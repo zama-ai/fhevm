@@ -13,11 +13,15 @@ import {
 } from 'vitest'
 
 describe('address validation', () => {
-  const manager = new IntegrationManager()
+  const manager = new IntegrationManager(false)
 
   beforeAll(async () => {
     await manager.beforeAll()
   }, 30_000)
+
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
 
   afterEach(async () => {
     await manager.afterEach()
@@ -38,17 +42,15 @@ describe('address validation', () => {
           },
           { correlationId: faker.string.uuid() },
         ),
-        'back',
       )
     })
     test("then it publish a 'web3:contract:validation:requested' event", async () => {
       await vi.waitUntil(async () => {
-        const size = await manager.getLogQueueSize()
-        return size >= 2
+        const size = await manager.getQueueSize('web3')
+        return size > 0
       })
-      const [first, second] = await manager.getLogQueueMessages()
-      expect(first?.event.type).toBe('back:address:validation:requested')
-      expect(second?.event.type).toBe('web3:contract:validation:requested')
+      const [message] = await manager.getQueueMessages('web3')
+      expect(message?.event.type).toBe('web3:contract:validation:requested')
     })
   })
 
@@ -63,17 +65,15 @@ describe('address validation', () => {
           },
           { correlationId: faker.string.uuid() },
         ),
-        'web3',
       )
     })
     test("then it publish a 'back:address:validation:confirmed' event", async () => {
       await vi.waitUntil(async () => {
-        const size = await manager.getLogQueueSize()
-        return size >= 2
+        const size = await manager.getQueueSize('back')
+        return size > 0
       })
-      const [first, second] = await manager.getLogQueueMessages()
-      expect(first?.event.type).toBe('web3:contract:validation:success')
-      expect(second?.event.type).toBe('back:address:validation:confirmed')
+      const [message] = await manager.getQueueMessages('back')
+      expect(message?.event.type).toBe('back:address:validation:confirmed')
     })
   })
 
@@ -88,17 +88,16 @@ describe('address validation', () => {
           },
           { correlationId: faker.string.uuid() },
         ),
-        'web3',
       )
     })
+
     test("then it publish a 'back:address:validation:failed' event", async () => {
       await vi.waitUntil(async () => {
-        const size = await manager.getLogQueueSize()
-        return size >= 2
+        const size = await manager.getQueueSize('back')
+        return size > 0
       })
-      const [first, second] = await manager.getLogQueueMessages()
-      expect(first?.event.type).toBe('web3:contract:validation:failure')
-      expect(second?.event.type).toBe('back:address:validation:failed')
+      const messages = await manager.getQueueMessages('back')
+      expect(messages[0]?.event.type).toBe('back:address:validation:failed')
     })
   })
 })

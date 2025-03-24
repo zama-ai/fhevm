@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { chainId, Meta, meta, requestId, web3Address } from './shared.js'
+import { chainId, meta, metaFactory, requestId, web3Address } from './shared.js'
 
 type EventTypes =
   | 'contract:validation:requested'
@@ -47,27 +47,7 @@ export const schema = z.discriminatedUnion('type', [...schemas]).and(
 )
 export type Web3Event = z.infer<typeof schema>
 
-/**
- * Create a factory to generate a given event
- *
- * @param type The type of the Event to generate
- * @returns the factory function for the selected event
- */
-function factory<
-  K extends EventTypes,
-  Event extends { type: `web3:${K}`; payload: object; meta: Meta } = Extract<
-    Web3Event,
-    { type: `web3:${K}` }
-  >,
->(type: K) {
-  return function (payload: Event['payload'], meta: Meta) {
-    return {
-      type: `web3:${type}`,
-      payload,
-      meta,
-    } as Event
-  }
-}
+const factory = metaFactory<Web3Event>('web3')
 
 export const contractValidationRequested = factory(
   'contract:validation:requested',

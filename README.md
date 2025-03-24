@@ -32,7 +32,6 @@ pnpm install
 # build our own packages
 pnpm --filter messages build
 pnpm --filter utils build
-pnpm --filter sqs build
 ```
 
 ## develop

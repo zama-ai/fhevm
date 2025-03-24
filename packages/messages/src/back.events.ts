@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { chainId, meta, Meta, requestId, web3Address } from './shared.js'
+import { chainId, meta, metaFactory, requestId, web3Address } from './shared.js'
 
 type EventTypes =
   | 'dapp:created'
@@ -11,6 +11,8 @@ type EventTypes =
   | 'address:validation:failed'
   | 'dapp:stats-requested'
   | 'dapp:stats-available'
+  | 'httpz:input-proof:requested'
+  | 'httpz:input-proof:completed'
 
 function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   key: Key,
@@ -69,6 +71,16 @@ const schemas = [
     timestamp: z.string().datetime(),
     externalRef: z.string(),
   }),
+  genSchema('httpz:input-proof:requested', {
+    contractChainId: chainId,
+    contractAddress: web3Address,
+    userAddress: web3Address,
+    ciphertextWithZkpok: z.string(),
+  }),
+  genSchema('httpz:input-proof:completed', {
+    handles: z.array(z.string()),
+    signatures: z.array(z.string()),
+  }),
 ] as const
 
 export const schema = z.discriminatedUnion('type', [...schemas]).and(
@@ -78,27 +90,7 @@ export const schema = z.discriminatedUnion('type', [...schemas]).and(
 )
 export type BackEvent = z.infer<typeof schema>
 
-/**
- * Create a factory to generate a given event
- *
- * @param type The type of the Event to generate
- * @returns the factory function for the selected event
- */
-function factory<
-  K extends EventTypes,
-  Event extends { type: `back:${K}`; payload: object; meta: Meta } = Extract<
-    BackEvent,
-    { type: `back:${K}` }
-  >,
->(type: K) {
-  return function (payload: Event['payload'], meta: Meta) {
-    return {
-      type: `back:${type}`,
-      payload,
-      meta,
-    } as Event
-  }
-}
+const factory = metaFactory<BackEvent>('back')
 
 export const dappCreated = factory('dapp:created')
 export const dappValidationRequested = factory('dapp:validation:requested')
@@ -113,6 +105,8 @@ export const addressValidationConfirmed = factory(
 export const addressValidationFailed = factory('address:validation:failed')
 export const dappStatsRequested = factory('dapp:stats-requested')
 export const dappStatsAvailable = factory('dapp:stats-available')
+export const httpzInputProofRequested = factory('httpz:input-proof:requested')
+export const httpzInputProofCompleted = factory('httpz:input-proof:completed')
 
 export function isBackEvent(data: unknown): data is BackEvent {
   return schema.safeParse(data).success

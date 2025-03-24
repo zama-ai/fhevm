@@ -43,7 +43,6 @@ jobs:
         run: |
           pnpm --filter messages build
           pnpm --filter utils build
-          pnpm --filter sqs build
 
       - name: Set Docker Tag
         id: set-tag
@@ -95,4 +94,3 @@ jobs:
       #       --amend ghcr.io/zama-ai/${{ inputs.image-name }}:${{ needs.determine-tag.outputs.docker_tag }}-amd64
       #     docker manifest push ghcr.io/zama-ai/${{ inputs.image-name }}:${{ needs.determine-tag.outputs.docker_tag }}
       #     docker manifest push ghcr.io/zama-ai/${{ inputs.image-name }}:latest
-

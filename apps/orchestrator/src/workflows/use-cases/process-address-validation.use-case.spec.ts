@@ -32,6 +32,7 @@ describe(ProcessAddressValidation, () => {
     let spy: MockInstance<
       (event: back.BackEvent | web3.Web3Event) => Task<void, AppError>
     >
+    let requestId: string
     let chainId: string
     let address: string
     let correlationId: string
@@ -39,12 +40,13 @@ describe(ProcessAddressValidation, () => {
 
     beforeEach(() => {
       spy = vi.spyOn(producer, 'publish')
+      requestId = faker.string.uuid()
       chainId = faker.string.numeric(5)
       address = faker.string.hexadecimal({ length: 40 })
       correlationId = faker.string.uuid()
       task = pubsub.publish(
         back.addressValidationRequested(
-          { chainId, address },
+          { requestId, chainId, address },
           { correlationId },
         ),
       )
@@ -63,7 +65,7 @@ describe(ProcessAddressValidation, () => {
       await task.toPromise()
       expect(spy).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          payload: { chainId, address },
+          payload: { requestId, chainId, address },
         }),
       )
     })
@@ -82,6 +84,7 @@ describe(ProcessAddressValidation, () => {
     let spy: MockInstance<
       (event: back.BackEvent | web3.Web3Event) => Task<void, AppError>
     >
+    let requestId: string
     let chainId: string
     let address: string
     let correlationId: string
@@ -89,11 +92,15 @@ describe(ProcessAddressValidation, () => {
 
     beforeEach(() => {
       spy = vi.spyOn(producer, 'publish')
+      requestId = faker.string.uuid()
       chainId = faker.string.numeric(5)
       address = faker.string.hexadecimal({ length: 40 })
       correlationId = faker.string.uuid()
       task = pubsub.publish(
-        web3.contractValidationSuccess({ chainId, address }, { correlationId }),
+        web3.contractValidationSuccess(
+          { requestId, chainId, address },
+          { correlationId },
+        ),
       )
     })
 
@@ -110,7 +117,7 @@ describe(ProcessAddressValidation, () => {
       await task.toPromise()
       expect(spy).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          payload: { chainId, address },
+          payload: { requestId, chainId, address },
         }),
       )
     })
@@ -129,6 +136,7 @@ describe(ProcessAddressValidation, () => {
     let spy: MockInstance<
       (event: back.BackEvent | web3.Web3Event) => Task<void, AppError>
     >
+    let requestId: string
     let chainId: string
     let address: string
     let reason: string
@@ -137,13 +145,14 @@ describe(ProcessAddressValidation, () => {
 
     beforeEach(() => {
       spy = vi.spyOn(producer, 'publish')
+      requestId = faker.string.uuid()
       chainId = faker.string.numeric(5)
       address = faker.string.hexadecimal({ length: 40 })
       reason = faker.lorem.paragraph()
       correlationId = faker.string.uuid()
       task = pubsub.publish(
         web3.contractValidationFailure(
-          { chainId, address, reason },
+          { requestId, chainId, address, reason },
           { correlationId },
         ),
       )
@@ -162,7 +171,7 @@ describe(ProcessAddressValidation, () => {
       await task.toPromise()
       expect(spy).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          payload: { chainId, address, reason },
+          payload: { requestId, chainId, address, reason },
         }),
       )
     })

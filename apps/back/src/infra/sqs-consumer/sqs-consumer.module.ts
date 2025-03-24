@@ -4,7 +4,7 @@ import { SQSClient } from '@aws-sdk/client-sqs'
 import { Module } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 
-import { SqsModule } from 'sqs'
+import { SqsModule } from '@ssut/nestjs-sqs'
 import { SQSConsumer } from './sqs.consumer.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
 import { SharedModule } from '#shared/shared.module.js'
@@ -18,10 +18,10 @@ import { SharedModule } from '#shared/shared.module.js'
         consumers: [
           {
             name: 'back',
-            queueUrl: config.get<string>('aws.queueUrl')!,
+            queueUrl: config.get<string>('aws.back.queueUrl')!,
             useQueueUrlAsEndpoint: false,
             sqs: new SQSClient({
-              endpoint: config.get('aws.queueUrl'),
+              endpoint: config.get('aws.back.queueUrl'),
               region: config.get('aws.region'),
             }),
             messageAttributeNames: ['All'],

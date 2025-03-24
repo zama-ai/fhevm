@@ -1,8 +1,8 @@
 import { AppModule, configModule } from '#app.module.js'
-import commonConfig from '#config/common.config.js'
-import dbConfig from '#config/db.config.js'
+// import commonConfig from '#config/common.config.js'
+// import dbConfig from '#config/db.config.js'
+import config from '#config/index.js'
 import { PrismaClient } from '#prisma/client/index.js'
-import { SNSClient } from '@aws-sdk/client-sns'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { INestApplication } from '@nestjs/common'
 import { ConfigModule, registerAs } from '@nestjs/config'
@@ -10,15 +10,46 @@ import { Test } from '@nestjs/testing'
 import { execSync } from 'child_process'
 import { randomUUID } from 'crypto'
 import { inject } from 'vitest'
+import type { Type } from '@nestjs/common'
 
 export class SetupManager {
-  #app: INestApplication
-
   #prismaClients: PrismaClient[]
 
-  #topicName: string
-  #queueName: string
-  #logQueueName: string
+  #app: INestApplication<any>
+
+  #orchQueueName: string
+  #backQueueName: string
+  #relayerQueueName: string
+  #web3QueueName: string
+
+  constructor(private readonly logEnabled = false) {}
+  private log(message: string) {
+    if (this.logEnabled) {
+      console.log(
+        `\x1b[34m[SetupManager|${this.workerId}]\x1b[33m ${message}\x1b[0m`,
+      )
+    }
+  }
+
+  private get workerId(): number {
+    return Number(process.env.VITEST_POOL_ID) - 1
+  }
+
+  get orchQueueUrl(): string {
+    return `${this.awsEndpoint}/000000000000/${this.#orchQueueName}`
+  }
+
+  get backQueueUrl(): string {
+    return `${this.awsEndpoint}/000000000000/${this.#backQueueName}`
+  }
+
+  get web3QueueUrl(): string {
+    return `${this.awsEndpoint}/000000000000/${this.#web3QueueName}`
+  }
+
+  get relayerQueueUrl(): string {
+    return `${this.awsEndpoint}/000000000000/${this.#relayerQueueName}`
+  }
 
   private async startPostgres() {
     const databaseUrls = inject('databaseUrls')
@@ -41,82 +72,79 @@ export class SetupManager {
     )
   }
 
-  private async execSync(command: string) {
-    await execSync(command, {
-      env: { PATH: process.env.PATH, AWS_DEFAULT_REGION: this.awsRegion },
-    })
+  private execSync(command: string) {
+    try {
+      return execSync(command, {
+        env: { PATH: process.env.PATH, AWS_DEFAULT_REGION: this.awsRegion },
+      }).toString()
+    } catch (error) {
+      this.log(`failed to execute ${command}: ${error}`)
+      return String(error)
+    }
   }
 
-  private async aws(command: string) {
-    return await this.execSync(
-      `aws --endpoint-url ${this.awsEndpoint} ${command}`,
-    )
+  private aws(command: string) {
+    return this.execSync(`aws --endpoint-url ${this.awsEndpoint} ${command}`)
   }
-  private async createTopic(topicName: string) {
-    await this.aws(
-      `sns create-topic --region ${this.awsRegion} --name ${topicName} --attributes "FifoTopic=false,ContentBasedDeduplication=true"`,
-    )
-  }
-  private async createQueue(queueName: string) {
-    await this.aws(
+  private createQueue(queueName: string) {
+    this.log(`creating ${queueName} queue`)
+    this.aws(
       `sqs create-queue --region ${this.awsRegion} --queue-name ${queueName}`,
     )
   }
 
-  private async deleteQueue(queueUrl: string) {
-    await this.aws(
+  private deleteQueue(queueUrl: string) {
+    this.log(`deleting ${queueUrl.slice(queueUrl.lastIndexOf('/') + 1)} queue`)
+    this.aws(
       `sqs delete-queue --region ${this.awsRegion} --queue-url ${queueUrl}`,
     )
   }
 
-  private async subscribeToTopic(queueArn: string) {
-    await this.aws(
-      `sns subscribe --region ${this.awsRegion} --topic-arn ${this.topicArn} --protocol sqs --notification-endpoint ${queueArn}`,
-    )
-  }
+  private startAws() {
+    const id = randomUUID()
+    this.log(`startAws id=${id}`)
+    // Generate a random topic name
+    this.#backQueueName = `back-queue-${id}`
+    this.#orchQueueName = `orch-queue-${id}`
+    this.#relayerQueueName = `relayer-queue-${id}`
+    this.#web3QueueName = `web3-queue-${id}`
 
-  #sns: SNSClient | undefined
-  get sns(): SNSClient {
-    if (!this.#sns) {
-      this.#sns = new SNSClient({
-        endpoint: this.awsEndpoint,
-        region: this.awsRegion,
-      })
-    }
-    return this.#sns
+    // NOTE: We need to create the orch queue once because
+    // the SqsConsumer open a Long Pulling request to this queue
+    this.log(`creating ${this.#orchQueueName} queue`)
+    this.createQueue(this.#orchQueueName)
   }
 
   #sqs: SQSClient | undefined
   get sqs(): SQSClient {
     if (!this.#sqs) {
       this.#sqs = new SQSClient({
-        endpoint: this.queueUrl,
+        endpoint: this.awsEndpoint,
         region: this.awsRegion,
+        useQueueUrlAsEndpoint: true,
       })
     }
     return this.#sqs
   }
 
-  private async purgeLogQueue() {
-    await this.deleteQueue(this.logQueueUrl)
-    await this.createQueue(this.#logQueueName)
-    await this.subscribeToTopic(this.logQueueArn)
+  private createQueues() {
+    this.log(`creating queues`)
+    this.createQueue(this.#backQueueName)
+    this.createQueue(this.#web3QueueName)
+    this.createQueue(this.#relayerQueueName)
+    this.log(`queue created`)
   }
 
-  private async startAws() {
-    // Generate a random uuid suffix
-    const id = randomUUID()
-    this.#topicName = `orch-test-topic-${id}`
-    this.#queueName = `orch-test-queue-${id}`
-    this.#logQueueName = `orch-test-log-queue-${id}`
+  private deleteQueues() {
+    this.log(`deleting queues`)
+    this.deleteQueue(this.backQueueUrl)
+    this.deleteQueue(this.web3QueueUrl)
+    this.deleteQueue(this.relayerQueueUrl)
+    this.log(`queue deleted`)
+  }
 
-    await this.createTopic(this.topicName)
-
-    await this.createQueue(this.#queueName)
-    await this.subscribeToTopic(this.queueArn)
-
-    await this.createQueue(this.#logQueueName)
-    await this.subscribeToTopic(this.logQueueArn)
+  get redisConnection(): { host: string; port: number } {
+    return inject('redisConnection')
   }
 
   async beforeAll() {
@@ -131,14 +159,25 @@ export class SetupManager {
         ConfigModule.forRoot({
           isGlobal: true,
           load: [
-            commonConfig,
+            ...config,
+            // commonConfig,
             registerAs('aws', () => ({
               endpoint: this.awsEndpoint,
-              queueUrl: this.queueUrl,
-              region: this.awsRegion,
-              topicArn: this.topicArn,
+              back: {
+                queueUrl: this.backQueueUrl,
+              },
+              orchestrator: {
+                queueUrl: this.orchQueueUrl,
+              },
+              relayer: {
+                queueUrl: this.relayerQueueUrl,
+              },
+              web3: {
+                queueUrl: this.web3QueueUrl,
+              },
             })),
-            dbConfig,
+            // dbConfig,
+            registerAs('redis', () => this.redisConnection),
           ],
         }),
       )
@@ -151,27 +190,31 @@ export class SetupManager {
   }
 
   async afterAll() {
-    // In case of errors during the setup process, #app could be undefined
-    if (this.#app) {
-      // Close the app
-      await this.#app.close()
-    }
+    await this.#app?.close()
+    this.log(`deleting ${this.#orchQueueName} queue`)
+    this.deleteQueue(this.orchQueueUrl)
+  }
+
+  beforeEach() {
+    this.log(`beforeEach`)
+    this.createQueues()
   }
 
   async afterEach() {
-    const WORKER_ID = Number(process.env.VITEST_POOL_ID) - 1
-
+    this.log(`after each`)
     await Promise.all([
       // Clear the database
-      this.#prismaClients[WORKER_ID].$transaction([
-        this.#prismaClients[WORKER_ID].snapshot.deleteMany(),
+      this.#prismaClients[this.workerId].$transaction([
+        this.#prismaClients[this.workerId].snapshot.deleteMany(),
       ]),
-      this.purgeLogQueue(),
+      this.deleteQueues(),
     ])
   }
 
-  get httpServer(): any {
-    return this.#app.getHttpServer()
+  get<TInput = any, TResult = TInput>(
+    typeOrToken: Type<TInput> | string | symbol,
+  ): TResult {
+    return this.#app.get(typeOrToken)
   }
 
   get awsEndpoint(): string {
@@ -180,30 +223,6 @@ export class SetupManager {
 
   get awsRegion(): string {
     return 'eu-central-1'
-  }
-
-  get topicName(): string {
-    return this.#topicName
-  }
-
-  get topicArn(): string {
-    return `arn:aws:sns:${this.awsRegion}:000000000000:${this.#topicName}`
-  }
-
-  get queueArn(): string {
-    return `arn:aws:sqs:${this.awsRegion}:000000000000:${this.#queueName}`
-  }
-
-  get queueUrl(): string {
-    return `${this.awsEndpoint}/000000000000/${this.#queueName}`
-  }
-
-  get logQueueArn(): string {
-    return `arn:aws:sqs:${this.awsRegion}:000000000000:${this.#logQueueName}`
-  }
-
-  get logQueueUrl(): string {
-    return `${this.awsEndpoint}/000000000000/${this.#logQueueName}`
   }
 }
 
