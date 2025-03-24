@@ -6,6 +6,7 @@ import { AppError, PubSub, type ISubscriber, Task, UseCase } from 'utils'
 import { web3 } from 'messages'
 import { Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
+import { ProducerService } from '#domain/services/producer.service.js'
 
 type Input = {
   requestId: string
@@ -17,6 +18,7 @@ export class FetchFHEEvents implements UseCase<Input, FheEvent[]> {
     private readonly pubsub: PubSub<web3.Web3Event>,
     private readonly service: FheEventService,
     private readonly repo: FheEventRepository,
+    private readonly publisher: ProducerService,
   ) {
     this.logger.debug(`subscribing to web3:fhe-event:requested`)
     this.pubsub.subscribe('web3:fhe-event:requested', this.handleFheEvent)
@@ -77,7 +79,7 @@ export class FetchFHEEvents implements UseCase<Input, FheEvent[]> {
           this.logger.log(
             `🚀 publishing ${toPublish.type}: ${JSON.stringify(toPublish.payload)}`,
           )
-          this.pubsub.publish(toPublish).fork(
+          this.publisher.sendMessage(toPublish).fork(
             () => {
               this.logger.verbose(`${toPublish.type} sent`)
             },

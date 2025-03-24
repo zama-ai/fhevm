@@ -15,6 +15,7 @@ import {
   FHE_EVENT_REPOSITORY,
   FHE_EVENT_SERVICE,
   MS_NAME,
+  PRODUCER,
   PUBSUB,
 } from './constants.js'
 import { ContractService } from './domain/services/contract.service.js'
@@ -32,6 +33,7 @@ import { PrismaFheEventRepository } from './infra/database/repositories/prisma-f
 import { web3 } from 'messages'
 import commonConfig from '#config/common.config.js'
 import { ViemFheEventService } from '#infra/adapters/viem-fhe-event.service.js'
+import { ProducerService } from '#domain/services/producer.service.js'
 
 // Note: I need to override the default behavior of ConfigModule in the tests,
 // and, as we use a dynamic module, we need to store the current instance to
@@ -109,7 +111,10 @@ export const configModule = ConfigModule.forRoot({
         return new ProxyContractService(map)
       },
     },
-    SqsProducer,
+    {
+      provide: PRODUCER,
+      useClass: SqsProducer,
+    },
     {
       provide: DiscoverContract,
       inject: [PUBSUB, CONTRACT_SERVICE],
@@ -140,12 +145,13 @@ export const configModule = ConfigModule.forRoot({
     },
     {
       provide: FetchFHEEvents,
-      inject: [PUBSUB, FHE_EVENT_SERVICE, FHE_EVENT_REPOSITORY],
+      inject: [PUBSUB, FHE_EVENT_SERVICE, FHE_EVENT_REPOSITORY, PRODUCER],
       useFactory: (
         pubsub: PubSub<web3.Web3Event>,
         service: FheEventService,
         repo: FheEventRepository,
-      ) => new FetchFHEEvents(pubsub, service, repo),
+        producer: ProducerService,
+      ) => new FetchFHEEvents(pubsub, service, repo, producer),
     },
   ],
 })
