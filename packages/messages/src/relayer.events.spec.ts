@@ -22,7 +22,7 @@ describe('relayer', () => {
             }) as `0x${string}`,
             chainId: faker.string.numeric(5),
           },
-          { correlationId: faker.string.uuid() },
+          // { correlationId: faker.string.uuid() },
         ),
       },
       {
@@ -68,6 +68,12 @@ describe('relayer', () => {
         ),
       },
     ])('identifies $event.type event', ({ event }) => {
+      const result = relayer.isRelayerEvent(event)
+      if (!result) {
+        console.log(
+          `failed: ${JSON.stringify(relayer.schema.safeParse(event))}`,
+        )
+      }
       expect(relayer.isRelayerEvent(event)).toBe(true)
     })
   })

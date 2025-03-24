@@ -55,7 +55,7 @@ const schemas = [
 
 export const schema = z
   .discriminatedUnion('type', [...schemas])
-  .and(z.object({ meta }))
+  .and(z.object({ meta: meta.optional() }))
 export type RelayerEvent = z.infer<typeof schema>
 
 /**
@@ -66,12 +66,13 @@ export type RelayerEvent = z.infer<typeof schema>
  */
 function factory<
   K extends EventTypes,
-  Event extends { type: `relayer:${K}`; payload: object; meta: Meta } = Extract<
-    RelayerEvent,
-    { type: `relayer:${K}` }
-  >,
+  Event extends {
+    type: `relayer:${K}`
+    payload: object
+    meta?: Meta
+  } = Extract<RelayerEvent, { type: `relayer:${K}` }>,
 >(type: K) {
-  return function (payload: Event['payload'], meta: Meta) {
+  return function (payload: Event['payload'], meta?: Meta) {
     return {
       type: `relayer:${type}`,
       payload,
