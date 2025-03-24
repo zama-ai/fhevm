@@ -4,8 +4,10 @@ import { z } from 'zod'
 export class FHEPublicKey extends ValueObject(
   'FHEPublicKey',
   z.object({
-    data_id: z.string(),
-    urls: z.array(z.string().url()),
+    fhe_public_key: z.object({
+      data_id: z.string(),
+      urls: z.array(z.string().url()),
+    }),
   }),
 ) {
   static parse(data: unknown): Result<FHEPublicKey, AppError> {

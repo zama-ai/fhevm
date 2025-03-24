@@ -45,8 +45,10 @@ describe('HttpzController', () => {
         Task.of({
           fhe_key_info: [
             FHEPublicKey.parse({
-              data_id: faker.string.uuid(),
-              urls: [faker.internet.url()],
+              fhe_public_key: {
+                data_id: faker.string.uuid(),
+                urls: [faker.internet.url()],
+              },
             }).unwrap(),
           ],
           crs: {

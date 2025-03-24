@@ -27,10 +27,12 @@ describe('GET /keyurl', () => {
           response: {
             fhe_key_info: [
               {
-                data_id: 'fhe-public-key-data-id',
-                urls: [
-                  'http://0.0.0.0:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee',
-                ],
+                fhe_public_key: {
+                  data_id: 'fhe-public-key-data-id',
+                  urls: [
+                    'http://0.0.0.0:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee',
+                  ],
+                },
               },
             ],
             crs: {

@@ -35,8 +35,10 @@ describe('GetKeyUrl', () => {
       keyUrlService.getFHEPublicKey.mockReturnValue(
         Task.of([
           FHEPublicKey.parse({
-            data_id: faker.string.uuid(),
-            urls: [faker.internet.url()],
+            fhe_public_key: {
+              data_id: faker.string.uuid(),
+              urls: [faker.internet.url()],
+            },
           }).unwrap(),
         ]),
       )
