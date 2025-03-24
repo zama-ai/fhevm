@@ -41,11 +41,6 @@ function factory({
         on: {
           'back:dapp:stats-requested': {
             actions: [
-              ({ event }) => {
-                console.log(
-                  `DAppStats handling ${event.type} for chain ${event.payload.chainId}`,
-                )
-              },
               ({ event: { payload, meta } }) =>
                 notifyMessage(web3.fheRequested(payload, meta)),
             ],

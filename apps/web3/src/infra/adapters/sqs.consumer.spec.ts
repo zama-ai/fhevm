@@ -71,8 +71,6 @@ describe('SQSConsumer', () => {
 
 function encodeMessage(message: object): Message {
   return {
-    Body: JSON.stringify({
-      Message: JSON.stringify(message),
-    }),
+    Body: JSON.stringify(message),
   }
 }
