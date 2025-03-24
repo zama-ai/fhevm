@@ -44,11 +44,19 @@ interface IZKPoKManager {
     event RejectProofResponse(uint256 indexed zkProofId);
 
     /**
-     * @notice Error indicating that the coprocessor has already responded to the ZK Proof verification request
+     * @notice Error indicating that the coprocessor signer has already responded to
+     * the ZK Proof verification request (either by verifying or rejecting the proof)
+     * @param zkProofId The ID of the ZK Proof
+     * @param signer The address of the coprocessor signer that has already responded
+     */
+    error CoprocessorSignerAlreadyResponded(uint256 zkProofId, address signer);
+
+    /**
+     * @notice Error indicating that the coprocessor signer has already signed the ZK Proof verification
      * @param zkProofId The ID of the ZK Proof
      * @param signer The address of the coprocessor signer that has already signed
      */
-    error CoprocessorSignerAlreadyResponded(uint256 zkProofId, address signer);
+    error CoprocessorSignerAlreadySigned(uint256 zkProofId, address signer);
 
     /**
      * @notice Requests the verification of a ZK Proof

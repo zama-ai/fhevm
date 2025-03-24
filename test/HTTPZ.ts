@@ -6,30 +6,6 @@ import hre, { ethers } from "hardhat";
 import { loadTestVariablesFixture, toValues } from "./utils/";
 
 describe("HTTPZ", function () {
-  function getKmsNodes(signers: HardhatEthersSigner[]) {
-    // Create dummy KMS nodes with the signers' addresses
-    const kmsNodes = signers.map((signer) => ({
-      connectorAddress: signer.address,
-      identity: hre.ethers.hexlify(hre.ethers.randomBytes(32)),
-      ipAddress: "127.0.0.1",
-      daUrl: "https://da.com",
-    }));
-
-    return { kmsNodes };
-  }
-
-  function getCoprocessors(signers: HardhatEthersSigner[]) {
-    // Create dummy Coprocessors with the signers' addresses
-    const coprocessors = signers.map((signer) => ({
-      transactionSenderAddress: signer.address,
-      identity: hre.ethers.hexlify(hre.ethers.randomBytes(32)),
-      daUrl: "https://da.com",
-      s3BucketUrl: "s3://bucket",
-    }));
-
-    return { coprocessors };
-  }
-
   async function getInputsForDeployFixture() {
     const signers = await hre.ethers.getSigners();
     const [owner, admin, user] = signers.splice(0, 3);
@@ -39,11 +15,35 @@ describe("HTTPZ", function () {
     const protocolMetadata = { name: "Protocol", website: "https://protocol.com" };
     const kmsThreshold = 1;
 
-    const kmsSigners = signers.splice(0, 4);
-    const { kmsNodes } = getKmsNodes(kmsSigners);
+    const nKmsNodes = 4;
+    const kmsTxSenders = signers.splice(0, nKmsNodes);
+    const kmsSigners = signers.splice(0, nKmsNodes);
 
-    const coprocessorSigners = signers.splice(0, 3);
-    const { coprocessors } = getCoprocessors(coprocessorSigners);
+    // Create dummy KMS nodes with the tx sender and signer addresses
+    const kmsNodes = [];
+    for (let i = 0; i < nKmsNodes; i++) {
+      kmsNodes.push({
+        txSenderAddress: kmsTxSenders[i].address,
+        signerAddress: kmsSigners[i].address,
+        ipAddress: `127.0.0.${i}`,
+        daUrl: `https://da-${i}.com`,
+      });
+    }
+
+    const nCoprocessors = 3;
+    const coprocessorTxSenders = signers.splice(0, nCoprocessors);
+    const coprocessorSigners = signers.splice(0, nCoprocessors);
+
+    // Create dummy Coprocessors with the tx sender and signer addresses
+    const coprocessors = [];
+    for (let i = 0; i < nCoprocessors; i++) {
+      coprocessors.push({
+        txSenderAddress: coprocessorTxSenders[i].address,
+        signerAddress: coprocessorSigners[i].address,
+        daUrl: `https://da-${i}.com`,
+        s3BucketUrl: `s3://bucket-${i}`,
+      });
+    }
 
     return {
       HTTPZ,
@@ -129,21 +129,39 @@ describe("HTTPZ", function () {
       await expect(httpz.checkIsAdmin(admin)).to.not.be.reverted;
     });
 
-    it("Should be registered as KMS nodes", async function () {
-      const { httpz, kmsSigners } = await loadFixture(loadTestVariablesFixture);
+    it("Should be registered as KMS nodes transaction senders", async function () {
+      const { httpz, kmsTxSenders } = await loadFixture(loadTestVariablesFixture);
 
-      // Loop over kmsSigners and check if they are properly registered as KMS nodes
-      for (const kmsSigner of kmsSigners) {
-        await expect(httpz.checkIsKmsNode(kmsSigner.address)).to.not.be.reverted;
+      // Loop over kmsTxSenders and check if they are properly registered as KMS transaction senders
+      for (const kmsTxSender of kmsTxSenders) {
+        await expect(httpz.checkIsKmsTxSender(kmsTxSender.address)).to.not.be.reverted;
       }
     });
 
-    it("Should be registered as coprocessors", async function () {
+    it("Should be registered as KMS nodes signers", async function () {
+      const { httpz, kmsSigners } = await loadFixture(loadTestVariablesFixture);
+
+      // Loop over kmsSigners and check if they are properly registered as KMS signers
+      for (const kmsSigner of kmsSigners) {
+        await expect(httpz.checkIsKmsSigner(kmsSigner.address)).to.not.be.reverted;
+      }
+    });
+
+    it("Should be registered as coprocessors transaction senders", async function () {
+      const { httpz, coprocessorTxSenders } = await loadFixture(loadTestVariablesFixture);
+
+      // Loop over coprocessorTxSenders and check if they are properly registered as coprocessor transaction senders
+      for (const coprocessorTxSender of coprocessorTxSenders) {
+        await expect(httpz.checkIsCoprocessorTxSender(coprocessorTxSender.address)).to.not.be.reverted;
+      }
+    });
+
+    it("Should be registered as coprocessors signers", async function () {
       const { httpz, coprocessorSigners } = await loadFixture(loadTestVariablesFixture);
 
-      // Loop over coprocessorSigners and check if they are properly registered as coprocessors
+      // Loop over coprocessorSigners and check if they are properly registered as coprocessor signers
       for (const coprocessorSigner of coprocessorSigners) {
-        await expect(httpz.checkIsCoprocessor(coprocessorSigner.address)).to.not.be.reverted;
+        await expect(httpz.checkIsCoprocessorSigner(coprocessorSigner.address)).to.not.be.reverted;
       }
     });
 
@@ -156,33 +174,33 @@ describe("HTTPZ", function () {
       }
     });
 
-    it("Should get all KMS node addresses", async function () {
-      const { httpz, kmsSigners } = await loadFixture(loadTestVariablesFixture);
+    it("Should get all KMS node transaction sender addresses", async function () {
+      const { httpz, kmsTxSenders } = await loadFixture(loadTestVariablesFixture);
 
-      // Get all KMS node addresses
-      const kmsNodeAddresses = await httpz.getAllKmsNodeAddresses();
+      // Get all KMS node transaction sender addresses
+      const kmsTxSenderAddresses = await httpz.getAllKmsTxSenderAddresses();
 
-      // Check that the number of KMS node addresses is correct
-      expect(kmsNodeAddresses.length).to.equal(kmsSigners.length);
+      // Check that the number of KMS node transaction sender addresses is correct
+      expect(kmsTxSenderAddresses.length).to.equal(kmsTxSenders.length);
 
       // Check that all KMS node addresses are in the list
-      for (const kmsSigner of kmsSigners) {
-        expect(kmsNodeAddresses).to.include(kmsSigner.address);
+      for (const kmsTxSender of kmsTxSenders) {
+        expect(kmsTxSenderAddresses).to.include(kmsTxSender.address);
       }
     });
 
-    it("Should get all coprocessor addresses", async function () {
-      const { httpz, coprocessorSigners } = await loadFixture(loadTestVariablesFixture);
+    it("Should get all coprocessor transaction sender addresses", async function () {
+      const { httpz, coprocessorTxSenders } = await loadFixture(loadTestVariablesFixture);
 
-      // Get all coprocessor addresses
-      const coprocessorAddresses = await httpz.getAllCoprocessorAddresses();
+      // Get all coprocessor transaction sender addresses
+      const coprocessorTxSenderAddresses = await httpz.getAllCoprocessorTxSenderAddresses();
 
-      // Check that the number of coprocessor addresses is correct
-      expect(coprocessorAddresses.length).to.equal(coprocessorSigners.length);
+      // Check that the number of coprocessor transaction sender addresses is correct
+      expect(coprocessorTxSenderAddresses.length).to.equal(coprocessorTxSenders.length);
 
-      // Check that all coprocessor addresses are in the list
-      for (const coprocessorSigner of coprocessorSigners) {
-        expect(coprocessorAddresses).to.include(coprocessorSigner.address);
+      // Check that all coprocessor transaction sender addresses are in the list
+      for (const coprocessorTxSender of coprocessorTxSenders) {
+        expect(coprocessorTxSenderAddresses).to.include(coprocessorTxSender.address);
       }
     });
   });

@@ -198,9 +198,11 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
         __Ownable_init(owner());
     }
 
-    /// @notice Checks if the sender is a KMS Node.
-    modifier onlyKmsNode() {
-        _HTTPZ.checkIsKmsNode(msg.sender);
+    /// @notice Checks if the sender is a KMS transaction sender.
+    /// @dev In case of reorgs, for response calls, we need to prevent someone else than the KMS
+    /// @dev transaction sender from copying the signature and sending it to trigger a consensus.
+    modifier onlyKmsTxSender() {
+        _HTTPZ.checkIsKmsTxSender(msg.sender);
         _;
     }
 
@@ -235,13 +237,11 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
     }
 
     /// @dev See {IDecryptionManager-publicDecryptionResponse}.
-    /// @dev Uses the isKmsNode modifier to prevent someone else from copying the signature and
-    /// @dev sending it to trigger a consensus in case of reorgs.
     function publicDecryptionResponse(
         uint256 publicDecryptionId,
         bytes calldata decryptedResult,
         bytes calldata signature
-    ) public virtual onlyKmsNode {
+    ) public virtual onlyKmsTxSender {
         DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
 
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
@@ -315,7 +315,7 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
             if (!_containsContractAddress(contractAddresses, ctHandleContractPairs[i].contractAddress)) {
-                revert ContractNotInContractAddresses(ctHandleContractPairs[i].contractAddress);
+                revert ContractNotInContractAddresses(ctHandleContractPairs[i].contractAddress, contractAddresses);
             }
             ctHandles[i] = ctHandleContractPairs[i].ctHandle;
         }
@@ -376,7 +376,7 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
             if (!_containsContractAddress(contractAddresses, ctHandleContractPairs[i].contractAddress)) {
-                revert ContractNotInContractAddresses(ctHandleContractPairs[i].contractAddress);
+                revert ContractNotInContractAddresses(ctHandleContractPairs[i].contractAddress, contractAddresses);
             }
             ctHandles[i] = ctHandleContractPairs[i].ctHandle;
             allowedContracts[i] = ctHandleContractPairs[i].contractAddress;
@@ -433,13 +433,11 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
     }
 
     /// @dev See {IDecryptionManager-userDecryptionResponse}.
-    /// @dev Uses the isKmsNode modifier to prevent someone else from copying the signature and
-    /// @dev sending it to trigger a consensus in case of reorgs.
     function userDecryptionResponse(
         uint256 userDecryptionId,
         bytes calldata reencryptedShare,
         bytes calldata signature
-    ) external virtual onlyKmsNode {
+    ) external virtual onlyKmsTxSender {
         DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
         UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[userDecryptionId];
 
@@ -455,7 +453,7 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
 
         /// @dev Recover the signer address from the signature and validate that is a KMS node that
         /// @dev has not already signed.
-        _validateUserDecryptEIP712Signature(userDecryptionId, digest, signature);
+        _validateUserDecryptResponseEIP712Signature(userDecryptionId, digest, signature);
 
         bytes[] storage verifiedSignatures = $._verifiedUserDecryptSignatures[userDecryptionId][digest];
         verifiedSignatures.push(signature);
@@ -515,8 +513,8 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
         DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
         address signer = ECDSA.recover(digest, signature);
 
-        /// @dev Check that the signer is a KMS node.
-        _HTTPZ.checkIsKmsNode(signer);
+        /// @dev Check that the signer is a KMS signer
+        _HTTPZ.checkIsKmsSigner(signer);
 
         /// @dev Check that the signer has not already responded to the public decryption request.
         if ($._alreadyPublicDecryptResponded[publicDecryptionId][signer]) {
@@ -524,29 +522,6 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
         }
 
         $._alreadyPublicDecryptResponded[publicDecryptionId][signer] = true;
-    }
-
-    /// @notice Validates the EIP712 signature for a given user decryption.
-    /// @param userDecryptionId The ID of the user decryption request.
-    /// @param digest The hash of the UserDecryptVerification structure.
-    /// @param signature The signature to be validated.
-    function _validateUserDecryptEIP712Signature(
-        uint256 userDecryptionId,
-        bytes32 digest,
-        bytes calldata signature
-    ) internal virtual {
-        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
-        address signer = ECDSA.recover(digest, signature);
-
-        /// @dev Check that the signer is a KMS node.
-        _HTTPZ.checkIsKmsNode(signer);
-
-        /// @dev Check that the signer has not already responded to the user decryption request.
-        if ($._alreadyUserDecryptResponded[userDecryptionId][signer]) {
-            revert KmsSignerAlreadyResponded(userDecryptionId, signer);
-        }
-
-        $._alreadyUserDecryptResponded[userDecryptionId][signer] = true;
     }
 
     /// @notice Validates the EIP712 signature for a given user decryption request
@@ -579,6 +554,29 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
         if (signer != userAddress) {
             revert InvalidUserSignature(signature);
         }
+    }
+
+    /// @notice Validates the EIP712 signature for a given user decryption response.
+    /// @param userDecryptionId The ID of the user decryption request.
+    /// @param digest The hash of the UserDecryptResponseVerification structure.
+    /// @param signature The signature to be validated.
+    function _validateUserDecryptResponseEIP712Signature(
+        uint256 userDecryptionId,
+        bytes32 digest,
+        bytes calldata signature
+    ) internal virtual {
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
+        address signer = ECDSA.recover(digest, signature);
+
+        /// @dev Check that the signer is a KMS signer.
+        _HTTPZ.checkIsKmsSigner(signer);
+
+        /// @dev Check that the signer has not already responded to the user decryption request.
+        if ($._alreadyUserDecryptResponded[userDecryptionId][signer]) {
+            revert KmsSignerAlreadyResponded(userDecryptionId, signer);
+        }
+
+        $._alreadyUserDecryptResponded[userDecryptionId][signer] = true;
     }
 
     /// @notice Computes the hash of a given PublicDecryptVerification structured data
