@@ -61,7 +61,7 @@ describe('get-dapp-stats', () => {
       let result: GraphQlResponse<DAppStats>
 
       beforeEach(async () => {
-        result = await manager.dapp.getDappStats({
+        result = await manager.dapp.getDappRawStats({
           token,
           dappId,
         })
@@ -127,7 +127,7 @@ describe('get-dapp-stats', () => {
       let getDappStats: GraphQlResponse<DAppStats>
 
       beforeEach(async () => {
-        getDappStats = await manager.dapp.getDappStats({
+        getDappStats = await manager.dapp.getDappRawStats({
           token,
           dappId,
         })

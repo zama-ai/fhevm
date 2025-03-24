@@ -14,7 +14,7 @@ import * as uc from '#dapps/use-cases/index.js'
 import { GetTeamById } from '#users/use-cases/get-team-by-id.use-case.js'
 import {
   DappType,
-  StatsType,
+  RawStatsType,
   ValidateAddress,
 } from '#dapps/infra/types/dapp.type.js'
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
@@ -41,7 +41,7 @@ export class DappsResolver {
     private readonly getDappByIdUC: uc.GetDappById,
     private readonly getTeamByIdUC: GetTeamById,
     private readonly deployDappUC: uc.DeployDApp,
-    private readonly getDappStatsUC: uc.GetDappStatsUseCase,
+    private readonly getDappRawStatsUC: uc.GetDappRawStatsUseCase,
     private readonly appUpdatesSubscriptionUC: uc.AppUpdatesSubscription,
     private readonly validateAddressUC: uc.ValidateAddress,
   ) {}
@@ -113,10 +113,20 @@ export class DappsResolver {
     return this.getTeamByIdUC.execute(TeamId.from(teamId)).toPromise()
   }
 
-  @ResolveField(() => [StatsType], { name: 'stats' })
+  @ResolveField(() => [RawStatsType], { name: 'rawStats' })
+  async rawStats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
+    const result = await this.getDappRawStatsUC
+      .execute({ dappId: dapp.id })
+      .toPromise()
+    return result.stats
+  }
+
+  @ResolveField(() => [RawStatsType], {
+    name: 'stats',
+  })
   async stats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
     this.logger.debug(`getting stats for dappId=${dapp.id}`)
-    const result = await this.getDappStatsUC
+    const result = await this.getDappRawStatsUC
       .execute({ dappId: dapp.id })
       .toPromise()
     return result.stats

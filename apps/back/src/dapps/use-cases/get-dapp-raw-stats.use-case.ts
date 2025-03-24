@@ -24,8 +24,8 @@ type Output = {
 }
 
 @Injectable()
-export class GetDappStatsUseCase implements UseCase<Input, Output> {
-  private readonly logger = new Logger(GetDappStatsUseCase.name)
+export class GetDappRawStatsUseCase implements UseCase<Input, Output> {
+  private readonly logger = new Logger(GetDappRawStatsUseCase.name)
   constructor(
     @Inject(PRODUCER) private readonly producer: IProducer,
     private readonly repo: DAppRepository,

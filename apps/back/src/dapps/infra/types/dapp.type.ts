@@ -28,8 +28,8 @@ registerEnumType(DappStatus, {
   },
 })
 
-@ObjectType('Stats')
-export class StatsType {
+@ObjectType('RawStats')
+export class RawStatsType {
   @Field(() => ID, { nullable: false })
   id: string
 
@@ -75,11 +75,18 @@ export class DappType {
   @Field({ nullable: false })
   createdAt: number
 
-  @Field(() => [StatsType], {
+  @Field(() => [RawStatsType], {
+    nullable: false,
+    description: 'DApp usage statistics',
+    deprecationReason: 'move to rawStats as stats will be rewamped soon',
+  })
+  stats: RawStatsType[]
+
+  @Field(() => [RawStatsType], {
     nullable: false,
     description: 'DApp usage statistics',
   })
-  stats: StatsType[]
+  rawStats: RawStatsType[]
 }
 
 @ObjectType('ValidateAddress')
