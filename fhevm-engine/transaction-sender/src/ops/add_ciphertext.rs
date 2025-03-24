@@ -79,12 +79,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
             .await?;
 
             info!(
-                "Transaction {} succeeded, handle: {}",
+                "addCiphertext txn: {} succeeded, handle: {}",
                 receipt.transaction_hash, h
             );
         } else {
             error!(
-                "Transaction {} failed with status {}, handle: {}",
+                "addCiphertext txn: {} failed with status {}, handle: {}",
                 receipt.transaction_hash,
                 receipt.status(),
                 h

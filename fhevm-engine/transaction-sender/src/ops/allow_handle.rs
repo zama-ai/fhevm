@@ -1,4 +1,7 @@
-use std::str::FromStr;
+use std::{
+    fmt::{Display, Formatter},
+    str::FromStr,
+};
 
 use crate::ops::common::try_into_array;
 
@@ -15,13 +18,31 @@ use async_trait::async_trait;
 use fhevm_engine_common::{tenant_keys::query_tenant_info, utils::compact_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 sol!(
     #[sol(rpc)]
     ACLManager,
     "artifacts/ACLManager.sol/ACLManager.json"
 );
+
+struct Key {
+    handle: Vec<u8>,
+    account_addr: String,
+    tenant_id: i32,
+}
+
+impl Display for Key {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Key {{ handle: {}, account: {}, tenant_id: {} }}",
+            compact_hex(&self.handle),
+            self.account_addr,
+            self.tenant_id
+        )
+    }
+}
 
 #[derive(Clone)]
 pub struct ACLManagerOperation<P: Provider<Ethereum> + Clone + 'static> {
@@ -38,10 +59,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
     async fn send_transaction(
         db_pool: Pool<Postgres>,
         provider: P,
-        handle: Vec<u8>,
+        key: &Key,
         txn_request: impl Into<TransactionRequest>,
     ) -> anyhow::Result<()> {
-        let h = compact_hex(&handle);
+        let h = compact_hex(&key.handle);
 
         info!("Processing transaction, handle: {}", h);
 
@@ -54,7 +75,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
                     txn_req, e, h
                 );
 
-                Self::increment_db_retry(&db_pool, handle, &e.to_string()).await?;
+                Self::increment_db_retry(&db_pool, key, &e.to_string()).await?;
                 bail!("Transaction sending failed with error: {}", e);
             }
         };
@@ -69,7 +90,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
             Ok(receipt) => receipt,
             Err(e) => {
                 error!("Getting receipt failed with error: {}", e);
-                Self::increment_db_retry(&db_pool, handle, &e.to_string()).await?;
+                Self::increment_db_retry(&db_pool, key, &e.to_string()).await?;
                 return Err(anyhow::Error::new(e));
             }
         };
@@ -78,25 +99,29 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
             sqlx::query!(
                 "UPDATE allowed_handles
                  SET txn_is_sent = true
-                 WHERE handle = $1",
-                handle
+                 WHERE handle = $1
+                 AND account_address = $2
+                 AND tenant_id = $3",
+                key.handle,
+                key.account_addr,
+                key.tenant_id
             )
             .execute(&db_pool)
             .await?;
 
             info!(
-                "Transaction {} succeeded, handle: {}",
-                receipt.transaction_hash, h
+                "allowAccount txn: {} succeeded, {}",
+                receipt.transaction_hash, key,
             );
         } else {
             error!(
-                "Transaction {} failed with status {}, handle: {}",
+                "allowAccount txn: {} failed with status {}, handle: {}",
                 receipt.transaction_hash,
                 receipt.status(),
                 h
             );
 
-            Self::increment_db_retry(&db_pool, handle, "receipt status = false").await?;
+            Self::increment_db_retry(&db_pool, key, "receipt status = false").await?;
 
             return Err(anyhow::anyhow!(
                 "Transaction {} failed with status {}, handle: {}",
@@ -132,19 +157,24 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
 
     async fn increment_db_retry(
         db_pool: &Pool<Postgres>,
-        handle: Vec<u8>,
+        key: &Key,
         err: &str,
     ) -> anyhow::Result<()> {
-        info!("Updating retry count, handle {}", compact_hex(&handle));
+        debug!("Updating retry count, {}", &key);
+
         sqlx::query!(
             "UPDATE allowed_handles
             SET
             txn_retry_count = txn_retry_count + 1,
             txn_last_error = $1,
             txn_last_error_at = NOW()
-            WHERE handle = $2",
+            WHERE handle = $2
+            AND account_address = $3
+            AND tenant_id = $4",
             err,
-            handle,
+            key.handle,
+            key.account_addr,
+            key.tenant_id
         )
         .execute(db_pool)
         .await?;
@@ -205,8 +235,8 @@ where
 
             let account_addr = row.account_address;
             info!(
-                "Allow handle: {}, chain_id: {}, account: {}",
-                h_as_hex, chain_id, account_addr
+                "Allow handle: {}, account: {}, chain_id: {}",
+                h_as_hex, account_addr, chain_id
             );
 
             let handle_u256 = U256::from_be_bytes(try_into_array::<32>(handle)?);
@@ -232,8 +262,14 @@ where
             let provider = self.provider.clone();
             let handle = row.handle;
 
+            let key = Key {
+                handle,
+                account_addr,
+                tenant_id: row.tenant_id,
+            };
+
             join_set.spawn(async move {
-                Self::send_transaction(db_pool, provider, handle, txn_request).await
+                Self::send_transaction(db_pool, provider, &key, txn_request).await
             });
         }
 
