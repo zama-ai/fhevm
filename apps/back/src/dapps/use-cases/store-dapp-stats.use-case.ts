@@ -2,6 +2,7 @@ import { PUBSUB } from '#constants.js'
 import { DAppStat } from '#dapps/domain/entities/dapp-stat.js'
 import { DAppStatId } from '#dapps/domain/entities/value-objects.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
+import { ChainId } from '#shared/entities/value-objects/chain-id.js'
 import { SubscriptionDappUpdatedPayload } from '#subscriptions/domain/entities/subscription.js'
 import {
   SUBSCRIPTION_SERVICE,
@@ -20,7 +21,7 @@ import {
 } from 'utils'
 
 type Input = {
-  chainId: string
+  chainId: string | number
   address: string
   name: string
   timestamp: string
@@ -65,10 +66,13 @@ export class StoreDAppStats implements UseCase<Input, Output> {
   }
 
   execute = (input: Input): Task<DAppStat, AppError> => {
-    return this.repo
-      .findByAddress(input.chainId, input.address)
-      .tap(dapp => {
-        this.logger.debug(`dApp found: ${dapp.id}`)
+    return ChainId.parse(input.chainId)
+      .asyncChain(chainId => {
+        return this.repo
+          .findByAddress(chainId.toString(), input.address)
+          .tap(dapp => {
+            this.logger.debug(`dApp found: ${dapp.id}`)
+          })
       })
       .chain(dapp =>
         this.repo

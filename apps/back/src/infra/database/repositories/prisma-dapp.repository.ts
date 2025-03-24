@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import type { AppError } from 'utils'
+import { AppError } from 'utils'
 import {
   duplicatedError,
   every,
