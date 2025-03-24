@@ -100,11 +100,15 @@ describe(ProcessDAppStats, () => {
       event = web3.fheDetected(
         {
           requestId: faker.string.uuid(),
-          id: faker.string.alphanumeric(10),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
-          name: faker.string.alphanumeric(10),
-          timestamp: faker.date.past().toISOString(),
+          events: [
+            {
+              id: faker.string.alphanumeric(10),
+              name: faker.string.alphanumeric(10),
+              timestamp: faker.date.past().toISOString(),
+            },
+          ],
         },
         { correlationId: faker.string.uuid() },
       ) as Extract<web3.Web3Event, { type: 'web3:fhe-event:detected' }>
@@ -129,12 +133,14 @@ describe(ProcessDAppStats, () => {
       expect((payload as any).address, 'Wrong address').toBe(
         event.payload.address,
       )
-      expect((payload as any).name, 'Wrong name').toBe(event.payload.name)
-      expect((payload as any).timestamp, 'Wrong timestamp').toBe(
-        event.payload.timestamp,
+      expect((payload as any).events[0].name, 'Wrong name').toBe(
+        event.payload.events[0].name,
       )
-      expect((payload as any).externalRef, 'Wrong externalREf').toBe(
-        event.payload.id,
+      expect((payload as any).events[0].timestamp, 'Wrong timestamp').toBe(
+        event.payload.events[0].timestamp,
+      )
+      expect((payload as any).events[0].externalRef, 'Wrong externalREf').toBe(
+        event.payload.events[0].id,
       )
     })
 
@@ -153,9 +159,13 @@ describe(ProcessDAppStats, () => {
           requestId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
-          name: faker.string.alphanumeric(10),
-          timestamp: faker.date.past().toISOString(),
-          externalRef: faker.string.alphanumeric(10),
+          events: [
+            {
+              name: faker.string.alphanumeric(10),
+              timestamp: faker.date.past().toISOString(),
+              externalRef: faker.string.alphanumeric(10),
+            },
+          ],
         },
         { correlationId: faker.string.uuid() },
       ),

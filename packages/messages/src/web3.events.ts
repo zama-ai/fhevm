@@ -34,9 +34,13 @@ const schemas = [
   }),
   genSchema('fhe-event:requested', {}),
   genSchema('fhe-event:detected', {
-    id: z.string(),
-    name: z.string(),
-    timestamp: z.string().datetime(),
+    events: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        timestamp: z.string().datetime(),
+      }),
+    ),
   }),
 ] as const
 

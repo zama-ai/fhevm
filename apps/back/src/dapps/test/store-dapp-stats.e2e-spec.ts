@@ -67,9 +67,13 @@ describe('store dapp stats', () => {
                 requestId: faker.string.uuid(),
                 chainId: LOCAL_FHEVM_CHAIN_ID,
                 address,
-                name: 'FheAdd',
-                timestamp: faker.date.past().toISOString(),
-                externalRef: faker.string.alphanumeric(10),
+                events: [
+                  {
+                    name: 'FheAdd',
+                    timestamp: faker.date.past().toISOString(),
+                    externalRef: faker.string.alphanumeric(10),
+                  },
+                ],
               },
               {
                 correlationId: faker.string.uuid(),

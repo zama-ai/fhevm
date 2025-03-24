@@ -62,15 +62,21 @@ export class FetchFHEEvents implements UseCase<Input, FheEvent[]> {
         Task.all<AppError, FheEvent>(events.map(this.repo.create)),
       )
       .tap(events => {
-        events.forEach(event => {
+        const map = events.reduce((map, event) => {
+          const address = event.callerAddress.value
+          return map.set(address, (map.get(address) ?? [])?.concat(event))
+        }, new Map<string, FheEvent[]>())
+        for (const events of map.values()) {
           const toPublish = web3.fheDetected(
             {
               requestId,
-              id: event.id.value,
-              address: event.callerAddress.value,
-              chainId: event.chainId.value,
-              name: event.name,
-              timestamp: event.timestamp.toISOString(),
+              chainId: events[0].chainId.value,
+              address: events[0].callerAddress.value,
+              events: events.map(event => ({
+                id: event.id.value,
+                name: event.name,
+                timestamp: event.timestamp.toISOString(),
+              })),
             },
             {
               correlationId: randomUUID(),
@@ -89,7 +95,7 @@ export class FetchFHEEvents implements UseCase<Input, FheEvent[]> {
               )
             },
           )
-        })
+        }
       })
   }
 }
