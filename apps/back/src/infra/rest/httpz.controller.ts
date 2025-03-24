@@ -14,7 +14,7 @@ export class HttpzController {
   constructor(
     private readonly getKeyUrlUC: GetKeyUrl,
     private readonly inputProofUC: InputProof,
-  ) {}
+  ) { }
 
   @Get('/keyurl')
   async getKeyUrl() {

@@ -13,7 +13,7 @@ export class SQSConsumer {
     private readonly pubsub: IPubSub<
       back.BackEvent | web3.Web3Event | relayer.RelayerEvent
     >,
-  ) {}
+  ) { }
 
   @SqsMessageHandler('orchestrator')
   public async handleMessage(message: Message) {
@@ -33,6 +33,7 @@ export class SQSConsumer {
           )
           await this.pubsub.publish(data).toPromise()
         } else {
+          this.logger.debug(`${JSON.stringify(relayer.schema.safeParse(data))}`);
           this.logger.debug(`❌ unhandled message ${(data as any).type}`)
         }
       } catch (error) {

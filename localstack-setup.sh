@@ -31,3 +31,6 @@ awslocal sqs create-queue --queue-name email-queue \
 
 echo "Creating relayer queue"
 awslocal sqs create-queue --queue-name relayer-queue
+
+echo "Creating tx-manager queue"
+awslocal sqs create-queue --queue-name tx-manager-queue

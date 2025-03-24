@@ -130,6 +130,18 @@ async fn main() {
     // NOTE: Should probably come from .env
     let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab]; // Used to generate uuid
 
+    // TODO: Pass the event_dispatcher to the event_listener
+    let config = aws_config::from_env().load().await;
+    let sqs_client = aws_sdk_sqs::Client::new(&config);
+    let default_relayer_sqs_endpoint = String::from(
+        "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/relayer-queue",
+    );
+    let default_console_sqs_endpoint = String::from(
+        "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/orchestrator-queue",
+    );
+    let default_tx_manager_sqs_endpoint = String::from(
+        "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/tx-manager-queue",
+    );
     // ############################################################################################
     // Observability
     // ############################################################################################
@@ -149,9 +161,6 @@ async fn main() {
 
     let dispatcher = Arc::new(TokioEventDispatcher::<ZwsRelayerEvent>::new());
     let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
-
-    // TODO: get that from env var
-    let topic_arn = "arn:aws:sns:eu-central-1:000000000000:relayer-topic";
 
     let gateway_chain_id: u64 = 54321;
     let gateway_private_key_env = "GATEWAY_PRIVATE_KEY".to_string();
@@ -206,12 +215,26 @@ async fn main() {
     // Register the event handlers
     // NOTE: we could also set the dispatcher in the Handler, but we use a SNS topic instead
     // here
-    let zws_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> =
-        Arc::new(ZWSRelayerHandler::new(topic_arn.to_owned(), Arc::clone(&orchestrator)).await);
+
+    // TODO: add tx-manager queue, and properly setup all listeners
+    // TODO: http listener should send message to SQS instead of internal orchestrator
+
+    let zws_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> = Arc::new(
+        ZWSRelayerHandler::new(
+            default_console_sqs_endpoint.to_owned(),
+            default_tx_manager_sqs_endpoint.to_owned(),
+            Arc::clone(&orchestrator),
+        )
+        .await,
+    );
+
     let console_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> =
-        Arc::new(ZWSConsoleMockHandler::new(topic_arn.to_owned()).await);
-    let tx_manager_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> =
-        Arc::new(ZWSTransactionManagerMockHandler::new(topic_arn.to_owned(), tx_services).await);
+        Arc::new(ZWSConsoleMockHandler::new(default_relayer_sqs_endpoint.to_owned()).await);
+
+    let tx_manager_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> = Arc::new(
+        ZWSTransactionManagerMockHandler::new(default_relayer_sqs_endpoint.to_owned(), tx_services)
+            .await,
+    );
 
     // Register handler for all events
     // Public decryption request
@@ -260,17 +283,19 @@ async fn main() {
         .expect("Couldn't connect to websocket of Gateway L2 blockchain ");
     let rollup_l2 = Arc::new(rollup_l2);
 
-    // === Create a subscription for events and spawn a listener to listen for events from the subcription.
-    // TODO: Pass the event_dispatcher to the event_listener
-    let config = aws_config::from_env().load().await;
-    let sqs_client = aws_sdk_sqs::Client::new(&config);
-    let default_sqs_endpoint = String::from(
-        "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/relayer-queue",
+    let relayer_sqs_endpoint: &'static str = Box::leak(
+        env::var("RELAYER_SQS_ENDPOINT")
+            .unwrap_or(default_relayer_sqs_endpoint)
+            .into_boxed_str(),
     );
-
-    let sqs_endpoint: &'static str = Box::leak(
-        env::var("SQS_ENDPOINT")
-            .unwrap_or(default_sqs_endpoint)
+    let console_sqs_endpoint: &'static str = Box::leak(
+        env::var("CONSOLE_SQS_ENDPOINT")
+            .unwrap_or(default_console_sqs_endpoint)
+            .into_boxed_str(),
+    );
+    let tx_manager_sqs_endpoint: &'static str = Box::leak(
+        env::var("TX_MANAGER_SQS_ENDPOINT")
+            .unwrap_or(default_tx_manager_sqs_endpoint)
             .into_boxed_str(),
     );
 
@@ -295,14 +320,21 @@ async fn main() {
     // standalone software we need this)
     tokio::spawn(http_listener(
         sqs_client.clone(),
-        sqs_endpoint,
+        relayer_sqs_endpoint,
         Arc::clone(&orchestrator),
     ));
 
-    // SQS event listener
+    // Relayer SQS event listener
     tokio::spawn(sqs_listener(
         sqs_client.clone(),
-        sqs_endpoint,
+        relayer_sqs_endpoint,
+        Arc::clone(&orchestrator),
+    ));
+
+    // TX-Manager SQS event listener
+    tokio::spawn(sqs_listener(
+        sqs_client.clone(),
+        tx_manager_sqs_endpoint,
         Arc::clone(&orchestrator),
     ));
 

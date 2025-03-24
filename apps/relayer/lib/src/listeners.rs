@@ -257,16 +257,17 @@ pub async fn sqs_listener(
         for message in messages {
             let event = match message.body() {
                 Some(content) => {
-                    let payload: SNSPayload = match serde_json::from_str(content) {
-                        Ok(value) => value,
+                    let payload: ZwsRelayerEvent = match serde_json::from_str(content) {
+                        Ok(value) => {
+                            debug!("successfuly parsed content from sqs: {:?}", content);
+                            value
+                        }
                         Err(err) => {
                             error!("Couldn't deserialize message: {content} with error {err}");
                             continue;
                         }
                     };
-                    match payload {
-                        SNSPayload::Notification(notification) => notification,
-                    }
+                    payload
                 }
                 None => {
                     error!("Message is empty");
@@ -282,10 +283,10 @@ pub async fn sqs_listener(
                 "Dispatching event"
             );
 
-            // // TODO: ERROR handling on event dispatch
+            // TODO: ERROR handling on event dispatch
 
             // Dispatch with error logging
-            if let Err(e) = orchestrator.dispatch_event(event.message).await {
+            if let Err(e) = orchestrator.dispatch_event(event).await {
                 error!(
                     file = file!(),
                     line = line!(),

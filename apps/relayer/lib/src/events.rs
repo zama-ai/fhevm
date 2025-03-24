@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 // TODO: prefix events with relayer
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", content = "payload")]
 pub enum ZwsRelayerEvent {
     /// Host is usually a public decryption request made on the Oracle contract
     #[serde(rename = "relayer:blockchain:host-event")]
@@ -433,7 +433,7 @@ pub struct SQSRelayerInputRegistrationRequest {
     pub contract_address: Address,
     #[serde(rename = "userAddress")]
     pub user_address: Address,
-    #[serde(rename = "ciphetextWithZkProof")]
+    #[serde(rename = "ciphertextWithZkpok")]
     pub ciphetext_with_zk_proof: Bytes,
 }
 
@@ -540,55 +540,3 @@ impl_event!(SQSRelayerPrivateDecryptionRequest, 8);
 impl_event!(SQSRelayerPrivateDecryptionResponse, 9);
 impl_event!(SQSRelayerInputRegistrationRequest, 10);
 impl_event!(SQSRelayerInputRegistrationResponse, 11);
-
-// Per https://docs.aws.amazon.com/sns/latest/dg/sns-sqs-as-subscriber.html
-// {
-//    "Type" : "Notification",
-//    "MessageId" : "63a3f6b6-d533-4a47-aef9-fcf5cf758c76",
-//    "TopicArn" : "arn:aws:sns:us-west-2:123456789012:MyTopic",
-//    "Subject" : "Testing publish to subscribed queues",
-//    "Message" : "Hello world!",
-//    "Timestamp" : "2012-03-29T05:12:16.901Z",
-//    "SignatureVersion" : "1",
-//    "Signature" : "EXAMPLEnTrFPa3...",
-//    "SigningCertURL" : "https://sns.us-west-2.amazonaws.com/SimpleNotificationService-f3ecfb7224c7233fe7bb5f59f96de52f.pem",
-//    "UnsubscribeURL" : "https://sns.us-west-2.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:us-west-2:123456789012:MyTopic:c7fe3a54-ab0e-4ec2-88e0-db410a0f2bee"
-// }
-
-// TODO: implement other SNS to SQS payloads
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "Type")]
-pub enum SNSPayload {
-    #[serde(rename = "Notification")]
-    Notification(SNSNotification),
-}
-
-fn deserialize_inner_json<'de, D>(deserializer: D) -> Result<ZwsRelayerEvent, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let json_str = String::deserialize(deserializer)?;
-    serde_json::from_str(&json_str).map_err(serde::de::Error::custom)
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SNSNotification {
-    #[serde(rename = "MessageId")]
-    pub message_id: String,
-    #[serde(rename = "TopicArn")]
-    pub topic_arn: String,
-    #[serde(rename = "Subject")]
-    pub subject: Option<String>,
-    #[serde(rename = "Message", deserialize_with = "deserialize_inner_json")]
-    pub message: ZwsRelayerEvent,
-    #[serde(rename = "Timestamp")]
-    pub timestamp: String,
-    #[serde(rename = "SignatureVersion")]
-    pub signature_version: String,
-    #[serde(rename = "Signature")]
-    pub signature: String,
-    #[serde(rename = "SigningCertURL")]
-    pub signing_cert_url: String,
-    #[serde(rename = "UnsubscribeURL")]
-    pub unsubscribe_url: String,
-}

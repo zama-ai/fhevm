@@ -33,15 +33,15 @@ use crate::events::*;
 /// Mock handler for Transaction Manager
 #[derive(Debug)]
 pub struct ZWSTransactionManagerMockHandler {
-    sns_client: aws_sdk_sns::Client,
-    topic_arn: String,
+    sqs_client: aws_sdk_sqs::Client,
+    queue_url: String,
     // TODO: mapping chain-id to transaction-service
     transaction_services: HashMap<u64, Arc<TransactionService>>,
 }
 
 impl ZWSTransactionManagerMockHandler {
     pub async fn new(
-        topic_arn: String,
+        queue_url: String,
         transaction_services: HashMap<u64, Arc<TransactionService>>,
     ) -> Self {
         let config = aws_config::from_env()
@@ -50,10 +50,10 @@ impl ZWSTransactionManagerMockHandler {
             .load()
             .await;
 
-        let sns_client = aws_sdk_sns::Client::new(&config);
+        let sqs_client = aws_sdk_sqs::Client::new(&config);
         ZWSTransactionManagerMockHandler {
-            sns_client,
-            topic_arn,
+            sqs_client,
+            queue_url,
             transaction_services,
         }
     }
@@ -80,7 +80,7 @@ impl ZWSTransactionManagerMockHandler {
         let mut tx_services = HashMap::new();
         tx_services.insert(gateway_chain_id, gateway_tx_service);
         Self::new(
-            String::from("arn:aws:sns:eu-central-1:000000000000:relayer-topic"),
+            String::from("http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/relayer-queue"),
             tx_services,
         )
         .await
@@ -162,7 +162,7 @@ impl EventHandler<ZwsRelayerEvent> for ZWSTransactionManagerMockHandler {
                         receipt: tx_receipt,
                     },
                 ));
-                match send_message_to_sns_topic(true, &self.sns_client, &self.topic_arn, message)
+                match send_message_to_sqs_queue(true, &self.sqs_client, &self.queue_url, message)
                     .await
                 {
                     Ok(_) => {
@@ -187,26 +187,26 @@ impl EventHandler<ZwsRelayerEvent> for ZWSTransactionManagerMockHandler {
 /// Mock handler for Console
 #[derive(Debug)]
 pub struct ZWSConsoleMockHandler {
-    sns_client: aws_sdk_sns::Client,
-    topic_arn: String,
+    sqs_client: aws_sdk_sqs::Client,
+    queue_url: String,
 }
 
 impl ZWSConsoleMockHandler {
-    pub async fn new(topic_arn: String) -> Self {
+    pub async fn new(queue_url: String) -> Self {
         let config = aws_config::from_env()
             .endpoint_url("http://127.0.0.1:4566")
             .region("eu-central-1")
             .load()
             .await;
-        let sns_client = aws_sdk_sns::Client::new(&config);
+        let sqs_client = aws_sdk_sqs::Client::new(&config);
         ZWSConsoleMockHandler {
-            sns_client,
-            topic_arn,
+            sqs_client,
+            queue_url,
         }
     }
     pub async fn default() -> Self {
         Self::new(String::from(
-            "arn:aws:sns:eu-central-1:000000000000:relayer-topic",
+            "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/relayer-queue",
         ))
         .await
     }
@@ -223,7 +223,7 @@ impl EventHandler<ZwsRelayerEvent> for ZWSConsoleMockHandler {
         // Match log
         match event {
             ZwsRelayerEvent::SQSRelayerAuthorizationRequest(authorization_request) => {
-                info!("Received authorization request from SQS pushing auth response to SNS relayer topic.");
+                info!("Received authorization request from SQS pushing auth response to SQS relayer queue.");
                 // NOTE: this is just a mock of the Console so we authorized all requests
                 let message = ZwsRelayerEvent::SQSRelayerAuthorizationResponse(
                     SQSRelayerAuthorizationResponse {
@@ -233,7 +233,7 @@ impl EventHandler<ZwsRelayerEvent> for ZWSConsoleMockHandler {
                 );
 
                 // SQS
-                match send_message_to_sns_topic(true, &self.sns_client, &self.topic_arn, message)
+                match send_message_to_sqs_queue(true, &self.sqs_client, &self.queue_url, message)
                     .await
                 {
                     Ok(_) => {
@@ -256,44 +256,17 @@ impl EventHandler<ZwsRelayerEvent> for ZWSConsoleMockHandler {
 }
 
 // TODO: Make more generic and accept any message that is Serializable
-async fn send_message_to_sns_topic(
-    check_topic_exists: bool,
-    sns_client: &aws_sdk_sns::Client,
-    topic_arn: &String,
+async fn send_message_to_sqs_queue(
+    check_queue_exists: bool,
+    sqs_client: &aws_sdk_sqs::Client,
+    queue_url: &String,
     message: ZwsRelayerEvent,
-) -> std::result::Result<aws_sdk_sns::operation::publish::PublishOutput, std::string::String> {
-    if check_topic_exists {
-        // Check that topic exists
-        // NOTE: this is mostly for debugging purposes
-        let topic_response = match sns_client.list_topics().send().await {
-            Ok(value) => value,
-            Err(error) => {
-                let err_msg = format!("Couldn't list topics: {:?}", error);
-                return Err(err_msg);
-            }
-        };
-        if topic_response.topics().contains(
-            // NOTE: self topic-arn could probably be the `Topic` object instead of
-            // String already
-            &aws_sdk_sns::types::Topic::builder()
-                .topic_arn(topic_arn)
-                .build(),
-        ) {
-            info!("Found topic in list of topics.");
-        } else {
-            let err_message = format!(
-                "Couldn't find topic {:?} in {:?}",
-                &topic_arn,
-                topic_response
-                    .topics()
-                    .iter()
-                    .map(|topic| topic.topic_arn().unwrap_or_default())
-                    .collect::<Vec<&str>>()
-                    .join(" ")
-            );
-            return Err(err_message);
-        }
-    };
+) -> std::result::Result<aws_sdk_sqs::operation::send_message::SendMessageOutput, std::string::String>
+{
+    if check_queue_exists {
+        // TODO: implement
+    }
+
     let serialized_message = match serde_json::to_string(&message) {
         Ok(value) => value,
         Err(err) => {
@@ -301,10 +274,12 @@ async fn send_message_to_sns_topic(
             return Err(err_msg);
         }
     };
-    let publishing_response = match sns_client
-        .publish()
-        .topic_arn(topic_arn)
-        .message(serialized_message)
+    let publishing_response = match sqs_client
+        .send_message()
+        .queue_url(queue_url)
+        .message_body(serialized_message)
+        // If the queue is FIFO, you need to set .message_deduplication_id
+        // and message_group_id or configure the queue for ContentBasedDeduplication.
         .send()
         .await
     {
@@ -318,24 +293,27 @@ async fn send_message_to_sns_topic(
 }
 
 pub struct ZWSRelayerHandler {
-    sns_client: aws_sdk_sns::Client,
-    topic_arn: String,
+    sqs_client: aws_sdk_sqs::Client,
+    console_queue_url: String,
+    tx_manager_queue_url: String,
     orchestrator: Arc<Orchestrator<TokioEventDispatcher<ZwsRelayerEvent>, ZwsRelayerEvent>>,
     // TODO: Add gateway chain-id
 }
 
 impl ZWSRelayerHandler {
     pub async fn new(
-        topic_arn: String,
+        console_queue_url: String,
+        tx_manager_queue_url: String,
         orchestrator: Arc<Orchestrator<TokioEventDispatcher<ZwsRelayerEvent>, ZwsRelayerEvent>>,
     ) -> Self {
         let config = aws_config::from_env().load().await;
         debug!("{:?}", config);
-        let sns_client = aws_sdk_sns::Client::new(&config);
+        let sqs_client = aws_sdk_sqs::Client::new(&config);
 
         ZWSRelayerHandler {
-            sns_client,
-            topic_arn,
+            sqs_client,
+            console_queue_url,
+            tx_manager_queue_url,
             orchestrator,
         }
     }
@@ -442,7 +420,7 @@ impl ZWSRelayerHandler {
         mut db_connection: PgConnection,
     ) {
         // TODO: Support other op-types
-        // TODO: Emit transaction-receipt event to SNS
+        // TODO: Emit transaction-receipt event to SQS
 
         let gateway_request = match fetch_gateway_request(&mut db_connection, response.request_id) {
             Ok(value) => value,
@@ -508,14 +486,13 @@ impl ZWSRelayerHandler {
         match check_response {
             Ok(db_response) => match db_response.first() {
                 Some(elt) => {
-                    let new_event = BlockchainEvent {
+                    let new_event = ZwsRelayerEvent::BlockchainEvent(BlockchainEvent {
                         request_id: response.request_id,
                         event_log: elt.event_log.0.clone(),
-                    };
-                    let dispatch = self
-                        .orchestrator
-                        .dispatch_event(ZwsRelayerEvent::BlockchainEvent(new_event))
-                        .await;
+                    });
+
+                    // Re-emit internally the event
+                    let dispatch = self.orchestrator.dispatch_event(new_event).await;
                     debug!("Dispatch response: {:?}", dispatch);
                 }
                 None => {
@@ -536,20 +513,21 @@ impl ZWSRelayerHandler {
         // NOTE: store event-log for further use
         // - When asking for the operation to be handled on the L2
         // - When responding with callback
-        match create_host_event(&mut db_connection, event.clone()) {
-            Ok(_) => {
-                debug!("Host event pushed to postgres");
-            }
-            Err(error) => {
-                error!("Failed to push event to postgres: {error}");
-                return;
-            }
-        }
 
         match SupportedBlockchainEvent::decode_log_data(event.event_log.data(), true) {
             Ok(decoded_event) => {
                 match decoded_event {
                     SupportedBlockchainEvent::DecryptionRequest(decryption_request) => {
+                        match create_host_event(&mut db_connection, event.clone()) {
+                            Ok(_) => {
+                                debug!("Host event pushed to postgres");
+                            }
+                            Err(error) => {
+                                error!("Failed to push event to postgres: {error}");
+                                return;
+                            }
+                        }
+
                         // Match and decode host decryption request event
                         // pub counter: Uint<256, 4>,
                         // pub requestID: Uint<256, 4>,
@@ -575,10 +553,10 @@ impl ZWSRelayerHandler {
                                 caller_address: contract_caller,
                             },
                         );
-                        match send_message_to_sns_topic(
+                        match send_message_to_sqs_queue(
                             true,
-                            &self.sns_client,
-                            &self.topic_arn,
+                            &self.sqs_client,
+                            &self.console_queue_url,
                             message,
                         )
                         .await
@@ -593,6 +571,7 @@ impl ZWSRelayerHandler {
                     }
                     SupportedBlockchainEvent::VerifyProofResponse(verification_response) => {
                         debug!("todo: implement: {:?}", verification_response);
+
                         // Check if on-chain request-id in db, if-not store response on-chain-request-id
                         // in db with how to retrieve it.
                         let zkpokid = verification_response.zkProofId.to_be_bytes_vec();
@@ -653,11 +632,27 @@ impl ZWSRelayerHandler {
                                 signatures: verification_response.signatures,
                             },
                         );
-
-                        let dispatch = self.orchestrator.dispatch_event(response).await;
-                        debug!("Dispatch response: {:?}", dispatch);
-
-                        // TODO: emit result back to be caught by listener
+                        match send_message_to_sqs_queue(
+                            true,
+                            &self.sqs_client,
+                            &self.console_queue_url,
+                            response.clone(),
+                        )
+                        .await
+                        {
+                            Ok(_) => {
+                                debug!(
+                                    "Successfuly sent input registration response to {:?}: {:?}",
+                                    self.console_queue_url, response
+                                )
+                            }
+                            Err(error) => {
+                                error!(
+                                    "Error sending input registration response to {:?}: {:?}",
+                                    self.console_queue_url, error
+                                )
+                            }
+                        }
                     }
                     SupportedBlockchainEvent::UserDecryptionResponse(user_decryption_response) => {
                         debug!("todo: implement: {:?}", user_decryption_response)
@@ -835,7 +830,9 @@ impl ZWSRelayerHandler {
             gateway_request_insertion_result
         );
 
-        match send_message_to_sns_topic(true, &self.sns_client, &self.topic_arn, message).await {
+        match send_message_to_sqs_queue(true, &self.sqs_client, &self.tx_manager_queue_url, message)
+            .await
+        {
             Ok(_) => {
                 debug!("Successfuly sent transaction request")
             }
