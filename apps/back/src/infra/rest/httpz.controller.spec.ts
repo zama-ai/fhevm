@@ -49,27 +49,31 @@ describe('HttpzController', () => {
               urls: [faker.internet.url()],
             }).unwrap(),
           ],
-          crs: [
-            CRS.parse({
+          crs: {
+            [faker.string.uuid()]: CRS.parse({
               data_id: faker.string.uuid(),
               urls: [faker.internet.url()],
             }).unwrap(),
-          ],
+          },
         }),
       )
     })
 
     test('should return the FHE public keys', async () => {
-      const { fhe_key_info } = await controller.getKeyUrl()
+      const {
+        response: { fhe_key_info },
+      } = await controller.getKeyUrl()
       expect(fhe_key_info).toBeDefined()
       expect(fhe_key_info.length).toBeGreaterThan(0)
       expect(getKeyUrl.execute.mock.calls.length).toBe(1)
     })
 
     test('should return the CRS URLs', async () => {
-      const { crs } = await controller.getKeyUrl()
+      const {
+        response: { crs },
+      } = await controller.getKeyUrl()
       expect(crs).toBeDefined()
-      expect(crs.length).toBeGreaterThan(0)
+      expect(Object.keys(crs).length).toBeGreaterThan(0)
       expect(getKeyUrl.execute.mock.calls.length).toBe(1)
     })
   })

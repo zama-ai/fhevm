@@ -20,13 +20,14 @@ export class HttpzController {
   async getKeyUrl() {
     this.logger.log('GET /keyurl')
     const { fhe_key_info, crs } = await this.getKeyUrlUC.execute().toPromise()
-    return { fhe_key_info, crs }
+    return { response: { fhe_key_info, crs } }
   }
 
   @Post('/input-proof')
   @UsePipes(new ZodValidationPipe(inputProofSchema))
-  postInputProof(@Body() input: InputProofRequest) {
+  async postInputProof(@Body() input: InputProofRequest) {
     this.logger.log('POST /input-proof')
-    return this.inputProofUC.execute(input).toPromise()
+    const response = this.inputProofUC.execute(input).toPromise()
+    return { response }
   }
 }

@@ -26,15 +26,18 @@ export class ConfigKeyUrlService extends KeyUrlService {
         .map(r => r.unwrap()) ?? [],
     )
   }
-  getCRS(): Task<CRS[], AppError> {
-    const data = this.config.get<unknown[]>('httpz.crs')
+  getCRS(): Task<Record<string, CRS>, AppError> {
+    const data = this.config.get<Record<string, unknown>>('httpz.crs') ?? {}
     this.logger.verbose(`data: ${JSON.stringify(data)}`)
 
     return Task.of(
-      data
-        ?.map(CRS.parse)
-        .filter(isOk)
-        .map(r => r.unwrap()) ?? [],
+      Object.entries(data).reduce(
+        (map, [key, value]) => {
+          const crs = CRS.parse(value)
+          return isOk(crs) ? { ...map, [key]: crs.unwrap() } : map
+        },
+        {} as Record<string, CRS>,
+      ),
     )
   }
 }

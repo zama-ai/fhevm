@@ -41,12 +41,12 @@ describe('GetKeyUrl', () => {
         ]),
       )
       keyUrlService.getCRS.mockReturnValue(
-        Task.of([
-          CRS.parse({
+        Task.of({
+          [faker.string.uuid()]: CRS.parse({
             data_id: faker.string.uuid(),
             urls: [faker.internet.url()],
           }).unwrap(),
-        ]),
+        }),
       )
     })
 
@@ -60,7 +60,7 @@ describe('GetKeyUrl', () => {
     test('should return the CRS URLs', async () => {
       const { crs } = await useCase.execute().toPromise()
       expect(crs).toBeDefined()
-      expect(crs.length).toBeGreaterThan(0)
+      expect(Object.keys(crs).length).toBeGreaterThan(0)
       expect(keyUrlService.getCRS).toHaveBeenCalled()
     })
   })

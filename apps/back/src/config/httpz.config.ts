@@ -5,10 +5,13 @@ interface HttpzConfig {
     data_id: string
     urls: string[]
   }[]
-  crs: {
-    data_id: string
-    urls: string[]
-  }[]
+  crs: Record<
+    string,
+    {
+      data_id: string
+      urls: string[]
+    }
+  >
 }
 
 const localHttpzConfig: HttpzConfig = {
@@ -20,19 +23,19 @@ const localHttpzConfig: HttpzConfig = {
       ],
     },
   ],
-  crs: [
-    {
+  crs: {
+    '2048': {
       data_id: 'crs-data-id',
       urls: [
         'http://0.0.0.0:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002',
       ],
     },
-  ],
+  },
 }
 
 const prodHttpzConfig: HttpzConfig = {
   fhe_key_info: [],
-  crs: [],
+  crs: {},
 }
 
 export default registerAs('httpz', () => {
