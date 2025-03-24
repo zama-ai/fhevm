@@ -52,7 +52,12 @@ function factory({
           'relayer:input-registration:input-registration-response': {
             actions: [
               ({ event: { payload, meta } }) =>
-                notifyMessage(back.httpzInputProofCompleted(payload, meta)),
+                notifyMessage(
+                  back.httpzInputProofCompleted(payload, {
+                    ...meta,
+                    correlationId: meta?.correlationId ?? payload.requestId,
+                  }),
+                ),
             ],
           },
         },
