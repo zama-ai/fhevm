@@ -16,11 +16,11 @@ export class HttpzController {
     private readonly inputProofUC: InputProof,
   ) {}
 
-  @Get('/key-url')
+  @Get('/keyurl')
   async getKeyUrl() {
-    this.logger.log('GET /key-url')
-    const { fheKeyInfo, crs } = await this.getKeyUrlUC.execute().toPromise()
-    return { fheKeyInfo, crs }
+    this.logger.log('GET /keyurl')
+    const { fhe_key_info, crs } = await this.getKeyUrlUC.execute().toPromise()
+    return { fhe_key_info, crs }
   }
 
   @Post('/input-proof')

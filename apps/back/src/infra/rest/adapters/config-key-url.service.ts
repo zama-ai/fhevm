@@ -16,7 +16,7 @@ export class ConfigKeyUrlService extends KeyUrlService {
   }
 
   getFHEPublicKey(): Task<FHEPublicKey[], AppError> {
-    const data = this.config.get<unknown[]>('httpz.fheKeyInfo')
+    const data = this.config.get<unknown[]>('httpz.fhe_key_info')
     this.logger.verbose(`data: ${JSON.stringify(data)}`)
 
     return Task.of(

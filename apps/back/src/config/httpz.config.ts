@@ -1,33 +1,37 @@
 import { registerAs } from '@nestjs/config'
 
 interface HttpzConfig {
-  fheKeyInfo: {
-    dataId: string
+  fhe_key_info: {
+    data_id: string
     urls: string[]
   }[]
   crs: {
-    dataId: string
+    data_id: string
     urls: string[]
   }[]
 }
 
 const localHttpzConfig: HttpzConfig = {
-  fheKeyInfo: [
+  fhe_key_info: [
     {
-      dataId: 'fhe-public-key-data-id',
-      urls: ['http://0.0.0.0:3001/publicKey.bin'],
+      data_id: 'fhe-public-key-data-id',
+      urls: [
+        'http://0.0.0.0:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee',
+      ],
     },
   ],
   crs: [
     {
-      dataId: 'crs-data-id',
-      urls: ['http://0.0.0.0:3001/crs2048.bin'],
+      data_id: 'crs-data-id',
+      urls: [
+        'http://0.0.0.0:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002',
+      ],
     },
   ],
 }
 
 const prodHttpzConfig: HttpzConfig = {
-  fheKeyInfo: [],
+  fhe_key_info: [],
   crs: [],
 }
 

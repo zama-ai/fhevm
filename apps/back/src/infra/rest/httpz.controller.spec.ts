@@ -37,21 +37,21 @@ describe('HttpzController', () => {
     expect(controller).toBeDefined()
   })
 
-  describe('GET /key-url', () => {
+  describe('GET /keyurl', () => {
     let getKeyUrl: MockProxy<GetKeyUrl>
     beforeEach(() => {
       getKeyUrl = module.get(GetKeyUrl)
       getKeyUrl.execute.mockReturnValue(
         Task.of({
-          fheKeyInfo: [
+          fhe_key_info: [
             FHEPublicKey.parse({
-              dataId: faker.string.uuid(),
+              data_id: faker.string.uuid(),
               urls: [faker.internet.url()],
             }).unwrap(),
           ],
           crs: [
             CRS.parse({
-              dataId: faker.string.uuid(),
+              data_id: faker.string.uuid(),
               urls: [faker.internet.url()],
             }).unwrap(),
           ],
@@ -60,9 +60,9 @@ describe('HttpzController', () => {
     })
 
     test('should return the FHE public keys', async () => {
-      const { fheKeyInfo } = await controller.getKeyUrl()
-      expect(fheKeyInfo).toBeDefined()
-      expect(fheKeyInfo.length).toBeGreaterThan(0)
+      const { fhe_key_info } = await controller.getKeyUrl()
+      expect(fhe_key_info).toBeDefined()
+      expect(fhe_key_info.length).toBeGreaterThan(0)
       expect(getKeyUrl.execute.mock.calls.length).toBe(1)
     })
 

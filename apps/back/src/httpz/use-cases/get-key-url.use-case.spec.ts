@@ -35,7 +35,7 @@ describe('GetKeyUrl', () => {
       keyUrlService.getFHEPublicKey.mockReturnValue(
         Task.of([
           FHEPublicKey.parse({
-            dataId: faker.string.uuid(),
+            data_id: faker.string.uuid(),
             urls: [faker.internet.url()],
           }).unwrap(),
         ]),
@@ -43,7 +43,7 @@ describe('GetKeyUrl', () => {
       keyUrlService.getCRS.mockReturnValue(
         Task.of([
           CRS.parse({
-            dataId: faker.string.uuid(),
+            data_id: faker.string.uuid(),
             urls: [faker.internet.url()],
           }).unwrap(),
         ]),
@@ -51,9 +51,9 @@ describe('GetKeyUrl', () => {
     })
 
     test('should return the FHE public keys', async () => {
-      const { fheKeyInfo } = await useCase.execute().toPromise()
-      expect(fheKeyInfo).toBeDefined()
-      expect(fheKeyInfo.length).toBeGreaterThan(0)
+      const { fhe_key_info } = await useCase.execute().toPromise()
+      expect(fhe_key_info).toBeDefined()
+      expect(fhe_key_info.length).toBeGreaterThan(0)
       expect(keyUrlService.getFHEPublicKey).toHaveBeenCalled()
     })
 
