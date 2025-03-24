@@ -1,0 +1,33 @@
+[package]
+name = "zws-relayer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fhevm-relayer = {workspace=true}
+axum = {workspace=true}
+tokio = {workspace=true}
+diesel-derive-enum = { workspace = true }
+dotenvy = {workspace=true}
+alloy = {workspace=true}
+serde = { workspace=true }
+serde_json = {workspace=true}
+aws-config = { workspace=true }
+uuid = { workspace=true }
+toml = { workspace=true }
+tracing = { workspace=true }
+tracing-subscriber = { workspace=true }
+alloy-sol-types = {workspace = true }
+aws-sdk-sns = {workspace = true }
+aws-sdk-sqs = {workspace = true }
+async-trait = {workspace = true }
+futures = {workspace = true }
+futures-util = {workspace = true }
+zws-relayer-lib = {path = "../lib"}
+diesel = {workspace = true }
+bip39 = {workspace = true}
+rand = {workspace = true}
+
+[[bin]]
+name = "zws-relayer"
+path = "./src/main.rs"

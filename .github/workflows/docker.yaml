@@ -72,25 +72,3 @@ jobs:
           tags: |
             ghcr.io/zama-zws/${{ matrix.service_name }}:latest
             ghcr.io/zama-zws/${{ matrix.service_name }}:${{ steps.set-tag.outputs.gitsha }}
-          #
-          # cache-from: ${{ inputs.cache-from }}
-          # cache-to: ${{ inputs.cache-to }}
-          # platforms: ${{ matrix.platform }}
-          # secrets: BLOCKCHAIN_ACTIONS_TOKEN=${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-
-      #
-      # - name: Login to GitHub Container Registry
-      #   uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-      #   with:
-      #     registry: ghcr.io
-      #     username: ${{ github.actor }}
-      #     password: ${{ secrets.GITHUB_TOKEN }}
-
-      # - name: Create and Push Multiarch Manifest
-      #   run: |
-      #     docker manifest create \
-      #     docker manifest create \
-      #       ghcr.io/zama-ai/${{ inputs.image-name }}:latest \
-      #       --amend ghcr.io/zama-ai/${{ inputs.image-name }}:${{ needs.determine-tag.outputs.docker_tag }}-amd64
-      #     docker manifest push ghcr.io/zama-ai/${{ inputs.image-name }}:${{ needs.determine-tag.outputs.docker_tag }}
-      #     docker manifest push ghcr.io/zama-ai/${{ inputs.image-name }}:latest
