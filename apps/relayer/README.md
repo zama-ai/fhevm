@@ -42,4 +42,7 @@ Run the input test once the relayer is running:
     - SQS not being reachable
     - Pg not being reachable
 - [ ] Add proper integration tests
+- [ ] Fine-grain input validation
+    - Filter out invalid ciphertexts/proofs
+    - Check ACL on both chains
 

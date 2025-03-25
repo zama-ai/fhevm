@@ -15,7 +15,7 @@ use std::env;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 use tracing_subscriber::FmtSubscriber;
 
 use zws_relayer_lib::events::*;
@@ -228,9 +228,6 @@ async fn main() {
         .await,
     );
 
-    let console_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> =
-        Arc::new(ZWSConsoleMockHandler::new(default_relayer_sqs_endpoint.to_owned()).await);
-
     let tx_manager_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> = Arc::new(
         ZWSTransactionManagerMockHandler::new(default_relayer_sqs_endpoint.to_owned(), tx_services)
             .await,
@@ -258,11 +255,6 @@ async fn main() {
 
     // NOTE: used for debugging mostly
 
-    // Transaction response
-    orchestrator.register_handler(
-        SQSRelayerAuthorizationRequest::event_id(),
-        Arc::clone(&console_handler),
-    );
     orchestrator.register_handler(
         SQSRelayerTransactionRequest::event_id(),
         Arc::clone(&tx_manager_handler),
@@ -314,15 +306,28 @@ async fn main() {
         .await
         .expect("Subscription to Gateway failed");
 
-    // TODO: Add http listeners for un-metered relayer
+    // Optional Console Mock
+    // This is for testing purposes only
+    // TODO: set this as a relayer parameter
+    let mock_console = false;
+    if mock_console {
+        warn!("MOCKING CONSOLE! DEVELOPMENT PURPOSES ONLY");
+        // Authorization handler
+        let console_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> =
+            Arc::new(ZWSConsoleMockHandler::new(relayer_sqs_endpoint.to_owned()).await);
+        orchestrator.register_handler(
+            SQSRelayerAuthorizationRequest::event_id(),
+            Arc::clone(&console_handler),
+        );
 
-    // HTTP listener (queries should come from the backend via SQS but to be able to run as
-    // standalone software we need this)
-    tokio::spawn(http_listener(
-        sqs_client.clone(),
-        relayer_sqs_endpoint,
-        Arc::clone(&orchestrator),
-    ));
+        // HTTP endpoint
+        tokio::spawn(http_listener(
+            sqs_client.clone(),
+            relayer_sqs_endpoint.to_string(),
+            console_sqs_endpoint.to_string(),
+            Arc::clone(&orchestrator),
+        ));
+    }
 
     // Relayer SQS event listener
     tokio::spawn(sqs_listener(
@@ -351,6 +356,8 @@ async fn main() {
         Arc::clone(&orchestrator),
         "Host".to_owned(),
     ));
+
+    debug!("All listeners started in their own tokio task");
 
     // Wait for ctrl + c signal to stop the application
     tokio::signal::ctrl_c().await.expect("Crtl-C Error");

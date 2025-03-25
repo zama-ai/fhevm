@@ -255,43 +255,6 @@ impl EventHandler<ZwsRelayerEvent> for ZWSConsoleMockHandler {
     }
 }
 
-// TODO: Make more generic and accept any message that is Serializable
-async fn send_message_to_sqs_queue(
-    check_queue_exists: bool,
-    sqs_client: &aws_sdk_sqs::Client,
-    queue_url: &String,
-    message: ZwsRelayerEvent,
-) -> std::result::Result<aws_sdk_sqs::operation::send_message::SendMessageOutput, std::string::String>
-{
-    if check_queue_exists {
-        // TODO: implement
-    }
-
-    let serialized_message = match serde_json::to_string(&message) {
-        Ok(value) => value,
-        Err(err) => {
-            let err_msg = format!("Error serializing message to JSON: {:?}", err);
-            return Err(err_msg);
-        }
-    };
-    let publishing_response = match sqs_client
-        .send_message()
-        .queue_url(queue_url)
-        .message_body(serialized_message)
-        // If the queue is FIFO, you need to set .message_deduplication_id
-        // and message_group_id or configure the queue for ContentBasedDeduplication.
-        .send()
-        .await
-    {
-        Err(error) => {
-            let err_msg = format!("Error publishing: {:?}", error);
-            return Err(err_msg);
-        }
-        Ok(response) => response,
-    };
-    Ok(publishing_response)
-}
-
 pub struct ZWSRelayerHandler {
     sqs_client: aws_sdk_sqs::Client,
     console_queue_url: String,
