@@ -10,4 +10,6 @@ export abstract class UserRepository {
     id: UserId,
     data: Partial<Omit<User, 'id'>>,
   ): Task<User, AppError>
+
+  abstract delete(id: UserId): Task<void, AppError>
 }
