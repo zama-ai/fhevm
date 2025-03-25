@@ -32,6 +32,7 @@ export function BlockPie({ title, total, data }: OwnProps) {
             <Box position="relative" mt="2" w="100%">
               <PieChartComponent
                 position="absolute"
+                zIndex="1"
                 top="-56px"
                 left="0"
                 w="100%"
