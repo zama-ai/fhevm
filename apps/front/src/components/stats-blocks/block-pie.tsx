@@ -8,29 +8,37 @@ const PieChartComponent = lazy(() =>
   })),
 )
 
-type OwnProps = { total: number; data: { name: string; value: number }[] }
+type OwnProps = {
+  title: string
+  total: number
+  data: { name: string; value: number }[]
+}
 
-export function BlockPie({ total, data }: OwnProps) {
+export function BlockPie({ title, total, data }: OwnProps) {
   return (
     <Card.Root minH="83px" size="sm">
       <Card.Body p="4">
         <StatRoot pos="relative">
-          <StatLabel>FHE Events</StatLabel>
-          <StatValueText width="100%" textAlign="center" display="block">
+          <StatLabel>{title}</StatLabel>
+          <StatValueText
+            width="100%"
+            textAlign="center"
+            display="block"
+            mt="5px"
+          >
             {total}
           </StatValueText>
           <Suspense fallback={null}>
-            <Box position="relative" mt="2" w="100%" border="1px solid pink">
+            <Box position="relative" mt="2" w="100%">
               <PieChartComponent
                 position="absolute"
-                top="-60px"
+                top="-56px"
                 left="0"
                 w="100%"
-                border="1px solid red"
                 data={data}
                 height="60px"
                 containerHeight={60}
-                innerRadius={20}
+                innerRadius={25}
                 outerRadius={30}
                 label={false}
               />

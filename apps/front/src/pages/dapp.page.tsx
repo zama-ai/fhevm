@@ -11,6 +11,11 @@ import {
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
 import { BlockSimple } from '@/components/stats-blocks/block-simple'
 import { BlockPie } from '@/components/stats-blocks/block-pie'
+import {
+  calculateOperationStats,
+  calculateEncryptionStats,
+  calculateTotal,
+} from '@/lib/stats.js'
 
 const GET_DAPP_DETAILS = graphql(`
   query GetDappDetails($dappId: ID!) {
@@ -82,40 +87,12 @@ export function DappPage() {
     throw Error(error.message)
   }
 
-  const operationStatsData: Array<{ name: string; value: number }> = data?.dapp
-    .stats.cumulative
-    ? Object.entries(data.dapp.stats.cumulative)
-        .filter(
-          ([key]) =>
-            ![
-              '__typename',
-              'total',
-              'TrivialEncrypt',
-              'VerifyCiphertext',
-            ].includes(key),
-        )
-        .map(([key, value]) => ({
-          name: key,
-          value: value as number,
-        }))
-    : []
-  const operationStatsTotal = operationStatsData.reduce(
-    (acc, curr) => acc + curr.value,
-    0,
-  )
-  const encryptionStatsData: Array<{ name: string; value: number }> = data?.dapp
-    .stats.cumulative
-    ? Object.entries(data.dapp.stats.cumulative)
-        .filter(([key]) => ['TrivialEncrypt', 'VerifyCiphertext'].includes(key))
-        .map(([key, value]) => ({
-          name: key,
-          value: value as number,
-        }))
-    : []
-  const encryptionStatsTotal = encryptionStatsData.reduce(
-    (acc, curr) => acc + curr.value,
-    0,
-  )
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { __typename, ...cumulative } = data?.dapp.stats.cumulative || {}
+  const operationStatsData = calculateOperationStats(cumulative)
+  const operationStatsTotal = calculateTotal(operationStatsData)
+  const encryptionStatsData = calculateEncryptionStats(cumulative)
+  const encryptionStatsTotal = calculateTotal(encryptionStatsData)
 
   return (
     <Box>
@@ -141,10 +118,12 @@ export function DappPage() {
               amount={data?.dapp.rawStats.length || 0}
             />
             <BlockPie
+              title="FHE Operations"
               total={operationStatsTotal || 0}
               data={operationStatsData}
             />
             <BlockPie
+              title="FHE Encryption"
               total={encryptionStatsTotal || 0}
               data={encryptionStatsData}
             />
