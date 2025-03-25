@@ -10,6 +10,7 @@ import {
 
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
 import { BlockSimple } from '@/components/stats-blocks/block-simple'
+import { BlockPie } from '@/components/stats-blocks/block-pie'
 
 const GET_DAPP_DETAILS = graphql(`
   query GetDappDetails($dappId: ID!) {
@@ -23,6 +24,22 @@ const GET_DAPP_DETAILS = graphql(`
         timestamp
         externalRef
       }
+      #      stats {
+      #        id
+      #        cumulative {
+      #          total
+      #          FheAdd
+      #          FheBitAnd
+      #          FheIfThenElse
+      #          FheLe
+      #          FheOr
+      #          FheSub
+      #          TrivialEncrypt
+      #          VerifyCiphertext
+      #          FheMul
+      #          FheDiv
+      #        }
+      #      }
     }
   }
 `)
@@ -39,7 +56,13 @@ const SUB_DAPP_UPDATED = gql(`
         timestamp
         externalRef
       }
-    }
+      # stats {
+      #   id
+      #   cumulative {
+      #     total
+      #   }
+      # }
+    } 
   }
 `)
 
@@ -82,6 +105,7 @@ export function DappPage() {
               title="Total FHE Events"
               amount={data?.dapp.rawStats.length || 0}
             />
+            <BlockPie />
           </Stack>
         </Stack>
       )}

@@ -37,11 +37,6 @@ export type Dapp = {
   name: Scalars['String']['output'];
   /** DApp usage statistics */
   rawStats: Array<RawStats>;
-  /**
-   * DApp usage statistics
-   * @deprecated move to rawStats as stats will be rewamped soon
-   */
-  stats: Array<RawStats>;
   status: DappStatus;
   team: Team;
   /** @deprecated Do not use this, it shall go away when I find a way to make it disappear */
