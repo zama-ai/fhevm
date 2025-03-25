@@ -7,21 +7,23 @@ import { GetTeamById } from '#users/use-cases/get-team-by-id.use-case.js'
 import { GetDappById } from '../use-cases/get-dapp-by-id.use-case.js'
 import { SharedModule } from '#shared/shared.module.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
+import { StatsResolver } from './stats.resolver.js'
 
 @Module({
   imports: [DatabaseModule, SharedModule, SubscriptionsModule],
   providers: [
     DappsResolver,
+    StatsResolver,
     uc.CreateDapp,
     uc.UpdateDapp,
     uc.GetDappById,
-    GetTeamById,
     uc.DeployDApp,
     uc.GetDappRawStatsUseCase,
     uc.AppDeployment,
     uc.AppUpdatesSubscription,
     uc.StoreDAppStats,
     uc.ValidateAddress,
+    GetTeamById,
   ],
   exports: [UpdateDapp, GetDappById],
 })

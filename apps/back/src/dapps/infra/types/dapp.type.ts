@@ -1,5 +1,6 @@
 import { TeamType } from '#users/infra/types/team.type.js'
 import { Field, ID, ObjectType, registerEnumType } from '@nestjs/graphql'
+import { DappStatsType } from './stat.type.js'
 
 export enum DappStatus {
   DRAFT = 'DRAFT',
@@ -75,12 +76,11 @@ export class DappType {
   @Field({ nullable: false })
   createdAt: number
 
-  @Field(() => [RawStatsType], {
+  @Field(() => DappStatsType, {
     nullable: false,
-    description: 'DApp usage statistics',
-    deprecationReason: 'move to rawStats as stats will be rewamped soon',
+    description: 'DApp usage aggregated statistics',
   })
-  stats: RawStatsType[]
+  stats: DappStatsType
 
   @Field(() => [RawStatsType], {
     nullable: false,
