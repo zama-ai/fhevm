@@ -22,11 +22,13 @@ import {
 type Input = {
   chainId: string
   address: string
-  name: string
-  timestamp: string
-  externalRef: string
+  events: {
+    name: string
+    timestamp: string
+    externalRef: string
+  }[]
 }
-type Output = DAppStat
+type Output = DAppStat[]
 
 @Injectable()
 export class StoreDAppStats implements UseCase<Input, Output> {
@@ -49,8 +51,10 @@ export class StoreDAppStats implements UseCase<Input, Output> {
     // need to restrict the event type
     return event.type === 'back:dapp:stats-available'
       ? this.execute(event.payload)
-          .tap(stat => {
-            this.logger.debug(`stat created ${JSON.stringify(stat.toJSON())}`)
+          .tap(stats => {
+            stats.forEach(stat => {
+              this.logger.debug(`stat created ${JSON.stringify(stat.toJSON())}`)
+            })
           })
           .map<void>(() => void 0)
           .orChain(err =>
@@ -64,29 +68,31 @@ export class StoreDAppStats implements UseCase<Input, Output> {
       : Task.of(void 0)
   }
 
-  execute = (input: Input): Task<DAppStat, AppError> => {
+  execute = (input: Input): Task<DAppStat[], AppError> => {
     return this.repo
       .findByAddress(input.chainId, input.address)
       .tap(dapp => {
         this.logger.debug(`dApp found: ${dapp.id}`)
       })
       .chain(dapp =>
-        this.repo
-          .createStat(dapp.id, {
-            id: DAppStatId.random().value,
-            name: input.name,
-            timestamp: new Date(input.timestamp),
-            dappId: dapp.id.value,
-            externalRef: input.externalRef,
-          })
-          .tap(() => {
-            this.subscriptions.publish<SubscriptionDappUpdatedPayload>(
-              'dappUpdated',
-              {
-                dappUpdated: dapp.toJSON(),
-              },
-            )
-          }),
+        Task.all<AppError, DAppStat>(
+          input.events.map(event =>
+            this.repo.createStat(dapp.id, {
+              id: DAppStatId.random().value,
+              dappId: dapp.id.value,
+              name: event.name,
+              timestamp: new Date(event.timestamp),
+              externalRef: event.externalRef,
+            }),
+          ),
+        ).tap(() => {
+          this.subscriptions.publish<SubscriptionDappUpdatedPayload>(
+            'dappUpdated',
+            {
+              dappUpdated: dapp.toJSON(),
+            },
+          )
+        }),
       )
   }
 }

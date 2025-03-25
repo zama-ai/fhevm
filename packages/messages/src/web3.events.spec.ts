@@ -40,11 +40,20 @@ describe('web3', () => {
         event: web3.fheDetected(
           {
             requestId: generateRequestId(),
-            id: faker.string.alphanumeric(),
             chainId: faker.string.numeric(5),
             address: faker.string.hexadecimal({ length: 40 }),
-            name: faker.string.alphanumeric(),
-            timestamp: faker.date.past().toISOString(),
+            events: [
+              {
+                id: faker.string.alphanumeric(),
+                name: faker.string.alphanumeric(),
+                timestamp: faker.date.past().toISOString(),
+              },
+              {
+                id: faker.string.alphanumeric(),
+                name: faker.string.alphanumeric(),
+                timestamp: faker.date.past().toISOString(),
+              },
+            ],
           },
           { correlationId: faker.string.uuid() },
         ),
@@ -60,7 +69,13 @@ describe('web3', () => {
         ),
       },
     ])('identifies $event.type event', ({ event }) => {
-      expect(web3.isWeb3Event(event)).toBe(true)
+      const check = web3.isWeb3Event(event)
+      if (!check) {
+        console.log(
+          `failed to validate: ${JSON.stringify(web3.schema.safeParse(event))}`,
+        )
+      }
+      expect(check).toBe(true)
     })
   })
 })

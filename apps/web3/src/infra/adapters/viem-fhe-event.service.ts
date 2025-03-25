@@ -71,10 +71,18 @@ class ViemFheEventServiceImpl implements FheEventService {
         })
         .then(events =>
           events
+            .map(event => {
+              console.log(
+                `event: ${JSON.stringify(event, (_, v) =>
+                  typeof v === 'bigint' ? v.toString() : v,
+                )}`,
+              )
+              return event
+            })
             .map(event =>
               FheEvent.parse({
                 chainId: chainId.value,
-                id: `${event.transactionHash}/${event.transactionIndex}`,
+                id: `${event.transactionHash}/${event.logIndex}`,
                 name: event.eventName,
                 callerAddress:
                   typeof event.args === 'object' && 'caller' in event.args

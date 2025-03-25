@@ -65,9 +65,13 @@ const schemas = [
   genSchema('dapp:stats-available', {
     chainId: chainId,
     address: web3Address,
-    name: z.string(),
-    timestamp: z.string().datetime(),
-    externalRef: z.string(),
+    events: z.array(
+      z.object({
+        name: z.string(),
+        timestamp: z.string().datetime(),
+        externalRef: z.string(),
+      }),
+    ),
   }),
 ] as const
 

@@ -6,6 +6,7 @@ import { AppError, PubSub, type ISubscriber, Task, UseCase } from 'utils'
 import { web3 } from 'messages'
 import { Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
+import { ProducerService } from '#domain/services/producer.service.js'
 
 type Input = {
   requestId: string
@@ -17,6 +18,7 @@ export class FetchFHEEvents implements UseCase<Input, FheEvent[]> {
     private readonly pubsub: PubSub<web3.Web3Event>,
     private readonly service: FheEventService,
     private readonly repo: FheEventRepository,
+    private readonly publisher: ProducerService,
   ) {
     this.logger.debug(`subscribing to web3:fhe-event:requested`)
     this.pubsub.subscribe('web3:fhe-event:requested', this.handleFheEvent)
@@ -60,15 +62,21 @@ export class FetchFHEEvents implements UseCase<Input, FheEvent[]> {
         Task.all<AppError, FheEvent>(events.map(this.repo.create)),
       )
       .tap(events => {
-        events.forEach(event => {
+        const map = events.reduce((map, event) => {
+          const address = event.callerAddress.value
+          return map.set(address, (map.get(address) ?? [])?.concat(event))
+        }, new Map<string, FheEvent[]>())
+        for (const events of map.values()) {
           const toPublish = web3.fheDetected(
             {
               requestId,
-              id: event.id.value,
-              address: event.callerAddress.value,
-              chainId: event.chainId.value,
-              name: event.name,
-              timestamp: event.timestamp.toISOString(),
+              chainId: events[0].chainId.value,
+              address: events[0].callerAddress.value,
+              events: events.map(event => ({
+                id: event.id.value,
+                name: event.name,
+                timestamp: event.timestamp.toISOString(),
+              })),
             },
             {
               correlationId: randomUUID(),
@@ -77,7 +85,7 @@ export class FetchFHEEvents implements UseCase<Input, FheEvent[]> {
           this.logger.log(
             `🚀 publishing ${toPublish.type}: ${JSON.stringify(toPublish.payload)}`,
           )
-          this.pubsub.publish(toPublish).fork(
+          this.publisher.sendMessage(toPublish).fork(
             () => {
               this.logger.verbose(`${toPublish.type} sent`)
             },
@@ -87,7 +95,7 @@ export class FetchFHEEvents implements UseCase<Input, FheEvent[]> {
               )
             },
           )
-        })
+        }
       })
   }
 }
