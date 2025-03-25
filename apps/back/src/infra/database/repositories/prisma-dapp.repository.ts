@@ -9,7 +9,11 @@ import {
 } from 'utils'
 
 import { DApp, DAppProps } from '#dapps/domain/entities/dapp.js'
-import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
+import {
+  DAppRepository,
+  type Operation,
+  type CumulativeStats,
+} from '#dapps/domain/repositories/dapp.repository.js'
 
 import { PrismaService } from '../prisma.service.js'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
@@ -188,5 +192,63 @@ export class PrismaDAppRepository extends DAppRepository {
         this.logger.verbose(`parsing stat: ${JSON.stringify(props)}`)
         return DAppStat.parse(props).async()
       })
+  }
+
+  findCumulativeStats = (id: DAppId): Task<CumulativeStats, AppError> => {
+    return new Task<CumulativeStats, AppError>((resolve, reject) => {
+      this.db.dappStat
+        .groupBy({
+          by: ['name'],
+          where: { dappId: id.value },
+          _count: {
+            name: true,
+          },
+        })
+        .then(stats => {
+          this.logger.debug(`stats: ${JSON.stringify(stats)}`)
+          const operations = stats.reduce(
+            (acc, stat) => {
+              acc[stat.name as Operation] = stat._count.name
+              return acc
+            },
+            {} as Record<Operation, number>,
+          )
+
+          // Initialize all operations with 0
+          const allOperations: Operation[] = [
+            'FheAdd',
+            'FheBitAnd',
+            'FheIfThenElse',
+            'FheLe',
+            'FheOr',
+            'FheSub',
+            'TrivialEncrypt',
+            'VerifyCiphertext',
+            'FheMul',
+            'FheDiv',
+          ]
+
+          const result = allOperations.reduce(
+            (acc, op) => {
+              acc[op] = operations[op] || 0
+              return acc
+            },
+            {} as Record<Operation, number>,
+          )
+
+          const total = Object.values(result).reduce(
+            (sum: number, count: number) => sum + count,
+            0,
+          )
+
+          resolve({ ...result, total })
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `failed to run findCumulativeStats for ${id.value}: ${err}`,
+          )
+          reject(unknownError(String(err)))
+        })
+    })
   }
 }

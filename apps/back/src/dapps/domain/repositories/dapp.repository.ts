@@ -5,6 +5,20 @@ import { DAppId } from '../entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '../entities/dapp-stat.js'
 
+export type Operation =
+  | 'FheAdd'
+  | 'FheBitAnd'
+  | 'FheIfThenElse'
+  | 'FheLe'
+  | 'FheOr'
+  | 'FheSub'
+  | 'TrivialEncrypt'
+  | 'VerifyCiphertext'
+  | 'FheMul'
+  | 'FheDiv'
+
+export type CumulativeStats = Record<Operation, number> & { total: number }
+
 export abstract class DAppRepository {
   abstract create(data: DApp): Task<DApp, AppError>
   abstract update(
@@ -26,4 +40,5 @@ export abstract class DAppRepository {
     props: DAppStatProps,
   ): Task<DAppStat, AppError>
   abstract findAllStats(id: DAppId): Task<DAppStat[], AppError>
+  abstract findCumulativeStats(id: DAppId): Task<CumulativeStats, AppError>
 }
