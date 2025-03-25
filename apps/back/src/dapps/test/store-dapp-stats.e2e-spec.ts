@@ -84,7 +84,7 @@ describe('store dapp stats', () => {
           const count = await manager.prismaClient.dappStat.count()
           return count > 0
         })
-        const res = await manager.dapp.getDappStats({ token, dappId })
+        const res = await manager.dapp.getDappRawStats({ token, dappId })
         if (res.success) {
           expect(res.data.id, 'Wrong dapp id').toBe(dappId)
           expect(res.data.stats.length, 'Wrong stats count').toBe(1)
