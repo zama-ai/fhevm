@@ -35,6 +35,8 @@ describe('input proof', () => {
       let contractAddress: string
       let userAddress: string
       let ciphertextWithZkpok: string
+      let handles: string[]
+      let signatures: string[]
 
       beforeEach(() => {
         contractChainId = faker.string.numeric(5)
@@ -44,6 +46,8 @@ describe('input proof', () => {
           length: { min: 40, max: 100 },
           prefix: '',
         })
+        handles = [faker.string.hexadecimal({ length: 40, prefix: '' })]
+        signatures = [faker.string.hexadecimal({ length: 40 })]
       })
 
       test('then the server responde successfully', async () => {
@@ -81,13 +85,14 @@ describe('input proof', () => {
 
         await manager.sendMessage(
           back.httpzInputProofCompleted(
-            { requestId, success: true },
+            { requestId, handles, signatures },
             { correlationId: faker.string.uuid() },
           ),
         )
 
         const response = await promise
         expect(response.status).toBe(201)
+        expect(response.body).toEqual({ response: { handles, signatures } })
       })
     })
   })

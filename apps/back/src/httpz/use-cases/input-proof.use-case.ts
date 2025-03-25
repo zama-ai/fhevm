@@ -14,8 +14,13 @@ type Input = {
   ciphertextWithZkpok: string
 }
 
+type Output = {
+  handles: string[]
+  signatures: string[]
+}
+
 @Injectable()
-export class InputProof implements UseCase<Input, void> {
+export class InputProof implements UseCase<Input, Output> {
   private readonly logger = new Logger(InputProof.name)
   constructor(
     @Inject(PUBSUB)
@@ -24,7 +29,7 @@ export class InputProof implements UseCase<Input, void> {
     private readonly publisher: IProducer,
   ) {}
 
-  execute = (input: Input): Task<void, AppError> => {
+  execute = (input: Input): Task<Output, AppError> => {
     this.logger.debug(`input=${JSON.stringify(input)}`)
 
     const requestId = generateRequestId()
@@ -53,13 +58,19 @@ export class InputProof implements UseCase<Input, void> {
           )
           .chain(
             () =>
-              new Task<void, AppError>(resolve => {
+              new Task<Output, AppError>(resolve => {
                 const handler: ISubscriber<back.BackEvent> = event => {
                   this.logger.verbose(
                     `handling event ${event.type} with requestId ${event.payload.requestId}`,
                   )
-                  if (event.payload.requestId === requestId) {
-                    resolve(void 0)
+                  if (
+                    event.type === 'back:httpz:input-proof:completed' &&
+                    event.payload.requestId === requestId
+                  ) {
+                    resolve({
+                      handles: event.payload.handles,
+                      signatures: event.payload.signatures,
+                    })
                     this.logger.verbose(
                       `unsubscribing from 'back:httpz:input-proof:completed' event`,
                     )

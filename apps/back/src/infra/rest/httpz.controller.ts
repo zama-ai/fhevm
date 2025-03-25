@@ -14,7 +14,7 @@ export class HttpzController {
   constructor(
     private readonly getKeyUrlUC: GetKeyUrl,
     private readonly inputProofUC: InputProof,
-  ) { }
+  ) {}
 
   @Get('/keyurl')
   async getKeyUrl() {
@@ -27,7 +27,7 @@ export class HttpzController {
   @UsePipes(new ZodValidationPipe(inputProofSchema))
   async postInputProof(@Body() input: InputProofRequest) {
     this.logger.log('POST /input-proof')
-    const response = this.inputProofUC.execute(input).toPromise()
+    const response = await this.inputProofUC.execute(input).toPromise()
     return { response }
   }
 }

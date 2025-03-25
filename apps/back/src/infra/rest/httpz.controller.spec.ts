@@ -82,10 +82,16 @@ describe('HttpzController', () => {
 
   describe(`POST /input-proof`, () => {
     let inputProof: MockProxy<InputProof>
+    let handles: string[]
+    let signatures: string[]
+
     beforeEach(() => {
+      handles = [faker.string.hexadecimal({ length: 40, prefix: '' })]
+      signatures = [faker.string.hexadecimal({ length: 40 })]
       inputProof = module.get(InputProof)
-      inputProof.execute.mockReturnValue(Task.of(void 0))
+      inputProof.execute.mockReturnValue(Task.of({ handles, signatures }))
     })
+
     test('should return a success response', async () => {
       await controller.postInputProof({
         contractChainId: faker.string.hexadecimal({ length: 3 }),
@@ -94,6 +100,16 @@ describe('HttpzController', () => {
         ciphertextWithZkpok: faker.string.hexadecimal({ length: 40 }),
       })
       expect(inputProof.execute).toHaveBeenCalledOnce()
+    })
+
+    test('should return the handles and the signatures', async () => {
+      const response = await controller.postInputProof({
+        contractChainId: faker.string.hexadecimal({ length: 3 }),
+        contractAddress: faker.string.hexadecimal({ length: 40 }),
+        userAddress: faker.string.hexadecimal({ length: 40 }),
+        ciphertextWithZkpok: faker.string.hexadecimal({ length: 40 }),
+      })
+      expect(response).toEqual({ response: { handles, signatures } })
     })
   })
 })
