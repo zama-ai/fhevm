@@ -9,8 +9,17 @@ type Team {
 }
 
 type CumulativeDappStats {
-  total: Float!
-  FheAdd: Float!
+  total: Int!
+  FheAdd: Int!
+  FheBitAnd: Int!
+  FheIfThenElse: Int!
+  FheLe: Int!
+  FheOr: Int!
+  FheSub: Int!
+  TrivialEncrypt: Int!
+  VerifyCiphertext: Int!
+  FheMul: Int!
+  FheDiv: Int!
 }
 
 type DappStats {

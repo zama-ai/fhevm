@@ -1,4 +1,4 @@
-import { Field, ID, ObjectType } from '@nestjs/graphql'
+import { Field, ID, ObjectType, Int } from '@nestjs/graphql'
 
 // @ObjectType('DailyDappStats')
 // export class DailyDappStatsType {
@@ -17,11 +17,38 @@ import { Field, ID, ObjectType } from '@nestjs/graphql'
 
 @ObjectType('CumulativeDappStats')
 export class CumulativeDappStatsType {
-  @Field({ nullable: false })
+  @Field(() => Int, { nullable: false })
   total: number
 
-  @Field({ nullable: false })
+  @Field(() => Int, { nullable: false })
   FheAdd: number
+
+  @Field(() => Int, { nullable: false })
+  FheBitAnd: number
+
+  @Field(() => Int, { nullable: false })
+  FheIfThenElse: number
+
+  @Field(() => Int, { nullable: false })
+  FheLe: number
+
+  @Field(() => Int, { nullable: false })
+  FheOr: number
+
+  @Field(() => Int, { nullable: false })
+  FheSub: number
+
+  @Field(() => Int, { nullable: false })
+  TrivialEncrypt: number
+
+  @Field(() => Int, { nullable: false })
+  VerifyCiphertext: number
+
+  @Field(() => Int, { nullable: false })
+  FheMul: number
+
+  @Field(() => Int, { nullable: false })
+  FheDiv: number
 }
 
 @ObjectType('DappStats')

@@ -19,6 +19,7 @@ import { StatsResolver } from './stats.resolver.js'
     uc.GetDappById,
     uc.DeployDApp,
     uc.GetDappRawStatsUseCase,
+    uc.GetDappCumulativeStatsUseCase,
     uc.AppDeployment,
     uc.AppUpdatesSubscription,
     uc.StoreDAppStats,
