@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Card } from '@chakra-ui/react'
+import { Box, Card } from '@chakra-ui/react'
 import { StatLabel, StatRoot, StatValueText } from '@/components/ui/stat'
 
 const PieChartComponent = lazy(() =>
@@ -8,28 +8,33 @@ const PieChartComponent = lazy(() =>
   })),
 )
 
-export function BlockPie() {
-  const total = 100
-  const data = [
-    { name: 'A', value: 40 },
-    { name: 'B', value: 300 },
-    { name: 'C', value: 300 },
-  ]
+type OwnProps = { total: number; data: { name: string; value: number }[] }
+
+export function BlockPie({ total, data }: OwnProps) {
   return (
-    <Card.Root width="300px">
+    <Card.Root minH="83px" size="sm">
       <Card.Body p="4">
         <StatRoot pos="relative">
-          <StatLabel>FHE Operations</StatLabel>
-          <StatValueText>{total}</StatValueText>
+          <StatLabel>FHE Events</StatLabel>
+          <StatValueText width="100%" textAlign="center" display="block">
+            {total}
+          </StatValueText>
           <Suspense fallback={null}>
-            <PieChartComponent
-              data={data}
-              height="60px"
-              mx="-4"
-              innerRadius={20}
-              outerRadius={30}
-              label={false}
-            />
+            <Box position="relative" mt="2" w="100%" border="1px solid pink">
+              <PieChartComponent
+                position="absolute"
+                top="-60px"
+                left="0"
+                w="100%"
+                border="1px solid red"
+                data={data}
+                height="60px"
+                containerHeight={60}
+                innerRadius={20}
+                outerRadius={30}
+                label={false}
+              />
+            </Box>
           </Suspense>
         </StatRoot>
       </Card.Body>

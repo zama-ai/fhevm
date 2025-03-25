@@ -34,6 +34,11 @@ export interface PieChartProps extends BoxProps {
    * @default false
    */
   label?: boolean
+  /**
+   * Height of the container
+   * @default 300
+   */
+  containerHeight?: number
 }
 
 /**
@@ -45,13 +50,14 @@ export const PieChartComponent = ({
   innerRadius = 0,
   outerRadius = 80,
   label = false,
+  containerHeight = 300,
   ...rest
 }: PieChartProps) => {
   const id = useId()
 
   return (
-    <Box {...rest} position="absolute" border="1px solid red">
-      <ResponsiveContainer width="100%" height={60}>
+    <Box {...rest}>
+      <ResponsiveContainer width="100%" height={containerHeight}>
         <PieChart>
           <Pie
             data={data}

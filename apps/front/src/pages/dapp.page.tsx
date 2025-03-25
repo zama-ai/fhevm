@@ -24,22 +24,22 @@ const GET_DAPP_DETAILS = graphql(`
         timestamp
         externalRef
       }
-      #      stats {
-      #        id
-      #        cumulative {
-      #          total
-      #          FheAdd
-      #          FheBitAnd
-      #          FheIfThenElse
-      #          FheLe
-      #          FheOr
-      #          FheSub
-      #          TrivialEncrypt
-      #          VerifyCiphertext
-      #          FheMul
-      #          FheDiv
-      #        }
-      #      }
+      stats {
+        id
+        cumulative {
+          total
+          FheAdd
+          FheBitAnd
+          FheIfThenElse
+          FheLe
+          FheOr
+          FheSub
+          TrivialEncrypt
+          VerifyCiphertext
+          FheMul
+          FheDiv
+        }
+      }
     }
   }
 `)
@@ -56,12 +56,12 @@ const SUB_DAPP_UPDATED = gql(`
         timestamp
         externalRef
       }
-      # stats {
-      #   id
-      #   cumulative {
-      #     total
-      #   }
-      # }
+      stats {
+        id
+        cumulative {
+          total
+        }
+      }
     } 
   }
 `)
@@ -81,6 +81,41 @@ export function DappPage() {
   if (error) {
     throw Error(error.message)
   }
+
+  const operationStatsData: Array<{ name: string; value: number }> = data?.dapp
+    .stats.cumulative
+    ? Object.entries(data.dapp.stats.cumulative)
+        .filter(
+          ([key]) =>
+            ![
+              '__typename',
+              'total',
+              'TrivialEncrypt',
+              'VerifyCiphertext',
+            ].includes(key),
+        )
+        .map(([key, value]) => ({
+          name: key,
+          value: value as number,
+        }))
+    : []
+  const operationStatsTotal = operationStatsData.reduce(
+    (acc, curr) => acc + curr.value,
+    0,
+  )
+  const encryptionStatsData: Array<{ name: string; value: number }> = data?.dapp
+    .stats.cumulative
+    ? Object.entries(data.dapp.stats.cumulative)
+        .filter(([key]) => ['TrivialEncrypt', 'VerifyCiphertext'].includes(key))
+        .map(([key, value]) => ({
+          name: key,
+          value: value as number,
+        }))
+    : []
+  const encryptionStatsTotal = encryptionStatsData.reduce(
+    (acc, curr) => acc + curr.value,
+    0,
+  )
 
   return (
     <Box>
@@ -105,7 +140,14 @@ export function DappPage() {
               title="Total FHE Events"
               amount={data?.dapp.rawStats.length || 0}
             />
-            <BlockPie />
+            <BlockPie
+              total={operationStatsTotal || 0}
+              data={operationStatsData}
+            />
+            <BlockPie
+              total={encryptionStatsTotal || 0}
+              data={encryptionStatsData}
+            />
           </Stack>
         </Stack>
       )}
