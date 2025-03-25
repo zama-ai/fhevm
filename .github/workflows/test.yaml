@@ -60,15 +60,6 @@ jobs:
       matrix: 
         folder: [apps/relayer]
     steps:
-      - name: Checkout Project
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      # Rust toolchain setup
-      - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@11df97af8e8102fd60b60a77dfbf58d40cd843b8 # v1.10.1
-        with:
-          toolchain: stable
-          components: rustfmt, clippy, llvm-tools-preview
-
       - name: Add SSH key
         env:
             SSH_AUTH_SOCK: /tmp/ssh_agent.sock
@@ -81,6 +72,30 @@ jobs:
             chmod 600 /home/runner/.ssh/github_actions
             ssh-agent -a $SSH_AUTH_SOCK > /dev/null	
             ssh-add $HOME/.ssh/github_actions
+
+      - name: Checkout Project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          token: ${{ github.token }}
+          submodules: false
+
+      - name: Checkout submodule
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: zama-ai/fhevm-relayer
+          path: apps/relayer/fhevm-relayer
+          persist-credentials: false
+          submodules: false
+          ssh-key: ${{ secrets.FHEVM_RELAYER_DEPLOY_PRIVKEY }}
+          ref: fd0r/docker-compose-makefile
+
+      # Rust toolchain setup
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@11df97af8e8102fd60b60a77dfbf58d40cd843b8 # v1.10.1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy, llvm-tools-preview
 
       - name: Formatting
         run: cd ${{matrix.folder}} && cargo fmt --all -- --check

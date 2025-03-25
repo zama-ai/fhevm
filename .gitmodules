@@ -1,9 +1,4 @@
-[submodule "external/fhevm-devops"]
-	path = external/fhevm-devops
-	url = git@github.com:zama-ai/fhevm-devops.git
-	branch = fd0r/zws
-
-[submodule "external/fhevm-relayer"]
-	path = external/fhevm-relayer
+[submodule "apps/relayer/fhevm-relayer"]
+	path = apps/relayer/fhevm-relayer
 	url = git@github.com:zama-ai/fhevm-relayer.git
 	branch = fd0r/docker-compose-makefile

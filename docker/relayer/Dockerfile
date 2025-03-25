@@ -1,9 +1,12 @@
 # syntax=docker/dockerfile:1
 # Base from https://docs.docker.com/guides/rust/develop/
 ARG RUST_VERSION=1.83.0
-ARG APP_NAME=contract-event-listener
+ARG CARGO_NET_GIT_FETCH_WITH_CLI=false
+ARG APP_NAME=zws-relayer  # binary name specified in apps/relayer/relayer/Cargo.toml
+
 FROM rust:${RUST_VERSION}-slim-bullseye AS build
 ARG APP_NAME
+ARG CARGO_NET_GIT_FETCH_WITH_CLI
 WORKDIR /app
 
 # Build the application.
@@ -15,7 +18,9 @@ WORKDIR /app
 # output directory before the cache mounted /app/target is unmounted.
 # NOTE: We need to mount ssh to be able to fetch the `fhevm-relayer` git repo.
 RUN --mount=type=ssh \
-    --mount=type=bind,source=src,target=src \
+    --mount=type=bind,source=lib,target=lib \
+    --mount=type=bind,source=relayer,target=relayer \
+    --mount=type=bind,source=fhevm-relayer,target=fhevm-relayer \
     --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
     --mount=type=cache,target=/app/target/ \
@@ -23,7 +28,8 @@ RUN --mount=type=ssh \
     <<EOF
 set -e
 apt update
-apt install libssl-dev musl-dev pkg-config -y
+# TODO: investigate why sqlite3 is required to build diesel if only postgres is specified
+apt install libssl-dev git musl-dev pkg-config libpq-dev libsqlite3-dev -y
 ls -R && cargo build --locked --release
 cp ./target/release/$APP_NAME /bin/server
 EOF
@@ -40,6 +46,7 @@ EOF
 # reproducibility is important, consider using a digest
 # (e.g.,    debian@sha256:ac707220fbd7b67fc19b112cee8170b41a9e97f703f588b2cdbbcdcecdd8af57).
 FROM debian:bullseye-slim AS final
+RUN apt update && apt install libssl-dev libpq-dev libsqlite3-dev -y
 
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/   #user

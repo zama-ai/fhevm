@@ -1,5 +1,4 @@
 TOP := $(dir $(firstword $(MAKEFILE_LIST)))
-FHEVM_DEVOPS_PATH ?= $(TOP)external/fhevm-devops
 
 .PHONY: publish-app-deployment-requested
 publish-app-deployment-requested:
@@ -61,12 +60,6 @@ blockchain-test:
 # display blockchain operations
 blockchain-listen:
 	bash scripts/blockchain-listen.sh
-
-run-fhevm-devops:
-	$(MAKE) -C $(FHEVM_DEVOPS_PATH)/coprocessor run-full
-
-clean-fhevm-devops:
-	$(MAKE) -C $(FHEVM_DEVOPS_PATH)/coprocessor clean
 	
 # Hardhat
 # First launch node and deploy contracts

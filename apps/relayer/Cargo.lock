@@ -63,6 +63,7 @@ dependencies = [
  "alloy-rpc-types",
  "alloy-serde",
  "alloy-signer",
+ "alloy-signer-aws",
  "alloy-signer-local",
  "alloy-transport",
  "alloy-transport-http",
@@ -503,6 +504,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloy-signer-aws"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0eb06810c34427d499863817eb506acf57cb9ded9224b374116cae4e22dbd4e9"
+dependencies = [
+ "alloy-consensus",
+ "alloy-network",
+ "alloy-primitives",
+ "alloy-signer",
+ "async-trait",
+ "aws-sdk-kms",
+ "k256",
+ "spki",
+ "thiserror 2.0.12",
+ "tracing",
+]
+
+[[package]]
 name = "alloy-signer-local"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -928,7 +947,7 @@ dependencies = [
  "aws-sdk-ssooidc",
  "aws-sdk-sts",
  "aws-smithy-async",
- "aws-smithy-http",
+ "aws-smithy-http 0.62.0",
  "aws-smithy-json",
  "aws-smithy-runtime",
  "aws-smithy-runtime-api",
@@ -990,7 +1009,7 @@ dependencies = [
  "aws-credential-types",
  "aws-sigv4",
  "aws-smithy-async",
- "aws-smithy-http",
+ "aws-smithy-http 0.62.0",
  "aws-smithy-runtime",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -1007,22 +1026,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "aws-sdk-sns"
-version = "1.63.0"
+name = "aws-sdk-kms"
+version = "1.61.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18f19087f7ce277f68f4fe7147acc50618190e12b80f2f3b5b5a915bea71465d"
+checksum = "72054067b7b84e963ee29c3b7fdfc61f76bcfc697e38b8dc1095a3ad2e7e764a"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
  "aws-smithy-async",
- "aws-smithy-http",
+ "aws-smithy-http 0.60.12",
  "aws-smithy-json",
- "aws-smithy-query",
  "aws-smithy-runtime",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
- "aws-smithy-xml",
  "aws-types",
+ "bytes",
  "http 0.2.12",
  "once_cell",
  "regex-lite",
@@ -1038,7 +1056,7 @@ dependencies = [
  "aws-credential-types",
  "aws-runtime",
  "aws-smithy-async",
- "aws-smithy-http",
+ "aws-smithy-http 0.62.0",
  "aws-smithy-json",
  "aws-smithy-runtime",
  "aws-smithy-runtime-api",
@@ -1060,7 +1078,7 @@ dependencies = [
  "aws-credential-types",
  "aws-runtime",
  "aws-smithy-async",
- "aws-smithy-http",
+ "aws-smithy-http 0.62.0",
  "aws-smithy-json",
  "aws-smithy-runtime",
  "aws-smithy-runtime-api",
@@ -1082,7 +1100,7 @@ dependencies = [
  "aws-credential-types",
  "aws-runtime",
  "aws-smithy-async",
- "aws-smithy-http",
+ "aws-smithy-http 0.62.0",
  "aws-smithy-json",
  "aws-smithy-runtime",
  "aws-smithy-runtime-api",
@@ -1104,7 +1122,7 @@ dependencies = [
  "aws-credential-types",
  "aws-runtime",
  "aws-smithy-async",
- "aws-smithy-http",
+ "aws-smithy-http 0.62.0",
  "aws-smithy-json",
  "aws-smithy-query",
  "aws-smithy-runtime",
@@ -1125,7 +1143,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69d03c3c05ff80d54ff860fe38c726f6f494c639ae975203a101335f223386db"
 dependencies = [
  "aws-credential-types",
- "aws-smithy-http",
+ "aws-smithy-http 0.62.0",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "bytes",
@@ -1150,6 +1168,26 @@ dependencies = [
  "futures-util",
  "pin-project-lite",
  "tokio",
+]
+
+[[package]]
+name = "aws-smithy-http"
+version = "0.60.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7809c27ad8da6a6a68c454e651d4962479e81472aa19ae99e59f9aba1f9713cc"
+dependencies = [
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "bytes",
+ "bytes-utils",
+ "futures-core",
+ "http 0.2.12",
+ "http-body 0.4.6",
+ "once_cell",
+ "percent-encoding",
+ "pin-project-lite",
+ "pin-utils",
+ "tracing",
 ]
 
 [[package]]
@@ -1227,7 +1265,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6328865e36c6fd970094ead6b05efd047d3a80ec5fc3be5e743910da9f2ebf8"
 dependencies = [
  "aws-smithy-async",
- "aws-smithy-http",
+ "aws-smithy-http 0.62.0",
  "aws-smithy-http-client",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -2252,7 +2290,6 @@ dependencies = [
 [[package]]
 name = "fhevm-relayer"
 version = "0.1.0"
-source = "git+ssh://git@github.com/zama-ai/fhevm-relayer.git?branch=fd0r%2Fdocker-compose-makefile#f74654e8265ba7dd4b472ce4c45a87403400b43c"
 dependencies = [
  "alloy",
  "alloy-sol-types",
@@ -5884,10 +5921,11 @@ dependencies = [
  "alloy-sol-types",
  "async-trait",
  "aws-config",
- "aws-sdk-sns",
+ "aws-sdk-kms",
  "aws-sdk-sqs",
  "axum 0.8.1",
  "bip39",
+ "config",
  "diesel",
  "diesel-derive-enum",
  "dotenvy",
@@ -5913,7 +5951,6 @@ dependencies = [
  "alloy-sol-types",
  "async-trait",
  "aws-config",
- "aws-sdk-sns",
  "aws-sdk-sqs",
  "aws-smithy-runtime",
  "axum 0.8.1",
@@ -5931,17 +5968,4 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
-]
-
-[[package]]
-name = "zws-tx-manager"
-version = "0.1.0"
-dependencies = [
- "aws-config",
- "aws-sdk-sns",
- "aws-sdk-sqs",
- "serde",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]

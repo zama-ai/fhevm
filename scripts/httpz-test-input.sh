@@ -11,6 +11,6 @@ SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
 
 # To use relayer directly
-cd $SCRIPTPATH/../external/fhevm-relayer && RELAYER_URL=http://localhost:4324 make run-test-input-proof-hardhat
+cd $SCRIPTPATH/../apps/relayer/fhevm-relayer && RELAYER_URL=http://localhost:4324 make run-test-input-proof-hardhat
 # To use relayer through back
-# cd $SCRIPTPATH/../external/fhevm-relayer && RELAYER_URL=http://localhost:3005 make run-test-input-proof-hardhat
+# cd $SCRIPTPATH/../apps/relayer/fhevm-relayer && RELAYER_URL=http://localhost:3005 make run-test-input-proof-hardhat

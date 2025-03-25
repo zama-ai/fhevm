@@ -388,7 +388,7 @@ pub async fn http_listener(
 
 pub async fn sqs_listener(
     sqs_client: aws_sdk_sqs::Client,
-    request_queue_url: &str,
+    request_queue_url: String,
     orchestrator: Arc<
         Orchestrator<
             impl EventDispatcher<ZwsRelayerEvent> + HandlerRegistry<ZwsRelayerEvent>,
@@ -397,10 +397,11 @@ pub async fn sqs_listener(
     >,
 ) {
     // TODO: SQS client
+    let url = &request_queue_url.clone();
     loop {
         let rcv_message_output = match sqs_client
             .receive_message()
-            .queue_url(request_queue_url)
+            .queue_url(url)
             .wait_time_seconds(10)
             .send()
             .await
@@ -464,7 +465,7 @@ pub async fn sqs_listener(
             // processed (imagine we have multiple consumers).
             match sqs_client
                 .delete_message()
-                .queue_url(request_queue_url)
+                .queue_url(url)
                 .set_receipt_handle(message.receipt_handle)
                 .send()
                 .await
