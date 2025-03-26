@@ -28,6 +28,9 @@ spec:
       tolerations:
 {{ toYaml .Values.dbMigration.tolerations.items | indent 8 }}
       {{- end }}
+      {{- if .Values.dbMigration.serviceAccountName }}
+      serviceAccountName: {{ .Values.dbMigration.serviceAccountName }}
+      {{- end }}
       initContainers:
       - name: fetch-pub-key-matter
         image: netdata/wget:latest

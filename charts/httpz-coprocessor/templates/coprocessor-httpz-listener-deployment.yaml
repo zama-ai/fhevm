@@ -30,6 +30,9 @@ spec:
       tolerations:
 {{ toYaml .Values.httpzListener.tolerations.items | indent 8 }}
       {{- end }}
+      {{- if .Values.httpzListener.serviceAccountName }}
+      serviceAccountName: {{ .Values.httpzListener.serviceAccountName }}
+      {{- end }}
       containers:
         - name: coprocessor-httpz-listener
           image: {{ .Values.httpzListener.image.name }}:{{ .Values.httpzListener.image.tag }}

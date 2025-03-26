@@ -30,6 +30,9 @@ spec:
       tolerations:
 {{ toYaml .Values.tfheWorker.tolerations.items | indent 8 }}
       {{- end }}
+      {{- if .Values.tfheWorker.serviceAccountName }}
+      serviceAccountName: {{ .Values.tfheWorker.serviceAccountName }}
+      {{- end }}
       containers:
         - name: coprocessor-server
           image: {{ .Values.tfheWorker.image.name }}:{{ .Values.tfheWorker.image.tag }}

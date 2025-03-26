@@ -30,6 +30,9 @@ spec:
       tolerations:
 {{ toYaml .Values.snsWorker.tolerations.items | indent 8 }}
       {{- end }}
+      {{- if .Values.snsWorker.serviceAccountName }}
+      serviceAccountName: {{ .Values.snsWorker.serviceAccountName }}
+      {{- end }}
       containers:
         - name: coprocessor-sns-worker
           image: {{ .Values.snsWorker.image.name }}:{{ .Values.snsWorker.image.tag }}

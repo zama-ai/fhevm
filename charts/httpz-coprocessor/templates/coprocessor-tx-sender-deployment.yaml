@@ -30,6 +30,9 @@ spec:
       tolerations:
 {{ toYaml .Values.txSender.tolerations.items | indent 8 }}
       {{- end }}
+      {{- if .Values.txSender.serviceAccountName }}
+      serviceAccountName: {{ .Values.txSender.serviceAccountName }}
+      {{- end }}
       containers:
         - name: coprocessor-tx-sender
           image: {{ .Values.txSender.image.name }}:{{ .Values.txSender.image.tag }}
