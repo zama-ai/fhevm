@@ -24,9 +24,6 @@ interface ICiphertextManager {
     /// @notice the handle (for any chainId).
     error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
 
-    /// @notice Error indicating that the given coprocessor has not added the ctHandle and chainId.
-    error CoprocessorHasNotAdded(uint256 ctHandle, uint256 chainId, address coprocessor);
-
     /// @notice Error indicating that the given ciphertext material represented by the given handle has not
     /// @notice been added in the contract.
     error CiphertextMaterialNotFound(uint256 ctHandle);
@@ -35,23 +32,9 @@ interface ICiphertextManager {
     /// @notice associated with the given chain ID.
     error CiphertextMaterialNotOnNetwork(uint256 ctHandle, uint256 chainId);
 
-    /// @notice Returns true if the ciphertext material has reached consensus and added in the contract.
-    /// @param ctHandle The handle of the ciphertext material.
-    function ciphertextMaterialExists(uint256 ctHandle) external view returns (bool);
-
     /// @notice Checks if the ciphertext material represented by the given handle has been added in the contract.
     /// @param ctHandle The handle of the ciphertext material.
     function checkCiphertextMaterial(uint256 ctHandle) external view;
-
-    /// @notice Checks if the given coprocessor has already added the ciphertext material.
-    /// @param ctHandle The handle of the ciphertext material.
-    /// @param chainId The chain ID of the blockchain associated to the ciphertext handle.
-    /// @param coprocessorTxSenderAddress The address of the coprocessor transaction sender.
-    function checkCoprocessorTxSenderHasAdded(
-        uint256 ctHandle,
-        uint256 chainId,
-        address coprocessorTxSenderAddress
-    ) external view;
 
     /// @notice Retrieves the list of "normal" ciphertext materials for the given handles.
     /// @param ctHandles The list of handles of the ciphertexts to retrieve.

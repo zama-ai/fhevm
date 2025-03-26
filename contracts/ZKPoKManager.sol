@@ -98,9 +98,10 @@ contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeab
         address userAddress,
         bytes calldata ciphertextWithZKProof
     ) public virtual {
-        ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
+        /// @dev Check that the chainId has been registered in the HTTPZ contract.
         _HTTPZ.checkNetworkIsRegistered(contractChainId);
 
+        ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
         // TODO(#52): Implement sending service fees to PaymentManager contract
 
         $.zkProofIdCounter++;

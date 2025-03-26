@@ -10,28 +10,31 @@ import { createAndFundRandomUser, loadTestVariablesFixture } from "./utils";
 describe("CiphertextManager", function () {
   const ctHandle = 2025;
   const keyId = 0;
-  const chainId = 1;
   const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
   const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
 
   // Fake values
   const fakeCtHandle = 11111;
-  const fakeChainId = 123;
+  const fakeHostChainId = 123;
 
   let httpz: HTTPZ;
   let ciphertextManager: CiphertextManager;
   let coprocessorTxSenders: HardhatEthersSigner[];
+  let hostChainId: number;
   let fakeTxSender: HDNodeWallet;
 
   async function prepareCiphertextManagerFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
     const { ciphertextManager, coprocessorTxSenders } = fixtureData;
 
+    // Define the hostChainId
+    hostChainId = fixtureData.chainIds[0];
+
     // Setup the CiphertextManager contract state with a ciphertext used during tests
     for (let txSender of coprocessorTxSenders) {
       await ciphertextManager
         .connect(txSender)
-        .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
     }
     return fixtureData;
   }
@@ -47,6 +50,17 @@ describe("CiphertextManager", function () {
   });
 
   describe("Add ciphertext material", async function () {
+    it("Should revert because the hostChainId is not registered in the HTTPZ contract", async function () {
+      // Check that adding a ciphertext material on a fake chain ID reverts
+      await expect(
+        ciphertextManager
+          .connect(coprocessorTxSenders[0])
+          .addCiphertextMaterial(ctHandle, keyId, fakeHostChainId, ciphertextDigest, snsCiphertextDigest),
+      )
+        .revertedWithCustomError(httpz, "NetworkNotRegistered")
+        .withArgs(fakeHostChainId);
+    });
+
     it("Should add a ciphertext material", async function () {
       // Given
       const newCtHandle = "0x0123";
@@ -54,12 +68,12 @@ describe("CiphertextManager", function () {
       // When
       await ciphertextManager
         .connect(coprocessorTxSenders[0])
-        .addCiphertextMaterial(newCtHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(newCtHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
 
       // This transaction should make the consensus to be reached and thus emit the expected event
       const result = ciphertextManager
         .connect(coprocessorTxSenders[1])
-        .addCiphertextMaterial(newCtHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(newCtHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
 
       // Then
       await expect(result)
@@ -72,7 +86,7 @@ describe("CiphertextManager", function () {
       // Then check that no other events get triggered
       await ciphertextManager
         .connect(coprocessorTxSenders[2])
-        .addCiphertextMaterial(newCtHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(newCtHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
       const events = await ciphertextManager.queryFilter(ciphertextManager.filters.AddCiphertextMaterial(newCtHandle));
 
       // It should emit only the event once consensus is reached which means only the second transaction emits the event
@@ -82,7 +96,7 @@ describe("CiphertextManager", function () {
     it("Should revert because the transaction sender is not a Coprocessor", async function () {
       const result = ciphertextManager
         .connect(fakeTxSender)
-        .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
 
       // Then
       await expect(result)
@@ -94,7 +108,7 @@ describe("CiphertextManager", function () {
       // When
       const result = ciphertextManager
         .connect(coprocessorTxSenders[0])
-        .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
 
       // Then
       await expect(result).revertedWithCustomError(ciphertextManager, "CoprocessorTxSenderAlreadyAdded");
@@ -150,33 +164,6 @@ describe("CiphertextManager", function () {
       await expect(result)
         .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
         .withArgs(fakeCtHandle);
-    });
-  });
-
-  describe("Check coprocessor transaction sender has added the ciphertext handle on the network", async function () {
-    it("Should not revert", async function () {
-      await expect(
-        ciphertextManager.checkCoprocessorTxSenderHasAdded(ctHandle, chainId, coprocessorTxSenders[0].address),
-      ).not.to.be.reverted;
-    });
-
-    it("Should revert because the coprocessor transaction sender has not added the ciphertext handle on the network", async function () {
-      const fakeCoprocessorTxSenderAddress = hre.ethers.Wallet.createRandom().address;
-      await expect(
-        ciphertextManager.checkCoprocessorTxSenderHasAdded(fakeCtHandle, chainId, coprocessorTxSenders[0].address),
-      )
-        .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
-        .withArgs(fakeCtHandle, chainId, coprocessorTxSenders[0].address);
-      await expect(
-        ciphertextManager.checkCoprocessorTxSenderHasAdded(ctHandle, fakeChainId, coprocessorTxSenders[0].address),
-      )
-        .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
-        .withArgs(ctHandle, fakeChainId, coprocessorTxSenders[0].address);
-      await expect(
-        ciphertextManager.checkCoprocessorTxSenderHasAdded(ctHandle, chainId, fakeCoprocessorTxSenderAddress),
-      )
-        .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
-        .withArgs(ctHandle, chainId, fakeCoprocessorTxSenderAddress);
     });
   });
 });
