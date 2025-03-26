@@ -52,8 +52,8 @@ describe("ZKPoKManager", function () {
         .withArgs(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     });
 
-    it("Should revert with NetworkNotRegistered", async function () {
-      // Check that sending a proof verification request with a fake chain id reverts
+    it("Should revert because the chainId is not registered in the HTTPZ contract", async function () {
+      // Check that sending a proof verification request with a fake chain ID reverts
       await expect(zkpokManager.verifyProofRequest(fakeChainId, contractAddress, userAddress, ciphertextWithZKProof))
         .revertedWithCustomError(httpz, "NetworkNotRegistered")
         .withArgs(fakeChainId);

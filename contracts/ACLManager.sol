@@ -87,16 +87,10 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
         uint256 ctHandle,
         address accountAddress
     ) public virtual override onlyCoprocessorTxSender {
-        ACLManagerStorage storage $ = _getACLManagerStorage();
+        /// @dev Check that the chainId has been registered in the HTTPZ contract.
+        _HTTPZ.checkNetworkIsRegistered(chainId);
 
-        /**
-         * @dev Check if the current Coprocessor has added the ciphertext material with the associated chain ID.
-         * This check is only performed if consensus on the "addCiphertextMaterial" has not been reached yet.
-         * If a Coprocessor was replaced, it should not revert the current transaction.
-         */
-        if (!_CIPHERTEXT_MANAGER.ciphertextMaterialExists(ctHandle)) {
-            _CIPHERTEXT_MANAGER.checkCoprocessorTxSenderHasAdded(ctHandle, chainId, msg.sender);
-        }
+        ACLManagerStorage storage $ = _getACLManagerStorage();
 
         /**
          * @dev Check if the coprocessor has already allowed the account to use the ciphertext handle.
@@ -123,16 +117,10 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
 
     /// @dev See {IACLManager-allowPublicDecrypt}.
     function allowPublicDecrypt(uint256 chainId, uint256 ctHandle) public virtual override onlyCoprocessorTxSender {
-        ACLManagerStorage storage $ = _getACLManagerStorage();
+        /// @dev Check that the chainId has been registered in the HTTPZ contract.
+        _HTTPZ.checkNetworkIsRegistered(chainId);
 
-        /**
-         * @dev Check if the current Coprocessor has added the ciphertext material with the associated chain ID.
-         * This check is only performed if consensus over the "addCiphertextMaterial" has not been reached yet.
-         * If a Coprocessor was replaced, it should not revert the current transaction.
-         */
-        if (!_CIPHERTEXT_MANAGER.ciphertextMaterialExists(ctHandle)) {
-            _CIPHERTEXT_MANAGER.checkCoprocessorTxSenderHasAdded(ctHandle, chainId, msg.sender);
-        }
+        ACLManagerStorage storage $ = _getACLManagerStorage();
 
         /**
          * @dev Check if the coprocessor has already allowed the ciphertext handle for public decryption.

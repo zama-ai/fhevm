@@ -50,12 +50,10 @@ describe("DecryptionManager", function () {
   let fakeSigner: HDNodeWallet;
   let keyId1: BigNumberish;
   let fheParamsName: string;
+  let hostChainId: number;
 
   // Define the gateway chain ID
   const chainId = hre.network.config.chainId!;
-
-  // Define the host chainId
-  const hostChainId = 123456;
 
   // Create 3 dummy ciphertext handles
   const ctHandles = [2025, 2026, 2027];
@@ -107,6 +105,9 @@ describe("DecryptionManager", function () {
   async function prepareAddCiphertextFixture() {
     const fixtureData = await loadFixture(prepareWithActivatedKeyFixture);
     const { ciphertextManager, coprocessorTxSenders, keyId1 } = fixtureData;
+
+    // Define the host chainId
+    hostChainId = fixtureData.chainIds[0];
 
     // Define dummy ciphertext values
     const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));

@@ -45,13 +45,6 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         /// @notice The mapping of the coprocessor transaction senders that have already added the ciphertext handle.
         mapping(uint256 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAdded)) 
             _alreadyAddedCoprocessorTxSenders;
-        // prettier-ignore
-        /// @notice The mapping of the coprocessor transaction senders that have already added the
-        /// @notice ciphertext handle for a given chain ID.
-        /// @dev This does not imply consensus but only that a coprocessor transaction sender has
-        /// @dev added the ciphertext handle.
-        mapping(uint256 ctHandle => mapping(uint256 chainId => mapping(address coprocessorTxSenderAddress => bool hasAdded)))
-            _coprocessorTxSendersAddedCtHandleForChainId;
         /// @notice The mapping of the coprocessor transaction senders that have added the ciphertext.
         mapping(uint256 ctHandle => address[] coprocessorTxSenderAddresses) _coprocessorTxSenderAddresses;
     }
@@ -73,28 +66,11 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         __Ownable_init(owner());
     }
 
-    /// @notice See {ICiphertextManager-ciphertextMaterialExists}.
-    function ciphertextMaterialExists(uint256 ctHandle) public view virtual returns (bool) {
-        CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
-        return $._isCiphertextMaterialAdded[ctHandle];
-    }
-
     /// @notice See {ICiphertextManager-checkCiphertextMaterial}.
     function checkCiphertextMaterial(uint256 ctHandle) public view virtual {
-        if (!ciphertextMaterialExists(ctHandle)) {
-            revert CiphertextMaterialNotFound(ctHandle);
-        }
-    }
-
-    /// @notice See {ICiphertextManager-checkCoprocessorTxSenderHasAdded}.
-    function checkCoprocessorTxSenderHasAdded(
-        uint256 ctHandle,
-        uint256 chainId,
-        address coprocessorTxSenderAddress
-    ) external view {
         CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
-        if (!$._coprocessorTxSendersAddedCtHandleForChainId[ctHandle][chainId][coprocessorTxSenderAddress]) {
-            revert CoprocessorHasNotAdded(ctHandle, chainId, coprocessorTxSenderAddress);
+        if (!$._isCiphertextMaterialAdded[ctHandle]) {
+            revert CiphertextMaterialNotFound(ctHandle);
         }
     }
 
@@ -149,10 +125,13 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
     ) public {
-        CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
-
         /// @dev Check if the sender is a Coprocessor
         _HTTPZ.checkIsCoprocessorTxSender(msg.sender);
+
+        /// @dev Check that the chainId has been registered in the HTTPZ contract.
+        _HTTPZ.checkNetworkIsRegistered(chainId);
+
+        CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
 
         /**
          * @dev Check if the coprocessor transaction sender has already added the ciphertext handle.
@@ -183,7 +162,6 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         $._addCiphertextHashCounters[addCiphertextHash]++;
 
         $._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender] = true;
-        $._coprocessorTxSendersAddedCtHandleForChainId[ctHandle][chainId][msg.sender] = true;
         $._coprocessorTxSenderAddresses[ctHandle].push(msg.sender);
 
         /// @dev Only send the event if consensus has not been reached in a previous call
