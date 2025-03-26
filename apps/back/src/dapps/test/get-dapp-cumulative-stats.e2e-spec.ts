@@ -170,17 +170,22 @@ describe('get-dapp-cumulative-stats', () => {
         expect(result.success).toBe(true)
         if (result.success && result.data) {
           const { cumulative } = result.data.stats
-          expect(cumulative.total).toBe(3)
-          expect(cumulative.FheAdd).toBe(2)
-          expect(cumulative.FheBitAnd).toBe(1)
-          expect(cumulative.FheIfThenElse).toBe(0)
-          expect(cumulative.FheLe).toBe(0)
-          expect(cumulative.FheOr).toBe(0)
-          expect(cumulative.FheSub).toBe(0)
-          expect(cumulative.TrivialEncrypt).toBe(0)
-          expect(cumulative.VerifyCiphertext).toBe(0)
-          expect(cumulative.FheMul).toBe(0)
-          expect(cumulative.FheDiv).toBe(0)
+          const results = [
+            ['total', 3],
+            ['FheAdd', 2],
+            ['FheBitAnd', 1],
+            ['FheIfThenElse', 0],
+            ['FheLe', 0],
+            ['FheOr', 0],
+            ['FheSub', 0],
+            ['TrivialEncrypt', 0],
+            ['VerifyCiphertext', 0],
+            ['FheMul', 0],
+            ['FheDiv', 0],
+          ] as [keyof (typeof cumulative), number][]
+          for (const [field, value] of results) {
+            expect(cumulative[field]).toBe(value)
+          }
         }
       })
     })
