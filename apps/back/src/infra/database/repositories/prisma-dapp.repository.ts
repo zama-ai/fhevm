@@ -13,6 +13,7 @@ import {
   DAppRepository,
   type Operation,
   type CumulativeStats,
+  type DailyStats,
 } from '#dapps/domain/repositories/dapp.repository.js'
 
 import { PrismaService } from '../prisma.service.js'
@@ -220,6 +221,69 @@ export class PrismaDAppRepository extends DAppRepository {
         .catch((err: unknown) => {
           this.logger.warn(
             `failed to run findCumulativeStats for ${id.value}: ${err}`,
+          )
+          reject(unknownError(String(err)))
+        })
+    })
+  }
+
+  findDailyStats = (id: DAppId): Task<DailyStats, AppError> => {
+    return new Task<DailyStats, AppError>((resolve, reject) => {
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
+      this.db.dappStat
+        .findMany({
+          where: {
+            dappId: id.value,
+            timestamp: {
+              gte: thirtyDaysAgo,
+            },
+          },
+          orderBy: {
+            timestamp: 'desc',
+          },
+        })
+        .then(stats => {
+          // Group stats by day
+          const dailyStats = stats.reduce(
+            (acc, stat) => {
+              const day = stat.timestamp.toISOString().split('T')[0]
+              const dayId = `day_${day.replace(/-/g, '')}`
+
+              if (!acc[dayId]) {
+                acc[dayId] = {
+                  id: dayId,
+                  day,
+                  cumulative: {
+                    total: 0,
+                    FheAdd: 0,
+                    FheBitAnd: 0,
+                    FheIfThenElse: 0,
+                    FheLe: 0,
+                    FheOr: 0,
+                    FheSub: 0,
+                    TrivialEncrypt: 0,
+                    VerifyCiphertext: 0,
+                    FheMul: 0,
+                    FheDiv: 0,
+                  },
+                }
+              }
+
+              acc[dayId].cumulative[stat.name as Operation] += 1
+              acc[dayId].cumulative.total += 1
+
+              return acc
+            },
+            {} as Record<string, DailyStats[0]>,
+          )
+
+          resolve(Object.values(dailyStats))
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `failed to run findDailyStats for ${id.value}: ${err}`,
           )
           reject(unknownError(String(err)))
         })

@@ -19,6 +19,12 @@ export type Operation =
 
 export type CumulativeStats = Record<Operation, number> & { total: number }
 
+export type DailyStats = {
+  id: string
+  day: string
+  cumulative: CumulativeStats
+}[]
+
 export abstract class DAppRepository {
   abstract create(data: DApp): Task<DApp, AppError>
   abstract update(
@@ -41,4 +47,5 @@ export abstract class DAppRepository {
   ): Task<DAppStat, AppError>
   abstract findAllStats(id: DAppId): Task<DAppStat[], AppError>
   abstract findCumulativeStats(id: DAppId): Task<CumulativeStats, AppError>
+  abstract findDailyStats(id: DAppId): Task<DailyStats, AppError>
 }

@@ -22,10 +22,22 @@ type CumulativeDappStats {
   FheDiv: Int!
 }
 
+type DailyDappStats {
+  """
+  The id of the day
+  """
+  id: ID!
+  day: String!
+  cumulative: CumulativeDappStats!
+}
+
 type DappStats {
-  """The id of the dapp"""
+  """
+  The id of the dapp
+  """
   id: ID!
   cumulative: CumulativeDappStats!
+  byDay: [DailyDappStats!]!
 }
 
 type RawStats {
@@ -40,25 +52,38 @@ type Dapp {
   name: String!
   status: DappStatus!
   address: String
-  teamId: String! @deprecated(reason: "Do not use this, it shall go away when I find a way to make it disappear")
+  teamId: String!
+    @deprecated(
+      reason: "Do not use this, it shall go away when I find a way to make it disappear"
+    )
   team: Team!
   createdAt: Float!
 
-  """DApp usage aggregated statistics"""
+  """
+  DApp usage aggregated statistics
+  """
   stats: DappStats!
 
-  """DApp usage statistics"""
+  """
+  DApp usage statistics
+  """
   rawStats: [RawStats!]!
 }
 
 enum DappStatus {
-  """Still being worked on"""
+  """
+  Still being worked on
+  """
   DRAFT
 
-  """We are deploying it"""
+  """
+  We are deploying it
+  """
   DEPLOYING
 
-  """You can use it now"""
+  """
+  You can use it now
+  """
   LIVE
   FAILED
   DELETED @deprecated(reason: "Not implmented yet")
@@ -75,7 +100,9 @@ type User {
   email: String!
   name: String!
 
-  """User teams"""
+  """
+  User teams
+  """
   teams: [Team!]!
 }
 
@@ -103,7 +130,9 @@ input QueryDappInput {
 }
 
 input ValidateAddressInput {
-  """"1" for eth mainnet "11155111" for sepolia, etc"""
+  """
+  "1" for eth mainnet "11155111" for sepolia, etc
+  """
   chainId: String!
   address: String!
 }

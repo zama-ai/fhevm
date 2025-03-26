@@ -51,6 +51,18 @@ export class CumulativeDappStatsType {
   FheDiv: number
 }
 
+@ObjectType('DailyDappStats')
+export class DailyDappStatsType {
+  @Field(() => ID, { nullable: false, description: 'The id of the day' })
+  id: string
+
+  @Field({ nullable: false })
+  day: string
+
+  @Field(() => CumulativeDappStatsType, { nullable: false })
+  cumulative: CumulativeDappStatsType
+}
+
 @ObjectType('DappStats')
 export class DappStatsType {
   @Field(() => ID, { nullable: false, description: 'The id of the dapp' })
