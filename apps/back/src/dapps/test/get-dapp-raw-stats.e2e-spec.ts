@@ -14,7 +14,7 @@ import {
   vi,
 } from 'vitest'
 
-describe.only('get-dapp-raw-stats', () => {
+describe('get-dapp-raw-stats', () => {
   const manager = new IntegrationManager()
 
   beforeAll(async () => {

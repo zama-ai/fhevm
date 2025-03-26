@@ -13,24 +13,11 @@ import {
   vi,
 } from 'vitest'
 import { GraphQlResponse } from '#tests/setup.manager.js'
-
-interface CumulativeDappStats {
-  total: number
-  FheAdd: number
-  FheBitAnd: number
-  FheIfThenElse: number
-  FheLe: number
-  FheOr: number
-  FheSub: number
-  TrivialEncrypt: number
-  VerifyCiphertext: number
-  FheMul: number
-  FheDiv: number
-}
+import { CumulativeStats } from '../domain/repositories/dapp.repository.js'
 
 interface DappStats {
   id: string
-  cumulative: CumulativeDappStats
+  cumulative: CumulativeStats
 }
 
 describe('get-dapp-cumulative-stats', () => {

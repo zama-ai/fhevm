@@ -8,6 +8,26 @@ type Team {
   dapps: [Dapp!]!
 }
 
+type CumulativeDappStats {
+  total: Int!
+  FheAdd: Int!
+  FheBitAnd: Int!
+  FheIfThenElse: Int!
+  FheLe: Int!
+  FheOr: Int!
+  FheSub: Int!
+  TrivialEncrypt: Int!
+  VerifyCiphertext: Int!
+  FheMul: Int!
+  FheDiv: Int!
+}
+
+type DappStats {
+  """The id of the dapp"""
+  id: ID!
+  cumulative: CumulativeDappStats!
+}
+
 type RawStats {
   id: ID!
   name: String!
@@ -23,6 +43,9 @@ type Dapp {
   teamId: String! @deprecated(reason: "Do not use this, it shall go away when I find a way to make it disappear")
   team: Team!
   createdAt: Float!
+
+  """DApp usage aggregated statistics"""
+  stats: DappStats!
 
   """DApp usage statistics"""
   rawStats: [RawStats!]!
