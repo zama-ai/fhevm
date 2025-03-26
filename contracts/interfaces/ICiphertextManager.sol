@@ -14,14 +14,15 @@ interface ICiphertextManager {
         uint256 indexed ctHandle,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest,
-        address[] coprocessors
+        address[] coprocessorTxSenderAddresses
     );
 
     /// @notice Error indicating that the given keyId is outdated.
     error InvalidCurrentKeyId(uint256 keyId);
 
-    /// @notice Error indicating that the given coprocessor has already added the handle (for any chainId).
-    error CoprocessorAlreadyAdded(address coprocessor);
+    /// @notice Error indicating that the given coprocessor transaction sender has already added
+    /// @notice the handle (for any chainId).
+    error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
 
     /// @notice Error indicating that the given coprocessor has not added the ctHandle and chainId.
     error CoprocessorHasNotAdded(uint256 ctHandle, uint256 chainId, address coprocessor);
@@ -45,11 +46,11 @@ interface ICiphertextManager {
     /// @notice Checks if the given coprocessor has already added the ciphertext material.
     /// @param ctHandle The handle of the ciphertext material.
     /// @param chainId The chain ID of the blockchain associated to the ciphertext handle.
-    /// @param coprocessorAddress The address of the coprocessor.
+    /// @param coprocessorTxSenderAddress The address of the coprocessor transaction sender.
     function checkCoprocessorTxSenderHasAdded(
         uint256 ctHandle,
         uint256 chainId,
-        address coprocessorAddress
+        address coprocessorTxSenderAddress
     ) external view;
 
     /// @notice Retrieves the list of "normal" ciphertext materials for the given handles.

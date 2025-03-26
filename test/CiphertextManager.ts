@@ -90,14 +90,14 @@ describe("CiphertextManager", function () {
         .withArgs(fakeTxSender.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
     });
 
-    it("Should revert with CoprocessorAlreadyAdded", async function () {
+    it("Should revert because the coprocessor transaction sender has already added the ciphertext handle", async function () {
       // When
       const result = ciphertextManager
         .connect(coprocessorTxSenders[0])
         .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
 
       // Then
-      await expect(result).revertedWithCustomError(ciphertextManager, "CoprocessorAlreadyAdded");
+      await expect(result).revertedWithCustomError(ciphertextManager, "CoprocessorTxSenderAlreadyAdded");
     });
 
     // TODO: Add test checking `isCurrentKeyId` once keys are generated through the Gateway
@@ -161,7 +161,7 @@ describe("CiphertextManager", function () {
     });
 
     it("Should revert because the coprocessor transaction sender has not added the ciphertext handle on the network", async function () {
-      const fakeCoprocessorAddress = hre.ethers.Wallet.createRandom().address;
+      const fakeCoprocessorTxSenderAddress = hre.ethers.Wallet.createRandom().address;
       await expect(
         ciphertextManager.checkCoprocessorTxSenderHasAdded(fakeCtHandle, chainId, coprocessorTxSenders[0].address),
       )
@@ -172,9 +172,11 @@ describe("CiphertextManager", function () {
       )
         .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
         .withArgs(ctHandle, fakeChainId, coprocessorTxSenders[0].address);
-      await expect(ciphertextManager.checkCoprocessorTxSenderHasAdded(ctHandle, chainId, fakeCoprocessorAddress))
+      await expect(
+        ciphertextManager.checkCoprocessorTxSenderHasAdded(ctHandle, chainId, fakeCoprocessorTxSenderAddress),
+      )
         .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
-        .withArgs(ctHandle, chainId, fakeCoprocessorAddress);
+        .withArgs(ctHandle, chainId, fakeCoprocessorTxSenderAddress);
     });
   });
 });
