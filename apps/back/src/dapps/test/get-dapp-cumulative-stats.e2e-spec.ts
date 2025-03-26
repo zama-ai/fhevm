@@ -122,57 +122,30 @@ describe('get-dapp-cumulative-stats', () => {
         dappId = createDappResult.data.id
       }
 
-      // Create some test stats
-      await manager.sendMessage(
-        JSON.stringify(
-          back.dappStatsAvailable(
-            {
-              requestId: faker.string.uuid(),
-              chainId: LOCAL_FHEVM_CHAIN_ID,
-              address,
-              name: 'FheAdd',
-              timestamp: faker.date.past().toISOString(),
-              externalRef: faker.string.alphanumeric(10),
-            },
-            {
-              correlationId: faker.string.uuid(),
-            },
-          ),
-        ),
-      )
+      // Create some test stats using a factory
+      const createFakeStatsMessages = (address: string, name: string) => ({
+        payload: {
+          requestId: faker.string.uuid(),
+          chainId: LOCAL_FHEVM_CHAIN_ID,
+          address,
+          name,
+          timestamp: faker.date.past().toISOString(),
+          externalRef: faker.string.alphanumeric(10),
+        },
+        meta: {
+          correlationId: faker.string.uuid(),
+        },
+      })
+      const messages = [
+        createFakeStatsMessages(address, 'FheAdd'),
+        createFakeStatsMessages(address, 'FheAdd'),
+        createFakeStatsMessages(address, 'FheBitAnd'),
+      ]
 
-      await manager.sendMessage(
-        JSON.stringify(
-          back.dappStatsAvailable(
-            {
-              requestId: faker.string.uuid(),
-              chainId: LOCAL_FHEVM_CHAIN_ID,
-              address,
-              name: 'FheAdd',
-              timestamp: faker.date.past().toISOString(),
-              externalRef: faker.string.alphanumeric(10),
-            },
-            {
-              correlationId: faker.string.uuid(),
-            },
-          ),
-        ),
-      )
-
-      await manager.sendMessage(
-        JSON.stringify(
-          back.dappStatsAvailable(
-            {
-              requestId: faker.string.uuid(),
-              chainId: LOCAL_FHEVM_CHAIN_ID,
-              address,
-              name: 'FheBitAnd',
-              timestamp: faker.date.past().toISOString(),
-              externalRef: faker.string.alphanumeric(10),
-            },
-            {
-              correlationId: faker.string.uuid(),
-            },
+      await Promise.all(
+        messages.map(({ payload, meta }) =>
+          manager.sendMessage(
+            JSON.stringify(back.dappStatsAvailable(payload, meta)),
           ),
         ),
       )
