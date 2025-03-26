@@ -28,6 +28,9 @@ spec:
       tolerations:
 {{ toYaml .Values.dbMigration.tolerations.items | indent 8 }}
       {{- end }}
+      {{- if .Values.dbMigration.serviceAccountName }}
+      serviceAccountName: {{ .Values.dbMigration.serviceAccountName }}
+      {{- end }}
       initContainers:
       - name: fetch-pub-key-matter
         image: netdata/wget:latest
@@ -80,5 +83,5 @@ spec:
       volumes:
         - name: cache-volume
           emptyDir: 
-            sizeLimit: 3Gi
+            sizeLimit: {{ .Values.dbMigration.storage.size }}
 {{- end -}}

@@ -30,6 +30,9 @@ spec:
       tolerations:
 {{ toYaml .Values.zkProofWorker.tolerations.items | indent 8 }}
       {{- end }}
+      {{- if .Values.zkProofWorker.serviceAccountName }}
+      serviceAccountName: {{ .Values.zkProofWorker.serviceAccountName }}
+      {{- end }}
       containers:
         - name: coprocessor-zkproof-worker
           image: {{ .Values.zkProofWorker.image.name }}:{{ .Values.zkProofWorker.image.tag }}

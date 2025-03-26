@@ -30,6 +30,9 @@ spec:
       tolerations:
 {{ toYaml .Values.gwListener.tolerations.items | indent 8 }}
       {{- end }}
+      {{- if .Values.gwListener.serviceAccountName }}
+      serviceAccountName: {{ .Values.gwListener.serviceAccountName }}
+      {{- end }}
       containers:
         - name: coprocessor-gw-listener
           image: {{ .Values.gwListener.image.name }}:{{ .Values.gwListener.image.tag }}
