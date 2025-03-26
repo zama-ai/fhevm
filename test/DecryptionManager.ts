@@ -127,7 +127,7 @@ describe("DecryptionManager", function () {
         ctHandle,
         keyId: keyId1,
         snsCiphertextDigest,
-        coprocessorAddresses: coprocessorTxSenders.map((s) => s.address),
+        coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
       });
     }
 

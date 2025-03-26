@@ -41,15 +41,19 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         mapping(uint256 ctHandle => bool isAdded) _isCiphertextMaterialAdded;
         /// @notice The counter of confirmations received for a ciphertext to be added.
         mapping(bytes32 addCiphertextHash => uint8 counter) _addCiphertextHashCounters;
-        /// @notice The mapping of the Coprocessors that have already added the ciphertext handle.
-        mapping(uint256 ctHandle => mapping(address coprocessorAddress => bool hasAdded)) _alreadyAddedCoprocessors;
         // prettier-ignore
-        /// @notice The mapping of the Coprocessors that have already added the ciphertext handle.
-        /// @dev This does not imply consensus but only that a Coprocessor has added the ciphertext handle.
-        mapping(uint256 ctHandle => mapping(uint256 chainId => mapping(address coprocessor => bool hasAdded)))
-            _coprocessorsAddedCtHandleForChainId;
-        /// @notice The mapping of the Coprocessors that have added the ciphertext.
-        mapping(uint256 ctHandle => address[] coprocessorAddresses) _coprocessorAddresses;
+        /// @notice The mapping of the coprocessor transaction senders that have already added the ciphertext handle.
+        mapping(uint256 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAdded)) 
+            _alreadyAddedCoprocessorTxSenders;
+        // prettier-ignore
+        /// @notice The mapping of the coprocessor transaction senders that have already added the
+        /// @notice ciphertext handle for a given chain ID.
+        /// @dev This does not imply consensus but only that a coprocessor transaction sender has
+        /// @dev added the ciphertext handle.
+        mapping(uint256 ctHandle => mapping(uint256 chainId => mapping(address coprocessorTxSenderAddress => bool hasAdded)))
+            _coprocessorTxSendersAddedCtHandleForChainId;
+        /// @notice The mapping of the coprocessor transaction senders that have added the ciphertext.
+        mapping(uint256 ctHandle => address[] coprocessorTxSenderAddresses) _coprocessorTxSenderAddresses;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("httpz_gateway.storage.CiphertextManager")) - 1)) &
@@ -86,11 +90,11 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
     function checkCoprocessorTxSenderHasAdded(
         uint256 ctHandle,
         uint256 chainId,
-        address coprocessorAddress
+        address coprocessorTxSenderAddress
     ) external view {
         CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
-        if (!$._coprocessorsAddedCtHandleForChainId[ctHandle][chainId][coprocessorAddress]) {
-            revert CoprocessorHasNotAdded(ctHandle, chainId, coprocessorAddress);
+        if (!$._coprocessorTxSendersAddedCtHandleForChainId[ctHandle][chainId][coprocessorTxSenderAddress]) {
+            revert CoprocessorHasNotAdded(ctHandle, chainId, coprocessorTxSenderAddress);
         }
     }
 
@@ -108,7 +112,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
                 ctHandles[i],
                 $._keyIds[ctHandles[i]],
                 $._ciphertextDigests[ctHandles[i]],
-                $._coprocessorAddresses[ctHandles[i]]
+                $._coprocessorTxSenderAddresses[ctHandles[i]]
             );
         }
 
@@ -129,7 +133,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
                 ctHandles[i],
                 $._keyIds[ctHandles[i]],
                 $._snsCiphertextDigests[ctHandles[i]],
-                $._coprocessorAddresses[ctHandles[i]]
+                $._coprocessorTxSenderAddresses[ctHandles[i]]
             );
         }
 
@@ -151,11 +155,12 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         _HTTPZ.checkIsCoprocessorTxSender(msg.sender);
 
         /**
-         * @dev Check if the Coprocessor has already added the ciphertext handle. Note that a Coprocessor
-         * cannot add the same ciphertext material on two different networks.
+         * @dev Check if the coprocessor transaction sender has already added the ciphertext handle.
+         * Note that a coprocessor transaction sender cannot add the same ciphertext material on
+         * two different networks.
          */
-        if ($._alreadyAddedCoprocessors[ctHandle][msg.sender]) {
-            revert CoprocessorAlreadyAdded(msg.sender);
+        if ($._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender]) {
+            revert CoprocessorTxSenderAlreadyAdded(msg.sender);
         }
 
         /// @dev Check if the received key ID is the latest activated.
@@ -177,9 +182,9 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         );
         $._addCiphertextHashCounters[addCiphertextHash]++;
 
-        $._alreadyAddedCoprocessors[ctHandle][msg.sender] = true;
-        $._coprocessorsAddedCtHandleForChainId[ctHandle][chainId][msg.sender] = true;
-        $._coprocessorAddresses[ctHandle].push(msg.sender);
+        $._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender] = true;
+        $._coprocessorTxSendersAddedCtHandleForChainId[ctHandle][chainId][msg.sender] = true;
+        $._coprocessorTxSenderAddresses[ctHandle].push(msg.sender);
 
         /// @dev Only send the event if consensus has not been reached in a previous call
         /// @dev and the consensus is reached in the current call.
@@ -198,7 +203,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
                 ctHandle,
                 ciphertextDigest,
                 snsCiphertextDigest,
-                $._coprocessorAddresses[ctHandle]
+                $._coprocessorTxSenderAddresses[ctHandle]
             );
         }
     }

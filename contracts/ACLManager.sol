@@ -35,14 +35,16 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
         // prettier-ignore
         /// @notice Coprocessors that have already allowed an account to use the ciphertext handle.
         mapping(uint256 ctHandle => mapping(address accountAddress =>
-            mapping(address coprocessorAddress => bool hasAllowed)))
+            mapping(address coprocessorTxSenderAddress => bool hasAllowed)))
                 _allowAccountCoprocessors;
         /// @notice Allowed public decryptions.
         mapping(uint256 ctHandle => bool isAllowed) allowedPublicDecrypts;
         /// @notice The counter used for the public decryption consensus.
         mapping(uint256 ctHandle => uint8 counter) _allowPublicDecryptCounters;
+        // prettier-ignore
         /// @notice Coprocessors that have already allowed a public decryption.
-        mapping(uint256 ctHandle => mapping(address coprocessorAddress => bool hasAllowed)) _allowPublicDecryptCoprocessors;
+        mapping(uint256 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAllowed)) 
+            _allowPublicDecryptCoprocessors;
         /// @dev Tracks the computed delegateAccountHash that has already been delegated.
         mapping(bytes32 delegateAccountHash => bool isDelegated) _delegatedAccountHashes;
         /// @dev Tracks the number of times a delegateAccountHash has received confirmations.
@@ -50,7 +52,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
         // prettier-ignore
         /// @dev Tracks the Coprocessors that has already delegated an account for a given delegateAccountHash.
         mapping(bytes32 delegateAccountHash =>
-            mapping(address coprocessorAddress => bool hasDelegated))
+            mapping(address coprocessorTxSenderAddress => bool hasDelegated))
                 _alreadyDelegatedCoprocessors;
         // prettier-ignore
         /// @dev Tracks the account delegations for a given contract after reaching consensus.

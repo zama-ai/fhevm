@@ -55,7 +55,7 @@ struct SnsCiphertextMaterial {
     uint256 ctHandle;
     uint256 keyId;
     bytes32 snsCiphertextDigest;
-    address[] coprocessorAddresses;
+    address[] coprocessorTxSenderAddresses;
 }
 
 /**
@@ -66,7 +66,7 @@ struct CiphertextMaterial {
     uint256 ctHandle;
     uint256 keyId;
     bytes32 ciphertextDigest;
-    address[] coprocessorAddresses;
+    address[] coprocessorTxSenderAddresses;
 }
 
 /**
