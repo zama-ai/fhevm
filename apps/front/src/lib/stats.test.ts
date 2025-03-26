@@ -12,7 +12,6 @@ describe('calculateOperationStats', () => {
 
   it('should filter out non-operation stats', () => {
     const input = {
-      total: 100,
       FheAdd: 10,
       FheMul: 20,
       TrivialEncrypt: 30,
@@ -27,7 +26,7 @@ describe('calculateOperationStats', () => {
   })
 
   it('should handle empty input object', () => {
-    expect(calculateOperationStats({ total: 0 })).toEqual([])
+    expect(calculateOperationStats({})).toEqual([])
   })
 })
 
@@ -38,7 +37,6 @@ describe('calculateEncryptionStats', () => {
 
   it('should only include encryption-related stats', () => {
     const input = {
-      total: 100,
       FheAdd: 10,
       FheMul: 20,
       TrivialEncrypt: 30,
@@ -53,7 +51,7 @@ describe('calculateEncryptionStats', () => {
   })
 
   it('should handle empty input object', () => {
-    expect(calculateEncryptionStats({ total: 0 })).toEqual([])
+    expect(calculateEncryptionStats({})).toEqual([])
   })
 })
 

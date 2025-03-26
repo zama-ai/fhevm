@@ -39,7 +39,7 @@ export function BlockPie({ title, total, data }: OwnProps) {
                 data={data}
                 height="60px"
                 containerHeight={60}
-                innerRadius={25}
+                innerRadius={20}
                 outerRadius={30}
                 label={false}
               />

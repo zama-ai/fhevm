@@ -9,9 +9,7 @@ export function calculateOperationStats(
   if (!data) return []
 
   return Object.entries(data)
-    .filter(
-      ([key]) => !['total', 'TrivialEncrypt', 'VerifyCiphertext'].includes(key),
-    )
+    .filter(([key]) => !['TrivialEncrypt', 'VerifyCiphertext'].includes(key))
     .map(([key, value]) => ({
       name: key,
       value: value

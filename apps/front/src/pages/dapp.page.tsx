@@ -88,7 +88,9 @@ export function DappPage() {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { __typename, ...cumulative } = data?.dapp.stats.cumulative || {}
+  const { __typename, total, ...cumulative } = data?.dapp.stats.cumulative || {
+    total: 0,
+  }
   const operationStatsData = calculateOperationStats(cumulative)
   const operationStatsTotal = calculateTotal(operationStatsData)
   const encryptionStatsData = calculateEncryptionStats(cumulative)
@@ -113,10 +115,7 @@ export function DappPage() {
       {data && (
         <Stack direction="column" gap="5">
           <Stack direction="row" gap="5">
-            <BlockSimple
-              title="Total FHE Events"
-              amount={data?.dapp.rawStats.length || 0}
-            />
+            <BlockSimple title="Total FHE Events" amount={total} />
             <BlockPie
               title="FHE Operations"
               total={operationStatsTotal || 0}
