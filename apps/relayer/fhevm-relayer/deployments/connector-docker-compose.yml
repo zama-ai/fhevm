@@ -2,7 +2,7 @@ services:
 
   kms-connector:
     container_name: kms-connector
-    image: ghcr.io/zama-ai/kms-connector:0e5366a
+    image: ghcr.io/zama-ai/kms-connector:370132f
     environment:
       KMS_CONNECTOR_GWL2_URL: ${KMS_CONNECTOR_GWL2_URL}
       KMS_CONNECTOR_KMS_CORE_ENDPOINT: ${KMS_CONNECTOR_KMS_CORE_ENDPOINT}
@@ -19,6 +19,7 @@ services:
       KMS_CONNECTOR_S3_CONFIG__BUCKET: ${KMS_CONNECTOR_S3_CONFIG__BUCKET}
       KMS_CONNECTOR_S3_CONFIG__ENDPOINT: ${KMS_CONNECTOR_S3_CONFIG__ENDPOINT}
       KMS_CONNECTOR_VERIFY_COPROCESSORS: ${KMS_CONNECTOR_VERIFY_COPROCESSORS}
+      FHE_KEY_ID: ${FHE_KEY_ID}
     volumes:
       - ./config/connector/config.toml:/var/lib/kms-connector/config.toml
     entrypoint: >

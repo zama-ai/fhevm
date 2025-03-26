@@ -53,6 +53,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./config/relayer/local.yaml:/relayer-local.yaml
       - ./config/env/.env.staging.coprocessor:/env.staging.coprocessor
+      - ./config/env/.env.staging.connector:/env.staging.connector
       - ./update-kms-keys.sh:/update-kms-keys.sh
     command: [ "/bin/sh", "-c", "apk add --no-cache bash grep sed && /bin/bash /update-kms-keys.sh" ]
     depends_on:
