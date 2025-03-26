@@ -1,0 +1,43 @@
+# Example configuration for KMS Connector
+
+# Service name for tracing (optional, defaults to "kms-connector")
+service_name = "kms-connector"
+
+# BIP39 mnemonic phrase for wallet generation (required)
+# This is used to derive the private key for signing responses
+# IMPORTANT: Keep this secure and never share it!
+mnemonic = "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
+
+# Chain ID for the L2 network (required)
+chain_id = 54321
+
+# Address of the DecryptionManager contract (required)
+# Format: hex string with 0x prefix
+decryption_manager_address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+
+# Address of the HTTPZ contract (required)
+# Format: hex string with 0x prefix
+httpz_address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
+
+# KMS-core gRPC endpoint (required)
+# Format: http://host:port
+kms_core_endpoint = "http://[::1]:50051"
+
+# GateWay L2 WebSocket RPC URL endpoint (required)
+gwl2_url = "ws://layer2-node:8546"
+
+# Size of the event processing channel (optional)
+channel_size = 1000
+
+# Path to the signing key file (optional)
+# If provided, the connector will use this signing key instead of the mnemonic
+# signing_key_path = "./keys/CLIENT/SigningKey/e164d9de0bec6656928726433cc56bef6ee8417ad5a4f8c82fbcc2d3e5f220fd"
+
+# Whether to verify coprocessors against the HTTPZ contract (optional, defaults to false)
+# verify_coprocessors = true
+
+# S3 configuration for ciphertext storage (optional)
+# [s3_config]
+# region = "us-east-1"
+# bucket = "my-ciphertext-bucket"
+# endpoint = "http://localhost:9876"

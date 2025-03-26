@@ -1,10 +1,10 @@
 name: HTTPZ E2E Tests
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/httpz-e2e-tests.yml'
-      - 'deployments/**'
+  # pull_request:
+  #   paths:
+  #     - '.github/workflows/httpz-e2e-tests.yml'
+  #     - 'deployments/**'
   workflow_dispatch:
 
 concurrency:

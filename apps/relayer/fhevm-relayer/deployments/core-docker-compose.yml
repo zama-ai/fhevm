@@ -1,0 +1,64 @@
+services:
+  kms-core:
+    container_name: kms-core
+    image: ghcr.io/zama-ai/kms-service:27d03d8
+    environment:
+      KMS_CORE__PUBLIC_VAULT__STORAGE: ${KMS_CORE__PUBLIC_VAULT__STORAGE}
+      KMS_CORE__PRIVATE_VAULT__STORAGE: ${KMS_CORE__PRIVATE_VAULT__STORAGE}
+    ports:
+      - "50051:50051"
+    healthcheck:
+      test: "grpc_health_probe --addr=localhost:50051"
+      interval: 1s
+      timeout: 1s
+      retries: 5
+      start_period: 1s
+    volumes:
+      - zama_minio_secrets:/minio_secrets
+      - ./config/kms-core/config.toml:/app/kms/core/service/config/config.toml
+    entrypoint: >
+      /bin/sh -c "
+      export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key) &&
+      export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key) &&
+      echo 'Generating signing keys' &&
+      kms-gen-keys --pub-url ${KMS_CORE__PUBLIC_VAULT__STORAGE} --aws-s3-endpoint http://s3-mock:9000 --aws-region eu-west-1 --priv-url ${KMS_CORE__PRIVATE_VAULT__STORAGE} --cmd signing-keys centralized &&
+      echo 'Starting kms service' &&
+      kms-server --config-file config/config.toml
+      "
+  generate-kms-keys:
+    container_name: generate-kms-keys
+    image: ghcr.io/zama-ai/kms-core-client:27d03d8
+    environment:
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      OBJECT_FOLDER: ${OBJECT_FOLDER}
+      CORE_ADDRESSES: ${CORE_ADDRESSES}
+    volumes:
+      - zama_minio_secrets:/minio_secrets
+      - ./config/core-client/config.toml:/app/kms-core-client/config.toml
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10 &&
+      cd /app/kms-core-client &&
+      bin/kms-core-client -f config.toml insecure-key-gen &&
+      bin/kms-core-client -f config.toml insecure-crs-gen --max-num-bits 2048
+      "
+    depends_on:
+      kms-core:
+        condition: service_started
+
+  update-kms-keys:
+    container_name: update-kms-keys
+    image: docker:cli
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./config/relayer/local.yaml:/relayer-local.yaml
+      - ./config/env/.env.staging.coprocessor:/env.staging.coprocessor
+      - ./update-kms-keys.sh:/update-kms-keys.sh
+    command: [ "/bin/sh", "-c", "apk add --no-cache bash grep sed && /bin/bash /update-kms-keys.sh" ]
+    depends_on:
+      generate-kms-keys:
+        condition: service_completed_successfully
+
+volumes:
+  zama_minio_secrets:
+    external: true

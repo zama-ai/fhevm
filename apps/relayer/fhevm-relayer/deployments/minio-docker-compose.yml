@@ -66,7 +66,9 @@ services:
         echo $${ACCESS_KEY} > /minio_secrets/sns_access_key &&
         echo $${SECRET_KEY} > /minio_secrets/sns_secret_key &&
         mc mb --with-lock --ignore-existing myminio/ct64 &&
-        mc mb --with-lock --ignore-existing myminio/ct128
+        mc mb --with-lock --ignore-existing myminio/ct128 &&
+        mc anonymous set public myminio/ct64 &&
+        mc anonymous set public myminio/ct128
       "
     volumes:
       - minio_secrets:/minio_secrets
@@ -75,15 +77,5 @@ services:
       s3-mock:
         condition: service_healthy
 
-  s3-mock-keys-loader:
-    container_name: s3-mock-keys-loader
-    image: debian:stable-slim
-    command: ["/load-keys.sh"]
-    volumes:
-      - ./config/kms-keys:/keys
-      - ./config/load-keys.sh:/load-keys.sh
-    depends_on:
-      s3-mock-setup:
-        condition: service_completed_successfully
 volumes:
   minio_secrets:

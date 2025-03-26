@@ -22,19 +22,24 @@ services:
     image: busybox
     volumes:
       - keys-cache:/keys
+    environment:
+      KMS_PUBLIC_KEY: ${KMS_PUBLIC_KEY}
+      KMS_SERVER_KEY: ${KMS_SERVER_KEY}
+      KMS_SNS_KEY: ${KMS_SNS_KEY}
+      KMS_CRS_KEY: ${KMS_CRS_KEY}
     command: >
       sh -c "echo 'Starting key downloads...' &&
-            wget http://s3-mock:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee -O /keys/pks &&
+            wget $KMS_PUBLIC_KEY -O /keys/pks &&
             echo 'Downloaded public key' &&
-            wget http://s3-mock:9000/kms-public/kms/PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee -O /keys/sks &&
+            wget $KMS_SERVER_KEY -O /keys/sks &&
             echo 'Downloaded server key' &&
-            wget http://s3-mock:9000/kms-public/kms/PUB/SnsKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee -O /keys/sns_pk &&
+            wget $KMS_SNS_KEY -O /keys/sns_pk &&
             echo 'Downloaded SNS key' &&
-            wget http://s3-mock:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002 -O /keys/pp &&
+            wget $KMS_CRS_KEY -O /keys/pp &&
             echo 'Downloaded PP key - All downloads complete'"
   db-migration:
     container_name: db-migration
-    image: ghcr.io/zama-ai/fhevm-db-migration:052c842
+    image: ghcr.io/zama-ai/fhevm-db-migration:a1ac933
     environment:
       DATABASE_URL: ${DATABASE_URL}
       CHAIN_ID: ${CHAIN_ID}
@@ -50,7 +55,7 @@ services:
   ####################### COPROCESSOR SERVICES #######################
   httpz-listener:
     container_name: "httpz-listener"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:fa2c48c
+    image: ghcr.io/zama-ai/fhevm-coprocessor:1753238
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
@@ -68,7 +73,7 @@ services:
 
   gw-listener:
     container_name: "gw-listener"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:fa2c48c
+    image: ghcr.io/zama-ai/fhevm-coprocessor:1753238
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_WS_URL}
@@ -87,21 +92,19 @@ services:
 
   tfhe-worker:
     container_name: tfhe-worker
-    image: ghcr.io/zama-ai/fhevm-coprocessor:fa2c48c
+    image: ghcr.io/zama-ai/fhevm-coprocessor:1753238
     environment:
       DATABASE_URL: ${DATABASE_URL}
-    volumes:
-      - ./config/coprocessor/coprocessor.key:/usr/share/coprocessor.key
     command:
       - coprocessor
+      - --run-bg-worker
       - --database-url=${DATABASE_URL}
+      - --pg-pool-max-connections=10
       - --worker-polling-interval-ms=1000
       - --work-items-batch-size=10
       - --tenant-key-cache-size=32
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4
-      - --pg-pool-max-connections=10
-      - --run-bg-worker
     depends_on:
       db:
         condition: service_healthy
@@ -110,7 +113,7 @@ services:
 
   zkproof-worker:
     container_name: "zkproof-worker"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:fa2c48c
+    image: ghcr.io/zama-ai/fhevm-coprocessor:1753238
     environment:
       DATABASE_URL: ${DATABASE_URL}
     command:
@@ -129,7 +132,7 @@ services:
 
   sns-worker:
     container_name: "sns-worker"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:fa2c48c
+    image: ghcr.io/zama-ai/fhevm-coprocessor:1753238
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
@@ -156,7 +159,7 @@ services:
 
   transaction-sender:
     container_name: "transaction-sender"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:fa2c48c
+    image: ghcr.io/zama-ai/fhevm-coprocessor:1753238
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_URL}
@@ -167,6 +170,11 @@ services:
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}
+      - --gateway-url=${GATEWAY_URL}
+      - --private-key=${TX_SENDER_PRIVATE_KEY}
+      - --ciphertext-manager-address=${CIPHERTEXT_MANAGER_ADDRESS}
+      - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
+      - --acl-manager-address=${ACL_MANAGER_ADDRESS}
       - --database-pool-size=10
       - --database-polling-interval-secs=5
       - --verify-proof-resp-database-channel="event_zkpok_computed"
@@ -174,11 +182,8 @@ services:
       - --verify-proof-resp-batch-limit=128
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
-      - --ciphertext-manager-address=${CIPHERTEXT_MANAGER_ADDRESS}
-      - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
-      - --gateway-url=${GATEWAY_URL}
-      - --private-key=${TX_SENDER_PRIVATE_KEY}
-      - --acl-manager-address=${ACL_MANAGER_ADDRESS}
+      - --add-ciphertexts-batch-limit=1
+      - --allow-handle-batch-limit=1
     depends_on:
       db:
         condition: service_healthy
