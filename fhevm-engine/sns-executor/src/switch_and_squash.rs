@@ -40,9 +40,37 @@ pub type Z128 = Wrapping<u128>;
 
 pub type Ciphertext64 = BaseRadixCiphertext<tfhe::shortint::Ciphertext>;
 pub type Ciphertext64Block = tfhe::shortint::Ciphertext;
-// Observe that tfhe-rs is hard-coded to use u64, hence we require custom types
-// for the 128 bit versions for now.
-pub type Ciphertext128 = Vec<Ciphertext128Block>;
+
+#[derive(VersionsDispatch)]
+pub enum Ciphertext128Versioned {
+    V0(Ciphertext128),
+}
+
+// Observe that tfhe-rs is hard-coded to use u64, hence we require custom types for the 128 bit versions for now.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, Versionize)]
+#[versionize(Ciphertext128Versioned)]
+pub struct Ciphertext128 {
+    pub inner: Vec<Ciphertext128Block>,
+}
+
+impl Named for Ciphertext128 {
+    const NAME: &'static str = "Ciphertext128";
+}
+
+impl Ciphertext128 {
+    pub fn new(inner: Vec<Ciphertext128Block>) -> Self {
+        Self { inner }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
 pub type Ciphertext128Block = LweCiphertextOwned<u128>;
 
 // NOTE: the below is copied from core/threshold
@@ -126,11 +154,11 @@ impl SwitchAndSquashKey {
     ) -> anyhow::Result<Ciphertext128> {
         let blocks = raw_small_ct.blocks();
         // do switch and squash on all blocks in parallel
-        let res = blocks
+        let inner = blocks
             .par_iter()
             .map(|current_block| self.to_large_ciphertext_block(current_block))
             .collect::<anyhow::Result<Vec<Ciphertext128Block>>>()?;
-        Ok(res)
+        Ok(Ciphertext128 { inner })
     }
 
     /// Converts a single ciphertext block over a 64 bit domain to a ciphertext
@@ -324,7 +352,7 @@ impl SnsClientKey {
         let bits_in_block = self.params.message_modulus_log();
         let mut recomposer = BlockRecomposer::<u128>::new(bits_in_block);
 
-        for encrypted_block in ct {
+        for encrypted_block in ct.inner.iter() {
             let decrypted_block = self.decrypt_block_128(encrypted_block);
             if !recomposer.add_unmasked(decrypted_block.0) {
                 // End of T::BITS reached no need to try more

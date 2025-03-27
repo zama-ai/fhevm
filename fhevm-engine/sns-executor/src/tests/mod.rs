@@ -1,5 +1,7 @@
 use crate::{
-    keyset::read_sns_sk_from_lo, switch_and_squash::SnsClientKey, Config, DBConfig, HandleItem,
+    keyset::read_sns_sk_from_lo,
+    switch_and_squash::{Ciphertext128, SnsClientKey},
+    Config, DBConfig, HandleItem,
 };
 use anyhow::Ok;
 use serde::{Deserialize, Serialize};
@@ -69,10 +71,10 @@ async fn test_decryptable(
     let data = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 10).await?;
 
     // deserialize ciphertext128
-    let ciphertext128: Vec<tfhe::core_crypto::prelude::LweCiphertext<Vec<u128>>> =
+    let inner: Vec<tfhe::core_crypto::prelude::LweCiphertext<Vec<u128>>> =
         bincode::deserialize(&data).expect("serializable ciphertext128");
 
-    let decrypted = sns_secret_key.decrypt_128(&ciphertext128);
+    let decrypted = sns_secret_key.decrypt_128(&Ciphertext128 { inner });
     println!("Decrypted, plaintext {}", decrypted);
 
     assert!(decrypted == expected_result as u128);
@@ -207,11 +209,13 @@ async fn insert_into_pbs_computations(
 /// Deletes all records from `pbs_computations` and `ciphertexts` where `handle`
 /// matches.
 async fn clean_up(pool: &sqlx::PgPool, handle: &Vec<u8>) -> anyhow::Result<()> {
-    sqlx::query!("DELETE FROM pbs_computations WHERE handle = $1", handle)
+    sqlx::query("DELETE FROM pbs_computations WHERE handle = $1")
+        .bind(handle)
         .execute(pool)
         .await?;
 
-    sqlx::query!("DELETE FROM ciphertexts WHERE handle = $1", handle)
+    sqlx::query("DELETE FROM ciphertexts WHERE handle = $1")
+        .bind(handle)
         .execute(pool)
         .await?;
 

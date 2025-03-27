@@ -3,6 +3,7 @@ use crate::HandleItem;
 use crate::KeySet;
 use crate::{Config, DBConfig, ExecutionError};
 use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::utils::safe_serialize;
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::PgListener;
 use sqlx::{Acquire, PgPool, Postgres, Transaction};
@@ -243,7 +244,7 @@ fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), Executio
             }
         }
 
-        let ciphertext128 = bincode::serialize(&ciphertext128)?;
+        let ciphertext128 = safe_serialize(&ciphertext128);
         task.ct128_uncompressed = Some(ciphertext128);
     }
 
