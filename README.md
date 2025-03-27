@@ -1,7 +1,7 @@
 <p align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://private-user-images.githubusercontent.com/1384478/421481269-6173e401-7c1b-4911-9731-ca2eb436e85f.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDI0NjM5MTAsIm5iZiI6MTc0MjQ2MzYxMCwicGF0aCI6Ii8xMzg0NDc4LzQyMTQ4MTI2OS02MTczZTQwMS03YzFiLTQ5MTEtOTczMS1jYTJlYjQzNmU4NWYucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI1MDMyMCUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTAzMjBUMDk0MDEwWiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9MGRlNjEwZjBlZWU1Njk5N2M5NGM0ODY3YzFiOTg4NTgzOGZmZTkwYzIxYjMwMGY4ZDE0YjZiODFlYzk4OWE0ZiZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.h99DLUrF4y1JrFJ2HGCgGQ6fNgGglbBIwrROYGHVOJs">
-  <source media="(prefers-color-scheme: light)" srcset="https://private-user-images.githubusercontent.com/1384478/421481269-6173e401-7c1b-4911-9731-ca2eb436e85f.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDI0NjM5MTAsIm5iZiI6MTc0MjQ2MzYxMCwicGF0aCI6Ii8xMzg0NDc4LzQyMTQ4MTI2OS02MTczZTQwMS03YzFiLTQ5MTEtOTczMS1jYTJlYjQzNmU4NWYucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI1MDMyMCUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTAzMjBUMDk0MDEwWiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9MGRlNjEwZjBlZWU1Njk5N2M5NGM0ODY3YzFiOTg4NTgzOGZmZTkwYzIxYjMwMGY4ZDE0YjZiODFlYzk4OWE0ZiZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.h99DLUrF4y1JrFJ2HGCgGQ6fNgGglbBIwrROYGHVOJs">
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/5d44c888-a30a-47a5-86b1-f1a10b58572d">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/f9f6b6e1-db81-4cb7-b962-181802576398">
   <img width=600 alt="Zama HTTPZ">
 </picture>
 </p>
@@ -23,6 +23,10 @@
     <img src="https://img.shields.io/badge/Contribute-Zama%20Bounty%20Program-%23ffd208?style=flat-square"></a>
   <a href="https://slsa.dev"><img alt="SLSA 3" src="https://slsa.dev/images/gh-badge-level3.svg" /></a>
 </p>
+
+> [!NOTE]  
+> **Renaming in progress**: The fhEVM repositories are transitionning to **HTTPZ**. You may see both names referenced for a short time. [Sign up](https://share-eu1.hsforms.com/1F7Z672SsRAeOVyqLdXWn2Q2duixc) to stay informed about the official HTTPZ release.
+
 
 ## About
 
@@ -66,8 +70,8 @@ HTTPZ is built for developers to write confidential smart contracts without lear
 _Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/tutorials/see-all-tutorials)._
 <br></br>
 
-> [!Note] > **Zama 5-Question Developer Survey**
->
+> [!Note]
+>  **Zama 5-Question Developer Survey**
 > We want to hear from you! Take 1 minute to share your thoughts and help us enhance our documentation and libraries. 👉 **[Click here](https://www.zama.ai/developer-survey)** to participate.
 
 ### Citations
