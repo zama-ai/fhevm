@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 fhevm-relayer = { workspace = true }
+clap = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 diesel-derive-enum = { workspace = true }

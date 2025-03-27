@@ -5,6 +5,7 @@ members = ["lib", "relayer"]
 
 [workspace.dependencies]
 fhevm-relayer = { path = "./fhevm-relayer/" }
+clap = { version = "4", features = ["derive"] }
 axum = { version = "0.8", features = ["macros"] }
 serde = { version = "1", features = ["derive"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }

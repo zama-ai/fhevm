@@ -9,6 +9,7 @@ use axum::{
 };
 use fhevm_relayer::orchestrator::traits::Event;
 use fhevm_relayer::{
+    config::settings::KeyUrl,
     core::event::InputProofRequest,
     core::utils::OnceHandler,
     http::{
@@ -294,13 +295,13 @@ pub async fn input_registration_handler_orchestrator(
     }
 }
 
-pub fn default_key_url() -> keyurl_http_listener::KeyUrlResponseJson {
+pub fn key_url_route(key_url: KeyUrl) -> keyurl_http_listener::KeyUrlResponseJson {
     keyurl_http_listener::KeyUrlResponseJson {
         response: keyurl_http_listener::Response {
             fhe_key_info: vec![keyurl_http_listener::FheKeyInfo {
                 fhe_public_key: keyurl_http_listener::KeyData {
-                    data_id: "fhe-public-key-data-id".to_string(),
-                    urls: vec!["http://0.0.0.0:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee".to_string()],
+                    data_id: key_url.fhe_public_key.data_id,
+                    urls: vec![key_url.fhe_public_key.url],
                 },
             }],
             crs: {
@@ -308,8 +309,8 @@ pub fn default_key_url() -> keyurl_http_listener::KeyUrlResponseJson {
                 map.insert(
                     "2048".to_string(),
                     keyurl_http_listener::KeyData {
-                        data_id: "crs-data-id".to_string(),
-                        urls: vec!["http://0.0.0.0:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002".to_string()],
+                        data_id: key_url.crs.data_id,
+                        urls: vec![key_url.crs.url],
                     },
                 );
                 map
@@ -323,6 +324,7 @@ pub async fn http_listener(
     sqs_client: aws_sdk_sqs::Client,
     relayer_queue_url: String,
     orchestrator_queue_url: String,
+    key_url: KeyUrl,
     _orchestrator: Arc<Orchestrator<TokioEventDispatcher<ZwsRelayerEvent>, ZwsRelayerEvent>>,
 ) {
     // let input_handler = Arc::new(InputProofHandler::new(orchestrator));
@@ -352,9 +354,10 @@ pub async fn http_listener(
             get(|| async {
                 info!("Received GET request to '/keyurl'");
                 // TODO: implement -> should be in config back
-                Json(default_key_url())
+                Json(key_url_route(key_url))
             }),
         );
+    // .with_state(Arc::new(KeyUrlState { key_url }));
 
     // Define the socket address for the server to listen on.
     let host = "0.0.0.0";

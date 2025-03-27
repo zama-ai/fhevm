@@ -1,5 +1,6 @@
 use alloy::primitives::Address;
 use alloy::signers::Signer;
+use clap::Parser;
 use config::{Config, Environment, File}; // ConfigError
 use dotenvy::from_path;
 use serde::{Deserialize, Serialize};
@@ -7,6 +8,7 @@ use std::collections::HashMap;
 
 use fhevm_relayer::{
     blockchain::ethereum::{ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient},
+    config::settings::KeyUrl,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
@@ -83,6 +85,7 @@ pub struct RelayerConfiguration {
     pub host_chains: Vec<HostChainConfig>,
     pub gateway_chain: GatewayChainConfig,
     pub queues: SQSConfiguration,
+    pub key_url: Option<KeyUrl>, // Optional because only require in debug mode
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -92,11 +95,20 @@ pub struct SQSConfiguration {
     pub transaction_queue: String,
 }
 
+#[derive(Parser, Serialize, Deserialize, Debug, Clone)]
+#[command(version, about, long_about = None)]
+pub struct CliArgs {
+    #[arg(long = "config-file")]
+    pub config_file: Option<String>,
+}
+
 impl RelayerConfiguration {
-    pub fn new() -> Result<Self, String> {
+    pub fn new(config_file: Option<String>) -> Result<Self, String> {
         // First get base config from files
         let s = match Config::builder()
-            .add_source(File::with_name("config.toml").required(false))
+            .add_source(
+                File::with_name(&config_file.unwrap_or("config.toml".to_string())).required(false),
+            )
             // Change how we specify environment variables
             // Env takes precedence over other sources
             .add_source(
@@ -206,6 +218,16 @@ async fn main() {
         }
     }
 
+    let args = CliArgs::parse();
+
+    // Check if the config file exists
+    if let Some(conf) = &args.config_file {
+        if !Path::new(&conf).exists() {
+            eprintln!("Config file not found: {}", conf);
+            std::process::exit(1);
+        }
+    }
+
     // Observability
     // https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#example-syntax
     let filter = tracing_subscriber::EnvFilter::from_default_env();
@@ -214,7 +236,7 @@ async fn main() {
 
     // Settings
     // TODO: add cli arg to specify path to config file with default
-    let settings = match RelayerConfiguration::new() {
+    let settings = match RelayerConfiguration::new(args.config_file) {
         Ok(value) => value,
         Err(error) => {
             error!(
@@ -356,9 +378,7 @@ async fn main() {
 
     // Optional Console Mock
     // This is for testing purposes only
-    // TODO: set this as a relayer parameter
-    let mock_console = false;
-    if mock_console {
+    if let Some(key_url) = settings.key_url {
         warn!("MOCKING CONSOLE! DEVELOPMENT PURPOSES ONLY");
         // Authorization handler
         let console_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> =
@@ -373,6 +393,7 @@ async fn main() {
             sqs_client.clone(),
             settings.queues.relayer_queue.to_string(),
             settings.queues.console_queue.to_string(),
+            key_url,
             Arc::clone(&orchestrator),
         ));
     }

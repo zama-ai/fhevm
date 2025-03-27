@@ -89,6 +89,9 @@ console-side-run:
 relayer-run:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer
 
+relayer-run-debug:
+	cd $(TOP)apps/relayer && cargo run --bin zws-relayer -- --config-file debug.toml
+
 # `--ssh default` used to forward ssh agent to allow fhevm-relayer dependency to be reached
 docker-compose-build:
 	docker compose -f $(TOP)docker/docker-compose.yaml build --ssh default
