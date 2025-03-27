@@ -3,8 +3,6 @@ import { Actor, createActor, setup } from 'xstate'
 
 export const EVENT_TYPES = [
   'back:dapp:stats-requested',
-  'back:dapp:stats-available',
-  'web3:fhe-event:requested',
   'web3:fhe-event:detected',
 ] as const
 
@@ -26,7 +24,7 @@ type DAppStatsMachine = ReturnType<typeof factory>
 function factory({
   notifyMessage,
 }: {
-  notifyMessage: (message: DAppStatsEvents) => void
+  notifyMessage: (message: back.BackEvent | web3.Web3Event) => void
 }) {
   return setup({
     types: {
@@ -49,12 +47,21 @@ function factory({
           'web3:fhe-event:detected': {
             actions: ({
               event: {
-                payload: { id, ...payload },
+                payload: { events, ...payload },
                 meta,
               },
             }) =>
               notifyMessage(
-                back.dappStatsAvailable({ ...payload, externalRef: id }, meta),
+                back.dappStatsAvailable(
+                  {
+                    ...payload,
+                    events: events.map(({ id, ...event }) => ({
+                      ...event,
+                      externalRef: id,
+                    })),
+                  },
+                  meta,
+                ),
               ),
           },
         },
@@ -75,12 +82,12 @@ export class DAppStats {
     this.#actor.start()
   }
 
-  private messages: DAppStatsEvents[] = []
-  private notifyMessage = (message: DAppStatsEvents) => {
+  private messages: (back.BackEvent | web3.Web3Event)[] = []
+  private notifyMessage = (message: back.BackEvent | web3.Web3Event) => {
     this.messages.push(message)
   }
 
-  send(event: DAppStatsEvents): DAppStatsEvents[] {
+  send(event: DAppStatsEvents): (back.BackEvent | web3.Web3Event)[] {
     this.messages = []
     this.#actor.send(event)
     return this.messages

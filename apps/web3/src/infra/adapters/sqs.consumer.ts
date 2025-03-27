@@ -18,25 +18,12 @@ export class SQSConsumer {
   public async handleMessage(message: Message) {
     const batchItemFailures: { itemIdentifier: string | undefined }[] = []
     if (message.Body) {
-      let body: Record<string, any>
-      try {
-        body = JSON.parse(message.Body)
-      } catch (err) {
-        this.logger.debug(`received message: ${message.Body}`)
-        this.logger.warn(`❌ failed to parse body: ${err}`)
-        return
-      }
-
-      if (!('Message' in body)) {
-        this.logger.warn(`missing 'Message' in Body: ${message.Body}`)
-      }
-
       let data: unknown
       try {
-        data = JSON.parse(body.Message)
-      } catch (err) {
-        this.logger.debug(`Message: ${body.Message}`)
-        this.logger.warn(`❌ failed to parse Message: ${err}`)
+        data = JSON.parse(message.Body)
+      } catch (error) {
+        this.logger.warn(`Failed to parse Body: ${error}`)
+        batchItemFailures.push({ itemIdentifier: message.MessageId })
         return { batchItemFailures }
       }
 

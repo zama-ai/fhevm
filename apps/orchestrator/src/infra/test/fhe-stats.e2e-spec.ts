@@ -84,11 +84,15 @@ describe('fhe stats', () => {
       const message = web3.fheDetected(
         {
           requestId,
-          id: faker.string.alphanumeric(10),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
-          name: faker.string.alphanumeric(),
-          timestamp: faker.date.past().toISOString(),
+          events: [
+            {
+              id: faker.string.alphanumeric(10),
+              name: faker.string.alphanumeric(),
+              timestamp: faker.date.past().toISOString(),
+            },
+          ],
         },
         { correlationId },
       )
@@ -102,6 +106,12 @@ describe('fhe stats', () => {
       })
       const messages = await manager.getQueueMessages('back')
       expect(messages.length).toBe(1)
+      if (!back.isBackEvent(messages[0]?.event)) {
+        console.log(`event: ${JSON.stringify(messages[0]?.event)}`)
+        console.log(
+          `failed to parse back event: ${JSON.stringify(back.schema.safeParse(messages[0]?.event))}`,
+        )
+      }
       expect(back.isBackEvent(messages[0]?.event)).toBe(true)
       expect((messages[0]?.event as back.BackEvent).type).toBe(
         'back:dapp:stats-available',

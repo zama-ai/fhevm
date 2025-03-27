@@ -9,12 +9,17 @@ import {
 } from 'utils'
 
 import { DApp, DAppProps } from '#dapps/domain/entities/dapp.js'
-import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
+import {
+  DAppRepository,
+  type Operation,
+  type CumulativeStats,
+} from '#dapps/domain/repositories/dapp.repository.js'
 
 import { PrismaService } from '../prisma.service.js'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
+import { Computation } from '#dapps/domain/utilities/computation.js'
 
 @Injectable()
 export class PrismaDAppRepository extends DAppRepository {
@@ -32,6 +37,32 @@ export class PrismaDAppRepository extends DAppRepository {
     }).chain(props => DApp.parse(props).async())
   }
 
+  delete = (id: DAppId): Task<void, AppError> => {
+    return new Task((resolve, reject) => {
+      this.db.dapp
+        .findUnique({
+          where: { id: id.value, deletedAt: null },
+        })
+        .then(dapp => {
+          if (!dapp) {
+            reject(notFoundError('dapp not found'))
+          } else {
+            return this.db.dapp.update({
+              data: { deletedAt: new Date() },
+              where: { id: id.value },
+            })
+          }
+        })
+        .then(() => {
+          resolve(void 0)
+        })
+        .catch(error => {
+          this.logger.warn(`failed to delete dapp ${id.value}: ${error}`)
+          reject(unknownError(String(error)))
+        })
+    })
+  }
+
   update = (
     id: DAppId,
     data: Partial<Omit<DAppProps, 'id'>>,
@@ -39,7 +70,17 @@ export class PrismaDAppRepository extends DAppRepository {
     this.logger.debug(`update: ${id} ${JSON.stringify(data)}`)
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
-        .update({ where: { id: id.value }, data })
+        .findUnique({ where: { id: id.value, deletedAt: null } })
+        .then(dapp => {
+          if (!dapp) {
+            reject(notFoundError(`dapp not found`))
+          } else {
+            return this.db.dapp.update({
+              where: { id: id.value },
+              data,
+            })
+          }
+        })
         .then(data => {
           this.logger.verbose(`updated: ${JSON.stringify(data)}`)
           resolve(data)
@@ -54,7 +95,7 @@ export class PrismaDAppRepository extends DAppRepository {
   findById = (id: DAppId): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
-        .findUnique({ where: { id: id.value } })
+        .findUnique({ where: { id: id.value, deletedAt: null } })
         .then(data =>
           data ? resolve(data) : reject(notFoundError('DApp not found')),
         )
@@ -65,7 +106,7 @@ export class PrismaDAppRepository extends DAppRepository {
   findByAddress = (chainId: string, address: string): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
-        .findFirst({ where: { address } })
+        .findFirst({ where: { address, deletedAt: null } })
         .then(data =>
           data
             ? resolve(data)
@@ -81,6 +122,7 @@ export class PrismaDAppRepository extends DAppRepository {
         .findUnique({
           where: {
             id: id.value,
+            deletedAt: null,
             team: {
               users: {
                 some: { id: { equals: userId.value } },
@@ -99,7 +141,7 @@ export class PrismaDAppRepository extends DAppRepository {
     return new Task<unknown[], AppError>((resolve, reject) => {
       this.db.dapp
         .findMany({
-          where: { teamId },
+          where: { teamId, deletedAt: null },
           orderBy: { createdAt: 'desc' },
         })
         .then(resolve)
@@ -151,5 +193,36 @@ export class PrismaDAppRepository extends DAppRepository {
         this.logger.verbose(`parsing stat: ${JSON.stringify(props)}`)
         return DAppStat.parse(props).async()
       })
+  }
+
+  findCumulativeStats = (id: DAppId): Task<CumulativeStats, AppError> => {
+    return new Task<CumulativeStats, AppError>((resolve, reject) => {
+      this.db.dappStat
+        .groupBy({
+          by: ['name'],
+          where: { dappId: id.value },
+          _count: {
+            name: true,
+          },
+        })
+        .then(stats => {
+          this.logger.debug(`stats: ${JSON.stringify(stats)}`)
+          const operations = stats.reduce(
+            (acc, stat) => {
+              acc[stat.name as Operation] = stat._count.name
+              return acc
+            },
+            {} as Record<Operation, number>,
+          )
+          const computation = new Computation(operations)
+          resolve(computation)
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `failed to run findCumulativeStats for ${id.value}: ${err}`,
+          )
+          reject(unknownError(String(err)))
+        })
+    })
   }
 }

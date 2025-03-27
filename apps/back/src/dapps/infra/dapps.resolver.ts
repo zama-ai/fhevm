@@ -14,7 +14,7 @@ import * as uc from '#dapps/use-cases/index.js'
 import { GetTeamById } from '#users/use-cases/get-team-by-id.use-case.js'
 import {
   DappType,
-  StatsType,
+  RawStatsType,
   ValidateAddress,
 } from '#dapps/infra/types/dapp.type.js'
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
@@ -30,6 +30,7 @@ import { TeamProps } from '#users/domain/entities/team.js'
 import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
 import { ValidateAddressInput } from './dto/inputs/validate-address.input.js'
 import { AppErrorFilter } from '#auth/infra/filters/app-error.filter.js'
+import { DappStatsType } from './types/stat.type.js'
 
 @UseFilters(AppErrorFilter)
 @Resolver(() => DappType)
@@ -41,7 +42,7 @@ export class DappsResolver {
     private readonly getDappByIdUC: uc.GetDappById,
     private readonly getTeamByIdUC: GetTeamById,
     private readonly deployDappUC: uc.DeployDApp,
-    private readonly getDappStatsUC: uc.GetDappStatsUseCase,
+    private readonly getDappRawStatsUC: uc.GetDappRawStatsUseCase,
     private readonly appUpdatesSubscriptionUC: uc.AppUpdatesSubscription,
     private readonly validateAddressUC: uc.ValidateAddress,
   ) {}
@@ -113,13 +114,19 @@ export class DappsResolver {
     return this.getTeamByIdUC.execute(TeamId.from(teamId)).toPromise()
   }
 
-  @ResolveField(() => [StatsType], { name: 'stats' })
-  async stats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
-    this.logger.debug(`getting stats for dappId=${dapp.id}`)
-    const result = await this.getDappStatsUC
+  @ResolveField(() => [RawStatsType], { name: 'rawStats' })
+  async rawStats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
+    const result = await this.getDappRawStatsUC
       .execute({ dappId: dapp.id })
       .toPromise()
     return result.stats
+  }
+
+  @ResolveField(() => DappStatsType, { name: 'stats' })
+  async stats(@Parent() dapp: DappType): Promise<DappStatsType> {
+    return Promise.resolve({
+      id: dapp.id,
+    })
   }
 
   @Query(() => ValidateAddress, { name: 'validateAddress', complexity: 2 })

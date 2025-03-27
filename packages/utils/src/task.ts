@@ -286,6 +286,15 @@ export class Task<A, E> {
       }, reject)
     })
   }
+
+  tapErr(fn: (err: E) => void): Task<A, E> {
+    return new Task((resolve, reject) => {
+      this.computation(resolve, error => {
+        fn(error)
+        reject(error)
+      })
+    })
+  }
 }
 
 function isFullfilled<T>(
@@ -309,7 +318,7 @@ interface Matchers<T, E, R1, R2 = R1> {
  * @param task Task to execute
  * @returns A promise that resolves with the result of the task
  */
-export function executeTask<A extends object | string | number, E>(
+export function executeTask<A extends object | string | number | void, E>(
   task: Task<A, E>,
 ): Promise<
   | { success: true; value: A; error: undefined }

@@ -35,11 +35,12 @@ export class SQSProducer implements EventProducer {
   readonly publish = (
     message: back.BackEvent | web3.Web3Event,
   ): Task<void, AppError> => {
-    this.logger.debug(`🚀 publishing: ${message.type}`)
+    this.logger.verbose(`handling ${message.type}`)
 
     return this.getQueueFromEvent(message).asyncChain(queueUrl => {
       this.logger.verbose(`queueUrl: ${queueUrl}`)
-      return new Task((resolve, reject) => {
+      return new Task<void, AppError>((resolve, reject) => {
+        this.logger.debug(`🚀 publishing: ${message.type} on ${queueUrl}`)
         this.client
           .send(
             new SendMessageCommand({
@@ -51,7 +52,7 @@ export class SQSProducer implements EventProducer {
             this.logger.verbose(
               `✅ PublishCommand status code: ${result.$metadata?.httpStatusCode}`,
             )
-            resolve()
+            resolve(void 0)
           })
           .catch(err => {
             this.logger.warn(
@@ -59,6 +60,10 @@ export class SQSProducer implements EventProducer {
             )
             return reject(unknownError(String(err)))
           })
+      }).tapErr(err => {
+        this.logger.warn(
+          `❌ failed to publish ${message.type}: ${err._tag}/${err.message}`,
+        )
       })
     })
   }

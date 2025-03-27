@@ -8,7 +8,27 @@ type Team {
   dapps: [Dapp!]!
 }
 
-type Stats {
+type CumulativeDappStats {
+  total: Int!
+  FheAdd: Int!
+  FheBitAnd: Int!
+  FheIfThenElse: Int!
+  FheLe: Int!
+  FheOr: Int!
+  FheSub: Int!
+  TrivialEncrypt: Int!
+  VerifyCiphertext: Int!
+  FheMul: Int!
+  FheDiv: Int!
+}
+
+type DappStats {
+  """The id of the dapp"""
+  id: ID!
+  cumulative: CumulativeDappStats!
+}
+
+type RawStats {
   id: ID!
   name: String!
   timestamp: Float!
@@ -24,8 +44,11 @@ type Dapp {
   team: Team!
   createdAt: Float!
 
+  """DApp usage aggregated statistics"""
+  stats: DappStats!
+
   """DApp usage statistics"""
-  stats: [Stats!]!
+  rawStats: [RawStats!]!
 }
 
 enum DappStatus {

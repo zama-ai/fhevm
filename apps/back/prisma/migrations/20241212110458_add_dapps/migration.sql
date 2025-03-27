@@ -10,6 +10,7 @@ CREATE TABLE "Dapp" (
     "teamId" TEXT NOT NULL,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deletedAt" TIMESTAMP(3),
 
     CONSTRAINT "Dapp_pkey" PRIMARY KEY ("id")
 );

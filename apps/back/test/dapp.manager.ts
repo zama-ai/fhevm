@@ -23,12 +23,31 @@ export interface DeployDappResult {
 
 export interface DAppStats {
   id: string
-  stats: {
+  rawStats: {
     id: string
     name: string
     timestamp: Date
     externalRef: string
   }[]
+}
+
+export interface CumulativeDappStats {
+  total: number
+  FheAdd: number
+  FheBitAnd: number
+  FheIfThenElse: number
+  FheLe: number
+  FheOr: number
+  FheSub: number
+  TrivialEncrypt: number
+  VerifyCiphertext: number
+  FheMul: number
+  FheDiv: number
+}
+
+export interface DappStats {
+  id: string
+  cumulative: CumulativeDappStats
 }
 
 export type ValidateAddress =
@@ -122,7 +141,7 @@ export class DappManager {
       .exec('deployDapp')
   }
 
-  async getDappStats({
+  async getDappRawStats({
     token,
     dappId,
   }: {
@@ -133,7 +152,7 @@ export class DappManager {
       this.httpServer,
     )
       .auth(token)
-      .query(GET_DAPP_STATS, { dappId })
+      .query(GET_DAPP_RAW_STATS, { dappId })
       .exec('dapp')
   }
 
@@ -153,6 +172,21 @@ export class DappManager {
       .auth(token)
       .query(VALIDATE_ADDRESS, { chainId, address })
       .exec('validateAddress')
+  }
+
+  async getDappStats({
+    token,
+    dappId,
+  }: {
+    token: string
+    dappId: string
+  }): Promise<GraphQlResponse<{ stats: DappStats }>> {
+    return GraphQl.request<{ dapp: { stats: DappStats } }, { dappId: string }>(
+      this.httpServer,
+    )
+      .auth(token)
+      .query(GET_DAPP_STATS, { dappId })
+      .exec('dapp')
   }
 }
 
@@ -211,11 +245,11 @@ const DEPLOY_DAPP = `
   }
 `
 
-const GET_DAPP_STATS = `
+const GET_DAPP_RAW_STATS = `
   query GetDappStats($dappId: ID!) {
     dapp(input: { id: $dappId }) {
       id
-      stats {
+      rawStats {
         id
         name
         timestamp
@@ -230,6 +264,29 @@ const VALIDATE_ADDRESS = `
     validateAddress(input: {chainId: $chainId, address: $address}) {
       check
       message
+    }
+  }
+`
+
+const GET_DAPP_STATS = `
+  query GetDappStats($dappId: ID!) {
+    dapp(input: { id: $dappId }) {
+      stats {
+        id
+        cumulative {
+          total
+          FheAdd
+          FheBitAnd
+          FheIfThenElse
+          FheLe
+          FheOr
+          FheSub
+          TrivialEncrypt
+          VerifyCiphertext
+          FheMul
+          FheDiv
+        }
+      }
     }
   }
 `

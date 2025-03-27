@@ -46,6 +46,7 @@ export interface SparklineProps extends BoxProps {
 }
 
 /**
+ * Sparkline component using Recharts
  */
 export const Sparkline = (props: SparklineProps) => {
   const {

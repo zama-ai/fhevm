@@ -67,9 +67,13 @@ describe('store dapp stats', () => {
                 requestId: faker.string.uuid(),
                 chainId: LOCAL_FHEVM_CHAIN_ID,
                 address,
-                name: 'FheAdd',
-                timestamp: faker.date.past().toISOString(),
-                externalRef: faker.string.alphanumeric(10),
+                events: [
+                  {
+                    name: 'FheAdd',
+                    timestamp: faker.date.past().toISOString(),
+                    externalRef: faker.string.alphanumeric(10),
+                  },
+                ],
               },
               {
                 correlationId: faker.string.uuid(),
@@ -84,12 +88,14 @@ describe('store dapp stats', () => {
           const count = await manager.prismaClient.dappStat.count()
           return count > 0
         })
-        const res = await manager.dapp.getDappStats({ token, dappId })
-        expect(res.success, 'Failed to fetch stats').toBe(true)
+        const res = await manager.dapp.getDappRawStats({ token, dappId })
         if (res.success) {
           expect(res.data.id, 'Wrong dapp id').toBe(dappId)
-          expect(res.data.stats.length, 'Wrong stats count').toBe(1)
-          expect(res.data.stats[0].name).toBe('FheAdd')
+          expect(res.data.rawStats.length, 'Wrong stats count').toBe(1)
+          expect(res.data.rawStats[0].name).toBe('FheAdd')
+        } else {
+          console.log(`res: ${JSON.stringify(res)}`)
+          expect(res.success, 'Failed to fetch stats').toBe(true)
         }
       })
     })

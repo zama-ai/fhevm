@@ -10,6 +10,12 @@ import {
 
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
 import { BlockSimple } from '@/components/stats-blocks/block-simple'
+import { BlockPie } from '@/components/stats-blocks/block-pie'
+import {
+  calculateOperationStats,
+  calculateEncryptionStats,
+  calculateTotal,
+} from '@/lib/stats.js'
 
 const GET_DAPP_DETAILS = graphql(`
   query GetDappDetails($dappId: ID!) {
@@ -17,11 +23,27 @@ const GET_DAPP_DETAILS = graphql(`
       id
       name
       status
-      stats {
+      rawStats {
         id
         name
         timestamp
         externalRef
+      }
+      stats {
+        id
+        cumulative {
+          total
+          FheAdd
+          FheBitAnd
+          FheIfThenElse
+          FheLe
+          FheOr
+          FheSub
+          TrivialEncrypt
+          VerifyCiphertext
+          FheMul
+          FheDiv
+        }
       }
     }
   }
@@ -33,13 +55,19 @@ const SUB_DAPP_UPDATED = gql(`
       id
       name
       status
-      stats {
+      rawStats {
         id
         name
         timestamp
         externalRef
       }
-    }
+      stats {
+        id
+        cumulative {
+          total
+        }
+      }
+    } 
   }
 `)
 
@@ -59,10 +87,19 @@ export function DappPage() {
     throw Error(error.message)
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { __typename, total, ...cumulative } = data?.dapp.stats.cumulative || {
+    total: 0,
+  }
+  const operationStatsData = calculateOperationStats(cumulative)
+  const operationStatsTotal = calculateTotal(operationStatsData)
+  const encryptionStatsData = calculateEncryptionStats(cumulative)
+  const encryptionStatsTotal = calculateTotal(encryptionStatsData)
+
   return (
     <Box>
       {data ? (
-        <Stack direction="row" align="center">
+        <Stack direction="row" align="center" alignItems="flex-start">
           <Heading mb="5">
             {liveData ? liveData.dappUpdated.name : data.dapp.name}
           </Heading>
@@ -78,9 +115,16 @@ export function DappPage() {
       {data && (
         <Stack direction="column" gap="5">
           <Stack direction="row" gap="5">
-            <BlockSimple
-              title="Total FHE Events"
-              amount={data?.dapp.stats.length || 0}
+            <BlockSimple title="Total FHE Events" amount={total} />
+            <BlockPie
+              title="FHE Operations"
+              total={operationStatsTotal || 0}
+              data={operationStatsData}
+            />
+            <BlockPie
+              title="FHE Encryption"
+              total={encryptionStatsTotal || 0}
+              data={encryptionStatsData}
             />
           </Stack>
         </Stack>
