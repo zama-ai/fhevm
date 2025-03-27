@@ -247,6 +247,24 @@ export class PrismaDAppRepository extends DAppRepository {
     ).chain(props => ApiKey.parse(props).async())
   }
 
+  updateApiKey = (apiKey: ApiKey): Task<ApiKey, AppError> => {
+    return new Task<unknown, AppError>((resolve, reject) => {
+      this.db.apiKey
+        .update({
+          where: { id: apiKey.id.value },
+          data: {
+            name: apiKey.name,
+            description: apiKey.description,
+          },
+        })
+        .then(resolve)
+        .catch(err => {
+          this.logger.warn(`failed to update api key: ${err}`)
+          reject(unknownError(String(err)))
+        })
+    }).chain(props => ApiKey.parse(props).async())
+  }
+
   deleteApiKey = (id: ApiKeyId): Task<void, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) =>
       this.db.apiKey

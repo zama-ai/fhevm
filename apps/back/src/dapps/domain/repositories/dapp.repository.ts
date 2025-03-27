@@ -31,5 +31,6 @@ export abstract class DAppRepository {
   abstract createApiKey(apiKey: ApiKey): Task<ApiKey, AppError>
   abstract findAllApiKeys(id: DAppId): Task<ApiKey[], AppError>
   abstract findApiKey(id: ApiKeyId): Task<ApiKey, AppError>
+  abstract updateApiKey(apiKey: ApiKey): Task<ApiKey, AppError>
   abstract deleteApiKey(id: ApiKeyId): Task<void, AppError>
 }
