@@ -4,7 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt'
 import { GetUserById } from '#users/use-cases/get-user-by-id.use-case.js'
 import { JwtPayload } from '#auth/interfaces/jwt-payload.js'
 import type { AppError } from 'utils'
-import { fail, ok, unauthorizedError } from 'utils'
+import { fail, isNotFoundError, ok, unauthorizedError } from 'utils'
 import { ConfigService } from '@nestjs/config'
 
 @Injectable()
@@ -30,6 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         : fail<JwtPayload, AppError>(unauthorizedError())
     )
       .asyncChain(jwt => this.getUserById.execute(jwt.sub))
+      .mapError(error => (isNotFoundError(error) ? unauthorizedError() : error))
       .toPromise()
   }
 }

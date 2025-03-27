@@ -1,0 +1,33 @@
+meta {
+  name: Get DApp by ID
+  type: graphql
+  seq: 3
+}
+
+post {
+  url: http://localhost:3000/graphql
+  body: graphql
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+}
+
+body:graphql {
+  query dapp($dappId: String!) {
+    dapp(input: {
+      id: $dappId
+    }) {
+      id
+      name
+      apiKey
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "dappId": "{{dappId}}"
+  }
+}

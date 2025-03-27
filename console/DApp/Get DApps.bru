@@ -1,0 +1,26 @@
+meta {
+  name: Get DApps
+  type: graphql
+  seq: 2
+}
+
+post {
+  url: http://localhost:3000/graphql
+  body: graphql
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+}
+
+body:graphql {
+  query getDapps {
+    dapp {
+      id
+      name
+      
+    }
+  }
+  
+}

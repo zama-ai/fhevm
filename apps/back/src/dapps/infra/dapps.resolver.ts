@@ -1,4 +1,4 @@
-import { Logger, UseFilters, UseGuards } from '@nestjs/common'
+import { Inject, Logger, UseFilters, UseGuards } from '@nestjs/common'
 import {
   Args,
   Mutation,
@@ -19,7 +19,7 @@ import {
 } from '#dapps/infra/types/dapp.type.js'
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
 import { JwtAuthGuard } from '#auth/infra/guards/jwt-auth-guard.js'
-import { User, type UserProps } from '#users/domain/entities/user.js'
+import { type UserProps } from '#users/domain/entities/user.js'
 import { TeamId, UserId } from '#users/domain/entities/value-objects.js'
 import { DeployDAppInput } from './dto/inputs/deploy-dapp.input.js'
 import { DAppId } from '../domain/entities/value-objects.js'
@@ -30,6 +30,7 @@ import { TeamProps } from '#users/domain/entities/team.js'
 import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
 import { ValidateAddressInput } from './dto/inputs/validate-address.input.js'
 import { AppErrorFilter } from '#auth/infra/filters/app-error.filter.js'
+import { ApiKeyType } from './types/api-key.type.js'
 
 @UseFilters(AppErrorFilter)
 @Resolver(() => DappType)
@@ -45,10 +46,13 @@ export class DappsResolver {
     private readonly appUpdatesSubscriptionUC: uc.AppUpdatesSubscription,
     private readonly validateAddressUC: uc.ValidateAddress,
   ) {}
+  @Inject(uc.GetAllApiKeys)
+  private readonly getAllApiKeysUC: uc.GetAllApiKeys
 
   @Query(() => DappType, { name: 'dapp' })
   @UseGuards(JwtAuthGuard)
   dapp(@Args('input') input: QueryDappInput, @CurrentUser() user: UserProps) {
+    this.logger.verbose(`resolving dapp ${input.id}`)
     return this.getDappByIdUC
       .execute({ dappId: DAppId.from(input.id), userId: UserId.from(user.id) })
       .toPromise()
@@ -60,6 +64,7 @@ export class DappsResolver {
     @Args('input') input: CreateDappInput,
     @CurrentUser() user: UserProps,
   ) {
+    this.logger.verbose(`creating dapp ${JSON.stringify(input)}`)
     return this.createDappUC.execute({ dapp: input, user }).toPromise()
   }
 
@@ -69,6 +74,9 @@ export class DappsResolver {
     @Args('input') input: UpdateDappInput,
     @CurrentUser() user: UserProps,
   ) {
+    this.logger.verbose(
+      `updating dapp ${input.id} with ${JSON.stringify(input)}`,
+    )
     const { id, ...props } = input
     return this.updateDappUC
       .execute({ dapp: { id: DAppId.from(id), ...props }, user })
@@ -81,6 +89,7 @@ export class DappsResolver {
     @Args('input') input: DeployDAppInput,
     @CurrentUser() user: UserProps,
   ) {
+    this.logger.verbose(`deploying dapp ${input.dappId}`)
     return this.deployDappUC
       .execute({ dappId: DAppId.from(input.dappId), user })
       .toPromise()
@@ -97,9 +106,10 @@ export class DappsResolver {
   @UseGuards(JwtAuthGuard)
   dappUpdated(
     @Args('input') input: DeployedDAppInput,
-    @CurrentUser() user: User,
+    @CurrentUser() user: UserProps,
   ) {
-    return this.appUpdatesSubscriptionUC
+    this.logger.verbose(`subscribing to dapp updates for dappId=${input.id}`)
+    this.appUpdatesSubscriptionUC
       .execute({
         dappId: input.id,
         user,
@@ -110,11 +120,13 @@ export class DappsResolver {
   @ResolveField(() => TeamType, { name: 'team' })
   async team(@Parent() dapp: DappType): Promise<TeamProps> {
     const { teamId } = dapp
+    this.logger.verbose(`resolving team field for dappId=${dapp.id}`)
     return this.getTeamByIdUC.execute(TeamId.from(teamId)).toPromise()
   }
 
   @ResolveField(() => [RawStatsType], { name: 'rawStats' })
   async rawStats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
+    this.logger.verbose(`resolving raw stats field for dappId=${dapp.id}`)
     const result = await this.getDappRawStatsUC
       .execute({ dappId: dapp.id })
       .toPromise()
@@ -125,7 +137,7 @@ export class DappsResolver {
     name: 'stats',
   })
   async stats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
-    this.logger.debug(`getting stats for dappId=${dapp.id}`)
+    this.logger.verbose(`resolving stats field for dappId=${dapp.id}`)
     const result = await this.getDappRawStatsUC
       .execute({ dappId: dapp.id })
       .toPromise()
@@ -137,8 +149,21 @@ export class DappsResolver {
   async validateAddress(
     @Args('input') input: ValidateAddressInput,
   ): Promise<ValidateAddress> {
-    this.logger.debug(`validating address ${input.chainId}/${input.address}`)
+    this.logger.verbose(`validating address ${input.chainId}/${input.address}`)
     const result = await this.validateAddressUC.execute(input).toPromise()
     return result
+  }
+
+  @ResolveField(() => [ApiKeyType], { name: 'apiKeys' })
+  async getAllApiKeys(
+    @CurrentUser() user: UserProps,
+    @Parent() dapp: DappType,
+  ): Promise<ApiKeyType[]> {
+    this.logger.verbose(`resolving apiKeys field for ${dapp.id}`)
+    const apiKeys = await this.getAllApiKeysUC
+      .execute({ dappId: dapp.id }, { user })
+      .toPromise()
+    this.logger.verbose(`apiKeys: ${JSON.stringify(apiKeys)}`)
+    return apiKeys
   }
 }

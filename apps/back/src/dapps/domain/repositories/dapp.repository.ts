@@ -1,9 +1,10 @@
 import { DApp, DAppProps } from '../entities/dapp.js'
 import type { AppError } from 'utils'
 import { Task } from 'utils'
-import { DAppId } from '../entities/value-objects.js'
+import { ApiKeyId, DAppId } from '../entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '../entities/dapp-stat.js'
+import { ApiKey } from '../entities/api-key.js'
 
 export abstract class DAppRepository {
   abstract create(data: DApp): Task<DApp, AppError>
@@ -26,4 +27,9 @@ export abstract class DAppRepository {
     props: DAppStatProps,
   ): Task<DAppStat, AppError>
   abstract findAllStats(id: DAppId): Task<DAppStat[], AppError>
+
+  abstract createApiKey(apiKey: ApiKey): Task<ApiKey, AppError>
+  abstract findAllApiKeys(id: DAppId): Task<ApiKey[], AppError>
+  abstract findApiKey(id: ApiKeyId): Task<ApiKey, AppError>
+  abstract deleteApiKey(id: ApiKeyId): Task<void, AppError>
 }

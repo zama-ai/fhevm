@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { DAppId, DAppStatId } from './value-objects.js'
 import { AppError, Entity, fail, ok, Result, validationError } from 'utils'
+import { fromZodError } from 'utils/dist/src/app-error.js'
 
 const schema = z.object({
   id: DAppStatId.schema,
@@ -27,7 +28,7 @@ export class DAppStat
     const check = schema.safeParse(data)
     return check.success
       ? ok(new DAppStat(check.data))
-      : fail(validationError(check.error.message))
+      : fail(fromZodError(check.error))
   }
 
   get id() {

@@ -286,6 +286,17 @@ export class Task<A, E> {
       }, reject)
     })
   }
+
+  tapError(fn: (error: E) => void): Task<A, E> {
+    this.computation(
+      () => {},
+      error => {
+        fn(error)
+      },
+    )
+
+    return this
+  }
 }
 
 function isFullfilled<T>(

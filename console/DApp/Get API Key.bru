@@ -1,0 +1,31 @@
+meta {
+  name: Get API Key
+  type: graphql
+  seq: 6
+}
+
+post {
+  url: http://localhost:3000/graphql
+  body: graphql
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+}
+
+body:graphql {
+  query getApiKey($id: ID!) {
+    apiKey(input: {id: $id}) {
+      name
+      description
+    }
+  }
+  
+}
+
+body:graphql:vars {
+  {
+    "dappId": "{{dappId}}"
+  }
+}

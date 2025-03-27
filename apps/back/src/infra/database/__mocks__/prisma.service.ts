@@ -1,4 +1,5 @@
 import { PrismaClient } from '#prisma/client/index.js'
+import { AppError, unknownError } from 'utils'
 import { beforeEach } from 'vitest'
 import { DeepMockProxy, mockDeep, mockReset } from 'vitest-mock-extended'
 
@@ -29,5 +30,13 @@ export class PrismaService {
 
   get dappStat(): DeepMockProxy<PrismaClient['dappStat']> {
     return prisma.dappStat
+  }
+
+  get apiKey(): DeepMockProxy<PrismaClient['apiKey']> {
+    return prisma.apiKey
+  }
+
+  decodeError(error: unknown): AppError {
+    return unknownError(String(error))
   }
 }

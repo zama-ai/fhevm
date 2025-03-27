@@ -8,6 +8,20 @@ type Team {
   dapps: [Dapp!]!
 }
 
+type ApiKey {
+  """API key ID"""
+  id: ID!
+
+  """DApp ID"""
+  dappId: ID!
+
+  """API key name"""
+  name: String!
+
+  """API key description"""
+  description: String
+}
+
 type RawStats {
   id: ID!
   name: String!
@@ -29,6 +43,7 @@ type Dapp {
 
   """DApp usage statistics"""
   rawStats: [RawStats!]!
+  apiKeys: [ApiKey!]!
 }
 
 enum DappStatus {
@@ -76,6 +91,7 @@ type Query {
   invitation(token: String!): Invitation!
   dapp(input: QueryDappInput!): Dapp!
   validateAddress(input: ValidateAddressInput!): ValidateAddress!
+  apiKey(input: QueryApiKeyInput!): ApiKey!
 }
 
 input QueryDappInput {
@@ -88,6 +104,11 @@ input ValidateAddressInput {
   address: String!
 }
 
+input QueryApiKeyInput {
+  """API key ID"""
+  id: ID!
+}
+
 type Mutation {
   login(input: LoginInput!): auth!
   signup(input: SignupInput!): auth!
@@ -96,6 +117,7 @@ type Mutation {
   createDapp(input: CreateDappInput!): Dapp!
   updateDapp(input: UpdateDappInput!): Dapp!
   deployDapp(input: DeployDAppInput!): Dapp!
+  createApiKey(input: CreateApiKeyInput!): ApiKey!
 }
 
 input LoginInput {
@@ -145,6 +167,17 @@ input UpdateDappInput {
 
 input DeployDAppInput {
   dappId: String!
+}
+
+input CreateApiKeyInput {
+  """DApp ID"""
+  dappId: String!
+
+  """API key name"""
+  name: String!
+
+  """API key description"""
+  description: String
 }
 
 type Subscription {
