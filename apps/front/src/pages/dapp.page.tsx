@@ -10,6 +10,12 @@ import {
 
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
 import { BlockSimple } from '@/components/stats-blocks/block-simple'
+import { BlockPie } from '@/components/stats-blocks/block-pie'
+import {
+  calculateOperationStats,
+  calculateEncryptionStats,
+  calculateTotal,
+} from '@/lib/stats.js'
 
 const GET_DAPP_DETAILS = graphql(`
   query GetDappDetails($dappId: ID!) {
@@ -22,6 +28,22 @@ const GET_DAPP_DETAILS = graphql(`
         name
         timestamp
         externalRef
+      }
+      stats {
+        id
+        cumulative {
+          total
+          FheAdd
+          FheBitAnd
+          FheIfThenElse
+          FheLe
+          FheOr
+          FheSub
+          TrivialEncrypt
+          VerifyCiphertext
+          FheMul
+          FheDiv
+        }
       }
     }
   }
@@ -39,7 +61,13 @@ const SUB_DAPP_UPDATED = gql(`
         timestamp
         externalRef
       }
-    }
+      stats {
+        id
+        cumulative {
+          total
+        }
+      }
+    } 
   }
 `)
 
@@ -58,6 +86,15 @@ export function DappPage() {
   if (error) {
     throw Error(error.message)
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { __typename, total, ...cumulative } = data?.dapp.stats.cumulative || {
+    total: 0,
+  }
+  const operationStatsData = calculateOperationStats(cumulative)
+  const operationStatsTotal = calculateTotal(operationStatsData)
+  const encryptionStatsData = calculateEncryptionStats(cumulative)
+  const encryptionStatsTotal = calculateTotal(encryptionStatsData)
 
   return (
     <Box>
@@ -78,9 +115,16 @@ export function DappPage() {
       {data && (
         <Stack direction="column" gap="5">
           <Stack direction="row" gap="5">
-            <BlockSimple
-              title="Total FHE Events"
-              amount={data?.dapp.rawStats.length || 0}
+            <BlockSimple title="Total FHE Events" amount={total} />
+            <BlockPie
+              title="FHE Operations"
+              total={operationStatsTotal || 0}
+              data={operationStatsData}
+            />
+            <BlockPie
+              title="FHE Encryption"
+              total={encryptionStatsTotal || 0}
+              data={encryptionStatsData}
             />
           </Stack>
         </Stack>

@@ -12,7 +12,7 @@ export const BlockSimple = ({ title, amount }: OwnProps) => {
       <Card.Body>
         <StatRoot>
           <StatLabel>{title}</StatLabel>
-          <StatValueText value={amount} />
+          <StatValueText mt="5px">{amount}</StatValueText>
         </StatRoot>
       </Card.Body>
     </Card.Root>

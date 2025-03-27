@@ -14,7 +14,7 @@ import {
   vi,
 } from 'vitest'
 
-describe('get-dapp-stats', () => {
+describe('get-dapp-raw-stats', () => {
   const manager = new IntegrationManager()
 
   beforeAll(async () => {
@@ -70,7 +70,7 @@ describe('get-dapp-stats', () => {
       test('then it should return an empty array', () => {
         expect(result.success).toBe(true)
         if (result.success) {
-          expect(result.data.stats.length).toBe(0)
+          expect(result.data.rawStats.length).toBe(0)
         }
       })
 
