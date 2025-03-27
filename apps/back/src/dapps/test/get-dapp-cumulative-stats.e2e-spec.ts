@@ -182,7 +182,7 @@ describe('get-dapp-cumulative-stats', () => {
             ['VerifyCiphertext', 0],
             ['FheMul', 0],
             ['FheDiv', 0],
-          ] as [keyof (typeof cumulative), number][]
+          ] as [keyof typeof cumulative, number][]
           for (const [field, value] of results) {
             expect(cumulative[field]).toBe(value)
           }

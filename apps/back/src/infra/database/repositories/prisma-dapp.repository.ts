@@ -19,6 +19,7 @@ import { PrismaService } from '../prisma.service.js'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
+import { Computation } from '#dapps/domain/utilities/computation.js'
 
 @Injectable()
 export class PrismaDAppRepository extends DAppRepository {
@@ -213,35 +214,8 @@ export class PrismaDAppRepository extends DAppRepository {
             },
             {} as Record<Operation, number>,
           )
-
-          // Initialize all operations with 0
-          const allOperations: Operation[] = [
-            'FheAdd',
-            'FheBitAnd',
-            'FheIfThenElse',
-            'FheLe',
-            'FheOr',
-            'FheSub',
-            'TrivialEncrypt',
-            'VerifyCiphertext',
-            'FheMul',
-            'FheDiv',
-          ]
-
-          const result = allOperations.reduce(
-            (acc, op) => {
-              acc[op] = operations[op] || 0
-              return acc
-            },
-            {} as Record<Operation, number>,
-          )
-
-          const total = Object.values(result).reduce(
-            (sum: number, count: number) => sum + count,
-            0,
-          )
-
-          resolve({ ...result, total })
+          const computation = new Computation(operations)
+          resolve(computation)
         })
         .catch((err: unknown) => {
           this.logger.warn(
