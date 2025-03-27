@@ -44,10 +44,12 @@ interface IDecryptionManager {
     /// @dev This event is meant to be listened by the KMS Connectors
     /// @param userDecryptionId The user decryption request's unique ID
     /// @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt
+    /// @param userAddress The user's address
     /// @param publicKey The user's public key for used reencryption
     event UserDecryptionRequest(
         uint256 indexed userDecryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
+        address userAddress,
         bytes publicKey
     );
 

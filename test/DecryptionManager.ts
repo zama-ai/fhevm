@@ -597,7 +597,7 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, toValues(snsCiphertextMaterials), publicKey);
+        .withArgs(userDecryptionId, toValues(snsCiphertextMaterials), user.address, publicKey);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
@@ -621,7 +621,7 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, toValues(singleSnsCiphertextMaterials), publicKey);
+        .withArgs(userDecryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey);
     });
 
     it("Should request a user decryption with empty ctHandleContractPairs list", async function () {
@@ -644,7 +644,7 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, toValues(emptyCtHandleContractPairs), publicKey);
+        .withArgs(userDecryptionId, toValues(emptyCtHandleContractPairs), user.address, publicKey);
     });
 
     it("Should revert because contract addresses exceeds maximum length allowed", async function () {
@@ -1072,7 +1072,7 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, toValues(snsCiphertextMaterials), publicKey);
+        .withArgs(userDecryptionId, toValues(snsCiphertextMaterials), user.address, publicKey);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
@@ -1112,7 +1112,7 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, toValues(singleSnsCiphertextMaterials), publicKey);
+        .withArgs(userDecryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey);
     });
 
     it("Should request a user decryption with empty ctHandleContractPairs list", async function () {
@@ -1148,7 +1148,7 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, [], publicKey);
+        .withArgs(userDecryptionId, [], user.address, publicKey);
     });
 
     it("Should revert because contractAddresses exceeds maximum length allowed", async function () {

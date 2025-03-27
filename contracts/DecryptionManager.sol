@@ -341,7 +341,7 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
 
         // TODO: Implement sending service fees to PaymentManager contract
 
-        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, publicKey);
+        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey);
     }
 
     /// @dev See {IDecryptionManager-userDecryptionWithDelegationRequest}.
@@ -367,27 +367,25 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
         /// @dev Check that the user decryption is allowed for the given userAddress and ctHandleContractPairs.
         _ACL_MANAGER.checkAccountAllowed(delegationAccounts.delegatedAddress, ctHandleContractPairs);
 
-        /// @dev Extract the ctHandles and contractAddresses from the given ctHandleContractPairs.
+        /// @dev Extract the ctHandles from the given ctHandleContractPairs.
         /// @dev We do not deduplicate handles if the same handle appears multiple times
         /// @dev for different contracts, it remains in the list as is. This ensures that
         /// @dev the CiphertextManager retrieval below returns all corresponding materials.
         uint256[] memory ctHandles = new uint256[](ctHandleContractPairs.length);
-        address[] memory allowedContracts = new address[](ctHandleContractPairs.length);
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
             if (!_containsContractAddress(contractAddresses, ctHandleContractPairs[i].contractAddress)) {
                 revert ContractNotInContractAddresses(ctHandleContractPairs[i].contractAddress, contractAddresses);
             }
             ctHandles[i] = ctHandleContractPairs[i].ctHandle;
-            allowedContracts[i] = ctHandleContractPairs[i].contractAddress;
         }
 
-        /// @dev Check that the user decryption is allowed for the given delegatedAccount and allowedContracts.
+        /// @dev Check that the user decryption is allowed for the given delegatedAccount and contractAddresses.
         _ACL_MANAGER.checkAccountDelegated(
             contractsChainId,
             delegationAccounts.userAddress,
             delegationAccounts.delegatedAddress,
-            allowedContracts
+            contractAddresses
         );
 
         /// @dev Initialize the EIP712UserDecryptRequest structure for the signature validation.
@@ -429,7 +427,7 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
 
         // TODO: Implement sending service fees to PaymentManager contract
 
-        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, publicKey);
+        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, delegationAccounts.userAddress, publicKey);
     }
 
     /// @dev See {IDecryptionManager-userDecryptionResponse}.
