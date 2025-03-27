@@ -1,4 +1,4 @@
-name: test
+name: Tests
 
 on:
   pull_request:
@@ -77,7 +77,8 @@ jobs:
       - name: Formatting
         run: cd ${{matrix.folder}} && cargo fmt --all -- --check
       - name: Linting
-        run: cd ${{matrix.folder}} && cargo clippy --all-targets --all-features -- -D warnings
+        run: cd ${{matrix.folder}} && cargo clippy --all-targets --all-features --workspace --exclude fhevm-relayer -- -D warnings
+
       - name: Run Tests with Coverage
         run: |
           export CARGO_INCREMENTAL=0
@@ -85,7 +86,7 @@ jobs:
           export LLVM_PROFILE_FILE='cargo-test-%p-%m.profraw'
           # NOTE: Could be set with a matrix when we have multiple RUST services
           cd ${{matrix.folder}}
-          RUST_BACKTRACE=full cargo test
+          RUST_BACKTRACE=full cargo test --workspace --exclude fhevm-relayer
           cargo install grcov
           mkdir coverage
           ~/.cargo/bin/grcov . --binary-path ./target/debug/deps/ -s . --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o coverage/ -t markdown
