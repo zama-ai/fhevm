@@ -1,3 +1,4 @@
+export { ApiKeyAllowsRequest } from './api-key-allows-request.use-case.js'
 export { AppDeployment } from './app-deployment.use-case.js'
 export { AppUpdatesSubscription } from './app-updates-subscription.use-case.js'
 export { CreateApiKey } from './create-api-key.use-case.js'

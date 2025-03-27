@@ -29,6 +29,7 @@ import { ApiKeyResolver } from './api-key.resolver.js'
     uc.GetApiKey,
     uc.UpdateApiKey,
     uc.DeleteApiKey,
+    uc.ApiKeyAllowsRequest,
   ],
   exports: [UpdateDapp, GetDappById],
 })

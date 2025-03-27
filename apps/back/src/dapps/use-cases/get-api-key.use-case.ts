@@ -1,5 +1,5 @@
 import { UNIT_OF_WORK } from '#constants.js'
-import { ApiKeyProps } from '#dapps/domain/entities/api-key.js'
+import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import { ApiKeyId } from '#dapps/domain/entities/value-objects.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
@@ -9,7 +9,7 @@ type Input = {
   apiKeyId: string
 }
 
-type Output = ApiKeyProps
+type Output = ApiKey
 
 @Injectable()
 export class GetApiKey implements UseCase<Input, Output> {
@@ -24,7 +24,6 @@ export class GetApiKey implements UseCase<Input, Output> {
   execute(input: Input, context?: Record<string, any>): Task<Output, AppError> {
     return ApiKeyId.fromString(input.apiKeyId)
       .asyncChain(this.repo.findApiKey)
-      .map(apiKey => apiKey.toJSON())
       .tapError(error => {
         this.logger.warn(`failed: ${error._tag}/${error.message}`)
       })
