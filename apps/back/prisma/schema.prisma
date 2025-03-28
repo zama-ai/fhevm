@@ -25,6 +25,11 @@ enum DappStatus {
   DELETED
 }
 
+enum StatsType {
+  SYMBOLIC
+  FHE
+}
+
 model Invitation {
   id        String    @id
   email     String    @unique
@@ -72,10 +77,14 @@ model Dapp {
 }
 
 model DappStat {
-  id          String   @id
+  id          String    @id
   name        String
   timestamp   DateTime
   dappId      String
-  dapp        Dapp     @relation(fields: [dappId], references: [id], onDelete: Cascade)
-  externalRef String   @unique
+  type        StatsType @default(SYMBOLIC)
+  day         Int       @default(1)
+  month       Int       @default(1)
+  year        Int       @default(2025)
+  dapp        Dapp      @relation(fields: [dappId], references: [id], onDelete: Cascade)
+  externalRef String    @unique
 }

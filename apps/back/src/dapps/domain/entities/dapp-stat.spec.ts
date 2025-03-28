@@ -12,6 +12,10 @@ describe('DappStat', () => {
       params = {
         id: DAppStatId.random().value,
         name: faker.string.alphanumeric(10),
+        type: 'SYMBOLIC',
+        day: faker.number.int({ min: 1, max: 365 }),
+        month: faker.number.int({ min: 0, max: 11 }),
+        year: faker.number.int({ min: 2020, max: 2025 }),
         timestamp: new Date(Date.now()),
         dappId: DAppId.random().value,
         externalRef: faker.string.alphanumeric(10),
@@ -108,6 +112,10 @@ describe('DappStat', () => {
       const result = DAppStat.create({
         name: faker.string.alphanumeric(10),
         timestamp: new Date(Date.now()),
+        type: 'SYMBOLIC',
+        day: faker.number.int({ min: 1, max: 365 }),
+        month: faker.number.int({ min: 0, max: 11 }),
+        year: faker.number.int({ min: 2020, max: 2025 }),
         // Note: to fix
         dappId: DAppId.random().value as `dapp_${string}` & z.BRAND<'DAppId'>,
         externalRef: faker.string.alphanumeric(10),

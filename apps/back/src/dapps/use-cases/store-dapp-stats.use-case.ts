@@ -1,5 +1,5 @@
 import { PUBSUB } from '#constants.js'
-import { DAppStat } from '#dapps/domain/entities/dapp-stat.js'
+import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { DAppStatId } from '#dapps/domain/entities/value-objects.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 import { SubscriptionDappUpdatedPayload } from '#subscriptions/domain/entities/subscription.js'
@@ -29,6 +29,8 @@ type Input = {
   }[]
 }
 type Output = DAppStat[]
+
+const DAY_IN_MS = 1000 * 60 * 60 * 24
 
 @Injectable()
 export class StoreDAppStats implements UseCase<Input, Output> {
@@ -68,23 +70,43 @@ export class StoreDAppStats implements UseCase<Input, Output> {
       : Task.of(void 0)
   }
 
+  public static createStatDetails = (
+    event: { name: string; timestamp: string; externalRef: string },
+    dappId: DAppStatProps['dappId'], // TODO: fix this
+  ): DAppStatProps => {
+    const date = new Date(event.timestamp)
+    const day =
+      (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) -
+        Date.UTC(date.getFullYear(), 0, 0)) /
+      DAY_IN_MS
+    return {
+      id: DAppStatId.random().value,
+      dappId,
+      type: 'SYMBOLIC',
+      day: day,
+      month: date.getUTCMonth(),
+      year: date.getUTCFullYear(),
+      name: event.name,
+      timestamp: date,
+      externalRef: event.externalRef,
+    }
+  }
   execute = (input: Input): Task<DAppStat[], AppError> => {
+    console.log('execute')
     return this.repo
       .findByAddress(input.chainId, input.address)
       .tap(dapp => {
+        console.log(`dApp found: ${dapp.id}`)
         this.logger.debug(`dApp found: ${dapp.id}`)
       })
       .chain(dapp =>
         Task.all<AppError, DAppStat>(
-          input.events.map(event =>
-            this.repo.createStat(dapp.id, {
-              id: DAppStatId.random().value,
-              dappId: dapp.id.value,
-              name: event.name,
-              timestamp: new Date(event.timestamp),
-              externalRef: event.externalRef,
-            }),
-          ),
+          input.events.map(event => {
+            return this.repo.createStat(
+              dapp.id,
+              StoreDAppStats.createStatDetails(event, dapp.id.value),
+            )
+          }),
         ).tap(() => {
           this.subscriptions.publish<SubscriptionDappUpdatedPayload>(
             'dappUpdated',

@@ -7,6 +7,10 @@ const schema = z.object({
   name: z.string(),
   timestamp: z.date(),
   dappId: DAppId.schema,
+  type: z.enum(['SYMBOLIC', 'FHE']),
+  day: z.number().min(1).max(366),
+  month: z.number().min(0).max(11),
+  year: z.number().min(0),
   externalRef: z.string(),
 })
 
@@ -44,6 +48,22 @@ export class DAppStat
 
   get dappId() {
     return DAppId.fromString(this.get('dappId')).unwrap()
+  }
+
+  get type() {
+    return this.get('type')
+  }
+
+  get day() {
+    return this.get('day')
+  }
+
+  get month() {
+    return this.get('month')
+  }
+
+  get year() {
+    return this.get('year')
   }
 
   get externalRef() {

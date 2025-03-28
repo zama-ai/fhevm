@@ -74,6 +74,10 @@ describe('PrismaDappRepository', () => {
           name: faker.string.alphanumeric(10),
           timestamp: new Date(Date.now()),
           dappId: DAppId.random().value as `dapp_${string}` & z.BRAND<'DAppId'>,
+          type: 'SYMBOLIC',
+          day: 1,
+          month: 0,
+          year: 2024,
           externalRef: faker.string.alphanumeric(10),
         },
       ]
@@ -121,6 +125,10 @@ describe('PrismaDappRepository', () => {
               timestamp: new Date(Date.now()),
               dappId: DAppId.random().value as `dapp_${string}` &
                 z.BRAND<'DAppId'>,
+              type: 'SYMBOLIC',
+              day: 1,
+              month: 0,
+              year: 2024,
               externalRef: faker.string.alphanumeric(16),
             },
             {
@@ -129,6 +137,10 @@ describe('PrismaDappRepository', () => {
               timestamp: new Date(Date.now()),
               dappId: DAppId.random().value as `dapp_${string}` &
                 z.BRAND<'DAppId'>,
+              type: 'SYMBOLIC',
+              day: 1,
+              month: 0,
+              year: 2024,
               externalRef: faker.string.alphanumeric(16),
             },
           ])
