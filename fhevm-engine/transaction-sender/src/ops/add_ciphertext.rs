@@ -195,10 +195,8 @@ where
                 }
             };
 
-            let key_id = tenant_info.key_id;
             let chain_id = tenant_info.chain_id;
             let handle: Vec<u8> = row.handle.clone();
-            let h_as_hex = compact_hex(&handle);
 
             let (ciphertext64_digest, ciphertext128_digest) =
                 match (row.ciphertext, row.ciphertext128) {
@@ -207,18 +205,19 @@ where
                         FixedBytes::from(try_into_array::<32>(ct128)?),
                     ),
                     _ => {
-                        error!("Missing ciphertext(s), handle {}", h_as_hex);
+                        error!("Missing ciphertext(s), handle {}", compact_hex(&handle));
                         continue;
                     }
                 };
 
-            let handle_u256 = U256::from_be_bytes(try_into_array::<32>(handle)?);
+            let handle_u256 = U256::from_be_bytes(try_into_array::<32>(row.handle)?);
+            let key_id = U256::from_be_bytes(tenant_info.key_id);
 
             info!(
                 "Adding ciphertext, handle: {}, chain_id: {}, key_id: {}, ct64: {}, ct128: {}",
-                h_as_hex,
+                compact_hex(&handle),
                 tenant_info.chain_id,
-                tenant_info.key_id,
+                compact_hex(&tenant_info.key_id),
                 compact_hex(ciphertext64_digest.as_ref()),
                 compact_hex(ciphertext128_digest.as_ref()),
             );
@@ -227,7 +226,7 @@ where
                 Some(gas_limit) => ciphertext_manager
                     .addCiphertextMaterial(
                         handle_u256,
-                        U256::from(key_id),
+                        key_id,
                         U256::from(chain_id),
                         ciphertext64_digest,
                         ciphertext128_digest,
@@ -237,7 +236,7 @@ where
                 None => ciphertext_manager
                     .addCiphertextMaterial(
                         handle_u256,
-                        U256::from(key_id),
+                        key_id,
                         U256::from(chain_id),
                         ciphertext64_digest,
                         ciphertext128_digest,
@@ -247,7 +246,6 @@ where
 
             let db_pool = db_pool.clone();
             let provider = self.provider.clone();
-            let handle = row.handle;
 
             join_set.spawn(async move {
                 Self::send_transaction(db_pool, provider, handle, txn_request).await
