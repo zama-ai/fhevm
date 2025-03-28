@@ -4,6 +4,7 @@ use crate::{
     Config, DBConfig, HandleItem,
 };
 use anyhow::Ok;
+use fhevm_engine_common::utils::safe_deserialize;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
@@ -32,7 +33,6 @@ async fn test_fhe_ciphertext128() {
     )
     .await
     .expect("test_decryptable, first_fhe_computation = true");
-
     test_decryptable(
         &conn,
         &sns_client_key,
@@ -71,10 +71,9 @@ async fn test_decryptable(
     let data = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 10).await?;
 
     // deserialize ciphertext128
-    let inner: Vec<tfhe::core_crypto::prelude::LweCiphertext<Vec<u128>>> =
-        bincode::deserialize(&data).expect("serializable ciphertext128");
+    let ct128: Ciphertext128 = safe_deserialize(&data).expect("serializable ciphertext128");
 
-    let decrypted = sns_secret_key.decrypt_128(&Ciphertext128 { inner });
+    let decrypted = sns_secret_key.decrypt_128(&ct128);
     println!("Decrypted, plaintext {}", decrypted);
 
     assert!(decrypted == expected_result as u128);
