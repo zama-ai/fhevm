@@ -2,9 +2,14 @@
 
 npx hardhat clean
 
-npx hardhat compile
+npx hardhat compile:specific --contract "contracts/emptyProxy"
 
 npx hardhat task:deployEmptyUUPSProxies
+
+# The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
+# Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
+# used.
+npx hardhat compile:specific --contract "contracts"
 
 echo "Deploy HTTPZ contract:"
 # Deploy HTTPZ contract
