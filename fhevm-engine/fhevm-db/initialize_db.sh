@@ -1,6 +1,23 @@
 #!/bin/bash
 set -e
 
+# Default to using absolute paths needed for Docker containers
+# Using arg --no-absolute-paths is needed for local DB initialization
+USE_ABSOLUTE_PATHS=true
+
+for arg in "$@"; do
+  if [[ "$arg" == "--no-absolute-paths" ]]; then
+    USE_ABSOLUTE_PATHS=false
+  fi
+done
+
+if [ "$USE_ABSOLUTE_PATHS" = true ]; then
+  MIGRATION_DIR="/migrations"
+  KEY_DIR="/fhevm-keys"
+else
+  MIGRATION_DIR="./migrations"
+  KEY_DIR="./../fhevm-keys"
+fi
 
 echo "-------------- Start database initilaization --------------"
 
@@ -8,15 +25,18 @@ echo "Creating database..."
 sqlx database create || { echo "Failed to create database."; exit 1; }
 
 echo "Running migrations..."
-sqlx migrate run --source /migrations || { echo "Failed to run migrations."; exit 1; }
+sqlx migrate run --source $MIGRATION_DIR || { echo "Failed to run migrations."; exit 1; }
 
 echo "-------------- Start inserting keys for tenant: $TENANT_API_KEY --------------"
 
 CHAIN_ID=${CHAIN_ID:-"12345"}
-PKS_FILE=${PKS_FILE:-"/fhevm-keys/pks"}
-SKS_FILE=${SKS_FILE:-"/fhevm-keys/sks"}
-PUBLIC_PARAMS_FILE=${PUBLIC_PARAMS_FILE:-"/fhevm-keys/pp"}
-SNS_PK_FILE=${SNS_PK_FILE:-"/fhevm-keys/sns_pk"}
+PKS_FILE=${PKS_FILE:-"$KEY_DIR/pks"}
+SKS_FILE=${SKS_FILE:-"$KEY_DIR/sks"}
+PUBLIC_PARAMS_FILE=${PUBLIC_PARAMS_FILE:-"$KEY_DIR/pp"}
+SNS_PK_FILE=${SNS_PK_FILE:-"$KEY_DIR/sns_pk"}
+KEY_ID=${KEY_ID:-"10f49fdf75a123370ce2e2b1c5cc0615fb6e78dd829d0d850470cdbc84f15c11"}
+KEY_ID_HEX="\\x${KEY_ID}"
+
 
 for file in "$PKS_FILE" "$SKS_FILE" "$PUBLIC_PARAMS_FILE" "$SNS_PK_FILE"; do
     if [[ ! -f $file ]]; then
@@ -36,7 +56,7 @@ if [ "$TENANT_EXISTS" = "1" ]; then
 fi
 
 TMP_CSV="/tmp/tenant_data.csv"
-echo "tenant_api_key,chain_id,acl_contract_address,verifying_contract_address,pks_key,sks_key,public_params,sns_pk" > $TMP_CSV
+echo "tenant_api_key,chain_id,acl_contract_address,verifying_contract_address,pks_key,sks_key,public_params,sns_pk,key_id" > $TMP_CSV
 
 
 import_large_file() {
@@ -100,11 +120,20 @@ EOF
 
 echo "Importing large object from $SNS_PK_FILE ($(du -h "$SNS_PK_FILE" | cut -f1))..."
 SNS_PK_OID=$(import_large_file "$SNS_PK_FILE" "$DATABASE_URL")
+ 
 
-echo "$TENANT_API_KEY,$CHAIN_ID,$ACL_CONTRACT_ADDRESS,$INPUT_VERIFIER_ADDRESS,\"\\x$(< "$PKS_FILE" xxd -p | tr -d '\n')\",\"\\x$(< "$SKS_FILE" xxd -p | tr -d '\n')\",\"\\x$(< "$PUBLIC_PARAMS_FILE" xxd -p | tr -d '\n')\",$SNS_PK_OID" >> $TMP_CSV
+echo "$TENANT_API_KEY,$CHAIN_ID,$ACL_CONTRACT_ADDRESS,$INPUT_VERIFIER_ADDRESS,\
+\"\\x$(< "$PKS_FILE" xxd -p | tr -d '\n')\",\
+\"\\x$(< "$SKS_FILE" xxd -p | tr -d '\n')\",\
+\"\\x$(< "$PUBLIC_PARAMS_FILE" xxd -p | tr -d '\n')\",\
+$SNS_PK_OID,\"$KEY_ID_HEX\"" >> $TMP_CSV
+
+echo "----------- Tenant data prepared for insertion: $TMP_CSV -----------"
+ 
+
 
 echo "Inserting tenant data from CSV using \COPY..."
-psql "$DATABASE_URL" -c "\COPY tenants (tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, sns_pk) FROM '$TMP_CSV' CSV HEADER;" || {
+psql "$DATABASE_URL" -c "\COPY tenants (tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, sns_pk, key_id) FROM '$TMP_CSV' CSV HEADER;" || {
     echo "Error: Failed to insert tenant data."; exit 1;
 }
 
