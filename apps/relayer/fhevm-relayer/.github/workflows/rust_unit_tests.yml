@@ -2,6 +2,9 @@ name: Rust Unit Tests
 
 on:
   pull_request:
+    paths-ignore:
+      - "deployments/**"
+      - "hardhat/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}

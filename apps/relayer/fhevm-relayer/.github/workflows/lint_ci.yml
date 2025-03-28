@@ -2,6 +2,9 @@ name: CI lint and checks
 
 on:
   pull_request:
+    paths-ignore:
+      - "deployments/**"
+      - "hardhat/**"
 
 concurrency:
   group: ci-lint-${{ github.ref }}

@@ -2,8 +2,9 @@ name: Dependency analysis
 
 on:
   pull_request:
-    branches:
-      - main
+    paths-ignore:
+    - "deployments/**"
+    - "hardhat/**"
 
 concurrency:
   group: deps-analysis-${{ github.ref }}

@@ -2,8 +2,9 @@ name: Rust Formatting
 
 on:
   pull_request:
-    branches:
-      - main
+    paths-ignore:
+      - "deployments/**"
+      - "hardhat/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}

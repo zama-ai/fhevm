@@ -2,6 +2,9 @@ name: Commitlint
 
 on:
   pull_request:
+    paths-ignore:
+      - "deployments/**"
+      - "hardhat/**"
 
 jobs:
   commitlint:
