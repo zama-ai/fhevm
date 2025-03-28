@@ -1,3 +1,4 @@
+use alloy::primitives::U256;
 use rand::distr::Alphanumeric;
 use rand::Rng;
 use sqlx::postgres::types::Oid;
@@ -6,6 +7,7 @@ use std::time::Duration;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 use tokio::time::sleep;
+use tracing::info;
 
 pub const ACL_CONTRACT_ADDR: &str = "0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2";
 
@@ -168,7 +170,7 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
 
 pub async fn insert_random_tenant(pool: &PgPool) -> Result<i32, sqlx::Error> {
     let chain_id: i32 = rand::rng().random_range(1..10000);
-    let key_id: i32 = rand::rng().random_range(1..10000);
+    let key_id_i32: i32 = rand::rng().random_range(1..10000);
 
     let verifying_contract_address: String = rand::rng()
         .sample_iter(&Alphanumeric)
@@ -182,9 +184,15 @@ pub async fn insert_random_tenant(pool: &PgPool) -> Result<i32, sqlx::Error> {
         .map(char::from)
         .collect();
 
+    info!(
+        "Dummy tenant info chain_id: {}, key_id: {}, acl_addr: {}, verify_addr: {}",
+        chain_id, key_id_i32, acl_contract_address, verifying_contract_address
+    );
+
     let pks_key: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
     let sks_key: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
     let public_params: Vec<u8> = (0..64).map(|_| rand::random::<u8>()).collect();
+    let key_id = U256::from(key_id_i32).to_be_bytes::<32>();
 
     let row = sqlx::query!(
         r#"
@@ -195,7 +203,7 @@ pub async fn insert_random_tenant(pool: &PgPool) -> Result<i32, sqlx::Error> {
                   acl_contract_address, pks_key, sks_key, public_params, key_id
         "#,
         chain_id,
-        key_id,
+        &key_id,
         verifying_contract_address,
         acl_contract_address,
         pks_key,

@@ -12,6 +12,7 @@ tracing = { workspace = true }
 sqlx = { workspace = true}
 rand = { workspace = true}
 tokio-util = { workspace = true}
+alloy = { workspace = true }
 hex = "0.4"
 serde_json = "1.0" 
 testcontainers = "0.23"
