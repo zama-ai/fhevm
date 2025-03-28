@@ -167,7 +167,9 @@ where
 }
 
 pub struct TenantInfo {
-    pub key_id: i32,
+    /// The key_id of the tenant
+    pub key_id: [u8; 32],
+    /// The chain id of the tenant
     pub chain_id: i32,
 }
 
@@ -187,8 +189,14 @@ where
     .fetch_one(conn)
     .await?;
 
+    let key_id_vec: Vec<u8> = row.try_get("key_id")?;
+
+    let key_id: [u8; 32] = key_id_vec
+        .try_into()
+        .map_err(|_| "Failed to convert key_id to [u8; 32]")?;
+
     let res: TenantInfo = TenantInfo {
-        key_id: row.try_get("key_id")?,
+        key_id,
         chain_id: row.try_get("chain_id")?,
     };
 
