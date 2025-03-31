@@ -1,0 +1,31 @@
+# All of the options which can be passed via CLI arguments can also be
+# permanently specified in this file.
+
+[advisories]
+# The ignored vulnerability RUSTSEC-2024-0388 is due to sqlx-mysql which is not used
+ignore = ["RUSTSEC-2023-0071"]
+informational_warnings = ["unmaintained"]
+severity_threshold = "medium"
+
+# Advisory Database Configuration
+[database]
+path = ".cargo/advisory-db" # Path where advisory git repo will be cloned
+url = "https://github.com/RustSec/advisory-db.git" # URL to git repo
+fetch = true # Perform a `git fetch` before auditing (default: true)
+stale = false # Allow stale advisory DB (i.e. no commits for 90 days, default: false)
+
+# Output Configuration
+[output]
+deny = [] # exit on error if unmaintained dependencies are found
+format = "terminal" # "terminal" (human readable report) or "json"
+quiet = false # Only print information on error
+show_tree = false # Show inverse dependency trees along with advisories (default: true)
+
+# Target Configuration
+[target]
+os = "linux"
+# arch = "x86_64"
+
+[yanked]
+enabled = true # Warn for yanked crates in Cargo.lock (default: true)
+update_index = true # Auto-update the crates.io index (default: true)

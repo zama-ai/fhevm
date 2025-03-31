@@ -1,0 +1,51 @@
+name: Dependency analysis
+
+on:
+  pull_request:
+    paths-ignore:
+    - "deployments/**"
+    - "hardhat/**"
+
+concurrency:
+  group: deps-analysis-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  dependencies-check:
+    runs-on: ubuntu-latest
+    steps:
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
+        with:
+          toolchain: stable
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@84ca29d5c1719e79e23b6af147555a8f4dac79d6 # v1.10.14
+
+      - name: Install cargo tools
+        run: |
+          cargo binstall --no-confirm --force \
+            cargo-audit@0.21.0 \
+            cargo-deny@0.16.2
+
+      - name: Check that Cargo.lock is the source of truth
+        run: |
+          cd fhevm-engine
+          cargo update -w --locked || (echo "Error: Cargo.lock is out of sync. Please run 'cargo update' locally and commit changes" && exit 1)
+
+      - name: License whitelist
+        run: |
+          cd fhevm-engine
+          cargo-deny deny check license --deny license-not-encountered
+
+      - name: Security issue whitelist
+        run: |
+          cd fhevm-engine
+          cargo-audit audit
+
+permissions:
+  contents: read
+  checks: write

@@ -2,6 +2,7 @@
 name = "fhevm-listener"
 version = "0.0.1"
 edition = "2021"
+license.workspace = true
 
 [[bin]]
 path = "src/bin/main.rs"
