@@ -1,0 +1,33 @@
+# Check the contract selectors are up-to-date.
+name: "Contract selectors check"
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: contract-selectors-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check-selectors:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c # v1.3.1
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate contract selectors
+        run: |
+          if ! forge selectors list | tail -n +2 | diff ./docs/contract_selectors.txt - &> /dev/null; then
+            echo -e "\033[91m\033[1m[-]\033[0m Contract selectors are not up-to-date." >&2
+            echo "Please run 'make update-selectors' to update them." >&2
+            exit 1
+          fi
