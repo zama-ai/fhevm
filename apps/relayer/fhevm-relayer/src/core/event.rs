@@ -655,4 +655,35 @@ mod tests {
         assert_eq!(json.response.handles, vec![expected_handle.clone()]);
         assert_eq!(json.response.signatures, vec![expected_signature]);
     }
+
+    use super::UserDecryptResponse;
+    use crate::http::userdecrypt_http_listener::UserDecryptResponseJson;
+    use alloy::primitives::Bytes;
+
+    #[test]
+    fn test_try_from_user_decrypt_response() {
+        // Create a UserDecryptResponse instance
+        let reencrypted_shares = vec![Bytes::from(vec![1, 2, 3, 4]), Bytes::from(vec![5, 6, 7, 8])];
+        let signatures = vec![
+            Bytes::from(vec![9, 10, 11, 12]),
+            Bytes::from(vec![13, 14, 15, 16]),
+        ];
+
+        let response = UserDecryptResponse {
+            gateway_request_id: U256::from_str("5").unwrap(),
+            reencrypted_shares,
+            signatures,
+        };
+
+        // Convert UserDecryptResponse to UserDecryptResponseJson
+        let json_response = UserDecryptResponseJson::try_from(response).unwrap();
+
+        // Expected UserDecryptResponseJson
+        let expected_json_response = "{\"response\":[{\"payload\":\"0x01020304\",\"signature\":\"0x090a0b0c\"},{\"payload\":\"0x05060708\",\"signature\":\"0x0d0e0f10\"}]}";
+        // Serialize the json response and print the json string
+        let json_string = serde_json::to_string(&json_response).unwrap();
+
+        println!("JSON Response: {:?}", json_string);
+        assert_eq!(json_string, expected_json_response);
+    }
 }
