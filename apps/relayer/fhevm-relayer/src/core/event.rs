@@ -679,7 +679,7 @@ mod tests {
         let json_response = UserDecryptResponseJson::try_from(response).unwrap();
 
         // Expected UserDecryptResponseJson
-        let expected_json_response = "{\"response\":[{\"payload\":\"0x01020304\",\"signature\":\"0x090a0b0c\"},{\"payload\":\"0x05060708\",\"signature\":\"0x0d0e0f10\"}]}";
+        let expected_json_response = "{\"response\":[{\"payload\":\"01020304\",\"signature\":\"090a0b0c\"},{\"payload\":\"05060708\",\"signature\":\"0d0e0f10\"}]}";
         // Serialize the json response and print the json string
         let json_string = serde_json::to_string(&json_response).unwrap();
 

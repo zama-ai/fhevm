@@ -53,7 +53,7 @@ pub struct UserDecryptResponseJson {
     pub response: Vec<UserDecryptResponsePayloadJson>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct UserDecryptResponsePayloadJson {
     pub payload: Bytes,
     pub signature: Bytes,
@@ -183,6 +183,31 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             }
         }
     }
+}
+
+use serde::ser::SerializeStruct;
+use serde::Serializer;
+
+impl Serialize for UserDecryptResponsePayloadJson {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("UserDecryptResponsePayloadJson", 2)?;
+        state.serialize_field(
+            "payload",
+            &serialize_vec_as_hex::<S>(&self.payload.to_vec()),
+        )?;
+        state.serialize_field(
+            "signature",
+            &serialize_vec_as_hex::<S>(&self.signature.to_vec()),
+        )?;
+        state.end()
+    }
+}
+
+fn serialize_vec_as_hex<S>(vec: &Vec<u8>) -> String {
+    hex::encode(vec)
 }
 
 // #[cfg(test)]
