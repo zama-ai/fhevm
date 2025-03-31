@@ -7,7 +7,7 @@ use alloy::{
 use clap::Parser;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
-use transaction_sender::{ConfigSettings, TransactionSender};
+use transaction_sender::{ConfigSettings, ProviderFillers, TransactionSender};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -71,6 +71,9 @@ struct Conf {
 
     #[arg(long, default_value = "16")]
     error_sleep_max_secs: u16,
+
+    #[arg(long, default_value = "10")]
+    txn_receipt_timeout_secs: u16,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -92,14 +95,15 @@ async fn main() -> anyhow::Result<()> {
     let conf = Conf::parse();
     let signer = PrivateKeySigner::from_str(conf.private_key.trim())?;
     let wallet = EthereumWallet::new(signer.clone());
-    let provider = ProviderBuilder::new()
-        .wallet(wallet.clone())
-        .on_http(conf.gateway_url.clone());
     let database_url = conf
         .database_url
         .clone()
         .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
     let cancel_token = CancellationToken::new();
+    let provider = ProviderBuilder::new()
+        .filler(ProviderFillers::default())
+        .wallet(wallet)
+        .on_http(conf.gateway_url);
     let sender = TransactionSender::new(
         conf.zkpok_manager_address,
         conf.ciphertext_manager_address,
@@ -123,6 +127,7 @@ async fn main() -> anyhow::Result<()> {
             add_ciphertexts_max_retries: conf.add_ciphertexts_max_retries,
             allow_handle_batch_limit: conf.allow_handle_batch_limit,
             allow_handle_max_retries: conf.allow_handle_max_retries,
+            txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
         },
         None,
     )

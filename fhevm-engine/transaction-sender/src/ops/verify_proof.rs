@@ -11,6 +11,7 @@ use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
+use std::time::Duration;
 use tokio::task::JoinSet;
 use tracing::{debug, error, info};
 use ZKPoKManager::ZKPoKManagerErrors;
@@ -138,8 +139,12 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
             }
         };
 
-        // Here, we assume we are sending the transaction to a rollup, hence the confirmations of 1.
+        // TODO: Even though we are sending the txn to a rollup, we need to think about reorgs of the parent chain and,
+        // therefore, potentially change the required confirmations to a value greater than 1.
         let receipt = match transaction
+            .with_timeout(Some(Duration::from_secs(
+                self.conf.txn_receipt_timeout_secs as u64,
+            )))
             .with_required_confirmations(1)
             .get_receipt()
             .await

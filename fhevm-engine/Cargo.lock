@@ -6792,6 +6792,7 @@ dependencies = [
 name = "test-harness"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "hex",
  "rand 0.9.0",

@@ -6,11 +6,10 @@ use common::{ACLManager, TestEnvironment};
 use rand::random;
 use serial_test::serial;
 use sqlx::PgPool;
-use std::sync::Arc;
 use std::time::Duration;
 use test_harness::db_utils::insert_random_tenant;
 use tokio::time::sleep;
-use transaction_sender::TransactionSender;
+use transaction_sender::{ProviderFillers, TransactionSender};
 
 mod common;
 
@@ -18,7 +17,9 @@ mod common;
 #[serial(db)]
 async fn test_allow_handle() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
     let acl_manager = ACLManager::deploy(&provider).await?;
 
     let txn_sender = TransactionSender::new(

@@ -7,27 +7,29 @@ use common::{CiphertextManager, TestEnvironment, ZKPoKManager};
 use futures_util::StreamExt;
 use rand::random;
 use serial_test::serial;
-use std::sync::Arc;
+use sqlx::{Postgres, QueryBuilder};
 use std::time::Duration;
 use tokio::time::sleep;
-use transaction_sender::TransactionSender;
+use transaction_sender::{ProviderFillers, TransactionSender};
 
 mod common;
+
+sol! {
+    struct CiphertextVerification {
+        bytes32[] ctHandles;
+        address userAddress;
+        address contractAddress;
+        uint256 contractChainId;
+    }
+}
 
 #[tokio::test]
 #[serial(db)]
 async fn verify_proof_response_success() -> anyhow::Result<()> {
-    sol! {
-        struct CiphertextVerification {
-            bytes32[] ctHandles;
-            address userAddress;
-            address contractAddress;
-            uint256 contractChainId;
-        }
-    }
-
     let env = TestEnvironment::new().await?;
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, false).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -129,9 +131,119 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
 
 #[tokio::test]
 #[serial(db)]
+async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
+    let env = TestEnvironment::new().await?;
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
+    let zkpok_manager = ZKPoKManager::deploy(&provider, false, false).await?;
+    let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
+    let txn_sender = TransactionSender::new(
+        *zkpok_manager.address(),
+        *ciphertext_manager.address(),
+        PrivateKeySigner::random().address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let event_filter = zkpok_manager
+        .VerifyProofResponseCalled_filter()
+        .watch()
+        .await?;
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    let count = 32;
+
+    let events_handle = tokio::spawn(async move {
+        event_filter
+            .into_stream()
+            .take(count)
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .map(|item| item.unwrap())
+            .collect::<Vec<_>>()
+    });
+
+    let contract_chain_id = 42u64;
+
+    let mut query_builder = QueryBuilder::<Postgres>::new("WITH ins AS (
+            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)");
+    query_builder.push_values(0..count, |mut b, i| {
+        b.push_bind(i as i64);
+        b.push_bind(contract_chain_id as i64);
+        b.push_bind(env.contract_address.to_string());
+        b.push_bind(env.user_address.to_string());
+        b.push_bind(&[1u8; 64]);
+        b.push_bind(true);
+    });
+    query_builder.push(")");
+    query_builder.push("SELECT pg_notify(");
+    query_builder.push_bind(env.conf.verify_proof_resp_db_channel);
+    query_builder
+        .push(", '')")
+        .build()
+        .execute(&env.db_pool)
+        .await?;
+
+    let events = events_handle.await?;
+    for i in 0..count {
+        let proof_id = i;
+        let expected_proof_id = U256::from(proof_id);
+        let expected_handles: Vec<FixedBytes<32>> =
+            vec![FixedBytes([1u8; 32]), FixedBytes([1u8; 32])];
+        let domain = eip712_domain! {
+            name: "ZKPoKManager",
+            version: "1",
+            chain_id: provider.get_chain_id().await?,
+            verifying_contract: *zkpok_manager.address(),
+        };
+        let signing_hash = CiphertextVerification {
+            ctHandles: expected_handles.clone(),
+            userAddress: env.user_address,
+            contractAddress: env.contract_address,
+            contractChainId: U256::from(contract_chain_id),
+        }
+        .eip712_signing_hash(&domain);
+        let expected_sig = env.signer.sign_hash_sync(&signing_hash)?;
+
+        // Make sure data in the event is correct, including the deterministic ECDSA signature.
+        assert_eq!(events[i].0._0, expected_proof_id);
+        assert_eq!(events[i].0._1, expected_handles);
+        assert_eq!(events[i].0._2.as_ref(), expected_sig.as_bytes());
+    }
+
+    // Make sure the proofs are removed from the database.
+    loop {
+        let rows = sqlx::query!(
+            "SELECT *
+             FROM verify_proofs"
+        )
+        .fetch_all(&env.db_pool)
+        .await?;
+        if rows.is_empty() {
+            break;
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    env.cancel_token.cancel();
+    run_handle.await??;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn verify_proof_response_reversal_already_responded() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
     let zkpok_manager = ZKPoKManager::deploy(&provider, true, false).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -206,7 +318,9 @@ async fn verify_proof_response_reversal_already_responded() -> anyhow::Result<()
 #[serial(db)]
 async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -277,7 +391,9 @@ async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result
 #[serial(db)]
 async fn verify_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
@@ -351,8 +467,9 @@ async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
     let mut env = TestEnvironment::new().await?;
     env.conf.verify_proof_remove_after_max_retries = true;
     env.conf.verify_proof_resp_max_retries = 2;
-
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -415,8 +532,9 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
     let mut env = TestEnvironment::new().await?;
     env.conf.verify_proof_remove_after_max_retries = false;
     env.conf.verify_proof_resp_max_retries = 2;
-
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -490,7 +608,9 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
 #[serial(db)]
 async fn reject_proof_response_success() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, false).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -573,7 +693,9 @@ async fn reject_proof_response_success() -> anyhow::Result<()> {
 #[serial(db)]
 async fn reject_proof_response_reversal_already_responded() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
     let zkpok_manager = ZKPoKManager::deploy(&provider, true, false).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -647,7 +769,9 @@ async fn reject_proof_response_reversal_already_responded() -> anyhow::Result<()
 #[serial(db)]
 async fn reject_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
@@ -715,7 +839,9 @@ async fn reject_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
 #[serial(db)]
 async fn reject_proof_response_other_reversal_gas_estimation() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(

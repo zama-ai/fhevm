@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::common::try_into_array;
 use super::TransactionOperation;
 use alloy::{
@@ -30,6 +32,7 @@ pub struct AddCiphertextOperation<P: Provider<Ethereum> + Clone + 'static> {
 
 impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
     async fn send_transaction(
+        &self,
         db_pool: Pool<Postgres>,
         provider: P,
         handle: Vec<u8>,
@@ -56,6 +59,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         // Here, we assume we are sending the transaction to a rollup, hence the
         // confirmations of 1.
         let receipt = match transaction
+            .with_timeout(Some(Duration::from_secs(
+                self.conf.txn_receipt_timeout_secs as u64,
+            )))
             .with_required_confirmations(1)
             .get_receipt()
             .await
@@ -210,7 +216,7 @@ where
                     }
                 };
 
-            let handle_u256 = U256::from_be_bytes(try_into_array::<32>(row.handle)?);
+            let handle_u256 = U256::from_be_bytes(try_into_array::<32>(row.handle.clone())?);
             let key_id = U256::from_be_bytes(tenant_info.key_id);
 
             info!(
@@ -247,8 +253,11 @@ where
             let db_pool = db_pool.clone();
             let provider = self.provider.clone();
 
+            let operation = self.clone();
             join_set.spawn(async move {
-                Self::send_transaction(db_pool, provider, handle, txn_request).await
+                operation
+                    .send_transaction(db_pool, provider, row.handle, txn_request)
+                    .await
             });
         }
 

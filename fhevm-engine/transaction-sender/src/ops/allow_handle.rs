@@ -1,6 +1,7 @@
 use std::{
     fmt::{Display, Formatter},
     str::FromStr,
+    time::Duration,
 };
 
 use crate::ops::common::try_into_array;
@@ -57,6 +58,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
     ///
     /// TODO: Refactor: Avoid code duplication
     async fn send_transaction(
+        &self,
         db_pool: Pool<Postgres>,
         provider: P,
         key: &Key,
@@ -83,6 +85,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
         // Here, we assume we are sending the transaction to a rollup, hence the
         // confirmations of 1.
         let receipt = match transaction
+            .with_timeout(Some(Duration::from_secs(
+                self.conf.txn_receipt_timeout_secs as u64,
+            )))
             .with_required_confirmations(1)
             .get_receipt()
             .await
@@ -268,8 +273,11 @@ where
                 tenant_id: row.tenant_id,
             };
 
+            let operation = self.clone();
             join_set.spawn(async move {
-                Self::send_transaction(db_pool, provider, &key, txn_request).await
+                operation
+                    .send_transaction(db_pool, provider, &key, txn_request)
+                    .await
             });
         }
 

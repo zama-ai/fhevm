@@ -5,11 +5,10 @@ use common::{CiphertextManager, TestEnvironment};
 use rand::{random, Rng};
 use serial_test::serial;
 use sqlx::PgPool;
-use std::sync::Arc;
 use std::time::Duration;
 use test_harness::db_utils::insert_random_tenant;
 use tokio::time::sleep;
-use transaction_sender::{ConfigSettings, TransactionSender};
+use transaction_sender::{ConfigSettings, ProviderFillers, TransactionSender};
 
 mod common;
 
@@ -17,7 +16,9 @@ mod common;
 #[serial(db)]
 async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
-    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil_with_wallet();
 
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -119,7 +120,9 @@ async fn test_retry_mechanism() -> anyhow::Result<()> {
     let env = TestEnvironment::new_with_config(conf).await?;
 
     // Create a provider without a wallet.
-    let provider = Arc::new(ProviderBuilder::new().on_anvil());
+    let provider = ProviderBuilder::default()
+        .filler(ProviderFillers::default())
+        .on_anvil();
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
