@@ -35,5 +35,6 @@ check-abi:
 update-abi:
 	python3 httpz_gateway_rust_bindings/abi_update.py update
 
-start-local-node:
-	npx hardhat node --port 8546
+update-selectors:
+	forge selectors list | tail -n +2 > ./docs/contract_selectors.txt
+
