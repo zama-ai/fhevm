@@ -1,6 +1,9 @@
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
-import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
-import { Injectable, Logger } from '@nestjs/common'
+import {
+  DAPP_REPOSITORY,
+  DAppRepository,
+} from '#dapps/domain/repositories/dapp.repository.js'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { AppError, Task, unauthorizedError, UseCase } from 'utils'
 
 type Input = {
@@ -12,7 +15,10 @@ type Input = {
 @Injectable()
 export class ApiKeyAllowsRequest implements UseCase<Input, void> {
   private readonly logger = new Logger(ApiKeyAllowsRequest.name)
-  constructor(private readonly dappRepository: DAppRepository) {}
+
+  constructor(
+    @Inject(DAPP_REPOSITORY) private readonly dappRepository: DAppRepository,
+  ) {}
 
   execute(input: Input): Task<void, AppError> {
     this.logger.debug(

@@ -2,7 +2,10 @@ import { PRODUCER } from '#constants.js'
 import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { DApp } from '#dapps/domain/entities/dapp.js'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
-import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
+import {
+  DAPP_REPOSITORY,
+  DAppRepository,
+} from '#dapps/domain/repositories/dapp.repository.js'
 import { IProducer } from '#shared/services/producer.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
@@ -28,7 +31,7 @@ export class GetDappRawStatsUseCase implements UseCase<Input, Output> {
   private readonly logger = new Logger(GetDappRawStatsUseCase.name)
   constructor(
     @Inject(PRODUCER) private readonly producer: IProducer,
-    private readonly repo: DAppRepository,
+    @Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository,
   ) {}
 
   execute(input: Input): Task<Output, AppError> {

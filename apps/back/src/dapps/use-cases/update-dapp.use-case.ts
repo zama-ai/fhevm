@@ -2,7 +2,10 @@ import { Inject, Injectable } from '@nestjs/common'
 import type { AppError, UnitOfWork, UseCase } from 'utils'
 import { Task } from 'utils'
 import { DAppProps } from '../domain/entities/dapp.js'
-import { DAppRepository } from '../domain/repositories/dapp.repository.js'
+import {
+  DAPP_REPOSITORY,
+  DAppRepository,
+} from '../domain/repositories/dapp.repository.js'
 import { User } from '#users/domain/entities/user.js'
 import { forbiddenError } from 'utils/dist/src/app-error.js'
 import { UNIT_OF_WORK } from '#constants.js'
@@ -24,7 +27,7 @@ interface Input {
 export class UpdateDapp implements UseCase<Input, DAppProps> {
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
-    private readonly dappRepository: DAppRepository,
+    @Inject(DAPP_REPOSITORY) private readonly dappRepository: DAppRepository,
     @Inject(SUBSCRIPTION_SERVICE)
     private readonly subscriptions: SubscriptionService,
   ) {}

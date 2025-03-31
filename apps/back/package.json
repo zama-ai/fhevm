@@ -64,6 +64,9 @@
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.4.10",
+    "@suites/di.nestjs": "^3.0.1",
+    "@suites/doubles.vitest": "^3.0.1",
+    "@suites/unit": "^3.0.1",
     "@swc/core": "^1.10.1",
     "@testcontainers/localstack": "^10.16.0",
     "@testcontainers/postgresql": "^10.16.0",
@@ -94,8 +97,7 @@
     "typescript": "catalog:",
     "unplugin-swc": "catalog:",
     "vite-tsconfig-paths": "catalog:",
-    "vitest": "catalog:",
-    "vitest-mock-extended": "^2.0.2"
+    "vitest": "catalog:"
   },
   "imports": {
     "#prisma/client": "./dist/generated/client",

@@ -1,7 +1,5 @@
-import { Test } from '@nestjs/testing'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { PrismaDAppRepository } from './prisma-dapp.repository.js'
-import { PrismaService } from '../__mocks__/prisma.service.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 import {
   ApiKeyId,
@@ -15,20 +13,22 @@ import { z } from 'zod'
 import { TeamId } from '#users/domain/entities/value-objects.js'
 import { Dapp, DappStatus } from '#prisma/client/index.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
+import { TestBed } from '@suites/unit'
+import { Mocked } from '@suites/doubles.vitest'
+import { PrismaService } from '../prisma.service.js'
 
 vi.mock('../prisma.service.js')
 
 describe('PrismaDappRepository', () => {
   let repo: DAppRepository
-  let prisma: PrismaService
+  let prisma: Mocked<PrismaService>
 
   beforeEach(async () => {
-    const moduleRef = await Test.createTestingModule({
-      providers: [PrismaDAppRepository, PrismaService],
-    }).compile()
+    const { unit, unitRef } =
+      await TestBed.solitary(PrismaDAppRepository).compile()
 
-    repo = moduleRef.get(PrismaDAppRepository)
-    prisma = moduleRef.get(PrismaService)
+    repo = unit
+    prisma = unitRef.get(PrismaService) as unknown as Mocked<PrismaService>
   })
 
   describe('findAllStats', () => {

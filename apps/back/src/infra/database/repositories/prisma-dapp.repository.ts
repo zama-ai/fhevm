@@ -18,11 +18,9 @@ import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
 
 @Injectable()
-export class PrismaDAppRepository extends DAppRepository {
+export class PrismaDAppRepository implements DAppRepository {
   logger = new Logger(PrismaDAppRepository.name)
-  constructor(private readonly db: PrismaService) {
-    super()
-  }
+  constructor(private readonly db: PrismaService) {}
 
   create = (data: DApp): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {

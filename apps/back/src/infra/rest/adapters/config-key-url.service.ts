@@ -8,12 +8,10 @@ import { ConfigService } from '@nestjs/config'
 import { Task, AppError, isOk } from 'utils'
 
 @Injectable()
-export class ConfigKeyUrlService extends KeyUrlService {
+export class ConfigKeyUrlService implements KeyUrlService {
   private readonly logger = new Logger(ConfigKeyUrlService.name)
 
-  constructor(private readonly config: ConfigService) {
-    super()
-  }
+  constructor(private readonly config: ConfigService) {}
 
   getFHEPublicKey(): Task<FHEPublicKey[], AppError> {
     const data = this.config.get<unknown[]>('httpz.fhe_key_info')

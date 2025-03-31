@@ -1,6 +1,9 @@
 import { UNIT_OF_WORK } from '#constants.js'
 import { ApiKeyId } from '#dapps/domain/entities/value-objects.js'
-import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
+import {
+  DAPP_REPOSITORY,
+  DAppRepository,
+} from '#dapps/domain/repositories/dapp.repository.js'
 import { Inject } from '@nestjs/common'
 import { AppError, Task, UnitOfWork, UseCase } from 'utils'
 
@@ -13,7 +16,7 @@ type Output = void
 export class DeleteApiKey implements UseCase<Input, Output> {
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
-    private readonly repo: DAppRepository,
+    @Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository,
   ) {}
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

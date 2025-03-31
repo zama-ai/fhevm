@@ -1,23 +1,31 @@
 import { beforeEach, describe, expect, test } from 'vitest'
 import { CreateApiKey } from './create-api-key.use-case.js'
 import { executeTask, notFoundError, Task, UnitOfWork } from 'utils'
-import { mock, MockProxy } from 'vitest-mock-extended'
-import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
+// import { mock, MockProxy } from 'vitest-mock-extended'
+import type { Mocked } from '@suites/doubles.vitest'
+import {
+  DAPP_REPOSITORY,
+  DAppRepository,
+} from '#dapps/domain/repositories/dapp.repository.js'
 import { ApiKeyId, DAppId } from '#dapps/domain/entities/value-objects.js'
 import { DApp } from '#dapps/domain/entities/dapp.js'
 import { faker } from '@faker-js/faker'
 import { TeamId } from '#users/domain/entities/value-objects.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
+import { TestBed } from '@suites/unit'
+import { UNIT_OF_WORK } from '#constants.js'
 
 describe('CreateApiKey', () => {
   let useCase: CreateApiKey
-  let uow: MockProxy<UnitOfWork>
-  let repo: MockProxy<DAppRepository>
+  let uow: Mocked<UnitOfWork>
+  let repo: Mocked<DAppRepository>
 
-  beforeEach(() => {
-    uow = mock<UnitOfWork>()
-    repo = mock<DAppRepository>()
-    useCase = new CreateApiKey(uow, repo)
+  beforeEach(async () => {
+    const { unit, unitRef } = await TestBed.solitary(CreateApiKey).compile()
+
+    uow = unitRef.get(UNIT_OF_WORK) as unknown as Mocked<UnitOfWork>
+    repo = unitRef.get(DAPP_REPOSITORY) as unknown as Mocked<DAppRepository>
+    useCase = unit
 
     uow.exec.mockImplementation(task => task)
   })

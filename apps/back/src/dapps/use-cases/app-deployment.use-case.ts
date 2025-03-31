@@ -1,7 +1,10 @@
 import { back } from 'messages'
 import type { AppError, IPubSub, ISubscriber, UnitOfWork, UseCase } from 'utils'
 import { isAppError, Task } from 'utils'
-import { DAppRepository } from '../domain/repositories/dapp.repository.js'
+import {
+  DAPP_REPOSITORY,
+  DAppRepository,
+} from '../domain/repositories/dapp.repository.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { PUBSUB, UNIT_OF_WORK } from '#constants.js'
 import { DAppId } from '../domain/entities/value-objects.js'
@@ -28,7 +31,7 @@ export class AppDeployment implements UseCase<Input, void> {
   constructor(
     @Inject(PUBSUB) private readonly pubsub: IPubSub<back.BackEvent>,
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
-    private readonly repo: DAppRepository,
+    @Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository,
   ) {
     this.pubsub.subscribe('back:dapp:*', this.handleEvent)
   }

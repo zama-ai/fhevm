@@ -1,31 +1,23 @@
-import { Test } from '@nestjs/testing'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { SQSConsumer } from './sqs.consumer.js'
 import { PUBSUB } from '#constants.js'
-import { mock, MockProxy } from 'vitest-mock-extended'
 import { Task, unknownError, type IPubSub } from 'utils'
 import { back } from 'messages'
 import { faker } from '@faker-js/faker'
 import { Message } from '@aws-sdk/client-sqs'
+import { Mocked } from '@suites/doubles.vitest'
+import { TestBed } from '@suites/unit'
 
 describe('SqsConsumer', () => {
   describe(`given it's listening to a queue`, () => {
-    let pubsub: MockProxy<IPubSub<back.BackEvent>>
+    let pubsub: Mocked<IPubSub<back.BackEvent>>
     let consumer: SQSConsumer
 
     beforeEach(async () => {
-      pubsub = mock<IPubSub<back.BackEvent>>()
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          SQSConsumer,
-          {
-            provide: PUBSUB,
-            useValue: pubsub,
-          },
-        ],
-      }).compile()
+      const { unit, unitRef } = await TestBed.solitary(SQSConsumer).compile()
 
-      consumer = moduleRef.get(SQSConsumer)
+      consumer = unit
+      pubsub = unitRef.get(PUBSUB) as unknown as Mocked<IPubSub<back.BackEvent>>
     })
 
     describe('when it receives a message', () => {

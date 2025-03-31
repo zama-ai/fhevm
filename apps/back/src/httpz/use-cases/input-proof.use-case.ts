@@ -28,10 +28,8 @@ export class InputProof implements UseCase<Input, Output> {
     private readonly pubsub: IPubSub<back.BackEvent>,
     @Inject(PRODUCER)
     private readonly publisher: IProducer,
+    private readonly apiKeyAllowsRequest: ApiKeyAllowsRequest,
   ) {}
-
-  @Inject(ApiKeyAllowsRequest)
-  private readonly apiKeyAllowsRequest: ApiKeyAllowsRequest
 
   execute = (
     input: Input,
@@ -44,6 +42,9 @@ export class InputProof implements UseCase<Input, Output> {
         apiKey: context.apiKey,
         chainId: input.contractChainId,
         address: input.contractAddress,
+      })
+      .tap(() => {
+        this.logger.debug(`apiKey=${context.apiKey}}`)
       })
       .chain(() =>
         every<ChainId, Web3Address, Web3Address, AppError>([

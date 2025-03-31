@@ -3,7 +3,10 @@ import type { UseCase, AppError, UnitOfWork } from 'utils'
 import { Task } from 'utils'
 
 import { DApp, DAppProps } from '../domain/entities/dapp.js'
-import { DAppRepository } from '../domain/repositories/dapp.repository.js'
+import {
+  DAPP_REPOSITORY,
+  DAppRepository,
+} from '../domain/repositories/dapp.repository.js'
 import { TeamRepository } from '#users/domain/repositories/team.repository.js'
 import { User } from '#users/domain/entities/user.js'
 import { TeamId } from '#users/domain/entities/value-objects.js'
@@ -22,7 +25,7 @@ interface Input {
 export class CreateDapp implements UseCase<Input, DAppProps> {
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
-    private readonly dappRepository: DAppRepository,
+    @Inject(DAPP_REPOSITORY) private readonly dappRepository: DAppRepository,
     private readonly teamRepository: TeamRepository,
   ) {}
   execute(input: Input): Task<DAppProps, AppError> {

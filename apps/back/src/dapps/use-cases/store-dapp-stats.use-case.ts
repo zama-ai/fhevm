@@ -1,7 +1,10 @@
 import { PUBSUB } from '#constants.js'
 import { DAppStat } from '#dapps/domain/entities/dapp-stat.js'
 import { DAppStatId } from '#dapps/domain/entities/value-objects.js'
-import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
+import {
+  DAPP_REPOSITORY,
+  DAppRepository,
+} from '#dapps/domain/repositories/dapp.repository.js'
 import { ChainId } from '#shared/entities/value-objects/chain-id.js'
 import { SubscriptionDappUpdatedPayload } from '#subscriptions/domain/entities/subscription.js'
 import {
@@ -35,7 +38,7 @@ export class StoreDAppStats implements UseCase<Input, Output> {
   constructor(
     @Inject(PUBSUB)
     private readonly pubsub: PubSub<back.BackEvent>,
-    private readonly repo: DAppRepository,
+    @Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository,
     @Inject(SUBSCRIPTION_SERVICE)
     private readonly subscriptions: SubscriptionService,
   ) {
