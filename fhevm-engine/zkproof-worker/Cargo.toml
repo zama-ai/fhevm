@@ -11,16 +11,16 @@ clap = { workspace = true }
 tfhe = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
-anyhow = { workspace = true }  
+anyhow = { workspace = true }
 tokio-util = { workspace = true }
 bincode = { workspace = true }
-thiserror = { version = "2.0" }
+thiserror = { version = "=2.0" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 rand = {workspace = true}
-alloy-primitives = "0.8.21"   
-sha3 = "0.10.8"
-lru = "0.13"
+alloy-primitives = "=0.8.23"
+sha3 = "=0.10.8"
+lru = "=0.13"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
