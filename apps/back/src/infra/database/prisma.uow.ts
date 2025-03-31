@@ -13,16 +13,16 @@ export class PrismaUOW implements UnitOfWork {
   ) {}
 
   exec<A, E>(task: Task<A, E>): Task<A, E> {
-    this.logger.debug('creating the wrapping task')
+    this.logger.verbose('creating the wrapping task')
     return new Task((resolve, reject) => {
       this.prisma
         .$transaction(tx => {
-          this.logger.debug('init tx')
+          this.logger.verbose('init tx')
           return this.cls.run(() => {
             this.cls.set('transaction', tx)
 
             return task.toPromise().then(value => {
-              this.logger.debug('committing tx')
+              this.logger.verbose('committing tx')
               resolve(value)
             })
           })

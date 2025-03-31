@@ -76,6 +76,9 @@ describe('fetch all dapps', () => {
         expect(res.success).toBe(true)
         if (res.success) {
           user = res.data
+        } else {
+          console.log(`failed to fetch user: ${JSON.stringify(res)}`)
+          expect(res.success).toBe(true)
         }
       })
 

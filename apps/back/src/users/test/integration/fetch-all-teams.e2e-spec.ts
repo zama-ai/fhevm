@@ -54,6 +54,9 @@ describe('fetch all teams', () => {
         expect(res.success, 'Failed to query ME').toBe(true)
         if (res.success) {
           user = res.data
+        } else {
+          console.log(`failed to fetch user: ${JSON.stringify(res)}`)
+          expect(res.success).toBe(true)
         }
       })
 

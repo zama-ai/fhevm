@@ -193,6 +193,7 @@ export class PrismaDAppRepository extends DAppRepository {
 
   /* Api Keys */
   createApiKey = (apiKey: ApiKey): Task<ApiKey, AppError> => {
+    this.logger.verbose(`creating API key for dApp ${apiKey.dappId.value}`)
     return this.findById(apiKey.dappId)
       .chain(() => {
         return new Task<unknown, AppError>((resolve, reject) => {
@@ -220,6 +221,7 @@ export class PrismaDAppRepository extends DAppRepository {
   }
 
   findAllApiKeys = (id: DAppId): Task<ApiKey[], AppError> => {
+    this.logger.verbose(`finding all api keys for ${id.value}`)
     return new Task<unknown[], AppError>((resolve, reject) =>
       this.db.apiKey
         .findMany({ where: { dappId: id.value, deletedAt: null } })
@@ -234,6 +236,7 @@ export class PrismaDAppRepository extends DAppRepository {
   }
 
   findApiKey = (id: ApiKeyId): Task<ApiKey, AppError> => {
+    this.logger.verbose(`finding api key ${id.value}`)
     return new Task<unknown, AppError>((resolve, reject) =>
       this.db.apiKey
         .findUnique({ where: { id: id.value, deletedAt: null } })
@@ -248,6 +251,7 @@ export class PrismaDAppRepository extends DAppRepository {
   }
 
   updateApiKey = (apiKey: ApiKey): Task<ApiKey, AppError> => {
+    this.logger.verbose(`updating api key ${apiKey.id.value}`)
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.apiKey
         .update({
@@ -266,6 +270,7 @@ export class PrismaDAppRepository extends DAppRepository {
   }
 
   deleteApiKey = (id: ApiKeyId): Task<void, AppError> => {
+    this.logger.verbose(`deleting api key ${id.value}`)
     return new Task<unknown, AppError>((resolve, reject) =>
       this.db.apiKey
         .update({ where: { id: id.value }, data: { deletedAt: new Date() } })

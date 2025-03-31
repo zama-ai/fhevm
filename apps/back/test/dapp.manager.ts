@@ -23,7 +23,7 @@ export interface DeployDappResult {
 
 export interface DAppStats {
   id: string
-  stats: {
+  rawStats: {
     id: string
     name: string
     timestamp: Date

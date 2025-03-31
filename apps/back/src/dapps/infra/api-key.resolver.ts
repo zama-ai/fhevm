@@ -6,7 +6,7 @@ import * as uc from '#dapps/use-cases/index.js'
 import { JwtAuthGuard } from '#auth/infra/guards/jwt-auth-guard.js'
 import { CreateApiKeyInput } from './dto/inputs/create-api-key.input.js'
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
-import { UserProps } from '#users/domain/entities/user.js'
+import { User } from '#users/domain/entities/user.js'
 import { QueryApiKeyInput } from './dto/inputs/query-api-key.input.js'
 import { DeleteApiKeyInput } from './dto/inputs/delete-api-key.input.js'
 import { UpdateApiKeyInput } from './dto/inputs/update-api-key.input.js'
@@ -31,7 +31,7 @@ export class ApiKeyResolver {
 
   @Mutation(() => ApiKeyType, { name: 'createApiKey' })
   async createApiKey(
-    @CurrentUser() user: UserProps,
+    @CurrentUser() user: User,
     @Args('input') input: CreateApiKeyInput,
   ) {
     this.logger.verbose(`creating API key for dappId=${input.dappId}`)
@@ -40,7 +40,7 @@ export class ApiKeyResolver {
 
   @Query(() => ApiKeyType, { name: 'apiKey' })
   async getApiKey(
-    @CurrentUser() user: UserProps,
+    @CurrentUser() user: User,
     @Args('input') input: QueryApiKeyInput,
   ) {
     this.logger.verbose(`getting API key by id=${input.id}`)
@@ -51,7 +51,7 @@ export class ApiKeyResolver {
 
   @Mutation(() => ApiKeyType, { name: 'updateApiKey' })
   async updateApiKey(
-    @CurrentUser() user: UserProps,
+    @CurrentUser() user: User,
     @Args('input') input: UpdateApiKeyInput,
   ): Promise<ApiKeyType> {
     this.logger.verbose(`updating API key by id=${input.id}`)
@@ -64,7 +64,7 @@ export class ApiKeyResolver {
 
   @Mutation(() => ID, { name: 'deleteApiKey' })
   async deleteApiKey(
-    @CurrentUser() user: UserProps,
+    @CurrentUser() user: User,
     @Args('input') input: DeleteApiKeyInput,
   ): Promise<string> {
     this.logger.verbose(`deleting API key by id=${input.id}`)

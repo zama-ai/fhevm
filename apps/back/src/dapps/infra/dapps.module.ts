@@ -31,6 +31,6 @@ import { ApiKeyResolver } from './api-key.resolver.js'
     uc.DeleteApiKey,
     uc.ApiKeyAllowsRequest,
   ],
-  exports: [UpdateDapp, GetDappById],
+  exports: [UpdateDapp, GetDappById, uc.ApiKeyAllowsRequest, uc.GetApiKey],
 })
 export class DappsModule {}

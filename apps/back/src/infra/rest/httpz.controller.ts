@@ -41,6 +41,11 @@ export class HttpzController {
     @CurrentApiKey() apiKey: ApiKey,
     @Body() input: InputProofRequest,
   ) {
+    // const apiKey = ApiKey.parse({
+    //   id: 'api_FZCIMYjgOMq7oGoqY4',
+    //   dappId: 'dapp_ItjGBAb_iO9i',
+    //   name: 'debug',
+    // }).unwrap()
     this.logger.log('POST /input-proof')
     const response = await this.inputProofUC
       .execute(input, { apiKey })

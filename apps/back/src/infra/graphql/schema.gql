@@ -118,6 +118,8 @@ type Mutation {
   updateDapp(input: UpdateDappInput!): Dapp!
   deployDapp(input: DeployDAppInput!): Dapp!
   createApiKey(input: CreateApiKeyInput!): ApiKey!
+  updateApiKey(input: UpdateApiKeyInput!): ApiKey!
+  deleteApiKey(input: DeleteApiKeyInput!): ID!
 }
 
 input LoginInput {
@@ -178,6 +180,22 @@ input CreateApiKeyInput {
 
   """API key description"""
   description: String
+}
+
+input UpdateApiKeyInput {
+  """API key ID"""
+  id: ID!
+
+  """API key name"""
+  name: String
+
+  """API key description"""
+  description: String
+}
+
+input DeleteApiKeyInput {
+  """API key ID"""
+  id: ID!
 }
 
 type Subscription {

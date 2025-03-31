@@ -1,4 +1,4 @@
-import { type UserProps } from '#users/domain/entities/user.js'
+import { User } from '#users/domain/entities/user.js'
 import {
   type AppError,
   IPubSub,
@@ -15,11 +15,10 @@ import { Inject, Logger } from '@nestjs/common'
 import { UpdateDapp } from './update-dapp.use-case.js'
 import { randomUUID } from 'crypto'
 import { DAppId } from '../domain/entities/value-objects.js'
-import { UserId } from '#users/domain/entities/value-objects.js'
 import { back, generateRequestId } from 'messages'
 
 interface Input {
-  user: UserProps // to check if they can deploy
+  user: User // to check if they can deploy
   dappId: DAppId
 }
 
@@ -40,7 +39,7 @@ export class DeployDApp implements UseCase<Input, DAppProps> {
     return this.uow
       .exec(
         this.dappRepository
-          .findOneByIdAndUserId(dappId, UserId.from(user.id))
+          .findOneByIdAndUserId(dappId, user.id)
           .tap(dapp => {
             this.logger.debug(`dapp: ${dapp}`)
           })
@@ -65,7 +64,7 @@ export class DeployDApp implements UseCase<Input, DAppProps> {
                     },
                     {
                       correlationId: randomUUID(),
-                      userId: user.id, // NOTE: do we still need it?
+                      userId: user.id.value, // NOTE: do we still need it?
                     },
                   ),
                 )
