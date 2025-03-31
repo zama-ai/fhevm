@@ -31,5 +31,6 @@ task("task:addNetworksToHttpz").setAction(async function (_, { ethers }) {
     await httpz.addNetwork(network);
   }
 
+  console.log("In HTTPZ contract:", proxyAddress, "\n");
   console.log("Added L1 networks:", layer1Networks, "\n");
 });
