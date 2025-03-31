@@ -436,11 +436,21 @@ impl TryFrom<UserDecryptResponse> for UserDecryptResponseJson {
     type Error = String;
 
     fn try_from(response: UserDecryptResponse) -> Result<Self, Self::Error> {
+        let mut json_response: Vec<UserDecryptResponsePayloadJson> = Vec::new();
+
+        for (share, signature) in response
+            .reencrypted_shares
+            .iter()
+            .zip(response.signatures.iter())
+        {
+            json_response.push(UserDecryptResponsePayloadJson {
+                payload: share.clone(),
+                signature: signature.clone(),
+            });
+        }
+
         Ok(UserDecryptResponseJson {
-            response: UserDecryptResponsePayloadJson {
-                reencrypted_shares: response.reencrypted_shares,
-                signatures: response.signatures,
-            },
+            response: json_response,
         })
     }
 }

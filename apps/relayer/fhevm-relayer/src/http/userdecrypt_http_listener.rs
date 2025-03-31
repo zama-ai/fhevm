@@ -50,13 +50,13 @@ impl UserDecryptRequestJson {
 /// Represents the response from the '/input-proof' endpoint.
 #[derive(Debug, Serialize)]
 pub struct UserDecryptResponseJson {
-    pub response: UserDecryptResponsePayloadJson,
+    pub response: Vec<UserDecryptResponsePayloadJson>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct UserDecryptResponsePayloadJson {
-    pub reencrypted_shares: Vec<Bytes>,
-    pub signatures: Vec<Bytes>,
+    pub payload: Bytes,
+    pub signature: Bytes,
 }
 
 /// Represents the error response from the '/input-proof' endpoint.
