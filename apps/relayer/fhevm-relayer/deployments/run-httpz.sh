@@ -202,6 +202,18 @@ cleanup "$@"
 
 cd "$(git rev-parse --show-toplevel)/deployments"
 
+run_compose "./config/env/.env.staging.layer1" "minio-docker-compose.yml" "S3 Mock Services" \
+    "s3-mock:running" \
+    "s3-mock-setup:complete"
+
+run_compose "./config/env/.env.staging.core" "core-docker-compose.yml" "Core Services" \
+    "kms-core:running" \
+    "generate-fhe-keys:complete" \
+    "update-kms-keys:complete"
+
+run_compose "./config/env/.env.staging.connector" "connector-docker-compose.yml" "Connector Services" \
+    "kms-connector:running"
+
 run_compose "./config/env/.env.staging.layer2" "layer2-docker-compose.yml" "Layer 2 Services" \
     "layer2-node:running" \
     "layer2-sc-deploy:complete"
@@ -210,19 +222,7 @@ run_compose "./config/env/.env.staging.layer1" "layer1-docker-compose.yml" "Laye
     "layer1-node:running" \
     "layer1-sc-deploy:complete"
 
-run_compose "./config/env/.env.staging.layer1" "minio-docker-compose.yml" "S3 Mock Services" \
-    "s3-mock:running" \
-    "s3-mock-setup:complete"
-
 get_s3_mock_ip "s3-mock"
-
-run_compose "./config/env/.env.staging.core" "core-docker-compose.yml" "Core Services" \
-    "kms-core:running" \
-    "generate-kms-keys:complete" \
-    "update-kms-keys:complete"
-
-run_compose "./config/env/.env.staging.connector" "connector-docker-compose.yml" "Connector Services" \
-    "kms-connector:running"
 
 run_compose "./config/env/.env.staging.coprocessor" "coprocessor-docker-compose.yml" "Coprocessor Services" \
     "db:running" \

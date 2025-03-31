@@ -25,7 +25,19 @@ services:
   
   layer2-sc-deploy:
     container_name: layer2-sc-deploy
-    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:v0.1.0-rc5
+    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:77f2dd0
+    environment:
+      - HARDHAT_NETWORK=staging
     volumes:
       - ./config/env/.env.staging.layer2:/app/.env
-    command: [ "bash", "/app/deploy-httpz-gateway-deployment.sh", "staging"]
+    command: [ "bash", "/app/deploy-gateway-contracts.sh"]
+
+  ## TODO: Uncomment this service after add-network is fixed
+  # layer2-sc-add-network:
+  #   container_name: layer2-sc-add-network
+  #   image: ghcr.io/zama-ai/gateway-l2/sc-bundle:v0.1.0-rc7
+  #   environment:
+  #     - HARDHAT_NETWORK=staging
+  #   volumes:
+  #     - ./config/env/.env.staging.layer2:/app/.env
+  #   command: [ "bash", "/app/add-httpz-networks.sh"]

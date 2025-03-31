@@ -19,18 +19,51 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
+## Layer2 core address
+BASE_URL="http://s3-mock:9000/kms-public/PUB/VerfAddress"
+ENV_LAYER2="/env.staging.layer2"
+KEY_SIGNER_ID=$(docker logs kms-core | grep "Successfully stored public server signing key under the handle" | sed 's/.*handle \([^ ]*\).*/\1/')
+SIGNER_ADDRESS_URL="$BASE_URL/$KEY_SIGNER_ID"
+
+if [ -z "$KEY_SIGNER_ID" ]; then
+    log_error "Failed to extract signing key ID from logs."
+    exit 1
+fi
+
+log_info "Signing Key ID: $KEY_SIGNER_ID"
+log_info "Retrieving KMS signer address from $SIGNER_ADDRESS_URL"
+curl -O "$SIGNER_ADDRESS_URL"
+SIGNER_ADDRESS=$(cat "$KEY_SIGNER_ID")
+
+# Validate the address format (should be a hex address)
+if [[ ! "$SIGNER_ADDRESS" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
+    log_warn "Retrieved signer address doesn't match expected format: $SIGNER_ADDRESS"
+    log_info "Using the address anyway, please verify manually."
+fi
+
+log_info "Updating KMS_SIGNER_ADDRESS_0 in $ENV_LAYER2..."
+cat "$ENV_LAYER2" | sed "s|^export KMS_SIGNER_ADDRESS_0=.*|export KMS_SIGNER_ADDRESS_0=\"$SIGNER_ADDRESS\"|g" > /tmp/env.layer2.new
+
+if grep -q "export KMS_SIGNER_ADDRESS_0=\"$SIGNER_ADDRESS\"" /tmp/env.layer2.new; then
+    cat /tmp/env.layer2.new > "$ENV_LAYER2" 
+    log_info "KMS_SIGNER_ADDRESS_0 successfully updated to: $SIGNER_ADDRESS"
+else
+    log_warn "Failed to update KMS_SIGNER_ADDRESS_0. Please update manually."
+    log_info "The value that should be set: $SIGNER_ADDRESS"
+fi
+
 LOCAL_YAML="/relayer-local.yaml"
 ENV_COPROCESSOR="/env.staging.coprocessor"
 ENV_CONNECTOR="/env.staging.connector"
 
-if ! docker ps -a | grep -q "generate-kms-keys"; then
-    log_error "Container generate-kms-keys not found. Make sure it has been run."
+if ! docker ps -a | grep -q "generate-fhe-keys"; then
+    log_error "Container generate-fhe-keys not found. Make sure it has been run."
     exit 1
 fi
 
 # Get logs from the container
-log_info "Retrieving logs from generate-kms-keys container..."
-LOGS=$(docker logs generate-kms-keys)
+log_info "Retrieving logs from generate-fhe-keys container..."
+LOGS=$(docker logs generate-fhe-keys)
 
 # Extract key request IDs
 KEY_GEN_ID=$(echo "$LOGS" | grep -A1 "insecure keygen done" | grep "request_id" | sed 's/.*"request_id": "\([^"]*\)".*/\1/')
@@ -84,5 +117,6 @@ else
 fi
 
 log_info "Configuration files updated successfully!"
+log_info "Signing Key ID: $KEY_SIGNER_ID"
 log_info "Public Key ID: $KEY_GEN_ID"
 log_info "CRS Key ID: $CRS_GEN_ID"

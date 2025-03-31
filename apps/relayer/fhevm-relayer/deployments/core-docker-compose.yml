@@ -1,7 +1,8 @@
 services:
+
   kms-core:
     container_name: kms-core
-    image: ghcr.io/zama-ai/kms-service:27d03d8
+    image: ghcr.io/zama-ai/kms-service:520cc0f
     environment:
       KMS_CORE__PUBLIC_VAULT__STORAGE: ${KMS_CORE__PUBLIC_VAULT__STORAGE}
       KMS_CORE__PRIVATE_VAULT__STORAGE: ${KMS_CORE__PRIVATE_VAULT__STORAGE}
@@ -25,8 +26,9 @@ services:
       echo 'Starting kms service' &&
       kms-server --config-file config/config.toml
       "
-  generate-kms-keys:
-    container_name: generate-kms-keys
+
+  generate-fhe-keys:
+    container_name: generate-fhe-keys
     image: ghcr.io/zama-ai/kms-core-client:27d03d8
     environment:
       S3_ENDPOINT: ${S3_ENDPOINT}
@@ -54,10 +56,11 @@ services:
       - ./config/relayer/local.yaml:/relayer-local.yaml
       - ./config/env/.env.staging.coprocessor:/env.staging.coprocessor
       - ./config/env/.env.staging.connector:/env.staging.connector
+      - ./config/env/.env.staging.layer2:/env.staging.layer2
       - ./update-kms-keys.sh:/update-kms-keys.sh
-    command: [ "/bin/sh", "-c", "apk add --no-cache bash grep sed && /bin/bash /update-kms-keys.sh" ]
+    command: [ "/bin/sh", "-c", "apk add --no-cache bash grep sed curl && /bin/bash /update-kms-keys.sh" ]
     depends_on:
-      generate-kms-keys:
+      generate-fhe-keys:
         condition: service_completed_successfully
 
 volumes:

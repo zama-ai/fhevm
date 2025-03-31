@@ -13,11 +13,11 @@ chain_id = 54321
 
 # Address of the DecryptionManager contract (required)
 # Format: hex string with 0x prefix
-decryption_manager_address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+decryption_manager_address = "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
 
 # Address of the HTTPZ contract (required)
 # Format: hex string with 0x prefix
-httpz_address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
+httpz_address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 
 # KMS-core gRPC endpoint (required)
 # Format: http://host:port

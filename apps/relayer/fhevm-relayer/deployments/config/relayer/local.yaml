@@ -6,10 +6,10 @@ inputproof:
 keyurl:
     fhe_public_key:
       data_id: "fhe-public-key-data-id"
-      url: "http://s3-mock:9000/kms-public/PUB/PublicKey/e2abdcc4d2235ded768f787d0edc40f214090c37c16bd29e710b8e3a9c441ac5"
+      url: "http://s3-mock:9000/kms-public/PUB/PublicKey/70bad3cedd97ecb57f69bdfb70cf9f151b94072e7e2c575b198d3fce603e8c0d"
     crs:
       data_id: "crs-data-id"
-      url: "http://s3-mock:9000/kms-public/PUB/CRS/4a9b14b04368d125b81e9def6d3a1014a05d67ffe5f3db811e5cc72288bdd0cc"
+      url: "http://s3-mock:9000/kms-public/PUB/CRS/8c201ed212efb70957cbd5ce881ea793eceedba130e570a6ba53193e0e6845f0"
 
 networks:
   fhevm:
@@ -42,8 +42,8 @@ contracts:
   # Example local contract addresses - Update these after deployment
   decryption_oracle_address: 0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d
   tfhe_executor_address: 0x12B064FB845C1cc05e9493856a1D637a73e944bE
-  decryption_manager_address: 0xF0bFB159C7381F7CB332586004d8247252C5b816
-  zkpok_manager_address: 0x812b06e1CDCE800494b79fFE4f925A504a9A9810
+  decryption_manager_address: 0xc9bAE822fE6793e3B456144AdB776D5A318CB71e
+  zkpok_manager_address: 0x35760912360E875DA50D40a74305575c23D55783
 
 log:
   # Set log level for development
