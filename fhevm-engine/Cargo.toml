@@ -15,7 +15,7 @@ bincode = "=1.3.3"
 clap = { version = "=4.5", features = ["derive"] }
 daggy = "=0.8.1"
 futures-util = "=0.3.31"
-prometheus = "=0.13.4"
+prometheus = "=0.14.0"
 prost = "=0.13"
 rand = "=0.9.0"
 rayon = "=1.10.0"
