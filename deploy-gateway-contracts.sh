@@ -34,3 +34,5 @@ npx hardhat task:deployAclManager
 echo "Deploy DecryptionManager contract:"
 # Deploy DecryptionManager contract
 npx hardhat task:deployDecryptionManager
+
+echo "Contract deployment done !"
