@@ -40,7 +40,7 @@ export class ProxyContractService implements ContractService {
   }
 
   isSmartContract = (
-    chainId: string,
+    chainId: string | number,
     address: Web3Address,
   ): Task<boolean, AppError> => {
     return ChainId.fromString(chainId)
@@ -49,7 +49,7 @@ export class ProxyContractService implements ContractService {
   }
 
   getOwner = (
-    chainId: string,
+    chainId: string | number,
     address: Web3Address,
   ): Task<Option<Web3Address>, AppError> => {
     return ChainId.fromString(chainId)
@@ -57,7 +57,10 @@ export class ProxyContractService implements ContractService {
       .asyncChain(service => service.getOwner(chainId, address))
   }
 
-  getAbi = (chainId: string, address: Web3Address): Task<string, AppError> => {
+  getAbi = (
+    chainId: string | number,
+    address: Web3Address,
+  ): Task<string, AppError> => {
     return ChainId.fromString(chainId)
       .chain(this.getService)
       .asyncChain(service => service.getAbi(chainId, address))

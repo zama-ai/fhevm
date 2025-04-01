@@ -1,4 +1,4 @@
-name: test
+name: Tests
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  build:
+  npm-build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -23,7 +23,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 5432:5432
+          - 5434:5432
       redis:
         image: redis
         options: >-
@@ -53,3 +53,48 @@ jobs:
         run: pnpm prisma:generate
       - name: Test
         run: pnpm test
+
+  compile-rust-unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: 
+        folder: [apps/relayer]
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          token: ${{ secrets.RELAYER_TOKEN }}
+          submodules: recursive
+
+      # Rust toolchain setup
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@11df97af8e8102fd60b60a77dfbf58d40cd843b8 # v1.10.1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Formatting
+        run: cd ${{matrix.folder}} && cargo fmt --all -- --check
+      - name: Linting
+        run: cd ${{matrix.folder}} && cargo clippy --all-targets --all-features --workspace --exclude fhevm-relayer -- -D warnings
+
+      - name: Run Tests with Coverage
+        run: |
+          export CARGO_INCREMENTAL=0
+          export RUSTFLAGS='-Cinstrument-coverage'
+          export LLVM_PROFILE_FILE='cargo-test-%p-%m.profraw'
+          # NOTE: Could be set with a matrix when we have multiple RUST services
+          cd ${{matrix.folder}}
+          RUST_BACKTRACE=full cargo test --workspace --exclude fhevm-relayer
+          cargo install grcov
+          mkdir coverage
+          ~/.cargo/bin/grcov . --binary-path ./target/debug/deps/ -s . --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o coverage/ -t markdown
+          ~/.cargo/bin/grcov . --binary-path ./target/debug/deps/ -s . --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o ./ -t lcov
+          cat coverage/markdown.md
+          cat coverage/markdown.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Report code coverage
+        uses: romeovs/lcov-reporter-action@87a815f34ec27a5826abba44ce09bbc688da58fd # v0.4.0
+        with:
+          title: test-coverage
+          lcov-file: lcov

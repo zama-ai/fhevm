@@ -29,3 +29,9 @@ services:
     build:
       context: ..
       dockerfile: ./docker/web3/Dockerfile
+
+  relayer:
+    image: ghcr.io/zama-ai/zws-relayer:latest
+    build:
+      context: ../apps/relayer/
+      dockerfile: ../../docker/relayer/Dockerfile

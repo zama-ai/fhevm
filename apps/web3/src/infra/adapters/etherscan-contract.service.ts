@@ -40,7 +40,7 @@ export class EtherscanContractService implements ContractService {
   }
 
   isSmartContract = (
-    chainId: string,
+    chainId: string | number,
     address: Web3Address,
   ): Task<boolean, AppError> => {
     return new Task((resolve, reject) => {
@@ -71,7 +71,7 @@ export class EtherscanContractService implements ContractService {
   }
 
   getOwner = (
-    chainId: string,
+    chainId: string | number,
     address: Web3Address,
   ): Task<Option<Web3Address>, AppError> => {
     this.logger.debug(`getContractCreation: ${chainId}/${address}`)
@@ -108,7 +108,10 @@ export class EtherscanContractService implements ContractService {
     )
   }
 
-  getAbi = (chainId: string, address: Web3Address): Task<string, AppError> => {
+  getAbi = (
+    chainId: string | number,
+    address: Web3Address,
+  ): Task<string, AppError> => {
     this.logger.debug(`getAbi: ${chainId}/${address}`)
 
     // Note: should I check the chainId?

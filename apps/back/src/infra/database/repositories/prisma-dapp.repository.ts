@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import type { AppError } from 'utils'
+import { AppError } from 'utils'
 import {
   duplicatedError,
   every,
@@ -103,7 +103,10 @@ export class PrismaDAppRepository extends DAppRepository {
     }).chain(props => DApp.parse(props).async())
   }
 
-  findByAddress = (chainId: string, address: string): Task<DApp, AppError> => {
+  findByAddress = (
+    chainId: string | number,
+    address: string,
+  ): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
         .findFirst({ where: { address, deletedAt: null } })

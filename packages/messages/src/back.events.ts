@@ -11,6 +11,8 @@ type EventTypes =
   | 'address:validation:failed'
   | 'dapp:stats-requested'
   | 'dapp:stats-available'
+  | 'httpz:input-proof:requested'
+  | 'httpz:input-proof:completed'
 
 function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   key: Key,
@@ -73,6 +75,16 @@ const schemas = [
       }),
     ),
   }),
+  genSchema('httpz:input-proof:requested', {
+    contractChainId: chainId,
+    contractAddress: web3Address,
+    userAddress: web3Address,
+    ciphertextWithZkpok: z.string(),
+  }),
+  genSchema('httpz:input-proof:completed', {
+    handles: z.array(z.string()),
+    signatures: z.array(z.string()),
+  }),
 ] as const
 
 export const schema = z.discriminatedUnion('type', [...schemas]).and(
@@ -97,6 +109,8 @@ export const addressValidationConfirmed = factory(
 export const addressValidationFailed = factory('address:validation:failed')
 export const dappStatsRequested = factory('dapp:stats-requested')
 export const dappStatsAvailable = factory('dapp:stats-available')
+export const httpzInputProofRequested = factory('httpz:input-proof:requested')
+export const httpzInputProofCompleted = factory('httpz:input-proof:completed')
 
 export function isBackEvent(data: unknown): data is BackEvent {
   return schema.safeParse(data).success

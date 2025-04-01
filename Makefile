@@ -1,5 +1,4 @@
 TOP := $(dir $(firstword $(MAKEFILE_LIST)))
-FHEVM_DEVOPS_PATH ?= $(TOP)external/fhevm-devops
 
 .PHONY: publish-app-deployment-requested
 publish-app-deployment-requested:
@@ -61,20 +60,38 @@ blockchain-test:
 # display blockchain operations
 blockchain-listen:
 	bash scripts/blockchain-listen.sh
-
-run-fhevm-devops:
-	$(MAKE) -C $(FHEVM_DEVOPS_PATH)/coprocessor run-full
-
-clean-fhevm-devops:
-	$(MAKE) -C $(FHEVM_DEVOPS_PATH)/coprocessor clean
 	
 # Hardhat
-# First launch hardhat node
-hardhat-run:
-	bash scripts/hardhat-run.sh
-# Then launch events listener	
-hardhat-listen:
-	bash scripts/hardhat-listen.sh
-# Then launch some tests
-hardhat-test:
-	bash scripts/hardhat-test.sh
+# First launch node and deploy contracts
+httpz-run:
+	bash scripts/httpz-run.sh
+	
+# Then launch some public decryption test
+httpz-test-public-decrypt:
+	bash scripts/httpz-test-public-decrypt.sh
+
+httpz-test-private-decrypt:
+	bash scripts/httpz-test-private-decrypt.sh
+
+httpz-test-input:
+	bash scripts/httpz-test-input.sh
+
+# Then clean nodes
+httpz-clean:
+	bash scripts/httpz-clean.sh
+
+console-side-clean:
+	docker compose down --volumes --remove-orphans
+
+console-side-run:
+	docker compose up -d --wait
+
+relayer-run:
+	cd $(TOP)apps/relayer && cargo run --bin zws-relayer
+
+relayer-run-debug:
+	cd $(TOP)apps/relayer && cargo run --bin zws-relayer -- --config-file debug.toml
+
+# `--ssh default` used to forward ssh agent to allow fhevm-relayer dependency to be reached
+docker-compose-build:
+	docker compose -f $(TOP)docker/docker-compose.yaml build --ssh default

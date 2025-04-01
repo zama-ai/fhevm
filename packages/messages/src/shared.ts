@@ -12,18 +12,21 @@ export const meta = z.record(z.string(), z.union([z.string(), z.number()])).and(
 
 export type Meta = z.infer<typeof meta>
 
-export const chainId = z.string().refine(
-  v => {
-    const n = Number(v)
-    return !isNaN(n) && n > 0
-  },
+export const chainId = z.union(
+  [
+    z.string().regex(/^0x[\da-f]+$/i),
+    z
+      .string()
+      .regex(/^[\d]+$/i)
+      .refine(v => parseInt(v, 10) > 0),
+    z.number().int().positive(),
+  ],
   { message: 'Invalid Chain Id' },
 )
 
 export const web3Address = z
   .string()
-  .length(42, 'blockchain address must be exactly 42 charaxters long')
-  .startsWith('0x', 'sepolia address must start with 0x')
+  .regex(/^0x[\da-f]{40}$/i, 'Invalid Address')
 
 export const requestId = z.string().uuid()
 export function generateRequestId() {
