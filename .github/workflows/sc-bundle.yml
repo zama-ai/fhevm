@@ -33,9 +33,9 @@ jobs:
 
   done:
     runs-on: ubuntu-latest
-    name: Pipeline Done
+    name: Docker Pipeline Done
     steps:
       - name: Success
-        run: echo Pipeline Done
+        run: echo Docker Pipeline Done
     needs:
       - docker-sc-bundle
