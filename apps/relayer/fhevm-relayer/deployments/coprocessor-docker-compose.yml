@@ -37,25 +37,29 @@ services:
             echo 'Downloaded SNS key' &&
             wget $KMS_CRS_KEY -O /keys/pp &&
             echo 'Downloaded PP key - All downloads complete'"
+
   db-migration:
     container_name: db-migration
-    image: ghcr.io/zama-ai/fhevm-db-migration:a1ac933
+    image: ghcr.io/zama-ai/fhevm-db-migration:9759b54
     environment:
       DATABASE_URL: ${DATABASE_URL}
       CHAIN_ID: ${CHAIN_ID}
       TENANT_API_KEY: ${TENANT_API_KEY}
       ACL_CONTRACT_ADDRESS: ${ACL_CONTRACT_ADDRESS}
       INPUT_VERIFIER_ADDRESS: ${INPUT_VERIFIER_ADDRESS}
+      KEY_ID: ${FHE_KEY_ID}
     volumes:
       - keys-cache:/fhevm-keys
     depends_on:
       db:
         condition: service_healthy
+      key-downloader:
+        condition: service_completed_successfully
 
   ####################### COPROCESSOR SERVICES #######################
   httpz-listener:
     container_name: "httpz-listener"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:98d1404
+    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
@@ -73,7 +77,7 @@ services:
 
   gw-listener:
     container_name: "gw-listener"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:98d1404
+    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_WS_URL}
@@ -92,7 +96,7 @@ services:
 
   tfhe-worker:
     container_name: tfhe-worker
-    image: ghcr.io/zama-ai/fhevm-coprocessor:98d1404
+    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
     environment:
       DATABASE_URL: ${DATABASE_URL}
     command:
@@ -113,7 +117,7 @@ services:
 
   zkproof-worker:
     container_name: "zkproof-worker"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:98d1404
+    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
     environment:
       DATABASE_URL: ${DATABASE_URL}
     command:
@@ -132,7 +136,7 @@ services:
 
   sns-worker:
     container_name: "sns-worker"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:98d1404
+    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
@@ -159,7 +163,7 @@ services:
 
   transaction-sender:
     container_name: "transaction-sender"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:98d1404
+    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_URL}

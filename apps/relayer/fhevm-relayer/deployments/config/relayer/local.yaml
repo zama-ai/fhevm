@@ -6,10 +6,10 @@ inputproof:
 keyurl:
     fhe_public_key:
       data_id: "fhe-public-key-data-id"
-      url: "http://s3-mock:9000/kms-public/PUB/PublicKey/70bad3cedd97ecb57f69bdfb70cf9f151b94072e7e2c575b198d3fce603e8c0d"
+      url: "http://s3-mock:9000/kms-public/PUB/PublicKey/7736cf5333387ca2cc84062c4080792681c4b0089be6fd947c3d3c9e2f93c8d6"
     crs:
       data_id: "crs-data-id"
-      url: "http://s3-mock:9000/kms-public/PUB/CRS/8c201ed212efb70957cbd5ce881ea793eceedba130e570a6ba53193e0e6845f0"
+      url: "http://s3-mock:9000/kms-public/PUB/CRS/ee4fd8e8f04cb41c3b952dbdb525426ca16ad78e049e4f6b573bfa4e80dfc6d0"
 
 networks:
   fhevm:

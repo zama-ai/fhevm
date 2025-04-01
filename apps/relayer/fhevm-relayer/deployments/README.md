@@ -50,6 +50,7 @@ Note that if you need to rerun the script `run-httpz.sh` if you want to:
 
 ## Troubelshooting
 
-- `0xdcf9faab`: `AccountNotAllowedToUseCiphertext` means the sns-worker is slow, the solution will be to sent the tx in // and expose an endpoint isCiphertextAdded. Or check on relayer side that ciphertext is added before sending a tx.
+- `0xdcf9faab`: `AccountNotAllowedToUseCiphertext`
+- `0x0988c081`: `CiphertextMaterialNotFound`
 
-Until it's fixed to move forward, please run the same test twice.
+If any of the following errors occurs, please run the test a second time until it's permamently fixed.

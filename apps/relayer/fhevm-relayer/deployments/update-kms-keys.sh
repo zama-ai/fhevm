@@ -19,7 +19,7 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
-## Layer2 core address
+## LAYER2 - KMS_SIGNER_ADDRESS_0
 BASE_URL="http://s3-mock:9000/kms-public/PUB/VerfAddress"
 ENV_LAYER2="/env.staging.layer2"
 KEY_SIGNER_ID=$(docker logs kms-core | grep "Successfully stored public server signing key under the handle" | sed 's/.*handle \([^ ]*\).*/\1/')
@@ -61,7 +61,6 @@ if ! docker ps -a | grep -q "generate-fhe-keys"; then
     exit 1
 fi
 
-# Get logs from the container
 log_info "Retrieving logs from generate-fhe-keys container..."
 LOGS=$(docker logs generate-fhe-keys)
 
@@ -86,34 +85,37 @@ SERVER_KEY_URL="$BASE_URL/ServerKey/$KEY_GEN_ID"
 SNS_KEY_URL="$BASE_URL/SnsKey/$KEY_GEN_ID"
 CRS_KEY_URL="$BASE_URL/CRS/$CRS_GEN_ID"
 
+## RELAYER
 log_info "Updating $LOCAL_YAML..."
 cat "$LOCAL_YAML" | sed "s|url: \"http://s3-mock:9000/kms-public/PUB/PublicKey/[^\"]*\"|url: \"$PUBLIC_KEY_URL\"|g" | \
                     sed "s|url: \"http://s3-mock:9000/kms-public/PUB/CRS/[^\"]*\"|url: \"$CRS_KEY_URL\"|g" > /tmp/local.yaml.new
 cat /tmp/local.yaml.new > "$LOCAL_YAML"
 
+## COPROCESSOR
 log_info "Updating $ENV_COPROCESSOR..."
 cat "$ENV_COPROCESSOR" | \
-    sed "s|export KMS_PUBLIC_KEY=http://s3-mock:9000/kms-public/PUB/PublicKey/[^$]*|export KMS_PUBLIC_KEY=$PUBLIC_KEY_URL|g" | \
-    sed "s|export KMS_SERVER_KEY=http://s3-mock:9000/kms-public/PUB/ServerKey/[^$]*|export KMS_SERVER_KEY=$SERVER_KEY_URL|g" | \
-    sed "s|export KMS_SNS_KEY=http://s3-mock:9000/kms-public/PUB/SnsKey/[^$]*|export KMS_SNS_KEY=$SNS_KEY_URL|g" | \
-    sed "s|export KMS_CRS_KEY=http://s3-mock:9000/kms-public/PUB/CRS/[^$]*|export KMS_CRS_KEY=$CRS_KEY_URL|g" > /tmp/env.new
-cat /tmp/env.new > "$ENV_COPROCESSOR"
+    sed "s|export KMS_PUBLIC_KEY=\"http://s3-mock:9000/kms-public/PUB/PublicKey/[^$]*\"|export KMS_PUBLIC_KEY=\"$PUBLIC_KEY_URL\"|g" | \
+    sed "s|export KMS_SERVER_KEY=\"http://s3-mock:9000/kms-public/PUB/ServerKey/[^$]*\"|export KMS_SERVER_KEY=\"$SERVER_KEY_URL\"|g" | \
+    sed "s|export KMS_SNS_KEY=\"http://s3-mock:9000/kms-public/PUB/SnsKey/[^$]*\"|export KMS_SNS_KEY=\"$SNS_KEY_URL\"|g" | \
+    sed "s|export KMS_CRS_KEY=\"http://s3-mock:9000/kms-public/PUB/CRS/[^$]*\"|export KMS_CRS_KEY=\"$CRS_KEY_URL\"|g" | \
+    sed "s|export FHE_KEY_ID=.*|export FHE_KEY_ID=\"$KEY_GEN_ID\"|g" > /tmp/env.coprocessor.new
 
-log_info "Updating $ENV_CONNECTOR..."
-log_info "Current connector environment file content:"
-cat "$ENV_CONNECTOR"
-
-# Better pattern matching that handles both with and without quotes
-cat "$ENV_CONNECTOR" | \
-    sed "s|export FHE_KEY_ID=.*|export FHE_KEY_ID=\"$KEY_GEN_ID\"|g" > /tmp/env.connector.new
-
-# Verify the change was made
-if grep -q "export FHE_KEY_ID=\"$KEY_GEN_ID\"" /tmp/env.connector.new; then
-    cat /tmp/env.connector.new > "$ENV_CONNECTOR"
-    log_info "FHE_KEY_ID successfully updated to: $KEY_GEN_ID"
+# Verify all changes were made
+if grep -q "export KMS_PUBLIC_KEY=\"$PUBLIC_KEY_URL\"" /tmp/env.coprocessor.new && \
+   grep -q "export KMS_SERVER_KEY=\"$SERVER_KEY_URL\"" /tmp/env.coprocessor.new && \
+   grep -q "export KMS_SNS_KEY=\"$SNS_KEY_URL\"" /tmp/env.coprocessor.new && \
+   grep -q "export KMS_CRS_KEY=\"$CRS_KEY_URL\"" /tmp/env.coprocessor.new && \
+   grep -q "export FHE_KEY_ID=\"$KEY_GEN_ID\"" /tmp/env.coprocessor.new; then
+    cat /tmp/env.coprocessor.new > "$ENV_COPROCESSOR"
+    log_info "All KMS keys successfully updated in coprocessor environment"
 else
-    log_warn "Failed to update FHE_KEY_ID. Manually verify the format in $ENV_CONNECTOR and update the script."
-    log_info "The value that should be set: $KEY_GEN_ID"
+    log_warn "Failed to update some KMS keys in coprocessor environment. Please verify the format and update manually."
+    log_info "Values that should be set:"
+    log_info "KMS_PUBLIC_KEY: $PUBLIC_KEY_URL"
+    log_info "KMS_SERVER_KEY: $SERVER_KEY_URL"
+    log_info "KMS_SNS_KEY: $SNS_KEY_URL"
+    log_info "KMS_CRS_KEY: $CRS_KEY_URL"
+    log_info "FHE_KEY_ID: $KEY_GEN_ID"
 fi
 
 log_info "Configuration files updated successfully!"

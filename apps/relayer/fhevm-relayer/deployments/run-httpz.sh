@@ -216,7 +216,8 @@ run_compose "./config/env/.env.staging.connector" "connector-docker-compose.yml"
 
 run_compose "./config/env/.env.staging.layer2" "layer2-docker-compose.yml" "Layer 2 Services" \
     "layer2-node:running" \
-    "layer2-sc-deploy:complete"
+    "layer2-sc-deploy:complete" \
+    "layer2-sc-add-network:complete"
 
 run_compose "./config/env/.env.staging.layer1" "layer1-docker-compose.yml" "Layer 1 Services" \
     "layer1-node:running" \
@@ -226,6 +227,7 @@ get_s3_mock_ip "s3-mock"
 
 run_compose "./config/env/.env.staging.coprocessor" "coprocessor-docker-compose.yml" "Coprocessor Services" \
     "db:running" \
+    "key-downloader:complete" \
     "db-migration:complete" \
     "httpz-listener:running" \
     "gw-listener:running" \
@@ -236,6 +238,7 @@ run_compose "./config/env/.env.staging.coprocessor" "coprocessor-docker-compose.
 
 run_compose "./config/env/.env.staging.relayer" "relayer-docker-compose.yml" "Relayer Services" \
     "httpz-relayer:running" \
+    "input-proof-test:complete" \
     "e2e-test-debug:running"
 
 log_info "All services started successfully!"
