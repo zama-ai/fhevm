@@ -38,6 +38,7 @@ describe('InputProof', () => {
     useCase = unit
 
     producer = unitRef.get(PRODUCER) as unknown as Mocked<IProducer>
+
     contractChainId = faker.string.numeric(5)
     contractAddress = faker.string.hexadecimal({ length: 40 })
     userAddress = faker.string.hexadecimal({ length: 40 })

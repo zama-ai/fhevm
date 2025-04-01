@@ -20,37 +20,6 @@ describe('HttpzController', () => {
   let controller: HttpzController
 
   beforeEach(async () => {
-    // module = await Test.createTestingModule({
-    //   controllers: [HttpzController],
-    //   providers: [
-    //     {
-    //       provide: GetKeyUrl,
-    //       useValue: mock<GetKeyUrl>(),
-    //     },
-    //     {
-    //       provide: ApiKeyAllowsRequest,
-    //       useFactory: () => {
-    //         const mocked = mock<ApiKeyAllowsRequest>()
-    //         console.log('ApiKeyAllowsRequest factory', mocked)
-    //         return mocked
-    //       },
-    //     },
-    //     {
-    //       provide: InputProof,
-    //       inject: [ApiKeyAllowsRequest],
-    //       useFactory: (apiKeyAllowsRequest: ApiKeyAllowsRequest) => {
-    //         console.log(`apiKeyAllowsRequest: ${apiKeyAllowsRequest}`)
-    //         return mock<InputProof>()
-    //       },
-    //     },
-    //     {
-    //       provide: GetApiKey,
-    //       useValue: mock<GetApiKey>(),
-    //     },
-    //   ],
-    // }).compile()
-
-    // controller = module.get(HttpzController)
     const { unit, unitRef: _unitRef } =
       await TestBed.solitary(HttpzController).compile()
     controller = unit
