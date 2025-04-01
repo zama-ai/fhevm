@@ -12,7 +12,8 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  check-selectors:
+  selectors-check:
+    name: Selectors check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project
