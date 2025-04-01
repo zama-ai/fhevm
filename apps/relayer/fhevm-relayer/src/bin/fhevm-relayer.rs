@@ -138,7 +138,7 @@ async fn main() -> eyre::Result<()> {
     let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
 
     // === Register the event handlers
-    let tx_config = TxConfig::from(settings.transaction);
+    let tx_config = TxConfig::from(settings.transaction.clone());
     let host_l1_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> =
         Arc::new(EthereumHostL1Handler::new(
             Arc::clone(&dispatcher),
@@ -207,6 +207,8 @@ async fn main() -> eyre::Result<()> {
             tx_service_rollup,
             tx_config,
             settings.contracts,
+            rollup_settings.http_url.clone(),
+            settings.transaction.clone().ciphertext_check_retry.clone(),
         ));
 
     orchestrator.register_handler(

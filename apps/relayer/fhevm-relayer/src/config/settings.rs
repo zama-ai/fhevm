@@ -68,7 +68,7 @@ impl NetworksConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct TransactionConfig {
     /// Environment variable name containing the private key for httpz
     pub private_key_httpz_env: String,
@@ -85,6 +85,7 @@ pub struct TransactionConfig {
     /// Retry configuration
     #[serde(default)]
     pub retry: RetrySettings,
+    pub ciphertext_check_retry: RetrySettings,
 }
 
 impl TransactionConfig {
@@ -99,7 +100,7 @@ impl TransactionConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct RetrySettings {
     #[serde(default = "default_max_attempts")]
     pub max_attempts: u32,
@@ -135,6 +136,7 @@ pub struct ContractConfig {
     pub tfhe_executor_address: String,
     pub decryption_manager_address: String,
     pub zkpok_manager_address: String,
+    pub ciphertext_manager_address: String,
 }
 
 #[derive(Debug, Deserialize)]

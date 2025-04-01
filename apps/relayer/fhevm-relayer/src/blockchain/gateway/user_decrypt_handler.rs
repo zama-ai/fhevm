@@ -1,9 +1,12 @@
 use crate::{
     blockchain::ethereum::{
-        bindings::DecyptionManager::{self, UserDecryptionRequest},
+        bindings::{
+            CiphertextManager,
+            DecyptionManager::{self, UserDecryptionRequest},
+        },
         ComputeCalldata,
     },
-    config::settings::ContractConfig,
+    config::settings::{ContractConfig, RetrySettings},
     core::{
         errors::EventProcessingError,
         event::{
@@ -17,10 +20,13 @@ use crate::{
     },
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
 };
+use reqwest::Url;
 use std::str::FromStr;
+use std::time::Duration;
 
 use alloy::{
     primitives::{Address, FixedBytes, U256},
+    providers::ProviderBuilder,
     rpc::types::TransactionReceipt,
 };
 
@@ -50,6 +56,8 @@ pub struct UserDecryptGatewayHandler {
     user_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
+    gateway_http_url: String,
+    retry_config: RetrySettings,
 }
 
 impl UserDecryptGatewayHandler {
@@ -58,12 +66,16 @@ impl UserDecryptGatewayHandler {
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,
+        gateway_http_url: String,
+        retry_config: RetrySettings,
     ) -> Self {
         Self {
             dispatcher,
             tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
             user_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
+            gateway_http_url,
+            retry_config,
         }
     }
 
@@ -337,6 +349,77 @@ impl UserDecryptGatewayHandler {
             handler: Arc::new(self.clone()),
         };
 
+        // Iterate over ct_handles_contract_pairs and extract a list of ct_handless
+        let ct_handles = user_decrypt_request
+            .ct_handle_contract_pairs
+            .clone()
+            .iter()
+            .map(|ct_handle_contract_pair| ct_handle_contract_pair.ct_handle)
+            .collect::<Vec<_>>();
+
+        let url = Url::parse(&self.gateway_http_url).unwrap();
+
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .on_http(url);
+        let ciphertext_manager_address =
+            Address::from_str(&self.contracts.ciphertext_manager_address).map_err(|_| {
+                EventProcessingError::ConfigError(
+                    crate::config::settings::AppConfigError::InvalidAddress(
+                        "contracts.ciphertext_manager_address".to_owned(),
+                    ),
+                )
+            })?;
+        let ciphertext_manager =
+            CiphertextManager::new(ciphertext_manager_address, provider.clone());
+
+        let max_retries = self.retry_config.max_attempts;
+        let retry_interval = Duration::from_secs(self.retry_config.base_delay_secs);
+
+        let mut retries = 0;
+        let mut should_retry = true;
+
+        while should_retry && retries < max_retries {
+            should_retry = false;
+
+            for ct_handle in &ct_handles {
+                match ciphertext_manager
+                    .clone()
+                    .checkCiphertextMaterial(*ct_handle)
+                    .call()
+                    .await
+                {
+                    Ok(_) => {
+                        info!("Function call succeeded for ct_handle: {:?}", ct_handle);
+                    }
+                    Err(err) => {
+                        info!(
+                            "Ciphertext not yet found for ct_handle: {:?}, retrying... ",
+                            ct_handle
+                        );
+                        debug!(
+                            "Ciphertext not yet found for ct_handle: {:?} error info: {}",
+                            ct_handle, err
+                        );
+                        should_retry = true;
+                    }
+                }
+            }
+
+            if should_retry {
+                retries += 1;
+                if retries < max_retries {
+                    println!(
+                        "Retrying the whole batch... (attempt {}/{})",
+                        retries, max_retries
+                    );
+                    tokio::time::sleep(retry_interval).await;
+                } else {
+                    println!("Max retries reached for the batch");
+                }
+            }
+        }
+
         let decryption_manager_address =
             Address::from_str(&self.contracts.decryption_manager_address).map_err(|_| {
                 EventProcessingError::ConfigError(
@@ -345,6 +428,7 @@ impl UserDecryptGatewayHandler {
                     ),
                 )
             })?;
+
         self.tx_helper
             .send_transaction(
                 "user_decryption_request",

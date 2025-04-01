@@ -1,15 +1,15 @@
 environment: development
 
 inputproof:
-    url: "0.0.0.0:3000"
+  url: "0.0.0.0:3000"
 
 keyurl:
-    fhe_public_key:
-      data_id: "fhe-public-key-data-id"
-      url: "http://s3-mock:9000/kms-public/PUB/PublicKey/7736cf5333387ca2cc84062c4080792681c4b0089be6fd947c3d3c9e2f93c8d6"
-    crs:
-      data_id: "crs-data-id"
-      url: "http://s3-mock:9000/kms-public/PUB/CRS/ee4fd8e8f04cb41c3b952dbdb525426ca16ad78e049e4f6b573bfa4e80dfc6d0"
+  fhe_public_key:
+    data_id: "fhe-public-key-data-id"
+    url: "http://s3-mock:9000/kms-public/PUB/PublicKey/f94a185152b470dbda3117535a2a8fa5098c9779f3954c3890ccaf187c689a6c"
+  crs:
+    data_id: "crs-data-id"
+    url: "http://s3-mock:9000/kms-public/PUB/CRS/033aff7eb5b1f24074d9f12e2f0f8183e4e7c0b09e199883763d87316a293f09"
 
 networks:
   fhevm:
@@ -37,13 +37,18 @@ transaction:
     max_attempts: 3
     base_delay_secs: 2
     max_delay_secs: 60
-
+  ciphertext_check_retry:
+    enabled: false
+    max_attempts: 75
+    base_delay_secs: 3
+    max_delay_secs: 225
 contracts:
   # Example local contract addresses - Update these after deployment
   decryption_oracle_address: 0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d
   tfhe_executor_address: 0x12B064FB845C1cc05e9493856a1D637a73e944bE
   decryption_manager_address: 0xc9bAE822fE6793e3B456144AdB776D5A318CB71e
   zkpok_manager_address: 0x35760912360E875DA50D40a74305575c23D55783
+  ciphertext_manager_address: 0x576Ea67208b146E63C5255d0f90104E25e3e04c7
 
 log:
   # Set log level for development
@@ -57,7 +62,6 @@ log:
   # Include timestamps in logs
   show_timestamp: true
   # Optional: Set specific log levels for different modules
-
 
 # Development-specific settings
 development:
