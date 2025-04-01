@@ -87,15 +87,6 @@ note={\url{https://github.com/zama-ai/httpz-solidity}},
 }
 ```
 
-```text
-@techreport{HTTPZ,
-author = "Zama",
-title = "Confidential EVM Smart Contracts using Fully Homomorphic Encryption",
-institution = "Zama",
-year = "2025"
-}
-```
-
 ### Contributing
 
 There are two ways to contribute to the Zama HTTPZ:
