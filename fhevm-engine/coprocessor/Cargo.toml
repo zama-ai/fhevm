@@ -53,6 +53,8 @@ gpu = ["tfhe/gpu", "scheduler/gpu", "fhevm-engine-common/gpu"]
 [dev-dependencies]
 testcontainers = "0.21"
 fhevm-listener = { path = "../fhevm-listener" }
+criterion = { version = "0.5.1", features = ["async_futures"] }
+serde = { workspace = true }
 
 [build-dependencies]
 tonic-build = "0.12"
@@ -64,3 +66,13 @@ path = "src/bin/coprocessor.rs"
 [[bin]]
 name = "cli"
 path = "src/bin/cli.rs"
+
+[[bench]]
+name = "erc20"
+path = "benches/erc20.rs"
+harness = false
+
+[[bench]]
+name = "synthetics"
+path = "benches/synthetics.rs"
+harness = false

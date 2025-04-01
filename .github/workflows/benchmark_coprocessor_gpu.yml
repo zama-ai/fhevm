@@ -16,6 +16,19 @@ on:
           - "multi-h100 (n3-H100x8)"
           - "multi-h100-nvlink (n3-H100x8-NVLink)"
           - "multi-h100-sxm5 (n3-H100x8-SXM5)"
+      benchmarks:
+        description: "Benchmark set"
+        required: true
+        type: choice
+        options:
+          - "erc20"
+          - "synthetics"
+          - "all"
+      batch_size:
+        description: "Batch sizes (# FHE operations executed per batch)"
+        required: true
+        type: string
+        default: "5000"
 
 env:
   CARGO_TERM_COLOR: always
@@ -44,3 +57,158 @@ jobs:
         run: |
           echo "name=$(echo '${{ inputs.profile }}' | sed 's|.*[[:space:]](\(.*\))|\1|')" >> "${GITHUB_OUTPUT}"
 
+  setup-instance:
+    name: Setup instance (fhevm-coprocessor-benchmarks-gpu)
+    needs: parse-inputs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      runner-name: ${{ steps.start-remote-instance.outputs.label }}
+    steps:
+      - name: Start remote instance
+        id: start-remote-instance
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: hyperstack
+          profile: ${{ needs.parse-inputs.outputs.profile }}
+
+  fhevm-coprocessor-benchmarks-gpu:
+    name: Coprocessor GPU benchmarks on (${{ needs.parse-inputs.outputs.profile }})
+    needs: [ parse-inputs, setup-instance ]
+    runs-on: ${{ needs.setup-instance.outputs.runner-name }}
+    continue-on-error: true
+    timeout-minutes: 720  # 12 hours
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      # explicit include-based build matrix, of known valid options
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            cuda: "12.2"
+            gcc: 11
+
+    steps:
+      - name: Install git LFS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs
+          git lfs install
+
+      - name: Checkout fhevm-backend
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: 'false'
+          fetch-depth: 0
+          lfs: true
+
+      - name: Checkout LFS objects
+        run: git lfs checkout
+
+      - name: Setup Hyperstack dependencies
+        uses: ./.github/actions/gpu_setup
+        with:
+          cuda-version: ${{ matrix.cuda }}
+          gcc-version: ${{ matrix.gcc }}
+          github-instance: ${{ env.SECRETS_AVAILABLE == 'false' }}
+
+      - name: Get benchmark details
+        run: |
+          {
+            echo "BENCH_DATE=$(date --iso-8601=seconds)";
+            echo "COMMIT_DATE=$(git --no-pager show -s --format=%cd --date=iso8601-strict ${{ github.sha }})";
+            echo "COMMIT_HASH=$(git describe --tags --dirty)";
+          } >> "${GITHUB_ENV}"
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1
+        with:
+          toolchain: nightly
+
+      - name: Install cargo dependencies
+        run: |
+          sudo apt-get install -y protobuf-compiler cmake pkg-config libssl-dev \
+                                  libclang-dev docker-compose-v2 docker.io acl
+          sudo usermod -aG docker $USER
+          newgrp docker
+          sudo setfacl --modify user:$USER:rw /var/run/docker.sock
+          cargo install sqlx-cli
+
+      - name: Install foundry
+        uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
+
+      - name: Cache cargo
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Init database
+        run: make init_db
+        working-directory: fhevm-engine/coprocessor
+
+      - name: Run benchmarks on GPU
+        run: |
+          BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" make "benchmark_${{ inputs.benchmarks }}_gpu"
+        working-directory: fhevm-engine/coprocessor
+
+      - name: Parse results
+        run: |
+          python3 ./ci/benchmark_parser.py fhevm-engine/target/criterion ${{ env.RESULTS_FILENAME }} \
+          --database coprocessor \
+          --hardware "${{ needs.parse-inputs.outputs.hardware_name }}" \
+          --backend gpu \
+          --project-version "${{ env.COMMIT_HASH }}" \
+          --branch ${{ github.ref_name }} \
+          --commit-date "${{ env.COMMIT_DATE }}" \
+          --bench-date "${{ env.BENCH_DATE }}" \
+          --walk-subdirs \
+          --name-suffix "operation_batch_size_${{ inputs.batch_size }}"
+
+      - name: Upload parsed results artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ github.sha }}_${{ inputs.benchmarks }}_${{ needs.parse-inputs.outputs.profile }}
+          path: ${{ env.RESULTS_FILENAME }}
+
+      - name: Checkout Slab repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: zama-ai/slab
+          path: slab
+          persist-credentials: 'false'
+          token: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+
+      - name: Send data to Slab
+        shell: bash
+        run: |
+          python3 slab/scripts/data_sender.py ${{ env.RESULTS_FILENAME }} "${{ secrets.JOB_SECRET }}" \
+          --slab-url "${{ secrets.SLAB_URL }}"
+
+  teardown-instance:
+    name: Teardown instance (fhevm-backend-gpu L40 test)
+    if: ${{ always() && needs.setup-instance.result == 'success' }}
+    needs: [ setup-instance, fhevm-coprocessor-benchmarks-gpu ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Stop remote instance
+        id: stop-instance
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.setup-instance.outputs.runner-name }}

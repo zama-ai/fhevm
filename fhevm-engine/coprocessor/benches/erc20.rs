@@ -1,30 +1,84 @@
-use crate::db_queries::query_tenant_keys;
-use crate::server::common::FheOperation;
-use crate::server::coprocessor::{async_computation_input::Input, AsyncComputationInput};
-use crate::server::coprocessor::{
+#[path = "./utils.rs"]
+mod utils;
+use crate::utils::{
+    default_api_key, default_tenant_id, query_tenant_keys, random_handle, setup_test_app,
+    wait_until_all_ciphertexts_computed, write_to_json, OperatorType,
+};
+use coprocessor::server::common::FheOperation;
+use coprocessor::server::coprocessor::{async_computation_input::Input, AsyncComputationInput};
+use coprocessor::server::coprocessor::{
     fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputeRequest,
     InputToUpload, InputUploadBatch,
 };
-use crate::tests::utils::{
-    decrypt_ciphertexts, default_api_key, default_tenant_id, random_handle, setup_test_app,
-    wait_until_all_ciphertexts_computed,
+use criterion::{
+    async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
 };
 use fhevm_engine_common::utils::safe_serialize;
 use std::str::FromStr;
+use std::time::SystemTime;
+use tokio::runtime::Runtime;
 use tonic::metadata::MetadataValue;
 
-pub fn test_random_user_address() -> String {
+fn test_random_user_address() -> String {
     let _private_key = "bd2400c676871534a682ca1c5e4cd647ec9c3e122f188c6e3f54e6900d586c7b";
     let public_key = "0x1BdA2a485c339C95a9AbfDe52E80ca38e34C199E";
     public_key.to_string()
 }
 
-pub fn test_random_contract_address() -> String {
+fn test_random_contract_address() -> String {
     "0x76c222560Db6b8937B291196eAb4Dad8930043aE".to_string()
 }
 
-#[tokio::test]
-async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
+    let mut c = Criterion::default().sample_size(10).configure_from_args();
+    let bench_name = "erc20::transfer";
+
+    let mut group = c.benchmark_group(bench_name);
+    for num_elems in [10, 50, 200, 500] {
+        group.throughput(Throughput::Elements(num_elems));
+        let bench_id =
+            format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems");
+        group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
+            let _ = Runtime::new().unwrap().block_on(schedule_erc20_whitepaper(
+                b,
+                num_elems as usize,
+                bench_id.clone(),
+            ));
+        });
+
+        group.throughput(Throughput::Elements(num_elems));
+        let bench_id = format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems");
+        group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
+            let _ = Runtime::new().unwrap().block_on(schedule_erc20_no_cmux(
+                b,
+                num_elems as usize,
+                bench_id.clone(),
+            ));
+        });
+
+        group.throughput(Throughput::Elements(num_elems));
+        let bench_id =
+            format!("{bench_name}::throughput::dependent_no_cmux::FHEUint64::{num_elems}_elems");
+        group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
+            let _ = Runtime::new()
+                .unwrap()
+                .block_on(schedule_dependent_erc20_no_cmux(
+                    b,
+                    num_elems as usize,
+                    bench_id.clone(),
+                ));
+        });
+    }
+    group.finish();
+
+    c.final_summary();
+}
+
+async fn schedule_erc20_whitepaper(
+    bencher: &mut Bencher<'_, WallTime>,
+    num_tx: usize,
+    bench_id: String,
+) -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -42,7 +96,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output_handles = vec![];
     let mut async_computations = vec![];
-    let mut num_samples: usize = 2;
+    let mut num_samples: usize = num_tx;
     let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
     if let Ok(samples) = samples {
         num_samples = samples.parse::<usize>().unwrap();
@@ -57,16 +111,15 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
     let keys = &keys[0];
 
     for _ in 0..=(num_samples - 1) as u32 {
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.0.pks);
         let the_list = builder
             .push(100_u64) // Balance source
             .push(10_u64) // Transfer amount
             .push(20_u64) // Balance destination
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&keys.0.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
         let serialized = safe_serialize(&the_list);
-        println!("Encrypting inputs...");
         let mut input_request = tonic::Request::new(InputUploadBatch {
             input_ciphertexts: vec![InputToUpload {
                 input_payload: serialized,
@@ -152,7 +205,6 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    println!("Scheduling computations...");
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
         computations: async_computations,
     });
@@ -160,34 +212,33 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
         "authorization",
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
-    let _resp = client.async_compute(compute_request).await?;
+    let _resp = client.async_compute(compute_request).await.unwrap();
 
-    println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    bencher.to_async(FuturesExecutor).iter(|| async {
+        let now = SystemTime::now();
+        wait_until_all_ciphertexts_computed(&app).await.unwrap();
+        println!("Execution time: {}", now.elapsed().unwrap().as_millis());
+    });
 
-    let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
-
-    assert_eq!(
-        resp.len(),
-        output_handles.len(),
-        "Outputs length doesn't match"
+    let params = keys.1.computation_parameters();
+    write_to_json::<u64, _>(
+        &bench_id,
+        params,
+        "",
+        "erc20-transfer",
+        &OperatorType::Atomic,
+        64,
+        vec![],
     );
-    for (i, r) in resp.iter().enumerate() {
-        match r.value.as_str() {
-            "true" if i % 5 == 0 => (), // trxa <= bals true
-            "30" if i % 5 == 1 => (),   // bald + trxa
-            "30" if i % 5 == 2 => (),   // select bald + trxa
-            "90" if i % 5 == 3 => (),   // bals - trxa
-            "90" if i % 5 == 4 => (),   // select bald - trxa
-            s => panic!("unexpected result: {} for output {i}", s),
-        }
-    }
+
     Ok(())
 }
 
-#[tokio::test]
-async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
+async fn schedule_erc20_no_cmux(
+    bencher: &mut Bencher<'_, WallTime>,
+    num_tx: usize,
+    bench_id: String,
+) -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -205,7 +256,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output_handles = vec![];
     let mut async_computations = vec![];
-    let mut num_samples: usize = 2;
+    let mut num_samples: usize = num_tx;
     let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
     if let Ok(samples) = samples {
         num_samples = samples.parse::<usize>().unwrap();
@@ -220,16 +271,15 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
     let keys = &keys[0];
 
     for _ in 0..=(num_samples - 1) as u32 {
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.0.pks);
         let the_list = builder
             .push(100_u64) // Balance source
             .push(10_u64) // Transfer amount
             .push(20_u64) // Balance destination
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&keys.0.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
         let serialized = safe_serialize(&the_list);
-        println!("Encrypting inputs...");
         let mut input_request = tonic::Request::new(InputUploadBatch {
             input_ciphertexts: vec![InputToUpload {
                 input_payload: serialized,
@@ -321,7 +371,6 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    println!("Scheduling computations...");
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
         computations: async_computations,
     });
@@ -331,32 +380,30 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
     );
     let _resp = client.async_compute(compute_request).await?;
 
-    println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    bencher.to_async(FuturesExecutor).iter(|| async {
+        let now = SystemTime::now();
+        wait_until_all_ciphertexts_computed(&app).await.unwrap();
+        println!("Execution time: {}", now.elapsed().unwrap().as_millis());
+    });
 
-    let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
-
-    assert_eq!(
-        resp.len(),
-        output_handles.len(),
-        "Outputs length doesn't match"
+    let params = keys.1.computation_parameters();
+    write_to_json::<u64, _>(
+        &bench_id,
+        params,
+        "",
+        "erc20-transfer",
+        &OperatorType::Atomic,
+        64,
+        vec![],
     );
-    for (i, r) in resp.iter().enumerate() {
-        match r.value.as_str() {
-            "true" if i % 5 == 0 => (), // trxa <= bals true
-            "1" if i % 5 == 1 => (),    // cast
-            "10" if i % 5 == 2 => (),   // select trxa * cast
-            "30" if i % 5 == 3 => (),   // bals + selected trxa
-            "90" if i % 5 == 4 => (),   // bald - selected trxa
-            s => panic!("unexpected result: {} for output {i}", s),
-        }
-    }
     Ok(())
 }
 
-#[tokio::test]
-async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
+async fn schedule_dependent_erc20_no_cmux(
+    bencher: &mut Bencher<'_, WallTime>,
+    num_tx: usize,
+    bench_id: String,
+) -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -374,7 +421,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
 
     let mut output_handles = vec![];
     let mut async_computations = vec![];
-    let mut num_samples: usize = 2;
+    let mut num_samples: usize = num_tx;
     let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
     if let Ok(samples) = samples {
         num_samples = samples.parse::<usize>().unwrap();
@@ -388,10 +435,10 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         })?;
     let keys = &keys[0];
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.0.pks);
     let the_list = builder
         .push(20_u64) // Initial balance destination
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&keys.0.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
     let serialized = safe_serialize(&the_list);
     let mut input_request = tonic::Request::new(InputUploadBatch {
@@ -417,15 +464,14 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
     };
 
     for _ in 0..=(num_samples - 1) as u32 {
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.0.pks);
         let the_list = builder
             .push(100_u64) // Balance source
             .push(10_u64) // Transfer amount
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&keys.0.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
         let serialized = safe_serialize(&the_list);
-        println!("Encrypting inputs...");
         let mut input_request = tonic::Request::new(InputUploadBatch {
             input_ciphertexts: vec![InputToUpload {
                 input_payload: serialized,
@@ -517,7 +563,6 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         };
     }
 
-    println!("Scheduling computations...");
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
         computations: async_computations,
     });
@@ -527,260 +572,21 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
     );
     let _resp = client.async_compute(compute_request).await?;
 
-    println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
-
-    let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
-
-    assert_eq!(
-        resp.len(),
-        output_handles.len(),
-        "Outputs length doesn't match"
-    );
-    for (i, r) in resp.iter().enumerate() {
-        let to_bal = (20 + (i / 5 + 1) * 10).to_string();
-        match r.value.as_str() {
-            "true" if i % 5 == 0 => (), // trxa <= bals true
-            "1" if i % 5 == 1 => (),    // cast
-            "10" if i % 5 == 2 => (),   // select trxa * cast
-            val if i % 5 == 3 => assert_eq!(val, to_bal, "Destination balances don't match."), // bals + selected trxa
-            "90" if i % 5 == 4 => (), // bald - selected trxa
-            s => panic!("unexpected result: {} for output {i}", s),
-        }
-    }
-    Ok(())
-}
-
-#[tokio::test]
-async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-
-    let mut handle_counter: u64 = random_handle();
-    let mut next_handle = || {
-        let out: u64 = handle_counter;
-        handle_counter += 1;
-        out.to_be_bytes().to_vec()
-    };
-    let api_key_header = format!("bearer {}", default_api_key());
-
-    let mut output_handles = vec![];
-    let mut async_computations = vec![];
-    let mut num_samples: usize = 2;
-    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
-    if let Ok(samples) = samples {
-        num_samples = samples.parse::<usize>().unwrap();
-    }
-
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
-
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
-    let the_list = builder
-        .push(42_u64) // Initial counter value
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
-        .unwrap();
-    let serialized = safe_serialize(&the_list);
-    let mut input_request = tonic::Request::new(InputUploadBatch {
-        input_ciphertexts: vec![InputToUpload {
-            input_payload: serialized,
-            signatures: Vec::new(),
-            user_address: test_random_user_address(),
-            contract_address: test_random_contract_address(),
-        }],
+    bencher.to_async(FuturesExecutor).iter(|| async {
+        let now = SystemTime::now();
+        wait_until_all_ciphertexts_computed(&app).await.unwrap();
+        println!("Execution time: {}", now.elapsed().unwrap().as_millis());
     });
-    input_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let resp = client.upload_inputs(input_request).await?;
-    let resp = resp.get_ref();
-    assert_eq!(resp.upload_responses.len(), 1);
-    let first_resp = &resp.upload_responses[0];
-    assert_eq!(first_resp.input_handles.len(), 1);
-    let handle_counter = first_resp.input_handles[0].handle.clone();
-    let mut counter = AsyncComputationInput {
-        input: Some(Input::InputHandle(handle_counter.clone())),
-    };
 
-    for _ in 0..=(num_samples - 1) as u32 {
-        let new_counter = next_handle();
-        output_handles.push(new_counter.clone());
-
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheAdd.into(),
-            output_handle: new_counter.clone(),
-            inputs: vec![
-                counter.clone(),
-                // Counter increment
-                AsyncComputationInput {
-                    input: Some(Input::Scalar(vec![7u8])),
-                },
-            ],
-        });
-
-        counter = AsyncComputationInput {
-            input: Some(Input::InputHandle(new_counter.clone())),
-        };
-    }
-
-    println!("Scheduling computations...");
-    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations,
-    });
-    compute_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let _resp = client.async_compute(compute_request).await?;
-
-    println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
-
-    let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
-
-    assert_eq!(
-        resp.len(),
-        output_handles.len(),
-        "Outputs length doesn't match"
-    );
-    for (i, r) in resp.iter().enumerate() {
-        let target = (42 + (i + 1) * 7).to_string();
-        assert_eq!(r.value.as_str(), target, "Counter value incorrect.");
-    }
-    Ok(())
-}
-
-#[tokio::test]
-async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-
-    let mut handle_counter: u64 = random_handle();
-    let mut next_handle = || {
-        let out: u64 = handle_counter;
-        handle_counter += 1;
-        out.to_be_bytes().to_vec()
-    };
-    let api_key_header = format!("bearer {}", default_api_key());
-
-    let mut output_handles = vec![];
-    let mut async_computations = vec![];
-    let mut num_samples: usize = 16;
-    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
-    if let Ok(samples) = samples {
-        num_samples = samples.parse::<usize>().unwrap();
-    }
-
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
-
-    let num_levels = (num_samples as f64).log2().ceil() as usize;
-    let mut num_comps_at_level = 2f64.powi((num_levels - 1) as i32) as usize;
-    let target = num_comps_at_level * 2;
-    let mut level_inputs = vec![];
-    let mut level_outputs = vec![];
-
-    for _ in 0..num_comps_at_level {
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
-        let the_list = builder
-            .push(1_u64) // Initial value
-            .push(1_u64) // Initial value
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
-            .unwrap();
-        let serialized = safe_serialize(&the_list);
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: vec![InputToUpload {
-                input_payload: serialized,
-                signatures: Vec::new(),
-                user_address: test_random_user_address(),
-                contract_address: test_random_contract_address(),
-            }],
-        });
-        input_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.upload_inputs(input_request).await?;
-        let resp = resp.get_ref();
-        assert_eq!(resp.upload_responses.len(), 1);
-        let first_resp = &resp.upload_responses[0];
-        assert_eq!(first_resp.input_handles.len(), 2);
-        let lhs_handle = first_resp.input_handles[0].handle.clone();
-        let rhs_handle = first_resp.input_handles[1].handle.clone();
-        level_inputs.push(AsyncComputationInput {
-            input: Some(Input::InputHandle(lhs_handle.clone())),
-        });
-        level_inputs.push(AsyncComputationInput {
-            input: Some(Input::InputHandle(rhs_handle.clone())),
-        });
-    }
-    let mut output_handle = next_handle();
-    for _ in 0..num_levels {
-        for i in 0..num_comps_at_level {
-            output_handle = next_handle();
-            level_outputs.push(AsyncComputationInput {
-                input: Some(Input::InputHandle(output_handle.clone())),
-            });
-            async_computations.push(AsyncComputation {
-                operation: FheOperation::FheAdd.into(),
-                output_handle: output_handle.clone(),
-                inputs: vec![level_inputs[2 * i].clone(), level_inputs[2 * i + 1].clone()],
-            });
-        }
-        num_comps_at_level /= 2;
-        if num_comps_at_level < 1 {
-            break;
-        }
-        level_inputs = std::mem::take(&mut level_outputs);
-    }
-    output_handles.push(output_handle);
-
-    println!("Scheduling computations...");
-    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations,
-    });
-    compute_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let _resp = client.async_compute(compute_request).await?;
-
-    println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
-
-    let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
-
-    assert_eq!(
-        resp.len(),
-        output_handles.len(),
-        "Outputs length doesn't match"
-    );
-    assert_eq!(
-        resp[0].value.as_str(),
-        target.to_string(),
-        "Incorrect result."
+    let params = keys.1.computation_parameters();
+    write_to_json::<u64, _>(
+        &bench_id,
+        params,
+        "",
+        "erc20-transfer",
+        &OperatorType::Atomic,
+        64,
+        vec![],
     );
     Ok(())
 }
