@@ -53,12 +53,16 @@ task("test", async (_taskArgs, hre, runSuper) => {
   await hre.run("compile:specific", { contract: "contracts" });
 
   await hre.run("task:deployHttpz");
-  await hre.run("task:addNetworksToHttpz");
   await hre.run("task:deployZkpokManager");
   await hre.run("task:deployKeyManager");
   await hre.run("task:deployCiphertextManager");
   await hre.run("task:deployAclManager");
   await hre.run("task:deployDecryptionManager");
+
+  // Contrary to deployment, here we consider the HTTPZ address from the `addresses/` directory
+  // for local testing
+  await hre.run("task:addNetworksToHttpz", { useInternalHttpzAddress: true });
+
   await runSuper();
 });
 
