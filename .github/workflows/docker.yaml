@@ -7,15 +7,18 @@ on:
     type: [created]
   pull_request:
     types: [labeled]
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   build-and-push-docker:
     if: |
-      github.event_name != 'pull_request' || 
+      github.event_name != 'pull_request' ||
       (github.event.action == 'labeled' && github.event.label.name == 'docker')
     strategy:
       matrix:
-        service_name: 
+        service_name:
           - {name: "back", context: "."}
           - {name: "email", context: "."}
           - {name: "orchestrator", context: "."}
