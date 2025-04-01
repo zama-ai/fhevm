@@ -34,7 +34,10 @@ export abstract class DAppRepository {
 
   abstract delete(id: DAppId): Task<void, AppError>
   abstract findById(id: DAppId): Task<DApp, AppError>
-  abstract findByAddress(chainId: string, address: string): Task<DApp, AppError>
+  abstract findByAddress(
+    chainId: string | number,
+    address: string,
+  ): Task<DApp, AppError>
   abstract findOneByIdAndUserId(
     id: DAppId,
     userId: UserId,

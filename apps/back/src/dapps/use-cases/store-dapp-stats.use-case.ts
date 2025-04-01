@@ -20,7 +20,7 @@ import {
 } from 'utils'
 
 type Input = {
-  chainId: string
+  chainId: string | number
   address: string
   events: {
     name: string

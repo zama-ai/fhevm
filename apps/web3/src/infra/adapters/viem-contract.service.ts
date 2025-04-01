@@ -16,7 +16,7 @@ export class ViemContractService implements ContractService {
   }
 
   isSmartContract = (
-    chainId: string,
+    chainId: string | number,
     address: Web3Address,
   ): Task<boolean, AppError> => {
     return this.chainId.value === chainId
@@ -31,7 +31,7 @@ export class ViemContractService implements ContractService {
   }
 
   getOwner = (
-    chainId: string,
+    chainId: string | number,
     address: Web3Address,
   ): Task<Option<Web3Address>, AppError> => {
     return this.chainId.value === chainId
@@ -65,7 +65,7 @@ export class ViemContractService implements ContractService {
 
   getAbi = (
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _chainId: string,
+    _chainId: string | number,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _address: Web3Address,
   ): Task<string, AppError> => {

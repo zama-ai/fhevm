@@ -9,6 +9,7 @@ services:
     command: redis-server --save 20 1 --loglevel warning --maxmemory-policy noeviction
     volumes:
       - cache:/data
+
   postgres:
     image: postgres:17-alpine
     restart: always
@@ -18,9 +19,22 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
       - POSTGRES_DB=${DB_NAME:-console}
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres:/var/lib/postgresql/data
+
+  relayer-db:
+    image: postgres:17-alpine
+    restart: always
+    container_name: relayer-db
+    environment:
+      - POSTGRES_USER=${DB_USERNAME:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-relayer}
+    ports:
+      - "5433:5432"
+    volumes:
+      - relayer-db:/var/lib/postgresql/data
 
   localstack:
     image: localstack/localstack:latest
@@ -42,7 +56,26 @@ services:
       # the container start
       - ./localstack-setup.sh:/etc/localstack/init/ready.d/script.sh
 
+  relayer-db-init:
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@relayer-db:5432/relayer
+      - RUST_LOG=debug
+    image: rust:1.85
+    entrypoint: >
+      /bin/sh -c "cargo install diesel_cli && cd /app/lib && diesel setup && diesel migration run --migration-dir /app/lib/migrations && touch /tmp/done && sleep 65 && exit 0 "
+    healthcheck:
+      test: [ "CMD", "test", "-f", "/tmp/done" ]
+      interval: 5s
+      timeout: 1s
+      retries: 240
+      start_period: 60s
+    working_dir: /app
+    volumes: 
+      - ./apps/relayer:/app
+
+
 volumes:
   cache:
   postgres:
   localstack:
+  relayer-db:

@@ -1,0 +1,17 @@
+[package]
+name = "zws-tx-manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing = { workspace = true }
+aws-config = { workspace = true }
+aws-sdk-sqs = { workspace = true }
+aws-sdk-sns = { workspace = true }
+
+[[bin]]
+name = "zws-tx-manager"
+path = "./src/main.rs"

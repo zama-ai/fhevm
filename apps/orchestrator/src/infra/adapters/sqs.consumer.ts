@@ -2,7 +2,7 @@ import { PUBSUB } from '#constants.js'
 import { Message } from '@aws-sdk/client-sqs'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { SqsMessageHandler } from '@ssut/nestjs-sqs'
-import { back, web3 } from 'messages'
+import { back, relayer, web3 } from 'messages'
 import { isAppError, type IPubSub } from 'utils'
 
 @Injectable()
@@ -10,8 +10,10 @@ export class SQSConsumer {
   private readonly logger = new Logger(SQSConsumer.name)
   constructor(
     @Inject(PUBSUB)
-    private readonly pubsub: IPubSub<back.BackEvent | web3.Web3Event>,
-  ) {}
+    private readonly pubsub: IPubSub<
+      back.BackEvent | web3.Web3Event | relayer.RelayerEvent
+    >,
+  ) { }
 
   @SqsMessageHandler('orchestrator')
   public async handleMessage(message: Message) {
@@ -21,12 +23,17 @@ export class SQSConsumer {
       const data: unknown = JSON.parse(message.Body)
 
       try {
-        if (back.isBackEvent(data) || web3.isWeb3Event(data)) {
+        if (
+          back.isBackEvent(data) ||
+          web3.isWeb3Event(data) ||
+          relayer.isRelayerEvent(data)
+        ) {
           this.logger.debug(
             `📬 publishing event ${data.type} on the internal queue`,
           )
           await this.pubsub.publish(data).toPromise()
         } else {
+          this.logger.debug(`${JSON.stringify(relayer.schema.safeParse(data))}`);
           this.logger.debug(`❌ unhandled message ${(data as any).type}`)
         }
       } catch (error) {

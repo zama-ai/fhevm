@@ -12,6 +12,7 @@ import { execSync } from 'child_process'
 import commonConfig from '#config/common.config.js'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { JsPromise } from '#prisma/client/runtime/library.js'
+import httpzConfig from '#config/httpz.config.js'
 import type { Type } from '@nestjs/common'
 export type GraphQlResponse<T> =
   | {
@@ -112,6 +113,7 @@ export class SetupManager {
             dbConfig,
             jwtConfig,
             registerAs('redis', () => this.redisConnection),
+            httpzConfig,
           ],
         }),
       )

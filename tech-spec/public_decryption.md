@@ -2,6 +2,8 @@
 
 Public decryption is when a contract calls the ZWS Public Decryption Oracle to get a ciphertext decrypted publicly on-chain.
 
+<!-- TODO: Add transaction receipt flow from tx-manager to relayer to console to payment -->
+
 [HTTPZ Flow](https://github.com/zama-ai/tech-spec/blob/main/architecture/public_decryption.md)
 
 ## Flow

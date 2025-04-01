@@ -28,3 +28,9 @@ echo "Creating Email queue"
 awslocal sqs create-queue --queue-name email-dlq 
 awslocal sqs create-queue --queue-name email-queue \
   --attributes '{"RedrivePolicy":"{\"deadLetterTargetArn\":\"arn:aws:sqs:eu-central-1:000000000000:email-dlq\",\"maxReceiveCount\":\"1\"}"}'
+
+echo "Creating relayer queue"
+awslocal sqs create-queue --queue-name relayer-queue
+
+echo "Creating tx-manager queue"
+awslocal sqs create-queue --queue-name tx-manager-queue

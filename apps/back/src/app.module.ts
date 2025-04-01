@@ -13,13 +13,22 @@ import jwtConfig from './config/jwt.config.js'
 import redisConfig from './config/redis.config.js'
 import commonConfig from '#config/common.config.js'
 import { MS_NAME } from '#constants.js'
+import { RestModule } from '#infra/rest/rest.module.js'
+import httpzConfig from '#config/httpz.config.js'
 
 // Note: I need to override the default behavior of ConfigModule in the tests,
 // and, as we use a dynamic module, we need to store the current instance to
 // override it in the tests.
 export const configModule = ConfigModule.forRoot({
   isGlobal: true,
-  load: [commonConfig, awsConfig, dbConfig, jwtConfig, redisConfig],
+  load: [
+    commonConfig,
+    awsConfig,
+    dbConfig,
+    jwtConfig,
+    redisConfig,
+    httpzConfig,
+  ],
 })
 
 @Module({
@@ -49,6 +58,7 @@ export const configModule = ConfigModule.forRoot({
       },
     }),
     GraphQLModule,
+    RestModule,
     SqsConsumerModule,
     SqsProducerModule,
   ],
