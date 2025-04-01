@@ -13,7 +13,7 @@ env:
 
 jobs:
   lint-check:
-    name: Lint
+    name: Action lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project
