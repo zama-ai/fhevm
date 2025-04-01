@@ -218,16 +218,16 @@ abstract contract DecryptionOracleCaller {
         uint256 handlesListlen = handlesList.length;
         uint256 signedDataLength;
         for (uint256 i = 0; i < handlesListlen; i++) {
-            uint8 typeCt = uint8(handlesList[i][30]);
-            if (typeCt < 9) {
+            FheType typeCt = FheType(uint8(handlesList[i][30]));
+            if (uint8(typeCt) < 9) {
                 signedDataLength += 32;
-            } else if (typeCt == 9) {
+            } else if (typeCt == FheType.Uint512) {
                 //ebytes64
                 signedDataLength += 128;
-            } else if (typeCt == 10) {
+            } else if (typeCt == FheType.Uint1024) {
                 //ebytes128
                 signedDataLength += 192;
-            } else if (typeCt == 11) {
+            } else if (typeCt == FheType.Uint2048) {
                 //ebytes256
                 signedDataLength += 320;
             } else {

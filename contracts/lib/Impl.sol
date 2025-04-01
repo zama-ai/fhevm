@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "./TFHE.sol";
+import {FheType} from "../contracts/FheType.sol";
 
 /**
  * @title   FHEVMConfigStruct
@@ -224,7 +224,7 @@ interface ITFHEExecutor {
         bytes32 inputHandle,
         address callerAddress,
         bytes memory inputProof,
-        bytes1 inputType
+        FheType inputType
     ) external returns (bytes32 result);
 
     /**
@@ -233,7 +233,7 @@ interface ITFHEExecutor {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function cast(bytes32 ct, bytes1 toType) external returns (bytes32 result);
+    function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
 
     /**
      * @notice          Does trivial encryption.
@@ -241,7 +241,7 @@ interface ITFHEExecutor {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(uint256 ct, bytes1 toType) external returns (bytes32 result);
+    function trivialEncrypt(uint256 ct, FheType toType) external returns (bytes32 result);
 
     /**
      * @notice          Does trivial encryption.
@@ -249,7 +249,7 @@ interface ITFHEExecutor {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(bytes memory ct, bytes1 toType) external returns (bytes32 result);
+    function trivialEncrypt(bytes memory ct, FheType toType) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHEEq operation.
@@ -283,7 +283,7 @@ interface ITFHEExecutor {
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRand(bytes1 randType) external returns (bytes32 result);
+    function fheRand(FheType randType) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHERandBounded operation.
@@ -291,7 +291,7 @@ interface ITFHEExecutor {
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (bytes32 result);
+    function fheRandBounded(uint256 upperBound, FheType randType) external returns (bytes32 result);
 }
 
 /**
@@ -663,7 +663,7 @@ library Impl {
 
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
-     *         If 'control's value is 'false', the result has the same value as 'ifFalse'.
+     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
@@ -677,14 +677,9 @@ library Impl {
      * @param toType        Input type.
      * @return result       Result.
      */
-    function verify(bytes32 inputHandle, bytes memory inputProof, uint8 toType) internal returns (bytes32 result) {
+    function verify(bytes32 inputHandle, bytes memory inputProof, FheType toType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).verifyCiphertext(
-            inputHandle,
-            msg.sender,
-            inputProof,
-            bytes1(toType)
-        );
+        result = ITFHEExecutor($.TFHEExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
         IACL($.ACLAddress).allowTransient(result, msg.sender);
     }
 
@@ -694,9 +689,9 @@ library Impl {
      * @param toType      Target type.
      * @return result     Result value of the target type.
      */
-    function cast(bytes32 ciphertext, uint8 toType) internal returns (bytes32 result) {
+    function cast(bytes32 ciphertext, FheType toType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).cast(ciphertext, bytes1(toType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).cast(ciphertext, toType);
     }
 
     /**
@@ -705,9 +700,9 @@ library Impl {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(uint256 value, uint8 toType) internal returns (bytes32 result) {
+    function trivialEncrypt(uint256 value, FheType toType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -716,9 +711,9 @@ library Impl {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(bytes memory value, uint8 toType) internal returns (bytes32 result) {
+    function trivialEncrypt(bytes memory value, FheType toType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -757,14 +752,14 @@ library Impl {
         result = ITFHEExecutor($.TFHEExecutorAddress).fheNe(lhs, rhs, scalarByte);
     }
 
-    function rand(uint8 randType) internal returns (bytes32 result) {
+    function rand(FheType randType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).fheRand(bytes1(randType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).fheRand(randType);
     }
 
-    function randBounded(uint256 upperBound, uint8 randType) internal returns (bytes32 result) {
+    function randBounded(uint256 upperBound, FheType randType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).fheRandBounded(upperBound, bytes1(randType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).fheRandBounded(upperBound, randType);
     }
 
     /**

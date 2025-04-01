@@ -1,4 +1,100 @@
-import { strict as assert } from 'assert';
+/**
+ * Enum representing different types of arguments.
+ */
+export enum ArgumentType {
+  /**
+   * Represents an encrypted boolean argument type.
+   */
+  Ebool,
+
+  /**
+   * Represents an encrypted unsigned integer argument type.
+   */
+  Euint,
+
+  /**
+   * Represents a generic unsigned integer argument type.
+   */
+  Uint,
+}
+
+export type FunctionType = {
+  /**
+   * The type of the function argument.
+   */
+  type: ArgumentType;
+
+  /**
+   * The bit length of the function argument.
+   */
+  bits: number;
+};
+
+export type OverloadSignature = {
+  /**
+   * The name of the overload signature.
+   */
+  name: string;
+
+  /**
+   * The arguments of the overload signature.
+   */
+  arguments: FunctionType[];
+
+  /**
+   * The return type of the overload signature.
+   */
+  returnType: FunctionType;
+
+  /**
+   * The binary operator associated with the overload signature.
+   * Optional.
+   */
+  binaryOperator?: string;
+
+  /**
+   * The unary operator associated with the overload signature.
+   * Optional.
+   */
+  unaryOperator?: string;
+};
+
+export type OverloadShard = {
+  /**
+   * The shard number of the overload.
+   */
+  shardNumber: number;
+
+  /**
+   * The overload signatures in the shard.
+   */
+  overloads: OverloadSignature[];
+};
+
+/**
+ * Represents a Fully Homomorphic Encryption (FHE) type.
+ *
+ * @interface FheType
+ *
+ * @property {string} type - The type of the FHE element.
+ * @property {string[]} supportedOperators - A list of operators supported by this FHE type.
+ * @property {number} bitLength - The bit length of the FHE type.
+ * @property {string} clearMatchingType - The corresponding clear (non-encrypted) type.
+ * @property {number} [value] - An optional value associated with the FHE type.
+ * @property {boolean} [isAlias] - Indicates if this FHE type is an alias.
+ * @property {string} [aliasType] - The type that this FHE type is an alias for, if applicable.
+ * @property {string} [clearMatchingTypeAlias] - The clear type that the alias corresponds to, if applicable.
+ */
+export interface FheType {
+  type: string;
+  supportedOperators: string[];
+  bitLength: number;
+  clearMatchingType: string;
+  value?: number;
+  isAlias?: boolean;
+  aliasType?: string;
+  clearMatchingTypeAlias?: string;
+}
 
 /**
  * Represents an operator with various properties and configurations.
@@ -14,11 +110,6 @@ export type Operator = {
    * Optional.
    */
   leftScalarInvertOp?: string;
-
-  /**
-   * The name of the precompiled function associated with this operator.
-   */
-  precompileName: string;
 
   /**
    * Indicates if the operator has a scalar operand.
@@ -55,21 +146,8 @@ export type Operator = {
 
   /**
    * The name of the FHE library associated with this operator.
-   * Optional.
    */
-  fheLibName?: string;
-
-  /**
-   * The binary Solidity operator associated with this operator.
-   * Optional.
-   */
-  binarySolidityOperator?: string;
-
-  /**
-   * The unary Solidity operator associated with this operator.
-   * Optional.
-   */
-  unarySolidityOperator?: string;
+  fheLibName: string;
 
   /**
    * Indicates if the operator is a shift operator.
@@ -100,263 +178,45 @@ export enum OperatorArguments {
  * Enum representing the possible return types.
  */
 export enum ReturnType {
-  Uint,
+  Euint,
   Ebool,
 }
 
 /**
- * An array of supported bit lengths for cryptographic operations.
- * The supported bit lengths include 8, 16, 32, 64, 128, and 256 bits.
- */
-export const SUPPORTED_BITS: number[] = [8, 16, 32, 64, 128, 256];
-
-/**
- * An array of supported unsigned integer bit lengths.
- */
-export const SUPPORTED_UINT = [8, 16, 32, 64, 128, 256];
-
-/**
- * A list of all supported operators with their respective properties.
+ * Validates the FHE (Fully Homomorphic Encryption) types.
  *
- * Each operator object contains the following properties:
- * - `name`: The name of the operator.
- * - `precompileName`: The precompiled name of the operator.
- * - `hasScalar`: A boolean indicating if the operator supports scalar values.
- * - `hasEncrypted`: A boolean indicating if the operator supports encrypted values.
- * - `arguments`: The type of arguments the operator accepts (binary or unary).
- * - `returnType`: The return type of the operator.
- * - `binarySolidityOperator` (optional): The corresponding binary operator in Solidity.
- * - `leftScalarEncrypt` (optional): A boolean indicating if the left scalar should be encrypted.
- * - `leftScalarDisable` (optional): A boolean indicating if the left scalar is disabled.
- * - `fheLibName` (optional): The corresponding function name in the FHE library.
- * - `shiftOperator` (optional): A boolean indicating if the operator is a shift operator.
- * - `rotateOperator` (optional): A boolean indicating if the operator is a rotate operator.
- * - `leftScalarInvertOp` (optional): The name of the inverted operator for the left scalar.
- * - `unarySolidityOperator` (optional): The corresponding unary operator in Solidity.
+ * @param fheTypes - The FHE types to validate.
+ * @throws Will throw an error if any FHE type is invalid.
  */
-export const ALL_OPERATORS: Operator[] = [
-  {
-    name: 'add',
-    precompileName: 'Add',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    binarySolidityOperator: '+',
-  },
-  {
-    name: 'sub',
-    precompileName: 'Subtract',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    leftScalarEncrypt: true,
-    binarySolidityOperator: '-',
-  },
-  {
-    name: 'mul',
-    precompileName: 'Multiply',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    binarySolidityOperator: '*',
-  },
-  {
-    name: 'div',
-    precompileName: 'Divide',
-    hasScalar: true,
-    hasEncrypted: false,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    leftScalarDisable: true,
-  },
-  {
-    name: 'rem',
-    precompileName: 'Rem',
-    hasScalar: true,
-    hasEncrypted: false,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    leftScalarDisable: true,
-  },
-  {
-    name: 'and',
-    precompileName: 'BitwiseAnd',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    fheLibName: 'fheBitAnd',
-    binarySolidityOperator: '&',
-  },
-  {
-    name: 'or',
-    precompileName: 'BitwiseOr',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    fheLibName: 'fheBitOr',
-    binarySolidityOperator: '|',
-  },
-  {
-    name: 'xor',
-    precompileName: 'BitwiseXor',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    fheLibName: 'fheBitXor',
-    binarySolidityOperator: '^',
-  },
-  {
-    name: 'shl',
-    precompileName: 'ShiftLeft',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    leftScalarEncrypt: true,
-    shiftOperator: true,
-  },
-  {
-    name: 'shr',
-    precompileName: 'ShiftRight',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    leftScalarEncrypt: true,
-    shiftOperator: true,
-  },
-  {
-    name: 'rotl',
-    precompileName: 'RotateLeft',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    leftScalarEncrypt: true,
-    rotateOperator: true,
-  },
-  {
-    name: 'rotr',
-    precompileName: 'RotateRight',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-    leftScalarEncrypt: true,
-    rotateOperator: true,
-  },
-  {
-    name: 'eq',
-    precompileName: 'Equal',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Ebool,
-  },
-  {
-    name: 'ne',
-    precompileName: 'NotEqual',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Ebool,
-  },
-  {
-    name: 'ge',
-    leftScalarInvertOp: 'le',
-    precompileName: 'GreaterThanOrEqual',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Ebool,
-  },
-  {
-    name: 'gt',
-    leftScalarInvertOp: 'lt',
-    precompileName: 'GreaterThan',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Ebool,
-  },
-  {
-    name: 'le',
-    leftScalarInvertOp: 'ge',
-    precompileName: 'LessThanOrEqual',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Ebool,
-  },
-  {
-    name: 'lt',
-    leftScalarInvertOp: 'gt',
-    precompileName: 'LessThan',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Ebool,
-  },
-  {
-    name: 'min',
-    precompileName: 'Min',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-  },
-  {
-    name: 'max',
-    precompileName: 'Max',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Binary,
-    returnType: ReturnType.Uint,
-  },
-  {
-    name: 'neg',
-    precompileName: 'Negate',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Unary,
-    returnType: ReturnType.Uint,
-    unarySolidityOperator: '-',
-  },
-  {
-    name: 'not',
-    precompileName: 'Not',
-    hasScalar: true,
-    hasEncrypted: true,
-    arguments: OperatorArguments.Unary,
-    returnType: ReturnType.Uint,
-    unarySolidityOperator: '~',
-  },
-];
+export function validateFHETypes(fheTypes: FheType[]): void {
+  fheTypes.forEach((fheType) => {
+    if (typeof fheType.type !== 'string' || typeof fheType.clearMatchingType !== 'string') {
+      throw new Error(`Invalid FHE type: ${JSON.stringify(fheType)}`);
+    }
+
+    // TODO Add more validation checks
+  });
+}
 
 /**
- * Validates the list of operators to ensure there are no duplicate names or precompile names.
+ * Validates an array of operators to ensure that they are properly defined and unique.
  *
- * @param operators - The list of operators to validate.
- * @returns The validated list of operators.
- * @throws Will throw an error if a duplicate operator name or precompile name is found.
+ * @param operators - An array of Operator objects to be validated.
+ * @throws Will throw an error if the operators array is not defined, not an array, or empty.
+ * @throws Will throw an error if there are duplicate operator names.
  */
-export function checks(operators: Operator[]): Operator[] {
+export function validateOperators(operators: Operator[]): void {
+  if (!operators || !Array.isArray(operators) || operators.length === 0) {
+    throw new Error('Operators is not defined or invalid');
+  }
+
   const nameMap: Record<string, boolean> = {};
-  const precompNameMap: Record<string, boolean> = {};
 
   operators.forEach((op) => {
-    assert(nameMap[op.name] == null, `Duplicate operator name found: ${op.name}`);
-    assert(precompNameMap[op.precompileName] == null, `Duplicate precompileName found: ${op.precompileName}`);
+    if (nameMap[op.name] != null) {
+      throw new Error(`Duplicate operator name found: ${op.name}`);
+    }
 
     nameMap[op.name] = true;
-    precompNameMap[op.precompileName] = true;
   });
-
-  return operators;
 }

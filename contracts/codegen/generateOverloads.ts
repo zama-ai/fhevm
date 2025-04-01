@@ -1,16 +1,35 @@
-import { SUPPORTED_BITS, SUPPORTED_UINT } from './common';
+import { FheType } from './common';
+import { findMinimumValueInBigIntArray, generateRandomNumber } from './utils';
 
+/**
+ * Represents a test structure with input and output types.
+ *
+ * @property inputs - An array of `bigint` values representing the inputs.
+ * @property output - The output value, which can be a `number`, `boolean`, or `bigint`.
+ */
 type Test = {
   inputs: bigint[];
   output: number | boolean | bigint;
 };
 
+/**
+ * Represents a collection of supported functions, where each function is identified
+ * by a unique key and associated with its corresponding `SupportedFunction` definition.
+ */
 type SupportedFunctions = {
   [key: string]: SupportedFunction;
 };
 
+/**
+ * Represents the parameters that can be used to configure supported functions.
+ *
+ * @property safeMin - Optional. If `true`, ensures that the minimum value is safely handled.
+ * @property noScalar - Optional. If `true`, disables scalar operations.
+ * @property lhsHigher - Optional. If `true`, enforces that the left-hand side value is higher.
+ * @property scalarOnly - Optional. If `true`, restricts operations to scalar values only.
+ * @property limit - Optional. Specifies a limit type, such as `'bits'`, to constrain operations.
+ */
 type SupportedFunctionParams = {
-  supportedBits: number[];
   safeMin?: boolean;
   noScalar?: boolean;
   lhsHigher?: boolean;
@@ -21,34 +40,30 @@ type SupportedFunctionParams = {
 type SupportedFunction = SupportedFunctionParams &
   (
     | {
+        // Represents a binary function (e.g., addition, subtraction) that operates on two inputs.
         unary?: false;
         evalTest: (lhsNumber: bigint, rhsNumber: bigint, lhs: number, rhs: number) => number | boolean | bigint;
       }
     | {
+        // Represents a unary function (e.g., negation, bitwise NOT) that operates on a single input.
         unary: true;
         evalTest: (lhs: bigint, bits: number) => number | boolean | bigint;
       }
   );
 
-(BigInt as any).prototype['toJSON'] = function () {
-  return this.toString();
-};
-
-const bigIntMin = (...args: bigint[]) => {
-  return args.reduce((min, e) => (e < min ? e : min), args[0]);
-};
-
-const bigIntMax = (...args: bigint[]) => {
-  return args.reduce((max, e) => (e > max ? e : max), args[0]);
-};
-
-const generateNumber = (bits: number) => {
-  const power = BigInt(Math.pow(2, bits) - 1);
-  const maxRange = bigIntMin(power, BigInt(Number.MAX_SAFE_INTEGER));
-  const substract = bigIntMax(BigInt(Math.floor(Math.random() * Number(maxRange))), 1n);
-  return bigIntMax(power - substract, 1n);
-};
-
+/**
+ * Safely evaluates a function with given inputs, ensuring the result does not exceed a specified bit limit.
+ *
+ * @param fn - A function that takes four arguments: `lhsNumber`, `rhsNumber`, `lhs`, and `rhs`, and returns a `number`, `boolean`, or `bigint`.
+ * @param lhsNumber - The left-hand side number as a `bigint`.
+ * @param rhsNumber - The right-hand side number as a `bigint`.
+ * @param lhs - The left-hand side number as a `number`.
+ * @param rhs - The right-hand side number as a `number`.
+ * @param safeMin - A boolean flag indicating whether to use the minimum (`Math.min`) or maximum (`Math.max`) of `lhs` and `rhs` to determine the bit limit. Defaults to `false`.
+ * @returns An object containing:
+ *   - `inputs`: An array with the adjusted `lhsNumber` and `rhsNumber`.
+ *   - `output`: The result of the function `fn` after adjustments.
+ */
 const safeEval = (
   fn: (lhsNumber: bigint, rhsNumber: bigint, lhs: number, rhs: number) => number | boolean | bigint,
   lhsNumber: bigint,
@@ -59,13 +74,12 @@ const safeEval = (
 ) => {
   const bitResults = safeMin ? Math.min(lhs, rhs) : Math.max(lhs, rhs);
   let result = fn(lhsNumber, rhsNumber, lhs, rhs);
-  const logs: any[] = [];
+
   if (typeof result === 'number' || typeof result === 'bigint') {
     while ((result as number | bigint) > Math.pow(2, bitResults) - 1) {
       lhsNumber = lhsNumber / 2n + 1n;
       rhsNumber = rhsNumber / 2n + 1n;
       result = fn(lhsNumber, rhsNumber, lhs, rhs);
-      logs.push([lhs, rhs, lhsNumber, rhsNumber, result]);
     }
   }
   return { inputs: [lhsNumber, rhsNumber], output: result };
@@ -73,58 +87,47 @@ const safeEval = (
 
 export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   add: {
-    supportedBits: SUPPORTED_BITS,
     safeMin: true,
     evalTest: (lhsNumber, rhsNumber) => BigInt(lhsNumber) + BigInt(rhsNumber),
   },
   sub: {
-    supportedBits: SUPPORTED_BITS,
     lhsHigher: true,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber - rhsNumber,
   },
   mul: {
-    supportedBits: SUPPORTED_BITS,
     safeMin: true,
     evalTest: (lhsNumber, rhsNumber) => BigInt(lhsNumber) * BigInt(rhsNumber),
   },
   div: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber / rhsNumber,
     scalarOnly: true,
   },
   rem: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber % rhsNumber,
     scalarOnly: true,
   },
   le: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber <= rhsNumber,
   },
   lt: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber < rhsNumber,
   },
   ge: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber >= rhsNumber,
   },
   gt: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber > rhsNumber,
   },
   eq: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber === rhsNumber,
   },
   ne: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber !== rhsNumber,
   },
   shl: {
-    supportedBits: SUPPORTED_BITS,
     limit: 'bits',
-    evalTest: (lhsNumber, rhsNumber, lhs, rhs) => {
+    evalTest: (lhsNumber, rhsNumber, lhs, _rhs) => {
+      // Perform a left shift operation by manipulating the bit positions of the binary representation.
       const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
       const r = bits.map((_, index) => {
         const newIndex = Number(BigInt(index) + (rhsNumber % BigInt(lhs)));
@@ -134,9 +137,8 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
     },
   },
   shr: {
-    supportedBits: SUPPORTED_BITS,
     limit: 'bits',
-    evalTest: (lhsNumber, rhsNumber, lhs, rhs) => {
+    evalTest: (lhsNumber, rhsNumber, lhs, _rhs) => {
       const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
       const r = bits.map((_, index) => {
         const newIndex = Number(BigInt(index) - (rhsNumber % BigInt(lhs)));
@@ -146,9 +148,8 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
     },
   },
   rotl: {
-    supportedBits: SUPPORTED_BITS,
     limit: 'bits',
-    evalTest: (lhsNumber, rhsNumber, lhs, rhs) => {
+    evalTest: (lhsNumber, rhsNumber, lhs, _rhs) => {
       const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
       const r = bits.map((_, index) => {
         let newIndex = Number(BigInt(index) + (rhsNumber % BigInt(lhs)));
@@ -159,9 +160,8 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
     },
   },
   rotr: {
-    supportedBits: SUPPORTED_BITS,
     limit: 'bits',
-    evalTest: (lhsNumber, rhsNumber, lhs, rhs) => {
+    evalTest: (lhsNumber, rhsNumber, lhs, _rhs) => {
       const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
       const r = bits.map((_, index) => {
         let newIndex = Number(BigInt(index) - (rhsNumber % BigInt(lhs)));
@@ -172,28 +172,22 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
     },
   },
   max: {
-    supportedBits: SUPPORTED_BITS,
     unary: false,
     evalTest: (lhsNumber, rhsNumber) => (lhsNumber > rhsNumber ? lhsNumber : rhsNumber),
   },
   min: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => (lhsNumber < rhsNumber ? lhsNumber : rhsNumber),
   },
   or: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber | rhsNumber,
   },
   and: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber & rhsNumber,
   },
   xor: {
-    supportedBits: SUPPORTED_BITS,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber ^ rhsNumber,
   },
   not: {
-    supportedBits: SUPPORTED_BITS,
     unary: true,
     evalTest: (lhsNumber, bits) => {
       const val = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-bits).split('');
@@ -208,7 +202,6 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
     },
   },
   neg: {
-    supportedBits: SUPPORTED_BITS,
     unary: true,
     evalTest: (lhsNumber, bits) => {
       const val = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-bits).split('');
@@ -226,82 +219,188 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   },
 };
 
-export const generateTests = () => {
-  const tests: any = {};
+/**
+ * Generates test cases for supported functions based on the provided FHE types.
+ *
+ * @param fheTypes - An array of FHE types, each containing information about type, bit length, and supported operators.
+ * @returns An object containing generated test cases for each supported function and FHE type combination.
+ */
+export const generateOverloads = (fheTypes: FheType[]) => {
+  const generatedTests: any = {};
   Object.keys(SUPPORTED_FUNCTIONS).forEach((functionName: string) => {
     const test = SUPPORTED_FUNCTIONS[functionName];
-    test.supportedBits.forEach((lhs: number) => {
-      if (test.unary) {
-        let lhsNumber = generateNumber(lhs);
-        const encryptedTestName = [functionName, `euint${lhs}`].join('_');
-        const encryptedTests: Test[] = [];
-        encryptedTests.push({
-          inputs: [lhsNumber],
-          output: test.evalTest(lhsNumber, lhs),
-        });
-        tests[encryptedTestName] = encryptedTests;
-      } else {
-        test.supportedBits.forEach((rhs: number) => {
-          const bitResults = Math.min(lhs, rhs);
-          let lhsNumber = generateNumber(lhs);
-          let rhsNumber = generateNumber(rhs);
-          if (test.limit === 'bits') {
-            rhsNumber = BigInt(1 + Math.floor(Math.random() * (rhs - 1)));
-          }
-          const smallest = bigIntMax(bigIntMin(lhsNumber, rhsNumber), 8n);
-          const only8bits = test.limit === 'bits' && rhs === 8;
-          const onlyEncrypted8bits = only8bits && lhs > 4;
 
-          if ((test.limit !== 'bits' || onlyEncrypted8bits) && !test.scalarOnly) {
-            const encryptedTestName = [functionName, `euint${lhs}`, `euint${rhs}`].join('_');
-            const encryptedTests: Test[] = [];
-            if (!test.lhsHigher) {
-              encryptedTests.push(safeEval(test.evalTest, lhsNumber, rhsNumber, lhs, rhs, test.safeMin));
-              encryptedTests.push(safeEval(test.evalTest, smallest - 4n, smallest, lhs, rhs, test.safeMin));
-            }
-            encryptedTests.push(safeEval(test.evalTest, smallest, smallest, lhs, rhs, test.safeMin));
-            encryptedTests.push(safeEval(test.evalTest, smallest, smallest - 4n, lhs, rhs, test.safeMin));
-            tests[encryptedTestName] = encryptedTests;
-          }
+    fheTypes.forEach((lhsFheType: FheType) => {
+      if (lhsFheType.type.startsWith('Uint') && lhsFheType.supportedOperators.includes(functionName)) {
+        if (test.unary) {
+          let lhsNumber = generateRandomNumber(lhsFheType.bitLength);
+          const encryptedTestName = [functionName, `e${lhsFheType.type.toLowerCase()}`].join('_');
+          const encryptedTests: Test[] = [];
+          encryptedTests.push({
+            inputs: [lhsNumber],
+            output: test.evalTest(lhsNumber, lhsFheType.bitLength),
+          });
+          generatedTests[encryptedTestName] = encryptedTests;
+        } else {
+          fheTypes.forEach((rhsFheType: FheType) => {
+            if (rhsFheType.type.startsWith('Uint') && rhsFheType.supportedOperators.includes(functionName)) {
+              const bitResults = Math.min(lhsFheType.bitLength, rhsFheType.bitLength);
+              let lhsNumber = generateRandomNumber(lhsFheType.bitLength);
+              let rhsNumber = generateRandomNumber(rhsFheType.bitLength);
 
-          const scalarCondition = !test.noScalar && (lhs === rhs || (rhs == 8 && lhs == 4) || (rhs == 4 && lhs == 8));
+              if (test.limit === 'bits') {
+                // @dev We set the floor as 5 to prevent underflows since tests would use smallest - 4n.
+                rhsNumber = BigInt(5 + Math.floor(Math.random() * (rhsFheType.bitLength - 1)));
+              }
 
-          if (SUPPORTED_UINT.includes(rhs) && (only8bits || (test.limit !== 'bits' && scalarCondition))) {
-            if (test.limit !== 'bits') {
-              rhsNumber = generateNumber(bitResults);
+              const smallest = findMinimumValueInBigIntArray(lhsNumber, rhsNumber);
+              const only8bits = test.limit === 'bits' && rhsFheType.bitLength === 8;
+
+              if ((test.limit !== 'bits' || only8bits) && !test.scalarOnly) {
+                const encryptedTestName = [
+                  functionName,
+                  `e${lhsFheType.type.toLowerCase()}`,
+                  `e${rhsFheType.type.toLowerCase()}`,
+                ].join('_');
+                const encryptedTests: Test[] = [];
+                if (!test.lhsHigher) {
+                  encryptedTests.push(
+                    safeEval(
+                      test.evalTest,
+                      lhsNumber,
+                      rhsNumber,
+                      lhsFheType.bitLength,
+                      rhsFheType.bitLength,
+                      test.safeMin,
+                    ),
+                  );
+                  encryptedTests.push(
+                    safeEval(
+                      test.evalTest,
+                      smallest - 4n,
+                      smallest,
+                      lhsFheType.bitLength,
+                      rhsFheType.bitLength,
+                      test.safeMin,
+                    ),
+                  );
+                }
+                encryptedTests.push(
+                  safeEval(test.evalTest, smallest, smallest, lhsFheType.bitLength, rhsFheType.bitLength, test.safeMin),
+                );
+                encryptedTests.push(
+                  safeEval(
+                    test.evalTest,
+                    smallest,
+                    smallest - 4n,
+                    lhsFheType.bitLength,
+                    rhsFheType.bitLength,
+                    test.safeMin,
+                  ),
+                );
+                generatedTests[encryptedTestName] = encryptedTests;
+              }
+
+              const scalarCondition = !test.noScalar && lhsFheType.bitLength === rhsFheType.bitLength;
+
+              if (only8bits || (test.limit !== 'bits' && scalarCondition)) {
+                if (test.limit !== 'bits') {
+                  rhsNumber = generateRandomNumber(bitResults);
+                }
+                const encryptedTestName = [
+                  functionName,
+                  `e${lhsFheType.type.toLowerCase()}`,
+                  `uint${rhsFheType.bitLength}`,
+                ].join('_');
+                const encryptedTests: Test[] = [];
+                if (!test.lhsHigher) {
+                  encryptedTests.push(
+                    safeEval(
+                      test.evalTest,
+                      lhsNumber,
+                      rhsNumber,
+                      lhsFheType.bitLength,
+                      rhsFheType.bitLength,
+                      test.safeMin,
+                    ),
+                  );
+                  encryptedTests.push(
+                    safeEval(
+                      test.evalTest,
+                      smallest - 4n,
+                      smallest,
+                      lhsFheType.bitLength,
+                      rhsFheType.bitLength,
+                      test.safeMin,
+                    ),
+                  );
+                }
+                encryptedTests.push(
+                  safeEval(test.evalTest, smallest, smallest, lhsFheType.bitLength, rhsFheType.bitLength, test.safeMin),
+                );
+                encryptedTests.push(
+                  safeEval(
+                    test.evalTest,
+                    smallest,
+                    smallest - 4n,
+                    lhsFheType.bitLength,
+                    rhsFheType.bitLength,
+                    test.safeMin,
+                  ),
+                );
+                generatedTests[encryptedTestName] = encryptedTests;
+              }
+              if (test.limit !== 'bits' && scalarCondition && !test.scalarOnly) {
+                lhsNumber = generateRandomNumber(bitResults);
+                const encryptedTestName = [
+                  functionName,
+                  `uint${lhsFheType.bitLength}`,
+                  `e${rhsFheType.type.toLowerCase()}`,
+                ].join('_');
+                const encryptedTests: Test[] = [];
+                if (!test.lhsHigher) {
+                  encryptedTests.push(
+                    safeEval(
+                      test.evalTest,
+                      lhsNumber,
+                      rhsNumber,
+                      lhsFheType.bitLength,
+                      rhsFheType.bitLength,
+                      test.safeMin,
+                    ),
+                  );
+                  encryptedTests.push(
+                    safeEval(
+                      test.evalTest,
+                      smallest - 4n,
+                      smallest,
+                      lhsFheType.bitLength,
+                      rhsFheType.bitLength,
+                      test.safeMin,
+                    ),
+                  );
+                }
+                encryptedTests.push(
+                  safeEval(test.evalTest, smallest, smallest, lhsFheType.bitLength, rhsFheType.bitLength, test.safeMin),
+                );
+                encryptedTests.push(
+                  safeEval(
+                    test.evalTest,
+                    smallest,
+                    smallest - 4n,
+                    lhsFheType.bitLength,
+                    rhsFheType.bitLength,
+                    test.safeMin,
+                  ),
+                );
+                generatedTests[encryptedTestName] = encryptedTests;
+              }
             }
-            const encryptedTestName = [functionName, `euint${lhs}`, `uint${rhs}`].join('_');
-            const encryptedTests: Test[] = [];
-            if (!test.lhsHigher) {
-              encryptedTests.push(safeEval(test.evalTest, lhsNumber, rhsNumber, lhs, rhs, test.safeMin));
-              encryptedTests.push(safeEval(test.evalTest, smallest - 4n, smallest, lhs, rhs, test.safeMin));
-            }
-            encryptedTests.push(safeEval(test.evalTest, smallest, smallest, lhs, rhs, test.safeMin));
-            encryptedTests.push(safeEval(test.evalTest, smallest, smallest - 4n, lhs, rhs, test.safeMin));
-            tests[encryptedTestName] = encryptedTests;
-          }
-          if (SUPPORTED_UINT.includes(lhs) && test.limit !== 'bits' && scalarCondition && !test.scalarOnly) {
-            lhsNumber = generateNumber(bitResults);
-            const encryptedTestName = [functionName, `uint${lhs}`, `euint${rhs}`].join('_');
-            const encryptedTests: Test[] = [];
-            if (!test.lhsHigher) {
-              encryptedTests.push(safeEval(test.evalTest, lhsNumber, rhsNumber, lhs, rhs, test.safeMin));
-              encryptedTests.push(safeEval(test.evalTest, smallest - 4n, smallest, lhs, rhs, test.safeMin));
-            }
-            encryptedTests.push(safeEval(test.evalTest, smallest, smallest, lhs, rhs, test.safeMin));
-            encryptedTests.push(safeEval(test.evalTest, smallest, smallest - 4n, lhs, rhs, test.safeMin));
-            tests[encryptedTestName] = encryptedTests;
-          }
-        });
+          });
+        }
       }
     });
   });
-  return tests;
+
+  return generatedTests;
 };
-
-const tests = generateTests();
-
-const fs = require('fs');
-const path = require('path');
-
-fs.writeFileSync(`${path.resolve(__dirname)}/overloads.json`, JSON.stringify(tests));

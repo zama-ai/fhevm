@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {TFHEExecutorNoEvents} from "./TFHEExecutorNoEvents.sol";
+import {FheType} from "./FheType.sol";
 
 /**
  * @title    TFHEExecutor
@@ -39,15 +40,15 @@ contract TFHEExecutor is TFHEExecutorNoEvents {
         bytes32 inputHandle,
         address userAddress,
         bytes inputProof,
-        bytes1 inputType,
+        FheType inputType,
         bytes32 result
     );
-    event Cast(address indexed caller, bytes32 ct, bytes1 toType, bytes32 result);
-    event TrivialEncrypt(address indexed caller, uint256 pt, bytes1 toType, bytes32 result);
-    event TrivialEncryptBytes(address indexed caller, bytes pt, bytes1 toType, bytes32 result);
+    event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
+    event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32 result);
+    event TrivialEncryptBytes(address indexed caller, bytes pt, FheType toType, bytes32 result);
     event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, bytes32 ifFalse, bytes32 result);
-    event FheRand(address indexed caller, bytes1 randType, bytes16 seed, bytes32 result);
-    event FheRandBounded(address indexed caller, uint256 upperBound, bytes1 randType, bytes16 seed, bytes32 result);
+    event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 result);
+    event FheRandBounded(address indexed caller, uint256 upperBound, FheType randType, bytes16 seed, bytes32 result);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -359,7 +360,7 @@ contract TFHEExecutor is TFHEExecutorNoEvents {
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRand(bytes1 randType) public virtual override returns (bytes32 result) {
+    function fheRand(FheType randType) public virtual override returns (bytes32 result) {
         bytes16 seed = _generateSeed();
         result = _generateRand(randType, seed);
         emit FheRand(msg.sender, randType, seed, result);
@@ -371,7 +372,7 @@ contract TFHEExecutor is TFHEExecutorNoEvents {
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRandBounded(uint256 upperBound, bytes1 randType) public virtual override returns (bytes32 result) {
+    function fheRandBounded(uint256 upperBound, FheType randType) public virtual override returns (bytes32 result) {
         bytes16 seed = _generateSeed();
         result = _generateRandBounded(upperBound, randType, seed);
         emit FheRandBounded(msg.sender, upperBound, randType, seed, result);
@@ -383,7 +384,7 @@ contract TFHEExecutor is TFHEExecutorNoEvents {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function cast(bytes32 ct, bytes1 toType) public virtual override returns (bytes32 result) {
+    function cast(bytes32 ct, FheType toType) public virtual override returns (bytes32 result) {
         result = super.cast(ct, toType);
         emit Cast(msg.sender, ct, toType, result);
     }
@@ -394,7 +395,7 @@ contract TFHEExecutor is TFHEExecutorNoEvents {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(uint256 pt, bytes1 toType) public virtual override returns (bytes32 result) {
+    function trivialEncrypt(uint256 pt, FheType toType) public virtual override returns (bytes32 result) {
         result = super.trivialEncrypt(pt, toType);
         emit TrivialEncrypt(msg.sender, pt, toType, result);
     }
@@ -406,7 +407,7 @@ contract TFHEExecutor is TFHEExecutorNoEvents {
      * @return result   Result value of the target type.
      * @dev             This is an overloaded function for ebytesXX types.
      */
-    function trivialEncrypt(bytes memory pt, bytes1 toType) public virtual override returns (bytes32 result) {
+    function trivialEncrypt(bytes memory pt, FheType toType) public virtual override returns (bytes32 result) {
         result = super.trivialEncrypt(pt, toType);
         emit TrivialEncryptBytes(msg.sender, pt, toType, result);
     }
@@ -423,7 +424,7 @@ contract TFHEExecutor is TFHEExecutorNoEvents {
         bytes32 inputHandle,
         address userAddress,
         bytes memory inputProof,
-        bytes1 inputType
+        FheType inputType
     ) public virtual override returns (bytes32 result) {
         result = super.verifyCiphertext(inputHandle, userAddress, inputProof, inputType);
         emit VerifyCiphertext(msg.sender, inputHandle, userAddress, inputProof, inputType, result);

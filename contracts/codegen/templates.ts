@@ -1,72 +1,61 @@
 import { assert } from 'console';
 
-import { Operator, OperatorArguments, ReturnType } from './common';
-import { ArgumentType, OverloadSignature } from './testgen';
+import { FheType, Operator, OperatorArguments, ReturnType } from './common';
 import { getUint } from './utils';
 
-function commonSolLib(): string {
-  return `
-type ebool is bytes32;
-type euint8 is bytes32;
-type euint16 is bytes32;
-type euint32 is bytes32;
-type euint64 is bytes32;
-type euint128 is bytes32;
-type euint256 is bytes32;
-type eaddress is bytes32;
-type ebytes64 is bytes32;
-type ebytes128 is bytes32;
-type ebytes256 is bytes32;
-type einput is bytes32;
+/**
+ * Generates Solidity type aliases from an array of FHE types.
+ *
+ * This function filters the provided FHE types to include only those that are supported for
+ * binary or unary operations. It then maps these types to Solidity type aliases, where each
+ * type is represented as a `bytes32`. Additionally, it includes a predefined alias for
+ * `einput`, which is represented as `bytes32`.
+ *
+ * @param fheTypes - An array of FHE types to generate Solidity type aliases from.
+ * @returns A string containing the Solidity type aliases, each on a new line.
+ */
+export function createSolidityTypeAliasesFromFheTypes(fheTypes: FheType[]): string {
+  return fheTypes
+    .filter((fheType: FheType) => fheType.supportedOperators.length > 0)
+    .map((fheType: FheType) => `type e${fheType.type.toLowerCase()} is bytes32;`)
+    .concat(['type einput is bytes32;'])
+    .join('\n');
+}
 
 /**
- * @title   Common
- * @notice  This library contains all the values used to communicate types to the run time.
- *          It matches the tfhe-rs types.
- *          see: https://github.com/zama-ai/tfhe-rs/blob/a2f1825691f9f95e9d241ca4bd4c4598b905f070/tfhe/src/high_level_api/mod.rs
+ * Generates a Solidity enum definition from an array of FheType objects.
+ *
+ * @param {FheType[]} fheTypes - An array of FheType objects to be converted into a Solidity enum.
+ * @returns {string} A string representing the Solidity enum definition.
  */
-library Common {
-    /// @notice Runtime type for encrypted boolean.
-    uint8 internal constant ebool_t = 0;
-
-    /// @notice Runtime type for encrypted uint4.
-    uint8 internal constant euint4_t = 1;
-
-    /// @notice Runtime type for encrypted uint8.
-    uint8 internal constant euint8_t = 2;
-
-    /// @notice Runtime type for encrypted uint16.
-    uint8 internal constant euint16_t = 3;
-
-    /// @notice Runtime type for encrypted uint32.
-    uint8 internal constant euint32_t = 4;
-
-    /// @notice Runtime type for encrypted uint64.
-    uint8 internal constant euint64_t = 5;
-
-    /// @notice Runtime type for encrypted uint128.
-    uint8 internal constant euint128_t = 6;
-    
-    /// @notice Runtime type for encrypted addresses.
-    uint8 internal constant euint160_t = 7;
-
-    /// @notice Runtime type for encrypted uint256.
-    uint8 internal constant euint256_t = 8;
-
-    /// @notice Runtime type for encrypted bytes64.
-    uint8 internal constant ebytes64_t = 9;
-
-    /// @notice Runtime type for encrypted bytes128.
-    uint8 internal constant ebytes128_t = 10;
-
-    /// @notice Runtime type for encrypted bytes256.
-    uint8 internal constant ebytes256_t = 11;
+export function createSolidityEnumFromFheTypes(fheTypes: FheType[]): string {
+  return `enum FheType {
+    ${fheTypes
+      .filter((fheType: FheType) => !fheType.aliasType)
+      .map(
+        (fheType: FheType, index: number) =>
+          `${fheType.type}${index < fheTypes.filter((fheType: FheType) => !fheType.aliasType).length - 1 ? ',' : ''}`,
+      )
+      .join('\n')}
+}`;
 }
+
+export function generateSolidityFheType(fheTypes: FheType[]): string {
+  return `
+    // SPDX-License-Identifier: BSD-3-Clause-Clear
+    pragma solidity ^0.8.24;
+
+    ${createSolidityEnumFromFheTypes(fheTypes)}
 `;
 }
 
-function binaryOperatorImpl(op: Operator): string {
-  const fname = operatorFheLibFunction(op);
+/**
+ * Generates the implementation of a binary operator function for Impl.sol.
+ *
+ * @param op - The operator for which the implementation is generated.
+ * @returns The string representation of the binary operator function.
+ */
+function handleSolidityBinaryOperatorForImpl(op: Operator): string {
   const scalarArg = op.hasScalar && op.hasEncrypted ? ', bool scalar' : '';
   const scalarByte = op.hasScalar ? '0x01' : '0x00';
   const scalarSection =
@@ -86,29 +75,31 @@ function binaryOperatorImpl(op: Operator): string {
     function ${op.name}(bytes32 lhs, bytes32 rhs${scalarArg}) internal returns (bytes32 result) {
         ${scalarSection}
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).${fname}(lhs, rhs, scalarByte);
+        result = ITFHEExecutor($.TFHEExecutorAddress).${op.fheLibName}(lhs, rhs, scalarByte);
     }` + '\n'
   );
 }
 
-export function implSol(operators: Operator[]): string {
+/**
+ * Generates the Solidity implementation (Impl.sol) library for FHE operations.
+ *
+ * @param operators - An array of Operator objects representing the supported operations.
+ * @returns A string containing the Solidity implementation library code.
+ */
+export function generateSolidityImplLib(operators: Operator[]): string {
   const res: string[] = [];
-
-  const coprocessorInterface = generateImplCoprocessorInterface(operators);
-  const aclInterface = generateACLInterface();
-  const inputVerifierInterface = generateInputVerifierInterface();
 
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "./TFHE.sol";
+import {FheType} from "../contracts/FheType.sol";
 
-${coprocessorInterface}
+${generateImplCoprocessorInterface(operators)}
 
-${aclInterface}
+${generateACLInterface()}
 
-${inputVerifierInterface}
+${generateInputVerifierInterface()}
 
 /**
  * @title   Impl
@@ -143,57 +134,19 @@ library Impl {
   operators.forEach((op) => {
     switch (op.arguments) {
       case OperatorArguments.Binary:
-        res.push(binaryOperatorImpl(op));
+        res.push(handleSolidityBinaryOperatorForImpl(op));
         break;
       case OperatorArguments.Unary:
-        res.push(unaryOperatorImpl(op));
+        res.push(handleUnaryOperatorForImpl(op));
         break;
     }
   });
 
-  res.push(implCustomMethods());
+  res.push(generateCustomMethodsForImpl());
 
   res.push('}\n');
 
   return res.join('');
-}
-export function fhevmLibSol(operators: Operator[]): string {
-  const res: string[] = [];
-
-  const fheLibInterface = generateImplFhevmLibInterface(operators);
-
-  res.push(`
-// SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.24;
-
-${fheLibInterface}
-
-`);
-
-  return res.join('');
-}
-
-function operatorFheLibFunction(op: Operator): string {
-  if (op.fheLibName) {
-    return op.fheLibName;
-  }
-  return `fhe${capitalizeFirstLetter(op.name)}`;
-}
-
-function capitalizeFirstLetter(input: string): string {
-  const firstLetter = input.toUpperCase().charAt(0);
-  const theRest = input.substring(1);
-  return `${firstLetter}${theRest}`;
-}
-
-function generateImplFhevmLibInterface(operators: Operator[]): string {
-  const res: string[] = [];
-
-  res.push('interface FhevmLib {');
-  res.push(fheLibCustomInterfaceFunctions());
-  res.push('}');
-
-  return res.join('\n');
 }
 
 function generateImplCoprocessorInterface(operators: Operator[]): string {
@@ -217,7 +170,6 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
     */
     interface ITFHEExecutor {`);
   operators.forEach((op) => {
-    let functionName = operatorFheLibFunction(op);
     const tail = 'external returns (bytes32 result);';
     let functionArguments: string;
     switch (op.arguments) {
@@ -226,24 +178,24 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
         res.push(`  
           
           /**
-           * @notice              Computes ${functionName} operation.
+           * @notice              Computes ${op.fheLibName} operation.
            * @param lhs           LHS.
            * @param rhs           RHS.
            * @param scalarByte    Scalar byte.
            * @return result       Result.
            */
-          function ${functionName}${functionArguments} ${tail}`);
+          function ${op.fheLibName}${functionArguments} ${tail}`);
         break;
       case OperatorArguments.Unary:
         functionArguments = '(bytes32 ct)';
         res.push(`  
 
            /**
-           * @notice              Computes ${functionName} operation.
+           * @notice              Computes ${op.fheLibName} operation.
            * @param ct            Ct
            * @return result       Result.
            */
-          function ${functionName}${functionArguments} ${tail}`);
+          function ${op.fheLibName}${functionArguments} ${tail}`);
         break;
     }
   });
@@ -253,19 +205,6 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
   res.push('}');
 
   return res.join('');
-}
-function fheLibCustomInterfaceFunctions(): string {
-  return `
-    /**
-     * @notice                Verifies the ciphertext.
-     * @param inputHandle     Input handle.
-     * @param callerAddress   Address of the caller.
-     * @param inputProof      Input proof.
-     * @param inputType       Input type.
-     * @return result         Result.
-     */
-    function verifyCiphertext(bytes32 inputHandle, address callerAddress, address contractAddress, bytes memory inputProof, bytes1 inputType) external pure returns (bytes32 result);
-  `;
 }
 
 function coprocessorInterfaceCustomFunctions(): string {
@@ -278,7 +217,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param inputType       Input type.
      * @return result         Result.
      */
-    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) external returns (bytes32 result);
+    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, FheType inputType) external returns (bytes32 result);
 
     /**
      * @notice          Performs the casting to a target type.
@@ -286,7 +225,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function cast(bytes32 ct, bytes1 toType) external returns (bytes32 result);
+    function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
 
      /**
      * @notice          Does trivial encryption.
@@ -294,7 +233,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(uint256 ct, bytes1 toType) external returns (bytes32 result);
+    function trivialEncrypt(uint256 ct, FheType toType) external returns (bytes32 result);
 
     /**
      * @notice          Does trivial encryption.
@@ -302,7 +241,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(bytes memory ct, bytes1 toType) external returns (bytes32 result);
+    function trivialEncrypt(bytes memory ct, FheType toType) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHEEq operation.
@@ -336,7 +275,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRand(bytes1 randType) external returns (bytes32 result);
+    function fheRand(FheType randType) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHERandBounded operation.
@@ -344,7 +283,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (bytes32 result);
+    function fheRandBounded(uint256 upperBound, FheType randType) external returns (bytes32 result);
   `;
 }
 
@@ -373,7 +312,6 @@ function generateACLInterface(): string {
      * @param account       Address of the account.
      */
     function allow(bytes32 handle, address account) external;
-
 
     /**
      * @dev This function removes the transient allowances, which could be useful for integration with
@@ -416,233 +354,309 @@ function generateInputVerifierInterface(): string {
   `;
 }
 
-export function tfheSol(
-  operators: Operator[],
-  supportedBits: number[],
-  mocked: boolean,
-): [string, OverloadSignature[]] {
-  const signatures: OverloadSignature[] = [];
+export function generateSolidityTFHELib(operators: Operator[], fheTypes: FheType[]): string {
   const res: string[] = [];
 
   res.push(`// SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.24;
+  pragma solidity ^0.8.24;
 
-import "./Impl.sol";
+  import "./Impl.sol";
+  import {FheType} from "../contracts/FheType.sol";
 
-${commonSolLib()}
-
-/**
- * @title   TFHE
- * @notice  This library is the interaction point for all smart contract developers
- *          that interact with TFHE.
- */
-library TFHE {
-
-/// @notice Returned if the input's length is greater than 64 bytes.
-error InputLengthAbove64Bytes(uint256 inputLength);
-
-/// @notice Returned if the input's length is greater than 128 bytes.
-error InputLengthAbove128Bytes(uint256 inputLength);
-
-/// @notice Returned if the input's length is greater than 256 bytes.
-error InputLengthAbove256Bytes(uint256 inputLength);
+  ${createSolidityTypeAliasesFromFheTypes(fheTypes)}
 
   /**
-   * @notice            Sets the FHEVM addresses.
-   * @param fhevmConfig FHEVM config struct that contains contract addresses.
-  */
-  function setFHEVM(FHEVMConfigStruct memory fhevmConfig) internal {
-      Impl.setFHEVM(fhevmConfig);
-  }
-`);
+   * @title   TFHE
+   * @notice  This library is the interaction point for all smart contract developers
+   *          that interact with TFHE.
+   */
+  library TFHE {
 
-  if (mocked) {
-    res.push(`
+  /// @notice Returned if the input's length is greater than 64 bytes.
+  error InputLengthAbove64Bytes(uint256 inputLength);
+
+  /// @notice Returned if the input's length is greater than 128 bytes.
+  error InputLengthAbove128Bytes(uint256 inputLength);
+
+  /// @notice Returned if the input's length is greater than 256 bytes.
+  error InputLengthAbove256Bytes(uint256 inputLength);
+
     /**
-    * @dev Returns true if the encrypted bool is initialized and false otherwise.
+     * @notice            Sets the FHEVM addresses.
+     * @param fhevmConfig FHEVM config struct that contains contract addresses.
     */
-    function isInitialized(ebool /*v*/) internal pure returns (bool) {
-        return true;
+    function setFHEVM(FHEVMConfigStruct memory fhevmConfig) internal {
+        Impl.setFHEVM(fhevmConfig);
     }
   `);
-    supportedBits.forEach((b) => {
-      res.push(`
-      /**
-      * @dev Returns true if the encrypted integer is initialized and false otherwise.
-      */
-      function isInitialized(euint${b} /*v*/) internal pure returns (bool) {
-          return true;
-      }
-    `);
-    });
-  } else {
-    res.push(`
-      /**
-      * @dev Returns true if the encrypted integer is initialized and false otherwise.
-      */
-    function isInitialized(ebool v) internal pure returns (bool) {
-        return ebool.unwrap(v) != 0;
-    }
-  `);
-    supportedBits.forEach((b) => {
-      res.push(`
-      /**
-      * @dev Returns true if the encrypted integer is initialized and false otherwise.
-      */
-      function isInitialized(euint${b} v) internal pure returns (bool) {
-          return euint${b}.unwrap(v) != 0;
-      }
-    `);
-    });
-  }
 
-  supportedBits.forEach((lhsBits) => {
-    supportedBits.forEach((rhsBits) => {
+  // 1. Exclude types that do not support any operators.
+  const adjustedFheTypes = fheTypes.filter((fheType: FheType) => fheType.supportedOperators.length > 0);
+
+  // 2. Generate isInitialized function for all supported types
+  adjustedFheTypes.forEach((fheType: FheType) => {
+    res.push(handleSolidityTFHEIsInitialized(fheType));
+  });
+
+  // 3. Handle encrypted operators for two encrypted types
+  adjustedFheTypes.forEach((lhsFheType: FheType) => {
+    adjustedFheTypes.forEach((rhsFheType: FheType) => {
       operators.forEach((operator) => {
-        if (!operator.shiftOperator && !operator.rotateOperator)
-          res.push(tfheEncryptedOperator(lhsBits, rhsBits, operator, signatures));
+        res.push(handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(lhsFheType, rhsFheType, operator));
       });
     });
+  });
+
+  // 4. Handle scalar operators for all supported types
+  adjustedFheTypes.forEach((fheType: FheType) => {
     operators.forEach((operator) => {
-      if (!operator.shiftOperator && !operator.rotateOperator)
-        res.push(tfheScalarOperator(lhsBits, lhsBits, operator, signatures));
+      res.push(generateSolidityTFHEScalarOperator(fheType, operator));
     });
   });
 
-  supportedBits.forEach((bits) => {
+  // 5. Handle shift & rotate operators for all supported types
+  adjustedFheTypes.forEach((fheType: FheType) => {
     operators.forEach((operator) => {
-      if (operator.shiftOperator || operator.rotateOperator)
-        res.push(tfheShiftOperators(bits, operator, signatures, !!operator.rotateOperator, mocked));
+      res.push(handleSolidityTFHEShiftOperator(fheType, operator));
     });
   });
 
-  // TODO: Decide whether we want to have mixed-inputs for CMUX/Select
-  supportedBits.forEach((bits) => res.push(tfheSelect(bits)));
-  supportedBits.forEach((outputBits) => {
-    supportedBits.forEach((inputBits) => {
-      res.push(tfheAsEboolCustomCast(inputBits, outputBits));
+  // 6. Handle ternary operator (i.e., select) for all supported types
+  adjustedFheTypes.forEach((fheType: FheType) => res.push(handleSolidityTFHESelect(fheType)));
+
+  // 7. Handle custom casting (1) between euint types and (2) between an euint type and ebool.
+  adjustedFheTypes.forEach((outputFheType: FheType) => {
+    adjustedFheTypes.forEach((inputFheType: FheType) => {
+      res.push(handleSolidityTFHECustomCastBetweenTwoEuint(inputFheType, outputFheType));
     });
-    res.push(tfheAsEboolUnaryCast(outputBits));
+    res.push(handleSolidityTFHECustomCastBetweenEboolAndEuint(outputFheType));
   });
-  supportedBits.forEach((bits) => res.push(tfheUnaryOperators(bits, operators, signatures)));
-  supportedBits.forEach((bits) => res.push(tfheCustomUnaryOperators(bits)));
 
-  res.push(tfheCustomMethods());
+  // 8. Handle unary operators for all supported types.
+  adjustedFheTypes.forEach((fheType: FheType) => res.push(handleSolidityTFHEUnaryOperators(fheType, operators)));
 
-  res.push(tfheAclMethods(supportedBits));
+  // 9. Handle conversion from plaintext and einput to all supported types (e.g., einput --> ebool, bytes memory --> ebytes64, uint32 --> euint32)
+  adjustedFheTypes.forEach((fheType: FheType) =>
+    res.push(handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType)),
+  );
+
+  // 10. Handle rand/randBounded for all supported types
+  adjustedFheTypes.forEach((fheType: FheType) => res.push(handleSolidityTFHERand(fheType)));
+
+  // 11. Add padding to bytes for all ebytes types
+  adjustedFheTypes.forEach((fheType: FheType) => res.push(handleTFHEPadToBytesForEbytes(fheType)));
+
+  // 12. Push ACL Solidity methods
+  res.push(generateSolidityACLMethods(adjustedFheTypes));
 
   res.push('}\n');
-
-  return [res.join(''), signatures];
-}
-
-function tfheEncryptedOperator(
-  lhsBits: number,
-  rhsBits: number,
-  operator: Operator,
-  signatures: OverloadSignature[],
-): string {
-  if (!operator.hasEncrypted || operator.arguments != OperatorArguments.Binary) {
-    return '';
-  }
-
-  const res: string[] = [];
-
-  const outputBits = Math.max(lhsBits, rhsBits);
-  const castLeftToRight = lhsBits < rhsBits;
-  const castRightToLeft = lhsBits > rhsBits;
-  const returnType =
-    operator.returnType == ReturnType.Uint
-      ? `euint${outputBits}`
-      : operator.returnType == ReturnType.Ebool
-        ? `ebool`
-        : assert(false, 'Unknown return type');
-  const returnTypeOverload: ArgumentType =
-    operator.returnType == ReturnType.Uint ? ArgumentType.EUint : ArgumentType.Ebool;
-  const scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', false' : '';
-
-  const leftExpr = castLeftToRight ? `asEuint${outputBits}(a)` : 'a';
-  const rightExpr = castRightToLeft ? `asEuint${outputBits}(b)` : 'b';
-  let implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
-  signatures.push({
-    name: operator.name,
-    arguments: [
-      { type: ArgumentType.EUint, bits: lhsBits },
-      { type: ArgumentType.EUint, bits: rhsBits },
-    ],
-    returnType: { type: returnTypeOverload, bits: outputBits },
-  });
-  res.push(`
-    /**
-    * @dev Evaluates ${operator.name}(a, b) and returns the result.
-    */
-    function ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) internal returns (${returnType}) {
-        if (!isInitialized(a)) {
-            a = asEuint${lhsBits}(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint${rhsBits}(0);
-        }
-        return ${returnType}.wrap(${implExpression});
-    }
-`);
 
   return res.join('');
 }
 
-function tfheScalarOperator(
-  lhsBits: number,
-  rhsBits: number,
+function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
+  lhsFheType: FheType,
+  rhsFheType: FheType,
   operator: Operator,
-  signatures: OverloadSignature[],
 ): string {
+  const res: string[] = [];
+
+  if (operator.shiftOperator || operator.rotateOperator) {
+    return '';
+  }
+
+  if (!operator.hasEncrypted || operator.arguments != OperatorArguments.Binary) {
+    return '';
+  }
+
+  if (
+    !lhsFheType.supportedOperators.includes(operator.name) ||
+    !rhsFheType.supportedOperators.includes(operator.name)
+  ) {
+    return '';
+  }
+
+  if (lhsFheType.type.startsWith('Uint') && rhsFheType.type.startsWith('Uint')) {
+    // Determine the maximum number of bits between lhsBits and rhsBits
+    const outputBits = Math.max(lhsFheType.bitLength, rhsFheType.bitLength);
+    const castLeftToRight = lhsFheType.bitLength < rhsFheType.bitLength;
+    const castRightToLeft = lhsFheType.bitLength > rhsFheType.bitLength;
+
+    const returnType =
+      operator.returnType == ReturnType.Euint
+        ? `euint${outputBits}`
+        : operator.returnType == ReturnType.Ebool
+          ? `ebool`
+          : assert(false, 'Unknown return type');
+
+    const scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', false' : '';
+    const leftExpr = castLeftToRight ? `asEuint${outputBits}(a)` : 'a';
+    const rightExpr = castRightToLeft ? `asEuint${outputBits}(b)` : 'b';
+    let implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
+
+    res.push(`
+    /**
+    * @dev Evaluates ${operator.name}(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b)  and returns the result.
+    */
+    function ${operator.name}(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b) internal returns (${returnType}) {
+        if (!isInitialized(a)) {
+            a = asE${lhsFheType.type.toLowerCase()}(0);
+        }
+        if (!isInitialized(b)) {
+            b = asE${rhsFheType.type.toLowerCase()}(0);
+        }
+        return ${returnType}.wrap(${implExpression});
+    }
+`);
+  } else if (lhsFheType.type === 'Bool' && rhsFheType.type === 'Bool') {
+    res.push(`
+    /**
+    * @dev Evaluates ${operator.name}(ebool a, ebool b) and returns the result.
+    */
+    function ${operator.name}(ebool a, ebool b) internal returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEbool(false);
+        }
+        if (!isInitialized(b)) {
+            b = asEbool(false);
+        }
+        return ebool.wrap(Impl.${operator.name}(ebool.unwrap(a), ebool.unwrap(b), false));
+    }
+`);
+  } else if (lhsFheType.type == rhsFheType.type && rhsFheType.type.startsWith('Bytes')) {
+    const bytesLength = lhsFheType.bitLength / 8;
+
+    res.push(`
+      /**
+      * @dev Evaluates ${operator.name}(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b) and returns the result.
+      */
+      function ${operator.name}(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b) internal returns (ebool) {
+          if (!isInitialized(a)) {
+              a = asEbytes${bytesLength}(padToBytes${bytesLength}(hex""));
+          }
+          if (!isInitialized(b)) {
+              b = asEbytes${bytesLength}(padToBytes${bytesLength}(hex""));
+          }
+          return ebool.wrap(Impl.${operator.name}(e${lhsFheType.type.toLowerCase()}.unwrap(a), e${rhsFheType.type.toLowerCase()}.unwrap(b), false));
+      }
+  `);
+  } else if (lhsFheType.type.startsWith('Address') && rhsFheType.type.startsWith('Address')) {
+    res.push(`
+      /**
+      * @dev Evaluates ${operator.name}(eaddress a, eaddress b) and returns the result.
+      */
+      function ${operator.name}(eaddress a, eaddress b) internal returns (ebool) {
+          if (!isInitialized(a)) {
+              a = asEaddress(address(0));
+          }
+          if (!isInitialized(b)) {
+              b = asEaddress(address(0));
+          }
+          return ebool.wrap(Impl.${operator.name}(eaddress.unwrap(a), eaddress.unwrap(b), false));
+      }
+  `);
+  } else if (lhsFheType.type.startsWith('Eint') && rhsFheType.type.startsWith('Eint')) {
+    throw new Error('Eint types are not supported!');
+  }
+
+  return res.join('');
+}
+
+function generateSolidityTFHEScalarOperator(fheType: FheType, operator: Operator): string {
+  const res: string[] = [];
+
+  if (operator.shiftOperator || operator.rotateOperator) {
+    return '';
+  }
+
   if (operator.arguments != OperatorArguments.Binary) {
     return '';
   }
 
-  if (!operator.hasScalar || lhsBits != rhsBits) {
+  if (!operator.hasScalar) {
     return '';
   }
 
-  const res: string[] = [];
+  if (!fheType.supportedOperators.includes(operator.name)) {
+    return '';
+  }
 
-  const outputBits = Math.max(lhsBits, rhsBits);
   const returnType =
-    operator.returnType == ReturnType.Uint
-      ? `euint${outputBits}`
+    operator.returnType == ReturnType.Euint
+      ? `e${fheType.type.toLowerCase()} `
       : operator.returnType == ReturnType.Ebool
         ? `ebool`
         : assert(false, 'Unknown return type');
-  const returnTypeOverload = operator.returnType == ReturnType.Uint ? ArgumentType.EUint : ArgumentType.Ebool;
-  var scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', true' : '';
+
+  let scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', true' : '';
   const leftOpName = operator.leftScalarInvertOp ?? operator.name;
-  var implExpressionA = `Impl.${operator.name}(euint${outputBits}.unwrap(a), bytes32(uint256(b))${scalarFlag})`;
-  var implExpressionB = `Impl.${leftOpName}(euint${outputBits}.unwrap(b), bytes32(uint256(a))${scalarFlag})`;
-  var maybeEncryptLeft = '';
+
+  let implExpressionA;
+
+  if (fheType.type == 'Bool') {
+    implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(b?1:0))${scalarFlag})`;
+  } else if (fheType.type.startsWith('Bytes')) {
+    implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), b${scalarFlag})`;
+  } else if (fheType.type.startsWith('Eint')) {
+    throw new Error('Eint types are not supported!');
+  } else {
+    implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(${
+      fheType.isAlias && fheType.clearMatchingTypeAlias !== undefined
+        ? `${fheType.clearMatchingTypeAlias.toLowerCase()}(b)`
+        : 'b'
+    }))${scalarFlag})`;
+  }
+
+  let implExpressionB;
+
+  if (fheType.type == 'Bool') {
+    implExpressionB = `Impl.${leftOpName}(e${fheType.type.toLowerCase()}.unwrap(b), bytes32(uint256(a?1:0))${scalarFlag})`;
+  } else if (fheType.type.startsWith('Bytes')) {
+    implExpressionB = `Impl.${leftOpName}(e${fheType.type.toLowerCase()}.unwrap(b), a${scalarFlag})`;
+  } else if (fheType.type.startsWith('Int')) {
+    throw new Error('Int types are not supported yet!');
+  } else {
+    implExpressionB = `Impl.${leftOpName}(e${fheType.type.toLowerCase()}.unwrap(b), bytes32(uint256(${
+      fheType.isAlias && fheType.clearMatchingTypeAlias !== undefined
+        ? `${fheType.clearMatchingTypeAlias.toLowerCase()}(a)`
+        : 'a'
+    }))${scalarFlag})`;
+  }
+
+  let maybeEncryptLeft = '';
+
   if (operator.leftScalarEncrypt) {
     // workaround until tfhe-rs left scalar support:
     // do the trivial encryption and preserve order of operations
     scalarFlag = ', false';
-    maybeEncryptLeft = `euint${outputBits} aEnc = asEuint${outputBits}(a);`;
-    implExpressionB = `Impl.${leftOpName}(euint${outputBits}.unwrap(aEnc), euint${outputBits}.unwrap(b)${scalarFlag})`;
+    maybeEncryptLeft = `e${fheType.type.toLowerCase()} aEnc = asE${fheType.type.toLowerCase()}(a);`;
+    implExpressionB = `Impl.${leftOpName}(e${fheType.type.toLowerCase()}.unwrap(aEnc), e${fheType.type.toLowerCase()}.unwrap(b)${scalarFlag})`;
   }
-  signatures.push({
-    name: operator.name,
-    arguments: [
-      { type: ArgumentType.EUint, bits: lhsBits },
-      { type: ArgumentType.Uint, bits: rhsBits },
-    ],
-    returnType: { type: returnTypeOverload, bits: outputBits },
-  });
+
+  const clearMatchingType =
+    fheType.type === 'Address'
+      ? fheType.clearMatchingType
+      : fheType.isAlias && fheType.clearMatchingTypeAlias !== undefined
+        ? fheType.clearMatchingTypeAlias
+        : fheType.clearMatchingType;
 
   // rhs scalar
   res.push(`
+    
     /**
-    * @dev Evaluates ${operator.name}(a, b) and returns the result.
+    * @dev Evaluates ${operator.name}(e${fheType.type.toLowerCase()} a, ${clearMatchingType.toLowerCase()} b) and returns the result.
     */
-    function ${operator.name}(euint${lhsBits} a, ${getUint(rhsBits)} b) internal returns (${returnType}) {
+    function ${operator.name}(e${fheType.type.toLowerCase()} a, ${clearMatchingType.toLowerCase()} b) internal returns (${returnType}) {
         if (!isInitialized(a)) {
-            a = asEuint${lhsBits}(0);
+            a = asE${fheType.type.toLowerCase()}(${
+              fheType.type == 'Bool'
+                ? 'false'
+                : fheType.type.startsWith('Bytes')
+                  ? `padToBytes${fheType.bitLength / 8}(hex"")`
+                  : fheType.type == 'Address'
+                    ? `${clearMatchingType.toLowerCase()}(0)`
+                    : 0
+            });
         }
         return ${returnType}.wrap(${implExpressionA});
     }
@@ -650,24 +664,23 @@ function tfheScalarOperator(
 
   // lhs scalar
   if (!operator.leftScalarDisable) {
-    signatures.push({
-      name: operator.name,
-      arguments: [
-        { type: ArgumentType.Uint, bits: rhsBits },
-        { type: ArgumentType.EUint, bits: lhsBits },
-      ],
-      returnType: { type: returnTypeOverload, bits: outputBits },
-    });
-
     res.push(`
 
     /**
-    * @dev Evaluates ${operator.name}(a, b) and returns the result.
+    * @dev Evaluates ${operator.name}(${clearMatchingType.toLowerCase()} a, e${fheType.type.toLowerCase()} b) and returns the result.
     */
-    function ${operator.name}(${getUint(lhsBits)} a, euint${rhsBits} b) internal returns (${returnType}) {
+    function ${operator.name}(${clearMatchingType.toLowerCase()} a, e${fheType.type.toLowerCase()} b) internal returns (${returnType}) {
         ${maybeEncryptLeft}
         if (!isInitialized(b)) {
-            b = asEuint${rhsBits}(0);
+            b = asE${fheType.type.toLowerCase()}(${
+              fheType.type == 'Bool'
+                ? 'false'
+                : fheType.type.startsWith('Bytes')
+                  ? `padToBytes${fheType.bitLength / 8}(hex"")`
+                  : fheType.type == 'Address'
+                    ? `${clearMatchingType.toLowerCase()}(0)`
+                    : 0
+            });
         }
         return ${returnType}.wrap(${implExpressionB});
     }
@@ -677,263 +690,145 @@ function tfheScalarOperator(
   return res.join('');
 }
 
-function tfheShiftOperators(
-  inputBits: number,
-  operator: Operator,
-  signatures: OverloadSignature[],
-  rotate: boolean,
-  mocked: boolean,
-): string {
+function handleSolidityTFHEIsInitialized(fheType: FheType): string {
+  return `
+      /**
+      * @dev Returns true if the encrypted integer is initialized and false otherwise.
+      */
+      function isInitialized(e${fheType.type.toLowerCase()} v) internal pure returns (bool) {
+          return e${fheType.type.toLowerCase()}.unwrap(v) != 0;
+      }
+    `;
+}
+
+function handleSolidityTFHEShiftOperator(fheType: FheType, operator: Operator): string {
   const res: string[] = [];
 
-  // Code and test for shift(euint{inputBits},euint8}
-  const outputBits = inputBits;
-  const lhsBits = inputBits;
-  const rhsBits = 8;
-  const castRightToLeft = lhsBits > rhsBits;
-
-  const returnType = `euint${outputBits}`;
-
-  const returnTypeOverload: ArgumentType = ArgumentType.EUint;
-  let scalarFlag = ', false';
-
-  const leftExpr = 'a';
-  const rightExpr = castRightToLeft ? `asEuint${outputBits}(b)` : 'b';
-  let implExpression: string;
-  if (mocked) {
-    if (rotate) {
-      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr}) % ${lhsBits}, ${lhsBits}${scalarFlag})`;
-    } else {
-      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr}) % ${lhsBits}${scalarFlag})`;
-    }
-  } else {
-    implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
+  if (!operator.shiftOperator && !operator.rotateOperator) {
+    return res.join();
   }
 
-  if (inputBits >= 8) {
-    signatures.push({
-      name: operator.name,
-      arguments: [
-        { type: ArgumentType.EUint, bits: lhsBits },
-        { type: ArgumentType.EUint, bits: rhsBits },
-      ],
-      returnType: { type: returnTypeOverload, bits: outputBits },
-    });
+  if (fheType.supportedOperators.includes(operator.name)) {
+    const lhsBits = fheType.bitLength;
+    const rhsBits = 8;
+    const castRightToLeft = lhsBits > rhsBits;
+
+    let scalarFlag = ', false';
+
+    const leftExpr = 'a';
+    const rightExpr = castRightToLeft ? `asE${fheType.type.toLowerCase()}(b)` : 'b';
+    let implExpression: string = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(${leftExpr}), e${fheType.type.toLowerCase()}.unwrap(${rightExpr})${scalarFlag})`;
 
     res.push(`
     /** 
-     * @dev Evaluates ${operator.name}(a, b) and returns the result.
+     * @dev Evaluates ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) and returns the result.
      */
-    function ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) internal returns (${returnType}) {
+    function ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) internal returns (e${fheType.type.toLowerCase()}) {
         if (!isInitialized(a)) {
             a = asEuint${lhsBits}(0);
         }
         if (!isInitialized(b)) {
             b = asEuint${rhsBits}(0);
         }
-        return ${returnType}.wrap(${implExpression});
+        return e${fheType.type.toLowerCase()}.wrap(${implExpression});
     }
 `);
-  }
 
-  // Code and test for shift(euint{inputBits},uint8}
-  scalarFlag = ', true';
-  implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), bytes32(uint256(b))${scalarFlag})`;
-  if (mocked) {
-    if (rotate) {
-      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), bytes32(uint256(b)) % ${lhsBits}, ${lhsBits}${scalarFlag})`;
-    } else {
-      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), bytes32(uint256(b)) % ${lhsBits}${scalarFlag})`;
-    }
-  }
-  signatures.push({
-    name: operator.name,
-    arguments: [
-      { type: ArgumentType.EUint, bits: lhsBits },
-      { type: ArgumentType.Uint, bits: rhsBits },
-    ],
-    returnType: { type: returnTypeOverload, bits: outputBits },
-  });
-  res.push(`
+    // Code and test for shift(euint{inputBits},uint8}
+    scalarFlag = ', true';
+    implExpression = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(b))${scalarFlag})`;
+
+    res.push(`
     /** 
-     * @dev Evaluates ${operator.name}(a, b) and returns the result.
+     * @dev Evaluates ${operator.name}(e${fheType.type.toLowerCase()} a, ${getUint(rhsBits)}) and returns the result.
      */
-    function ${operator.name}(euint${lhsBits} a, ${getUint(rhsBits)} b) internal returns (${returnType}) {
+    function ${operator.name}(e${fheType.type.toLowerCase()} a, ${getUint(rhsBits)} b) internal returns (e${fheType.type.toLowerCase()}) {
         if (!isInitialized(a)) {
-            a = asEuint${lhsBits}(0);
+            a = asE${fheType.type.toLowerCase()}(0);
         }
-        return ${returnType}.wrap(${implExpression});
+        return e${fheType.type.toLowerCase()}.wrap(${implExpression});
     }
   `);
+  }
   return res.join('');
 }
 
-function tfheSelect(inputBits: number): string {
-  return `
+function handleSolidityTFHESelect(fheType: FheType): string {
+  let res = '';
+
+  if (fheType.supportedOperators.includes('select')) {
+    res += `
     /**
     * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
-    *         If 'control's value is 'false', the result has the same value as 'ifFalse'.
+    *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
     */
-    function select(ebool control, euint${inputBits} a, euint${inputBits} b) internal returns (euint${inputBits}) {
-        return euint${inputBits}.wrap(Impl.select(ebool.unwrap(control), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
+    function select(ebool control, e${fheType.type.toLowerCase()} a, e${fheType.type.toLowerCase()} b) internal returns (e${fheType.type.toLowerCase()}) {
+        return e${fheType.type.toLowerCase()}.wrap(Impl.select(ebool.unwrap(control), e${fheType.type.toLowerCase()}.unwrap(a), e${fheType.type.toLowerCase()}.unwrap(b)));
     }`;
+  }
+
+  return res;
 }
 
-function tfheAsEboolCustomCast(inputBits: number, outputBits: number): string {
-  if (inputBits == outputBits) {
+function handleSolidityTFHECustomCastBetweenTwoEuint(inputFheType: FheType, outputFheType: FheType): string {
+  if (
+    inputFheType.type == outputFheType.type ||
+    !inputFheType.type.startsWith('Uint') ||
+    !outputFheType.type.startsWith('Uint')
+  ) {
     return '';
   }
 
   return `
   /**
-    * @dev Casts an encrypted integer from euint${inputBits} to euint${outputBits}.
+    * @dev Casts an encrypted integer from 'e${inputFheType.type.toLowerCase()}' to 'e${outputFheType.type.toLowerCase()}'.
     */
-    function asEuint${outputBits}(euint${inputBits} value) internal returns (euint${outputBits}) {
-        return euint${outputBits}.wrap(Impl.cast(euint${inputBits}.unwrap(value), Common.euint${outputBits}_t));
+    function asE${outputFheType.type.toLowerCase()}(e${inputFheType.type.toLowerCase()} value) internal returns (e${outputFheType.type.toLowerCase()}) {
+        return e${outputFheType.type.toLowerCase()}.wrap(Impl.cast(e${inputFheType.type.toLowerCase()}.unwrap(value), FheType.${outputFheType.type}));
     }
     `;
 }
 
-function tfheAsEboolUnaryCast(bits: number): string {
+function handleSolidityTFHECustomCastBetweenEboolAndEuint(fheType: FheType): string {
   const res: string[] = [];
-  res.push(`
-    /**
-    * @dev Casts an encrypted integer from euint${bits} to ebool.
-    */
-    function asEbool(euint${bits} value) internal returns (ebool) {
-        return ne(value, 0);
-    }
-    `);
 
-  if (bits == 8) {
+  if (fheType.type.startsWith('Uint')) {
     res.push(`
     /**
-    * @dev Converts an inputHandle with corresponding inputProof to an encrypted boolean.
-    */
-    function asEbool(einput inputHandle, bytes memory inputProof) internal returns (ebool) {
-        return ebool.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebool_t));
-    }
-
-    /**
-    * @dev Converts a plaintext value to an encrypted boolean.
-    */
-    function asEbool(uint256 value) internal returns (ebool) {
-        return ebool.wrap(Impl.trivialEncrypt(value, Common.ebool_t));
-    }
-
     /** 
-     * @dev Converts a plaintext boolean to an encrypted boolean.
+     * @dev Converts an 'ebool' to an 'e${fheType.type.toLowerCase()}'.
      */
-    function asEbool(bool value) internal returns (ebool) {
-        if (value) {
-            return asEbool(uint256(1));
-        } else {
-            return asEbool(uint256(0));
-        }
-    }
-
-    /** 
-     * @dev Converts an 'ebool' to an 'euint8'.
-    */
-     function asEuint8(ebool value) internal returns (euint8) {
-      return euint8.wrap(Impl.cast(ebool.unwrap(value), Common.euint8_t));
-    }
-
-     /** 
-     * @dev Evaluates and(a, b) and returns the result.
-     */
-     function and(ebool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.and(ebool.unwrap(a), ebool.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates and(a, b) and returns the result.
-    */
-     function and(ebool a, bool b) internal returns (ebool) {
-        return ebool.wrap(Impl.and(ebool.unwrap(a), bytes32(uint256(b?1:0)), true));
-    }
-
-     /** 
-     * @dev Evaluates and(a, b) and returns the result.
-    */
-     function and(bool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.and(ebool.unwrap(b), bytes32(uint256(a?1:0)), true));
-    }
-
-     /** 
-     * @dev Evaluates or(a, b) and returns the result.
-    */
-     function or(ebool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.or(ebool.unwrap(a), ebool.unwrap(b), false));
-    }
-
-     /** 
-     * @dev Evaluates or(a, b) and returns the result.
-     */
-     function or(ebool a, bool b) internal returns (ebool) {
-        return ebool.wrap(Impl.or(ebool.unwrap(a), bytes32(uint256(b?1:0)), true));
-    }
-
-    /** 
-     * @dev Evaluates or(a, b) and returns the result.
-     */
-    function or(bool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.or(ebool.unwrap(b), bytes32(uint256(a?1:0)), true));
-    }
-
-    /** 
-     * @dev Evaluates xor(a, b) and returns the result.
-     */
-    function xor(ebool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.xor(ebool.unwrap(a), ebool.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates xor(a, b) and returns the result.
-     */ 
-    function xor(ebool a, bool b) internal returns (ebool) {
-        return ebool.wrap(Impl.xor(ebool.unwrap(a), bytes32(uint256(b?1:0)), true));
-    }
-
-    /** 
-     * @dev Evaluates xor(a, b) and returns the result.
-     */
-    function xor(bool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.xor(ebool.unwrap(b), bytes32(uint256(a?1:0)), true));
-    }
-
-    function not(ebool a) internal returns (ebool) {
-        return ebool.wrap(Impl.not(ebool.unwrap(a)));
+    function asE${fheType.type.toLowerCase()}(ebool b) internal returns (e${fheType.type.toLowerCase()}) {
+        return e${fheType.type.toLowerCase()}.wrap(Impl.cast(ebool.unwrap(b), FheType.${fheType.type}));
     }
     `);
-  } else {
-    res.push(`
-    /** 
-     * @dev Converts an 'ebool' to an 'euint${bits}'.
-     */
-    function asEuint${bits}(ebool b) internal returns (euint${bits}) {
-        return euint${bits}.wrap(Impl.cast(ebool.unwrap(b), Common.euint${bits}_t));
+
+    if (fheType.supportedOperators.includes('ne')) {
+      res.push(`
+      /**
+      * @dev Casts an encrypted integer from 'e${fheType.type.toLowerCase()}' to 'ebool'.
+      */
+      function asEbool(e${fheType.type.toLowerCase()} value) internal returns (ebool) {
+          return ne(value, 0);
+      }
+      `);
     }
-    `);
   }
 
   return res.join('');
 }
 
-function tfheUnaryOperators(bits: number, operators: Operator[], signatures: OverloadSignature[]): string {
+function handleSolidityTFHEUnaryOperators(fheType: FheType, operators: Operator[]): string {
   const res: string[] = [];
 
   operators.forEach((op) => {
-    if (op.arguments == OperatorArguments.Unary) {
-      signatures.push({
-        name: op.name,
-        arguments: [{ type: ArgumentType.EUint, bits }],
-        returnType: { type: ArgumentType.EUint, bits },
-      });
-
+    if (op.arguments == OperatorArguments.Unary && fheType.supportedOperators.includes(op.name)) {
       res.push(`
-        function ${op.name}(euint${bits} value) internal returns (euint${bits}) {
-            return euint${bits}.wrap(Impl.${op.name}(euint${bits}.unwrap(value)));
+          /**
+           * @dev Evaluates ${op.name}(e${fheType.type.toLowerCase()} value) and returns the result.
+           */
+        function ${op.name}(e${fheType.type.toLowerCase()} value) internal returns (e${fheType.type.toLowerCase()}) {
+            return e${fheType.type.toLowerCase()}.wrap(Impl.${op.name}(e${fheType.type.toLowerCase()}.unwrap(value)));
         }
       `);
     }
@@ -942,37 +837,90 @@ function tfheUnaryOperators(bits: number, operators: Operator[], signatures: Ove
   return res.join('\n');
 }
 
-function tfheCustomUnaryOperators(bits: number): string {
+/**
+ * Generates Solidity functions to convert plaintext and encrypted input handles to their respective encrypted types.
+ *
+ * @param {FheType} fheType - The Fully Homomorphic Encryption (FHE) type information.
+ * @returns {string} - The Solidity code for the conversion functions.
+ *
+ * The generated functions include:
+ * - A function to convert an `einput` handle and its proof to an encrypted type.
+ * - If the type is `Bool`, an additional function to convert a plaintext boolean to an encrypted boolean.
+ * - If the type is `Bytes`, an additional function to convert plaintext bytes to the respective encrypted type.
+ * - For other types, a function to convert a plaintext value to the respective encrypted type.
+ */
+function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: FheType): string {
   let result = `
     /** 
-     * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint${bits} integer.
+     * @dev Convert an inputHandle with corresponding inputProof to an encrypted e${fheType.type.toLowerCase()} integer.
      */
-    function asEuint${bits}(einput inputHandle, bytes memory inputProof) internal returns (euint${bits}) {
-        return euint${bits}.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint${bits}_t));
-    }
-
-    /** 
-     * @dev Convert a plaintext value to an encrypted euint${bits} integer.
-    */
-    function asEuint${bits}(uint256 value) internal returns (euint${bits}) {
-        return euint${bits}.wrap(Impl.trivialEncrypt(value, Common.euint${bits}_t));
+    function asE${fheType.type.toLowerCase()}(einput inputHandle, bytes memory inputProof) internal returns (e${fheType.type.toLowerCase()}) {
+        return e${fheType.type.toLowerCase()}.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
     }
 
     `;
+
+  /// If boolean, add also the asEbool function that allows casting bool
+  if (fheType.type.startsWith('Bool')) {
+    result += `
+      /** 
+     * @dev Converts a plaintext boolean to an encrypted boolean.
+     */
+      function asEbool(bool value) internal returns (ebool) {
+        return ebool.wrap(Impl.trivialEncrypt(value? 1 : 0, FheType.Bool));
+    }
+
+    `;
+  } else if (fheType.type.startsWith('Bytes')) {
+    result += `
+      /**
+        * @dev Convert the plaintext bytes to a e${fheType.type.toLowerCase()} value.
+      */
+      function asE${fheType.type.toLowerCase()}(${fheType.clearMatchingTypeAlias} value) internal returns (e${fheType.type.toLowerCase()}) {
+        return e${fheType.type.toLowerCase()}.wrap(Impl.trivialEncrypt(value, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
+      }
+      `;
+  } else {
+    const value =
+      fheType.isAlias && fheType.clearMatchingTypeAlias !== undefined
+        ? `${fheType.clearMatchingTypeAlias.toLowerCase()}(value)`
+        : 'value';
+
+    result += `
+    /** 
+     * @dev Convert a plaintext value to an encrypted e${fheType.type.toLowerCase()} integer.
+    */
+    function asE${fheType.type.toLowerCase()}(${fheType.clearMatchingType} value) internal returns (e${fheType.type.toLowerCase()}) {
+        return e${fheType.type.toLowerCase()}.wrap(Impl.trivialEncrypt(uint256(${value}), FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
+    }
+
+    `;
+  }
   return result;
 }
 
-function unaryOperatorImpl(op: Operator): string {
-  let fname = operatorFheLibFunction(op);
+/**
+ * Generates the implementation of a unary operator function.
+ *
+ * @param op - The operator for which the implementation is generated.
+ * @returns The string representation of the unary operator function.
+ */
+function handleUnaryOperatorForImpl(op: Operator): string {
   return `
     function ${op.name}(bytes32 ct) internal returns (bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
-      result = ITFHEExecutor($.TFHEExecutorAddress).${fname}(ct);
+      result = ITFHEExecutor($.TFHEExecutorAddress).${op.fheLibName}(ct);
     }
   `;
 }
 
-function tfheAclMethods(supportedBits: number[]): string {
+/**
+ * Generates Solidity ACL (Access Control List) methods for the provided FHE types.
+ *
+ * @param {FheType[]} fheTypes - An array of FHE types for which to generate the ACL methods.
+ * @returns {string} A string containing the generated Solidity code for the ACL methods.
+ */
+function generateSolidityACLMethods(fheTypes: FheType[]): string {
   const res: string[] = [];
 
   res.push(
@@ -981,894 +929,96 @@ function tfheAclMethods(supportedBits: number[]): string {
      * @dev This function cleans the transient storage for the ACL (accounts) and the InputVerifier
      *      (input proofs).
      *      This could be useful for integration with Account Abstraction when bundling several 
-     *      UserOps calling the TFHEExecutorCoprocessor.
+     *      UserOps calling the TFHEExecutor.
      */
     function cleanTransientStorage() internal {
       Impl.cleanTransientStorageACL();
       Impl.cleanTransientStorageInputVerifier();
     }
-
-    /**
-     * @dev Returns whether the account is allowed to use the value.
-     */
-    function isAllowed(ebool value, address account) internal view returns (bool) {
-      return Impl.isAllowed(ebool.unwrap(value), account);
-    }
   `,
   );
 
-  supportedBits.forEach((bits) =>
+  fheTypes.forEach((fheType: FheType) =>
     res.push(`
     /**
      * @dev Returns whether the account is allowed to use the value.
      */
-    function isAllowed(euint${bits} value, address account) internal view returns (bool) {
-      return Impl.isAllowed(euint${bits}.unwrap(value), account);
-    }`),
-  );
-
-  res.push(
-    `
-    /**
-     * @dev Returns whether the account is allowed to use the value.
-     */
-    function isAllowed(eaddress value, address account) internal view returns(bool) {
-      return Impl.isAllowed(eaddress.unwrap(value), account);
-    }
-
-    /**
-     * @dev Returns whether the account is allowed to use the value.
-     */
-    function isAllowed(ebytes256 value, address account) internal view returns (bool) {
-      return Impl.isAllowed(ebytes256.unwrap(value), account);
-    }
-
-    /**
-     * @dev Returns whether the sender is allowed to use the value.
-     */
-    function isSenderAllowed(ebool value) internal view returns (bool) {
-      return Impl.isAllowed(ebool.unwrap(value), msg.sender);
-    }
-    `,
-  );
-
-  supportedBits.forEach((bits) =>
-    res.push(
-      `
-      /**
-      * @dev Returns whether the sender is allowed to use the value.
-      */
-      function isSenderAllowed(euint${bits} value) internal view returns (bool) {
-        return Impl.isAllowed(euint${bits}.unwrap(value), msg.sender);
-      }
-      `,
-    ),
-  );
-
-  res.push(
-    `
-    /**
-    * @dev Returns whether the sender is allowed to use the value.
-    */
-    function isSenderAllowed(eaddress value) internal view returns(bool) {
-      return Impl.isAllowed(eaddress.unwrap(value), msg.sender);
+    function isAllowed(e${fheType.type.toLowerCase()} value, address account) internal view returns (bool) {
+      return Impl.isAllowed(e${fheType.type.toLowerCase()}.unwrap(value), account);
     }
 
     /**
     * @dev Returns whether the sender is allowed to use the value.
     */
-    function isSenderAllowed(ebytes256 value) internal view returns(bool) {
-      return Impl.isAllowed(ebytes256.unwrap(value), msg.sender);
-    }
-    `,
-  );
-
-  res.push(
-    `
-    function allow(ebool value, address account) internal {
-      Impl.allow(ebool.unwrap(value), account);
-    }
-
-    function allowThis(ebool value) internal {
-      Impl.allow(ebool.unwrap(value), address(this));
-    }
-    `,
-  );
-
-  supportedBits.forEach((bits) =>
-    res.push(
-      `
-    /**
-     * @dev Allows the use of value for the address account.
-     */
-    function allow(euint${bits} value, address account) internal {
-      Impl.allow(euint${bits}.unwrap(value), account);
-    }
-
-    /**
-     * @dev Allows the use of value for this address (address(this)).
-     */
-    function allowThis(euint${bits} value) internal {
-      Impl.allow(euint${bits}.unwrap(value), address(this));
-    }
-    \n`,
-    ),
-  );
-
-  res.push(
-    `
-    /**
-     * @dev Allows the use of value for the address account.
-     */
-    function allow(eaddress value, address account) internal {
-      Impl.allow(eaddress.unwrap(value), account);
-    }
-
-    /**
-     * @dev Allows the use of value for this address (address(this)).
-     */
-    function allowThis(eaddress value) internal {
-      Impl.allow(eaddress.unwrap(value), address(this));
+    function isSenderAllowed(e${fheType.type.toLowerCase()} value) internal view returns (bool) {
+      return Impl.isAllowed(e${fheType.type.toLowerCase()}.unwrap(value), msg.sender);
     }
 
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(ebytes64 value, address account) internal {
-      Impl.allow(ebytes64.unwrap(value), account);
+    function allow(e${fheType.type.toLowerCase()} value, address account) internal {
+      Impl.allow(e${fheType.type.toLowerCase()}.unwrap(value), account);
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(ebytes64 value) internal {
-      Impl.allow(ebytes64.unwrap(value), address(this));
-    }
-
-    /**
-     * @dev Allows the use of value for the address account.
-     */
-    function allow(ebytes128 value, address account) internal {
-      Impl.allow(ebytes128.unwrap(value), account);
-    }
-
-    /**
-     * @dev Allows the use of value for this address (address(this)).
-     */
-    function allowThis(ebytes128 value) internal {
-      Impl.allow(ebytes128.unwrap(value), address(this));
-    }
-
-    /**
-     * @dev Allows the use of value for the address account.
-     */
-    function allow(ebytes256 value, address account) internal {
-      Impl.allow(ebytes256.unwrap(value), account);
-    }
-
-    /**
-     * @dev Allows the use of value for this address (address(this)).
-     */
-    function allowThis(ebytes256 value) internal {
-      Impl.allow(ebytes256.unwrap(value), address(this));
-    }
-    `,
-  );
-
-  res.push(
-    `
-    /**
-     * @dev Allows the use of value by address account for this transaction.
-     */
-    function allowTransient(ebool value, address account) internal {
-      Impl.allowTransient(ebool.unwrap(value), account);
-    }
-    `,
-  );
-
-  supportedBits.forEach((bits) =>
-    res.push(
-      `
-    /**
-     * @dev Allows the use of value by address account for this transaction.
-     */
-    function allowTransient(euint${bits} value, address account) internal {
-      Impl.allowTransient(euint${bits}.unwrap(value), account);
-    }
-    \n`,
-    ),
-  );
-
-  res.push(
-    `
-    /**
-     * @dev Allows the use of value by address account for this transaction.
-     */
-    function allowTransient(eaddress value, address account) internal {
-      Impl.allowTransient(eaddress.unwrap(value), account);
+    function allowThis(e${fheType.type.toLowerCase()} value) internal {
+      Impl.allow(e${fheType.type.toLowerCase()}.unwrap(value), address(this));
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(ebytes64 value, address account) internal {
-      Impl.allowTransient(ebytes64.unwrap(value), account);
+    function allowTransient(e${fheType.type.toLowerCase()} value, address account) internal {
+      Impl.allowTransient(e${fheType.type.toLowerCase()}.unwrap(value), account);
     }
 
-    /**
-     * @dev Allows the use of value by address account for this transaction.
-     */
-    function allowTransient(ebytes128 value, address account) internal {
-      Impl.allowTransient(ebytes128.unwrap(value), account);
-    }
-
-    /**
-     * @dev Allows the use of value by address account for this transaction.
-     */
-    function allowTransient(ebytes256 value, address account) internal {
-      Impl.allowTransient(ebytes256.unwrap(value), account);
-    }
-    `,
+    `),
   );
 
   return res.join('');
 }
 
-function tfheCustomMethods(): string {
-  let result = `
-    /**
-    * @dev Generates a random encrypted boolean.
-    */
-    function randEbool() internal returns (ebool) {
-      return ebool.wrap(Impl.rand(Common.ebool_t));
-    }
+function handleTFHEPadToBytesForEbytes(fheType: FheType): string {
+  if (!fheType.type.startsWith('Bytes')) {
+    return '';
+  }
 
-    /**
-    * @dev Generates a random encrypted 8-bit unsigned integer.
-    */
-    function randEuint8() internal returns (euint8) {
-      return euint8.wrap(Impl.rand(Common.euint8_t));
-    }
+  const bytesLength = fheType.bitLength / 8;
 
-    /**
-    * @dev Generates a random encrypted 8-bit unsigned integer in the [0, upperBound) range.
-    *      The upperBound must be a power of 2.
-    */
-    function randEuint8(uint8 upperBound) internal returns (euint8) {
-      return euint8.wrap(Impl.randBounded(upperBound, Common.euint8_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 16-bit unsigned integer.
-    */
-    function randEuint16() internal returns (euint16) {
-      return euint16.wrap(Impl.rand(Common.euint16_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 16-bit unsigned integer in the [0, upperBound) range.
-    *      The upperBound must be a power of 2.
-    */
-    function randEuint16(uint16 upperBound) internal returns (euint16) {
-      return euint16.wrap(Impl.randBounded(upperBound, Common.euint16_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 32-bit unsigned integer.
-    */
-    function randEuint32() internal returns (euint32) {
-      return euint32.wrap(Impl.rand(Common.euint32_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 32-bit unsigned integer in the [0, upperBound) range.
-    *      The upperBound must be a power of 2.
-    */
-    function randEuint32(uint32 upperBound) internal returns (euint32) {
-      return euint32.wrap(Impl.randBounded(upperBound, Common.euint32_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 64-bit unsigned integer.
-    */
-    function randEuint64() internal returns (euint64) {
-      return euint64.wrap(Impl.rand(Common.euint64_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 64-bit unsigned integer in the [0, upperBound) range.
-    *      The upperBound must be a power of 2.
-    */
-    function randEuint64(uint64 upperBound) internal returns (euint64) {
-      return euint64.wrap(Impl.randBounded(upperBound, Common.euint64_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 128-bit unsigned integer.
-    */
-    function randEuint128() internal returns (euint128) {
-      return euint128.wrap(Impl.rand(Common.euint128_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 128-bit unsigned integer in the [0, upperBound) range.
-    *      The upperBound must be a power of 2.
-    */
-    function randEuint128(uint128 upperBound) internal returns (euint128) {
-      return euint128.wrap(Impl.randBounded(upperBound, Common.euint128_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 256-bit unsigned integer.
-    */
-    function randEuint256() internal returns (euint256) {
-      return euint256.wrap(Impl.rand(Common.euint256_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 256-bit unsigned integer in the [0, upperBound) range.
-    *      The upperBound must be a power of 2.
-    */
-    function randEuint256(uint256 upperBound) internal returns (euint256) {
-      return euint256.wrap(Impl.randBounded(upperBound, Common.euint256_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 512-bit unsigned integer.
-    */
-    function randEbytes64() internal returns (ebytes64) {
-      return ebytes64.wrap(Impl.rand(Common.ebytes64_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 1024-bit unsigned integer.
-    */
-    function randEbytes128() internal returns (ebytes128) {
-      return ebytes128.wrap(Impl.rand(Common.ebytes128_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 2048-bit unsigned integer.
-    */
-    function randEbytes256() internal returns (ebytes256) {
-      return ebytes256.wrap(Impl.rand(Common.ebytes256_t));
-    }
-
-    /**
-    * @dev Convert an inputHandle with corresponding inputProof to an encrypted eaddress.
-    */
-    function asEaddress(einput inputHandle, bytes memory inputProof) internal returns (eaddress) {
-      return eaddress.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint160_t));
-    }
-
-    /**
-    * @dev Convert a plaintext value to an encrypted address.
-    */
-    function asEaddress(address value) internal returns (eaddress) {
-        return eaddress.wrap(Impl.trivialEncrypt(uint160(value), Common.euint160_t));
-    }
-
+  return `
+        /**
+         * @dev Left-pad a bytes array with zeros such that it becomes of length ${bytesLength}.
+         */
+        function padToBytes${bytesLength}(bytes memory input) internal pure returns (bytes memory) {
+          uint256 inputLength = input.length;
     
-    /**
-    * @dev Convert the given inputHandle and inputProof to an encrypted ebytes64 value.
-    */
-    function asEbytes64(einput inputHandle, bytes memory inputProof) internal returns (ebytes64) {
-      return ebytes64.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebytes64_t));
-    }
-
-    /**
-    * @dev Left-pad a bytes array with zeros such that it becomes of length 64.
-    */
-    function padToBytes64(bytes memory input) internal pure returns (bytes memory) {
-      uint256 inputLength = input.length;
-
-      if (inputLength > 64) {
-          revert InputLengthAbove64Bytes(inputLength);
-      }
-
-      bytes memory result = new bytes(64);
-      uint256 paddingLength = 64 - inputLength;
-
-      for (uint256 i = 0; i < paddingLength; i++) {
-          result[i] = 0;
-      }
-      for (uint256 i = 0; i < inputLength; i++) {
-          result[paddingLength + i] = input[i];
-      }
-      return result;
-    }
-
-    /**
-    * @dev Convert a plaintext value - must be a bytes array of size 64 - to an encrypted Bytes64.
-    */
-    function asEbytes64(bytes memory value) internal returns (ebytes64) {
-        return ebytes64.wrap(Impl.trivialEncrypt(value, Common.ebytes64_t));
-    }
-
-    /**
-    * @dev Convert the given inputHandle and inputProof to an encrypted ebytes128 value.
-    */
-    function asEbytes128(einput inputHandle, bytes memory inputProof) internal returns (ebytes128) {
-      return ebytes128.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebytes128_t));
-    }
-
-    /**
-    * @dev Left-pad a bytes array with zeros such that it becomes of length 128.
-    */
-    function padToBytes128(bytes memory input) internal pure returns (bytes memory) {
-      uint256 inputLength = input.length;
-
-      if (inputLength > 128) {
-          revert InputLengthAbove128Bytes(inputLength);    
-      }
-
-      bytes memory result = new bytes(128);
-      uint256 paddingLength = 128 - inputLength;
-      for (uint256 i = 0; i < paddingLength; i++) {
-          result[i] = 0;
-      }
-      for (uint256 i = 0; i < inputLength; i++) {
-          result[paddingLength + i] = input[i];
-      }
-      return result;
-    }
-
-    /**
-    * @dev Convert a plaintext value - must be a bytes array of size 128 - to an encrypted Bytes128.
-    */
-    function asEbytes128(bytes memory value) internal returns (ebytes128) {
-        return ebytes128.wrap(Impl.trivialEncrypt(value, Common.ebytes128_t));
-    }
+          if (inputLength > ${bytesLength}) {
+              revert InputLengthAbove${bytesLength}Bytes(inputLength);
+          }
     
-    /**
-    * @dev Convert the given inputHandle and inputProof to an encrypted ebytes256 value.
-    */
-    function asEbytes256(einput inputHandle, bytes memory inputProof) internal returns (ebytes256) {
-      return ebytes256.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebytes256_t));
-    }
-
-    /**
-    * @dev Left-pad a bytes array with zeros such that it becomes of length 256.
-    */
-    function padToBytes256(bytes memory input) internal pure returns (bytes memory) {
-      uint256 inputLength = input.length;
-
-      if (inputLength > 256) {
-          revert InputLengthAbove256Bytes(inputLength);    
-      }
-
-      bytes memory result = new bytes(256);
-      uint256 paddingLength = 256 - inputLength;
-      for (uint256 i = 0; i < paddingLength; i++) {
-          result[i] = 0;
-      }
-      for (uint256 i = 0; i < inputLength; i++) {
-          result[paddingLength + i] = input[i];
-      }
-      return result;
-    }
-
-    /**
-    * @dev Convert a plaintext value - must be a bytes array of size 256 - to an encrypted Bytes256.
-    */
-    function asEbytes256(bytes memory value) internal returns (ebytes256) {
-        return ebytes256.wrap(Impl.trivialEncrypt(value, Common.ebytes256_t));
-    }
-
-    /**
-    * @dev Returns true if the encrypted address is initialized and false otherwise.
-    */
-    function isInitialized(eaddress v) internal pure returns (bool) {
-        return eaddress.unwrap(v) != 0;
-    }
-
-    /**
-    * @dev Returns true if the encrypted value is initialized and false otherwise.
-    */
-    function isInitialized(ebytes64 v) internal pure returns (bool) {
-        return ebytes64.unwrap(v) != 0;
-    }
-
-    /**
-    * @dev Returns true if the encrypted value is initialized and false otherwise.
-    */
-    function isInitialized(ebytes128 v) internal pure returns (bool) {
-        return ebytes128.unwrap(v) != 0;
-    }
+          bytes memory result = new bytes(${bytesLength});
+          uint256 paddingLength = ${bytesLength} - inputLength;
     
-    /**
-    * @dev Returns true if the encrypted value is initialized and false otherwise.
-    */
-    function isInitialized(ebytes256 v) internal pure returns (bool) {
-        return ebytes256.unwrap(v) != 0;
-    }
+          for (uint256 i = 0; i < paddingLength; i++) {
+              result[i] = 0;
+          }
 
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(ebool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
+          for (uint256 i = 0; i < inputLength; i++) {
+              result[paddingLength + i] = input[i];
+          }
+          return result;
         }
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
-        return ebool.wrap(Impl.eq(ebool.unwrap(a), ebool.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(ebool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
-        return ebool.wrap(Impl.ne(ebool.unwrap(a), ebool.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(ebool a, bool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
-        uint256 bProc = b?1:0;
-        return ebool.wrap(Impl.eq(ebool.unwrap(a), bytes32(bProc), true));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(bool b, ebool a) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
-        uint256 bProc = b?1:0;
-        return ebool.wrap(Impl.eq(ebool.unwrap(a), bytes32(bProc), true));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(ebool a, bool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
-        uint256 bProc = b?1:0;
-        return ebool.wrap(Impl.ne(ebool.unwrap(a), bytes32(bProc), true));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(bool b, ebool a) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
-        uint256 bProc = b?1:0;
-        return ebool.wrap(Impl.ne(ebool.unwrap(a), bytes32(bProc), true));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(eaddress a, eaddress b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
-        if (!isInitialized(b)) {
-            b = asEaddress(address(0));
-        }
-        return ebool.wrap(Impl.eq(eaddress.unwrap(a), eaddress.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(eaddress a, eaddress b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
-        if (!isInitialized(b)) {
-            b = asEaddress(address(0));
-        }
-        return ebool.wrap(Impl.ne(eaddress.unwrap(a), eaddress.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(eaddress a, address b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
-        bytes32 bProc = bytes32(uint256(uint160(b)));
-        return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(address b, eaddress a) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
-        bytes32 bProc = bytes32(uint256(uint160(b)));
-        return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(eaddress a, address b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
-        bytes32 bProc = bytes32(uint256(uint160(b)));
-        return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(address b, eaddress a) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
-        bytes32 bProc = bytes32(uint256(uint160(b)));
-        return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
-    }
-
-    /**
-    * @dev If 'control''s value is 'true', the result has the same value as 'a'.
-    *      If 'control''s value is 'false', the result has the same value as 'b'.
-    */
-    function select(ebool control, ebool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.select(ebool.unwrap(control), ebool.unwrap(a), ebool.unwrap(b)));
-    }
-
-    /**
-    * @dev If 'control''s value is 'true', the result has the same value as 'a'.
-    *      If 'control''s value is 'false', the result has the same value as 'b'.
-    */
-    function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {
-        return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
-    }
-
-    /**
-    * @dev If 'control''s value is 'true', the result has the same value as 'a'.
-    *      If 'control''s value is 'false', the result has the same value as 'b'.
-    */
-    function select(ebool control, ebytes64 a, ebytes64 b) internal returns (ebytes64) {
-        return ebytes64.wrap(Impl.select(ebool.unwrap(control), ebytes64.unwrap(a), ebytes64.unwrap(b)));
-    }
-
-    /**
-    * @dev If 'control''s value is 'true', the result has the same value as 'a'.
-    *      If 'control''s value is 'false', the result has the same value as 'b'.
-    */
-    function select(ebool control, ebytes128 a, ebytes128 b) internal returns (ebytes128) {
-        return ebytes128.wrap(Impl.select(ebool.unwrap(control), ebytes128.unwrap(a), ebytes128.unwrap(b)));
-    }
-        
-    /**
-    * @dev If 'control''s value is 'true', the result has the same value as 'a'.
-    *      If 'control''s value is 'false', the result has the same value as 'b'.
-    */
-    function select(ebool control, ebytes256 a, ebytes256 b) internal returns (ebytes256) {
-        return ebytes256.wrap(Impl.select(ebool.unwrap(control), ebytes256.unwrap(a), ebytes256.unwrap(b)));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(ebytes64 a, ebytes64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes64(padToBytes64(hex''));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes64(padToBytes64(hex''));
-        }
-        return ebool.wrap(Impl.eq(ebytes64.unwrap(a), ebytes64.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(ebytes64 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes64(padToBytes64(hex''));
-        }
-        return ebool.wrap(Impl.eq(ebytes64.unwrap(a), b, true));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(bytes memory a, ebytes64 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes64(padToBytes64(hex''));
-        }
-        return ebool.wrap(Impl.eq(ebytes64.unwrap(b), a, true));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(ebytes64 a, ebytes64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes64(padToBytes64(hex''));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes64(padToBytes64(hex''));
-        }
-        return ebool.wrap(Impl.ne(ebytes64.unwrap(a), ebytes64.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(ebytes64 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes64(padToBytes64(hex''));
-        }
-        return ebool.wrap(Impl.ne(ebytes64.unwrap(a), b, true));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(bytes memory a, ebytes64 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes64(padToBytes64(hex''));
-        }
-        return ebool.wrap(Impl.ne(ebytes64.unwrap(b), a, true));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(ebytes128 a, ebytes128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes128(padToBytes128(hex''));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes128(padToBytes128(hex''));
-        }
-        return ebool.wrap(Impl.eq(ebytes128.unwrap(a), ebytes128.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(ebytes128 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes128(padToBytes128(hex''));
-        }
-        return ebool.wrap(Impl.eq(ebytes128.unwrap(a), b, true));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(bytes memory a, ebytes128 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes128(padToBytes128(hex''));
-        }
-        return ebool.wrap(Impl.eq(ebytes128.unwrap(b), a, true));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(ebytes128 a, ebytes128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes128(padToBytes128(hex''));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes128(padToBytes128(hex''));
-        }
-        return ebool.wrap(Impl.ne(ebytes128.unwrap(a), ebytes128.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(ebytes128 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes128(padToBytes128(hex''));
-        }
-        return ebool.wrap(Impl.ne(ebytes128.unwrap(a), b, true));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(bytes memory a, ebytes128 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes128(padToBytes128(hex''));
-        }
-        return ebool.wrap(Impl.ne(ebytes128.unwrap(b), a, true));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(ebytes256 a, ebytes256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes256(padToBytes256(hex''));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes256(padToBytes256(hex''));
-        }
-        return ebool.wrap(Impl.eq(ebytes256.unwrap(a), ebytes256.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(ebytes256 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes256(padToBytes256(hex''));
-        }
-        return ebool.wrap(Impl.eq(ebytes256.unwrap(a), b, true));
-    }
-
-    /** 
-     * @dev Evaluates eq(a, b) and returns the result.
-     */
-    function eq(bytes memory a, ebytes256 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes256(padToBytes256(hex''));
-        }
-        return ebool.wrap(Impl.eq(ebytes256.unwrap(b), a, true));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(ebytes256 a, ebytes256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes256(padToBytes256(hex''));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes256(padToBytes256(hex''));
-        }
-        return ebool.wrap(Impl.ne(ebytes256.unwrap(a), ebytes256.unwrap(b), false));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(ebytes256 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes256(padToBytes256(hex''));
-        }
-        return ebool.wrap(Impl.ne(ebytes256.unwrap(a), b, true));
-    }
-
-    /** 
-     * @dev Evaluates ne(a, b) and returns the result.
-     */
-    function ne(bytes memory a, ebytes256 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes256(padToBytes256(hex''));
-        }
-        return ebool.wrap(Impl.ne(ebytes256.unwrap(b), a, true));
-    }
-`;
-  return result;
+      `;
 }
 
-function implCustomMethods(): string {
+function generateCustomMethodsForImpl(): string {
   return `
     /**
     * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
-    *         If 'control's value is 'false', the result has the same value as 'ifFalse'.
+    *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
     */
     function select(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
@@ -1885,10 +1035,10 @@ function implCustomMethods(): string {
     function verify(
         bytes32 inputHandle,
         bytes memory inputProof,
-        uint8 toType
+        FheType toType
     ) internal returns (bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, bytes1(toType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
         IACL($.ACLAddress).allowTransient(result, msg.sender);
     }
 
@@ -1900,10 +1050,10 @@ function implCustomMethods(): string {
      */
     function cast(
         bytes32 ciphertext,
-        uint8 toType
+        FheType toType
     ) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).cast(ciphertext, bytes1(toType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).cast(ciphertext, toType);
     }
 
     /**
@@ -1914,10 +1064,10 @@ function implCustomMethods(): string {
      */
     function trivialEncrypt(
         uint256 value,
-        uint8 toType
+        FheType toType
     ) internal returns (bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -1928,10 +1078,10 @@ function implCustomMethods(): string {
      */
     function trivialEncrypt(
       bytes memory value,
-      uint8 toType
+      FheType toType
     ) internal returns (bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -1970,14 +1120,14 @@ function implCustomMethods(): string {
       result = ITFHEExecutor($.TFHEExecutorAddress).fheNe(lhs, rhs, scalarByte);
   }
 
-    function rand(uint8 randType) internal returns(bytes32 result) {
+    function rand(FheType randType) internal returns(bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
-      result = ITFHEExecutor($.TFHEExecutorAddress).fheRand(bytes1(randType));
+      result = ITFHEExecutor($.TFHEExecutorAddress).fheRand(randType);
     }
 
-    function randBounded(uint256 upperBound, uint8 randType) internal returns(bytes32 result) {
+    function randBounded(uint256 upperBound, FheType randType) internal returns(bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
-      result = ITFHEExecutor($.TFHEExecutorAddress).fheRandBounded(upperBound, bytes1(randType));
+      result = ITFHEExecutor($.TFHEExecutorAddress).fheRandBounded(upperBound, randType);
     }
 
     /**
@@ -2037,4 +1187,35 @@ function implCustomMethods(): string {
       return IACL($.ACLAddress).isAllowed(handle, account);
     }
     `;
+}
+
+function handleSolidityTFHERand(fheType: FheType): string {
+  let res = '';
+
+  if (fheType.supportedOperators.includes('rand')) {
+    res += `
+    /**
+    * @dev Generates a random encrypted value.
+    */
+    function randE${fheType.type.toLowerCase()}() internal returns (e${fheType.type.toLowerCase()}) {
+      return e${fheType.type.toLowerCase()}.wrap(Impl.rand(FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
+    }
+
+    `;
+  }
+
+  if (fheType.supportedOperators.includes('randBounded')) {
+    res += `
+    /**
+    * @dev Generates a random encrypted ${fheType.bitLength}-bit unsigned integer in the [0, upperBound) range.
+    *      The upperBound must be a power of 2.
+    */
+    function randE${fheType.type.toLowerCase()}(uint${fheType.bitLength} upperBound) internal returns (e${fheType.type.toLowerCase()}) {
+      return e${fheType.type.toLowerCase()}.wrap(Impl.randBounded(upperBound, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
+    }
+
+    `;
+  }
+
+  return res;
 }

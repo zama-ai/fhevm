@@ -30,7 +30,7 @@ contract TracingSubCalls {
 contract SubContractCreate {
     /// @dev Constructor that encrypts the input
     /// @param input The value to be encrypted
-    constructor(uint256 input) {
+    constructor(uint64 input) {
         TFHE.asEuint64(input);
     }
 }
@@ -39,7 +39,7 @@ contract SubContractCreate {
 contract SubContractCreateFail {
     /// @dev Constructor that encrypts the input and then fails
     /// @param input The value to be encrypted before failing
-    constructor(uint256 input) {
+    constructor(uint64 input) {
         TFHE.asEuint64(input);
         require(false, "This constructor always fails");
     }
@@ -63,7 +63,7 @@ contract SubContract {
     /// @notice Internal function that fails with a custom input
     /// @dev Encrypts the input before failing
     /// @param input The value to be encrypted before failing
-    function fail2(uint input) external {
+    function fail2(uint64 input) external {
         TFHE.asEuint64(input);
         require(false, "This function always fails with custom input");
     }
