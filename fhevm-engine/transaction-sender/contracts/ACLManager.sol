@@ -7,7 +7,7 @@ pragma solidity ^0.8.24;
 contract ACLManager {
     function allowAccount(
         uint256 chainId,
-        uint256 ctHandle,
+        bytes32 ctHandle,
         address accountAddress
     ) public {}
 

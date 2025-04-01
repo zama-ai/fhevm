@@ -9,7 +9,7 @@ use crate::{nonce_managed_provider::NonceManagedProvider, ops::common::try_into_
 use super::TransactionOperation;
 use alloy::{
     network::{Ethereum, TransactionBuilder},
-    primitives::{Address, U256},
+    primitives::{Address, FixedBytes, U256},
     providers::Provider,
     rpc::types::TransactionRequest,
     sol,
@@ -247,18 +247,18 @@ where
                 h_as_hex, event_type, account_addr, chain_id,
             );
 
-            let handle_u256 = U256::from_be_bytes(try_into_array::<32>(handle)?);
+            let handle_bytes32 = FixedBytes::from(try_into_array::<32>(handle)?);
 
             let txn_request = match event_type {
                 AllowEvents::AllowedForDecryption => {
                     // Call allowPublicDecrypt when account_address is null
                     match &self.gas {
                         Some(gas_limit) => acl_manager
-                            .allowPublicDecrypt(U256::from(chain_id), handle_u256)
+                            .allowPublicDecrypt(U256::from(chain_id), handle_bytes32)
                             .into_transaction_request()
                             .with_gas_limit(*gas_limit),
                         None => acl_manager
-                            .allowPublicDecrypt(U256::from(chain_id), handle_u256)
+                            .allowPublicDecrypt(U256::from(chain_id), handle_bytes32)
                             .into_transaction_request(),
                     }
                 }
@@ -275,11 +275,11 @@ where
 
                     match &self.gas {
                         Some(gas_limit) => acl_manager
-                            .allowAccount(U256::from(chain_id), handle_u256, address)
+                            .allowAccount(U256::from(chain_id), handle_bytes32, address)
                             .into_transaction_request()
                             .with_gas_limit(*gas_limit),
                         None => acl_manager
-                            .allowAccount(U256::from(chain_id), handle_u256, address)
+                            .allowAccount(U256::from(chain_id), handle_bytes32, address)
                             .into_transaction_request(),
                     }
                 }

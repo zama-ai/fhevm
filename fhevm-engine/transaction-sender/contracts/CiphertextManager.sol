@@ -5,7 +5,7 @@ pragma solidity ^0.8.24;
 /// source: github.com/zama-ai/gateway-l2/blob/main/contracts/CiphertextManager.sol
 contract CiphertextManager {
     function addCiphertextMaterial(
-        uint256 ctHandle,
+        bytes32 ctHandle,
         uint256 keyId,
         uint256 chainId,
         bytes32 ciphertextDigest,
