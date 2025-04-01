@@ -8,18 +8,20 @@ import { GetDappById } from '../use-cases/get-dapp-by-id.use-case.js'
 import { SharedModule } from '#shared/shared.module.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
 import { ApiKeyResolver } from './api-key.resolver.js'
+import { StatsResolver } from './stats.resolver.js'
 
 @Module({
   imports: [DatabaseModule, SharedModule, SubscriptionsModule],
   providers: [
     DappsResolver,
     ApiKeyResolver,
+    StatsResolver,
     uc.CreateDapp,
     uc.UpdateDapp,
     uc.GetDappById,
-    GetTeamById,
     uc.DeployDApp,
     uc.GetDappRawStatsUseCase,
+    uc.GetDappCumulativeStatsUseCase,
     uc.AppDeployment,
     uc.AppUpdatesSubscription,
     uc.StoreDAppStats,
@@ -30,6 +32,7 @@ import { ApiKeyResolver } from './api-key.resolver.js'
     uc.UpdateApiKey,
     uc.DeleteApiKey,
     uc.ApiKeyAllowsRequest,
+    GetTeamById,
   ],
   exports: [UpdateDapp, GetDappById, uc.ApiKeyAllowsRequest, uc.GetApiKey],
 })

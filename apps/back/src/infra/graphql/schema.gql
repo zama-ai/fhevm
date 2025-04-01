@@ -22,6 +22,26 @@ type ApiKey {
   description: String
 }
 
+type CumulativeDappStats {
+  total: Int!
+  FheAdd: Int!
+  FheBitAnd: Int!
+  FheIfThenElse: Int!
+  FheLe: Int!
+  FheOr: Int!
+  FheSub: Int!
+  TrivialEncrypt: Int!
+  VerifyCiphertext: Int!
+  FheMul: Int!
+  FheDiv: Int!
+}
+
+type DappStats {
+  """The id of the dapp"""
+  id: ID!
+  cumulative: CumulativeDappStats!
+}
+
 type RawStats {
   id: ID!
   name: String!
@@ -38,8 +58,8 @@ type Dapp {
   team: Team!
   createdAt: Float!
 
-  """DApp usage statistics"""
-  stats: [RawStats!]! @deprecated(reason: "move to rawStats as stats will be rewamped soon")
+  """DApp usage aggregated statistics"""
+  stats: DappStats!
 
   """DApp usage statistics"""
   rawStats: [RawStats!]!

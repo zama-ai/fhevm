@@ -31,6 +31,7 @@ import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
 import { ValidateAddressInput } from './dto/inputs/validate-address.input.js'
 import { AppErrorFilter } from '#auth/infra/filters/app-error.filter.js'
 import { ApiKeyType } from './types/api-key.type.js'
+import { DappStatsType } from './types/stat.type.js'
 
 @UseFilters(AppErrorFilter)
 @Resolver(() => DappType)
@@ -124,15 +125,11 @@ export class DappsResolver {
     return result.stats
   }
 
-  @ResolveField(() => [RawStatsType], {
-    name: 'stats',
-  })
-  async stats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
-    this.logger.verbose(`resolving stats field for dappId=${dapp.id}`)
-    const result = await this.getDappRawStatsUC
-      .execute({ dappId: dapp.id })
-      .toPromise()
-    return result.stats
+  @ResolveField(() => DappStatsType, { name: 'stats' })
+  async stats(@Parent() dapp: DappType): Promise<DappStatsType> {
+    return Promise.resolve({
+      id: dapp.id,
+    })
   }
 
   @Query(() => ValidateAddress, { name: 'validateAddress', complexity: 2 })

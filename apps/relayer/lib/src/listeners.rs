@@ -7,7 +7,9 @@ use axum::{
     response::{Html, IntoResponse},
     Json, Router,
 };
+use fhevm_relayer::orchestrator::traits::Event;
 use fhevm_relayer::{
+    config::settings::KeyUrl,
     core::event::InputProofRequest,
     core::utils::OnceHandler,
     http::{
@@ -27,6 +29,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 pub struct ProofHandlerState<T>
 where
@@ -35,8 +38,162 @@ where
     orchestrator: Arc<Orchestrator<T, ZwsRelayerEvent>>,
 }
 
+pub async fn wait_for_response_with_id(
+    sqs_client: &aws_sdk_sqs::Client,
+    request_queue_url: &str,
+    request_id: Uuid,
+) -> ZwsRelayerEvent {
+    loop {
+        let rcv_message_output = match sqs_client
+            .receive_message()
+            .queue_url(request_queue_url)
+            .wait_time_seconds(10)
+            .send()
+            .await
+        {
+            Ok(value) => value,
+            Err(err) => {
+                warn!("{:?}", err);
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                continue;
+            }
+        };
+
+        let messages = rcv_message_output.messages.unwrap_or_default();
+        if !messages.is_empty() {
+            debug!("Received {} messages from SQS.", messages.len());
+        }
+
+        for message in messages {
+            match message.body() {
+                Some(content) => {
+                    match serde_json::from_str::<ZwsRelayerEvent>(content) {
+                        Ok(value) => {
+                            debug!("successfuly parsed content from sqs: {:?}", content);
+                            if value.request_id() == request_id {
+                                match sqs_client
+                                    .delete_message()
+                                    .queue_url(request_queue_url)
+                                    .set_receipt_handle(message.receipt_handle)
+                                    .send()
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        debug!("message deleted");
+                                    }
+                                    Err(err) => {
+                                        error!("error deleting message: {:?}", err);
+                                    }
+                                };
+                                return value;
+                            }
+                        }
+                        Err(err) => {
+                            error!("Couldn't deserialize message: {content} with error {err}");
+                            continue;
+                        }
+                    };
+                }
+                None => {
+                    error!("Message is empty");
+                    continue;
+                }
+            };
+        }
+    }
+}
+
+pub struct HTTPListenerState {
+    sqs_client: aws_sdk_sqs::Client,
+    relayer_queue_url: String,
+    orchestrator_queue_url: String,
+}
+
 #[debug_handler]
-pub async fn handle_function(
+pub async fn input_registration_handler_sqs(
+    State(listener_state): State<Arc<HTTPListenerState>>,
+    Json(payload): Json<InputProofRequestJson>,
+) -> impl IntoResponse {
+    debug!("Handling input proof request");
+    // Validate the payload
+    if let Err(message) = payload.validate() {
+        let error_response = InputProofErrorResponseJson { message };
+        return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+    }
+
+    let request_id = Uuid::new_v4();
+
+    // Prepare and send an event
+    let request_data: InputProofRequest = match payload.try_into() {
+        Ok(event_data) => event_data,
+        Err(message) => {
+            let error_response = InputProofErrorResponseJson { message };
+            return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+        }
+    };
+
+    // NOTE: we could use SNS insteaf of the orchestrator dispatch here
+    // but since it's just a mock it should be fine
+    let event =
+        ZwsRelayerEvent::SQSRelayerInputRegistrationRequest(SQSRelayerInputRegistrationRequest {
+            request_id,
+            contract_chain_id: request_data.contract_chain_id,
+            contract_address: request_data.contract_address,
+            user_address: request_data.user_address,
+            ciphetext_with_zk_proof: request_data.ciphetext_with_zk_proof,
+        });
+
+    match send_message_to_sqs_queue(
+        true,
+        &listener_state.sqs_client,
+        &listener_state.relayer_queue_url,
+        event,
+    )
+    .await
+    {
+        Ok(_) => debug!("success sending request"),
+        Err(error) => {
+            error!("Couldn't send request to sqs");
+            let error_response = InputProofErrorResponseJson { message: error };
+            return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+        }
+    }
+
+    // Wait for response on the rx of Onshot channel.
+    loop {
+        match wait_for_response_with_id(
+            &listener_state.sqs_client,
+            &listener_state.orchestrator_queue_url,
+            request_id,
+        )
+        .await
+        {
+            ZwsRelayerEvent::SQSRelayerInputRegistrationResponse(value) => {
+                info!("Received response event.");
+                return (
+                    StatusCode::OK,
+                    Json(InputProofResponseJson {
+                        response: InputProofResponsePayloadJson {
+                            handles: value.handles.iter().map(|elt| elt.to_string()).collect(),
+                            signatures: value
+                                .signatures
+                                .iter()
+                                .map(|elt| elt.to_string())
+                                .collect(),
+                        },
+                    }),
+                )
+                    .into_response();
+            }
+            _ => {
+                debug!("Received an event but not the response yet")
+            }
+        };
+    }
+}
+
+#[debug_handler]
+pub async fn input_registration_handler_orchestrator(
     State(input_handler_state): State<
         Arc<ProofHandlerState<TokioEventDispatcher<ZwsRelayerEvent>>>,
     >,
@@ -92,7 +249,7 @@ pub async fn handle_function(
     debug!("dispatched event to orchestrator to initiate processing");
 
     debug!("waiting for reponse event");
-    //
+
     // Wait for response on the rx of Onshot channel.
     match rx.await {
         Ok(event) => {
@@ -138,13 +295,13 @@ pub async fn handle_function(
     }
 }
 
-pub fn default_key_url() -> keyurl_http_listener::KeyUrlResponseJson {
+pub fn key_url_route(key_url: KeyUrl) -> keyurl_http_listener::KeyUrlResponseJson {
     keyurl_http_listener::KeyUrlResponseJson {
         response: keyurl_http_listener::Response {
             fhe_key_info: vec![keyurl_http_listener::FheKeyInfo {
                 fhe_public_key: keyurl_http_listener::KeyData {
-                    data_id: "fhe-public-key-data-id".to_string(),
-                    urls: vec!["http://0.0.0.0:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee".to_string()],
+                    data_id: key_url.fhe_public_key.data_id,
+                    urls: vec![key_url.fhe_public_key.url],
                 },
             }],
             crs: {
@@ -152,8 +309,8 @@ pub fn default_key_url() -> keyurl_http_listener::KeyUrlResponseJson {
                 map.insert(
                     "2048".to_string(),
                     keyurl_http_listener::KeyData {
-                        data_id: "crs-data-id".to_string(),
-                        urls: vec!["http://0.0.0.0:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002".to_string()],
+                        data_id: key_url.crs.data_id,
+                        urls: vec![key_url.crs.url],
                     },
                 );
                 map
@@ -162,18 +319,27 @@ pub fn default_key_url() -> keyurl_http_listener::KeyUrlResponseJson {
     }
 }
 
+// TODO: remove the orchestrator and send messages to SQS instead
 pub async fn http_listener(
-    _sqs_client: aws_sdk_sqs::Client,
-    _request_queue_url: &str,
-    orchestrator: Arc<Orchestrator<TokioEventDispatcher<ZwsRelayerEvent>, ZwsRelayerEvent>>,
+    sqs_client: aws_sdk_sqs::Client,
+    relayer_queue_url: String,
+    orchestrator_queue_url: String,
+    key_url: KeyUrl,
+    _orchestrator: Arc<Orchestrator<TokioEventDispatcher<ZwsRelayerEvent>, ZwsRelayerEvent>>,
 ) {
     // let input_handler = Arc::new(InputProofHandler::new(orchestrator));
     // let shared_state = Arc::new(orchestrator);
+    //
+    //
 
     // TODO: add private/user-decryption route
     let app = Router::new()
-        .route("/input-proof", post(handle_function))
-        .with_state(Arc::new(ProofHandlerState { orchestrator }))
+        .route("/input-proof", post(input_registration_handler_sqs))
+        .with_state(Arc::new(HTTPListenerState {
+            sqs_client,
+            relayer_queue_url,
+            orchestrator_queue_url,
+        }))
         .route(
             "/",
             get({
@@ -188,9 +354,10 @@ pub async fn http_listener(
             get(|| async {
                 info!("Received GET request to '/keyurl'");
                 // TODO: implement -> should be in config back
-                Json(default_key_url())
+                Json(key_url_route(key_url))
             }),
         );
+    // .with_state(Arc::new(KeyUrlState { key_url }));
 
     // Define the socket address for the server to listen on.
     let host = "0.0.0.0";
@@ -224,7 +391,7 @@ pub async fn http_listener(
 
 pub async fn sqs_listener(
     sqs_client: aws_sdk_sqs::Client,
-    request_queue_url: &str,
+    request_queue_url: String,
     orchestrator: Arc<
         Orchestrator<
             impl EventDispatcher<ZwsRelayerEvent> + HandlerRegistry<ZwsRelayerEvent>,
@@ -233,10 +400,11 @@ pub async fn sqs_listener(
     >,
 ) {
     // TODO: SQS client
+    let url = &request_queue_url.clone();
     loop {
         let rcv_message_output = match sqs_client
             .receive_message()
-            .queue_url(request_queue_url)
+            .queue_url(url)
             .wait_time_seconds(10)
             .send()
             .await
@@ -300,7 +468,7 @@ pub async fn sqs_listener(
             // processed (imagine we have multiple consumers).
             match sqs_client
                 .delete_message()
-                .queue_url(request_queue_url)
+                .queue_url(url)
                 .set_receipt_handle(message.receipt_handle)
                 .send()
                 .await

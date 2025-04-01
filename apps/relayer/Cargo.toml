@@ -1,37 +1,35 @@
 [workspace]
 resolver = "2"
 
-members = [
-"lib",
-"relayer",
-"tx-manager",
-]
+members = ["lib", "relayer"]
 
 [workspace.dependencies]
-fhevm-relayer = { git = "ssh://git@github.com/zama-ai/fhevm-relayer.git" , branch="fd0r/docker-compose-makefile"}
-axum = {version = "0.8", features = ["macros"]}
-serde = {version = "1", features = ["derive"]}
+fhevm-relayer = { path = "./fhevm-relayer/" }
+clap = { version = "4", features = ["derive"] }
+axum = { version = "0.8", features = ["macros"] }
+serde = { version = "1", features = ["derive"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
-dotenvy = {version="^0.15.0"}
+dotenvy = { version = "^0.15.0" }
 diesel = { version = "2.2.0", features = ["postgres", "extras", "serde_json"] }
-alloy-sol-types = {version = "0.8.18"}
-alloy = {version="^0.9.2", features=["full"]}
-tokio = {version = "1", features=["full"]}
-bip39 = {version = "2"}
-rand = {version = "0.9"}
-tracing-subscriber = {version = "0.3", features = ["env-filter"]}
-tracing = {version = "0.1"}
+alloy-sol-types = { version = "0.8.18" }
+alloy = { version = "^0.9.2", features = ["full", "signer-aws"] }
+tokio = { version = "1", features = ["full"] }
+bip39 = { version = "2" }
+rand = { version = "0.9" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = { version = "0.1" }
 aws-config = { version = "1", features = ["behavior-version-latest"] }
-aws-sdk-sqs = {version = "1"}
-aws-sdk-sns = {version = "1"}
+aws-sdk-sqs = { version = "1" }
+aws-sdk-kms = { version = "1" }
 aws-smithy-runtime = { version = "1" }
-axum-tracing-opentelemetry = {version = "0.25"}
-axum-otel-metrics = {version = "0.9"}
-serde_json = {version = "1"}
-reqwest = {version = "0.12"}
+axum-tracing-opentelemetry = { version = "0.25" }
+axum-otel-metrics = { version = "0.9" }
+serde_json = { version = "1" }
+reqwest = { version = "0.12" }
 uuid = { version = "1", features = ["serde", "v1", "v4"] }
-toml = {version= "0.8"}
-async-trait = {version = "0.1" }
-futures = {version = "0.3.31"}
-futures-util = {version = "0.3.31"}
-diesel_json = {version = "0.2" }
+toml = { version = "0.8" }
+async-trait = { version = "0.1" }
+futures = { version = "0.3.31" }
+futures-util = { version = "0.3.31" }
+diesel_json = { version = "0.2" }
+config = { version = "0.15" }

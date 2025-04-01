@@ -1,44 +1,159 @@
 use alloy::primitives::Address;
+use alloy::signers::Signer;
+use clap::Parser;
+use config::{Config, Environment, File}; // ConfigError
 use dotenvy::from_path;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use fhevm_relayer::{
     blockchain::ethereum::{ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient},
+    config::settings::KeyUrl,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
     transaction::TransactionService,
 };
-use std::env;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 use tracing_subscriber::FmtSubscriber;
 
 use zws_relayer_lib::events::*;
 use zws_relayer_lib::handlers::*;
 use zws_relayer_lib::listeners::*;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ContractConfig {
     name: String,
     address: Address,
 }
 
-const DECRYPTION_ORACLE_ADDRESS_ENV_KEY: &str = "DECRYPTION_ORACLE_ADDRESS";
-const DECRYPTION_MANAGER_ADDRESS_ENV_KEY: &str = "DECRYPTION_MANAGER_ADDRESS";
-const ZKPOK_MANAGER_ADDRESS_ENV_KEY: &str = "ZKPOK_MANAGER_ADDRESS";
+// TODO: use rust-url to validate url inputs?
 
+// TODO: rethink the private-key-env to fit the new signer paradigm
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainConfig {
     /// Chain id
     pub chain_id: u64,
-    /// RPC URL
-    pub rpc_url: String,
+    /// WebSocket endpoint URL
+    pub ws_url: String,
+    /// HTTP endpoint URL
+    pub http_url: String,
+    /// Signer configuration
+    pub signer_config: SignerConfig,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct HostChainConfig {
+    pub chain_config: ChainConfig,
+    pub decryption_oracle: Address,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct GatewayChainConfig {
+    pub chain_config: ChainConfig,
+    pub zkpok_manager: Address,
+    pub decryption_manager: Address,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LocalSignerConfig {
     /// Env var name that holds the private key
     pub private_key_env: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AWSKMSSignerConfig {
+    /// Env var name that holds the private key
+    pub key_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum SignerConfig {
+    AWSKMS(AWSKMSSignerConfig),
+    Local(LocalSignerConfig),
+}
+
+/// Top-level configuration structure.
+///
+/// Contains all configuration settings for the relayer service.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RelayerConfiguration {
+    /// Network configurations
+    pub host_chains: Vec<HostChainConfig>,
+    pub gateway_chain: GatewayChainConfig,
+    pub queues: SQSConfiguration,
+    pub key_url: Option<KeyUrl>, // Optional because only require in debug mode
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SQSConfiguration {
+    pub console_queue: String,
+    pub relayer_queue: String,
+    pub transaction_queue: String,
+}
+
+#[derive(Parser, Serialize, Deserialize, Debug, Clone)]
+#[command(version, about, long_about = None)]
+pub struct CliArgs {
+    #[arg(long = "config-file")]
+    pub config_file: Option<String>,
+}
+
+impl RelayerConfiguration {
+    pub fn new(config_file: Option<String>) -> Result<Self, String> {
+        // First get base config from files
+        let s = match Config::builder()
+            .add_source(
+                File::with_name(&config_file.unwrap_or("config.toml".to_string())).required(false),
+            )
+            // Change how we specify environment variables
+            // Env takes precedence over other sources
+            .add_source(
+                Environment::with_prefix("RELAYER")
+                    .separator("__") // Use double underscore
+                    .prefix_separator("_"), // Separator between RELAYER and the rest
+            )
+            .build()
+        {
+            Ok(value) => value,
+            Err(error) => {
+                error!("{:?}", error);
+                return Err("".to_string());
+            }
+        };
+
+        let settings: Self = match s.try_deserialize() {
+            Ok(value) => value,
+            Err(error) => {
+                error!("{:?}", error);
+                return Err("".to_string());
+            }
+        };
+
+        Ok(settings)
+    }
+
+    pub fn get_host_signer(
+        &self,
+        _chain_id: u64,
+    ) -> Result<Box<dyn Signer>, alloy::signers::local::LocalSignerError> {
+        match "".parse::<alloy::signers::local::PrivateKeySigner>() {
+            Ok(value) => Ok(Box::new(value)),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn get_gateway_signer(
+        &self,
+    ) -> Result<Box<dyn Signer>, alloy::signers::local::LocalSignerError> {
+        match "".parse::<alloy::signers::local::PrivateKeySigner>() {
+            Ok(value) => Ok(Box::new(value)),
+            Err(error) => Err(error),
+        }
+    }
 }
 
 // NOTE: we should probably catch each request in a redis-db for easier debugging
@@ -93,10 +208,7 @@ pub struct ChainConfig {
 ///
 #[tokio::main]
 async fn main() {
-    // ############################################################################################
-    // Configuration
-    // ############################################################################################
-
+    // Load .env if it exists, tracing not setup yet so println log
     match from_path(Path::new(".env")).ok() {
         Some(_) => {
             println!("Properly loaded .env file");
@@ -106,147 +218,149 @@ async fn main() {
         }
     }
 
-    // TODO: create proper struct to handle configuration
+    let args = CliArgs::parse();
 
-    let gateway_ws_url =
-        env::var("GATEWAY_WEBSOCKET").unwrap_or(String::from("ws://localhost:8546"));
-    let host_ws_url = env::var("HOST_WEBSOCKET").unwrap_or(String::from("ws://localhost:8545"));
-    let decryption_oracle_address = Address::from_str(
-        &env::var(DECRYPTION_ORACLE_ADDRESS_ENV_KEY)
-            .expect("Couldn't find DECRYPTION_ORACLE_ADDRESS from "),
-    )
-    .expect("Invalid Ethereum address");
-    let decryption_manager_address = Address::from_str(
-        &env::var(DECRYPTION_MANAGER_ADDRESS_ENV_KEY)
-            .expect("Couldn't find DECRYPTION_ORACLE_ADDRESS from "),
-    )
-    .expect("Invalid Ethereum address");
-    let zkpok_manager_address = Address::from_str(
-        &env::var(ZKPOK_MANAGER_ADDRESS_ENV_KEY)
-            .expect("Couldn't find DECRYPTION_ORACLE_ADDRESS from "),
-    )
-    .expect("Invalid Ethereum address");
+    // Check if the config file exists
+    if let Some(conf) = &args.config_file {
+        if !Path::new(&conf).exists() {
+            eprintln!("Config file not found: {}", conf);
+            std::process::exit(1);
+        }
+    }
 
-    // NOTE: Should probably come from .env
-    let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab]; // Used to generate uuid
-
-    // TODO: Pass the event_dispatcher to the event_listener
-    let config = aws_config::from_env().load().await;
-    let sqs_client = aws_sdk_sqs::Client::new(&config);
-    let default_relayer_sqs_endpoint = String::from(
-        "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/relayer-queue",
-    );
-    let default_console_sqs_endpoint = String::from(
-        "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/orchestrator-queue",
-    );
-    let default_tx_manager_sqs_endpoint = String::from(
-        "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/tx-manager-queue",
-    );
-    // ############################################################################################
     // Observability
-    // ############################################################################################
     // https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#example-syntax
     let filter = tracing_subscriber::EnvFilter::from_default_env();
     let subscriber = FmtSubscriber::builder().with_env_filter(filter).finish();
     tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");
 
-    info!(
-        "Decryption Oracle Contract address {:?}",
-        decryption_oracle_address
-    );
+    // Settings
+    // TODO: add cli arg to specify path to config file with default
+    let settings = match RelayerConfiguration::new(args.config_file) {
+        Ok(value) => value,
+        Err(error) => {
+            error!(
+                "Unrecoverable error parsing relayer configuration: {:?}",
+                error
+            );
+            panic!("Error: {:?}", error)
+        }
+    };
 
-    // ############################################################################################
+    info!("Configuration {:?}", settings);
+
+    // SQS
+    let config = aws_config::from_env().load().await;
+    let sqs_client = aws_sdk_sqs::Client::new(&config);
+    let kms_client = aws_sdk_kms::Client::new(&config);
+
     // Orchestrator
-    // ############################################################################################
-
+    // TODO: Should probably come from configuration
+    let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab]; // Used to generate uuid
     let dispatcher = Arc::new(TokioEventDispatcher::<ZwsRelayerEvent>::new());
     let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
 
-    let gateway_chain_id: u64 = 54321;
-    let gateway_private_key_env = "GATEWAY_PRIVATE_KEY".to_string();
-
-    let gateway_rpc_url = "http://localhost:8546";
-    let gateway_tx_service =
-        match TransactionService::new(gateway_rpc_url, &gateway_private_key_env, gateway_chain_id)
-            .await
-        {
-            Ok(value) => value,
-            Err(error) => {
-                let err_msg = format!(
-                    "Couldn't initialize gateway transaction service: {:?}",
-                    error
-                );
-                error!(err_msg);
-                panic!("{}", err_msg);
-            }
-        };
+    // Transaction services
     let mut tx_services = HashMap::new();
-    tx_services.insert(gateway_chain_id, gateway_tx_service);
 
-    let host_chain_private_key_env = "HTTPZ_PRIVATE_KEY".to_string();
-
-    let host_chains: Vec<ChainConfig> = vec![ChainConfig {
-        chain_id: 12345,
-        rpc_url: "http://localhost:8545".to_string(),
-        private_key_env: host_chain_private_key_env,
-    }];
-
-    for host_chain in host_chains {
-        let tx_service = match TransactionService::new(
-            &host_chain.rpc_url,
-            &host_chain.rpc_url,
-            host_chain.chain_id,
-        )
-        .await
-        {
-            Ok(value) => value,
-            Err(error) => {
-                let err_msg = format!(
-                    "Couldn't initialize gateway transaction service: {:?}",
-                    error
-                );
-                error!(err_msg);
-                panic!("{}", err_msg);
-            }
-        };
-        tx_services.insert(host_chain.chain_id, tx_service);
+    match settings.gateway_chain.chain_config.signer_config {
+        SignerConfig::Local(signer_config) => {
+            let gateway_tx_service = match TransactionService::new(
+                &settings.gateway_chain.chain_config.http_url,
+                &signer_config.private_key_env,
+                settings.gateway_chain.chain_config.chain_id,
+            )
+            .await
+            {
+                Ok(value) => value,
+                Err(error) => {
+                    let err_msg = format!(
+                        "Couldn't initialize gateway transaction service: {:?}",
+                        error
+                    );
+                    error!(err_msg);
+                    panic!("{}", err_msg);
+                }
+            };
+            tx_services.insert(
+                settings.gateway_chain.chain_config.chain_id,
+                gateway_tx_service,
+            );
+        }
+        SignerConfig::AWSKMS(signer_config) => {
+            let _signer = alloy::signers::aws::AwsSigner::new(
+                kms_client,
+                signer_config.key_id,
+                Some(settings.gateway_chain.chain_config.chain_id),
+            )
+            .await
+            .unwrap();
+            // TODO: add support for arbitrary signers in fhevm-relayer
+            let error_message = "AWS KMS isn't properly supported in fhevm-relayer yet!";
+            error!(error_message);
+            panic!("{}", error_message);
+        }
     }
 
-    // Register the event handlers
-    // NOTE: we could also set the dispatcher in the Handler, but we use a SNS topic instead
-    // here
+    for host_chain in settings.host_chains.clone() {
+        match host_chain.chain_config.signer_config {
+            SignerConfig::Local(signer_config) => {
+                let tx_service = match TransactionService::new(
+                    &host_chain.chain_config.http_url,
+                    &signer_config.private_key_env,
+                    host_chain.chain_config.chain_id,
+                )
+                .await
+                {
+                    Ok(value) => value,
+                    Err(error) => {
+                        let err_msg = format!(
+                            "Couldn't initialize gateway transaction service: {:?}",
+                            error
+                        );
+                        error!(err_msg);
+                        panic!("{}", err_msg);
+                    }
+                };
+                tx_services.insert(host_chain.chain_config.chain_id, tx_service);
+            }
+            _ => {
+                error!("Not supported signer");
+                panic!("Unsupported signer");
+            }
+        }
+    }
 
-    // TODO: add tx-manager queue, and properly setup all listeners
-    // TODO: http listener should send message to SQS instead of internal orchestrator
-
+    // Event handlers
     let zws_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> = Arc::new(
         ZWSRelayerHandler::new(
-            default_console_sqs_endpoint.to_owned(),
-            default_tx_manager_sqs_endpoint.to_owned(),
+            settings.queues.console_queue.to_owned(),
+            settings.queues.transaction_queue.to_owned(),
             Arc::clone(&orchestrator),
         )
         .await,
     );
 
-    let console_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> =
-        Arc::new(ZWSConsoleMockHandler::new(default_relayer_sqs_endpoint.to_owned()).await);
-
+    // NOTE: for now the transaction manager is part of the relayer but communication is already
+    // done through SQS
+    // NOTE: we could probably tweak the orchestrator to add SQS communication in the dispatch
+    // event method
     let tx_manager_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> = Arc::new(
-        ZWSTransactionManagerMockHandler::new(default_relayer_sqs_endpoint.to_owned(), tx_services)
-            .await,
+        ZWSTransactionManagerMockHandler::new(
+            settings.queues.relayer_queue.to_owned(),
+            tx_services,
+        )
+        .await,
     );
 
     // Register handler for all events
-    // Public decryption request
+    // Relayer handler
     orchestrator.register_handler(BlockchainEvent::event_id(), Arc::clone(&zws_handler));
-    // Console authorization response
     orchestrator.register_handler(
         SQSRelayerAuthorizationResponse::event_id(),
         Arc::clone(&zws_handler),
     );
-    // HTTPZ-Gateway response
     orchestrator.register_handler(HTTPZGatewayEvent::event_id(), Arc::clone(&zws_handler));
-    // Transaction response
     orchestrator.register_handler(
         SQSRelayerTransactionResponse::event_id(),
         Arc::clone(&zws_handler),
@@ -256,101 +370,96 @@ async fn main() {
         Arc::clone(&zws_handler),
     );
 
-    // NOTE: used for debugging mostly
-
-    // Transaction response
-    orchestrator.register_handler(
-        SQSRelayerAuthorizationRequest::event_id(),
-        Arc::clone(&console_handler),
-    );
+    // Transaction handler
     orchestrator.register_handler(
         SQSRelayerTransactionRequest::event_id(),
         Arc::clone(&tx_manager_handler),
     );
-    // TODO: Implement missing:
-    // SQS private decryption request
-    // SQS private decryption response
-    // INPUT ??? -> check input flow
 
-    // Initialize Ethereum host L1 adapter
-    let host_l1 = EthereumJsonRPCWsClient::new(ChainName::Httpz, host_ws_url.as_str())
-        .await
-        .expect("Couldn't connect to websocket of Host L1 blockchain ");
-    let host_l1 = Arc::new(host_l1);
-    // Initialize Gateway L2 adapter
-    let rollup_l2 = EthereumJsonRPCWsClient::new(ChainName::Gateway, gateway_ws_url.as_str())
-        .await
-        .expect("Couldn't connect to websocket of Gateway L2 blockchain ");
-    let rollup_l2 = Arc::new(rollup_l2);
+    // Optional Console Mock
+    // This is for testing purposes only
+    if let Some(key_url) = settings.key_url {
+        warn!("MOCKING CONSOLE! DEVELOPMENT PURPOSES ONLY");
+        // Authorization handler
+        let console_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> =
+            Arc::new(ZWSConsoleMockHandler::new(settings.queues.relayer_queue.to_owned()).await);
+        orchestrator.register_handler(
+            SQSRelayerAuthorizationRequest::event_id(),
+            Arc::clone(&console_handler),
+        );
 
-    let relayer_sqs_endpoint: &'static str = Box::leak(
-        env::var("RELAYER_SQS_ENDPOINT")
-            .unwrap_or(default_relayer_sqs_endpoint)
-            .into_boxed_str(),
-    );
-    let console_sqs_endpoint: &'static str = Box::leak(
-        env::var("CONSOLE_SQS_ENDPOINT")
-            .unwrap_or(default_console_sqs_endpoint)
-            .into_boxed_str(),
-    );
-    let tx_manager_sqs_endpoint: &'static str = Box::leak(
-        env::var("TX_MANAGER_SQS_ENDPOINT")
-            .unwrap_or(default_tx_manager_sqs_endpoint)
-            .into_boxed_str(),
-    );
+        // HTTP listener
+        tokio::spawn(http_listener(
+            sqs_client.clone(),
+            settings.queues.relayer_queue.to_string(),
+            settings.queues.console_queue.to_string(),
+            key_url,
+            Arc::clone(&orchestrator),
+        ));
+    }
 
-    let filter_httpz_host = ContractAndTopicsFilter::new(vec![decryption_oracle_address], vec![]);
-    let subscription_httpz_host = host_l1
-        .new_subscription(filter_httpz_host, None)
-        .await
-        .expect("Subscription to L1 failed");
+    // Initialize EVM Host adapters
+    for host_chain in settings.host_chains.clone() {
+        let host_client =
+            EthereumJsonRPCWsClient::new(ChainName::Httpz, host_chain.chain_config.ws_url.as_str())
+                .await
+                .expect("Couldn't connect to websocket of Host L1 blockchain ");
+        let host_client = Arc::new(host_client);
+        let filter_httpz_host =
+            ContractAndTopicsFilter::new(vec![host_chain.decryption_oracle], vec![]);
+        let subscription_httpz_host = host_client
+            .new_subscription(filter_httpz_host, None)
+            .await
+            .expect("Subscription to L1 failed");
+        tokio::spawn(blockchain_event_listener(
+            subscription_httpz_host,
+            Arc::clone(&orchestrator),
+            "Host".to_owned(),
+        ));
+    }
 
-    let filter_httpz_gateway = ContractAndTopicsFilter::new(
-        vec![decryption_manager_address, zkpok_manager_address],
+    // Initialize Gateway adapter
+    let gateway_client = EthereumJsonRPCWsClient::new(
+        ChainName::Gateway,
+        settings.gateway_chain.chain_config.ws_url.as_str(),
+    )
+    .await
+    .expect("Couldn't connect to websocket of Gateway L2 blockchain ");
+    let gateway = Arc::new(gateway_client);
+    let filter_gateway = ContractAndTopicsFilter::new(
+        vec![
+            settings.gateway_chain.zkpok_manager,
+            settings.gateway_chain.decryption_manager,
+        ],
         vec![],
     );
-    let subscription_httpz_gateway = rollup_l2
-        .new_subscription(filter_httpz_gateway, None)
+    let subscription_gateway = gateway
+        .new_subscription(filter_gateway, None)
         .await
         .expect("Subscription to Gateway failed");
-
-    // TODO: Add http listeners for un-metered relayer
-
-    // HTTP listener (queries should come from the backend via SQS but to be able to run as
-    // standalone software we need this)
-    tokio::spawn(http_listener(
-        sqs_client.clone(),
-        relayer_sqs_endpoint,
-        Arc::clone(&orchestrator),
-    ));
 
     // Relayer SQS event listener
     tokio::spawn(sqs_listener(
         sqs_client.clone(),
-        relayer_sqs_endpoint,
+        settings.queues.relayer_queue,
         Arc::clone(&orchestrator),
     ));
 
     // TX-Manager SQS event listener
     tokio::spawn(sqs_listener(
         sqs_client.clone(),
-        tx_manager_sqs_endpoint,
+        settings.queues.transaction_queue,
         Arc::clone(&orchestrator),
     ));
 
     // Blockchain event listener
     tokio::spawn(blockchain_event_listener(
-        subscription_httpz_gateway,
+        subscription_gateway,
         Arc::clone(&orchestrator),
         "Gateway".to_owned(),
     ));
 
-    // Native chain event listener
-    tokio::spawn(blockchain_event_listener(
-        subscription_httpz_host,
-        Arc::clone(&orchestrator),
-        "Host".to_owned(),
-    ));
+    debug!("All listeners started in their own tokio task");
 
     // Wait for ctrl + c signal to stop the application
     tokio::signal::ctrl_c().await.expect("Crtl-C Error");

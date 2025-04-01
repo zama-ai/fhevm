@@ -1,4 +1,4 @@
-name: test
+name: Tests
 
 on:
   pull_request:
@@ -62,6 +62,11 @@ jobs:
     steps:
       - name: Checkout Project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          token: ${{ secrets.RELAYER_TOKEN }}
+          submodules: recursive
+
       # Rust toolchain setup
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@11df97af8e8102fd60b60a77dfbf58d40cd843b8 # v1.10.1
@@ -69,35 +74,19 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy, llvm-tools-preview
 
-      - name: Add SSH key
-        env:
-            SSH_AUTH_SOCK: /tmp/ssh_agent.sock
-        run: |
-            mkdir -p $HOME/.ssh
-            # Replace example.com with the hostname of the machine
-            # you're SSH-ing into
-            ssh-keyscan github.com >> $HOME/.ssh/known_hosts
-            echo "${{ secrets.FHEVM_RELAYER_DEPLOY_PRIVKEY }}" > $HOME/.ssh/github_actions
-            chmod 600 /home/runner/.ssh/github_actions
-            ssh-agent -a $SSH_AUTH_SOCK > /dev/null	
-            ssh-add $HOME/.ssh/github_actions
-
       - name: Formatting
         run: cd ${{matrix.folder}} && cargo fmt --all -- --check
       - name: Linting
-        env:
-            SSH_AUTH_SOCK: /tmp/ssh_agent.sock
-        run: cd ${{matrix.folder}} && cargo clippy --all-targets --all-features -- -D warnings
+        run: cd ${{matrix.folder}} && cargo clippy --all-targets --all-features --workspace --exclude fhevm-relayer -- -D warnings
+
       - name: Run Tests with Coverage
-        env:
-            SSH_AUTH_SOCK: /tmp/ssh_agent.sock
         run: |
           export CARGO_INCREMENTAL=0
           export RUSTFLAGS='-Cinstrument-coverage'
           export LLVM_PROFILE_FILE='cargo-test-%p-%m.profraw'
           # NOTE: Could be set with a matrix when we have multiple RUST services
           cd ${{matrix.folder}}
-          RUST_BACKTRACE=full cargo test
+          RUST_BACKTRACE=full cargo test --workspace --exclude fhevm-relayer
           cargo install grcov
           mkdir coverage
           ~/.cargo/bin/grcov . --binary-path ./target/debug/deps/ -s . --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o coverage/ -t markdown

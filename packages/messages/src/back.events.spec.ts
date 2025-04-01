@@ -94,9 +94,18 @@ describe('back', () => {
             requestId: generateRequestId(),
             chainId: faker.string.numeric(5),
             address: faker.string.hexadecimal({ length: 40 }),
-            name: faker.string.alphanumeric(),
-            timestamp: faker.date.past().toISOString(),
-            externalRef: faker.string.alphanumeric(10),
+            events: [
+              {
+                name: faker.string.alphanumeric(),
+                timestamp: faker.date.past().toISOString(),
+                externalRef: faker.string.alphanumeric(10),
+              },
+              {
+                name: faker.string.alphanumeric(),
+                timestamp: faker.date.past().toISOString(),
+                externalRef: faker.string.alphanumeric(10),
+              },
+            ],
           },
           { correlationId: faker.string.uuid() },
         ),

@@ -30,8 +30,8 @@ services:
       context: ..
       dockerfile: ./docker/web3/Dockerfile
 
-  l1-listener:
-    image: ghcr.io/zama-ai/zws-l1-listener:latest
+  relayer:
+    image: ghcr.io/zama-ai/zws-relayer:latest
     build:
-      context: ../apps/contract-event-listener/
-      dockerfile: ../../docker/contract-event-listener/Dockerfile
+      context: ../apps/relayer/
+      dockerfile: ../../docker/relayer/Dockerfile

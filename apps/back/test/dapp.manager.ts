@@ -31,6 +31,25 @@ export interface DAppStats {
   }[]
 }
 
+export interface CumulativeDappStats {
+  total: number
+  FheAdd: number
+  FheBitAnd: number
+  FheIfThenElse: number
+  FheLe: number
+  FheOr: number
+  FheSub: number
+  TrivialEncrypt: number
+  VerifyCiphertext: number
+  FheMul: number
+  FheDiv: number
+}
+
+export interface DappStats {
+  id: string
+  cumulative: CumulativeDappStats
+}
+
 export type ValidateAddress =
   | { check: true; message?: never }
   | { check: false; message: string }
@@ -154,6 +173,21 @@ export class DappManager {
       .query(VALIDATE_ADDRESS, { chainId, address })
       .exec('validateAddress')
   }
+
+  async getDappStats({
+    token,
+    dappId,
+  }: {
+    token: string
+    dappId: string
+  }): Promise<GraphQlResponse<{ stats: DappStats }>> {
+    return GraphQl.request<{ dapp: { stats: DappStats } }, { dappId: string }>(
+      this.httpServer,
+    )
+      .auth(token)
+      .query(GET_DAPP_STATS, { dappId })
+      .exec('dapp')
+  }
 }
 
 const CREATE_DAPP = `
@@ -230,6 +264,29 @@ const VALIDATE_ADDRESS = `
     validateAddress(input: {chainId: $chainId, address: $address}) {
       check
       message
+    }
+  }
+`
+
+const GET_DAPP_STATS = `
+  query GetDappStats($dappId: ID!) {
+    dapp(input: { id: $dappId }) {
+      stats {
+        id
+        cumulative {
+          total
+          FheAdd
+          FheBitAnd
+          FheIfThenElse
+          FheLe
+          FheOr
+          FheSub
+          TrivialEncrypt
+          VerifyCiphertext
+          FheMul
+          FheDiv
+        }
+      }
     }
   }
 `

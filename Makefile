@@ -1,5 +1,4 @@
 TOP := $(dir $(firstword $(MAKEFILE_LIST)))
-FHEVM_DEVOPS_PATH ?= $(TOP)external/fhevm-devops
 
 .PHONY: publish-app-deployment-requested
 publish-app-deployment-requested:
@@ -26,9 +25,9 @@ publish-app-deployment-sc-discovered:
 .PHONY: publish-back-dapp-stats-requests
 publish-back-dapp-stats-requests:
 	aws --endpoint=http://localhost:4566 sqs send-message \
-		--queue-url 'http://localhost:4566/000000000000/back-queue' \
+		--queue-url 'http://localhost:4566/000000000000/orchestrator-queue' \
 		--region eu-central-1 \
-		--message-body '{"type": "back:dapp:stats-requested", "payload": {"chainId": "123456", "address": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}, "meta": {"correlationId": "ea0ca1c2-3fde-4f80-8abb-08aecee4107c"}}' 
+		--message-body '{"type": "back:dapp:stats-requested", "payload": {"requestId":"ea0ca1c2-3fde-4f80-8abb-08aecee4107c", "dAppId": "dapp_eBNtPYLsxFUI", "chainId": "123456", "address": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}, "meta": {"correlationId": "ea0ca1c2-3fde-4f80-8abb-08aecee4107c"}}' 
 
 .PHONY: publish-back-dapp-stats-available
 publish-back-dapp-stats-available:
@@ -61,12 +60,6 @@ blockchain-test:
 # display blockchain operations
 blockchain-listen:
 	bash scripts/blockchain-listen.sh
-
-run-fhevm-devops:
-	$(MAKE) -C $(FHEVM_DEVOPS_PATH)/coprocessor run-full
-
-clean-fhevm-devops:
-	$(MAKE) -C $(FHEVM_DEVOPS_PATH)/coprocessor clean
 	
 # Hardhat
 # First launch node and deploy contracts
@@ -95,6 +88,9 @@ console-side-run:
 
 relayer-run:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer
+
+relayer-run-debug:
+	cd $(TOP)apps/relayer && cargo run --bin zws-relayer -- --config-file debug.toml
 
 # `--ssh default` used to forward ssh agent to allow fhevm-relayer dependency to be reached
 docker-compose-build:
