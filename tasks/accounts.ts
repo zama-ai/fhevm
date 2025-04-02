@@ -1,8 +1,6 @@
 import { task, types } from "hardhat/config";
 import { HardhatNetworkHDAccountsConfig } from "hardhat/types";
 
-import { ACCOUNT_NAMES } from "./utils/constants";
-
 // Use this task to get the list of accounts (addresses, private keys, public keys)
 task("get-accounts", "Prints the list of accounts")
   .addParam("numAccounts", "Number of accounts to return (1-20)", 3, types.int)
@@ -36,7 +34,7 @@ task("get-accounts", "Prints the list of accounts")
     console.info("\nAccount Details:");
     console.info("================");
     accounts.forEach(({ index, privateKey, address, publicKey }) => {
-      console.info(`\nAccount ${index}: (${ACCOUNT_NAMES[index]})`);
+      console.info(`\nAccount ${index}:`);
       console.info(`Address:     ${address}`);
       console.info(`Private Key: ${privateKey}`);
       console.info(`Public Key:  ${publicKey}`);
