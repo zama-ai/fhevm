@@ -94,7 +94,6 @@ task("task:deployHttpz").setAction(async function (_, { ethers, upgrades }) {
       txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
       signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
       ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
-      daUrl: getRequiredEnvVar(`KMS_NODE_DA_URL_${idx}`),
     });
   }
 
@@ -105,7 +104,6 @@ task("task:deployHttpz").setAction(async function (_, { ethers, upgrades }) {
     coprocessors.push({
       txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
       signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
-      daUrl: getRequiredEnvVar(`COPROCESSOR_DA_URL_${idx}`),
       s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
     });
   }

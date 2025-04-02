@@ -17,8 +17,6 @@ struct KmsNode {
     address signerAddress;
     /// @notice IP address of the KMS node
     string ipAddress;
-    /// @notice URL address of the KMS node's data availability (DA)
-    string daUrl;
 }
 
 /// @notice Struct that represents a coprocessor
@@ -27,8 +25,6 @@ struct Coprocessor {
     address txSenderAddress;
     /// @notice Address of the coprocessor's signer (used for signing inputs with EIP712 signatures)
     address signerAddress;
-    /// @notice URL address of the coprocessor's data availability (DA)
-    string daUrl;
     /// @notice URL address of the coprocessor's S3 bucket where ciphertexts are stored
     string s3BucketUrl;
 }

@@ -26,7 +26,6 @@ describe("HTTPZ", function () {
         txSenderAddress: kmsTxSenders[i].address,
         signerAddress: kmsSigners[i].address,
         ipAddress: `127.0.0.${i}`,
-        daUrl: `https://da-${i}.com`,
       });
     }
 
@@ -40,7 +39,6 @@ describe("HTTPZ", function () {
       coprocessors.push({
         txSenderAddress: coprocessorTxSenders[i].address,
         signerAddress: coprocessorSigners[i].address,
-        daUrl: `https://da-${i}.com`,
         s3BucketUrl: `s3://bucket-${i}`,
       });
     }
