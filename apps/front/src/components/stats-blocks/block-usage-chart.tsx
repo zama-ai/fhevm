@@ -35,7 +35,7 @@ export const BlockUsageChart = ({
     <Card.Root minH="83px" size="sm">
       <Card.Body>
         <StatRoot>
-          <HStack>
+          <HStack alignItems="start">
             <Stack>
               <StatLabel>Total usage</StatLabel>
 
@@ -67,7 +67,7 @@ export const BlockUsageChart = ({
                           notation="compact"
                           compactDisplay="short"
                         />{' '}
-                        FHE Operations
+                        calculations
                       </StatHelpText>
                     </Box>
                     <Box width="100%">
@@ -86,7 +86,7 @@ export const BlockUsageChart = ({
                           notation="compact"
                           compactDisplay="short"
                         />{' '}
-                        FHE Operations
+                        encryptions
                       </StatHelpText>
                     </Box>
                   </Stack>
