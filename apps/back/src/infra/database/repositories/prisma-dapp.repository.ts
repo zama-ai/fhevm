@@ -240,47 +240,48 @@ export class PrismaDAppRepository extends DAppRepository {
       daysago.setUTCDate(daysago.getUTCDate() - LIMIT_BYDAY_AGO)
 
       this.db.dappStat
-        .findMany({
+        .groupBy({
+          by: ['type', 'day', 'year'],
           where: {
             dappId: id.value,
             timestamp: {
               gte: daysago.toISOString(),
             },
           },
-          orderBy: {
-            timestamp: 'desc',
+          _count: {
+            _all: true,
           },
         })
         .then(stats => {
-          // Group stats by day
-          const dailyStats = stats.reduce(
-            (acc, stat) => {
-              const day = new Date(stat.timestamp).toISOString().split('T')[0]
-              const dayId = `day_${day.replace(/-/g, '')}`
+          const dailyStatsMap = new Map<string, DailyStats[0]>()
 
-              if (!acc[dayId]) {
-                acc[dayId] = {
-                  id: dayId,
-                  day,
-                  total: 0,
-                  symbolic: 0,
-                  fhe: 0,
-                }
-              }
+          stats.forEach(stat => {
+            const date = new Date(stat.year, 0, 1)
+            // reminder: stat.day is 1-366
+            date.setUTCDate(date.getUTCDate() + stat.day - 1)
+            const formattedDay = date.toISOString().split('T')[0]
+            const dayId = `day_${formattedDay.replace(/-/g, '')}`
 
-              if (stat.type === StatsType.SYMBOLIC) {
-                acc[dayId].symbolic += 1
-              } else {
-                acc[dayId].fhe += 1
-              }
-              acc[dayId].total += 1
+            if (!dailyStatsMap.has(dayId)) {
+              dailyStatsMap.set(dayId, {
+                id: dayId,
+                day: formattedDay,
+                total: 0,
+                symbolic: 0,
+                fhe: 0,
+              })
+            }
 
-              return acc
-            },
-            {} as Record<string, DailyStats[0]>,
-          )
+            const dayStats = dailyStatsMap.get(dayId)!
+            if (stat.type === StatsType.SYMBOLIC) {
+              dayStats.symbolic = stat._count._all
+            } else {
+              dayStats.fhe = stat._count._all
+            }
+            dayStats.total += stat._count._all
+          })
 
-          resolve(Object.values(dailyStats))
+          resolve(Array.from(dailyStatsMap.values()))
         })
         .catch((err: unknown) => {
           this.logger.warn(
