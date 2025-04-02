@@ -2,7 +2,7 @@ services:
 
   kms-connector:
     container_name: kms-connector
-    image: ghcr.io/zama-ai/kms-connector:4812f86
+    image: ghcr.io/zama-ai/kms-connector:v0.11.0-rc5
     environment:
       KMS_CONNECTOR_GWL2_URL: ${KMS_CONNECTOR_GWL2_URL}
       KMS_CONNECTOR_KMS_CORE_ENDPOINT: ${KMS_CONNECTOR_KMS_CORE_ENDPOINT}
