@@ -21,6 +21,7 @@ import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { Computation } from '#dapps/domain/utilities/computation.js'
+import { StatsType } from '#prisma/client/index.js'
 
 @Injectable()
 export class PrismaDAppRepository extends DAppRepository {
@@ -261,24 +262,18 @@ export class PrismaDAppRepository extends DAppRepository {
                 acc[dayId] = {
                   id: dayId,
                   day,
-                  cumulative: {
-                    total: 0,
-                    FheAdd: 0,
-                    FheBitAnd: 0,
-                    FheIfThenElse: 0,
-                    FheLe: 0,
-                    FheOr: 0,
-                    FheSub: 0,
-                    TrivialEncrypt: 0,
-                    VerifyCiphertext: 0,
-                    FheMul: 0,
-                    FheDiv: 0,
-                  },
+                  total: 0,
+                  symbolic: 0,
+                  fhe: 0,
                 }
               }
 
-              acc[dayId].cumulative[stat.name as Operation] += 1
-              acc[dayId].cumulative.total += 1
+              if (stat.type === StatsType.SYMBOLIC) {
+                acc[dayId].symbolic += 1
+              } else {
+                acc[dayId].fhe += 1
+              }
+              acc[dayId].total += 1
 
               return acc
             },

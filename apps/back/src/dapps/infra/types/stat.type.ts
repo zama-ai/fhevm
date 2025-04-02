@@ -1,20 +1,5 @@
 import { Field, ID, ObjectType, Int } from '@nestjs/graphql'
 
-// @ObjectType('DailyDappStats')
-// export class DailyDappStatsType {
-//   @Field(() => ID, { nullable: false, description: 'The id of the day' })
-//   id: string
-
-//   @Field({ nullable: false })
-//   day: string
-
-//   @Field({ nullable: false })
-//   total: number
-
-//   @Field({ nullable: false })
-//   FheAdd: number
-// }
-
 @ObjectType('CumulativeDappStats')
 export class CumulativeDappStatsType {
   @Field(() => Int, { nullable: false })
@@ -59,8 +44,14 @@ export class DailyDappStatsType {
   @Field({ nullable: false })
   day: string
 
-  @Field(() => CumulativeDappStatsType, { nullable: false })
-  cumulative: CumulativeDappStatsType
+  @Field(() => Int, { nullable: false })
+  total: number
+
+  @Field(() => Int, { nullable: false })
+  symbolic: number
+
+  @Field(() => Int, { nullable: false })
+  fhe: number
 }
 
 @ObjectType('DappStats')

@@ -27,7 +27,7 @@ export class StatsResolver {
   async cumulative(
     @Parent() dappStat: DappStatsType,
   ): Promise<CumulativeDappStatsType> {
-    this.logger.log(`Resolving cumulative stats for ${dappStat.id}`)
+    this.logger.debug(`Resolving cumulative stats for ${dappStat.id}`)
     return this.getDappCumulativeStatsUC
       .execute({ dappId: dappStat.id })
       .toPromise()
@@ -39,7 +39,7 @@ export class StatsResolver {
   async byDay(
     @Parent() dappStat: DappStatsType,
   ): Promise<DailyDappStatsType[]> {
-    this.logger.log(`Resolving daily stats for ${dappStat.id}`)
+    this.logger.debug(`Resolving daily stats for ${dappStat.id}`)
     return this.getDappDailyStatsUC.execute({ dappId: dappStat.id }).toPromise()
   }
 

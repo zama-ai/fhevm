@@ -42,9 +42,9 @@ const GET_DAPP_DETAILS = graphql(`
         byDay {
           id
           day
-          cumulative {
-            total
-          }
+          total
+          symbolic
+          fhe
         }
       }
     }
@@ -81,9 +81,9 @@ const SUB_DAPP_UPDATED = gql(`
         byDay {
           id
           day
-          cumulative {
-            total
-          }
+          total
+          symbolic
+          fhe
         }
       }
     } 

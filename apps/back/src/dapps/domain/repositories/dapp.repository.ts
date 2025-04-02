@@ -22,7 +22,9 @@ export type CumulativeStats = Record<Operation, number> & { total: number }
 export type DailyStats = {
   id: string
   day: string
-  cumulative: CumulativeStats
+  total: number
+  symbolic: number
+  fhe: number
 }[]
 
 export abstract class DAppRepository {

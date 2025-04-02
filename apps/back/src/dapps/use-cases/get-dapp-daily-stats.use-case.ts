@@ -10,19 +10,9 @@ type Input = {
 type Output = {
   id: string
   day: string
-  cumulative: {
-    total: number
-    FheAdd: number
-    FheBitAnd: number
-    FheIfThenElse: number
-    FheLe: number
-    FheOr: number
-    FheSub: number
-    TrivialEncrypt: number
-    VerifyCiphertext: number
-    FheMul: number
-    FheDiv: number
-  }
+  total: number
+  symbolic: number
+  fhe: number
 }[]
 
 @Injectable()

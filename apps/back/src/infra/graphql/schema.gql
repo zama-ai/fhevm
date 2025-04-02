@@ -26,7 +26,9 @@ type DailyDappStats {
   """The id of the day"""
   id: ID!
   day: String!
-  cumulative: CumulativeDappStats!
+  total: Int!
+  symbolic: Int!
+  fhe: Int!
 }
 
 type DappStats {

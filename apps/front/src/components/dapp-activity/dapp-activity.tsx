@@ -14,9 +14,9 @@ import { BlockUsageChart } from '../stats-blocks/block-usage-chart'
 type DailyStats = {
   id: string
   day: string
-  cumulative: {
-    total: number
-  }
+  total: number
+  symbolic: number
+  fhe: number
 }
 
 type OwnProps = {
@@ -37,12 +37,6 @@ export function DappActivity({
     total: 0,
   }
 
-  const byDay = byDayDappStats.map(({ id, day, cumulative: { total } }) => ({
-    id,
-    day,
-    total,
-  }))
-
   const operationStatsData = calculateOperationStats(cumulative)
   const operationStatsTotal = calculateTotal(operationStatsData)
   const encryptionStatsData = calculateEncryptionStats(cumulative)
@@ -58,7 +52,7 @@ export function DappActivity({
           encryptionStatsData={encryptionStatsData}
           encryptionStatsTotal={encryptionStatsTotal}
         />
-        <BlockDaily data={byDayToSparkline(byDay)} />
+        <BlockDaily data={byDayToSparkline(byDayDappStats)} />
       </Stack>
     </Stack>
   )
