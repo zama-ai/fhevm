@@ -235,8 +235,8 @@ export class PrismaDAppRepository extends DAppRepository {
 
     return new Task<DailyStats, AppError>((resolve, reject) => {
       const daysago = new Date()
-      daysago.setHours(0, 0, 0, 0) // full days, partial day stats are ugly
-      daysago.setDate(daysago.getDate() - LIMIT_BYDAY_AGO)
+      daysago.setUTCHours(0, 0, 0, 0) // full days in UTC, partial day stats are ugly
+      daysago.setUTCDate(daysago.getUTCDate() - LIMIT_BYDAY_AGO)
 
       this.db.dappStat
         .findMany({
@@ -254,7 +254,7 @@ export class PrismaDAppRepository extends DAppRepository {
           // Group stats by day
           const dailyStats = stats.reduce(
             (acc, stat) => {
-              const day = stat.timestamp.toISOString().split('T')[0]
+              const day = new Date(stat.timestamp).toISOString().split('T')[0]
               const dayId = `day_${day.replace(/-/g, '')}`
 
               if (!acc[dayId]) {

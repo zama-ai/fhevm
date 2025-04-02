@@ -57,14 +57,14 @@ export function byDayToSparkline(
   // Generate array of all days in range
   const result: Array<{ index: string; value: number }> = []
   const currentDate = new Date(minDate)
-  currentDate.setHours(0, 0, 0, 0)
+  currentDate.setUTCHours(0, 0, 0, 0)
 
   while (currentDate <= maxDate) {
     const dayStr = toYYMMDD(currentDate)
     const existingStat = statsMap.get(dayStr)
     const { index, value } = existingStat || { index: dayStr, value: 0 }
     result.push({ index, value })
-    currentDate.setDate(currentDate.getDate() + 1)
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1)
   }
 
   return result.sort((a, b) => a.index.localeCompare(b.index))
