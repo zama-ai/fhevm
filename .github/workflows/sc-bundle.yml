@@ -10,8 +10,8 @@ on:
       - published
 
 concurrency:
-  group: gateway-sc-${{ github.ref_name }}
-  cancel-in-progress: false
+  group: gateway-sc-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   docker-sc-bundle:
