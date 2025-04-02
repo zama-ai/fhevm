@@ -1,5 +1,5 @@
 use alloy::primitives::FixedBytes;
-use alloy::providers::{Provider, WalletProvider};
+use alloy::providers::{Provider, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::U256, sol_types::eip712_domain};
 use alloy::{providers::ProviderBuilder, signers::SignerSync, sol, sol_types::SolStruct};
@@ -28,8 +28,10 @@ sol! {
 async fn verify_proof_response_success() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, false).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -134,8 +136,10 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
 async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, false).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -179,7 +183,7 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
         b.push_bind(contract_chain_id as i64);
         b.push_bind(env.contract_address.to_string());
         b.push_bind(env.user_address.to_string());
-        b.push_bind(&[1u8; 64]);
+        b.push_bind([1u8; 64]);
         b.push_bind(true);
     });
     query_builder.push(")");
@@ -192,7 +196,7 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
         .await?;
 
     let events = events_handle.await?;
-    for i in 0..count {
+    for (i, event) in events.iter().enumerate().take(count) {
         let proof_id = i;
         let expected_proof_id = U256::from(proof_id);
         let expected_handles: Vec<FixedBytes<32>> =
@@ -213,9 +217,9 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
         let expected_sig = env.signer.sign_hash_sync(&signing_hash)?;
 
         // Make sure data in the event is correct, including the deterministic ECDSA signature.
-        assert_eq!(events[i].0._0, expected_proof_id);
-        assert_eq!(events[i].0._1, expected_handles);
-        assert_eq!(events[i].0._2.as_ref(), expected_sig.as_bytes());
+        assert_eq!(event.0._0, expected_proof_id);
+        assert_eq!(event.0._1, expected_handles);
+        assert_eq!(event.0._2.as_ref(), expected_sig.as_bytes());
     }
 
     // Make sure the proofs are removed from the database.
@@ -242,8 +246,10 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
 async fn verify_proof_response_reversal_already_responded() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let zkpok_manager = ZKPoKManager::deploy(&provider, true, false).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -263,9 +269,7 @@ async fn verify_proof_response_reversal_already_responded() -> anyhow::Result<()
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     // Record initial transaction count.
-    let initial_tx_count = provider
-        .get_transaction_count(provider.default_signer_address())
-        .await?;
+    let initial_tx_count = provider.get_transaction_count(env.signer.address()).await?;
 
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
@@ -301,9 +305,7 @@ async fn verify_proof_response_reversal_already_responded() -> anyhow::Result<()
     }
 
     // Verify that no transaction has been sent.
-    let final_tx_count = provider
-        .get_transaction_count(provider.default_signer_address())
-        .await?;
+    let final_tx_count = provider.get_transaction_count(env.signer.address()).await?;
     assert_eq!(
         final_tx_count, initial_tx_count,
         "Expected no new transaction to be sent"
@@ -319,8 +321,10 @@ async fn verify_proof_response_reversal_already_responded() -> anyhow::Result<()
 async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -392,8 +396,10 @@ async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result
 async fn verify_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
@@ -468,8 +474,10 @@ async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
     env.conf.verify_proof_remove_after_max_retries = true;
     env.conf.verify_proof_resp_max_retries = 2;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -533,8 +541,10 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
     env.conf.verify_proof_remove_after_max_retries = false;
     env.conf.verify_proof_resp_max_retries = 2;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -609,8 +619,10 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
 async fn reject_proof_response_success() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, false).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -694,8 +706,10 @@ async fn reject_proof_response_success() -> anyhow::Result<()> {
 async fn reject_proof_response_reversal_already_responded() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let zkpok_manager = ZKPoKManager::deploy(&provider, true, false).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -715,9 +729,7 @@ async fn reject_proof_response_reversal_already_responded() -> anyhow::Result<()
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     // Record initial transaction count.
-    let initial_tx_count = provider
-        .get_transaction_count(provider.default_signer_address())
-        .await?;
+    let initial_tx_count = provider.get_transaction_count(env.signer.address()).await?;
 
     sqlx::query!(
         "WITH ins AS (
@@ -752,9 +764,7 @@ async fn reject_proof_response_reversal_already_responded() -> anyhow::Result<()
     }
 
     // Verify that no transaction has been sent.
-    let final_tx_count = provider
-        .get_transaction_count(provider.default_signer_address())
-        .await?;
+    let final_tx_count = provider.get_transaction_count(env.signer.address()).await?;
     assert_eq!(
         final_tx_count, initial_tx_count,
         "Expected no new transaction to be sent"
@@ -770,8 +780,10 @@ async fn reject_proof_response_reversal_already_responded() -> anyhow::Result<()
 async fn reject_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
@@ -840,8 +852,10 @@ async fn reject_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
 async fn reject_proof_response_other_reversal_gas_estimation() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(

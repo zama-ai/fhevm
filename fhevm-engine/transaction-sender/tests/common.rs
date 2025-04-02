@@ -1,4 +1,10 @@
-use alloy::{primitives::Address, signers::local::PrivateKeySigner, sol};
+use alloy::{
+    network::EthereumWallet,
+    node_bindings::{Anvil, AnvilInstance},
+    primitives::Address,
+    signers::local::PrivateKeySigner,
+    sol,
+};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
@@ -31,6 +37,10 @@ pub struct TestEnvironment {
     pub contract_address: Address,
     #[allow(dead_code)]
     pub user_address: Address,
+    #[allow(dead_code)]
+    pub anvil: AnvilInstance,
+    #[allow(dead_code)]
+    pub wallet: EthereumWallet,
 }
 
 impl TestEnvironment {
@@ -57,13 +67,18 @@ impl TestEnvironment {
         )
         .await?;
 
+        let anvil = Anvil::new().try_spawn()?;
+        let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
+        let wallet = signer.clone().into();
         Ok(Self {
-            signer: PrivateKeySigner::random(),
+            signer,
             conf,
             cancel_token: CancellationToken::new(),
             db_pool,
             contract_address: PrivateKeySigner::random().address(),
             user_address: PrivateKeySigner::random().address(),
+            anvil,
+            wallet,
         })
     }
 }

@@ -1,6 +1,6 @@
-use alloy::primitives::Address;
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
+use alloy::{primitives::Address, providers::WsConnect};
 use common::{ACLManager, TestEnvironment};
 
 use rand::random;
@@ -18,8 +18,10 @@ mod common;
 async fn test_allow_handle() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let acl_manager = ACLManager::deploy(&provider).await?;
 
     let txn_sender = TransactionSender::new(

@@ -3135,6 +3135,7 @@ dependencies = [
  "fhevm-engine-common",
  "foundry-compilers",
  "futures-util",
+ "semver 1.0.26",
  "serde",
  "serial_test",
  "sqlx",

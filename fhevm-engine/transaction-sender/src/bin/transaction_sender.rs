@@ -1,8 +1,11 @@
 use std::str::FromStr;
 
 use alloy::{
-    network::EthereumWallet, primitives::Address, providers::ProviderBuilder,
-    signers::local::PrivateKeySigner, transports::http::reqwest::Url,
+    network::EthereumWallet,
+    primitives::Address,
+    providers::{ProviderBuilder, WsConnect},
+    signers::local::PrivateKeySigner,
+    transports::http::reqwest::Url,
 };
 use clap::Parser;
 use tokio::signal::unix::{signal, SignalKind};
@@ -100,10 +103,11 @@ async fn main() -> anyhow::Result<()> {
         .clone()
         .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
     let cancel_token = CancellationToken::new();
-    let provider = ProviderBuilder::new()
-        .filler(ProviderFillers::default())
+    let provider = ProviderBuilder::default()
         .wallet(wallet)
-        .on_http(conf.gateway_url);
+        .filler(ProviderFillers::default())
+        .on_ws(WsConnect::new(conf.gateway_url))
+        .await?;
     let sender = TransactionSender::new(
         conf.zkpok_manager_address,
         conf.ciphertext_manager_address,

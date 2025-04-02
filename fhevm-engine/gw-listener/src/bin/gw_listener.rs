@@ -57,8 +57,7 @@ async fn main() -> anyhow::Result<()> {
 
     let provider = ProviderBuilder::new()
         .on_ws(WsConnect::new(conf.gw_url.clone()))
-        .await
-        .expect("should have valid provider");
+        .await?;
 
     let cancel_token = CancellationToken::new();
     let gw_listener = GatewayListener::new(

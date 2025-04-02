@@ -1,4 +1,4 @@
-use alloy::providers::{Provider, ProviderBuilder, WalletProvider};
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
 use common::{CiphertextManager, TestEnvironment};
 
@@ -17,8 +17,10 @@ mod common;
 async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::default()
+        .wallet(env.wallet)
         .filler(ProviderFillers::default())
-        .on_anvil_with_wallet();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
 
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
@@ -40,9 +42,7 @@ async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
     //  Add a ciphertext digest to database
     let handle = random::<[u8; 32]>().to_vec();
     // Record initial transaction count.
-    let initial_tx_count = provider
-        .get_transaction_count(provider.default_signer_address())
-        .await?;
+    let initial_tx_count = provider.get_transaction_count(env.signer.address()).await?;
 
     // Insert a ciphertext digest into the database.
     insert_ciphertext_digest(
@@ -95,9 +95,7 @@ async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
     );
 
     // Verify that a transaction has been sent.
-    let tx_count = provider
-        .get_transaction_count(provider.default_signer_address())
-        .await?;
+    let tx_count = provider.get_transaction_count(env.signer.address()).await?;
     assert_eq!(
         tx_count,
         initial_tx_count + 1,
@@ -122,7 +120,8 @@ async fn test_retry_mechanism() -> anyhow::Result<()> {
     // Create a provider without a wallet.
     let provider = ProviderBuilder::default()
         .filler(ProviderFillers::default())
-        .on_anvil();
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
