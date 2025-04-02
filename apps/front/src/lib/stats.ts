@@ -42,8 +42,8 @@ export function toYYMMDD(date: Date): string {
 }
 
 export function byDayToSparkline(
-  stats: Array<{ id: string; day: string; total: number }>,
-): Array<Record<string, string | number> & { value: number }> {
+  stats: Array<{ id: string; day: string; total: number; fhe: number }>,
+): Array<{ value: number; compareValue: number }> {
   if (stats.length === 0) return []
 
   const dates = stats.map(s => new Date(s.day))
@@ -51,19 +51,27 @@ export function byDayToSparkline(
   const maxDate = new Date(Math.max(...dates.map(d => d.getTime())))
 
   const statsMap = new Map(
-    stats.map(s => [s.day, { index: s.day, value: s.total }]),
+    stats.map(s => [
+      s.day,
+      { index: s.day, value: s.total, compareValue: s.fhe },
+    ]),
   )
 
   // Generate array of all days in range
-  const result: Array<{ index: string; value: number }> = []
+  const result: Array<{ index: string; value: number; compareValue: number }> =
+    []
   const currentDate = new Date(minDate)
   currentDate.setUTCHours(0, 0, 0, 0)
 
   while (currentDate <= maxDate) {
     const dayStr = toYYMMDD(currentDate)
     const existingStat = statsMap.get(dayStr)
-    const { index, value } = existingStat || { index: dayStr, value: 0 }
-    result.push({ index, value })
+    const { index, value, compareValue } = existingStat || {
+      index: dayStr,
+      value: 0,
+      compareValue: 0,
+    }
+    result.push({ index, value, compareValue })
     currentDate.setUTCDate(currentDate.getUTCDate() + 1)
   }
 
