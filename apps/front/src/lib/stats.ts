@@ -36,3 +36,36 @@ export function calculateEncryptionStats(
 export function calculateTotal(stats: StatData): number {
   return stats.reduce((acc, curr) => acc + curr.value, 0)
 }
+
+export function toYYMMDD(date: Date): string {
+  return date.toISOString().split('T')[0]
+}
+
+export function byDayToSparkline(
+  stats: Array<{ id: string; day: string; total: number }>,
+): Array<Record<string, string | number> & { value: number }> {
+  if (stats.length === 0) return []
+
+  const dates = stats.map(s => new Date(s.day))
+  const minDate = new Date(Math.min(...dates.map(d => d.getTime())))
+  const maxDate = new Date(Math.max(...dates.map(d => d.getTime())))
+
+  const statsMap = new Map(
+    stats.map(s => [s.day, { index: s.day, value: s.total }]),
+  )
+
+  // Generate array of all days in range
+  const result: Array<{ index: string; value: number }> = []
+  const currentDate = new Date(minDate)
+  currentDate.setHours(0, 0, 0, 0)
+
+  while (currentDate <= maxDate) {
+    const dayStr = toYYMMDD(currentDate)
+    const existingStat = statsMap.get(dayStr)
+    const { index, value } = existingStat || { index: dayStr, value: 0 }
+    result.push({ index, value })
+    currentDate.setDate(currentDate.getDate() + 1)
+  }
+
+  return result.sort((a, b) => a.index.localeCompare(b.index))
+}

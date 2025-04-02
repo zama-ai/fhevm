@@ -9,13 +9,8 @@ import {
 } from '@/__generated__/graphql.js'
 
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
-import { BlockSimple } from '@/components/stats-blocks/block-simple'
-import { BlockPie } from '@/components/stats-blocks/block-pie'
-import {
-  calculateOperationStats,
-  calculateEncryptionStats,
-  calculateTotal,
-} from '@/lib/stats.js'
+
+import { DappActivity } from '@/components/dapp-activity/dapp-activity'
 
 const GET_DAPP_DETAILS = graphql(`
   query GetDappDetails($dappId: ID!) {
@@ -44,6 +39,13 @@ const GET_DAPP_DETAILS = graphql(`
           FheMul
           FheDiv
         }
+        byDay {
+          id
+          day
+          cumulative {
+            total
+          }
+        }
       }
     }
   }
@@ -65,6 +67,33 @@ const SUB_DAPP_UPDATED = gql(`
         id
         cumulative {
           total
+          FheAdd
+          FheBitAnd
+          FheIfThenElse
+          FheLe
+          FheOr
+          FheSub
+          TrivialEncrypt
+          VerifyCiphertext
+          FheMul
+          FheDiv
+        }
+        byDay {
+          id
+          day
+          cumulative {
+            total
+            FheAdd
+            FheBitAnd
+            FheIfThenElse
+            FheLe
+            FheOr
+            FheSub
+            TrivialEncrypt
+            VerifyCiphertext
+            FheMul
+            FheDiv
+          }
         }
       }
     } 
@@ -87,15 +116,6 @@ export function DappPage() {
     throw Error(error.message)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { __typename, total, ...cumulative } = data?.dapp.stats.cumulative || {
-    total: 0,
-  }
-  const operationStatsData = calculateOperationStats(cumulative)
-  const operationStatsTotal = calculateTotal(operationStatsData)
-  const encryptionStatsData = calculateEncryptionStats(cumulative)
-  const encryptionStatsTotal = calculateTotal(encryptionStatsData)
-
   return (
     <Box>
       {data ? (
@@ -113,21 +133,10 @@ export function DappPage() {
         <Skeleton height="5" my="5" width="30rem" />
       )}
       {data && (
-        <Stack direction="column" gap="5">
-          <Stack direction="row" gap="5">
-            <BlockSimple title="Total FHE Events" amount={total} />
-            <BlockPie
-              title="FHE Operations"
-              total={operationStatsTotal || 0}
-              data={operationStatsData}
-            />
-            <BlockPie
-              title="FHE Encryption"
-              total={encryptionStatsTotal || 0}
-              data={encryptionStatsData}
-            />
-          </Stack>
-        </Stack>
+        <DappActivity
+          cumulativeDappStats={data.dapp.stats.cumulative}
+          byDayDappStats={data.dapp.stats.byDay}
+        />
       )}
     </Box>
   )
