@@ -1,7 +1,5 @@
 import { Stack } from '@chakra-ui/react'
 
-import { BlockSimple } from '@/components/stats-blocks/block-simple'
-import { BlockPie } from '@/components/stats-blocks/block-pie'
 import { BlockSparkline } from '@/components/stats-blocks/block-sparkline'
 
 import {
@@ -11,6 +9,7 @@ import {
   byDayToSparkline,
 } from '@/lib/stats.js'
 import { CumulativeDappStats } from '@/__generated__/graphql.js'
+import { BlockUsageChart } from '../stats-blocks/block-usage-chart'
 
 type DailyStats = {
   id: string
@@ -52,19 +51,15 @@ export function DappActivity({
   return (
     <Stack direction="column" gap="5">
       <Stack direction="row" gap="5">
-        <BlockSimple title="Total FHE Events" amount={total} />
-        <BlockPie
-          title="FHE Operations"
-          total={operationStatsTotal || 0}
-          data={operationStatsData}
+        <BlockUsageChart
+          total={total}
+          operationStatsData={operationStatsData}
+          operationStatsTotal={operationStatsTotal}
+          encryptionStatsData={encryptionStatsData}
+          encryptionStatsTotal={encryptionStatsTotal}
         />
-        <BlockPie
-          title="FHE Encryption"
-          total={encryptionStatsTotal || 0}
-          data={encryptionStatsData}
-        />
+        <BlockSparkline data={byDayToSparkline(byDay)} />
       </Stack>
-      <BlockSparkline data={byDayToSparkline(byDay)} />
     </Stack>
   )
 }
