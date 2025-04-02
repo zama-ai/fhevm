@@ -35,16 +35,14 @@ services:
       dockerfile: Dockerfile
       tags:
         - gateway-l2/sc-bundle:0.1.0-local
+    env_file: ./.env.example.deployment
     environment:
       - HARDHAT_NETWORK=staging
-    volumes:
-      - ./.env.example.deployment:/app/.env
     command:
       - /bin/bash
       - "-c"
       - |
-        source /app/.env
-        /app/deploy-gateway-contracts.sh
+        cd /app/ && npx hardhat task:deployAllContracts
     depends_on:
       anvil-node:
         condition: service_started
@@ -57,14 +55,11 @@ services:
       dockerfile: Dockerfile
       tags:
         - gateway-l2/sc-bundle:0.1.0-local
-    volumes:
-      - ./.env.example.deployment:/app/.env
     command:
       - /bin/bash
       - "-c"
-      - |
-        source /app/.env
-        /app/add-httpz-networks.sh
+      - cd /app/ && npx hardhat task:addNetworksToHttpz
+    env_file: ./.env.example.deployment
     environment:
       - HARDHAT_NETWORK=staging
     depends_on:

@@ -9,10 +9,14 @@ import { getRequiredEnvVar } from "./utils/loadVariables";
 // for local testing. By default, we use the HTTPZ_ADDRESS env var, as done in deployment
 task("task:addNetworksToHttpz")
   .addParam("useInternalHttpzAddress", "If internal HTTPZ address should be used", false, types.boolean)
-  .setAction(async function (taskArgs, { ethers }) {
+  .setAction(async function (taskArgs, hre) {
+    await hre.run("clean");
+    await hre.run("compile");
+    console.log("Register networks to HTTPZ contract");
+
     const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
     const numNetworks = parseInt(getRequiredEnvVar("NUM_NETWORKS"));
-    const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);
+    const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
     // Parse the L1 network
     const layer1Networks = [];
@@ -35,11 +39,12 @@ task("task:addNetworksToHttpz")
     }
 
     // Add L1 networks
-    const httpz = await ethers.getContractAt("HTTPZ", proxyAddress, deployer);
+    const httpz = await hre.ethers.getContractAt("HTTPZ", proxyAddress, deployer);
     for (const network of layer1Networks) {
       await httpz.addNetwork(network);
     }
 
     console.log("In HTTPZ contract:", proxyAddress, "\n");
     console.log("Added L1 networks:", layer1Networks, "\n");
+    console.log("Networks registration done!");
   });

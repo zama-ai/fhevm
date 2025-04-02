@@ -1,4 +1,4 @@
-name: "Gateway Layer 2 sc Docker Image"
+name: "Gateway Layer 2 sc Docker Image And Tests"
 
 on:
   pull_request:
@@ -31,6 +31,13 @@ jobs:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
 
+  docker-test:
+    uses: ./.github/workflows/docker-tests.yml
+    with:
+      image-name: ${{ needs.docker-sc-bundle.outputs.image_name }}
+    needs:
+      - docker-sc-bundle
+
   done:
     runs-on: ubuntu-latest
     name: Docker Pipeline Done
@@ -38,4 +45,4 @@ jobs:
       - name: Success
         run: echo Docker Pipeline Done
     needs:
-      - docker-sc-bundle
+      - docker-test
