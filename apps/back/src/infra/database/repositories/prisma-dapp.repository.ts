@@ -231,16 +231,19 @@ export class PrismaDAppRepository extends DAppRepository {
   }
 
   findDailyStats = (id: DAppId): Task<DailyStats, AppError> => {
+    const LIMIT_BYDAY_AGO = 30 // default 30 days
+
     return new Task<DailyStats, AppError>((resolve, reject) => {
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      const daysago = new Date()
+      daysago.setHours(0, 0, 0, 0) // full days, partial day stats are ugly
+      daysago.setDate(daysago.getDate() - LIMIT_BYDAY_AGO)
 
       this.db.dappStat
         .findMany({
           where: {
             dappId: id.value,
             timestamp: {
-              gte: thirtyDaysAgo,
+              gte: daysago.toISOString(),
             },
           },
           orderBy: {
