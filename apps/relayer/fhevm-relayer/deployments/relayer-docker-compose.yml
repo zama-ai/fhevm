@@ -19,7 +19,7 @@ services:
   
   input-proof-test:
     container_name: input-proof-test
-    image: ghcr.io/zama-ai/fhevm-e2e-test:a068f94
+    image: ghcr.io/zama-ai/fhevm-e2e-test:120290d
     command:
       - /bin/bash
       - -c
@@ -36,7 +36,7 @@ services:
       dockerfile: hardhat/contracts/operations/Dockerfile
       tags:
       - "httpz-e2e-tester:0.1.1-local"
-    image: ghcr.io/zama-ai/fhevm-e2e-test:d0ba9c2
+    image: ghcr.io/zama-ai/fhevm-e2e-test:120290d
     command: ["/bin/bash", "-c", "tail -f /dev/null"]
     volumes:
       - ./config/env/.env.staging.layer1:/app/hardhat/contracts/.env
