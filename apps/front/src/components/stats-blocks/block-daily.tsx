@@ -13,7 +13,7 @@ const Sparkline = lazy(() =>
   })),
 )
 
-export function BlockSparkline({
+export function BlockDaily({
   data,
 }: {
   data: Array<Record<string, string | number> & { value: number }>

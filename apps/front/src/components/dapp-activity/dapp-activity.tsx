@@ -1,6 +1,6 @@
 import { Stack } from '@chakra-ui/react'
 
-import { BlockSparkline } from '@/components/stats-blocks/block-sparkline'
+import { BlockDaily } from '@/components/stats-blocks/block-daily'
 
 import {
   calculateOperationStats,
@@ -58,7 +58,7 @@ export function DappActivity({
           encryptionStatsData={encryptionStatsData}
           encryptionStatsTotal={encryptionStatsTotal}
         />
-        <BlockSparkline data={byDayToSparkline(byDay)} />
+        <BlockDaily data={byDayToSparkline(byDay)} />
       </Stack>
     </Stack>
   )
