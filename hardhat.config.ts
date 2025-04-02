@@ -59,7 +59,7 @@ const config: HardhatUserConfig = {
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : chainIds.hardhat,
+      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.hardhat,
     },
     localHTTPZGateway: {
       accounts: {
@@ -67,7 +67,7 @@ const config: HardhatUserConfig = {
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : chainIds.localHTTPZGateway,
+      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.localHTTPZGateway,
       url: `http://127.0.0.1:8546`,
     },
     staging: {
@@ -76,7 +76,7 @@ const config: HardhatUserConfig = {
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : chainIds.staging,
+      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.staging,
       url: rpcUrl,
     },
     zwsDev: {
@@ -85,7 +85,7 @@ const config: HardhatUserConfig = {
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : chainIds.zwsDev,
+      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.zwsDev,
       url: rpcUrl,
     },
   },
