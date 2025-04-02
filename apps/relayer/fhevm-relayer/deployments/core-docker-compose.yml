@@ -55,6 +55,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./config/relayer/local.yaml:/relayer-local.yaml
       - ./config/env/.env.staging.coprocessor:/env.staging.coprocessor
+      - ./config/env/.env.staging.layer1:/env.staging.layer1
       - ./config/env/.env.staging.layer2:/env.staging.layer2
       - ./update-kms-keys.sh:/update-kms-keys.sh
     command: [ "/bin/sh", "-c", "apk add --no-cache bash grep sed curl && /bin/bash /update-kms-keys.sh" ]

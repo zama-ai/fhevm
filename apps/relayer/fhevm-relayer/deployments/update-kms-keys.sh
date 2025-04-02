@@ -21,6 +21,7 @@ log_error() {
 
 ## LAYER2 - KMS_SIGNER_ADDRESS_0
 BASE_URL="http://s3-mock:9000/kms-public/PUB/VerfAddress"
+ENV_LAYER1="/env.staging.layer1"
 ENV_LAYER2="/env.staging.layer2"
 KEY_SIGNER_ID=$(docker logs kms-core | grep "Successfully stored public server signing key under the handle" | sed 's/.*handle \([^ ]*\).*/\1/')
 SIGNER_ADDRESS_URL="$BASE_URL/$KEY_SIGNER_ID"
@@ -41,20 +42,30 @@ if [[ ! "$SIGNER_ADDRESS" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
     log_info "Using the address anyway, please verify manually."
 fi
 
+# LAYER1
+log_info "Updating ADDRESS_KMS_SIGNER_0 in $ENV_LAYER1..."
+cat "$ENV_LAYER1" | sed "s|^export ADDRESS_KMS_SIGNER_0=.*|export ADDRESS_KMS_SIGNER_0=\"$SIGNER_ADDRESS\"|g" > /tmp/env.layer1.new
+if grep -q "export ADDRESS_KMS_SIGNER_0=\"$SIGNER_ADDRESS\"" /tmp/env.layer1.new; then
+    cat /tmp/env.layer1.new > "$ENV_LAYER1"
+    log_info "ADDRESS_KMS_SIGNER_0 successfully updated to: $SIGNER_ADDRESS in $ENV_LAYER1"
+else
+    log_warn "Failed to update ADDRESS_KMS_SIGNER_0. Please update manually in $ENV_LAYER1."
+    log_info "The value that should be set: $SIGNER_ADDRESS"
+fi
+
+# LAYER2
 log_info "Updating KMS_SIGNER_ADDRESS_0 in $ENV_LAYER2..."
 cat "$ENV_LAYER2" | sed "s|^export KMS_SIGNER_ADDRESS_0=.*|export KMS_SIGNER_ADDRESS_0=\"$SIGNER_ADDRESS\"|g" > /tmp/env.layer2.new
-
 if grep -q "export KMS_SIGNER_ADDRESS_0=\"$SIGNER_ADDRESS\"" /tmp/env.layer2.new; then
-    cat /tmp/env.layer2.new > "$ENV_LAYER2" 
-    log_info "KMS_SIGNER_ADDRESS_0 successfully updated to: $SIGNER_ADDRESS"
+    cat /tmp/env.layer2.new > "$ENV_LAYER2"
+    log_info "KMS_SIGNER_ADDRESS_0 successfully updated to: $SIGNER_ADDRESS in $ENV_LAYER2"
 else
-    log_warn "Failed to update KMS_SIGNER_ADDRESS_0. Please update manually."
+    log_warn "Failed to update KMS_SIGNER_ADDRESS_0. Please update manually in $ENV_LAYER2"
     log_info "The value that should be set: $SIGNER_ADDRESS"
 fi
 
 LOCAL_YAML="/relayer-local.yaml"
 ENV_COPROCESSOR="/env.staging.coprocessor"
-ENV_CONNECTOR="/env.staging.connector"
 
 if ! docker ps -a | grep -q "generate-fhe-keys"; then
     log_error "Container generate-fhe-keys not found. Make sure it has been run."
