@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
       tags:
         - "ghcr.io/zama-ai/fhevm-relayer:v0.1.0-local"
-    image: ghcr.io/zama-ai/fhevm-relayer:4e289a9
+    image: ghcr.io/zama-ai/fhevm-relayer:a068f94
     command:
     - fhevm-relayer
     environment:
@@ -19,7 +19,7 @@ services:
   
   input-proof-test:
     container_name: input-proof-test
-    image: ghcr.io/zama-ai/fhevm-e2e-test:d0ba9c2
+    image: ghcr.io/zama-ai/fhevm-e2e-test:a068f94
     command:
       - /bin/bash
       - -c
