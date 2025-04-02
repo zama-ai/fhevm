@@ -43,26 +43,11 @@ task("compile:specific", "Compiles only the specified contract")
   });
 
 task("test", async (_taskArgs, hre, runSuper) => {
-  await hre.run("compile:specific", { contract: "contracts/emptyProxy" });
   await hre.run("task:faucetToPrivate", { privateKey: process.env.DEPLOYER_PRIVATE_KEY });
-  await hre.run("task:deployEmptyUUPSProxies");
-
-  // The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
-  // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
-  // used during the tests which will make them fail.
-  await hre.run("compile:specific", { contract: "contracts" });
-
-  await hre.run("task:deployHttpz");
-  await hre.run("task:deployZkpokManager");
-  await hre.run("task:deployKeyManager");
-  await hre.run("task:deployCiphertextManager");
-  await hre.run("task:deployAclManager");
-  await hre.run("task:deployDecryptionManager");
-
+  await hre.run("task:deployAllContracts");
   // Contrary to deployment, here we consider the HTTPZ address from the `addresses/` directory
   // for local testing
   await hre.run("task:addNetworksToHttpz", { useInternalHttpzAddress: true });
-
   await runSuper();
 });
 
