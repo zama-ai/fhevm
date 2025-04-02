@@ -19,9 +19,13 @@ import { FhevmInstances } from './types';
 
 const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
 const RELAYER_URL = process.env.RELAYER_URL;
+const GATEWAY_CHAIN_ID = process.env.CHAIN_ID_GATEWAY;
+const DECRYPTION_MANAGER_ADDRESS = process.env.DECRYPTION_MANAGER_ADDRESS;
+
 
 let clientKey: Uint8Array | undefined;
 
+const decryptionManagerAdd = DECRYPTION_MANAGER_ADDRESS;
 const kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
 const aclAdd = dotenv.parse(fs.readFileSync('addresses/.env.acl')).ACL_CONTRACT_ADDRESS;
 
@@ -56,13 +60,14 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 };
 
 export const createInstance = async () => {
-  console.log('net url:', network.config.url);
   const relayerUrl = RELAYER_URL || 'http://localhost:3000';
   const instance = await createFhevmInstance({
+    verifyingContractAddress: decryptionManagerAdd,
     kmsContractAddress: kmsAdd,
     aclContractAddress: aclAdd,
-    networkUrl: network.config.url,
+    network: network.config.url,
     relayerUrl: relayerUrl,
+    gatewayChainId: GATEWAY_CHAIN_ID || '54321',
   });
   return instance;
 };

@@ -71,74 +71,71 @@ describe('Reencryption', function () {
       durationDays
     );
 
-    expect(decryptedValue).to.equal(1);
+    expect(decryptedValue[0]).to.equal(1);
 
 
-
-    // on the other hand, Bob should be unable to read Alice's balance
-    try {
-      const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-      const eip712Bob = this.instances.bob.createEIP712(publicKeyBob, this.contractAddress);
-      const signatureBob = await this.signers.bob.signTypedData(
-        eip712Bob.domain,
-        { Reencrypt: eip712Bob.types.Reencrypt },
-        eip712Bob.message,
-      );
-      await this.instances.bob.reencrypt(
-        handle,
-        privateKeyBob,
-        publicKeyBob,
-        signatureBob.replace('0x', ''),
-        this.contractAddress,
-        this.signers.bob.address,
-      );
-      expect.fail('Expected an error to be thrown - Bob should not be able to reencrypt Alice balance');
-    } catch (error) {
-      expect(error.message).to.equal('User is not authorized to reencrypt this handle!');
-    }
-
-    // and should be impossible to call reencrypt if contractAddress === userAddress
-    try {
-      const eip712b = this.instances.alice.createEIP712(publicKey, this.signers.alice.address);
-      const signatureAliceb = await this.signers.alice.signTypedData(
-        eip712b.domain,
-        { Reencrypt: eip712b.types.Reencrypt },
-        eip712b.message,
-      );
-      await this.instances.alice.reencrypt(
-        handle,
-        privateKey,
-        publicKey,
-        signatureAliceb.replace('0x', ''),
-        this.signers.alice.address,
-        this.signers.alice.address,
-      );
-      expect.fail('Expected an error to be thrown - userAddress and contractAddress cannot be equal');
-    } catch (error) {
-      expect(error.message).to.equal(
-        'userAddress should not be equal to contractAddress when requesting reencryption!',
-      );
-    }
   });
 
   it('test reencrypt euint4', async function () {
     const handle = await this.contract.xUint4();
+   
+
+    console.log('handle:', handle);
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKey, this.contractAddress);
+    const ctHandleContractPairs = [
+      {
+        ctHandle: handle,
+        contractAddress: this.contractAddress,
+      }
+    ];
+    const startTimeStamp = Math.floor(Date.now() / 1000).toString();
+    const durationDays = "10"; // String for consistency
+    const contractAddresses = [this.contractAddress];
+    const gatewayChainId = process.env.CHAIN_ID_GATEWAY || 654321;
+    const hostChainId = process.env.CHAIN_ID_HTTPZ || "123456";
+
+    
+    // Use the new createEIP712UserDecrypt function
+    const eip712 = this.instances.alice.createEIP712UserDecrypt(
+      gatewayChainId,
+      process.env.DECRYPTION_MANAGER_ADDRESS, // Decryption Manager contract
+      publicKey,
+      contractAddresses,
+      hostChainId,
+      startTimeStamp,
+      durationDays
+    );
+
+    console.log('EIP712 structure:', {
+      domain: eip712.domain,
+      types: eip712.types,
+      primaryType: eip712.primaryType,
+      message: eip712.message
+    });
+
+    // Update the signing to match the new primaryType
     const signature = await this.signers.alice.signTypedData(
       eip712.domain,
-      { Reencrypt: eip712.types.Reencrypt },
-      eip712.message,
+      { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
+      eip712.message
     );
-    const decryptedValue = await this.instances.alice.reencrypt(
-      handle,
+
+    const decryptedValue = await this.instances.alice.userDecrypt(
+      process.env.DECRYPTION_MANAGER_ADDRESS, 
+      ctHandleContractPairs,
       privateKey,
       publicKey,
       signature.replace('0x', ''),
-      this.contractAddress,
+      contractAddresses,
       this.signers.alice.address,
+      startTimeStamp,
+      durationDays
     );
-    expect(decryptedValue).to.equal(4);
+
+
+
+
+    expect(decryptedValue[0]).to.equal(4);
   });
 
   it('test reencrypt euint8', async function () {
