@@ -2,7 +2,7 @@ services:
 
   kms-core:
     container_name: kms-core
-    image: ghcr.io/zama-ai/kms-service:520cc0f
+    image: ghcr.io/zama-ai/kms-service:v0.11.0-rc5
     environment:
       KMS_CORE__PUBLIC_VAULT__STORAGE: ${KMS_CORE__PUBLIC_VAULT__STORAGE}
       KMS_CORE__PRIVATE_VAULT__STORAGE: ${KMS_CORE__PRIVATE_VAULT__STORAGE}
@@ -29,7 +29,7 @@ services:
 
   generate-fhe-keys:
     container_name: generate-fhe-keys
-    image: ghcr.io/zama-ai/kms-core-client:27d03d8
+    image: ghcr.io/zama-ai/kms-core-client:v0.11.0-rc5
     environment:
       S3_ENDPOINT: ${S3_ENDPOINT}
       OBJECT_FOLDER: ${OBJECT_FOLDER}
