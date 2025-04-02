@@ -194,19 +194,13 @@ impl Serialize for UserDecryptResponsePayloadJson {
         S: Serializer,
     {
         let mut state = serializer.serialize_struct("UserDecryptResponsePayloadJson", 2)?;
-        state.serialize_field(
-            "payload",
-            &serialize_vec_as_hex::<S>(&self.payload.to_vec()),
-        )?;
-        state.serialize_field(
-            "signature",
-            &serialize_vec_as_hex::<S>(&self.signature.to_vec()),
-        )?;
+        state.serialize_field("payload", &serialize_vec_as_hex(&self.payload.to_vec()))?;
+        state.serialize_field("signature", &serialize_vec_as_hex(&self.signature.to_vec()))?;
         state.end()
     }
 }
 
-fn serialize_vec_as_hex<S>(vec: &Vec<u8>) -> String {
+fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
     hex::encode(vec)
 }
 
