@@ -1,3 +1,5 @@
+include .env.test
+
 prettier:
 	npx prettier . --write
 
@@ -16,9 +18,10 @@ start-local-node:
 	npx hardhat node --port 8546
 
 deploy-contracts-local:
-	cp .env.example .env
-	HARDHAT_NETWORK=localHTTPZGateway ./deploy-gateway-contracts.sh
-	HARDHAT_NETWORK=localHTTPZGateway ./add-httpz-networks.sh
+	cp .env.test .env
+	HARDHAT_NETWORK=localHTTPZGateway npx hardhat task:faucetToPrivate --private-key $(DEPLOYER_PRIVATE_KEY)
+	HARDHAT_NETWORK=localHTTPZGateway npx hardhat task:deployAllContracts
+	HARDHAT_NETWORK=localHTTPZGateway npx hardhat task:addNetworksToHttpz --use-internal-httpz-address true
 
 docker-compose-build:
 	docker compose -vvv build

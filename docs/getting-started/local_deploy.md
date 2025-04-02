@@ -10,7 +10,7 @@ Here is an example of how to deploy contracts locally (on a `gatewayL2` local ne
 npm install
 ```
 
-1/ Modify values in the `.env.example` if needed, depending on your scenario. It should contain :
+1/ Modify values in the `.env.test` if needed, depending on your scenario. It should contain :
 
 - protocol metadata
 - admin addresses
@@ -18,8 +18,8 @@ npm install
 - coprocessors
 - L1 network(s) infos
 
-The number of KMS nodes, coprocessors and networks set in the `.env.example` file should be lower or equal to the number
-of metadata set along each, and differentiated by indexes (starting from 1).
+The number of KMS nodes, coprocessors and networks set in the `.env.test` file should be lower or equal to the number of
+metadata set along each, and differentiated by indexes (starting from 1).
 
 Note: to get the different accounts (with their private and public keys), run
 

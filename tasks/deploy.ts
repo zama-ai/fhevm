@@ -222,6 +222,38 @@ task("task:deployDecryptionManager").setAction(async function (_, { ethers, upgr
   console.log(`DecryptionManager code set successfully at address: ${proxyAddress}\n`);
 });
 
+// Deploy all the contracts
+task("task:deployAllContracts").setAction(async function (_, hre) {
+  await hre.run("clean");
+  await hre.run("compile:specific", { contract: "contracts/emptyProxy" });
+  await hre.run("task:deployEmptyUUPSProxies");
+
+  // The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
+  // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
+  // used.
+  await hre.run("compile:specific", { contract: "contracts" });
+
+  console.log("Deploy HTTPZ contract:");
+  await hre.run("task:deployHttpz");
+
+  console.log("Deploy ZKPoKManager contract:");
+  await hre.run("task:deployZkpokManager");
+
+  console.log("Deploy KeyManager contract:");
+  await hre.run("task:deployKeyManager");
+
+  console.log("Deploy CiphertextManager contract:");
+  await hre.run("task:deployCiphertextManager");
+
+  console.log("Deploy ACLManager contract:");
+  await hre.run("task:deployAclManager");
+
+  console.log("Deploy DecryptionManager contract:");
+  await hre.run("task:deployDecryptionManager");
+
+  console.log("Contract deployment done!");
+});
+
 // A helpher task to update a contract's address in their .sol and .env file in the `addresses` folder
 task("task:setContractAddress")
   .addParam("name", "The name of the contract (PascalCase)")
