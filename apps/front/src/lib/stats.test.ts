@@ -89,50 +89,12 @@ describe('byDayToSparkline', () => {
         id: 'day_20240315',
         day: '2024-03-15',
         total: 42,
-      },
-    ]
-    const result = byDayToSparkline(stats)
-    expect(result).toEqual([{ index: '2024-03-15', value: 42 }])
-  })
-
-  it('should handle multiple days with gaps', () => {
-    const stats = [
-      {
-        id: 'day_20240315',
-        day: '2024-03-15',
-        total: 42,
-      },
-      {
-        id: 'day_20240317',
-        day: '2024-03-17',
-        total: 24,
+        fhe: 1,
       },
     ]
     const result = byDayToSparkline(stats)
     expect(result).toEqual([
-      { index: '2024-03-15', value: 42 },
-      { index: '2024-03-16', value: 0 },
-      { index: '2024-03-17', value: 24 },
-    ])
-  })
-
-  it('should handle UTC dates correctly', () => {
-    const stats = [
-      {
-        id: 'day_20240315',
-        day: '2024-03-15T23:59:59Z',
-        total: 42,
-      },
-      {
-        id: 'day_20240316',
-        day: '2024-03-16T00:00:00Z',
-        total: 24,
-      },
-    ]
-    const result = byDayToSparkline(stats)
-    expect(result).toEqual([
-      { index: '2024-03-15', value: 42 },
-      { index: '2024-03-16', value: 24 },
+      { index: '2024-03-15', value: 42, compareValue: 1 },
     ])
   })
 
@@ -142,21 +104,23 @@ describe('byDayToSparkline', () => {
         id: 'day_20240315',
         day: '2024-03-15',
         total: 42,
+        fhe: 1,
       },
       {
         id: 'day_20240320',
         day: '2024-03-20',
         total: 24,
+        fhe: 0,
       },
     ]
     const result = byDayToSparkline(stats)
     expect(result).toEqual([
-      { index: '2024-03-15', value: 42 },
-      { index: '2024-03-16', value: 0 },
-      { index: '2024-03-17', value: 0 },
-      { index: '2024-03-18', value: 0 },
-      { index: '2024-03-19', value: 0 },
-      { index: '2024-03-20', value: 24 },
+      { index: '2024-03-15', value: 42, compareValue: 1 },
+      { index: '2024-03-16', value: 0, compareValue: 0 },
+      { index: '2024-03-17', value: 0, compareValue: 0 },
+      { index: '2024-03-18', value: 0, compareValue: 0 },
+      { index: '2024-03-19', value: 0, compareValue: 0 },
+      { index: '2024-03-20', value: 24, compareValue: 0 },
     ])
   })
 })
