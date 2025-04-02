@@ -8,12 +8,13 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import "./interfaces/ICiphertextManager.sol";
 import "./interfaces/IHTTPZ.sol";
 import "./interfaces/IKeyManager.sol";
+import "./shared/HttpzChecks.sol";
 
 /**
  * @title CiphertextManager smart contract
  * @dev See {ICiphertextManager}.
  */
-contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSUpgradeable {
+contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSUpgradeable, HttpzChecks {
     /// @notice The address of the HTTPZ contract, used for fetching information about coprocessors.
     IHTTPZ private constant _HTTPZ = IHTTPZ(httpzAddress);
 
@@ -124,13 +125,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         uint256 chainId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
-    ) public {
-        /// @dev Check if the sender is a Coprocessor
-        _HTTPZ.checkIsCoprocessorTxSender(msg.sender);
-
-        /// @dev Check that the chainId has been registered in the HTTPZ contract.
-        _HTTPZ.checkNetworkIsRegistered(chainId);
-
+    ) public onlyCoprocessorTxSender onlyRegisteredNetwork(chainId) {
         CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
 
         /**

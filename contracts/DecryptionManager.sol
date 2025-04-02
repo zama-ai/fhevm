@@ -12,10 +12,17 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IHTTPZ.sol";
 import "./interfaces/IACLManager.sol";
 import "./interfaces/ICiphertextManager.sol";
+import "./shared/HttpzChecks.sol";
 
 /// @title DecryptionManager contract
 /// @dev See {IDecryptionManager}.
-contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2StepUpgradeable, UUPSUpgradeable {
+contract DecryptionManager is
+    IDecryptionManager,
+    EIP712Upgradeable,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeable,
+    HttpzChecks
+{
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
     /// @dev EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
@@ -198,14 +205,6 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
         __Ownable_init(owner());
     }
 
-    /// @notice Checks if the sender is a KMS transaction sender.
-    /// @dev In case of reorgs, for response calls, we need to prevent someone else than the KMS
-    /// @dev transaction sender from copying the signature and sending it to trigger a consensus.
-    modifier onlyKmsTxSender() {
-        _HTTPZ.checkIsKmsTxSender(msg.sender);
-        _;
-    }
-
     /// @dev See {IDecryptionManager-publicDecryptionRequest}.
     function publicDecryptionRequest(uint256[] calldata ctHandles) public virtual {
         DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
@@ -237,6 +236,8 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
     }
 
     /// @dev See {IDecryptionManager-publicDecryptionResponse}.
+    /// @dev We restrict this call to KMS transaction senders because, in case of reorgs, we need to
+    /// @dev prevent anyone else from copying the signature and sending it to trigger a consensus.
     function publicDecryptionResponse(
         uint256 publicDecryptionId,
         bytes calldata decryptedResult,
@@ -431,6 +432,8 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
     }
 
     /// @dev See {IDecryptionManager-userDecryptionResponse}.
+    /// @dev We restrict this call to KMS transaction senders because, in case of reorgs, we need to
+    /// @dev prevent anyone else from copying the signature and sending it to trigger a consensus.
     function userDecryptionResponse(
         uint256 userDecryptionId,
         bytes calldata reencryptedShare,

@@ -7,10 +7,11 @@ import { httpzAddress } from "../addresses/HttpzAddress.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import "./shared/HttpzChecks.sol";
 
 /// @title Key Manager contract
 /// @dev See {IKeyManager}.
-contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable {
+contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable, HttpzChecks {
     /// @notice The address of the HTTPZ contract for protocol state calls.
     IHTTPZ private constant _HTTPZ = IHTTPZ(httpzAddress);
 
@@ -125,24 +126,6 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable {
         if (!$._fheParamsInitialized[fheParamsName]) {
             revert FheParamsNotInitialized();
         }
-        _;
-    }
-
-    /// @notice Checks if the sender is an administrator.
-    modifier onlyAdmin() {
-        _HTTPZ.checkIsAdmin(msg.sender);
-        _;
-    }
-
-    /// @notice Checks if the sender is a KMS node.
-    modifier onlyKmsTxSender() {
-        _HTTPZ.checkIsKmsTxSender(msg.sender);
-        _;
-    }
-
-    /// @notice Checks if the sender is a coprocessor transaction sender.
-    modifier onlyCoprocessorTxSender() {
-        _HTTPZ.checkIsCoprocessorTxSender(msg.sender);
         _;
     }
 
