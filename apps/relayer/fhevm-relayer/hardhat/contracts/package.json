@@ -23,7 +23,7 @@
   "author": "",
   "license": "BSD-3-Clause",
   "devDependencies": {
-    "@httpz/sdk": "^0.7.0-10",
+    "@httpz/sdk": "^0.7.0-11",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@openzeppelin/contracts-upgradeable": "^5.0.2",
     "@openzeppelin/foundry-upgrades": "^0.3.6",
