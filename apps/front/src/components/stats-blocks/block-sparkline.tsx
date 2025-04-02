@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Card, StatRoot, StatValueText } from '@chakra-ui/react'
+import { Card, FormatNumber, StatRoot, StatValueText } from '@chakra-ui/react'
 import {
   StatLabel,
   StatHelpText,
@@ -18,22 +18,25 @@ export function BlockSparkline({
 }: {
   data: Array<Record<string, string | number> & { value: number }>
 }) {
-  const value = Number(data[data.length - 1].value ?? 0)
-  const compareValue = Number(data[data.length - 1].compareValue ?? 0)
-  const percentage = Math.round(((value - compareValue) / value) * 100)
+  const today = data[data.length - 1].value ?? 0
+  const yesterday = data[data.length - 2].value ?? 0
+  const evolution = (today - yesterday) / today
+  const PercentageComponent = evolution > 0 ? StatUpTrend : StatDownTrend
 
   return (
     <Card.Root width="300px">
       <Card.Body p="4">
         <StatRoot pos="relative">
-          {JSON.stringify(data)}
-          <StatLabel>Computations</StatLabel>
+          <StatLabel>Daily usage</StatLabel>
           <StatHelpText pos="absolute" top="0" right="0">
-            {percentage > 0 ? (
-              <StatUpTrend>{percentage}%</StatUpTrend>
-            ) : (
-              <StatDownTrend>{percentage}%</StatDownTrend>
-            )}
+            <PercentageComponent>
+              <FormatNumber
+                value={evolution}
+                style="percent"
+                maximumFractionDigits={2}
+                minimumFractionDigits={2}
+              />
+            </PercentageComponent>
           </StatHelpText>
           <StatValueText>
             {Math.ceil(Number(data[data.length - 1].value ?? 0) || 0)}
@@ -52,13 +55,3 @@ export function BlockSparkline({
     </Card.Root>
   )
 }
-
-// const pseudorandom: Array<Array<number>> = [
-//   [151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140],
-//   [36, 103, 30, 69, 142, 8, 99, 37, 240, 21, 10, 23, 190, 6, 148, 247, 120],
-// ]
-// const data: Array<{ value: number; compareValue: number }> =
-//   pseudorandom[0].map((value: number, index: number) => ({
-//     value,
-//     compareValue: pseudorandom[1][index],
-//   }))

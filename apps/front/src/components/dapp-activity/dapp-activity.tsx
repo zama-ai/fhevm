@@ -10,11 +10,19 @@ import {
   calculateTotal,
   byDayToSparkline,
 } from '@/lib/stats.js'
-import { CumulativeDappStats, DailyDappStats } from '@/__generated__/graphql.js'
+import { CumulativeDappStats } from '@/__generated__/graphql.js'
+
+type DailyStats = {
+  id: string
+  day: string
+  cumulative: {
+    total: number
+  }
+}
 
 type OwnProps = {
   cumulativeDappStats: CumulativeDappStats
-  byDayDappStats: DailyDappStats[]
+  byDayDappStats: DailyStats[]
 }
 
 export function DappActivity({

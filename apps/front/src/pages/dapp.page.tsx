@@ -44,6 +44,16 @@ const GET_DAPP_DETAILS = graphql(`
           day
           cumulative {
             total
+            FheAdd
+            FheBitAnd
+            FheIfThenElse
+            FheLe
+            FheOr
+            FheSub
+            TrivialEncrypt
+            VerifyCiphertext
+            FheMul
+            FheDiv
           }
         }
       }
