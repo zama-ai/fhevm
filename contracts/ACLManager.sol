@@ -9,10 +9,11 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import "./interfaces/IACLManager.sol";
 import "./interfaces/ICiphertextManager.sol";
 import "./interfaces/IHTTPZ.sol";
+import "./shared/HttpzChecks.sol";
 
 /// @title ACLManager smart contract
 /// @dev See {IACLManager}
-contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
+contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, HttpzChecks {
     /// @notice The address of the HTTPZ contract for protocol state calls.
     IHTTPZ private constant _HTTPZ = IHTTPZ(httpzAddress);
     /// @notice The address of the CiphertextManager contract for checking ciphertext materials.
@@ -75,21 +76,12 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
         __Ownable_init(owner());
     }
 
-    /// @notice Checks if the sender is a coprocessor transaction sender.
-    modifier onlyCoprocessorTxSender() {
-        _HTTPZ.checkIsCoprocessorTxSender(msg.sender);
-        _;
-    }
-
     /// @dev See {IACLManager-allowAccount}.
     function allowAccount(
         uint256 chainId,
         uint256 ctHandle,
         address accountAddress
-    ) public virtual override onlyCoprocessorTxSender {
-        /// @dev Check that the chainId has been registered in the HTTPZ contract.
-        _HTTPZ.checkNetworkIsRegistered(chainId);
-
+    ) public virtual override onlyCoprocessorTxSender onlyRegisteredNetwork(chainId) {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
         /**
@@ -116,10 +108,10 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
     }
 
     /// @dev See {IACLManager-allowPublicDecrypt}.
-    function allowPublicDecrypt(uint256 chainId, uint256 ctHandle) public virtual override onlyCoprocessorTxSender {
-        /// @dev Check that the chainId has been registered in the HTTPZ contract.
-        _HTTPZ.checkNetworkIsRegistered(chainId);
-
+    function allowPublicDecrypt(
+        uint256 chainId,
+        uint256 ctHandle
+    ) public virtual override onlyCoprocessorTxSender onlyRegisteredNetwork(chainId) {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
         /**

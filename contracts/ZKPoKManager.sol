@@ -9,12 +9,13 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IZKPoKManager.sol";
 import "./interfaces/IHTTPZ.sol";
+import "./shared/HttpzChecks.sol";
 
 /**
  * @title ZKPoKManager smart contract
  * @dev See {IZKPoKManager}
  */
-contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeable, UUPSUpgradeable {
+contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeable, UUPSUpgradeable, HttpzChecks {
     /**
      * @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
      * @dev The name of this struct is not relevant for the signature validation, only the one defined
@@ -97,10 +98,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeab
         address contractAddress,
         address userAddress,
         bytes calldata ciphertextWithZKProof
-    ) public virtual {
-        /// @dev Check that the chainId has been registered in the HTTPZ contract.
-        _HTTPZ.checkNetworkIsRegistered(contractChainId);
-
+    ) public virtual onlyRegisteredNetwork(contractChainId) {
         ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
         // TODO(#52): Implement sending service fees to PaymentManager contract
 
@@ -113,18 +111,16 @@ contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeab
         emit VerifyProofRequest(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     }
 
-    /// @dev See {IZKPoKManager-verifyProofResponse}.
+    /**
+     * @dev See {IZKPoKManager-verifyProofResponse}.
+     * We restrict this call to coprocessor transaction senders because, in case of reorgs, we need to
+     * prevent anyone else from copying the signature and sending it to trigger a consensus.
+     */
     function verifyProofResponse(
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
         bytes calldata signature
-    ) public virtual {
-        /**
-         * @dev Check that the sender is a coprocessor transaction sender. In case of reorgs, this prevents
-         * someone else from copying the signature and sending it to trigger a consensus.
-         */
-        _HTTPZ.checkIsCoprocessorTxSender(msg.sender);
-
+    ) public virtual onlyCoprocessorTxSender {
         ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
 
         /// @dev Retrieve stored ZK Proof verification request inputs.
