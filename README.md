@@ -27,7 +27,6 @@
 > [!NOTE]  
 > **Renaming in progress**: The HTTPZ repositories are transitionning to **HTTPZ**. You may see both names referenced for a short time. [Sign up](https://share-eu1.hsforms.com/1F7Z672SsRAeOVyqLdXWn2Q2duixc) to stay informed about the official HTTPZ release.
 
-
 ## About
 
 ### What is HTTPZ
@@ -71,7 +70,7 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/tutor
 <br></br>
 
 > [!Note]
->  **Zama 5-Question Developer Survey**
+> **Zama 5-Question Developer Survey**
 > We want to hear from you! Take 1 minute to share your thoughts and help us enhance our documentation and libraries. 👉 **[Click here](https://www.zama.ai/developer-survey)** to participate.
 
 ### Citations

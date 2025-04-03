@@ -50,8 +50,8 @@ Below is an example of how to implement reencryption in a dApp:
 import { createInstances } from "../instance";
 import { getSigners, initSigners } from "../signers";
 import abi from "./abi.json";
-import { Contract, BrowserProvider } from "ethers";
 import { createInstance } from "@httpz/sdk/bundle";
+import { Contract, BrowserProvider } from "ethers";
 
 const CONTRACT_ADDRESS = "";
 

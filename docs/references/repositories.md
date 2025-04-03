@@ -32,8 +32,8 @@ Access the essential libraries for building and integrating FHE-enabled applicat
 
 | **Repository**                                            | **Description**                                                 |
 | --------------------------------------------------------- | --------------------------------------------------------------- |
-| [httpz-solidity](https://github.com/zama-ai/fhevm/)                | Solidity library for FHE operations                             |
-| [@httpz/sdk](https://github.com/zama-ai/fhevmjs/)            | JavaScript library for client-side FHE                          |
+| [httpz-solidity](https://github.com/zama-ai/fhevm/)       | Solidity library for FHE operations                             |
+| [@httpz/sdk](https://github.com/zama-ai/fhevmjs/)         | JavaScript library for client-side FHE                          |
 | [fhevm-backend](https://github.com/zama-ai/fhevm-backend) | Rust backend and go-ethereum modules for native and coprocessor |
 
 ## **Core implementations**
