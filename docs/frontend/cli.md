@@ -4,7 +4,7 @@ The `httpz` Command-Line Interface (CLI) tool provides a simple and efficient wa
 
 ## Installation
 
-Ensure you have [Node.js](https://nodejs.org/) installed on your system before proceeding. Then, globally install the `HTTPZjs` package to enable the CLI tool:
+Ensure you have [Node.js](https://nodejs.org/) installed on your system before proceeding. Then, globally install the `@httpz/sdk` package to enable the CLI tool:
 
 ```bash
 npm install -g @httpz/sdk
