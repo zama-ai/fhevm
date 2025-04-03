@@ -90,7 +90,11 @@ describe('chainId', () => {
   })
 
   test('should reject a generic string', () => {
-    expect(chainId.safeParse(faker.string.alphanumeric()).success).toBe(false)
+    expect(
+      chainId.safeParse(
+        faker.string.alphanumeric({ length: 5, exclude: '0123456789' }),
+      ).success,
+    ).toBe(false)
   })
 
   test('should reject a negative integer', () => {
