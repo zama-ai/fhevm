@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
       tags:
         - "ghcr.io/zama-ai/fhevm-relayer:v0.1.0-local"
-    image: ghcr.io/zama-ai/fhevm-relayer:a068f94
+    image: ghcr.io/zama-ai/fhevm-relayer:6554284
     command:
     - fhevm-relayer
     environment:
