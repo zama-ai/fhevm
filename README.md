@@ -25,7 +25,7 @@
 </p>
 
 > [!NOTE]  
-> **Renaming in progress**: The fhEVM repositories are transitionning to **HTTPZ**. You may see both names referenced for a short time. [Sign up](https://share-eu1.hsforms.com/1F7Z672SsRAeOVyqLdXWn2Q2duixc) to stay informed about the official HTTPZ release.
+> **Renaming in progress**: The HTTPZ repositories are transitionning to **HTTPZ**. You may see both names referenced for a short time. [Sign up](https://share-eu1.hsforms.com/1F7Z672SsRAeOVyqLdXWn2Q2duixc) to stay informed about the official HTTPZ release.
 
 
 ## About

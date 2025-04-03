@@ -10,16 +10,16 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your system before p
 npm install -g @httpz/sdk
 ```
 
-Once installed, you can access the CLI using the `fhevm` command. Verify the installation and explore available commands using:
+Once installed, you can access the CLI using the `httpz` command. Verify the installation and explore available commands using:
 
 ```bash
-fhevm help
+httpz help
 ```
 
 To see specific options for encryption, run:
 
 ```bash
-fhevm encrypt help
+httpz encrypt help
 ```
 
 ## Encrypting Data
@@ -29,7 +29,7 @@ The CLI allows you to encrypt integers and booleans for use in smart contracts. 
 ### Syntax
 
 ```bash
-fhevm encrypt --node <NODE_URL> <CONTRACT_ADDRESS> <USER_ADDRESS> <DATA:TYPE>...
+httpz encrypt --node <NODE_URL> <CONTRACT_ADDRESS> <USER_ADDRESS> <DATA:TYPE>...
 ```
 
 - **`--node`**: Specifies the RPC URL of the blockchain node (e.g., `http://localhost:8545`).
@@ -44,5 +44,5 @@ fhevm encrypt --node <NODE_URL> <CONTRACT_ADDRESS> <USER_ADDRESS> <DATA:TYPE>...
 Encrypt the integer `71721075` (64-bit) and the boolean `1` for the contract at `0x8Fdb26641d14a80FCCBE87BF455338Dd9C539a50` and the user at `0xa5e1defb98EFe38EBb2D958CEe052410247F4c80`:
 
 ```bash
-fhevm encrypt --node http://localhost:8545 0x8Fdb26641d14a80FCCBE87BF455338Dd9C539a50 0xa5e1defb98EFe38EBb2D958CEe052410247F4c80 71721075:64 1:1
+httpz encrypt --node http://localhost:8545 0x8Fdb26641d14a80FCCBE87BF455338Dd9C539a50 0xa5e1defb98EFe38EBb2D958CEe052410247F4c80 71721075:64 1:1
 ```

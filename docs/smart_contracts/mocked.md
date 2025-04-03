@@ -4,7 +4,7 @@ This document provides an overview of mocked mode in the HTTPZ framework, explai
 
 ## Overview
 
-**Mocked mode** is a development and testing feature provided in the `fhEVM` framework that allows developers to simulate the behavior of Fully Homomorphic Encryption (FHE) without requiring the full encryption and decryption processes to be performed. This makes development and testing cycles faster and more efficient by replacing actual cryptographic operations with mocked values, which behave similarly to encrypted data but without the computational overhead of true encryption.
+**Mocked mode** is a development and testing feature provided in the HTTPZ framework that allows developers to simulate the behavior of Fully Homomorphic Encryption (FHE) without requiring the full encryption and decryption processes to be performed. This makes development and testing cycles faster and more efficient by replacing actual cryptographic operations with mocked values, which behave similarly to encrypted data but without the computational overhead of true encryption.
 
 ## How to use mocked mode
 
