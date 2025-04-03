@@ -59,7 +59,7 @@ services:
   ####################### COPROCESSOR SERVICES #######################
   httpz-listener:
     container_name: "httpz-listener"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
+    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
@@ -77,7 +77,7 @@ services:
 
   gw-listener:
     container_name: "gw-listener"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
+    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_WS_URL}
@@ -96,7 +96,7 @@ services:
 
   tfhe-worker:
     container_name: tfhe-worker
-    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
+    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
     environment:
       DATABASE_URL: ${DATABASE_URL}
     command:
@@ -117,7 +117,7 @@ services:
 
   zkproof-worker:
     container_name: "zkproof-worker"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
+    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
     environment:
       DATABASE_URL: ${DATABASE_URL}
     command:
@@ -136,7 +136,7 @@ services:
 
   sns-worker:
     container_name: "sns-worker"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
+    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
@@ -163,7 +163,7 @@ services:
 
   transaction-sender:
     container_name: "transaction-sender"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:9759b54
+    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_URL}
@@ -174,7 +174,7 @@ services:
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}
-      - --gateway-url=${GATEWAY_URL}
+      - --gateway-url=${GATEWAY_WS_URL}
       - --private-key=${TX_SENDER_PRIVATE_KEY}
       - --ciphertext-manager-address=${CIPHERTEXT_MANAGER_ADDRESS}
       - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
@@ -186,8 +186,6 @@ services:
       - --verify-proof-resp-batch-limit=128
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
-      - --add-ciphertexts-batch-limit=1
-      - --allow-handle-batch-limit=1
     depends_on:
       db:
         condition: service_healthy
