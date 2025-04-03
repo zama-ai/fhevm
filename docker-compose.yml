@@ -42,7 +42,7 @@ services:
       - /bin/bash
       - "-c"
       - |
-        cd /app/ && npx hardhat task:deployAllContracts
+        cd /app/ && npx hardhat task:deployAllGatewayContracts
     depends_on:
       anvil-node:
         condition: service_started

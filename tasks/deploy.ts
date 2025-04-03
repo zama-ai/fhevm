@@ -221,7 +221,7 @@ task("task:deployDecryptionManager").setAction(async function (_, { ethers, upgr
 });
 
 // Deploy all the contracts
-task("task:deployAllContracts").setAction(async function (_, hre) {
+task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   await hre.run("clean");
   await hre.run("compile:specific", { contract: "contracts/emptyProxy" });
   await hre.run("task:deployEmptyUUPSProxies");
