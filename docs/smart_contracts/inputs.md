@@ -1,12 +1,12 @@
 # Encrypted Inputs
 
-This document introduces the concept of encrypted inputs in the fhEVM, explaining their role, structure, validation process, and how developers can integrate them into smart contracts and applications.
+This document introduces the concept of encrypted inputs in the HTTPZ, explaining their role, structure, validation process, and how developers can integrate them into smart contracts and applications.
 
 {% hint style="info" %}
 Understanding how encryption, decryption and reencryption works is a prerequisite before implementation, see [Encryption, Decryption, Re-encryption, and Computation](d_re_ecrypt_compute.md)
 {% endhint %}
 
-Encrypted inputs are a core feature of fhEVM, enabling users to push encrypted data onto the blockchain while ensuring data confidentiality and integrity.
+Encrypted inputs are a core feature of HTTPZ, enabling users to push encrypted data onto the blockchain while ensuring data confidentiality and integrity.
 
 ## What are encrypted inputs?
 
@@ -144,4 +144,4 @@ function transfer(
 - **Frontend encryption**: Always encrypt inputs using the FHE public key on the client side to ensure data confidentiality.
 - **Proof management**: Ensure that the correct zero-knowledge proof is associated with each encrypted input to avoid validation errors.
 
-Encrypted inputs and their validation form the backbone of secure and private interactions in the fhEVM. By leveraging these tools, developers can create robust, privacy-preserving smart contracts without compromising functionality or scalability.
+Encrypted inputs and their validation form the backbone of secure and private interactions in the HTTPZ. By leveraging these tools, developers can create robust, privacy-preserving smart contracts without compromising functionality or scalability.
