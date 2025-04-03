@@ -88,7 +88,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice maximum length of contractAddresses array during delegation.
     uint256 private constant MAX_NUM_CONTRACT_ADDRESSES = 10;
 
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
+    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
 
     /// @custom:oz-upgrades-unsafe-allow constructor

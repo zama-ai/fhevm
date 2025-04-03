@@ -957,22 +957,25 @@ function generateSolidityACLMethods(fheTypes: FheType[]): string {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(e${fheType.type.toLowerCase()} value, address account) internal {
+    function allow(e${fheType.type.toLowerCase()} value, address account) internal returns(e${fheType.type.toLowerCase()}) {
       Impl.allow(e${fheType.type.toLowerCase()}.unwrap(value), account);
+      return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(e${fheType.type.toLowerCase()} value) internal {
+    function allowThis(e${fheType.type.toLowerCase()} value) internal returns(e${fheType.type.toLowerCase()}) {
       Impl.allow(e${fheType.type.toLowerCase()}.unwrap(value), address(this));
+      return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(e${fheType.type.toLowerCase()} value, address account) internal {
+    function allowTransient(e${fheType.type.toLowerCase()} value, address account) internal returns(e${fheType.type.toLowerCase()}) {
       Impl.allowTransient(e${fheType.type.toLowerCase()}.unwrap(value), account);
+      return value;
     }
 
     `),
@@ -1037,7 +1040,7 @@ function generateCustomMethodsForImpl(): string {
         bytes memory inputProof,
         FheType toType
     ) internal returns (bytes32 result) {
-      FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
         IACL($.ACLAddress).allowTransient(result, msg.sender);
     }

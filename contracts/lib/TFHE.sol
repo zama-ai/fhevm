@@ -8805,22 +8805,25 @@ library TFHE {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(ebool value, address account) internal {
+    function allow(ebool value, address account) internal returns (ebool) {
         Impl.allow(ebool.unwrap(value), account);
+        return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(ebool value) internal {
+    function allowThis(ebool value) internal returns (ebool) {
         Impl.allow(ebool.unwrap(value), address(this));
+        return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(ebool value, address account) internal {
+    function allowTransient(ebool value, address account) internal returns (ebool) {
         Impl.allowTransient(ebool.unwrap(value), account);
+        return value;
     }
 
     /**
@@ -8840,22 +8843,25 @@ library TFHE {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(euint8 value, address account) internal {
+    function allow(euint8 value, address account) internal returns (euint8) {
         Impl.allow(euint8.unwrap(value), account);
+        return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(euint8 value) internal {
+    function allowThis(euint8 value) internal returns (euint8) {
         Impl.allow(euint8.unwrap(value), address(this));
+        return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(euint8 value, address account) internal {
+    function allowTransient(euint8 value, address account) internal returns (euint8) {
         Impl.allowTransient(euint8.unwrap(value), account);
+        return value;
     }
 
     /**
@@ -8875,22 +8881,25 @@ library TFHE {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(euint16 value, address account) internal {
+    function allow(euint16 value, address account) internal returns (euint16) {
         Impl.allow(euint16.unwrap(value), account);
+        return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(euint16 value) internal {
+    function allowThis(euint16 value) internal returns (euint16) {
         Impl.allow(euint16.unwrap(value), address(this));
+        return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(euint16 value, address account) internal {
+    function allowTransient(euint16 value, address account) internal returns (euint16) {
         Impl.allowTransient(euint16.unwrap(value), account);
+        return value;
     }
 
     /**
@@ -8910,22 +8919,25 @@ library TFHE {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(euint32 value, address account) internal {
+    function allow(euint32 value, address account) internal returns (euint32) {
         Impl.allow(euint32.unwrap(value), account);
+        return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(euint32 value) internal {
+    function allowThis(euint32 value) internal returns (euint32) {
         Impl.allow(euint32.unwrap(value), address(this));
+        return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(euint32 value, address account) internal {
+    function allowTransient(euint32 value, address account) internal returns (euint32) {
         Impl.allowTransient(euint32.unwrap(value), account);
+        return value;
     }
 
     /**
@@ -8945,22 +8957,25 @@ library TFHE {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(euint64 value, address account) internal {
+    function allow(euint64 value, address account) internal returns (euint64) {
         Impl.allow(euint64.unwrap(value), account);
+        return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(euint64 value) internal {
+    function allowThis(euint64 value) internal returns (euint64) {
         Impl.allow(euint64.unwrap(value), address(this));
+        return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(euint64 value, address account) internal {
+    function allowTransient(euint64 value, address account) internal returns (euint64) {
         Impl.allowTransient(euint64.unwrap(value), account);
+        return value;
     }
 
     /**
@@ -8980,22 +8995,25 @@ library TFHE {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(euint128 value, address account) internal {
+    function allow(euint128 value, address account) internal returns (euint128) {
         Impl.allow(euint128.unwrap(value), account);
+        return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(euint128 value) internal {
+    function allowThis(euint128 value) internal returns (euint128) {
         Impl.allow(euint128.unwrap(value), address(this));
+        return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(euint128 value, address account) internal {
+    function allowTransient(euint128 value, address account) internal returns (euint128) {
         Impl.allowTransient(euint128.unwrap(value), account);
+        return value;
     }
 
     /**
@@ -9015,22 +9033,25 @@ library TFHE {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(euint256 value, address account) internal {
+    function allow(euint256 value, address account) internal returns (euint256) {
         Impl.allow(euint256.unwrap(value), account);
+        return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(euint256 value) internal {
+    function allowThis(euint256 value) internal returns (euint256) {
         Impl.allow(euint256.unwrap(value), address(this));
+        return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(euint256 value, address account) internal {
+    function allowTransient(euint256 value, address account) internal returns (euint256) {
         Impl.allowTransient(euint256.unwrap(value), account);
+        return value;
     }
 
     /**
@@ -9050,22 +9071,25 @@ library TFHE {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(ebytes64 value, address account) internal {
+    function allow(ebytes64 value, address account) internal returns (ebytes64) {
         Impl.allow(ebytes64.unwrap(value), account);
+        return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(ebytes64 value) internal {
+    function allowThis(ebytes64 value) internal returns (ebytes64) {
         Impl.allow(ebytes64.unwrap(value), address(this));
+        return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(ebytes64 value, address account) internal {
+    function allowTransient(ebytes64 value, address account) internal returns (ebytes64) {
         Impl.allowTransient(ebytes64.unwrap(value), account);
+        return value;
     }
 
     /**
@@ -9085,22 +9109,25 @@ library TFHE {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(ebytes128 value, address account) internal {
+    function allow(ebytes128 value, address account) internal returns (ebytes128) {
         Impl.allow(ebytes128.unwrap(value), account);
+        return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(ebytes128 value) internal {
+    function allowThis(ebytes128 value) internal returns (ebytes128) {
         Impl.allow(ebytes128.unwrap(value), address(this));
+        return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(ebytes128 value, address account) internal {
+    function allowTransient(ebytes128 value, address account) internal returns (ebytes128) {
         Impl.allowTransient(ebytes128.unwrap(value), account);
+        return value;
     }
 
     /**
@@ -9120,22 +9147,25 @@ library TFHE {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(ebytes256 value, address account) internal {
+    function allow(ebytes256 value, address account) internal returns (ebytes256) {
         Impl.allow(ebytes256.unwrap(value), account);
+        return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(ebytes256 value) internal {
+    function allowThis(ebytes256 value) internal returns (ebytes256) {
         Impl.allow(ebytes256.unwrap(value), address(this));
+        return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(ebytes256 value, address account) internal {
+    function allowTransient(ebytes256 value, address account) internal returns (ebytes256) {
         Impl.allowTransient(ebytes256.unwrap(value), account);
+        return value;
     }
 
     /**
@@ -9155,21 +9185,24 @@ library TFHE {
     /**
      * @dev Allows the use of value for the address account.
      */
-    function allow(eaddress value, address account) internal {
+    function allow(eaddress value, address account) internal returns (eaddress) {
         Impl.allow(eaddress.unwrap(value), account);
+        return value;
     }
 
     /**
      * @dev Allows the use of value for this address (address(this)).
      */
-    function allowThis(eaddress value) internal {
+    function allowThis(eaddress value) internal returns (eaddress) {
         Impl.allow(eaddress.unwrap(value), address(this));
+        return value;
     }
 
     /**
      * @dev Allows the use of value by address account for this transaction.
      */
-    function allowTransient(eaddress value, address account) internal {
+    function allowTransient(eaddress value, address account) internal returns (eaddress) {
         Impl.allowTransient(eaddress.unwrap(value), account);
+        return value;
     }
 }
