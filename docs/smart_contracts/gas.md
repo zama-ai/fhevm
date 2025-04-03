@@ -1,6 +1,6 @@
 # Gas estimation in HTTPZ
 
-This guide explains how to estimate gas costs for Fully Homomorphic Encryption (FHE) operations in your smart contracts on Zama's HTTPZ. Understanding gas consumption is critical for designing efficient confidential smart contracts.
+This guide explains how to estimate gas costs for Fully Homomorphic Encryption (FHE) operations in your smart contracts on HTTPZ. Understanding gas consumption is critical for designing efficient confidential smart contracts.
 
 ## Overview
 

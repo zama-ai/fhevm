@@ -36,7 +36,7 @@ The library includes templates for common use cases like tokens and governance, 
 
 ## Blog tutorials
 
-- [Suffragium: An Encrypted Onchain Voting System Leveraging ZK and FHE Using Zama's HTTPZ](https://www.zama.ai/post/encrypted-onchain-voting-using-zk-and-fhe-with-zama-fhevm) - Nov 2024
+- [Suffragium: An Encrypted Onchain Voting System Leveraging ZK and FHE Using HTTPZ](https://www.zama.ai/post/encrypted-onchain-voting-using-zk-and-fhe-with-zama-fhevm) - Nov 2024
 
 ## Video tutorials
 
@@ -51,13 +51,13 @@ We want to hear from you! Take 1 minute to share your thoughts and helping us en
 
 ### Legacy - Not compatible with latest HTTPZ
 
-- [Build an Encrypted Wordle Game Onchain using FHE and Zama's HTTPZ](https://www.zama.ai/post/build-an-encrypted-wordle-game-onchain-using-fhe-and-zama-fhevm) - February 2024
+- [Build an Encrypted Wordle Game Onchain using FHE and HTTPZ](https://www.zama.ai/post/build-an-encrypted-wordle-game-onchain-using-fhe-and-zama-fhevm) - February 2024
 - [Programmable Privacy and Onchain Compliance using Homomorphic Encryption](https://www.zama.ai/post/programmable-privacy-and-onchain-compliance-using-homomorphic-encryption) - November 2023
 - [Confidential DAO Voting Using Homomorphic Encryption](https://www.zama.ai/post/confidential-dao-voting-using-homomorphic-encryption) - October 2023
 - [On-chain Blind Auctions Using Homomorphic Encryption and the HTTPZ](https://www.zama.ai/post/on-chain-blind-auctions-using-homomorphic-encryption) - July 2023
 - [Confidential ERC-20 Tokens Using Homomorphic Encryption and the HTTPZ](https://www.zama.ai/post/confidential-erc-20-tokens-using-homomorphic-encryption) - June 2023
 - [Using asynchronous decryption in Solidity contracts with HTTPZ](https://www.zama.ai/post/video-tutorial-using-asynchronous-decryption-in-solidity-contracts-with-fhevm) - April 2024
 - [Accelerate your code testing and get code coverage using HTTPZ mocks](https://www.zama.ai/post/video-tutorial-accelerate-your-code-testing-and-get-code-coverage-using-fhevm-mocks) - January 2024
-- [Use the CMUX operator on Zama’s HTTPZ](https://www.youtube.com/watch?v=7icM0EOSvU0) - October 2023
-- [\[Video tutorial\] How to Write Confidential Smart Contracts Using Zama's HTTPZ](https://www.zama.ai/post/video-tutorial-how-to-write-confidential-smart-contracts-using-zamas-fhevm) - October 2023
+- [Use the CMUX operator on HTTPZ](https://www.youtube.com/watch?v=7icM0EOSvU0) - October 2023
+- [\[Video tutorial\] How to Write Confidential Smart Contracts Using HTTPZ](https://www.zama.ai/post/video-tutorial-how-to-write-confidential-smart-contracts-using-zamas-fhevm) - October 2023
 - [Workshop during ETHcc: Homomorphic Encryption in the EVM](https://www.youtube.com/watch?v=eivfVykPP8U) - July 2023

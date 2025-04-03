@@ -1,6 +1,6 @@
 # Contributing
 
-There are two ways to contribute to the Zama's HTTPZ:
+There are two ways to contribute to HTTPZ:
 
 - [Open issues](https://github.com/zama-ai/fhevm/issues/new/choose) to report bugs and typos, or to suggest new ideas
 - Request to become an official contributor by emailing [hello@zama.ai](mailto:hello@zama.ai).
