@@ -1,6 +1,6 @@
 # asEbool, asEuintXX, asEaddress and asEbytesXX operations
 
-This documentation covers the `asEbool`, `asEuintXX`, `asEaddress` and `asEbytesXX` operations provided by the TFHE library for working with encrypted data in the fhEVM. These operations are essential for converting between plaintext and encrypted types, as well as handling encrypted inputs.
+This documentation covers the `asEbool`, `asEuintXX`, `asEaddress` and `asEbytesXX` operations provided by the TFHE library for working with encrypted data in the HTTPZ. These operations are essential for converting between plaintext and encrypted types, as well as handling encrypted inputs.
 
 The operations can be categorized into three main use cases:
 
