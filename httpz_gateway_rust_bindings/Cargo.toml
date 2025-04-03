@@ -7,6 +7,7 @@ license = "BSD-3-Clause-Clear"
 version = "1.0.0"
 
 [dependencies]
-alloy-contract = { version = "0.12.4", default-features = false }
-alloy-sol-types = { version = "0.8.22", default-features = false, features = ["json"]}
-serde = { version = "1.0.217", default-features = false, features = ["derive"] }
+alloy = { version = "0.13.0", default-features = false, features = ["contract", "sol-types"] }
+
+[lib]
+path = "src/mod.rs"
