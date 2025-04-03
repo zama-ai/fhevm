@@ -1,4 +1,4 @@
-use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
 use common::{CiphertextManager, TestEnvironment};
 
@@ -8,7 +8,9 @@ use sqlx::PgPool;
 use std::time::Duration;
 use test_harness::db_utils::insert_random_tenant;
 use tokio::time::sleep;
-use transaction_sender::{ConfigSettings, ProviderFillers, TransactionSender};
+use transaction_sender::{
+    ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
+};
 
 mod common;
 
@@ -16,13 +18,20 @@ mod common;
 #[serial(db)]
 async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
-    let provider = ProviderBuilder::default()
-        .wallet(env.wallet)
-        .filler(ProviderFillers::default())
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
         .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
         .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
 
-    let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
+    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
         *ciphertext_manager.address(),
@@ -118,10 +127,12 @@ async fn test_retry_mechanism() -> anyhow::Result<()> {
     let env = TestEnvironment::new_with_config(conf).await?;
 
     // Create a provider without a wallet.
-    let provider = ProviderBuilder::default()
-        .filler(ProviderFillers::default())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
-        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::new()
+            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .await?,
+        None,
+    );
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),

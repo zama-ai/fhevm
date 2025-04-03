@@ -2,13 +2,13 @@ use alloy::{
     network::Ethereum, primitives::Address, providers::Provider, signers::local::PrivateKeySigner,
 };
 use futures_util::FutureExt;
-use sqlx::postgres::PgListener;
+use sqlx::{postgres::PgListener, Pool, Postgres};
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use crate::{ops, ConfigSettings, TXN_SENDER_TARGET};
+use crate::{nonce_managed_provider::NonceManagedProvider, ops, ConfigSettings, TXN_SENDER_TARGET};
 
 #[derive(Clone)]
 pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
@@ -17,6 +17,7 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
     operations: Vec<Arc<dyn ops::TransactionOperation<P>>>,
     zkpok_manager_address: Address,
     ciphertext_manager_address: Address,
+    db_pool: Pool<Postgres>,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
@@ -26,11 +27,16 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
         ciphertext_manager_address: Address,
         acl_manager_address: Address,
         signer: PrivateKeySigner,
-        provider: P,
+        provider: NonceManagedProvider<P>,
         cancel_token: CancellationToken,
         conf: ConfigSettings,
         gas: Option<u64>,
     ) -> anyhow::Result<Self> {
+        let db_pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(conf.database_pool_size)
+            .connect(&conf.database_url)
+            .await?;
+
         let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![
             Arc::new(
                 ops::verify_proof::VerifyProofOperation::new(
@@ -39,6 +45,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                     signer.clone(),
                     conf.clone(),
                     gas,
+                    db_pool.clone(),
                 )
                 .await?,
             ),
@@ -47,12 +54,14 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                 provider.clone(),
                 conf.clone(),
                 gas,
+                db_pool.clone(),
             )),
             Arc::new(ops::allow_handle::ACLManagerOperation::new(
                 acl_manager_address,
                 provider.clone(),
                 conf.clone(),
                 gas,
+                db_pool.clone(),
             )),
         ];
         Ok(Self {
@@ -61,6 +70,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             operations,
             zkpok_manager_address,
             ciphertext_manager_address,
+            db_pool,
         })
     }
 
@@ -68,15 +78,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
         info!(target: TXN_SENDER_TARGET, "Starting Transaction Sender with: {:?}, ZKPoKManager: {}, CiphertextManager: {}",
             self.conf, self.zkpok_manager_address, self.ciphertext_manager_address);
 
-        let db_pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(self.conf.database_pool_size)
-            .connect(&self.conf.database_url)
-            .await?;
         let mut join_set = JoinSet::new();
 
         for op in self.operations.clone() {
             let op_channel = op.channel().to_owned();
-            let db_pool = db_pool.clone();
             let token = self.cancel_token.clone();
             let db_polling_interval_secs = self.conf.db_polling_interval_secs;
             join_set.spawn({
@@ -84,7 +89,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                 info!(target: TXN_SENDER_TARGET, "Spawning operation loop {}", op_channel);
                 async move {
                     let mut sleep_duration = sender.conf.error_sleep_initial_secs as u64;
-                    let mut listener = PgListener::connect_with(&db_pool).await?;
+                    let mut listener = PgListener::connect_with(&sender.db_pool).await?;
                     listener.listen(&op_channel).await?;
                     loop {
                         if token.is_cancelled() {
@@ -92,7 +97,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                             break;
                         }
 
-                        match op.execute(&db_pool).await {
+                        match op.execute().await {
                             Err(e) => {
                                 error!(target: TXN_SENDER_TARGET,
                                     "Operation {} error: {}. Retrying after {} seconds",

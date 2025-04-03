@@ -10,7 +10,9 @@ use alloy::{
 use clap::Parser;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
-use transaction_sender::{ConfigSettings, ProviderFillers, TransactionSender};
+use transaction_sender::{
+    ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
+};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -77,6 +79,9 @@ struct Conf {
 
     #[arg(long, default_value = "10")]
     txn_receipt_timeout_secs: u16,
+
+    #[arg(long, default_value = "0")]
+    required_txn_confirmations: u16,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -103,11 +108,14 @@ async fn main() -> anyhow::Result<()> {
         .clone()
         .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
     let cancel_token = CancellationToken::new();
-    let provider = ProviderBuilder::default()
-        .wallet(wallet)
-        .filler(ProviderFillers::default())
-        .on_ws(WsConnect::new(conf.gateway_url))
-        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(wallet.clone())
+            .on_ws(WsConnect::new(conf.gateway_url))
+            .await?,
+        Some(wallet.default_signer().address()),
+    );
     let sender = TransactionSender::new(
         conf.zkpok_manager_address,
         conf.ciphertext_manager_address,
@@ -132,6 +140,7 @@ async fn main() -> anyhow::Result<()> {
             allow_handle_batch_limit: conf.allow_handle_batch_limit,
             allow_handle_max_retries: conf.allow_handle_max_retries,
             txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
+            required_txn_confirmations: conf.required_txn_confirmations,
         },
         None,
     )

@@ -1,3 +1,4 @@
+mod nonce_managed_provider;
 mod ops;
 mod transaction_sender;
 
@@ -26,6 +27,8 @@ pub struct ConfigSettings {
     pub error_sleep_max_secs: u16,
 
     pub txn_receipt_timeout_secs: u16,
+
+    pub required_txn_confirmations: u16,
 }
 
 impl Default for ConfigSettings {
@@ -48,22 +51,15 @@ impl Default for ConfigSettings {
             allow_handle_batch_limit: 10,
             allow_handle_max_retries: 10,
             txn_receipt_timeout_secs: 10,
+            required_txn_confirmations: 0,
         }
     }
 }
 
-use alloy::providers::fillers::{
-    BlobGasFiller, CachedNonceManager, ChainIdFiller, GasFiller, JoinFill, NonceFiller,
-};
+pub use nonce_managed_provider::FillersWithoutNonceManagement;
+pub use nonce_managed_provider::NonceManagedProvider;
 pub use transaction_sender::TransactionSender;
 
 pub const TXN_SENDER_TARGET: &str = "txn_sender";
 pub const VERIFY_PROOFS_TARGET: &str = "verify_proofs";
 pub const ADD_CIPHERTEXTS_TARGET: &str = "add_ciphertexts";
-
-// Make sure we use a cached nonce manager such that we can send txns concurrently.
-// Note: We take the recommended filler types from the `alloy` crate and just change to a `CachedNonceManager`.
-pub type ProviderFillers = JoinFill<
-    GasFiller,
-    JoinFill<BlobGasFiller, JoinFill<NonceFiller<CachedNonceManager>, ChainIdFiller>>,
->;

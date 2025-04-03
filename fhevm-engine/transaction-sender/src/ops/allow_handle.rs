@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use crate::ops::common::try_into_array;
+use crate::{nonce_managed_provider::NonceManagedProvider, ops::common::try_into_array};
 
 use super::TransactionOperation;
 use alloy::{
@@ -48,9 +48,10 @@ impl Display for Key {
 #[derive(Clone)]
 pub struct ACLManagerOperation<P: Provider<Ethereum> + Clone + 'static> {
     acl_manager_contract_address: Address,
-    provider: P,
+    provider: NonceManagedProvider<P>,
     conf: crate::ConfigSettings,
     gas: Option<u64>,
+    db_pool: Pool<Postgres>,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
@@ -59,8 +60,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
     /// TODO: Refactor: Avoid code duplication
     async fn send_transaction(
         &self,
-        db_pool: Pool<Postgres>,
-        provider: P,
         key: &Key,
         txn_request: impl Into<TransactionRequest>,
     ) -> anyhow::Result<()> {
@@ -69,7 +68,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
         info!("Processing transaction, handle: {}", h);
 
         let txn_req = txn_request.into();
-        let transaction = match provider.send_transaction(txn_req.clone()).await {
+        let transaction = match self.provider.send_transaction(txn_req.clone()).await {
             Ok(txn) => txn,
             Err(e) => {
                 error!(
@@ -77,25 +76,23 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
                     txn_req, e, h
                 );
 
-                Self::increment_db_retry(&db_pool, key, &e.to_string()).await?;
+                self.increment_db_retry(key, &e.to_string()).await?;
                 bail!("Transaction sending failed with error: {}", e);
             }
         };
 
-        // Here, we assume we are sending the transaction to a rollup, hence the
-        // confirmations of 1.
         let receipt = match transaction
             .with_timeout(Some(Duration::from_secs(
                 self.conf.txn_receipt_timeout_secs as u64,
             )))
-            .with_required_confirmations(1)
+            .with_required_confirmations(self.conf.required_txn_confirmations as u64)
             .get_receipt()
             .await
         {
             Ok(receipt) => receipt,
             Err(e) => {
                 error!("Getting receipt failed with error: {}", e);
-                Self::increment_db_retry(&db_pool, key, &e.to_string()).await?;
+                self.increment_db_retry(key, &e.to_string()).await?;
                 return Err(anyhow::Error::new(e));
             }
         };
@@ -111,7 +108,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
                 key.account_addr,
                 key.tenant_id
             )
-            .execute(&db_pool)
+            .execute(&self.db_pool)
             .await?;
 
             info!(
@@ -126,7 +123,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
                 h
             );
 
-            Self::increment_db_retry(&db_pool, key, "receipt status = false").await?;
+            self.increment_db_retry(key, "receipt status = false")
+                .await?;
 
             return Err(anyhow::anyhow!(
                 "Transaction {} failed with status {}, handle: {}",
@@ -142,9 +140,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
 impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
     pub fn new(
         acl_manager_contract_address: Address,
-        provider: P,
+        provider: NonceManagedProvider<P>,
         conf: crate::ConfigSettings,
         gas: Option<u64>,
+        db_pool: Pool<Postgres>,
     ) -> Self {
         info!(
             "Creating ACLManagerOperation with gas: {} and ACLManager address: {}",
@@ -157,14 +156,11 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
             provider,
             conf,
             gas,
+            db_pool,
         }
     }
 
-    async fn increment_db_retry(
-        db_pool: &Pool<Postgres>,
-        key: &Key,
-        err: &str,
-    ) -> anyhow::Result<()> {
+    async fn increment_db_retry(&self, key: &Key, err: &str) -> anyhow::Result<()> {
         debug!("Updating retry count, {}", &key);
 
         sqlx::query!(
@@ -181,7 +177,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
             key.account_addr,
             key.tenant_id
         )
-        .execute(db_pool)
+        .execute(&self.db_pool)
         .await?;
         Ok(())
     }
@@ -196,7 +192,7 @@ where
         &self.conf.allow_handle_db_channel
     }
 
-    async fn execute(&self, db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    async fn execute(&self) -> anyhow::Result<bool> {
         let rows = sqlx::query!(
             "
             SELECT handle, tenant_id, account_address
@@ -210,11 +206,11 @@ where
             self.conf.allow_handle_max_retries as i32,
             self.conf.allow_handle_batch_limit as i32,
         )
-        .fetch_all(db_pool)
+        .fetch_all(&self.db_pool)
         .await?;
 
         let acl_manager: ACLManager::ACLManagerInstance<(), &P> =
-            ACLManager::new(self.acl_manager_contract_address, &self.provider);
+            ACLManager::new(self.acl_manager_contract_address, self.provider.inner());
 
         info!("Selected {} rows to process", rows.len());
 
@@ -222,7 +218,7 @@ where
 
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
-            let tenant = match query_tenant_info(db_pool, row.tenant_id).await {
+            let tenant = match query_tenant_info(&self.db_pool, row.tenant_id).await {
                 Ok(res) => res,
                 Err(_) => {
                     error!(
@@ -263,8 +259,6 @@ where
                     .into_transaction_request(),
             };
 
-            let db_pool = db_pool.clone();
-            let provider = self.provider.clone();
             let handle = row.handle;
 
             let key = Key {
@@ -274,11 +268,7 @@ where
             };
 
             let operation = self.clone();
-            join_set.spawn(async move {
-                operation
-                    .send_transaction(db_pool, provider, &key, txn_request)
-                    .await
-            });
+            join_set.spawn(async move { operation.send_transaction(&key, txn_request).await });
         }
 
         while let Some(res) = join_set.join_next().await {
