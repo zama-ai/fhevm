@@ -1,22 +1,22 @@
 # Build a web application
 
-This document guides you through building a web application using the fhevmjs library. You can either start with a template or directly integrate the library into your project.
+This document guides you through building a web application using the @httpz/sdk library. You can either start with a template or directly integrate the library into your project.
 
 ## Using a template
 
-`fhevmjs` is working out of the box and we recommend you to use it. We also provide three GitHub templates to start your project with everything set.
+`@httpz/sdk` is working out of the box and we recommend you to use it. We also provide three GitHub templates to start your project with everything set.
 
 ### React + TypeScript
 
-You can use [this template](https://github.com/zama-ai/fhevmjs-react-template) to start an application with fhevmjs, using Vite + React + TypeScript.
+You can use [this template](https://github.com/zama-ai/fhevmjs-react-template) to start an application with @httpz/sdk, using Vite + React + TypeScript.
 
 ### VueJS + TypeScript
 
-You can also use [this template](https://github.com/zama-ai/fhevmjs-vue-template) to start an application with fhevmjs, using Vite + Vue + TypeScript.
+You can also use [this template](https://github.com/zama-ai/fhevmjs-vue-template) to start an application with @httpz/sdk, using Vite + Vue + TypeScript.
 
 ### NextJS + Typescript
 
-You can also use [this template](https://github.com/zama-ai/fhevmjs-next-template) to start an application with fhevmjs, using Next + TypeScript.
+You can also use [this template](https://github.com/zama-ai/fhevmjs-next-template) to start an application with @httpz/sdk, using Next + TypeScript.
 
 ## Using the mocked coprocessor for frontend
 
@@ -26,7 +26,7 @@ As an alternative to use the real coprocessor deployed on Sepolia to help you de
 
 ### Step 1: Setup the library
 
-`fhevmjs` consists of multiple files, including WASM files and WebWorkers, which can make packaging these components correctly in your setup cumbersome. To simplify this process, especially if you're developing a dApp with server-side rendering (SSR), we recommend using our CDN.
+`@httpz/sdk` consists of multiple files, including WASM files and WebWorkers, which can make packaging these components correctly in your setup cumbersome. To simplify this process, especially if you're developing a dApp with server-side rendering (SSR), we recommend using our CDN.
 
 #### Using UMD CDN
 
@@ -39,18 +39,18 @@ Include this line at the top of your project.
 In your project, you can use the bundle import if you install `fhevmjs` package:
 
 ```javascript
-import { initFhevm, createInstance } from "fhevmjs/bundle";
+import { initHTTPZ, createInstance } from "@httpz/sdk/bundle";
 ```
 
 #### Using ESM CDN
 
-If you prefer You can also use the `fhevmjs` as a ES module:
+If you prefer You can also use the `@httpz/sdk` as a ES module:
 
 ```html
 <script type="module">
-  import { initFhevm, createInstance } from "https://cdn.zama.ai/fhevmjs/0.6.2/fhevmjs.js";
+  import { initHTTPZ, createInstance } from "https://cdn.zama.ai/fhevmjs/0.6.2/fhevmjs.js";
 
-  await initFhevm();
+  await initHTTPZ();
   const instance = await createInstance({
     network: window.ethereum,
     kmsContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
@@ -62,34 +62,34 @@ If you prefer You can also use the `fhevmjs` as a ES module:
 
 #### Using npm package
 
-Install the `fhevmjs` library to your project:
+Install the `@httpz/sdk` library to your project:
 
 ```bash
 # Using npm
-npm install fhevmjs
+npm install @httpz/sdk
 
 # Using Yarn
-yarn add fhevmjs
+yarn add @httpz/sdk
 
 # Using pnpm
-pnpm add fhevmjs
+pnpm add @httpz/sdk
 ```
 
-`fhevmjs` uses ESM format. You need to set the [type to "module" in your package.json](https://nodejs.org/api/packages.html#type). If your node project use `"type": "commonjs"` or no type, you can force the loading of the web version by using `import { createInstance } from 'fhevmjs/web';`
+`@httpz/sdk` uses ESM format. You need to set the [type to "module" in your package.json](https://nodejs.org/api/packages.html#type). If your node project use `"type": "commonjs"` or no type, you can force the loading of the web version by using `import { createInstance } from '@httpz/sdk/web';`
 
 ```javascript
-import { initFhevm, createInstance } from "fhevmjs";
+import { initHTTPZ, createInstance } from "@httpz/sdk";
 ```
 
 ### Step 2: Initialize your project
 
-To use the library in your project, you need to load the WASM of [TFHE](https://www.npmjs.com/package/tfhe) first with `initFhevm`.
+To use the library in your project, you need to load the WASM of [TFHE](https://www.npmjs.com/package/tfhe) first with `initHTTPZ`.
 
 ```javascript
-import { initFhevm } from "fhevmjs/bundle";
+import { initHTTPZ } from "@httpz/sdk/bundle";
 
 const init = async () => {
-  await initFhevm(); // Load needed WASM
+  await initHTTPZ(); // Load needed WASM
 };
 ```
 
@@ -105,10 +105,10 @@ Once the WASM is loaded, you can now create an instance. An instance receives an
 - `coprocessorUrl` (optional): the URL of the coprocessor
 
 ```javascript
-import { initFhevm, createInstance } from "fhevmjs/bundle";
+import { initHTTPZ, createInstance } from "@httpz/sdk/bundle";
 
 const init = async () => {
-  await initFhevm(); // Load TFHE
+  await initHTTPZ(); // Load TFHE
   return createInstance({
     kmsContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
     aclContractAddress: "0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5",

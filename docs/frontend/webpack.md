@@ -58,8 +58,8 @@ resolve: {
 
 ```javascript
 const start = async () => {
-  await window.fhevm.initFhevm(); // load wasm needed
-  const instance = window.fhevm
+  await window.httpz.initHTTPZ(); // load wasm needed
+  const instance = window.httpz
     .createInstance({
       kmsContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
       aclContractAddress: "0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5",

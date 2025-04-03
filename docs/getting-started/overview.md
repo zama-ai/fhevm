@@ -6,7 +6,7 @@ HTTPZ is a suite of solutions that enables confidential smart contracts on the E
 
 ### For dApp developers
 
-The HTTPZ Protocol provides a **`TFHE` Solidity library** for building confidential smart contracts, a **`fhevm.js` Javascript library** to enable front‐end FHE interactions, and a range of developer tools, examples, and templates to streamline the usage for developers.&#x20;
+The HTTPZ Protocol provides a **`TFHE` Solidity library** for building confidential smart contracts, a **HTTPZ SDK** to enable front‐end FHE interactions, and a range of developer tools, examples, and templates to streamline the usage for developers.&#x20;
 
 #### Smart contract development
 

@@ -6,12 +6,12 @@ This document provides an overview of the `fhevmjs` library, detailing its initi
 
 ## Init (browser)
 
-If you are using `fhevmjs` in a web application, you need to initialize it before creating an instance. To do this, you should call `initFhevm` and wait for the promise to resolve.
+If you are using `fhevmjs` in a web application, you need to initialize it before creating an instance. To do this, you should call `initHTTPZ` and wait for the promise to resolve.
 
 ```javascript
-import { FhevmInstance, createInstance } from "fhevmjs/node";
+import { HTTPZInstance, createInstance } from "@httpz/sdk/node";
 
-initFhevm().then(() => {
+initHTTPZ().then(() => {
   const instance = await createInstance({
     network: window.ethereum,
     gatewayUrl: "https://gateway.sepolia.zama.ai",
@@ -34,7 +34,7 @@ This function returns an instance of fhevmjs, which accepts an object containing
 - `publicParams` (optional): if the public params has been fetched separately or stored in cache, you can provide it
 
 ```javascript
-import { createInstance } from "fhevmjs";
+import { createInstance } from "@httpz/sdk";
 
 const instance = await createInstance({
   networkUrl: "https://eth-sepolia.public.blastapi.io",
@@ -47,7 +47,7 @@ const instance = await createInstance({
 Using `window.ethereum` object:
 
 ```javascript
-import { FhevmInstance, createInstance } from "fhevmjs/bundle";
+import { HTTPZInstance, createInstance } from "@httpz/sdk/bundle";
 
 const instance = await createInstance({
   network: window.ethereum,
