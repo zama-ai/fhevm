@@ -70,7 +70,7 @@
 
 - [Table of all addresses](references/table_of_addresses.md)
 - [Smart contracts - HTTPZ API](references/functions.md)
-- [Frontend - HTTPZjs lib](references/fhevmjs.md)
+- [Frontend - HTTPZ SDK](references/fhevmjs.md)
 - [Repositories](references/repositories.md)
 
 ## Developer
