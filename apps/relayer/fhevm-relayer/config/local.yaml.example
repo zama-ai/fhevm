@@ -40,6 +40,16 @@ transaction:
   max_priority_fee: 2000000000
   timeout_secs: 30
   confirmations: 1
+  retry:
+    enabled: false
+    max_attempts: 3
+    base_delay_secs: 2
+    max_delay_secs: 60
+  ciphertext_check_retry:
+    enabled: false
+    max_attempts: 75
+    base_delay_secs: 3
+    max_delay_secs: 225
 
 contracts:
   # Example local contract addresses - Update these after deployment
