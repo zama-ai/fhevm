@@ -1,0 +1,30 @@
+# Check Rust bindings crate's version and files are up-to-date.
+name: "Bindings update check"
+
+on:
+  pull_request:
+
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: bindings-update-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  bindings-update-check:
+    name: Bindings update check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c # v1.3.1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check bindings are up-to-date
+        run: python3 tasks/bindings_update.py check
