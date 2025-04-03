@@ -33,10 +33,10 @@ docker-compose-down:
 	docker compose -vvv down
 
 check-abi:
-	python3 httpz_gateway_rust_bindings/abi_update.py check
+	python3 tasks/bindings_update.py check
 
 update-abi:
-	python3 httpz_gateway_rust_bindings/abi_update.py update
+	python3 tasks/bindings_update.py update
 
 update-selectors:
 	forge selectors list | tail -n +2 > ./docs/contract_selectors.txt
