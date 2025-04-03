@@ -31,6 +31,9 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     /// @notice Returned if the input proof is empty.
     error EmptyInputProof();
 
+    /// @notice Returned if the chain id from the input handle is invalid.
+    error InvalidChainId();
+
     /// @notice Returned if the index is invalid.
     error InvalidIndex();
 
@@ -114,7 +117,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
         uint256 threshold; /// @notice The threshold for the number of signers required for a signature to be valid
     }
 
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
+    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant InputVerifierStorageLocation =
         0x3f7d7a96c8c7024e92d37afccfc9b87773a33b9bc22e23134b683e74a50ace00;
 
@@ -173,18 +176,25 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
         TFHEExecutor.ContextUserInputs memory context,
         bytes32 inputHandle,
         bytes memory inputProof
-    ) public virtual returns (uint256) {
+    ) public virtual returns (bytes32) {
         (bool isProofCached, bytes32 cacheKey) = _checkProofCache(
             inputProof,
             context.userAddress,
             context.contractAddress
         );
+
+        uint64 recoveredChainId = uint64(
+            uint256((inputHandle & 0x00000000000000000000000000000000000000000000ffffffffffffffffffff) >> 16)
+        );
+
+        if (recoveredChainId != block.chainid) revert InvalidChainId();
+
         uint256 result = uint256(inputHandle);
-        uint256 indexHandle = (result & 0x0000000000000000000000000000000000000000000000000000000000ff0000) >> 16;
+        uint256 indexHandle = (result & 0x0000000000000000000000000000000000000000ff00000000000000000000) >> 80;
 
         if (!isProofCached) {
             /// @dev bundleCiphertext is compressedPackedCT+ZKPOK
-            ///      inputHandle is keccak256(keccak256(bundleCiphertext)+index)[0:29]+index+type+version
+            ///      inputHandle is keccak256(keccak256(bundleCiphertext)+index)[0:20] + index[21] + chainId[22:29] + type[30] + version[31]
             ///      and inputProof is len(list_handles) + numSigners + list_handles + signatureCoprocessorSigners (1+1+NUM_HANDLES*32+65*numSigners)
 
             uint256 inputProofLen = inputProof.length;
@@ -193,7 +203,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
             uint256 numSigners = uint256(uint8(inputProof[1]));
 
             /// @dev This checks in particular that the list is non-empty.
-            if (numHandles <= indexHandle) revert InvalidIndex();
+            if (numHandles <= indexHandle || indexHandle > 254) revert InvalidIndex();
             if (inputProofLen != 2 + 32 * numHandles + 65 * numSigners) revert DeserializingInputProofFail();
 
             /// @dev Deserialize handle and check that they are from the correct version.
@@ -226,14 +236,15 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
         } else {
             uint8 numHandles = uint8(inputProof[0]);
             /// @dev We know inputProof is non-empty since it has been previously cached.
-            if (numHandles <= indexHandle) revert InvalidIndex();
+            if (numHandles <= indexHandle || indexHandle > 254) revert InvalidIndex();
             uint256 element;
             for (uint256 j = 0; j < 32; j++) {
                 element |= uint256(uint8(inputProof[2 + indexHandle * 32 + j])) << (8 * (31 - j));
             }
             if (element != result) revert InvalidInputHandle();
         }
-        return result;
+
+        return bytes32(result);
     }
 
     /**

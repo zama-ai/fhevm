@@ -294,6 +294,11 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       const encryptedArray = new Uint8Array(encrypted);
       const hash = new Keccak(256).update(Buffer.from(encryptedArray)).digest();
 
+      const chainId = process.env.SOLIDITY_COVERAGE_RUNNING === 'true' ? 31337 : hre.network.config.chainId;
+      if (chainId === undefined) {
+        throw new Error('Chain ID is not defined');
+      }
+
       const handles = bits.map((v, i) => {
         const dataWithIndex = new Uint8Array(hash.length + 1);
         dataWithIndex.set(hash, 0);
@@ -301,9 +306,21 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
         const finalHash = new Keccak(256).update(Buffer.from(dataWithIndex)).digest();
         const dataInput = new Uint8Array(32);
         dataInput.set(finalHash, 0);
-        dataInput.set([i, ENCRYPTION_TYPES[v], 0], 29);
+        // Put the index at byte21
+        dataInput.set([i], 21);
+
+        // Split the chainId over 8 bytes
+        const chainIdBuffer = Buffer.alloc(8);
+        chainIdBuffer.writeBigUInt64BE(BigInt(chainId), 0);
+
+        // Add the chainId to bytes22-29
+        dataInput.set(chainIdBuffer, 22);
+
+        // Add encryption type and handle_version (which is 0) to bytes30-31
+        dataInput.set([ENCRYPTION_TYPES[v], 0], 30);
         return dataInput;
       });
+
       let inputProof = '0x' + numberToHex(handles.length); // numHandles + numCoprocessorSigners + list_handles + signatureCoprocessorSigners (total len : 1+1+32+NUM_HANDLES*32+65*numSigners)
       const numSigners = +process.env.NUM_COPROCESSORS!;
       inputProof += numberToHex(numSigners);

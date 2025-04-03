@@ -135,7 +135,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice IInputVerifier.
     IInputVerifier private constant inputVerifier = IInputVerifier(inputVerifierAdd);
 
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.TFHEExecutor")) - 1)) & ~bytes32(uint256(0xff))
+    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.TFHEExecutor")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant TFHEExecutorStorageLocation =
         0xa436a06f0efce5ea38c956a21e24202a59b3b746d48a23fb52b4a5bc33fe3e00;
 
@@ -449,7 +449,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         _checkByteLengthForEbytesTypes(rhs.length, lhsType);
 
         result = keccak256(abi.encodePacked(Operators.fheEq, lhs, rhs, scalar, acl, block.chainid));
-        result = _appendType(result, FheType.Bool);
+        result = _appendMetadataToPrehandle(result, FheType.Bool);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -502,7 +502,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
         _checkByteLengthForEbytesTypes(rhs.length, lhsType);
         result = keccak256(abi.encodePacked(Operators.fheNe, lhs, rhs, scalar, acl, block.chainid));
-        result = _appendType(result, FheType.Bool);
+        result = _appendMetadataToPrehandle(result, FheType.Bool);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -738,7 +738,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (typeCt == toType) revert InvalidType();
         fheGasLimit.payForCast(typeCt);
         result = keccak256(abi.encodePacked(Operators.cast, ct, toType, acl, block.chainid));
-        result = _appendType(result, toType);
+        result = _appendMetadataToPrehandle(result, toType);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -761,7 +761,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         if ((1 << uint8(toType)) & supportedTypes == 0) revert UnsupportedType();
         fheGasLimit.payForTrivialEncrypt(toType);
         result = keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid));
-        result = _appendType(result, toType);
+        result = _appendMetadataToPrehandle(result, toType);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -781,7 +781,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         fheGasLimit.payForTrivialEncrypt(toType);
         _checkByteLengthForEbytesTypes(pt.length, toType);
         result = keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid));
-        result = _appendType(result, toType);
+        result = _appendMetadataToPrehandle(result, toType);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -850,22 +850,34 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @dev Handle format for user inputs is: keccak256(keccak256(CiphertextFHEList)||index_handle)[0:29] || index_handle || handle_type || handle_version
-     *      Other handles format (fhe ops results) is: keccak256(keccak256(rawCiphertextFHEList)||index_handle)[0:30] || handle_type || handle_version
+     * @dev Handle format for user inputs and ops results are as such:
+     *      keccak256(keccak256(CiphertextFHEList)||index_handle)[0:20] || index_handle[21] || chainID [22:29] ||  handle_type [30] || handle_version [31]
+     *      If the handle stems from computation, the index_handle must be set to 0xff.
      *      The CiphertextFHEList actually contains: 1 byte (= N) for size of handles_list, N bytes for the handles_types : 1 per handle, then the original fhe160list raw ciphertext
      */
     function _typeOf(bytes32 handle) internal pure virtual returns (FheType typeCt) {
         typeCt = FheType(uint8(handle[30]));
     }
 
-    function _appendType(bytes32 prehandle, FheType handleType) internal pure virtual returns (bytes32 result) {
-        result = prehandle & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000;
+    function _appendMetadataToPrehandle(
+        bytes32 prehandle,
+        FheType handleType
+    ) internal view virtual returns (bytes32 result) {
+        /// @dev Clear bytes 21-31.
+        result = prehandle & 0xffffffffffffffffffffffffffffffffffffffffff0000000000000000000000;
+        /// @dev Set byte 21 to 0xff since the new handle comes from computation.
+        result = result | (bytes32(uint256(0xff)) << 80);
+        /// @dev chainId is cast to uint64 first to make sure it does not take more than 8 bytes before shifting.
+        /// If EIP2294 gets approved, it will force the chainID's size to be lower than MAX_UINT64.
+        result = result | (bytes32(uint256(uint64(block.chainid))) << 16);
+        /// @dev Insert handleType into byte 30.
         result = result | (bytes32(uint256(uint8(handleType))) << 8);
+        /// @dev Insert HANDLE_VERSION into byte 31.
         result = result | bytes32(uint256(HANDLE_VERSION));
     }
 
     /**
-     * @dev Checks the length for typeOf that are
+     * @dev Checks the length for typeOf that are ebytes.
      */
     function _checkByteLengthForEbytesTypes(uint256 byteLength, FheType fheType) internal pure virtual {
         if (fheType == FheType.Uint512) {
@@ -886,7 +898,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (!acl.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         result = keccak256(abi.encodePacked(op, ct, acl, block.chainid));
         FheType typeCt = _typeOf(ct);
-        result = _appendType(result, typeCt);
+        result = _appendMetadataToPrehandle(result, typeCt);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -906,7 +918,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             if (lhsType != rhsType) revert IncompatibleTypes();
         }
         result = keccak256(abi.encodePacked(op, lhs, rhs, scalar, acl, block.chainid));
-        result = _appendType(result, resultType);
+        result = _appendMetadataToPrehandle(result, resultType);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -929,7 +941,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (middleType != rhsType) revert IncompatibleTypes();
 
         result = keccak256(abi.encodePacked(op, lhs, middle, rhs, acl, block.chainid));
-        result = _appendType(result, middleType);
+        result = _appendMetadataToPrehandle(result, middleType);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -957,7 +969,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();
         fheGasLimit.payForFheRand(randType);
         result = keccak256(abi.encodePacked(Operators.fheRand, randType, seed));
-        result = _appendType(result, randType);
+        result = _appendMetadataToPrehandle(result, randType);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -977,7 +989,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (!_isPowerOfTwo(upperBound)) revert NotPowerOfTwo();
         fheGasLimit.payForFheRandBounded(randType);
         result = keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, seed));
-        result = _appendType(result, randType);
+        result = _appendMetadataToPrehandle(result, randType);
         acl.allowTransient(result, msg.sender);
     }
 

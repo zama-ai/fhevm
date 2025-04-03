@@ -1,4 +1,4 @@
-import { assert, expect } from 'chai';
+import { expect } from 'chai';
 
 import { getFHEGasFromTxReceipt } from '../coprocessorUtils';
 import { createInstances } from '../instance';
@@ -37,7 +37,7 @@ describe('EncryptedERC20:FHEGas', function () {
     const FHEGasConsumedTransfer = getFHEGasFromTxReceipt(t2);
     console.log('FHEGas Consumed in transfer', FHEGasConsumedTransfer);
     console.log('Native Gas Consumed in transfer', t2.gasUsed);
-    assert(FHEGasConsumedTransfer == 586200, 'FHEGas incorrect');
+    expect(FHEGasConsumedTransfer).to.eq(586200, 'FHEGas incorrect');
   });
 
   it('should be able to transferFrom only if allowance is sufficient', async function () {
@@ -69,6 +69,6 @@ describe('EncryptedERC20:FHEGas', function () {
     const FHEGasConsumedTransferFrom = getFHEGasFromTxReceipt(t3);
     console.log('FHEGas Consumed in transferFrom', FHEGasConsumedTransferFrom);
     console.log('Native Gas Consumed in transferFrom', t3.gasUsed);
-    assert(FHEGasConsumedTransferFrom == 1009200, 'FHEGas incorrect');
+    expect(FHEGasConsumedTransferFrom).to.eq(1009200, 'FHEGas incorrect');
   });
 });

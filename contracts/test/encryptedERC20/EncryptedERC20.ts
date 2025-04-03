@@ -1,4 +1,5 @@
-import { expect } from 'chai';
+import { assert, expect } from 'chai';
+import hre from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
@@ -23,6 +24,18 @@ describe('EncryptedERC20', function () {
 
     // Reencrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
+
+    // Balance handle is deterministic so we can verify the last bytes of the handle
+    // Byte 21 was set to 0xff.
+    expect(balanceHandleAlice.slice(44, 46)).to.eq('ff');
+    // Bytes 22-29 must be the chainId
+    const chainId = process.env.SOLIDITY_COVERAGE ? 31337 : hre.network.config.chainId;
+    assert(chainId, 'Host chainId not set');
+    expect(balanceHandleAlice.slice(46, 62)).to.eq(chainId.toString(16).padStart(16, '0'));
+    // Byte30: type is euint64 (so position 5 in the FheType enum)
+    expect(balanceHandleAlice.slice(62, 64)).to.eq('05');
+    // Byte31: handle version is 0
+    expect(balanceHandleAlice.slice(64, 66)).to.eq('00');
 
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
     const eip712 = this.instances.alice.createEIP712(publicKeyAlice, this.contractAddress);
