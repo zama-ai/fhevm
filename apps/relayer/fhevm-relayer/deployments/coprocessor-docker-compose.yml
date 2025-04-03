@@ -40,7 +40,7 @@ services:
 
   db-migration:
     container_name: db-migration
-    image: ghcr.io/zama-ai/fhevm-db-migration:9759b54
+    image: ghcr.io/zama-ai/fhevm-db-migration:v0.7.0-rc3
     environment:
       DATABASE_URL: ${DATABASE_URL}
       CHAIN_ID: ${CHAIN_ID}
@@ -59,7 +59,7 @@ services:
   ####################### COPROCESSOR SERVICES #######################
   httpz-listener:
     container_name: "httpz-listener"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
@@ -77,7 +77,7 @@ services:
 
   gw-listener:
     container_name: "gw-listener"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_WS_URL}
@@ -96,7 +96,7 @@ services:
 
   tfhe-worker:
     container_name: tfhe-worker
-    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
     environment:
       DATABASE_URL: ${DATABASE_URL}
     command:
@@ -117,7 +117,7 @@ services:
 
   zkproof-worker:
     container_name: "zkproof-worker"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
     environment:
       DATABASE_URL: ${DATABASE_URL}
     command:
@@ -136,7 +136,7 @@ services:
 
   sns-worker:
     container_name: "sns-worker"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
@@ -163,7 +163,7 @@ services:
 
   transaction-sender:
     container_name: "transaction-sender"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:57666aa
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_URL}
