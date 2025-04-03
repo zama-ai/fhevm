@@ -9,7 +9,8 @@
   "types": "./dist/src/index.d.ts",
   "type": "module",
   "scripts": {
-    "build": "nest build",
+    "prebuild": "rm -rf dist",
+    "build": "tsc --project tsconfig.build.json",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "vitest run",
