@@ -150,8 +150,8 @@ services:
       - --tenant-api-key=${TENANT_API_KEY}
       - --pg-listen-channels=["event_pbs_computations" "event_ciphertext_computed"]
       - --pg-notify-channel="event_ciphertext128_computed"
-      - --work-items-batch-size=4
-      - --pg-polling-interval=60
+      - --work-items-batch-size=20
+      - --pg-polling-interval=3
       - --pg-pool-connections=10
       - --bucket-name-ct64=ct64
       - --bucket-name-ct128=ct128
