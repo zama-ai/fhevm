@@ -54,7 +54,7 @@ resolve: {
 
 **Cause:** The library may not bundle correctly with certain frameworks, leading to errors during the build or runtime process.
 
-**Possible solutions:** Use the [prebundled version available](./webapp.md) with `fhevmjs/bundle`. Embed the library with a `<script>` tag and initialize it as shown below:
+**Possible solutions:** Use the [prebundled version available](./webapp.md) with `@httpz/sdk/bundle`. Embed the library with a `<script>` tag and initialize it as shown below:
 
 ```javascript
 const start = async () => {

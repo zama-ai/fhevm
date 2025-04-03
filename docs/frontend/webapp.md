@@ -36,7 +36,7 @@ Include this line at the top of your project.
 <script src="https://cdn.zama.ai/fhevmjs/0.6.2/fhevmjs.umd.cjs" type="text/javascript"></script>
 ```
 
-In your project, you can use the bundle import if you install `fhevmjs` package:
+In your project, you can use the bundle import if you install `@httpz/sdk` package:
 
 ```javascript
 import { initHTTPZ, createInstance } from "@httpz/sdk/bundle";

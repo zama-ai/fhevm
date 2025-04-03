@@ -7,7 +7,7 @@ The `HTTPZjs` Command-Line Interface (CLI) tool provides a simple and efficient 
 Ensure you have [Node.js](https://nodejs.org/) installed on your system before proceeding. Then, globally install the `HTTPZjs` package to enable the CLI tool:
 
 ```bash
-npm install -g fhevmjs
+npm install -g @httpz/sdk
 ```
 
 Once installed, you can access the CLI using the `fhevm` command. Verify the installation and explore available commands using:

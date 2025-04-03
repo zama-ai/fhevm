@@ -45,7 +45,7 @@ In this example, `param1`, `param2`, and `param3` are encrypted inputs, while `i
 
 ## Client-Side implementation
 
-To interact with such a function, developers can use the [fhevmjs](https://github.com/zama-ai/fhevmjs) library to create and manage encrypted inputs. Below is an example implementation:
+To interact with such a function, developers can use the [@httpz/sdk](https://github.com/zama-ai/fhevmjs) library to create and manage encrypted inputs. Below is an example implementation:
 
 ```javascript
 import { createInstances } from "../instance";
