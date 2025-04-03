@@ -43,13 +43,13 @@ async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
 // Adds some funds to these wallets.
 async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
   // Get signers
-  // - the owner owns the HTTPZ contract and can initialize the protocol, update FHE params
-  // - the admin can add KMS nodes, coprocessors, networks, trigger key/CRS/KSK generation
+  // - the owner owns the contracts and can initialize the protocol, update FHE params
+  // - the pauser can pause the protocol
   // - the user has no particular rights and is mostly used to check roles are properly set
   const owner = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY"), hre.ethers.provider);
   await fund(owner.address, DEFAULT_BALANCE);
-  const admin = await hre.ethers.getSigner(getRequiredEnvVar("ADMIN_ADDRESS"));
-  await checkIsHardhatSigner(admin);
+  const pauser = await hre.ethers.getSigner(getRequiredEnvVar("PAUSER_ADDRESS"));
+  await checkIsHardhatSigner(pauser);
   const user = await createAndFundRandomUser();
 
   // Load the KMS transaction senders
@@ -84,7 +84,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
     coprocessorSigners.push(coprocessorSigner);
   }
 
-  return { owner, admin, user, kmsTxSenders, kmsSigners, coprocessorTxSenders, coprocessorSigners };
+  return { owner, pauser, user, kmsTxSenders, kmsSigners, coprocessorTxSenders, coprocessorSigners };
 }
 
 // Loads the addresses of the deployed contracts, and the values required for the tests.

@@ -33,15 +33,15 @@ interface IHTTPZ {
     error NotKmsSigner(address kmsSignerAddress);
 
     event AddNetwork(Network network);
-    event Initialization(ProtocolMetadata metadata, address admin, uint256 kmsThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
+    event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
     event UpdateKmsThreshold(uint256 newKmsThreshold);
 
     function addNetwork(Network memory network) external;
-    function checkIsAdmin(address adminAddress) external view;
     function checkIsCoprocessorSigner(address signerAddress) external view;
     function checkIsCoprocessorTxSender(address coprocessorTxSenderAddress) external view;
     function checkIsKmsSigner(address signerAddress) external view;
     function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
+    function checkIsPauser(address pauserAddress) external view;
     function checkNetworkIsRegistered(uint256 chainId) external view;
     function coprocessorTxSenderAddresses(uint256 index) external view returns (address);
     function coprocessors(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
@@ -104,19 +104,6 @@ interface IHTTPZ {
   },
   {
     "type": "function",
-    "name": "checkIsAdmin",
-    "inputs": [
-      {
-        "name": "adminAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "checkIsCoprocessorSigner",
     "inputs": [
       {
@@ -160,6 +147,19 @@ interface IHTTPZ {
     "inputs": [
       {
         "name": "kmsTxSenderAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "checkIsPauser",
+    "inputs": [
+      {
+        "name": "pauserAddress",
         "type": "address",
         "internalType": "address"
       }
@@ -497,6 +497,12 @@ interface IHTTPZ {
     "name": "Initialization",
     "inputs": [
       {
+        "name": "pauser",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
         "name": "metadata",
         "type": "tuple",
         "indexed": false,
@@ -513,12 +519,6 @@ interface IHTTPZ {
             "internalType": "string"
           }
         ]
-      },
-      {
-        "name": "admin",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
       },
       {
         "name": "kmsThreshold",
@@ -2231,9 +2231,9 @@ event AddNetwork(Network network);
             }
         }
     };
-    /**Event with signature `Initialization((string,string),address,uint256,(address,address,string)[],(address,address,string)[])` and selector `0x191c76da28ae2b731a908a85ab47c4ad4ace8737ddc27d1f55cb162ce4bed648`.
+    /**Event with signature `Initialization(address,(string,string),uint256,(address,address,string)[],(address,address,string)[])` and selector `0xf33d908c4a8b532fe64df20b726f11405c11b9772d31b66f5eef6887a43c3fde`.
 ```solidity
-event Initialization(ProtocolMetadata metadata, address admin, uint256 kmsThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
+event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -2244,9 +2244,9 @@ event Initialization(ProtocolMetadata metadata, address admin, uint256 kmsThresh
     #[derive(Clone)]
     pub struct Initialization {
         #[allow(missing_docs)]
-        pub metadata: <ProtocolMetadata as alloy::sol_types::SolType>::RustType,
+        pub pauser: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub admin: alloy::sol_types::private::Address,
+        pub metadata: <ProtocolMetadata as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
         pub kmsThreshold: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -2269,8 +2269,8 @@ event Initialization(ProtocolMetadata metadata, address admin, uint256 kmsThresh
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for Initialization {
             type DataTuple<'a> = (
-                ProtocolMetadata,
                 alloy::sol_types::sol_data::Address,
+                ProtocolMetadata,
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<KmsNode>,
                 alloy::sol_types::sol_data::Array<Coprocessor>,
@@ -2279,40 +2279,40 @@ event Initialization(ProtocolMetadata metadata, address admin, uint256 kmsThresh
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "Initialization((string,string),address,uint256,(address,address,string)[],(address,address,string)[])";
+            const SIGNATURE: &'static str = "Initialization(address,(string,string),uint256,(address,address,string)[],(address,address,string)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                25u8,
-                28u8,
-                118u8,
-                218u8,
-                40u8,
-                174u8,
-                43u8,
-                115u8,
-                26u8,
+                243u8,
+                61u8,
                 144u8,
-                138u8,
-                133u8,
-                171u8,
-                71u8,
-                196u8,
-                173u8,
+                140u8,
                 74u8,
-                206u8,
+                139u8,
+                83u8,
+                47u8,
+                230u8,
+                77u8,
+                242u8,
+                11u8,
+                114u8,
+                111u8,
+                17u8,
+                64u8,
+                92u8,
+                17u8,
+                185u8,
+                119u8,
+                45u8,
+                49u8,
+                182u8,
+                111u8,
+                94u8,
+                239u8,
+                104u8,
                 135u8,
-                55u8,
-                221u8,
-                194u8,
-                125u8,
-                31u8,
-                85u8,
-                203u8,
-                22u8,
-                44u8,
-                228u8,
-                190u8,
-                214u8,
-                72u8,
+                164u8,
+                60u8,
+                63u8,
+                222u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -2322,8 +2322,8 @@ event Initialization(ProtocolMetadata metadata, address admin, uint256 kmsThresh
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    metadata: data.0,
-                    admin: data.1,
+                    pauser: data.0,
+                    metadata: data.1,
                     kmsThreshold: data.2,
                     kmsNodes: data.3,
                     coprocessors: data.4,
@@ -2347,11 +2347,11 @@ event Initialization(ProtocolMetadata metadata, address admin, uint256 kmsThresh
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.pauser,
+                    ),
                     <ProtocolMetadata as alloy_sol_types::SolType>::tokenize(
                         &self.metadata,
-                    ),
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.admin,
                     ),
                     <alloy::sol_types::sol_data::Uint<
                         256,
@@ -2639,129 +2639,6 @@ function addNetwork(Network memory network) external;
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (<Network as alloy_sol_types::SolType>::tokenize(&self.network),)
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    /**Function with signature `checkIsAdmin(address)` and selector `0xd953689d`.
-```solidity
-function checkIsAdmin(address adminAddress) external view;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkIsAdminCall {
-        #[allow(missing_docs)]
-        pub adminAddress: alloy::sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the [`checkIsAdmin(address)`](checkIsAdminCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkIsAdminReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkIsAdminCall> for UnderlyingRustTuple<'_> {
-                fn from(value: checkIsAdminCall) -> Self {
-                    (value.adminAddress,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkIsAdminCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { adminAddress: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkIsAdminReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: checkIsAdminReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkIsAdminReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for checkIsAdminCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = checkIsAdminReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkIsAdmin(address)";
-            const SELECTOR: [u8; 4] = [217u8, 83u8, 104u8, 157u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.adminAddress,
-                    ),
-                )
             }
             #[inline]
             fn abi_decode_returns(
@@ -3272,6 +3149,129 @@ function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.kmsTxSenderAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    /**Function with signature `checkIsPauser(address)` and selector `0x195afde6`.
+```solidity
+function checkIsPauser(address pauserAddress) external view;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct checkIsPauserCall {
+        #[allow(missing_docs)]
+        pub pauserAddress: alloy::sol_types::private::Address,
+    }
+    ///Container type for the return parameters of the [`checkIsPauser(address)`](checkIsPauserCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct checkIsPauserReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<checkIsPauserCall> for UnderlyingRustTuple<'_> {
+                fn from(value: checkIsPauserCall) -> Self {
+                    (value.pauserAddress,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkIsPauserCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { pauserAddress: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<checkIsPauserReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: checkIsPauserReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkIsPauserReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for checkIsPauserCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = checkIsPauserReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "checkIsPauser(address)";
+            const SELECTOR: [u8; 4] = [25u8, 90u8, 253u8, 230u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.pauserAddress,
                     ),
                 )
             }
@@ -5085,8 +5085,6 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
         #[allow(missing_docs)]
         addNetwork(addNetworkCall),
         #[allow(missing_docs)]
-        checkIsAdmin(checkIsAdminCall),
-        #[allow(missing_docs)]
         checkIsCoprocessorSigner(checkIsCoprocessorSignerCall),
         #[allow(missing_docs)]
         checkIsCoprocessorTxSender(checkIsCoprocessorTxSenderCall),
@@ -5094,6 +5092,8 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
         checkIsKmsSigner(checkIsKmsSignerCall),
         #[allow(missing_docs)]
         checkIsKmsTxSender(checkIsKmsTxSenderCall),
+        #[allow(missing_docs)]
+        checkIsPauser(checkIsPauserCall),
         #[allow(missing_docs)]
         checkNetworkIsRegistered(checkNetworkIsRegisteredCall),
         #[allow(missing_docs)]
@@ -5133,6 +5133,7 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [2u8, 25u8, 21u8, 15u8],
+            [25u8, 90u8, 253u8, 230u8],
             [71u8, 205u8, 75u8, 62u8],
             [72u8, 20u8, 76u8, 97u8],
             [73u8, 4u8, 19u8, 170u8],
@@ -5150,7 +5151,6 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
             [203u8, 102u8, 23u8, 85u8],
             [205u8, 180u8, 194u8, 185u8],
             [213u8, 36u8, 75u8, 241u8],
-            [217u8, 83u8, 104u8, 157u8],
             [236u8, 189u8, 150u8, 171u8],
         ];
     }
@@ -5165,9 +5165,6 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                 Self::addNetwork(_) => {
                     <addNetworkCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::checkIsAdmin(_) => {
-                    <checkIsAdminCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::checkIsCoprocessorSigner(_) => {
                     <checkIsCoprocessorSignerCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -5179,6 +5176,9 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                 }
                 Self::checkIsKmsTxSender(_) => {
                     <checkIsKmsTxSenderCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::checkIsPauser(_) => {
+                    <checkIsPauserCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::checkNetworkIsRegistered(_) => {
                     <checkNetworkIsRegisteredCall as alloy_sol_types::SolCall>::SELECTOR
@@ -5251,6 +5251,19 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                             .map(IHTTPZCalls::updateKmsThreshold)
                     }
                     updateKmsThreshold
+                },
+                {
+                    fn checkIsPauser(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IHTTPZCalls> {
+                        <checkIsPauserCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IHTTPZCalls::checkIsPauser)
+                    }
+                    checkIsPauser
                 },
                 {
                     fn getKmsMajorityThreshold(
@@ -5474,19 +5487,6 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                     kmsTxSenderAddresses
                 },
                 {
-                    fn checkIsAdmin(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IHTTPZCalls> {
-                        <checkIsAdminCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IHTTPZCalls::checkIsAdmin)
-                    }
-                    checkIsAdmin
-                },
-                {
                     fn coprocessors(
                         data: &[u8],
                         validate: bool,
@@ -5516,11 +5516,6 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                 Self::addNetwork(inner) => {
                     <addNetworkCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::checkIsAdmin(inner) => {
-                    <checkIsAdminCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::checkIsCoprocessorSigner(inner) => {
                     <checkIsCoprocessorSignerCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -5538,6 +5533,11 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                 }
                 Self::checkIsKmsTxSender(inner) => {
                     <checkIsKmsTxSenderCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::checkIsPauser(inner) => {
+                    <checkIsPauserCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -5618,12 +5618,6 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                         out,
                     )
                 }
-                Self::checkIsAdmin(inner) => {
-                    <checkIsAdminCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::checkIsCoprocessorSigner(inner) => {
                     <checkIsCoprocessorSignerCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -5644,6 +5638,12 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                 }
                 Self::checkIsKmsTxSender(inner) => {
                     <checkIsKmsTxSenderCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::checkIsPauser(inner) => {
+                    <checkIsPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -5997,40 +5997,6 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                25u8,
-                28u8,
-                118u8,
-                218u8,
-                40u8,
-                174u8,
-                43u8,
-                115u8,
-                26u8,
-                144u8,
-                138u8,
-                133u8,
-                171u8,
-                71u8,
-                196u8,
-                173u8,
-                74u8,
-                206u8,
-                135u8,
-                55u8,
-                221u8,
-                194u8,
-                125u8,
-                31u8,
-                85u8,
-                203u8,
-                22u8,
-                44u8,
-                228u8,
-                190u8,
-                214u8,
-                72u8,
-            ],
-            [
                 184u8,
                 32u8,
                 123u8,
@@ -6097,6 +6063,40 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                 23u8,
                 203u8,
                 132u8,
+            ],
+            [
+                243u8,
+                61u8,
+                144u8,
+                140u8,
+                74u8,
+                139u8,
+                83u8,
+                47u8,
+                230u8,
+                77u8,
+                242u8,
+                11u8,
+                114u8,
+                111u8,
+                17u8,
+                64u8,
+                92u8,
+                17u8,
+                185u8,
+                119u8,
+                45u8,
+                49u8,
+                182u8,
+                111u8,
+                94u8,
+                239u8,
+                104u8,
+                135u8,
+                164u8,
+                60u8,
+                63u8,
+                222u8,
             ],
         ];
     }
@@ -6350,13 +6350,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<T, &P, addNetworkCall, N> {
             self.call_builder(&addNetworkCall { network })
         }
-        ///Creates a new call builder for the [`checkIsAdmin`] function.
-        pub fn checkIsAdmin(
-            &self,
-            adminAddress: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkIsAdminCall, N> {
-            self.call_builder(&checkIsAdminCall { adminAddress })
-        }
         ///Creates a new call builder for the [`checkIsCoprocessorSigner`] function.
         pub fn checkIsCoprocessorSigner(
             &self,
@@ -6400,6 +6393,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     kmsTxSenderAddress,
                 },
             )
+        }
+        ///Creates a new call builder for the [`checkIsPauser`] function.
+        pub fn checkIsPauser(
+            &self,
+            pauserAddress: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<T, &P, checkIsPauserCall, N> {
+            self.call_builder(&checkIsPauserCall { pauserAddress })
         }
         ///Creates a new call builder for the [`checkNetworkIsRegistered`] function.
         pub fn checkNetworkIsRegistered(

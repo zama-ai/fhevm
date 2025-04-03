@@ -9,10 +9,8 @@ pragma solidity ^0.8.24;
  * - the cryptographic parameters to consider when generating public materials (FHE keys, CRS, KSKs)
  * - the generated public materials (FHE keys, CRS, KSKs) IDs
  *
- * The KeyManager contract is owned by a DAO governance contract that can be used for updating the
+ * The KeyManager contract has an owner. It can generate public material, activate FHE keys or update
  * cryptographic parameters.
- * The KeyManager contract is also managed by administrators that can generate any public material,
- * and activate FHE keys.
  * Some functions are restricted to KMS connectors (contracts representing each KMS node) or coprocessors.
  * Some view functions are accessible to everyone (ex: getting the current activated FHE key ID).
  */
@@ -147,7 +145,6 @@ interface IKeyManager {
     error FheParamsAlreadyInitialized(string fheParamsName);
 
     /// @notice Trigger a key generation preprocessing
-    /// @dev This function can only be called by an administrator
     function preprocessKeygenRequest(string calldata fheParamsName) external;
 
     /// @notice Handle the response of a key generation preprocessing
@@ -157,7 +154,6 @@ interface IKeyManager {
     function preprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId) external;
 
     /// @notice Trigger a KSK generation preprocessing
-    /// @dev This function can only be called by an administrator
     function preprocessKskgenRequest(string calldata fheParamsName) external;
 
     /// @notice Handle the response of a KSK generation preprocessing
@@ -167,7 +163,6 @@ interface IKeyManager {
     function preprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId) external;
 
     /// @notice Trigger a key generation
-    /// @dev This function can only be called by an administrator
     /// @param preKeyId The preprocessed key ID
     function keygenRequest(uint256 preKeyId) external;
 
@@ -178,7 +173,6 @@ interface IKeyManager {
     function keygenResponse(uint256 preKeyId, uint256 keyId) external;
 
     /// @notice Trigger a CRS generation
-    /// @dev This function can only be called by an administrator
     function crsgenRequest(string calldata fheParamsName) external;
 
     /// @notice Handle the response of a CRS generation
@@ -188,7 +182,6 @@ interface IKeyManager {
     function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external;
 
     /// @notice Trigger a KSK generation
-    /// @dev This function can only be called by an administrator
     /// @param preKskId The preprocessed KSK ID
     /// @param sourceKeyId The key ID to key switch from
     /// @param destKeyId The key ID to key switch to
@@ -201,7 +194,6 @@ interface IKeyManager {
     function kskgenResponse(uint256 preKskId, uint256 kskId) external;
 
     /// @notice Activate the key in coprocessors
-    /// @dev This function can only be called by an administrator
     /// @dev A key can only be activated if a key switch key from the current key to this key has
     /// @dev already been generated
     /// @param keyId The key ID

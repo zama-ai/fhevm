@@ -10,13 +10,12 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 /**
  * @title HTTPZ contract
  * @dev See {IHTTPZ}.
- * @dev Add/remove methods will be added in the future for admin, KMS nodes, coprocessors and networks.
+ * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and networks.
  * @dev See https://github.com/zama-ai/gateway-l2/issues/98 for more details.
  */
 contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUPSUpgradeable {
-    /// @notice The admin role. For example, only admins can update the KMS threshold (HTTPZ contract)
-    /// @notice trigger public material generation or set/update FHE parameters (in Key Manager).
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    /// @notice The pauser role, which can pause the contracts.
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     /// @notice The KMS node role. For example, only KMS nodes can send response transactions during
     /// @notice public material generation (in Key Manager) or decryption (in Decryption Manager).
@@ -68,14 +67,14 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
     }
 
     /// @notice Initializes the contract
+    /// @param initialPauser Pauser address
     /// @param initialMetadata Metadata of the protocol
-    /// @param initialAdmin Admin address
     /// @param initialKmsThreshold The KMS threshold. Must verify `3t < n` for `n` KMS nodes.
     /// @param initialKmsNodes List of KMS nodes
     /// @param initialCoprocessors List of coprocessors
     function initialize(
+        address initialPauser,
         ProtocolMetadata memory initialMetadata,
-        address initialAdmin,
         uint256 initialKmsThreshold,
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors
@@ -85,8 +84,8 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
         HTTPZStorage storage $ = _getHTTPZStorage();
         $.protocolMetadata = initialMetadata;
 
-        /// @dev Register the admin
-        _grantRole(ADMIN_ROLE, initialAdmin);
+        /// @dev Register the pauser
+        _grantRole(PAUSER_ROLE, initialPauser);
 
         uint256 nParties = initialKmsNodes.length;
 
@@ -115,11 +114,11 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
             $._isCoprocessorSigner[initialCoprocessors[i].signerAddress] = true;
         }
 
-        emit Initialization(initialMetadata, initialAdmin, initialKmsThreshold, initialKmsNodes, initialCoprocessors);
+        emit Initialization(initialPauser, initialMetadata, initialKmsThreshold, initialKmsNodes, initialCoprocessors);
     }
 
     /// @dev See {IHTTPZ-updateKmsThreshold}.
-    function updateKmsThreshold(uint256 newKmsThreshold) external virtual onlyRole(ADMIN_ROLE) {
+    function updateKmsThreshold(uint256 newKmsThreshold) external virtual onlyOwner {
         HTTPZStorage storage $ = _getHTTPZStorage();
         if (newKmsThreshold > $.kmsTxSenderAddresses.length) {
             revert KmsThresholdTooHigh(newKmsThreshold, $.kmsTxSenderAddresses.length);
@@ -129,9 +128,9 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
         emit UpdateKmsThreshold(newKmsThreshold);
     }
 
-    /// @dev See {IHTTPZ-checkIsAdmin}.
-    function checkIsAdmin(address adminAddress) external view virtual {
-        _checkRole(ADMIN_ROLE, adminAddress);
+    /// @dev See {IHTTPZ-checkIsPauser}.
+    function checkIsPauser(address pauserAddress) external view virtual {
+        _checkRole(PAUSER_ROLE, pauserAddress);
     }
 
     /// @dev See {IHTTPZ-checkIsKmsTxSender}.

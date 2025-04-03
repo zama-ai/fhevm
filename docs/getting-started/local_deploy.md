@@ -13,7 +13,7 @@ npm install
 1/ Modify values in the `.env.test` if needed, depending on your scenario. It should contain :
 
 - protocol metadata
-- admin addresses
+- pauser address
 - kms nodes
 - coprocessors
 - L1 network(s) infos

@@ -12,20 +12,22 @@ import "../shared/Structs.sol";
  * - the list of coprocessors used exclusively by this Gateway L2
  * - the list of networks using this Gateway L2
  *
- * The HTTPZ contract is owned by a DAO governance contract that can be used for initialization.
- * The HTTPZ contract is also managed by administrators that will be allowed to update the state.
+ * The HTTPZ contract has an owner and a pauser.
+ * The owner can call some restricted functions, such as adding or removing KMS nodes, coprocessors
+ * and networks.
+ * The pauser can pause all contracts.
  * Some view functions are accessible to everyone (ex: getting the number of KMS nodes).
  */
 interface IHTTPZ {
     /// @notice Emitted when the HTTPZ initialization is completed
+    /// @param pauser Pauser address
     /// @param metadata Metadata of the protocol
-    /// @param admin Admin address
     /// @param kmsThreshold The KMS threshold
     /// @param kmsNodes List of KMS nodes
     /// @param coprocessors List of coprocessors
     event Initialization(
+        address pauser,
         ProtocolMetadata metadata,
-        address admin,
         uint256 kmsThreshold,
         KmsNode[] kmsNodes,
         Coprocessor[] coprocessors
@@ -64,14 +66,13 @@ interface IHTTPZ {
     error InvalidNullChainId();
 
     /// @notice Update the KMS threshold
-    /// @dev This function can only be called by an administrator
     /// @dev The new threshold must verify `0 <= t <= n`, with `n` the number of KMS nodes currently registered
     /// @param newKmsThreshold The new KMS threshold
     function updateKmsThreshold(uint256 newKmsThreshold) external;
 
-    /// @notice Check if an address is an administrator
-    /// @param adminAddress The address to check
-    function checkIsAdmin(address adminAddress) external view;
+    /// @notice Check if an address is the pauser
+    /// @param pauserAddress The address to check
+    function checkIsPauser(address pauserAddress) external view;
 
     /// @notice Check if an address is a registered KMS transaction sender
     /// @param kmsTxSenderAddress The address to check
