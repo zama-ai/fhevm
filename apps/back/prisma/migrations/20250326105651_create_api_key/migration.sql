@@ -1,6 +1,7 @@
 -- CreateTable
 CREATE TABLE "ApiKey" (
     "id" TEXT NOT NULL,
+    "token" TEXT NOT NULL,
     "dappId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "description" TEXT,

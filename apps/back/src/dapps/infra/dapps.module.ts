@@ -29,11 +29,17 @@ import { StatsResolver } from './stats.resolver.js'
     uc.CreateApiKey,
     uc.GetAllApiKeys,
     uc.GetApiKey,
+    uc.GetApiKeyByToken,
     uc.UpdateApiKey,
     uc.DeleteApiKey,
     uc.ApiKeyAllowsRequest,
     GetTeamById,
   ],
-  exports: [UpdateDapp, GetDappById, uc.ApiKeyAllowsRequest, uc.GetApiKey],
+  exports: [
+    UpdateDapp,
+    GetDappById,
+    uc.ApiKeyAllowsRequest,
+    uc.GetApiKeyByToken,
+  ],
 })
 export class DappsModule {}

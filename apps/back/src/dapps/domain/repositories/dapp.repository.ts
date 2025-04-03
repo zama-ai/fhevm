@@ -1,7 +1,7 @@
 import { DApp, DAppProps } from '../entities/dapp.js'
 import type { AppError } from 'utils'
 import { Task } from 'utils'
-import { ApiKeyId, DAppId } from '../entities/value-objects.js'
+import { ApiKeyId, DAppId, Token } from '../entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '../entities/dapp-stat.js'
 import { ApiKey } from '../entities/api-key.js'
@@ -38,6 +38,7 @@ export interface DAppRepository {
   createApiKey(apiKey: ApiKey): Task<ApiKey, AppError>
   findAllApiKeys(id: DAppId): Task<ApiKey[], AppError>
   findApiKey(id: ApiKeyId): Task<ApiKey, AppError>
+  findApiKeyByToken(token: Token): Task<ApiKey, AppError>
   updateApiKey(apiKey: ApiKey): Task<ApiKey, AppError>
   deleteApiKey(id: ApiKeyId): Task<void, AppError>
 }

@@ -83,6 +83,7 @@ model DappStat {
 
 model ApiKey {
   id          String    @id
+  token       String
   name        String
   description String?
   dappId      String

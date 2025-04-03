@@ -12,21 +12,22 @@ import type { Request } from 'express'
 export class ApiKeyGuard implements CanActivate {
   private readonly logger = new Logger(ApiKeyGuard.name)
 
-  constructor(private readonly getApiKeyUC: uc.GetApiKey) {}
+  constructor(private readonly getApiKeyUC: uc.GetApiKeyByToken) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request: Request = context.switchToHttp().getRequest()
 
-    const apiKeyId = request.headers['x-api-key']
-    this.logger.verbose(`apiKeyId: ${apiKeyId}`)
-    if (!apiKeyId) {
+    const token = request.headers['x-api-key']
+    this.logger.verbose(`token: ${token}`)
+    if (!token) {
       this.logger.debug(`no API key provided`)
       return false
     }
     try {
       const apiKey = await this.getApiKeyUC
-        .execute({ apiKeyId: apiKeyId as string })
+        .execute({ token: Array.isArray(token) ? token[0] : token })
         .toPromise()
       this.logger.verbose(`apiKey: ${JSON.stringify(apiKey.toJSON())}`)
+      // TODO: override Request definition to add an optional `apiKey` field
       ;(request as any).apiKey = apiKey
       return Boolean(apiKey)
     } catch (error) {

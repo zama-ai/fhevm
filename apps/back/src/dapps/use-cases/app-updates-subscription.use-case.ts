@@ -29,10 +29,8 @@ export class AppUpdatesSubscription implements UseCase<Input, Output> {
   ) {}
   execute({ dappId, user }: Input): Task<Output, AppError> {
     this.logger.verbose(`subscribing to dapp updates for dappId=${dappId}`)
-    return User.parse(user)
-      .asyncChain(user =>
-        this.dappRepository.findOneByIdAndUserId(DAppId.from(dappId), user.id),
-      )
+    return this.dappRepository
+      .findOneByIdAndUserId(DAppId.from(dappId), user.id)
       .tap(dapp => {
         this.logger.debug(`${user.id} subscribed to ${dapp.id}`)
       })

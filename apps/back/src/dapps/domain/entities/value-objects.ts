@@ -65,3 +65,19 @@ export class ApiKeyId extends ValueObject(
       : fail(fromZodError(result.error))
   }
 }
+
+export class Token extends ValueObject(
+  'Token',
+  z.string().startsWith('pk_').length(23).refine(validateNanoId(20, 'pk_')),
+) {
+  static random(): Token {
+    return Token.from(`pk_${nanoid(20)}`)
+  }
+
+  static fromString(token: string): Result<Token, AppError> {
+    const result = Token.schema.safeParse(token)
+    return result.success
+      ? ok(Token.from(token))
+      : fail(fromZodError(result.error))
+  }
+}

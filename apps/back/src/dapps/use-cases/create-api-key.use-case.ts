@@ -1,6 +1,6 @@
 import { UNIT_OF_WORK } from '#constants.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
-import { ApiKeyId, DAppId } from '#dapps/domain/entities/value-objects.js'
+import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import {
   DAPP_REPOSITORY,
   DAppRepository,
@@ -36,8 +36,7 @@ export class CreateApiKey implements UseCase<Input, Output> {
         this.repo
           .findById(dappId)
           .chain(() =>
-            ApiKey.parse({
-              id: ApiKeyId.random().value,
+            ApiKey.create({
               dappId: dappId.value,
               name: input.name,
               description: input.description,

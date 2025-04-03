@@ -16,7 +16,11 @@ import {
 } from '#dapps/domain/repositories/dapp.repository.js'
 
 import { PrismaService } from '../prisma.service.js'
-import { ApiKeyId, DAppId } from '#dapps/domain/entities/value-objects.js'
+import {
+  ApiKeyId,
+  DAppId,
+  Token,
+} from '#dapps/domain/entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
@@ -242,6 +246,7 @@ export class PrismaDAppRepository implements DAppRepository {
             .create({
               data: {
                 id: apiKey.id.value,
+                token: apiKey.token.value,
                 dappId: apiKey.dappId.value,
                 name: apiKey.name,
                 description: apiKey.description,
@@ -282,6 +287,23 @@ export class PrismaDAppRepository implements DAppRepository {
         )
         .catch(err => {
           this.logger.warn(`failed to run findApiKey for ${id.value}: ${err}`)
+          reject(unknownError(String(err)))
+        }),
+    ).chain(props => ApiKey.parse(props).async())
+  }
+
+  findApiKeyByToken = (token: Token): Task<ApiKey, AppError> => {
+    this.logger.verbose(`finding api key by token ${token.value}`)
+    return new Task<unknown, AppError>((resolve, reject) =>
+      this.db.apiKey
+        .findFirst({ where: { token: token.value, deletedAt: null } })
+        .then(data =>
+          data ? resolve(data) : reject(notFoundError('API key not found')),
+        )
+        .catch(err => {
+          this.logger.warn(
+            `failed to run findApiKeyByToken for ${token.value}: ${err}`,
+          )
           reject(unknownError(String(err)))
         }),
     ).chain(props => ApiKey.parse(props).async())
