@@ -1,8 +1,7 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import { BigNumberish, EventLog, Wallet } from "ethers";
-import { HDNodeWallet } from "ethers";
+import { BigNumberish, EventLog, HDNodeWallet, Wallet } from "ethers";
 import hre from "hardhat";
 
 import {
@@ -40,7 +39,7 @@ describe("DecryptionManager", function () {
   let aclManager: ACLManager;
   let ciphertextManager: CiphertextManager;
   let decryptionManager: DecryptionManager;
-  let admin: HardhatEthersSigner;
+  let owner: Wallet;
   let user: HDNodeWallet;
   let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
   let kmsSignatures: string[];
@@ -61,10 +60,10 @@ describe("DecryptionManager", function () {
   // Trigger a key generation in KeyManager contract and activate the key
   async function prepareWithActivatedKeyFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
-    const { keyManager, admin, kmsTxSenders, coprocessorTxSenders, fheParamsName } = fixtureData;
+    const { keyManager, owner, kmsTxSenders, coprocessorTxSenders, fheParamsName } = fixtureData;
 
     // Trigger a preprocessing keygen request
-    const txRequest = await keyManager.connect(admin).preprocessKeygenRequest(fheParamsName);
+    const txRequest = await keyManager.connect(owner).preprocessKeygenRequest(fheParamsName);
 
     // Get the preKeyRequestId from the event in the transaction receipt
     const receipt = await txRequest.wait();
@@ -80,7 +79,7 @@ describe("DecryptionManager", function () {
     }
 
     // Trigger a keygen request
-    await keyManager.connect(admin).keygenRequest(preKeyId);
+    await keyManager.connect(owner).keygenRequest(preKeyId);
 
     // Define a keyId for keygen response
     const keyId1 = 1;
@@ -91,7 +90,7 @@ describe("DecryptionManager", function () {
     }
 
     // Request activation of the key
-    await keyManager.connect(admin).activateKeyRequest(keyId1);
+    await keyManager.connect(owner).activateKeyRequest(keyId1);
 
     // Trigger activation responses for all coprocessors
     for (let i = 0; i < coprocessorTxSenders.length; i++) {
@@ -139,14 +138,14 @@ describe("DecryptionManager", function () {
   async function createAndRotateKey(
     sourceKeyId: BigNumberish,
     keyManager: KeyManager,
-    admin: HardhatEthersSigner,
+    owner: Wallet,
     coprocessorTxSenders: HardhatEthersSigner[],
     kmsTxSenders: HardhatEthersSigner[],
     fheParamsName: string,
   ): Promise<BigNumberish> {
     const newKeyId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
     // Trigger a preprocessing keygen request
-    let txRequest = await keyManager.connect(admin).preprocessKeygenRequest(fheParamsName);
+    let txRequest = await keyManager.connect(owner).preprocessKeygenRequest(fheParamsName);
 
     // Get the preKeyRequestId from the event in the transaction receipt
     let receipt = await txRequest.wait();
@@ -162,7 +161,7 @@ describe("DecryptionManager", function () {
     }
 
     // Trigger a keygen request
-    await keyManager.connect(admin).keygenRequest(preKeyId);
+    await keyManager.connect(owner).keygenRequest(preKeyId);
 
     // Trigger keygen responses for all KMS nodes
     for (let i = 0; i < kmsTxSenders.length; i++) {
@@ -170,7 +169,7 @@ describe("DecryptionManager", function () {
     }
 
     // Trigger a preprocessing kskgen request
-    txRequest = await keyManager.connect(admin).preprocessKskgenRequest(fheParamsName);
+    txRequest = await keyManager.connect(owner).preprocessKskgenRequest(fheParamsName);
 
     // Get the preKeyRequestId from the event in the transaction receipt
     receipt = await txRequest.wait();
@@ -186,7 +185,7 @@ describe("DecryptionManager", function () {
     }
 
     // Trigger a kskgen request
-    await keyManager.connect(admin).kskgenRequest(preKskId, sourceKeyId, newKeyId);
+    await keyManager.connect(owner).kskgenRequest(preKskId, sourceKeyId, newKeyId);
 
     // Define a kskId for kskgen response
     const kskId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
@@ -197,7 +196,7 @@ describe("DecryptionManager", function () {
     }
 
     // Request activation of the key
-    await keyManager.connect(admin).activateKeyRequest(newKeyId);
+    await keyManager.connect(owner).activateKeyRequest(newKeyId);
 
     // Trigger activation responses for all coprocessors
     for (let i = 0; i < coprocessorTxSenders.length; i++) {
@@ -369,7 +368,7 @@ describe("DecryptionManager", function () {
         decryptionManager,
         ciphertextManager,
         aclManager,
-        admin,
+        owner,
         kmsTxSenders,
         coprocessorTxSenders,
         user,
@@ -380,7 +379,7 @@ describe("DecryptionManager", function () {
       const keyId2 = await createAndRotateKey(
         keyId1,
         keyManager,
-        admin,
+        owner,
         coprocessorTxSenders,
         kmsTxSenders,
         fheParamsName,
@@ -565,7 +564,7 @@ describe("DecryptionManager", function () {
       aclManager = fixtureData.aclManager;
       ciphertextManager = fixtureData.ciphertextManager;
       decryptionManager = fixtureData.decryptionManager;
-      admin = fixtureData.admin;
+      owner = fixtureData.owner;
       user = fixtureData.user;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       userSignature = fixtureData.userSignature;
@@ -815,7 +814,7 @@ describe("DecryptionManager", function () {
       const keyId2 = await createAndRotateKey(
         keyId1,
         keyManager,
-        admin,
+        owner,
         coprocessorTxSenders,
         kmsTxSenders,
         fheParamsName,
@@ -1335,7 +1334,7 @@ describe("DecryptionManager", function () {
         decryptionManager,
         ciphertextManager,
         aclManager,
-        admin,
+        owner,
         coprocessorTxSenders,
         kmsTxSenders,
         user,
@@ -1351,7 +1350,7 @@ describe("DecryptionManager", function () {
       const keyId2 = await createAndRotateKey(
         keyId1,
         keyManager,
-        admin,
+        owner,
         coprocessorTxSenders,
         kmsTxSenders,
         fheParamsName,

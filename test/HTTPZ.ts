@@ -8,7 +8,7 @@ import { loadTestVariablesFixture, toValues } from "./utils/";
 describe("HTTPZ", function () {
   async function getInputsForDeployFixture() {
     const signers = await hre.ethers.getSigners();
-    const [owner, admin, user] = signers.splice(0, 3);
+    const [owner, pauser, user] = signers.splice(0, 3);
 
     const HTTPZ = await hre.ethers.getContractFactory("HTTPZ", owner);
 
@@ -46,7 +46,7 @@ describe("HTTPZ", function () {
     return {
       HTTPZ,
       owner,
-      admin,
+      pauser,
       user,
       protocolMetadata,
       kmsThreshold,
@@ -69,7 +69,7 @@ describe("HTTPZ", function () {
 
   describe("Deployment", function () {
     it("Should revert because of bad KMS threshold", async function () {
-      const { HTTPZ, protocolMetadata, owner, admin, kmsNodes, coprocessors } =
+      const { HTTPZ, protocolMetadata, owner, pauser, kmsNodes, coprocessors } =
         await loadFixture(getInputsForDeployFixture);
       const proxyContract = await deployEmptyProxy(owner);
 
@@ -81,7 +81,7 @@ describe("HTTPZ", function () {
       const upgradeTx = hre.upgrades.upgradeProxy(proxyContract, HTTPZ, {
         call: {
           fn: "initialize",
-          args: [protocolMetadata, admin.address, badKmsThreshold, kmsNodes, coprocessors],
+          args: [pauser.address, protocolMetadata, badKmsThreshold, kmsNodes, coprocessors],
         },
       });
       await expect(upgradeTx)
@@ -90,14 +90,14 @@ describe("HTTPZ", function () {
     });
 
     it("Should deploy", async function () {
-      const { HTTPZ, protocolMetadata, owner, admin, kmsThreshold, kmsNodes, coprocessors } =
+      const { HTTPZ, protocolMetadata, owner, pauser, kmsThreshold, kmsNodes, coprocessors } =
         await loadFixture(getInputsForDeployFixture);
       const proxyContract = await deployEmptyProxy(owner);
 
       const upgradeTx = await hre.upgrades.upgradeProxy(proxyContract, HTTPZ, {
         call: {
           fn: "initialize",
-          args: [protocolMetadata, admin.address, kmsThreshold, kmsNodes, coprocessors],
+          args: [pauser.address, protocolMetadata, kmsThreshold, kmsNodes, coprocessors],
         },
       });
 
@@ -112,19 +112,19 @@ describe("HTTPZ", function () {
       // It should emit one event containing the initialization parameters
       expect(initializationEvents.length).to.equal(1);
       expect(stringifiedEventArgs).to.deep.equal([
+        pauser.address,
         toValues(protocolMetadata).toString(),
-        admin.address,
         kmsThreshold,
         toValues(kmsNodes).toString(),
         toValues(coprocessors).toString(),
       ]);
     });
 
-    it("Should be registered as an admin", async function () {
-      const { httpz, admin } = await loadFixture(loadTestVariablesFixture);
+    it("Should be registered as an pauser", async function () {
+      const { httpz, pauser } = await loadFixture(loadTestVariablesFixture);
 
-      // Check if the admin is properly registered
-      await expect(httpz.checkIsAdmin(admin)).to.not.be.reverted;
+      // Check if the pauser is properly registered
+      await expect(httpz.checkIsPauser(pauser)).to.not.be.reverted;
     });
 
     it("Should be registered as KMS nodes transaction senders", async function () {
@@ -207,18 +207,18 @@ describe("HTTPZ", function () {
     it("Should revert because of access controls", async function () {
       const { httpz, user } = await loadFixture(loadTestVariablesFixture);
 
-      // Check that someone else than the admin cannot update the KMS threshold
+      // Check that someone else than the owner cannot update the KMS threshold
       await expect(httpz.connect(user).updateKmsThreshold(1))
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.ADMIN_ROLE());
+        .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
+        .withArgs(user.address);
     });
 
     it("Should update the KMS threshold", async function () {
-      const { httpz, admin } = await loadFixture(loadTestVariablesFixture);
+      const { httpz, owner } = await loadFixture(loadTestVariablesFixture);
 
       // Update the KMS threshold
       const newKmsThreshold = 0;
-      const tx = await httpz.connect(admin).updateKmsThreshold(newKmsThreshold);
+      const tx = await httpz.connect(owner).updateKmsThreshold(newKmsThreshold);
 
       // Check event
       await expect(tx).to.emit(httpz, "UpdateKmsThreshold").withArgs(newKmsThreshold);
@@ -228,13 +228,13 @@ describe("HTTPZ", function () {
     });
 
     it("Should revert because the KMS threshold is too high", async function () {
-      const { httpz, admin, kmsSigners } = await loadFixture(loadTestVariablesFixture);
+      const { httpz, owner, kmsSigners } = await loadFixture(loadTestVariablesFixture);
 
       // Define a KMS threshold that is too high (greater than the number of KMS nodes)
       const badKmsThreshold = kmsSigners.length + 1;
 
       // Check that updating with a KMS threshold that is too high reverts
-      await expect(httpz.connect(admin).updateKmsThreshold(badKmsThreshold))
+      await expect(httpz.connect(owner).updateKmsThreshold(badKmsThreshold))
         .to.be.revertedWithCustomError(httpz, "KmsThresholdTooHigh")
         .withArgs(badKmsThreshold, kmsSigners.length);
     });
@@ -242,7 +242,7 @@ describe("HTTPZ", function () {
 
   describe("Add network", function () {
     it("Should add a new network metadata", async function () {
-      const { httpz, admin } = await loadFixture(loadTestVariablesFixture);
+      const { httpz, owner } = await loadFixture(loadTestVariablesFixture);
 
       const newNetwork = {
         chainId: hre.ethers.toNumber(hre.ethers.randomBytes(2)),
@@ -252,16 +252,16 @@ describe("HTTPZ", function () {
         website: "https://network.com",
       };
 
-      const txResponse = httpz.connect(admin).addNetwork(newNetwork);
+      const txResponse = httpz.connect(owner).addNetwork(newNetwork);
 
       // Check AddNetwork event has been emitted
       await expect(txResponse).to.emit(httpz, "AddNetwork").withArgs(toValues(newNetwork));
     });
 
     it("Should revert because the network's chainId is null", async function () {
-      const { httpz, admin } = await loadFixture(loadTestVariablesFixture);
+      const { httpz, owner } = await loadFixture(loadTestVariablesFixture);
 
-      const txResponse = httpz.connect(admin).addNetwork({
+      const txResponse = httpz.connect(owner).addNetwork({
         chainId: 0,
         httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
         aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
@@ -274,11 +274,11 @@ describe("HTTPZ", function () {
     });
 
     it("Should revert because a network with the same chainId already exists", async function () {
-      const { httpz, admin } = await loadFixture(loadTestVariablesFixture);
+      const { httpz, owner } = await loadFixture(loadTestVariablesFixture);
 
       const alreadyAddedNetwork = await httpz.networks(0);
 
-      const txResponse = httpz.connect(admin).addNetwork({
+      const txResponse = httpz.connect(owner).addNetwork({
         chainId: alreadyAddedNetwork.chainId,
         httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
         aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
