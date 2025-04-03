@@ -24,9 +24,9 @@ abstract contract HttpzChecks {
         _;
     }
 
-    /// @notice Checks if the sender is an administrator.
-    modifier onlyAdmin() {
-        _HTTPZ.checkIsAdmin(msg.sender);
+    /// @notice Checks if the sender is the pauser.
+    modifier onlyPauser() {
+        _HTTPZ.checkIsPauser(msg.sender);
         _;
     }
 

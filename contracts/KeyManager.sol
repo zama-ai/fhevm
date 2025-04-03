@@ -132,7 +132,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     /// @dev See {IKeyManager-preprocessKeygenRequest}.
     function preprocessKeygenRequest(
         string calldata fheParamsName
-    ) external virtual onlyAdmin fheParamsInitialized(fheParamsName) {
+    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
@@ -178,7 +178,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     /// @dev See {IKeyManager-preprocessKskgenRequest}.
     function preprocessKskgenRequest(
         string calldata fheParamsName
-    ) external virtual onlyAdmin fheParamsInitialized(fheParamsName) {
+    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
@@ -222,7 +222,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     }
 
     /// @dev See {IKeyManager-keygenRequest}.
-    function keygenRequest(uint256 preKeyId) external virtual onlyAdmin {
+    function keygenRequest(uint256 preKeyId) external virtual onlyOwner {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev A key generation request can only be sent once
@@ -271,7 +271,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     /// @dev See {IKeyManager-crsgenRequest}.
     function crsgenRequest(
         string calldata fheParamsName
-    ) external virtual onlyAdmin fheParamsInitialized(fheParamsName) {
+    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev Generate a new crsgenRequestId. This is used to link the FHE params sent in the request
@@ -313,7 +313,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     }
 
     /// @dev See {IKeyManager-kskgenRequest}.
-    function kskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId) external virtual onlyAdmin {
+    function kskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId) external virtual onlyOwner {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev A KSK generation request can only be sent once
@@ -378,7 +378,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     }
 
     /// @dev See {IKeyManager-activateKeyRequest}.
-    function activateKeyRequest(uint256 keyId) external virtual onlyAdmin {
+    function activateKeyRequest(uint256 keyId) external virtual onlyOwner {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev A key activation request can only be sent once
