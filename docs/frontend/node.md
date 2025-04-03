@@ -1,5 +1,7 @@
 # Build with Node
 
+FIXME: fhevmjs, fhevm command
+
 This document provides instructions on how to build with `Node.js` using the `fhevmjs` library.
 
 ## Install the library
