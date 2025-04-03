@@ -1,10 +1,12 @@
 # Using the CLI
 
-The `fhevmjs` Command-Line Interface (CLI) tool provides a simple and efficient way to encrypt data for use with the blockchain's Fully Homomorphic Encryption (FHE) system. This guide explains how to install and use the CLI to encrypt integers and booleans for confidential smart contracts.
+The `HTTPZjs` Command-Line Interface (CLI) tool provides a simple and efficient way to encrypt data for use with the blockchain's Fully Homomorphic Encryption (FHE) system. This guide explains how to install and use the CLI to encrypt integers and booleans for confidential smart contracts.
 
 ## Installation
 
-Ensure you have [Node.js](https://nodejs.org/) installed on your system before proceeding. Then, globally install the `fhevmjs` package to enable the CLI tool:
+FIXME: fhevmjs, fhevm command
+
+Ensure you have [Node.js](https://nodejs.org/) installed on your system before proceeding. Then, globally install the `HTTPZjs` package to enable the CLI tool:
 
 ```bash
 npm install -g fhevmjs
