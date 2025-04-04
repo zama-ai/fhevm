@@ -1,6 +1,6 @@
 # Table of contents
 
-- [Welcome to Gateway Layer 2](README.md)
+- [Welcome to HTTPZ Gateway](README.md)
 
 ## Getting Started
 

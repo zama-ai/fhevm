@@ -4,7 +4,7 @@ import { task, types } from "hardhat/config";
 
 import { getRequiredEnvVar } from "./utils/loadVariables";
 
-// Add L1 networks metadata to the HTTPZ contract
+// Add host networks metadata to the HTTPZ contract
 // Note: Internal HTTPZ address is defined in the `addresses/` directory. It should be used
 // for local testing. By default, we use the HTTPZ_ADDRESS env var, as done in deployment
 task("task:addNetworksToHttpz")
@@ -18,10 +18,10 @@ task("task:addNetworksToHttpz")
     const numNetworks = parseInt(getRequiredEnvVar("NUM_NETWORKS"));
     const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
-    // Parse the L1 network
-    const layer1Networks = [];
+    // Parse the host network(s)
+    const hostNetworks = [];
     for (let idx = 0; idx < numNetworks; idx++) {
-      layer1Networks.push({
+      hostNetworks.push({
         chainId: getRequiredEnvVar(`NETWORK_CHAIN_ID_${idx}`),
         httpzExecutor: getRequiredEnvVar(`NETWORK_HTTPZ_EXECUTOR_${idx}`),
         aclAddress: getRequiredEnvVar(`NETWORK_ACL_ADDRESS_${idx}`),
@@ -38,13 +38,13 @@ task("task:addNetworksToHttpz")
       proxyAddress = getRequiredEnvVar("HTTPZ_ADDRESS");
     }
 
-    // Add L1 networks
+    // Add host networks
     const httpz = await hre.ethers.getContractAt("HTTPZ", proxyAddress, deployer);
-    for (const network of layer1Networks) {
+    for (const network of hostNetworks) {
       await httpz.addNetwork(network);
     }
 
     console.log("In HTTPZ contract:", proxyAddress, "\n");
-    console.log("Added L1 networks:", layer1Networks, "\n");
+    console.log("Added host networks:", hostNetworks, "\n");
     console.log("Networks registration done!");
   });
