@@ -11,7 +11,6 @@ import {
 import { DApp, DAppProps } from '#dapps/domain/entities/dapp.js'
 import {
   DAppRepository,
-  type Operation,
   type CumulativeStats,
   type DailyStats,
 } from '#dapps/domain/repositories/dapp.repository.js'
@@ -214,10 +213,10 @@ export class PrismaDAppRepository extends DAppRepository {
           this.logger.debug(`stats: ${JSON.stringify(stats)}`)
           const operations = stats.reduce(
             (acc, stat) => {
-              acc[stat.name as Operation] = stat._count.name
+              acc[stat.name as DAppStat['name']] = stat._count.name
               return acc
             },
-            {} as Record<Operation, number>,
+            {} as Record<DAppStat['name'], number>,
           )
           const computation = new Computation(operations)
           resolve(computation)

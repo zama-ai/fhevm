@@ -5,40 +5,9 @@ import { DAppId } from '../entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '../entities/dapp-stat.js'
 
-export type Operation =
-  | 'FheAdd'
-  | 'FheSub'
-  | 'FheMul'
-  | 'FheDiv'
-  | 'FheRem'
-  | 'FheBitAnd'
-  | 'FheBitOr'
-  | 'FheBitXor'
-  | 'FheShl'
-  | 'FheShr'
-  | 'FheRotl'
-  | 'FheRotr'
-  | 'FheEq'
-  | 'FheEqBytes'
-  | 'FheNe'
-  | 'FheNeBytes'
-  | 'FheGe'
-  | 'FheGt'
-  | 'FheLe'
-  | 'FheLt'
-  | 'FheMin'
-  | 'FheMax'
-  | 'FheNeg'
-  | 'FheNot'
-  | 'VerifyCiphertext'
-  | 'Cast'
-  | 'TrivialEncrypt'
-  | 'TrivialEncryptBytes'
-  | 'FheIfThenElse'
-  | 'FheRand'
-  | 'FheRandBounded'
-
-export type CumulativeStats = Record<Operation, number> & { total: number }
+export type CumulativeStats = Record<DAppStat['name'], number> & {
+  total: number
+}
 
 export type DailyStats = {
   id: string

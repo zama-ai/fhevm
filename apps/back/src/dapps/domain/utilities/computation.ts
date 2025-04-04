@@ -1,7 +1,7 @@
-import { Operation } from '../repositories/dapp.repository.js'
+import { DAppStat } from '../entities/dapp-stat.js'
 
 // Initialize all operations with 0
-const allOperations: Record<Operation, number> = {
+const allOperations: Record<DAppStat['name'], number> = {
   FheAdd: 0,
   FheSub: 0,
   FheMul: 0,
@@ -36,9 +36,9 @@ const allOperations: Record<Operation, number> = {
 }
 
 export class Computation {
-  private readonly values: Record<Operation, number>
+  private readonly values: Record<DAppStat['name'], number>
 
-  constructor(values: Partial<Record<Operation, number>> = {}) {
+  constructor(values: Partial<Record<DAppStat['name'], number>> = {}) {
     this.values = { ...allOperations, ...values }
   }
 
