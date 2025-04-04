@@ -12,7 +12,7 @@ describe('DappStat', () => {
     beforeEach(() => {
       params = {
         id: DAppStatId.random().value,
-        name: faker.string.alphanumeric(10),
+        name: 'FheAdd',
         type: StatsType.COMPUTATION,
         day: faker.number.int({ min: 1, max: 365 }),
         month: faker.number.int({ min: 0, max: 11 }),
@@ -111,7 +111,7 @@ describe('DappStat', () => {
 
     beforeEach(() => {
       const result = DAppStat.create({
-        name: faker.string.alphanumeric(10),
+        name: 'FheAdd',
         timestamp: new Date(Date.now()),
         type: StatsType.COMPUTATION,
         day: faker.number.int({ min: 1, max: 365 }),

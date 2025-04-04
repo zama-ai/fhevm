@@ -71,7 +71,7 @@ describe('PrismaDappRepository', () => {
       const stats: DAppStatProps[] = [
         {
           id: DAppStatId.random().value as string & z.BRAND<'DAppStatId'>,
-          name: faker.string.alphanumeric(10),
+          name: 'FheAdd',
           timestamp: new Date(Date.now()),
           dappId: DAppId.random().value as `dapp_${string}` & z.BRAND<'DAppId'>,
           type: StatsType.COMPUTATION,
