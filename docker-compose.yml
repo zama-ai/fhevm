@@ -29,12 +29,12 @@ services:
 
   deploy-gateway-contracts:
     container_name: deploy-gateway-contracts
-    image: gateway-l2/sc-bundle:0.1.0-local
+    image: httpz-gateway/sc-bundle:0.1.0-local
     build:
       context: .
       dockerfile: Dockerfile
       tags:
-        - gateway-l2/sc-bundle:0.1.0-local
+        - httpz-gateway/sc-bundle:0.1.0-local
     env_file: ./.env.example.deployment
     environment:
       - HARDHAT_NETWORK=staging
@@ -49,12 +49,12 @@ services:
 
   add-httpz-networks:
     container_name: add-httpz-networks
-    image: gateway-l2/sc-bundle:0.1.0-local
+    image: httpz-gateway/sc-bundle:0.1.0-local
     build:
       context: .
       dockerfile: Dockerfile
       tags:
-        - gateway-l2/sc-bundle:0.1.0-local
+        - httpz-gateway/sc-bundle:0.1.0-local
     command:
       - /bin/bash
       - "-c"

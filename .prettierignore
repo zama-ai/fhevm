@@ -8,7 +8,6 @@ build
 cache
 coverage
 dist
-fhevmTemp
 httpz_gateway_rust_bindings/target
 node_modules
 types

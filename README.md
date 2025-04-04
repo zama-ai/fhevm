@@ -1,6 +1,6 @@
-# gateway-l2
+# HTTPZ-Gateway
 
-Solidity Smart Contracts for the Gateway L2 Rollup
+Solidity Smart Contracts for the HTTPZ Gateway
 
 ## Smart Contracts deployment
 

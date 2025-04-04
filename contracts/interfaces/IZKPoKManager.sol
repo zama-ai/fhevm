@@ -29,7 +29,6 @@ interface IZKPoKManager {
 
     /**
      * @notice Emitted once a correct ZK Proof verification is completed
-     * @dev This event is meant to be listened by the fhEVM Relayer
      * @param zkProofId The ID of the ZK Proof
      * @param ctHandles The coprocessor's computed ciphertext handles
      * @param signatures The coprocessor's signature
@@ -38,7 +37,6 @@ interface IZKPoKManager {
 
     /**
      * @notice Emitted once an ZK Proof verification is rejected
-     * @dev This event is meant to be listened by the fhEVM Relayer
      * @param zkProofId The ID of the ZK Proof
      */
     event RejectProofResponse(uint256 indexed zkProofId);

@@ -6,11 +6,11 @@ import "../shared/Structs.sol";
 /**
  * @title Interface for the HTTPZ contract
  * @notice The HTTPZ contract is responsible for being a point of truth for all contracts and
- * components from the Gateway L2.
+ * components from the HTTPZ Gateway.
  * @dev The HTTPZ contract contains:
- * - the list of KMS nodes used exclusively by this Gateway L2
- * - the list of coprocessors used exclusively by this Gateway L2
- * - the list of networks using this Gateway L2
+ * - the list of KMS nodes used exclusively by this HTTPZ Gateway
+ * - the list of coprocessors used exclusively by this HTTPZ Gateway
+ * - the list of networks using this HTTPZ Gateway
  *
  * The HTTPZ contract has an owner and a pauser.
  * The owner can call some restricted functions, such as adding or removing KMS nodes, coprocessors
