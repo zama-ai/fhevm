@@ -8,11 +8,12 @@ RUN apt-get update && \
 # Set the working directory
 WORKDIR /app
 
-# Copy only necessary files for npm install
+# Copy only necessary files for npm ci
 COPY package.json ./
+COPY package-lock.json ./ 
 
 # Install dependencies
-RUN npm install && \
+RUN npm ci && \
     npm prune
 
 # Copy the application files

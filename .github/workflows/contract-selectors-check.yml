@@ -23,12 +23,8 @@ jobs:
         uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c # v1.3.1
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Validate contract selectors
         run: |
-          if ! forge selectors list | tail -n +2 | diff ./docs/contract_selectors.txt - &> /dev/null; then
-            echo -e "\033[91m\033[1m[-]\033[0m Contract selectors are not up-to-date." >&2
-            echo "Please run 'make update-selectors' to update them." >&2
-            exit 1
-          fi
+          make check-selectors
