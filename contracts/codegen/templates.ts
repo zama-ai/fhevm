@@ -4,10 +4,9 @@ import { Operator, OperatorArguments, ReturnType } from './common';
 import { ArgumentType, OverloadSignature } from './testgen';
 import { getUint } from './utils';
 
-export function commonSolLib(): string {
+function commonSolLib(): string {
   return `
 type ebool is bytes32;
-type euint4 is bytes32;
 type euint8 is bytes32;
 type euint16 is bytes32;
 type euint32 is bytes32;
@@ -23,9 +22,10 @@ type einput is bytes32;
 /**
  * @title   Common
  * @notice  This library contains all the values used to communicate types to the run time.
+ *          It matches the tfhe-rs types.
+ *          see: https://github.com/zama-ai/tfhe-rs/blob/a2f1825691f9f95e9d241ca4bd4c4598b905f070/tfhe/src/high_level_api/mod.rs
  */
 library Common {
-
     /// @notice Runtime type for encrypted boolean.
     uint8 internal constant ebool_t = 0;
 
@@ -40,10 +40,13 @@ library Common {
 
     /// @notice Runtime type for encrypted uint32.
     uint8 internal constant euint32_t = 4;
+
     /// @notice Runtime type for encrypted uint64.
     uint8 internal constant euint64_t = 5;
+
     /// @notice Runtime type for encrypted uint128.
     uint8 internal constant euint128_t = 6;
+    
     /// @notice Runtime type for encrypted addresses.
     uint8 internal constant euint160_t = 7;
 
@@ -112,7 +115,7 @@ ${inputVerifierInterface}
  * @notice  This library is the core implementation for computing FHE operations (e.g. add, sub, xor).
  */
 library Impl {
-  /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
+  /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
   bytes32 private constant FHEVMConfigLocation = 0xed8d60e34876f751cc8b014c560745351147d9de11b9347c854e881b128ea600;
 
   /**
@@ -154,7 +157,6 @@ library Impl {
 
   return res.join('');
 }
-
 export function fhevmLibSol(operators: Operator[]): string {
   const res: string[] = [];
 
@@ -252,7 +254,6 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
 
   return res.join('');
 }
-
 function fheLibCustomInterfaceFunctions(): string {
   return `
     /**
@@ -428,9 +429,7 @@ pragma solidity ^0.8.24;
 
 import "./Impl.sol";
 
-
 ${commonSolLib()}
-
 
 /**
  * @title   TFHE
@@ -526,7 +525,7 @@ error InputLengthAbove256Bytes(uint256 inputLength);
     res.push(tfheAsEboolUnaryCast(outputBits));
   });
   supportedBits.forEach((bits) => res.push(tfheUnaryOperators(bits, operators, signatures)));
-  supportedBits.forEach((bits) => res.push(tfheCustomUnaryOperators(bits, signatures, mocked)));
+  supportedBits.forEach((bits) => res.push(tfheCustomUnaryOperators(bits)));
 
   res.push(tfheCustomMethods());
 
@@ -943,7 +942,7 @@ function tfheUnaryOperators(bits: number, operators: Operator[], signatures: Ove
   return res.join('\n');
 }
 
-function tfheCustomUnaryOperators(bits: number, signatures: OverloadSignature[], mocked: boolean): string {
+function tfheCustomUnaryOperators(bits: number): string {
   let result = `
     /** 
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint${bits} integer.
@@ -1222,21 +1221,6 @@ function tfheCustomMethods(): string {
     */
     function randEbool() internal returns (ebool) {
       return ebool.wrap(Impl.rand(Common.ebool_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 4-bit unsigned integer.
-    */
-    function randEuint4() internal returns (euint4) {
-      return euint4.wrap(Impl.rand(Common.euint4_t));
-    }
-
-    /**
-    * @dev Generates a random encrypted 4-bit unsigned integer in the [0, upperBound) range.
-    *      The upperBound must be a power of 2.
-    */
-    function randEuint4(uint8 upperBound) internal returns (euint4) {
-      return euint4.wrap(Impl.randBounded(upperBound, Common.euint4_t));
     }
 
     /**

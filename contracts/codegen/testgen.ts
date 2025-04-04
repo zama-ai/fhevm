@@ -64,7 +64,7 @@ function generateIntroTestCode(shards: OverloadShard[], idxSplit: number): strin
   intro.push(`
     import { expect } from 'chai';
     import { ethers } from 'hardhat';
-    import { createInstances, decrypt4, decrypt8, decrypt16, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '../instance';
+    import { createInstances, decrypt8, decrypt16, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '../instance';
     import { getSigners, initSigners } from '../signers';
 
   `);
@@ -239,7 +239,6 @@ export function generateSmartContract(os: OverloadShard): string {
 
         contract TFHETestSuite${os.shardNumber} {
           ebool public resb;
-          euint4 public res4;
           euint8 public res8;
           euint16 public res16;
           euint32 public res32;
@@ -264,7 +263,6 @@ export function generateSmartContract(os: OverloadShard): string {
 
 const stateVar = {
   ebool: 'resb',
-  euint4: 'res4',
   euint8: 'res8',
   euint16: 'res16',
   euint32: 'res32',

@@ -83,26 +83,6 @@ describe('Reencryption', function () {
     }
   });
 
-  it('test reencrypt euint4', async function () {
-    const handle = await this.contract.xUint4();
-    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKey, this.contractAddress);
-    const signature = await this.signers.alice.signTypedData(
-      eip712.domain,
-      { Reencrypt: eip712.types.Reencrypt },
-      eip712.message,
-    );
-    const decryptedValue = await this.instances.alice.reencrypt(
-      handle,
-      privateKey,
-      publicKey,
-      signature.replace('0x', ''),
-      this.contractAddress,
-      this.signers.alice.address,
-    );
-    expect(decryptedValue).to.equal(4);
-  });
-
   it('test reencrypt euint8', async function () {
     const handle = await this.contract.xUint8();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();

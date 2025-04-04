@@ -109,24 +109,6 @@ export const decryptBool = async (handle: string): Promise<boolean> => {
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
  */
-export const decrypt4 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
-  } else {
-    return getDecryptor().decrypt4(await getCiphertext(handle, ethers));
-  }
-};
-
-/**
- * @debug
- * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
- *
- * @param {bigint} a handle to decrypt
- * @returns {bigint}
- */
 export const decrypt8 = async (handle: string): Promise<bigint> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();

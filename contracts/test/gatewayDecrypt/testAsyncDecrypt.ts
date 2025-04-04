@@ -70,36 +70,6 @@ describe('TestAsyncDecrypt', function () {
     }
   });
 
-  it('test async decrypt uint4', async function () {
-    const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
-    const tx2 = await this.contract.connect(this.signers.carol).requestUint4();
-    await tx2.wait();
-    await awaitAllDecryptionResults();
-    const y = await this.contract.yUint4();
-    expect(y).to.equal(4);
-    const balanceAfter = await ethers.provider.getBalance(this.relayerAddress);
-    console.log(balanceBefore - balanceAfter);
-  });
-
-  it.skip('test async decrypt FAKE uint4', async function () {
-    if (network.name !== 'hardhat') {
-      // only in fhevm mode
-      const txObject = await this.contract.requestFakeUint4.populateTransaction();
-      const tx = await this.signers.carol.sendTransaction(txObject);
-      let receipt = null;
-      let waitTime = 0;
-      while (receipt === null && waitTime < 15000) {
-        receipt = await ethers.provider.getTransactionReceipt(tx.hash);
-        if (receipt === null) {
-          console.log('Trying again to fetch txn receipt....');
-          await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait for 5 seconds
-          waitTime += 5000;
-        }
-      }
-      expect(waitTime >= 15000).to.be.true;
-    }
-  });
-
   it('test async decrypt uint8', async function () {
     const tx2 = await this.contract.connect(this.signers.carol).requestUint8();
     await tx2.wait();

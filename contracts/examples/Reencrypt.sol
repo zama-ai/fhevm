@@ -9,8 +9,6 @@ import "../lib/FHEVMConfig.sol";
 contract Reencrypt {
     /// @dev Encrypted boolean
     ebool public xBool;
-    /// @dev Encrypted 4-bit unsigned integer
-    euint4 public xUint4;
     /// @dev Encrypted 8-bit unsigned integer
     euint8 public xUint8;
     /// @dev Encrypted 16-bit unsigned integer
@@ -35,11 +33,6 @@ contract Reencrypt {
         xBool = TFHE.asEbool(true);
         TFHE.allowThis(xBool);
         TFHE.allow(xBool, msg.sender);
-
-        // Initialize and set permissions for xUint4
-        xUint4 = TFHE.asEuint4(4);
-        TFHE.allowThis(xUint4);
-        TFHE.allow(xUint4, msg.sender);
 
         // Initialize and set permissions for xUint8
         xUint8 = TFHE.asEuint8(42);

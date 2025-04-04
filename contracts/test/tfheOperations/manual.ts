@@ -4,7 +4,6 @@ import { ethers } from 'hardhat';
 import type { TFHEManualTestSuite } from '../../types/contracts/tests/TFHEManualTestSuite';
 import {
   createInstances,
-  decrypt4,
   decrypt8,
   decrypt16,
   decrypt32,
@@ -435,20 +434,6 @@ describe('TFHE manual operations', function () {
     expect(res).to.equal(true);
   });
 
-  it('ebool to euint4 casting works with true', async function () {
-    const tx = await this.contract.test_ebool_to_euint4_cast(true);
-    await tx.wait();
-    const res = await decrypt4(await this.contract.res4());
-    expect(res).to.equal(1);
-  });
-
-  it('ebool to euint4 casting works with false', async function () {
-    const tx = await this.contract.test_ebool_to_euint4_cast(false);
-    await tx.wait();
-    const res = await decrypt4(await this.contract.res4());
-    expect(res).to.equal(0);
-  });
-
   it('ebool to euint8 casting works with true', async function () {
     const tx = await this.contract.test_ebool_to_euint8_cast(true);
     await tx.wait();
@@ -531,13 +516,6 @@ describe('TFHE manual operations', function () {
     await tx.wait();
     const res = await decrypt256(await this.contract.res256());
     expect(res).to.equal(0);
-  });
-
-  it('euint4 to euint256 casting works', async function () {
-    const tx = await this.contract.test_euint4_to_euint256_cast(12);
-    await tx.wait();
-    const res = await decrypt256(await this.contract.res256());
-    expect(res).to.equal(12);
   });
 
   it('euint128 to euint8 casting works', async function () {

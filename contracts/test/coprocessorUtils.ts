@@ -63,7 +63,6 @@ interface FHEVMEvent {
 
 const NumBits = {
   0: 1n, //ebool
-  1: 4n, //euint4
   2: 8n, //euint8
   3: 16n, //euint16
   4: 32n, //euint32

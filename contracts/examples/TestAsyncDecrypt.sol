@@ -10,7 +10,6 @@ import "../addresses/DecryptionOracleAddress.sol";
 contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @dev Encrypted state variables
     ebool xBool;
-    euint4 xUint4;
     euint8 xUint8;
     euint16 xUint16;
     euint32 xUint32;
@@ -50,8 +49,7 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         /// @dev Initialize encrypted variables with sample values
         xBool = TFHE.asEbool(true);
         TFHE.allowThis(xBool);
-        xUint4 = TFHE.asEuint4(4);
-        TFHE.allowThis(xUint4);
+
         xUint8 = TFHE.asEuint8(42);
         TFHE.allowThis(xUint8);
         xUint16 = TFHE.asEuint16(16);
@@ -118,21 +116,6 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     ) public checkSignatures(requestID, signatures) returns (bool) {
         yBool = decryptedInput;
         return yBool;
-    }
-
-    /// @notice Request decryption of a 4-bit unsigned integer
-    function requestUint4() public {
-        bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(xUint4);
-        requestDecryption(cts, this.callbackUint4.selector);
-    }
-
-    /// @notice Attempt to request decryption of a fake 4-bit unsigned integer (should revert)
-    function requestFakeUint4() public {
-        bytes32[] memory cts = new bytes32[](1);
-        cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000100;
-        /// @dev This should revert because the previous handle is not honestly obtained
-        requestDecryption(cts, this.callbackUint4.selector);
     }
 
     /// @notice Callback function for 4-bit unsigned integer decryption

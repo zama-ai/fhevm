@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { Wallet, ethers } from 'ethers';
 import * as fs from 'fs';
+import hre from 'hardhat';
 import { Keccak } from 'sha3';
 import { isAddress } from 'web3-validator';
 
@@ -11,8 +12,6 @@ import { getRequiredEnvVar } from '../tasks/utils/loadVariables';
 import { insertSQL } from './coprocessorUtils';
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
 import { checkIsHardhatSigner } from './utils';
-
-const hre = require('hardhat');
 
 async function getCoprocessorSigners() {
   const coprocessorSigners = [];
@@ -30,17 +29,16 @@ const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
 
 enum Types {
   ebool = 0,
-  euint4,
-  euint8,
-  euint16,
-  euint32,
-  euint64,
-  euint128,
-  eaddress,
-  euint256,
-  ebytes64,
-  ebytes128,
-  ebytes256,
+  euint8 = 2,
+  euint16 = 3,
+  euint32 = 4,
+  euint64 = 5,
+  euint128 = 6,
+  eaddress = 7,
+  euint256 = 8,
+  ebytes64 = 9,
+  ebytes128 = 10,
+  ebytes256 = 11,
 }
 
 const sum = (arr: number[]) => arr.reduce((acc, val) => acc + val, 0);
@@ -69,10 +67,6 @@ function createUintToUint8ArrayFunction(numBits: number) {
     switch (numBits) {
       case 2: // ebool takes 2 bits
         byteBuffer = Buffer.from([Types.ebool]);
-        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
-        break;
-      case 4:
-        byteBuffer = Buffer.from([Types.euint4]);
         totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
         break;
       case 8:
@@ -187,14 +181,6 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
         throw new Error('The value must be 1 or 0.');
       values.push(BigInt(value));
       bits.push(2); // ebool takes 2 bits instead of one: only exception in TFHE-rs
-      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
-      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
-      return this;
-    },
-    add4(value: number | bigint) {
-      checkEncryptedValue(value, 4);
-      values.push(BigInt(value));
-      bits.push(4);
       if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
       if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;

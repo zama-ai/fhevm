@@ -7,18 +7,21 @@ import * as t from './templates';
 import * as testgen from './testgen';
 
 function generateAllFiles() {
-  const numSplits = 12;
+  const numberOfTestSplits = 12;
+  if (!ALL_OPERATORS || !Array.isArray(ALL_OPERATORS) || ALL_OPERATORS.length === 0) {
+    throw new Error('ALL_OPERATORS is not defined or invalid');
+  }
   const operators = checks(ALL_OPERATORS);
   const [tfheSolSource, overloads] = t.tfheSol(operators, SUPPORTED_BITS, false);
-  const ovShards = testgen.splitOverloadsToShards(overloads);
+  const overloadShards = testgen.splitOverloadsToShards(overloads);
   writeFileSync('lib/Impl.sol', t.implSol(operators));
   writeFileSync('lib/TFHE.sol', tfheSolSource);
   writeFileSync('contracts/FHEGasLimit.sol', generateFHEGasLimit(operatorsPrices));
   mkdirSync('contracts/tests', { recursive: true });
-  ovShards.forEach((os) => {
+  overloadShards.forEach((os) => {
     writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
   });
-  const tsSplits: string[] = testgen.generateTestCode(ovShards, numSplits);
+  const tsSplits: string[] = testgen.generateTestCode(overloadShards, numberOfTestSplits);
   tsSplits.forEach((split, splitIdx) => writeFileSync(`test/tfheOperations/tfheOperations${splitIdx + 1}.ts`, split));
 }
 

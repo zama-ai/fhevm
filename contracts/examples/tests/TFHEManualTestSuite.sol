@@ -6,7 +6,6 @@ import "../../lib/FHEVMConfig.sol";
 
 contract TFHEManualTestSuite {
     ebool public resb;
-    euint4 public res4;
     euint8 public res8;
     euint16 public res16;
     euint32 public res32;
@@ -308,10 +307,6 @@ contract TFHEManualTestSuite {
         resb = result;
     }
 
-    function test_ebool_to_euint4_cast(bool input) public {
-        res4 = TFHE.asEuint4(TFHE.asEbool(input));
-    }
-
     function test_ebool_to_euint8_cast(bool input) public {
         res8 = TFHE.asEuint8(TFHE.asEbool(input));
     }
@@ -334,10 +329,6 @@ contract TFHEManualTestSuite {
 
     function test_ebool_to_euint256_cast(bool input) public {
         res256 = TFHE.asEuint256(TFHE.asEbool(input));
-    }
-
-    function test_euint4_to_euint256_cast(uint8 input) public {
-        res256 = TFHE.asEuint256(TFHE.asEuint4(input));
     }
 
     function test_euint128_to_euint8_cast(uint128 input) public {

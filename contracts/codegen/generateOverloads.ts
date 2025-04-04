@@ -1,3 +1,5 @@
+import { SUPPORTED_BITS, SUPPORTED_UINT } from './common';
+
 type Test = {
   inputs: bigint[];
   output: number | boolean | bigint;
@@ -31,9 +33,6 @@ type SupportedFunction = SupportedFunctionParams &
 (BigInt as any).prototype['toJSON'] = function () {
   return this.toString();
 };
-
-const SUPPORTED_UINT = [8, 16, 32, 64, 128, 256];
-const SUPPORTED_BITS = [4, 8, 16, 32, 64, 128, 256];
 
 const bigIntMin = (...args: bigint[]) => {
   return args.reduce((min, e) => (e < min ? e : min), args[0]);
