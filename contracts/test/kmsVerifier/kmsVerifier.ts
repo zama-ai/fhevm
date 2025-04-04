@@ -30,15 +30,15 @@ describe('KMSVerifier', function () {
       const addressSigner = process.env['KMS_SIGNER_ADDRESS_1']!;
       let setSigners = await kmsVerifier.getSigners();
       setSigners = [...setSigners, addressSigner];
-      let tx = await kmsVerifier.connect(deployer).defineNewContext(setSigners, 1);
-      await tx.wait();
+      const tx1 = await kmsVerifier.connect(deployer).defineNewContext(setSigners, 1);
+      await tx1.wait();
 
       expect((await kmsVerifier.getSigners()).length).to.equal(2); // one signer has been added
 
       const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
       const contract = (await contractFactory.connect(this.signers.alice).deploy()) as TestAsyncDecrypt;
-      tx = await contract.requestBool();
-      await tx.wait();
+      const tx2 = await contract.requestBool();
+      await tx2.wait();
       await awaitAllDecryptionResults();
       expect(await contract.yBool()).to.equal(true); // in this case, one signature still suffices to pass the decrypt (threshold is still 1)
 
@@ -53,17 +53,25 @@ describe('KMSVerifier', function () {
       const kmsSigner3Address = process.env['KMS_SIGNER_ADDRESS_3']!;
       let setSigners2 = await kmsVerifier.getSigners();
       setSigners2 = [...setSigners2, kmsSigner2Address, kmsSigner3Address];
-      tx = await kmsVerifier.connect(deployer).defineNewContext(setSigners2, 1);
-      await tx.wait();
+      const tx3 = await kmsVerifier.connect(deployer).defineNewContext(setSigners2, 1);
+      await tx3.wait();
       expect((await kmsVerifier.getSigners()).length).to.equal(4); // 3rd and 4th signer has been added successfully
 
-      tx = await kmsVerifier.connect(deployer).setThreshold(2n);
-      await tx.wait();
+      const tx4 = await kmsVerifier.connect(deployer).setThreshold(2n);
+      await tx4.wait();
       expect(await kmsVerifier.getThreshold()).to.equal(2);
 
+      const tx5 = await contract.requestUint16();
+      await tx5.wait();
+
+      await expect(awaitAllDecryptionResults())
+        .to.revertedWithCustomError(kmsVerifier, 'KMSSignatureThresholdNotReached')
+        .withArgs(1n); // should revert because now we are below the threshold! (we receive only 1 signature but threshold is 2)
+
       process.env.NUM_KMS_NODES = '4';
-      tx = await contract.requestUint8();
-      await tx.wait();
+
+      const tx6 = await contract.requestUint8();
+      await tx6.wait();
       await awaitAllDecryptionResults();
       expect(await contract.yUint8()).to.equal(42); // even with more than 2 signatures decryption should still succeed
 
@@ -75,8 +83,8 @@ describe('KMSVerifier', function () {
       inputAlice.addBytes256(bigIntToBytes256(18446744073709550032n));
 
       const encryptedAmount = await inputAlice.encrypt();
-      tx = await contract2.requestMixedBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof);
-      await tx.wait();
+      const tx7 = await contract2.requestMixedBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof);
+      await tx7.wait();
       await awaitAllDecryptionResults();
 
       expect(await contract2.yBytes256()).to.equal(ethers.toBeHex(18446744073709550032n, 256));
@@ -85,20 +93,21 @@ describe('KMSVerifier', function () {
 
       process.env.NUM_KMS_NODES = '2';
       process.env.KMS_SIGNER_ADDRESS_1 = process.env.KMS_SIGNER_ADDRESS_0;
-      tx = await contract.requestUint16();
-      await tx.wait();
+      const tx8 = await contract.requestUint16();
+      await tx8.wait();
       await expect(awaitAllDecryptionResults()).to.revertedWithCustomError(contract, 'InvalidKMSSignatures'); // cannot use duplicated signatures if threshold is 2
       expect(await contract.yUint16()).to.equal(0);
 
       process.env.NUM_KMS_NODES = '1';
       let setSigners3 = [...(await kmsVerifier.getSigners())];
       setSigners3.pop();
-      tx = await kmsVerifier.connect(deployer).defineNewContext(setSigners3, 1);
-      await tx.wait();
+
+      const tx9 = await kmsVerifier.connect(deployer).defineNewContext(setSigners3, 1);
+      await tx9.wait();
       expect(await kmsVerifier.getThreshold()).to.equal(1);
 
-      tx = await contract.requestUint16();
-      await tx.wait();
+      const tx10 = await contract.requestUint16();
+      await tx10.wait();
       await awaitAllDecryptionResults();
       expect(await contract.yUint16()).to.equal(16); // after removing one of the 4 signers, one signature is enough for decryption
     }
