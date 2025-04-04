@@ -29,8 +29,11 @@ interface IHTTPZ {
     error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
     error NetworkAlreadyRegistered(uint256 chainId);
     error NetworkNotRegistered(uint256 chainId);
-    error NotCoprocessorSigner(address coprocessorSignerAddress);
-    error NotKmsSigner(address kmsSignerAddress);
+    error NotCoprocessorSigner(address signerAddress);
+    error NotCoprocessorTxSender(address txSenderAddress);
+    error NotKmsSigner(address signerAddress);
+    error NotKmsTxSender(address txSenderAddress);
+    error NotPauser(address pauserAddress);
 
     event AddNetwork(Network network);
     event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
@@ -636,7 +639,18 @@ interface IHTTPZ {
     "name": "NotCoprocessorSigner",
     "inputs": [
       {
-        "name": "coprocessorSignerAddress",
+        "name": "signerAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotCoprocessorTxSender",
+    "inputs": [
+      {
+        "name": "txSenderAddress",
         "type": "address",
         "internalType": "address"
       }
@@ -647,7 +661,29 @@ interface IHTTPZ {
     "name": "NotKmsSigner",
     "inputs": [
       {
-        "name": "kmsSignerAddress",
+        "name": "signerAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotKmsTxSender",
+    "inputs": [
+      {
+        "name": "txSenderAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotPauser",
+    "inputs": [
+      {
+        "name": "pauserAddress",
         "type": "address",
         "internalType": "address"
       }
@@ -1961,13 +1997,13 @@ error NetworkNotRegistered(uint256 chainId);
     };
     /**Custom error with signature `NotCoprocessorSigner(address)` and selector `0x26cd75dc`.
 ```solidity
-error NotCoprocessorSigner(address coprocessorSignerAddress);
+error NotCoprocessorSigner(address signerAddress);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotCoprocessorSigner {
         #[allow(missing_docs)]
-        pub coprocessorSignerAddress: alloy::sol_types::private::Address,
+        pub signerAddress: alloy::sol_types::private::Address,
     }
     #[allow(
         non_camel_case_types,
@@ -1996,16 +2032,14 @@ error NotCoprocessorSigner(address coprocessorSignerAddress);
         #[doc(hidden)]
         impl ::core::convert::From<NotCoprocessorSigner> for UnderlyingRustTuple<'_> {
             fn from(value: NotCoprocessorSigner) -> Self {
-                (value.coprocessorSignerAddress,)
+                (value.signerAddress,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotCoprocessorSigner {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    coprocessorSignerAddress: tuple.0,
-                }
+                Self { signerAddress: tuple.0 }
             }
         }
         #[automatically_derived]
@@ -2026,7 +2060,78 @@ error NotCoprocessorSigner(address coprocessorSignerAddress);
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.coprocessorSignerAddress,
+                        &self.signerAddress,
+                    ),
+                )
+            }
+        }
+    };
+    /**Custom error with signature `NotCoprocessorTxSender(address)` and selector `0x52d725f5`.
+```solidity
+error NotCoprocessorTxSender(address txSenderAddress);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct NotCoprocessorTxSender {
+        #[allow(missing_docs)]
+        pub txSenderAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<NotCoprocessorTxSender> for UnderlyingRustTuple<'_> {
+            fn from(value: NotCoprocessorTxSender) -> Self {
+                (value.txSenderAddress,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotCoprocessorTxSender {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { txSenderAddress: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for NotCoprocessorTxSender {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "NotCoprocessorTxSender(address)";
+            const SELECTOR: [u8; 4] = [82u8, 215u8, 37u8, 245u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.txSenderAddress,
                     ),
                 )
             }
@@ -2034,13 +2139,13 @@ error NotCoprocessorSigner(address coprocessorSignerAddress);
     };
     /**Custom error with signature `NotKmsSigner(address)` and selector `0x2a7c6ef6`.
 ```solidity
-error NotKmsSigner(address kmsSignerAddress);
+error NotKmsSigner(address signerAddress);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotKmsSigner {
         #[allow(missing_docs)]
-        pub kmsSignerAddress: alloy::sol_types::private::Address,
+        pub signerAddress: alloy::sol_types::private::Address,
     }
     #[allow(
         non_camel_case_types,
@@ -2069,14 +2174,14 @@ error NotKmsSigner(address kmsSignerAddress);
         #[doc(hidden)]
         impl ::core::convert::From<NotKmsSigner> for UnderlyingRustTuple<'_> {
             fn from(value: NotKmsSigner) -> Self {
-                (value.kmsSignerAddress,)
+                (value.signerAddress,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotKmsSigner {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { kmsSignerAddress: tuple.0 }
+                Self { signerAddress: tuple.0 }
             }
         }
         #[automatically_derived]
@@ -2097,7 +2202,149 @@ error NotKmsSigner(address kmsSignerAddress);
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.kmsSignerAddress,
+                        &self.signerAddress,
+                    ),
+                )
+            }
+        }
+    };
+    /**Custom error with signature `NotKmsTxSender(address)` and selector `0xaee86323`.
+```solidity
+error NotKmsTxSender(address txSenderAddress);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct NotKmsTxSender {
+        #[allow(missing_docs)]
+        pub txSenderAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<NotKmsTxSender> for UnderlyingRustTuple<'_> {
+            fn from(value: NotKmsTxSender) -> Self {
+                (value.txSenderAddress,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotKmsTxSender {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { txSenderAddress: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for NotKmsTxSender {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "NotKmsTxSender(address)";
+            const SELECTOR: [u8; 4] = [174u8, 232u8, 99u8, 35u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.txSenderAddress,
+                    ),
+                )
+            }
+        }
+    };
+    /**Custom error with signature `NotPauser(address)` and selector `0x206a346e`.
+```solidity
+error NotPauser(address pauserAddress);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct NotPauser {
+        #[allow(missing_docs)]
+        pub pauserAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<NotPauser> for UnderlyingRustTuple<'_> {
+            fn from(value: NotPauser) -> Self {
+                (value.pauserAddress,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotPauser {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { pauserAddress: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for NotPauser {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "NotPauser(address)";
+            const SELECTOR: [u8; 4] = [32u8, 106u8, 52u8, 110u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.pauserAddress,
                     ),
                 )
             }
@@ -5748,7 +5995,13 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
         #[allow(missing_docs)]
         NotCoprocessorSigner(NotCoprocessorSigner),
         #[allow(missing_docs)]
+        NotCoprocessorTxSender(NotCoprocessorTxSender),
+        #[allow(missing_docs)]
         NotKmsSigner(NotKmsSigner),
+        #[allow(missing_docs)]
+        NotKmsTxSender(NotKmsTxSender),
+        #[allow(missing_docs)]
+        NotPauser(NotPauser),
     }
     #[automatically_derived]
     impl IHTTPZErrors {
@@ -5759,11 +6012,14 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [32u8, 106u8, 52u8, 110u8],
             [34u8, 247u8, 63u8, 234u8],
             [38u8, 205u8, 117u8, 220u8],
             [42u8, 124u8, 110u8, 246u8],
             [72u8, 103u8, 111u8, 224u8],
+            [82u8, 215u8, 37u8, 245u8],
             [109u8, 246u8, 254u8, 137u8],
+            [174u8, 232u8, 99u8, 35u8],
             [177u8, 130u8, 92u8, 94u8],
         ];
     }
@@ -5771,7 +6027,7 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
     impl alloy_sol_types::SolInterface for IHTTPZErrors {
         const NAME: &'static str = "IHTTPZErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 6usize;
+        const COUNT: usize = 9usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5790,9 +6046,16 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                 Self::NotCoprocessorSigner(_) => {
                     <NotCoprocessorSigner as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::NotCoprocessorTxSender(_) => {
+                    <NotCoprocessorTxSender as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::NotKmsSigner(_) => {
                     <NotKmsSigner as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::NotKmsTxSender(_) => {
+                    <NotKmsTxSender as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::NotPauser(_) => <NotPauser as alloy_sol_types::SolError>::SELECTOR,
             }
         }
         #[inline]
@@ -5814,6 +6077,19 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                 &[u8],
                 bool,
             ) -> alloy_sol_types::Result<IHTTPZErrors>] = &[
+                {
+                    fn NotPauser(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IHTTPZErrors> {
+                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IHTTPZErrors::NotPauser)
+                    }
+                    NotPauser
+                },
                 {
                     fn InvalidNullChainId(
                         data: &[u8],
@@ -5867,6 +6143,19 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                     KmsThresholdTooHigh
                 },
                 {
+                    fn NotCoprocessorTxSender(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IHTTPZErrors> {
+                        <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IHTTPZErrors::NotCoprocessorTxSender)
+                    }
+                    NotCoprocessorTxSender
+                },
+                {
                     fn NetworkNotRegistered(
                         data: &[u8],
                         validate: bool,
@@ -5878,6 +6167,19 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                             .map(IHTTPZErrors::NetworkNotRegistered)
                     }
                     NetworkNotRegistered
+                },
+                {
+                    fn NotKmsTxSender(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IHTTPZErrors> {
+                        <NotKmsTxSender as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IHTTPZErrors::NotKmsTxSender)
+                    }
+                    NotKmsTxSender
                 },
                 {
                     fn NetworkAlreadyRegistered(
@@ -5931,8 +6233,21 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                         inner,
                     )
                 }
+                Self::NotCoprocessorTxSender(inner) => {
+                    <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::NotKmsSigner(inner) => {
                     <NotKmsSigner as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                }
+                Self::NotKmsTxSender(inner) => {
+                    <NotKmsTxSender as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::NotPauser(inner) => {
+                    <NotPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
             }
         }
@@ -5969,11 +6284,26 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                         out,
                     )
                 }
+                Self::NotCoprocessorTxSender(inner) => {
+                    <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::NotKmsSigner(inner) => {
                     <NotKmsSigner as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
+                }
+                Self::NotKmsTxSender(inner) => {
+                    <NotKmsTxSender as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::NotPauser(inner) => {
+                    <NotPauser as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
             }
         }

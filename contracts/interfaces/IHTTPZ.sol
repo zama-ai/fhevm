@@ -47,13 +47,25 @@ interface IHTTPZ {
     /// @param nParties The number of KMS nodes
     error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
 
+    /// @notice Error emitted when an address is not the pauser
+    /// @param pauserAddress The address that is not the pauser
+    error NotPauser(address pauserAddress);
+
+    /// @notice Error emitted when an address is not a KMS transaction sender
+    /// @param txSenderAddress The address that is not a KMS transaction sender
+    error NotKmsTxSender(address txSenderAddress);
+
     /// @notice Error emitted when an address is not a KMS signer
-    /// @param kmsSignerAddress The address that is not a KMS signer
-    error NotKmsSigner(address kmsSignerAddress);
+    /// @param signerAddress The address that is not a KMS signer
+    error NotKmsSigner(address signerAddress);
+
+    /// @notice Error emitted when an address is not a coprocessor transaction sender
+    /// @param txSenderAddress The address that is not a coprocessor transaction sender
+    error NotCoprocessorTxSender(address txSenderAddress);
 
     /// @notice Error emitted when an address is not a coprocessor signer
-    /// @param coprocessorSignerAddress The address that is not a coprocessor signer
-    error NotCoprocessorSigner(address coprocessorSignerAddress);
+    /// @param signerAddress The address that is not a coprocessor signer
+    error NotCoprocessorSigner(address signerAddress);
 
     /// @notice Error emitted when a network is not registered
     /// @param chainId The chain ID of the network

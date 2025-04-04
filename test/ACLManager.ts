@@ -91,9 +91,7 @@ describe("ACLManager", function () {
       const txResponse = aclManager.connect(fakeTxSender).allowAccount(hostChainId, ctHandle, allowedAddress);
 
       // Then
-      await expect(txResponse)
-        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(fakeTxSender.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
+      await expect(txResponse).revertedWithCustomError(httpz, "NotCoprocessorTxSender").withArgs(fakeTxSender.address);
     });
   });
 
@@ -130,9 +128,7 @@ describe("ACLManager", function () {
       const txResponse = aclManager.connect(fakeTxSender).allowPublicDecrypt(hostChainId, ctHandle);
 
       // Then
-      await expect(txResponse)
-        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(fakeTxSender.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
+      await expect(txResponse).revertedWithCustomError(httpz, "NotCoprocessorTxSender").withArgs(fakeTxSender.address);
     });
   });
 
@@ -181,9 +177,7 @@ describe("ACLManager", function () {
         .delegateAccount(hostChainId, delegator, delegatee, [allowedContract1]);
 
       // Then
-      await expect(txResponse)
-        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(fakeTxSender.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
+      await expect(txResponse).revertedWithCustomError(httpz, "NotCoprocessorTxSender").withArgs(fakeTxSender.address);
     });
 
     it("Should revert because the contracts list exceeds the maximum length", async function () {

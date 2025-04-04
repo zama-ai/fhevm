@@ -132,8 +132,8 @@ describe("KeyManager", function () {
       // Check that someone else than a KMS transaction sender cannot trigger a preprocessing
       // keygen response
       await expect(keyManager.connect(user).preprocessKeygenResponse(0, 0))
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_TX_SENDER_ROLE());
+        .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
+        .withArgs(user.address);
 
       // Check that someone else than the owner cannot trigger a keygen request
       await expect(keyManager.connect(user).keygenRequest(0))
@@ -142,8 +142,8 @@ describe("KeyManager", function () {
 
       // Check that someone else than the KMS transaction sender cannot trigger a keygen response
       await expect(keyManager.connect(user).keygenResponse(0, 0))
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_TX_SENDER_ROLE());
+        .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
+        .withArgs(user.address);
     });
 
     it("Should handle a preprocessed keygen", async function () {
@@ -284,8 +284,8 @@ describe("KeyManager", function () {
 
       // Check that someone else than the KMS transaction sender cannot trigger a CRS generation response
       await expect(keyManager.connect(user).crsgenResponse(0, 0))
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_TX_SENDER_ROLE());
+        .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
+        .withArgs(user.address);
     });
 
     it("Should handle a CRS generation", async function () {
@@ -362,8 +362,8 @@ describe("KeyManager", function () {
 
       // Check that someone else than the KMS transaction sender cannot trigger a preprocessing KSK generation response
       await expect(keyManager.connect(user).preprocessKskgenResponse(0, 0))
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_TX_SENDER_ROLE());
+        .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
+        .withArgs(user.address);
 
       // Check that someone else than the owner cannot trigger a KSK generation request
       await expect(keyManager.connect(user).kskgenRequest(0, 0, 0))
@@ -372,8 +372,8 @@ describe("KeyManager", function () {
 
       // Check that someone else than the KMS transaction sender cannot trigger a KSK generation response
       await expect(keyManager.connect(user).kskgenResponse(0, 0))
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_TX_SENDER_ROLE());
+        .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
+        .withArgs(user.address);
     });
 
     it("Should handle a preprocessed KSK generation", async function () {
@@ -520,8 +520,8 @@ describe("KeyManager", function () {
 
       // Check that someone else than a coprocessor transaction sender cannot trigger a key activation response
       await expect(keyManager.connect(user).activateKeyResponse(0))
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
+        .to.be.revertedWithCustomError(httpz, "NotCoprocessorTxSender")
+        .withArgs(user.address);
     });
 
     it("Should handle a first key activation (no KSK generation)", async function () {

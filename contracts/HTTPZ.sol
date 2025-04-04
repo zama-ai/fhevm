@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import "./interfaces/IHTTPZ.sol";
-import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
@@ -13,18 +12,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
  * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and networks.
  * @dev See https://github.com/zama-ai/httpz-gateway/issues/98 for more details.
  */
-contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUPSUpgradeable {
-    /// @notice The pauser role, which can pause the contracts.
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
-
-    /// @notice The KMS node role. For example, only KMS nodes can send response transactions during
-    /// @notice public material generation (in Key Manager) or decryption (in Decryption Manager).
-    bytes32 public constant KMS_TX_SENDER_ROLE = keccak256("KMS_TX_SENDER_ROLE");
-
-    /// @notice The coprocessor role. For example, only coprocessors can send response transactions
-    /// @notice during key activation (in Key Manager) or ZK Proof verification (in ZKPoK Manager).
-    bytes32 public constant COPROCESSOR_TX_SENDER_ROLE = keccak256("COPROCESSOR_TX_SENDER_ROLE");
-
+contract HTTPZ is IHTTPZ, Ownable2StepUpgradeable, UUPSUpgradeable {
     /// @notice The contract's metadata
     string private constant CONTRACT_NAME = "HTTPZ";
     uint256 private constant MAJOR_VERSION = 0;
@@ -34,27 +22,33 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:httpz_gateway.storage.HTTPZ
     struct HTTPZStorage {
+        /// @notice The pauser's address
+        address pauser;
+        /// @notice The KMS nodes' transaction sender addresses
+        mapping(address kmsTxSenderAddress => bool isKmsTxSender) _isKmsTxSender;
+        /// @notice The KMS nodes' signer addresses
+        mapping(address kmsSignerAddress => bool isKmsSigner) _isKmsSigner;
+        /// @notice The coprocessors' transaction sender addresses
+        mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender) _isCoprocessorTxSender;
+        /// @notice The coprocessors' signer addresses
+        mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner;
+        /// @notice The networks' registered status
+        mapping(uint256 chainId => bool isRegistered) _isNetworkRegistered;
         /// @notice The protocol's metadata
         ProtocolMetadata protocolMetadata;
         /// @notice The KMS nodes' metadata
         mapping(address kmsTxSenderAddress => KmsNode kmsNode) kmsNodes;
-        /// @notice The KMS nodes' transaction sender addresses
+        /// @notice The KMS nodes' transaction sender address list
         address[] kmsTxSenderAddresses;
-        /// @notice The KMS nodes' signer addresses
-        mapping(address kmsSignerAddress => bool isKmsSigner) _isKmsSigner;
         /// @notice The KMS' threshold to consider for majority vote or reconstruction. For a set ot `n`
         /// @notice KMS nodes, the threshold `t` must verify `3t < n`.
         uint256 kmsThreshold;
         /// @notice The coprocessors' metadata
         mapping(address coprocessorTxSenderAddress => Coprocessor coprocessor) coprocessors;
-        /// @notice The coprocessors' transaction sender addresses
+        /// @notice The coprocessors' transaction sender address list
         address[] coprocessorTxSenderAddresses;
-        /// @notice The coprocessors' signer addresses
-        mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner;
         /// @notice The networks' metadata
         Network[] networks;
-        /// @notice The networks' registered status
-        mapping(uint256 chainId => bool isRegistered) _isNetworkRegistered;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("httpz_gateway.storage.HTTPZ")) - 1)) & ~bytes32(uint256(0xff))
@@ -85,7 +79,7 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
         $.protocolMetadata = initialMetadata;
 
         /// @dev Register the pauser
-        _grantRole(PAUSER_ROLE, initialPauser);
+        $.pauser = initialPauser;
 
         uint256 nParties = initialKmsNodes.length;
 
@@ -100,7 +94,7 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
 
         /// @dev Register the KMS nodes
         for (uint256 i = 0; i < nParties; i++) {
-            _grantRole(KMS_TX_SENDER_ROLE, initialKmsNodes[i].txSenderAddress);
+            $._isKmsTxSender[initialKmsNodes[i].txSenderAddress] = true;
             $.kmsNodes[initialKmsNodes[i].txSenderAddress] = initialKmsNodes[i];
             $.kmsTxSenderAddresses.push(initialKmsNodes[i].txSenderAddress);
             $._isKmsSigner[initialKmsNodes[i].signerAddress] = true;
@@ -108,7 +102,7 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
 
         /// @dev Register the coprocessors
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
-            _grantRole(COPROCESSOR_TX_SENDER_ROLE, initialCoprocessors[i].txSenderAddress);
+            $._isCoprocessorTxSender[initialCoprocessors[i].txSenderAddress] = true;
             $.coprocessors[initialCoprocessors[i].txSenderAddress] = initialCoprocessors[i];
             $.coprocessorTxSenderAddresses.push(initialCoprocessors[i].txSenderAddress);
             $._isCoprocessorSigner[initialCoprocessors[i].signerAddress] = true;
@@ -130,12 +124,18 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
 
     /// @dev See {IHTTPZ-checkIsPauser}.
     function checkIsPauser(address pauserAddress) external view virtual {
-        _checkRole(PAUSER_ROLE, pauserAddress);
+        HTTPZStorage storage $ = _getHTTPZStorage();
+        if ($.pauser != pauserAddress) {
+            revert NotPauser(pauserAddress);
+        }
     }
 
     /// @dev See {IHTTPZ-checkIsKmsTxSender}.
-    function checkIsKmsTxSender(address kmsTxSenderAddress) external view virtual {
-        _checkRole(KMS_TX_SENDER_ROLE, kmsTxSenderAddress);
+    function checkIsKmsTxSender(address txSenderAddress) external view virtual {
+        HTTPZStorage storage $ = _getHTTPZStorage();
+        if (!$._isKmsTxSender[txSenderAddress]) {
+            revert NotKmsTxSender(txSenderAddress);
+        }
     }
 
     /// @dev See {IHTTPZ-checkIsKmsSigner}.
@@ -147,8 +147,11 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
     }
 
     /// @dev See {IHTTPZ-checkIsCoprocessorTxSender}.
-    function checkIsCoprocessorTxSender(address coprocessorTxSenderAddress) external view virtual {
-        _checkRole(COPROCESSOR_TX_SENDER_ROLE, coprocessorTxSenderAddress);
+    function checkIsCoprocessorTxSender(address txSenderAddress) external view virtual {
+        HTTPZStorage storage $ = _getHTTPZStorage();
+        if (!$._isCoprocessorTxSender[txSenderAddress]) {
+            revert NotCoprocessorTxSender(txSenderAddress);
+        }
     }
 
     /// @dev See {IHTTPZ-checkIsCoprocessorSigner}.

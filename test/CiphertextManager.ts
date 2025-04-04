@@ -99,9 +99,7 @@ describe("CiphertextManager", function () {
         .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
 
       // Then
-      await expect(result)
-        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(fakeTxSender.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
+      await expect(result).revertedWithCustomError(httpz, "NotCoprocessorTxSender").withArgs(fakeTxSender.address);
     });
 
     it("Should revert because the coprocessor transaction sender has already added the ciphertext handle", async function () {

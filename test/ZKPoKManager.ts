@@ -264,8 +264,8 @@ describe("ZKPoKManager", function () {
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
       await expect(zkpokManager.connect(fakeTxSender).verifyProofResponse(zkProofId, ctHandles, signature1))
-        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(fakeTxSender.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
+        .revertedWithCustomError(httpz, "NotCoprocessorTxSender")
+        .withArgs(fakeTxSender.address);
     });
   });
 
@@ -375,8 +375,8 @@ describe("ZKPoKManager", function () {
     it("Should revert because the sender is not a coprocessor transaction sender", async function () {
       // Check that triggering a proof response with a non-coprocessor transaction sender reverts
       await expect(zkpokManager.connect(fakeTxSender).rejectProofResponse(zkProofId))
-        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(fakeTxSender.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
+        .revertedWithCustomError(httpz, "NotCoprocessorTxSender")
+        .withArgs(fakeTxSender.address);
     });
   });
 });

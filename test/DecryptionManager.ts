@@ -306,8 +306,8 @@ describe("DecryptionManager", function () {
           .connect(fakeTxSender)
           .publicDecryptionResponse(publicDecryptionId, decryptedResult, dummySignature),
       )
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(fakeTxSender.address, httpz.KMS_TX_SENDER_ROLE());
+        .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
+        .withArgs(fakeTxSender.address);
     });
 
     it("Should revert because the signer is not a KMS signer", async function () {
@@ -770,8 +770,8 @@ describe("DecryptionManager", function () {
           .connect(fakeTxSender)
           .userDecryptionResponse(userDecryptionId, reencryptedShare, userSignature),
       )
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(fakeTxSender.address, httpz.KMS_TX_SENDER_ROLE());
+        .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
+        .withArgs(fakeTxSender.address);
     });
 
     it("Should revert because contract in ctHandleContractPairs not included in contractAddresses list", async function () {
