@@ -2,16 +2,12 @@ npm run --no-install prettier:check
 npm run --no-install lint:sol
 
 # Checks that the Gateway contracts' bindings are up-to-date.
-printf "> python3 tasks/bindings_update.py check\n\n"
-python3 tasks/bindings_update.py check
+printf "> make check-bindings\n\n"
+make check-bindings
 
 # Checks that the contract selectors are up-to-date.
-printf "> forge selectors list | tail -n +2 | diff ./docs/contract_selectors.txt -\n\n"
-if ! DAPP_OUT=artifacts forge selectors list | tail -n +2 | diff ./docs/contract_selectors.txt - &> /dev/null; then
-    printf "\033[91m\033[1m[-]\033[0m Contract selectors are not up-to-date.\n" >&2
-    printf "Please run 'make update-selectors' to update them.\n\n" >&2
-    exit 1
-fi
+printf "> make check-selectors\n\n"
+make check-selectors
 
 # Lints the crate's code.
 printf "> cd httpz_gateway_rust_bindings && cargo clippy -- -D warnings && cd ..\n\n"
