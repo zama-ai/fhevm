@@ -15,6 +15,8 @@ GW_ROOT_DIR = Path(os.path.dirname(__file__)).parent
 GW_CRATE_DIR = GW_ROOT_DIR.joinpath("httpz_gateway_rust_bindings")
 GW_CONTRACTS_DIR = GW_ROOT_DIR.joinpath("contracts")
 
+ALLOWED_FORGE_VERSIONS = ["1.0.0-v1.0.0", "1.0.0-stable"]
+
 
 def init_cli() -> ArgumentParser:
     """Inits the CLI of the tool."""
@@ -61,8 +63,9 @@ class ExitStatus(Enum):
     """An enum representing the different exit status of the tool."""
 
     FORGE_NOT_INSTALLED = 1
-    CRATE_VERSION_NOT_UP_TO_DATE = 2
-    BINDINGS_NOT_UP_TO_DATE = 3
+    WRONG_FORGE_VERSION = 2
+    CRATE_VERSION_NOT_UP_TO_DATE = 3
+    BINDINGS_NOT_UP_TO_DATE = 4
 
 
 class BindingsUpdater:
@@ -77,8 +80,8 @@ class BindingsUpdater:
     gateway_repo_version: str
 
     def __init__(self):
-        BindingsUpdater._check_forge_installed()
         self.tempdir = tempfile.mkdtemp()
+        BindingsUpdater._check_forge_installed()
         with open(f"{GW_ROOT_DIR}/package.json", "r") as package_json_fd:
             package_json_content = json.load(package_json_fd)
             self.gateway_repo_version = package_json_content["version"]
@@ -87,11 +90,26 @@ class BindingsUpdater:
         shutil.rmtree(self.tempdir)
 
     def _check_forge_installed():
-        """Checks if the forge tool is installed."""
+        """Checks if `forge` is installed with the required version."""
         path = shutil.which("forge")
         if path is None:
             log_error("ERROR: forge is not installed.")
             sys.exit(ExitStatus.FORGE_NOT_INSTALLED.value)
+
+        forge_version = (
+            subprocess.run(
+                ["forge", "--version"], capture_output=True, text=True
+            )
+            .stdout.splitlines()[0]
+            .lstrip("forge Version: ")
+        )
+        if forge_version not in ALLOWED_FORGE_VERSIONS:
+            log_error(
+                "ERROR: Required forge version to be one of these: "
+                f"`{ALLOWED_FORGE_VERSIONS}` but '{forge_version}' is "
+                "currently installed."
+            )
+            sys.exit(ExitStatus.WRONG_FORGE_VERSION.value)
 
     def check_bindings_up_to_date(self):
         """Checks that the Gateway contracts' bindings are up-to-date."""
