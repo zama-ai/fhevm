@@ -59,7 +59,9 @@ describe('store-dapp-stats', () => {
     })
 
     describe('when we receive a dapp stats available event', () => {
+      let timestamp: string
       beforeEach(async () => {
+        timestamp = faker.date.past().toISOString()
         await manager.sendMessage(
           JSON.stringify(
             back.dappStatsAvailable(
@@ -70,7 +72,7 @@ describe('store-dapp-stats', () => {
                 events: [
                   {
                     name: 'FheAdd',
-                    timestamp: '2022-02-04T02:09:35.077Z',
+                    timestamp,
                     externalRef: faker.string.alphanumeric(10),
                   },
                 ],
@@ -94,7 +96,7 @@ describe('store-dapp-stats', () => {
           expect(res.data.rawStats.length, 'Wrong stats count').toBe(1)
           expect(res.data.rawStats[0].name).toBe('FheAdd')
           expect(res.data.rawStats[0].timestamp).toBe(
-            new Date('2022-02-04T02:09:35.077Z').getTime(),
+            new Date(timestamp).getTime(),
           )
         } else {
           console.log(`res: ${JSON.stringify(res)}`)
