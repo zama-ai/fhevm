@@ -22,8 +22,8 @@ describe('calculateOperationStats', () => {
 
     const result = calculateOperationStats(input)
     expect(result).toEqual([
-      { name: 'FheAdd', value: 10 },
       { name: 'FheMul', value: 20 },
+      { name: 'FheAdd', value: 10 },
     ])
   })
 
@@ -47,8 +47,8 @@ describe('calculateEncryptionStats', () => {
 
     const result = calculateEncryptionStats(input)
     expect(result).toEqual([
-      { name: 'TrivialEncrypt', value: 30 },
       { name: 'VerifyCiphertext', value: 40 },
+      { name: 'TrivialEncrypt', value: 30 },
     ])
   })
 
@@ -89,7 +89,7 @@ describe('byDayToSparkline', () => {
         id: 'day_20240315',
         day: '2024-03-15',
         total: 42,
-        fhe: 1,
+        encryption: 1,
       },
     ]
     const result = byDayToSparkline(stats)
@@ -104,13 +104,13 @@ describe('byDayToSparkline', () => {
         id: 'day_20240315',
         day: '2024-03-15',
         total: 42,
-        fhe: 1,
+        encryption: 1,
       },
       {
         id: 'day_20240320',
         day: '2024-03-20',
         total: 24,
-        fhe: 0,
+        encryption: 0,
       },
     ]
     const result = byDayToSparkline(stats)

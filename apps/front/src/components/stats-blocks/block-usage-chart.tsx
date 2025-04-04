@@ -31,7 +31,7 @@ export const BlockUsageChart = ({
   encryptionStatsTotal,
 }: OwnProps) => {
   return (
-    <Card.Root minH="83px" size="sm">
+    <Card.Root minH="83px" size="sm" width="300px">
       <Card.Body>
         <StatRoot>
           <HStack alignItems="start">
@@ -46,52 +46,54 @@ export const BlockUsageChart = ({
                 />
               </StatValueText>
             </Stack>
-            <Box width="240px">
-              <Suspense fallback={null}>
-                <Box position="relative" mt="2" w="100%">
-                  <Stack direction="row" gap="2" zIndex="1">
-                    <Box width="100%">
-                      <PieChartComponent
-                        w="100%"
-                        data={operationStatsData}
-                        height="80px"
-                        containerHeight={60}
-                        innerRadius={20}
-                        outerRadius={30}
-                        label={false}
-                      />
-                      <StatHelpText>
-                        <FormatNumber
-                          value={operationStatsTotal}
-                          notation="compact"
-                          compactDisplay="short"
-                        />{' '}
-                        calculations
-                      </StatHelpText>
-                    </Box>
-                    <Box width="100%">
-                      <PieChartComponent
-                        w="100%"
-                        data={encryptionStatsData}
-                        height="80px"
-                        containerHeight={60}
-                        innerRadius={20}
-                        outerRadius={30}
-                        label={false}
-                      />
-                      <StatHelpText>
-                        <FormatNumber
-                          value={encryptionStatsTotal}
-                          notation="compact"
-                          compactDisplay="short"
-                        />{' '}
-                        encryptions
-                      </StatHelpText>
-                    </Box>
-                  </Stack>
-                </Box>
-              </Suspense>
-            </Box>
+            {total > 0 && (
+              <Box width="240px">
+                <Suspense fallback={null}>
+                  <Box position="relative" mt="2" w="100%">
+                    <Stack direction="row" gap="2" zIndex="1">
+                      <Box width="100%">
+                        <PieChartComponent
+                          w="100%"
+                          data={operationStatsData}
+                          height="80px"
+                          containerHeight={60}
+                          innerRadius={20}
+                          outerRadius={30}
+                          label={false}
+                        />
+                        <StatHelpText>
+                          <FormatNumber
+                            value={operationStatsTotal}
+                            notation="compact"
+                            compactDisplay="short"
+                          />{' '}
+                          calculations
+                        </StatHelpText>
+                      </Box>
+                      <Box width="100%">
+                        <PieChartComponent
+                          w="100%"
+                          data={encryptionStatsData}
+                          height="80px"
+                          containerHeight={60}
+                          innerRadius={20}
+                          outerRadius={30}
+                          label={false}
+                        />
+                        <StatHelpText>
+                          <FormatNumber
+                            value={encryptionStatsTotal}
+                            notation="compact"
+                            compactDisplay="short"
+                          />{' '}
+                          encryptions
+                        </StatHelpText>
+                      </Box>
+                    </Stack>
+                  </Box>
+                </Suspense>
+              </Box>
+            )}
           </HStack>
         </StatRoot>
       </Card.Body>

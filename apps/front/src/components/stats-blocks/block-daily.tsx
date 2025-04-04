@@ -1,5 +1,11 @@
 import { lazy, Suspense } from 'react'
-import { Card, FormatNumber, StatRoot, StatValueText } from '@chakra-ui/react'
+import {
+  Card,
+  FormatNumber,
+  StatRoot,
+  StatValueText,
+  Text,
+} from '@chakra-ui/react'
 import {
   StatLabel,
   StatHelpText,
@@ -18,14 +24,25 @@ export function BlockDaily({
 }: {
   data: Array<Record<string, string | number> & { value: number }>
 }) {
+  if (!data || data.length < 2)
+    return (
+      <Card.Root minH="83px" size="sm" width="300px">
+        <Card.Body>
+          <StatRoot pos="relative">
+            <StatLabel>Daily usage</StatLabel>
+            <Text fontSize="xs">- no usage yet -</Text>
+          </StatRoot>
+        </Card.Body>
+      </Card.Root>
+    )
   const today = data[data.length - 1].value ?? 0
   const yesterday = data[data.length - 2].value ?? 0
   const evolution = (today - yesterday) / today
   const PercentageComponent = evolution > 0 ? StatUpTrend : StatDownTrend
 
   return (
-    <Card.Root width="300px">
-      <Card.Body p="4">
+    <Card.Root minH="83px" size="sm" width="300px">
+      <Card.Body>
         <StatRoot pos="relative">
           <StatLabel>Daily usage</StatLabel>
           <StatHelpText pos="absolute" top="0" right="0">

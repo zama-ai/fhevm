@@ -25,6 +25,8 @@ export function calculateOperationStats(
           : value
         : 0,
     }))
+    .filter(s => s.value > 0)
+    .sort((a, b) => b.value - a.value)
 }
 
 export function calculateEncryptionStats(
@@ -38,6 +40,8 @@ export function calculateEncryptionStats(
       name: key,
       value: value as number,
     }))
+    .filter(s => s.value > 0)
+    .sort((a, b) => b.value - a.value)
 }
 
 export function calculateTotal(stats: StatData): number {
