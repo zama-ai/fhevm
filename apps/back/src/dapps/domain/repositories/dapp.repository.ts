@@ -44,8 +44,8 @@ export type DailyStats = {
   id: string
   day: string
   total: number
-  symbolic: number
-  fhe: number
+  computation: number
+  encryption: number
 }[]
 
 export abstract class DAppRepository {

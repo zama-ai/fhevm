@@ -64,8 +64,8 @@ const GET_DAPP_DETAILS = graphql(`
           id
           day
           total
-          symbolic
-          fhe
+          computation
+          encryption
         }
       }
     }
@@ -124,8 +124,8 @@ const SUB_DAPP_UPDATED = gql(`
           id
           day
           total
-          symbolic
-          fhe
+          computation
+          encryption
         }
       }
     } 

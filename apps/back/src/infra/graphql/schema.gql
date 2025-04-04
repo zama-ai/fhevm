@@ -48,8 +48,8 @@ type DailyDappStats {
   id: ID!
   day: String!
   total: Int!
-  symbolic: Int!
-  fhe: Int!
+  computation: Int!
+  encryption: Int!
 }
 
 type DappStats {

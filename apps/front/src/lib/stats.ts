@@ -49,7 +49,7 @@ export function toYYMMDD(date: Date): string {
 }
 
 export function byDayToSparkline(
-  stats: Array<{ id: string; day: string; total: number; fhe: number }>,
+  stats: Array<{ id: string; day: string; total: number; encryption: number }>,
 ): Array<{ value: number; compareValue: number }> {
   if (stats.length === 0) return []
 
@@ -60,7 +60,7 @@ export function byDayToSparkline(
   const statsMap = new Map(
     stats.map(s => [
       s.day,
-      { index: s.day, value: s.total, compareValue: s.fhe },
+      { index: s.day, value: s.total, compareValue: s.encryption },
     ]),
   )
 

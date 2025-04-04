@@ -111,10 +111,10 @@ export class DailyDappStatsType {
   total: number
 
   @Field(() => Int, { nullable: false })
-  symbolic: number
+  computation: number
 
   @Field(() => Int, { nullable: false })
-  fhe: number
+  encryption: number
 }
 
 @ObjectType('DappStats')

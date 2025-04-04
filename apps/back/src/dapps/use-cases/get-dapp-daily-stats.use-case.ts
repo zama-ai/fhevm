@@ -1,7 +1,7 @@
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 import { Injectable, Logger } from '@nestjs/common'
-import { AppError, Task, UseCase, validationError } from 'utils'
+import { AppError, Task, UseCase } from 'utils'
 
 type Input = {
   dappId: string
@@ -11,8 +11,8 @@ type Output = {
   id: string
   day: string
   total: number
-  symbolic: number
-  fhe: number
+  computation: number
+  encryption: number
 }[]
 
 @Injectable()

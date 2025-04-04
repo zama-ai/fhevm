@@ -267,16 +267,16 @@ export class PrismaDAppRepository extends DAppRepository {
                 id: dayId,
                 day: formattedDay,
                 total: 0,
-                symbolic: 0,
-                fhe: 0,
+                computation: 0,
+                encryption: 0,
               })
             }
 
             const dayStats = dailyStatsMap.get(dayId)!
             if (stat.type === StatsType.COMPUTATION) {
-              dayStats.symbolic = stat._count._all
+              dayStats.computation = stat._count._all
             } else {
-              dayStats.fhe = stat._count._all
+              dayStats.encryption = stat._count._all
             }
             dayStats.total += stat._count._all
           })

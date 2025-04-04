@@ -15,8 +15,8 @@ type DailyStats = {
   id: string
   day: string
   total: number
-  symbolic: number
-  fhe: number
+  computation: number
+  encryption: number
 }
 
 type OwnProps = {
