@@ -27,7 +27,7 @@ enum DappStatus {
 
 enum StatsType {
   SYMBOLIC
-  FHE
+  ENCRYPTION
 }
 
 model Invitation {

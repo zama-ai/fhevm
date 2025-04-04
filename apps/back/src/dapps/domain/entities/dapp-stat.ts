@@ -7,7 +7,7 @@ const schema = z.object({
   name: z.string(),
   timestamp: z.date(),
   dappId: DAppId.schema,
-  type: z.enum(['SYMBOLIC', 'FHE']),
+  type: z.enum(['SYMBOLIC', 'ENCRYPTION']),
   day: z.number().min(1).max(366),
   month: z.number().min(0).max(11),
   year: z.number().min(0),
