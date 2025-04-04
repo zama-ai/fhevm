@@ -29,15 +29,36 @@ const GET_DAPP_DETAILS = graphql(`
         cumulative {
           total
           FheAdd
-          FheBitAnd
-          FheIfThenElse
-          FheLe
-          FheOr
           FheSub
-          TrivialEncrypt
-          VerifyCiphertext
           FheMul
           FheDiv
+          FheRem
+          FheBitAnd
+          FheBitOr
+          FheBitXor
+          FheShl
+          FheShr
+          FheRotl
+          FheRotr
+          FheEq
+          FheEqBytes
+          FheNe
+          FheNeBytes
+          FheGe
+          FheGt
+          FheLe
+          FheLt
+          FheMin
+          FheMax
+          FheNeg
+          FheNot
+          VerifyCiphertext
+          Cast
+          TrivialEncrypt
+          TrivialEncryptBytes
+          FheIfThenElse
+          FheRand
+          FheRandBounded
         }
         byDay {
           id
@@ -68,15 +89,36 @@ const SUB_DAPP_UPDATED = gql(`
         cumulative {
           total
           FheAdd
-          FheBitAnd
-          FheIfThenElse
-          FheLe
-          FheOr
           FheSub
-          TrivialEncrypt
-          VerifyCiphertext
           FheMul
           FheDiv
+          FheRem
+          FheBitAnd
+          FheBitOr
+          FheBitXor
+          FheShl
+          FheShr
+          FheRotl
+          FheRotr
+          FheEq
+          FheEqBytes
+          FheNe
+          FheNeBytes
+          FheGe
+          FheGt
+          FheLe
+          FheLt
+          FheMin
+          FheMax
+          FheNeg
+          FheNot
+          VerifyCiphertext
+          Cast
+          TrivialEncrypt
+          TrivialEncryptBytes
+          FheIfThenElse
+          FheRand
+          FheRandBounded
         }
         byDay {
           id

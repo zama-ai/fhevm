@@ -30,7 +30,6 @@ export const BlockUsageChart = ({
   encryptionStatsData,
   encryptionStatsTotal,
 }: OwnProps) => {
-  console.log({ operationStatsData, encryptionStatsData })
   return (
     <Card.Root minH="83px" size="sm">
       <Card.Body>

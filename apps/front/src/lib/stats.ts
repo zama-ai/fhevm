@@ -3,13 +3,20 @@ type CumulativeStats = {
   [key: string]: number
 }
 
+// TODO: update when real encryption operations are added
+const ENCRYPTION_OPERATIONS = [
+  'TrivialEncrypt',
+  'VerifyCiphertext',
+  'TrivialEncryptBytes',
+]
+
 export function calculateOperationStats(
   data: CumulativeStats | undefined,
 ): StatData {
   if (!data) return []
 
   return Object.entries(data)
-    .filter(([key]) => !['TrivialEncrypt', 'VerifyCiphertext'].includes(key))
+    .filter(([key]) => !ENCRYPTION_OPERATIONS.includes(key))
     .map(([key, value]) => ({
       name: key,
       value: value
@@ -26,7 +33,7 @@ export function calculateEncryptionStats(
   if (!data) return []
 
   return Object.entries(data)
-    .filter(([key]) => ['TrivialEncrypt', 'VerifyCiphertext'].includes(key))
+    .filter(([key]) => ENCRYPTION_OPERATIONS.includes(key))
     .map(([key, value]) => ({
       name: key,
       value: value as number,
