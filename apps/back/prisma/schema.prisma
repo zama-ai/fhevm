@@ -26,7 +26,7 @@ enum DappStatus {
 }
 
 enum StatsType {
-  SYMBOLIC
+  COMPUTATION
   ENCRYPTION
 }
 
@@ -81,10 +81,10 @@ model DappStat {
   name        String
   timestamp   DateTime
   dappId      String
-  type        StatsType @default(SYMBOLIC)
-  day         Int       @default(1) // day of year 1-366
-  month       Int       @default(1) // month 0-11
-  year        Int       @default(2025)
+  type        StatsType @default(COMPUTATION)
+  day         Int // day of year 1-366
+  month       Int // month 0-11
+  year        Int
   dapp        Dapp      @relation(fields: [dappId], references: [id], onDelete: Cascade)
   externalRef String    @unique
 }

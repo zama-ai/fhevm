@@ -273,7 +273,7 @@ export class PrismaDAppRepository extends DAppRepository {
             }
 
             const dayStats = dailyStatsMap.get(dayId)!
-            if (stat.type === StatsType.SYMBOLIC) {
+            if (stat.type === StatsType.COMPUTATION) {
               dayStats.symbolic = stat._count._all
             } else {
               dayStats.fhe = stat._count._all

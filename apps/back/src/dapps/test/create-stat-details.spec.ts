@@ -2,6 +2,7 @@ import { faker } from '@faker-js/faker'
 import { describe, expect, test } from 'vitest'
 import { StoreDAppStats } from '../use-cases/store-dapp-stats.use-case.js'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
+import { StatsType } from '#prisma/client/index.js'
 
 describe('StoreDAppStats.createStatDetails', () => {
   test('should create stat details with correct date calculations', () => {
@@ -22,7 +23,7 @@ describe('StoreDAppStats.createStatDetails', () => {
     expect(result).toEqual({
       id: expect.any(String),
       dappId,
-      type: 'SYMBOLIC',
+      type: StatsType.COMPUTATION,
       day: expectedDay,
       month: date.getUTCMonth(),
       year: date.getUTCFullYear(),
@@ -50,7 +51,7 @@ describe('StoreDAppStats.createStatDetails', () => {
     expect(result).toEqual({
       id: expect.any(String),
       dappId,
-      type: 'SYMBOLIC',
+      type: StatsType.COMPUTATION,
       day: expectedDay,
       month: date.getUTCMonth(),
       year: date.getUTCFullYear(),
@@ -78,7 +79,7 @@ describe('StoreDAppStats.createStatDetails', () => {
     expect(result).toEqual({
       id: expect.any(String),
       dappId,
-      type: 'SYMBOLIC',
+      type: StatsType.COMPUTATION,
       day: expectedDay,
       month: date.getUTCMonth(),
       year: date.getUTCFullYear(),

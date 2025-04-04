@@ -13,7 +13,7 @@ describe('DappStat', () => {
       params = {
         id: DAppStatId.random().value,
         name: faker.string.alphanumeric(10),
-        type: StatsType.SYMBOLIC,
+        type: StatsType.COMPUTATION,
         day: faker.number.int({ min: 1, max: 365 }),
         month: faker.number.int({ min: 0, max: 11 }),
         year: faker.number.int({ min: 2020, max: 2025 }),
@@ -113,7 +113,7 @@ describe('DappStat', () => {
       const result = DAppStat.create({
         name: faker.string.alphanumeric(10),
         timestamp: new Date(Date.now()),
-        type: StatsType.SYMBOLIC,
+        type: StatsType.COMPUTATION,
         day: faker.number.int({ min: 1, max: 365 }),
         month: faker.number.int({ min: 0, max: 11 }),
         year: faker.number.int({ min: 2020, max: 2025 }),

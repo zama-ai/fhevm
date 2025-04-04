@@ -9,7 +9,7 @@ import { AppError, every, executeTask, isAppError } from 'utils'
 import { faker } from '@faker-js/faker'
 import { z } from 'zod'
 import { TeamId } from '#users/domain/entities/value-objects.js'
-import { Dapp } from '#prisma/client/index.js'
+import { Dapp, StatsType } from '#prisma/client/index.js'
 
 vi.mock('../prisma.service.js')
 
@@ -74,7 +74,7 @@ describe('PrismaDappRepository', () => {
           name: faker.string.alphanumeric(10),
           timestamp: new Date(Date.now()),
           dappId: DAppId.random().value as `dapp_${string}` & z.BRAND<'DAppId'>,
-          type: 'SYMBOLIC',
+          type: StatsType.COMPUTATION,
           day: 1,
           month: 0,
           year: 2024,
@@ -125,7 +125,7 @@ describe('PrismaDappRepository', () => {
               timestamp: new Date(Date.now()),
               dappId: DAppId.random().value as `dapp_${string}` &
                 z.BRAND<'DAppId'>,
-              type: 'SYMBOLIC',
+              type: StatsType.COMPUTATION,
               day: 1,
               month: 0,
               year: 2024,
@@ -137,7 +137,7 @@ describe('PrismaDappRepository', () => {
               timestamp: new Date(Date.now()),
               dappId: DAppId.random().value as `dapp_${string}` &
                 z.BRAND<'DAppId'>,
-              type: 'SYMBOLIC',
+              type: StatsType.COMPUTATION,
               day: 1,
               month: 0,
               year: 2024,

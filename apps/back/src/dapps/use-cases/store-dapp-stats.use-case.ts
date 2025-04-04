@@ -82,7 +82,7 @@ export class StoreDAppStats implements UseCase<Input, Output> {
     return {
       id: DAppStatId.random().value,
       dappId,
-      type: 'SYMBOLIC',
+      type: 'COMPUTATION',
       day: day,
       month: date.getUTCMonth(),
       year: date.getUTCFullYear(),
