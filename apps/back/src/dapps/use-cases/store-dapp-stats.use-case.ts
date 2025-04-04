@@ -92,11 +92,9 @@ export class StoreDAppStats implements UseCase<Input, Output> {
     }
   }
   execute = (input: Input): Task<DAppStat[], AppError> => {
-    console.log('execute')
     return this.repo
       .findByAddress(input.chainId, input.address)
       .tap(dapp => {
-        console.log(`dApp found: ${dapp.id}`)
         this.logger.debug(`dApp found: ${dapp.id}`)
       })
       .chain(dapp =>
