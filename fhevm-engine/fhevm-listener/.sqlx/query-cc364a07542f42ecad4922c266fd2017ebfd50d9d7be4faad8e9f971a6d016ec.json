@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "TRUNCATE blocks_valid",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "cc364a07542f42ecad4922c266fd2017ebfd50d9d7be4faad8e9f971a6d016ec"
+}
