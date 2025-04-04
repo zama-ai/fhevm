@@ -3,6 +3,7 @@ import { DAppId, DAppStatId } from './value-objects.js'
 import { faker } from '@faker-js/faker'
 import { DAppStat } from './dapp-stat.js'
 import { z } from 'zod'
+import { StatsType } from '#prisma/client/index.js'
 
 describe('DappStat', () => {
   describe('parse', () => {
@@ -12,7 +13,7 @@ describe('DappStat', () => {
       params = {
         id: DAppStatId.random().value,
         name: faker.string.alphanumeric(10),
-        type: 'SYMBOLIC',
+        type: StatsType.SYMBOLIC,
         day: faker.number.int({ min: 1, max: 365 }),
         month: faker.number.int({ min: 0, max: 11 }),
         year: faker.number.int({ min: 2020, max: 2025 }),
@@ -112,7 +113,7 @@ describe('DappStat', () => {
       const result = DAppStat.create({
         name: faker.string.alphanumeric(10),
         timestamp: new Date(Date.now()),
-        type: 'SYMBOLIC',
+        type: StatsType.SYMBOLIC,
         day: faker.number.int({ min: 1, max: 365 }),
         month: faker.number.int({ min: 0, max: 11 }),
         year: faker.number.int({ min: 2020, max: 2025 }),
