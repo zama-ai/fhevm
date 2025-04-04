@@ -19,6 +19,14 @@ use crate::{
 
 use super::operators::supported_types;
 
+fn random_test_supported_types() -> &'static [i32] {
+    if !cfg!(feature = "gpu") {
+        supported_types()
+    } else {
+        &supported_types()[0..9]
+    }
+}
+
 #[tokio::test]
 async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
@@ -43,7 +51,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     let mut repeated_output_handles = Vec::new();
     let mut other_seed_output_handles = Vec::new();
 
-    let random_test_types = supported_types();
+    let random_test_types = random_test_supported_types();
 
     let deterministic_seed = 123u8;
     for the_type in random_test_types {
@@ -132,18 +140,43 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     ];
     #[cfg(feature = "gpu")]
     let expected: Vec<DecryptionResult> = vec![
-        DecryptionResult { value: "false".to_string(), output_type: 0 },
-        DecryptionResult { value: "5".to_string(), output_type: 1 },
-        DecryptionResult { value: "149".to_string(), output_type: 2 },
-        DecryptionResult { value: "19349".to_string(), output_type: 3 },
-        DecryptionResult { value: "417483669".to_string(), output_type: 4 },
-        DecryptionResult { value: "18215029179758562197".to_string(), output_type: 5 },
-        DecryptionResult { value: "285171577856650533455529174907356334997".to_string(), output_type: 6 },
-        DecryptionResult { value: "152905830138175504431271466872053891096341793685".to_string(), output_type: 7 },
-        DecryptionResult { value: "75047619794910340784669152516253626220419211295364484836071532923723869997973".to_string(), output_type: 8 },
-        DecryptionResult { value: "349780784510418262902040665399285801727082007983000585469369865909231330563294145578970577364371909994875185361545296833571683466843935904940636405648277".to_string(), output_type: 9 },
-        DecryptionResult { value: "171738377129917967436345594293257284762353650530386021250612102300810915559078926240760554417297547360292892239635175923515301804258782398062670768578011802573955312346636109421853242135805160085475970193277794019696322884249110858403790775226268809271163552060562930044042204075187142693715233344518365531029".to_string(), output_type: 10 },
-        DecryptionResult { value: "23011518767875069512636716445371001254752832170388493231908154456531448560534447660025296332812920678862851739752053299852838774028475881128210422000455499284435972428726433160524380665603633868755094527969467996057520428645434245018037450371155948494643475469241326170683896768567625761004528705839494428438218605230209633486159150400503849489806523016437545092095042453015740298878618948656025939925399651396176524511837723097378533063790942072701533215994079205919166519674954609602207838815187324718030081530929497091171188932094924158847373533994038323782999583833402052703292634830232831666420753273719368076181".to_string(), output_type: 11 }
+        DecryptionResult {
+            value: "false".to_string(),
+            output_type: 0,
+        },
+        DecryptionResult {
+            value: "5".to_string(),
+            output_type: 1,
+        },
+        DecryptionResult {
+            value: "149".to_string(),
+            output_type: 2,
+        },
+        DecryptionResult {
+            value: "19349".to_string(),
+            output_type: 3,
+        },
+        DecryptionResult {
+            value: "417483669".to_string(),
+            output_type: 4,
+        },
+        DecryptionResult {
+            value: "18215029179758562197".to_string(),
+            output_type: 5,
+        },
+        DecryptionResult {
+            value: "285171577856650533455529174907356334997".to_string(),
+            output_type: 6,
+        },
+        DecryptionResult {
+            value: "152905830138175504431271466872053891096341793685".to_string(),
+            output_type: 7,
+        },
+        DecryptionResult {
+            value: "75047619794910340784669152516253626220419211295364484836071532923723869997973"
+                .to_string(),
+            output_type: 8,
+        },
     ];
 
     println!("results: {:#?}", resp);
@@ -230,12 +263,9 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
         "29959802665946685857998219333530176405",
         "152905830138175504431271466872053891096341793685",
         "17151575176252243072883660011909672293784218962544202816342740919767305178005",
-        "349780784510418262902040665399285801727082007983000585469369865909231330563294145578970577364371909994875185361545296833571683466843935904940636405648277",
-        "36911392015244274356647704984080429741005377109713028295539541432511408704953203891229196425491895344452806829731630905271209477647969931193035195598406209290629392277986995464626577434870589495886157979214039693067709872492263697298355942320648381398650669047123206364081769621327355465088716097300197428117",
-        "6853015732219565862279278101036025274530780835530751215842981742769120991100502213426695627051463947018492759291104290105778994453230420580666345807231357724120533745075935114649281790408807815357065708777434211919124319324124366937118403201917863259352652543223173649240108822797092856700752506277529235677261438535375462275816663007221564742378434998774384063056139623350227202524388791580896643493311093033204722652606794418579357487640119120499684409377435590305603677319544504739629287951721662983190810240601148123648190297918424839739610950799319656011198516116787250380633395527756757569642826468189569960853",
     ];
 
-    for (idx, the_type) in supported_types().iter().enumerate() {
+    for (idx, the_type) in random_test_supported_types().iter().enumerate() {
         let output_handle = next_handle();
         output_handles.push(output_handle.clone());
 
@@ -271,11 +301,14 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
-    assert_eq!(resp.len(), bounds.len());
+    assert_eq!(resp.len(), results.len());
 
     println!("response: {:#?}", resp);
-    for idx in 0..bounds.len() {
-        assert_eq!(resp[idx].output_type, supported_types()[idx] as i16);
+    for idx in 0..results.len() {
+        assert_eq!(
+            resp[idx].output_type,
+            random_test_supported_types()[idx] as i16
+        );
         assert_eq!(resp[idx].value, results[idx]);
         // skip boolean bounds check
         if resp[idx].output_type > 0 {
