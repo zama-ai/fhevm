@@ -22,14 +22,13 @@ describe('KMSVerifier', function () {
       // to avoid messing up other tests if used on the real node, in parallel testing
 
       const origKMSAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
-      const deployer = new ethers.Wallet(process.env.PRIVATE_KEY_FHEVM_DEPLOYER!).connect(ethers.provider);
+      const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
       const kmsVerifier = await this.kmsFactory.attach(origKMSAdd);
       expect(await kmsVerifier.getVersion()).to.equal('KMSVerifier v0.1.0');
 
-      const privKeySigner = process.env['PRIVATE_KEY_KMS_SIGNER_1']!;
-      const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
+      const addressSigner = process.env['KMS_SIGNER_ADDRESS_1']!;
       let setSigners = await kmsVerifier.getSigners();
-      setSigners = [...setSigners, kmsSigner.address];
+      setSigners = [...setSigners, addressSigner];
       const tx = await kmsVerifier.connect(deployer).defineNewContext(setSigners, 1);
       await tx.wait();
 
@@ -43,20 +42,17 @@ describe('KMSVerifier', function () {
       const y = await contract.yBool();
       expect(y).to.equal(true); // in this case, one signature still suffices to pass the decrypt (threshold is still 1)
 
-      const kmsSignerDup = new ethers.Wallet(privKeySigner).connect(ethers.provider);
-      setSigners = [...setSigners, kmsSignerDup];
+      setSigners = [...setSigners, addressSigner];
       await expect(kmsVerifier.connect(deployer).defineNewContext(setSigners, 1)).to.revertedWithCustomError(
         kmsVerifier,
         'KMSAlreadySigner',
       ); // cannot add duplicated signer
       expect((await kmsVerifier.getSigners()).length).to.equal(2);
 
-      const privKeySigner2 = process.env['PRIVATE_KEY_KMS_SIGNER_2']!;
-      const kmsSigner2 = new ethers.Wallet(privKeySigner2).connect(ethers.provider);
-      const privKeySigner3 = process.env['PRIVATE_KEY_KMS_SIGNER_3']!;
-      const kmsSigner3 = new ethers.Wallet(privKeySigner3).connect(ethers.provider);
+      const kmsSigner2Address = process.env['KMS_SIGNER_ADDRESS_2']!;
+      const kmsSigner3Address = process.env['KMS_SIGNER_ADDRESS_3']!;
       let setSigners2 = await kmsVerifier.getSigners();
-      setSigners2 = [...setSigners2, kmsSigner2.address, kmsSigner3.address];
+      setSigners2 = [...setSigners2, kmsSigner2Address, kmsSigner3Address];
       const tx4 = await kmsVerifier.connect(deployer).defineNewContext(setSigners2, 1);
       await tx4.wait();
       expect((await kmsVerifier.getSigners()).length).to.equal(4); // 3rd and 4th signer has been added successfully
@@ -73,14 +69,15 @@ describe('KMSVerifier', function () {
       const y2 = await contract.yUint4();
       expect(y2).to.equal(0);
 
+      process.env.NUM_KMS_NODES = '2';
       const tx5Bis = await contract.requestUint4();
       await tx5Bis.wait();
-      process.env.NUM_KMS_SIGNERS = '2';
+
       await awaitAllDecryptionResults();
       const y3 = await contract.yUint4();
       expect(y3).to.equal(4); // with 2 signatures decryption should now succeed
 
-      process.env.NUM_KMS_SIGNERS = '4';
+      process.env.NUM_KMS_NODES = '4';
       const tx6 = await contract.requestUint8();
       await tx6.wait();
       await awaitAllDecryptionResults();
@@ -105,15 +102,15 @@ describe('KMSVerifier', function () {
       const yAdd = await contract2.yAddress();
       expect(yAdd).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72'); // testing trustless mixed with ebytes256, in case of several signatures
 
-      process.env.NUM_KMS_SIGNERS = '2';
-      process.env.PRIVATE_KEY_KMS_SIGNER_1 = process.env.PRIVATE_KEY_KMS_SIGNER_0;
+      process.env.NUM_KMS_NODES = '2';
+      process.env.KMS_SIGNER_ADDRESS_1 = process.env.KMS_SIGNER_ADDRESS_0;
       const tx7 = await contract.requestUint16();
       await tx7.wait();
       await expect(awaitAllDecryptionResults()).to.revertedWithCustomError(contract, 'InvalidKMSSignatures'); // cannot use duplicated signatures if threshold is 2
       const y5 = await contract.yUint16();
       expect(y5).to.equal(0);
 
-      process.env.NUM_KMS_SIGNERS = '1';
+      process.env.NUM_KMS_NODES = '1';
       let setSigners3 = [...(await kmsVerifier.getSigners())];
       setSigners3.pop();
       const tx8 = await kmsVerifier.connect(deployer).defineNewContext(setSigners3, 1);

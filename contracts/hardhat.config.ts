@@ -9,7 +9,7 @@ import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 
 import CustomProvider from './CustomProvider';
-// Adjust the import path as needed
+import './tasks/accounts';
 import './tasks/etherscanVerify';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
@@ -50,34 +50,7 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
-    const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
-    const privKeyFhevmRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
-    const decryptionManagerAddress = process.env.DECRYPTION_MANAGER_ADDRESS;
-    const zkpokManagerAddress = process.env.ZKPOK_MANAGER_ADDRESS;
-    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
-
-    await hre.run('compile:specific', { contract: 'contracts/emptyProxy' });
-    await hre.run('task:deployEmptyUUPSProxies', { privateKey: privKeyFhevmDeployer, useCoprocessorAddress: false });
-
-    await hre.run('compile:specific', { contract: 'contracts' });
-    await hre.run('compile:specific', { contract: 'lib' });
-    await hre.run('compile:specific', { contract: 'decryptionOracle' });
-
-    await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployTFHEExecutor', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployKMSVerifier', {
-      privateKey: privKeyFhevmDeployer,
-      decryptionManagerAddress: decryptionManagerAddress,
-      useAddress: false,
-    });
-    await hre.run('task:deployInputVerifier', {
-      privateKey: privKeyFhevmDeployer,
-      zkpokManagerAddress: zkpokManagerAddress,
-      useAddress: false,
-    });
-    await hre.run('task:deployFHEGasLimit', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployDecryptionOracle', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployAllHostContracts');
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
@@ -125,7 +98,7 @@ const config: HardhatUserConfig = {
   networks: {
     hardhat: {
       accounts: {
-        count: 10,
+        count: 20,
         mnemonic,
         path: "m/44'/60'/0'/0",
       },

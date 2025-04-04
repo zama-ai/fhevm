@@ -2,4 +2,4 @@
 
 pragma solidity ^0.8.24;
 
-address constant fheGasLimitAdd = 0x208De73316E44722e16f6dDFF40881A3e4F86104;
+address constant fheGasLimitAdd = 0x36772142b74871f255CbD7A3e89B401d3e45825f;

@@ -22,5 +22,3 @@ COPY contracts/contracts ./contracts/
 COPY contracts/lib ./lib/
 COPY contracts/tasks ./tasks/
 COPY contracts/decryptionOracle ./decryptionOracle/
-
-RUN chmod +x ./*.sh

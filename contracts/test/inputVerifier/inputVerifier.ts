@@ -21,13 +21,12 @@ describe('InputVerifier', function () {
       // to avoid messing up other tests if used on the real node, in parallel testing
 
       const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
-      const deployer = new ethers.Wallet(process.env.PRIVATE_KEY_FHEVM_DEPLOYER!).connect(ethers.provider);
+      const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
       const inputVerifier = await this.inputVerifierFactory.attach(origIVAdd);
       expect(await inputVerifier.getVersion()).to.equal('InputVerifier v0.1.0');
 
-      const privKeySigner = process.env['PRIVATE_KEY_COPROCESSOR_ACCOUNT_1']!;
-      const inputSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
-      const tx = await inputVerifier.connect(deployer).addSigner(inputSigner.address);
+      const addressSigner = process.env['COPROCESSOR_SIGNER_ADDRESS_1']!;
+      const tx = await inputVerifier.connect(deployer).addSigner(addressSigner);
       await tx.wait();
 
       expect((await inputVerifier.getSigners()).length).to.equal(2); // one signer has been added
@@ -48,7 +47,7 @@ describe('InputVerifier', function () {
       const y = await contract.yUint64();
       expect(y).to.equal(0n);
 
-      process.env.NUM_COPROCESSOR_SIGNERS = '2';
+      process.env.NUM_COPROCESSORS = '2';
       const encryptedAmount2 = await inputAlice.encrypt();
       const tx2 = await contract.requestUint64NonTrivial(encryptedAmount2.handles[0], encryptedAmount2.inputProof);
       await tx2.wait();
@@ -57,9 +56,8 @@ describe('InputVerifier', function () {
       const y2 = await contract.yUint64();
       expect(y2).to.equal(18446744073709550042n); // in this case, one signature still suffices to pass the decrypt (threshold is still 1)
 
-      const privKeySigner2 = process.env['PRIVATE_KEY_COPROCESSOR_ACCOUNT_2']!;
-      const inputSigner2 = new ethers.Wallet(privKeySigner2).connect(ethers.provider);
-      const tx3 = await inputVerifier.connect(deployer).addSigner(inputSigner2.address);
+      const addressSigner2 = process.env['COPROCESSOR_SIGNER_ADDRESS_2']!;
+      const tx3 = await inputVerifier.connect(deployer).addSigner(addressSigner2);
       await tx3.wait();
       expect((await inputVerifier.getSigners()).length).to.equal(3);
 
@@ -73,9 +71,8 @@ describe('InputVerifier', function () {
       const y4 = await contract.yUint64();
       expect(y4).to.equal(42n); // in this case, two signatures still suffice to pass the decrypt (threshold is still 2)
 
-      const privKeySigner3 = process.env['PRIVATE_KEY_COPROCESSOR_ACCOUNT_3']!;
-      const inputSigner3 = new ethers.Wallet(privKeySigner3).connect(ethers.provider);
-      const tx5 = await inputVerifier.connect(deployer).addSigner(inputSigner3.address);
+      const addressSigner3 = process.env['COPROCESSOR_SIGNER_ADDRESS_3']!;
+      const tx5 = await inputVerifier.connect(deployer).addSigner(addressSigner3);
       await tx5.wait();
       expect((await inputVerifier.getSigners()).length).to.equal(4);
 
@@ -86,7 +83,7 @@ describe('InputVerifier', function () {
         .to.revertedWithCustomError(inputVerifier, 'SignatureThresholdNotReached')
         .withArgs(2n); // now we need at least 3 signatures
 
-      process.env.NUM_COPROCESSOR_SIGNERS = '4';
+      process.env.NUM_COPROCESSORS = '4';
       const inputAlice4 = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
       inputAlice4.add64(1992);
       const encryptedAmount5 = await inputAlice4.encrypt();
@@ -96,7 +93,7 @@ describe('InputVerifier', function () {
       const y5 = await contract.yUint64();
       expect(y5).to.equal(1992n);
 
-      process.env.NUM_COPROCESSOR_SIGNERS = '3';
+      process.env.NUM_COPROCESSORS = '3';
       const inputAlice5 = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
       inputAlice5.add64(873);
       const encryptedAmount6 = await inputAlice5.encrypt();
@@ -106,16 +103,16 @@ describe('InputVerifier', function () {
       const y6 = await contract.yUint64();
       expect(y6).to.equal(873n); // 3 signatures should still work
 
-      const tx8 = await inputVerifier.connect(deployer).removeSigner(inputSigner3.address);
+      const tx8 = await inputVerifier.connect(deployer).removeSigner(addressSigner3);
       await tx8.wait();
       expect((await inputVerifier.getSigners()).length).to.equal(3);
-      const tx9 = await inputVerifier.connect(deployer).removeSigner(inputSigner2.address);
+      const tx9 = await inputVerifier.connect(deployer).removeSigner(addressSigner2);
       await tx9.wait();
       expect((await inputVerifier.getSigners()).length).to.equal(2);
-      const tx10 = await inputVerifier.connect(deployer).removeSigner(inputSigner.address);
+      const tx10 = await inputVerifier.connect(deployer).removeSigner(addressSigner);
       await tx10.wait();
       expect((await inputVerifier.getSigners()).length).to.equal(1);
-      process.env.NUM_COPROCESSOR_SIGNERS = '1';
+      process.env.NUM_COPROCESSORS = '1';
     }
   });
 
@@ -124,13 +121,12 @@ describe('InputVerifier', function () {
       // to avoid messing up other tests if used on the real node, in parallel testing
 
       const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
-      const deployer = new ethers.Wallet(process.env.PRIVATE_KEY_FHEVM_DEPLOYER!).connect(ethers.provider);
+      const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
       const inputVerifier = await this.inputVerifierFactory.attach(origIVAdd);
       expect((await inputVerifier.getSigners()).length).to.equal(1);
 
-      const privKeySigner = process.env['PRIVATE_KEY_COPROCESSOR_ACCOUNT_1']!;
-      const inputSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
-      const tx = await inputVerifier.connect(deployer).addSigner(inputSigner.address);
+      const addressSigner = process.env['COPROCESSOR_SIGNER_ADDRESS_1']!;
+      const tx = await inputVerifier.connect(deployer).addSigner(addressSigner);
       await tx.wait();
 
       expect((await inputVerifier.getSigners()).length).to.equal(2); // one signer has been added
@@ -160,7 +156,7 @@ describe('InputVerifier', function () {
       const y = await contract.yBool();
       expect(y).to.equal(false);
 
-      process.env.NUM_COPROCESSOR_SIGNERS = '2';
+      process.env.NUM_COPROCESSORS = '2';
       const encryptedAmount2 = await inputAlice.encrypt();
       const tx2 = await contract.requestMixedNonTrivial(
         encryptedAmount2.handles[0],
@@ -179,10 +175,10 @@ describe('InputVerifier', function () {
       expect(y_Add).to.equal('0x1E69D5aa8750Ff56c556C164fE6feaE71BBA9a09');
 
       expect((await inputVerifier.getSigners()).length).to.equal(2);
-      const tx10 = await inputVerifier.connect(deployer).removeSigner(inputSigner.address);
+      const tx10 = await inputVerifier.connect(deployer).removeSigner(addressSigner);
       await tx10.wait();
       expect((await inputVerifier.getSigners()).length).to.equal(1);
-      process.env.NUM_COPROCESSOR_SIGNERS = '1';
+      process.env.NUM_COPROCESSORS = '1';
     }
   });
 

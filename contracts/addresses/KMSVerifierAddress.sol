@@ -2,4 +2,4 @@
 
 pragma solidity ^0.8.24;
 
-address constant kmsVerifierAdd = 0x596E6682c72946AF006B27C131793F2b62527A4b;
+address constant kmsVerifierAdd = 0xe3a9105a3a932253A70F126eb1E3b589C643dD24;

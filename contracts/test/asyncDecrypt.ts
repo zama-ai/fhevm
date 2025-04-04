@@ -1,15 +1,28 @@
 import dotenv from 'dotenv';
-import { Wallet } from 'ethers';
+import { Signer } from 'ethers';
 import fs from 'fs';
 import { ethers, network } from 'hardhat';
 
+import { getRequiredEnvVar } from '../tasks/utils/loadVariables';
 import { DecryptionOracle } from '../types';
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
+import { checkIsHardhatSigner } from './utils';
 
 const networkName = network.name;
 
 const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
 const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
+
+async function getKMSSigners() {
+  const kmsSigners = [];
+  const numKMSSigners = getRequiredEnvVar('NUM_KMS_NODES');
+  for (let idx = 0; idx < +numKMSSigners; idx++) {
+    const kmsSigner = await ethers.getSigner(getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`));
+    await checkIsHardhatSigner(kmsSigner);
+    kmsSigners.push(kmsSigner);
+  }
+  return kmsSigners;
+}
 
 const CiphertextType = {
   0: 'bool',
@@ -34,10 +47,9 @@ const currentTime = (): string => {
 };
 
 const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.decryptionoracle'));
-let relayer: Wallet;
+let relayer: Signer;
 if (networkName === 'hardhat') {
-  const privKeyRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
-  relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
+  ethers.getSigners().then((signers) => (relayer = signers[6]));
 }
 
 const argEvents =
@@ -143,8 +155,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       // + adding also a dummy empty array of bytes for correct abi-encoding when used with signatures
       decryptedResult = '0x' + encodedData.slice(66).slice(0, -64); // we pop the dummy requestID to get the correct value to pass for `decryptedCts` + we also pop the last 32 bytes (empty bytes[])
 
-      const numSigners = +process.env.NUM_KMS_SIGNERS!;
-      const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, decryptedResult, numSigners);
+      const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, decryptedResult);
 
       const calldata =
         callbackSelector +
@@ -168,22 +179,15 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
   }
 };
 
-async function computeDecryptSignatures(
-  handlesList: string[],
-  decryptedResult: string,
-  numSigners: number,
-): Promise<string[]> {
+async function computeDecryptSignatures(handlesList: string[], decryptedResult: string): Promise<string[]> {
   const signatures: string[] = [];
 
-  for (let idx = 0; idx < numSigners; idx++) {
-    const privKeySigner = process.env[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
-    if (privKeySigner) {
-      const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
-      const signature = await kmsSign(handlesList, decryptedResult, kmsSigner);
-      signatures.push(signature);
-    } else {
-      throw new Error(`Private key for signer ${idx} not found in environment variables`);
-    }
+  let signers = await getKMSSigners();
+
+  for (let idx = 0; idx < signers.length; idx++) {
+    const kmsSigner = signers[idx];
+    const signature = await kmsSign(handlesList, decryptedResult, kmsSigner);
+    signatures.push(signature);
   }
   return signatures;
 }

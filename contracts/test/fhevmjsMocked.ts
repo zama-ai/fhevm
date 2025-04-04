@@ -7,10 +7,23 @@ import * as fs from 'fs';
 import { Keccak } from 'sha3';
 import { isAddress } from 'web3-validator';
 
+import { getRequiredEnvVar } from '../tasks/utils/loadVariables';
 import { insertSQL } from './coprocessorUtils';
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
+import { checkIsHardhatSigner } from './utils';
 
 const hre = require('hardhat');
+
+async function getCoprocessorSigners() {
+  const coprocessorSigners = [];
+  const numKMSSigners = getRequiredEnvVar('NUM_COPROCESSORS');
+  for (let idx = 0; idx < +numKMSSigners; idx++) {
+    const coprocessorSigner = await hre.ethers.getSigner(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
+    await checkIsHardhatSigner(coprocessorSigner);
+    coprocessorSigners.push(coprocessorSigner);
+  }
+  return coprocessorSigners;
+}
 
 const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
 const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
@@ -306,7 +319,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
         return dataInput;
       });
       let inputProof = '0x' + numberToHex(handles.length); // numHandles + numCoprocessorSigners + list_handles + signatureCoprocessorSigners (total len : 1+1+32+NUM_HANDLES*32+65*numSigners)
-      const numSigners = +process.env.NUM_COPROCESSOR_SIGNERS!;
+      const numSigners = +process.env.NUM_COPROCESSORS!;
       inputProof += numberToHex(numSigners);
 
       const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
@@ -370,16 +383,13 @@ async function computeInputSignaturesCopro(
   contractAddress: string,
 ): Promise<string[]> {
   const signatures: string[] = [];
-  const numSigners = +process.env.NUM_COPROCESSOR_SIGNERS!;
+  const numSigners = +process.env.NUM_COPROCESSORS!;
+  let signers = await getCoprocessorSigners();
+
   for (let idx = 0; idx < numSigners; idx++) {
-    const privKeySigner = process.env[`PRIVATE_KEY_COPROCESSOR_ACCOUNT_${idx}`];
-    if (privKeySigner) {
-      const coprocSigner = new Wallet(privKeySigner).connect(ethers.provider);
-      const signature = await coprocSign(handlesList, userAddress, contractAddress, coprocSigner);
-      signatures.push(signature);
-    } else {
-      throw new Error(`Private key for coprocessor signer ${idx} not found in environment variables`);
-    }
+    const coprocSigner = signers[idx];
+    const signature = await coprocSign(handlesList, userAddress, contractAddress, coprocSigner);
+    signatures.push(signature);
   }
   return signatures;
 }

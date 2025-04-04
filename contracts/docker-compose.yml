@@ -4,24 +4,20 @@ services:
   anvil-node:
     container_name: anvil-node
     image: ghcr.io/foundry-rs/foundry:stable
-    env_file:
-      - ./.env.example.deployment
     entrypoint:
-      [
-        "anvil",
-        "--block-time",
-        "0.5",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "8545",
-        "--chain-id",
-        "12345",
-        "--accounts",
-        "15",
-        "--mnemonic",
-        "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer",
-      ]
+      - anvil
+      - --block-time
+      - "0.5"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8545"
+      - --chain-id
+      - "12345"
+      - --accounts
+      - "15"
+      - --mnemonic
+      - "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
     ports:
       - "8545:8545"
     volumes:
@@ -34,8 +30,15 @@ services:
       dockerfile: contracts/operations/docker/ci.dockerfile
       tags:
         - "httpz-smart-contracts:0.7.0-local"
+    env_file:
+      - ./.env.example
     environment:
-      - HARDHAT_NETWORK=staging
-    volumes:
-      - ./.env.example.deployment:/app/.env
-    command: ["/app/deploy-core-contracts.sh"]
+      - HARDHAT_NETWORK=${HARDHAT_NETWORK:-staging}
+      - CHAIN_ID_GATEWAY=54321
+    command:
+      - /bin/bash
+      - -c
+      - |
+        # Uncomment this line to debug
+        # tail -f /dev/null
+        cd /app/ && npx hardhat task:deployAllHostContracts
