@@ -139,7 +139,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
 
         /// @dev Check if the received key ID is the latest activated.
         // TODO: Revisit the following line accordingly with key lifecycles issue
-        // See: https://github.com/zama-ai/gateway-l2/issues/90
+        // See: https://github.com/zama-ai/httpz-gateway/issues/90
         // TODO: Re-enable this check once keys are generated through the Gateway
         // bool isCurrentKeyId = _KEY_MANAGER.isCurrentKeyId(keyId);
         // if (!isCurrentKeyId) {

@@ -1,4 +1,4 @@
-name: "Gateway Layer 2 sc Docker Image And Tests"
+name: "HTTPZ Gateway sc Docker Image And Tests"
 
 on:
   pull_request:
@@ -23,7 +23,7 @@ jobs:
     with:
       working-directory: "."
       push_image: true
-      image-name: "gateway-l2/sc-bundle"
+      image-name: "httpz-gateway/sc-bundle"
       docker-file: "Dockerfile"
       arm-build: true
 

@@ -1,10 +1,10 @@
 # Deploy contracts locally
 
-Here is an example of how to deploy contracts locally (on a `gatewayL2` local network)using hardhat.
+Here is an example of how to deploy contracts locally (on a local network) using hardhat.
 
 ## Deploy contracts
 
-0/ Prerequisites: First, git clone `gateway-l2` repo, install dependencies with
+0/ Prerequisites: First, git clone `httpz-gateway` repo, install dependencies with
 
 ```bash
 npm install
@@ -16,7 +16,7 @@ npm install
 - pauser address
 - kms nodes
 - coprocessors
-- L1 network(s) infos
+- host network(s) infos
 
 The number of KMS nodes, coprocessors and networks set in the `.env.test` file should be lower or equal to the number of
 metadata set along each, and differentiated by indexes (starting from 1).

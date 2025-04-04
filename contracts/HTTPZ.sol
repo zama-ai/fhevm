@@ -11,7 +11,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
  * @title HTTPZ contract
  * @dev See {IHTTPZ}.
  * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and networks.
- * @dev See https://github.com/zama-ai/gateway-l2/issues/98 for more details.
+ * @dev See https://github.com/zama-ai/httpz-gateway/issues/98 for more details.
  */
 contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUPSUpgradeable {
     /// @notice The pauser role, which can pause the contracts.

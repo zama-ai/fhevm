@@ -1,6 +1,6 @@
 ---
 description: >-
-  The Gateway Layer 2.
+  The HTTPZ Gateway.
 layout:
   title:
     visible: true
@@ -14,7 +14,7 @@ layout:
     visible: false
 ---
 
-# Welcome to Gateway Layer 2
+# Welcome to HTTPZ Gateway
 
 ## Get started
 
@@ -33,15 +33,15 @@ days.
 
 Collaborate with us to advance the FHE spaces and drive innovation together.
 
-- [Contribute to Gateway Layer 2](developer/contribute.md)
+- [Contribute to HTTPZ Gateway](developer/contribute.md)
 - [Follow the development roadmap](developer/roadmap.md)
 <!-- markdown-link-check-disable -->
-- [See the latest test release note](https://github.com/zama-ai/gateway-l2/releases)
-- [Request a feature](https://github.com/zama-ai/gateway-l2/issues/new)
-- [Report a bug](https://github.com/zama-ai/gateway-l2/issues/new)
+- [See the latest test release note](https://github.com/zama-ai/httpz-gateway/releases)
+- [Request a feature](https://github.com/zama-ai/httpz-gateway/issues/new)
+- [Report a bug](https://github.com/zama-ai/httpz-gateway/issues/new)
 <!-- markdown-link-check-enable -->
 
 ---
 
-We value your feedback! [Take a 5-question developer survey](http://zama.ai/developer-survey) to improve the Gateway
-Layer 2 library and the documentation and help other developers use FHE.
+We value your feedback! [Take a 5-question developer survey](http://zama.ai/developer-survey) to improve the HTTPZ
+Gateway and the documentation and help other developers use FHE.

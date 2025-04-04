@@ -45,7 +45,7 @@ struct Network {
 
 /**
  * @notice Data structure used to transfer a SNS ciphertext and some of its metadata between
- * the Gateway L2 contracts.
+ * the Gateway contracts.
  */
 struct SnsCiphertextMaterial {
     uint256 ctHandle;
@@ -56,7 +56,7 @@ struct SnsCiphertextMaterial {
 
 /**
  * @notice Data structure used to transfer a regular ciphertext and some of its metadata between
- * the Gateway L2 contracts.
+ * the Gateway contracts.
  */
 struct CiphertextMaterial {
     uint256 ctHandle;

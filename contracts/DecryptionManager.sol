@@ -221,7 +221,7 @@ contract DecryptionManager is
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
+        /// @dev See https://github.com/zama-ai/httpz-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         $._publicDecryptionCounter++;
@@ -330,7 +330,7 @@ contract DecryptionManager is
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
+        /// @dev See https://github.com/zama-ai/httpz-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
@@ -416,7 +416,7 @@ contract DecryptionManager is
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
+        /// @dev See https://github.com/zama-ai/httpz-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
