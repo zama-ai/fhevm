@@ -30,24 +30,24 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
     /// @custom:storage-location erc7201:httpz_gateway.storage.CiphertextManager
     struct CiphertextManagerStorage {
         /// @notice The regular ciphertext digests tied to the ciphertext handle.
-        mapping(uint256 ctHandle => bytes32 ctDigest) _ciphertextDigests;
+        mapping(bytes32 ctHandle => bytes32 ctDigest) _ciphertextDigests;
         /// @notice The SNS ciphertext digests tied to the ciphertext handle.
-        mapping(uint256 ctHandle => bytes32 snsCtDigest) _snsCiphertextDigests;
+        mapping(bytes32 ctHandle => bytes32 snsCtDigest) _snsCiphertextDigests;
         /// @notice The key IDs used for generating the ciphertext.
         /// @dev It's necessary in case new keys are generated: we need to know what key to use for using a ciphertext.
-        mapping(uint256 ctHandle => uint256 keyId) _keyIds;
+        mapping(bytes32 ctHandle => uint256 keyId) _keyIds;
         /// @notice The chain IDs associated to the ciphertext handle.
-        mapping(uint256 ctHandle => uint256 chainId) _chainIds;
+        mapping(bytes32 ctHandle => uint256 chainId) _chainIds;
         /// @notice The mapping of already added ciphertexts tied to the given handle.
-        mapping(uint256 ctHandle => bool isAdded) _isCiphertextMaterialAdded;
+        mapping(bytes32 ctHandle => bool isAdded) _isCiphertextMaterialAdded;
         /// @notice The counter of confirmations received for a ciphertext to be added.
         mapping(bytes32 addCiphertextHash => uint8 counter) _addCiphertextHashCounters;
         // prettier-ignore
         /// @notice The mapping of the coprocessor transaction senders that have already added the ciphertext handle.
-        mapping(uint256 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAdded)) 
+        mapping(bytes32 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAdded)) 
             _alreadyAddedCoprocessorTxSenders;
         /// @notice The mapping of the coprocessor transaction senders that have added the ciphertext.
-        mapping(uint256 ctHandle => address[] coprocessorTxSenderAddresses) _coprocessorTxSenderAddresses;
+        mapping(bytes32 ctHandle => address[] coprocessorTxSenderAddresses) _coprocessorTxSenderAddresses;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("httpz_gateway.storage.CiphertextManager")) - 1)) &
@@ -68,7 +68,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
     }
 
     /// @notice See {ICiphertextManager-checkCiphertextMaterial}.
-    function checkCiphertextMaterial(uint256 ctHandle) public view virtual {
+    function checkCiphertextMaterial(bytes32 ctHandle) public view virtual {
         CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
         if (!$._isCiphertextMaterialAdded[ctHandle]) {
             revert CiphertextMaterialNotFound(ctHandle);
@@ -77,7 +77,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
 
     /// @notice See {ICiphertextManager-getCiphertextMaterials}.
     function getCiphertextMaterials(
-        uint256[] calldata ctHandles
+        bytes32[] calldata ctHandles
     ) public view returns (CiphertextMaterial[] memory ctMaterials) {
         CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
         ctMaterials = new CiphertextMaterial[](ctHandles.length);
@@ -98,7 +98,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
 
     /// @notice See {ICiphertextManager-getSnsCiphertextMaterials}.
     function getSnsCiphertextMaterials(
-        uint256[] calldata ctHandles
+        bytes32[] calldata ctHandles
     ) public view returns (SnsCiphertextMaterial[] memory snsCtMaterials) {
         CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
         snsCtMaterials = new SnsCiphertextMaterial[](ctHandles.length);
@@ -120,7 +120,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
     /// @notice See {ICiphertextManager-addCiphertextMaterial}.
     /// @dev This function calls the HTTPZ contract to check that the sender address is a Coprocessor.
     function addCiphertextMaterial(
-        uint256 ctHandle,
+        bytes32 ctHandle,
         uint256 keyId,
         uint256 chainId,
         bytes32 ciphertextDigest,

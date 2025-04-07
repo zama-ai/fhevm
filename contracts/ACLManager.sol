@@ -30,21 +30,21 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     /// @custom:storage-location erc7201:httpz_gateway.storage.ACLManager
     struct ACLManagerStorage {
         /// @notice Accounts allowed to use the ciphertext handle.
-        mapping(uint256 ctHandle => mapping(address accountAddress => bool isAllowed)) allowedAccounts;
+        mapping(bytes32 ctHandle => mapping(address accountAddress => bool isAllowed)) allowedAccounts;
         /// @notice The counter used for the allowAccount consensus.
-        mapping(uint256 ctHandle => mapping(address accountAddress => uint8 counter)) _allowAccountCounters;
+        mapping(bytes32 ctHandle => mapping(address accountAddress => uint8 counter)) _allowAccountCounters;
         // prettier-ignore
         /// @notice Coprocessors that have already allowed an account to use the ciphertext handle.
-        mapping(uint256 ctHandle => mapping(address accountAddress =>
+        mapping(bytes32 ctHandle => mapping(address accountAddress =>
             mapping(address coprocessorTxSenderAddress => bool hasAllowed)))
                 _allowAccountCoprocessors;
         /// @notice Allowed public decryptions.
-        mapping(uint256 ctHandle => bool isAllowed) allowedPublicDecrypts;
+        mapping(bytes32 ctHandle => bool isAllowed) allowedPublicDecrypts;
         /// @notice The counter used for the public decryption consensus.
-        mapping(uint256 ctHandle => uint8 counter) _allowPublicDecryptCounters;
+        mapping(bytes32 ctHandle => uint8 counter) _allowPublicDecryptCounters;
         // prettier-ignore
         /// @notice Coprocessors that have already allowed a public decryption.
-        mapping(uint256 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAllowed)) 
+        mapping(bytes32 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAllowed)) 
             _allowPublicDecryptCoprocessors;
         /// @dev Tracks the computed delegateAccountHash that has already been delegated.
         mapping(bytes32 delegateAccountHash => bool isDelegated) _delegatedAccountHashes;
@@ -79,7 +79,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     /// @dev See {IACLManager-allowAccount}.
     function allowAccount(
         uint256 chainId,
-        uint256 ctHandle,
+        bytes32 ctHandle,
         address accountAddress
     ) public virtual override onlyCoprocessorTxSender onlyRegisteredNetwork(chainId) {
         ACLManagerStorage storage $ = _getACLManagerStorage();
@@ -110,7 +110,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     /// @dev See {IACLManager-allowPublicDecrypt}.
     function allowPublicDecrypt(
         uint256 chainId,
-        uint256 ctHandle
+        bytes32 ctHandle
     ) public virtual override onlyCoprocessorTxSender onlyRegisteredNetwork(chainId) {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
@@ -185,7 +185,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            uint256 ctHandle = ctHandleContractPairs[i].ctHandle;
+            bytes32 ctHandle = ctHandleContractPairs[i].ctHandle;
             address contractAddress = ctHandleContractPairs[i].contractAddress;
 
             /// @dev Check that the contract address is different from the account address
@@ -206,7 +206,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     }
 
     /// @dev See {IACLManager-checkPublicDecryptAllowed}.
-    function checkPublicDecryptAllowed(uint256[] calldata ctHandles) public view virtual {
+    function checkPublicDecryptAllowed(bytes32[] calldata ctHandles) public view virtual {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
         /// @dev Iterate over the ctHandles to check if the public decryption is allowed.
@@ -259,13 +259,13 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     }
 
     /// @dev See {IACLManager-allowedAccounts}.
-    function allowedAccounts(uint256 ctHandle, address accountAddress) external view virtual returns (bool) {
+    function allowedAccounts(bytes32 ctHandle, address accountAddress) external view virtual returns (bool) {
         ACLManagerStorage storage $ = _getACLManagerStorage();
         return $.allowedAccounts[ctHandle][accountAddress];
     }
 
     /// @dev See {IACLManager-allowedPublicDecrypts}.
-    function allowedPublicDecrypts(uint256 ctHandle) external view virtual returns (bool) {
+    function allowedPublicDecrypts(bytes32 ctHandle) external view virtual returns (bool) {
         ACLManagerStorage storage $ = _getACLManagerStorage();
         return $.allowedPublicDecrypts[ctHandle];
     }

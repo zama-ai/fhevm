@@ -8,6 +8,7 @@ import { HTTPZ, ZKPoKManager } from "../typechain-types";
 import {
   EIP712,
   createAndFundRandomUser,
+  createCtHandles,
   createEIP712ResponseZKPoK,
   getSignaturesZKPoK,
   loadTestVariablesFixture,
@@ -17,11 +18,11 @@ describe("ZKPoKManager", function () {
   const contractAddress = hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678");
   const userAddress = hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12");
   const ciphertextWithZKProof = hre.ethers.randomBytes(32);
-  const ctHandles = [hre.ethers.randomBytes(32), hre.ethers.randomBytes(32)];
+  const ctHandles = createCtHandles(3);
 
   // Expected ZK proof id (after first request)
   const zkProofId = 1;
-  const fakeCtHandles = [hre.ethers.randomBytes(32)];
+  const fakeCtHandles = createCtHandles(3);
 
   // Fake values
   const fakeChainId = 123;

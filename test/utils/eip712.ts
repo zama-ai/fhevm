@@ -27,7 +27,7 @@ export interface EIP712 {
 export function createEIP712ResponseZKPoK(
   chainId: number,
   verifyingContract: string,
-  ctHandles: Uint8Array[],
+  ctHandles: string[],
   userAddress: string,
   contractAddress: string,
   contractChainId: number,
@@ -86,7 +86,7 @@ export async function getSignaturesZKPoK(
 export function createEIP712ResponsePublicDecrypt(
   chainId: number,
   verifyingContract: string,
-  ctHandles: number[],
+  ctHandles: string[],
   decryptedResult: Uint8Array,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
@@ -101,7 +101,7 @@ export function createEIP712ResponsePublicDecrypt(
         { name: "verifyingContract", type: "address" },
       ],
       PublicDecryptVerification: [
-        { name: "ctHandles", type: "uint256[]" },
+        { name: "ctHandles", type: "bytes32[]" },
         { name: "decryptedResult", type: "bytes" },
       ],
     },
@@ -267,7 +267,7 @@ export function createEIP712ResponseUserDecrypt(
   chainId: number,
   verifyingContract: string,
   publicKey: Uint8Array,
-  ctHandles: number[],
+  ctHandles: string[],
   reencryptedShare: Uint8Array,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
@@ -283,7 +283,7 @@ export function createEIP712ResponseUserDecrypt(
       ],
       UserDecryptResponseVerification: [
         { name: "publicKey", type: "bytes" },
-        { name: "ctHandles", type: "uint256[]" },
+        { name: "ctHandles", type: "bytes32[]" },
         { name: "reencryptedShare", type: "bytes" },
       ],
     },

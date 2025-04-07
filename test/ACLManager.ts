@@ -5,16 +5,16 @@ import { HDNodeWallet } from "ethers";
 import hre from "hardhat";
 
 import { ACLManager, CiphertextManager, HTTPZ } from "../typechain-types";
-import { createAndFundRandomUser, loadTestVariablesFixture } from "./utils";
+import { createAndFundRandomUser, createBytes32, createCtHandle, loadTestVariablesFixture } from "./utils";
 
 describe("ACLManager", function () {
-  const keyId = 0; // Using exceptional first key (currentKeyId == 0). See {HTTPZ-activateKeyRequest}
-  const ctHandle = 2025;
-  const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
-  const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+  const keyId = 0;
+  const ctHandle = createCtHandle();
+  const ciphertextDigest = createBytes32();
+  const snsCiphertextDigest = createBytes32();
 
   // Fake values
-  const fakeCtHandle = 11111;
+  const fakeCtHandle = createCtHandle();
   const fakeHostChainId = 123;
 
   let httpz: HTTPZ;

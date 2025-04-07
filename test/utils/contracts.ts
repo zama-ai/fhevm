@@ -4,28 +4,8 @@ import { Wallet } from "ethers";
 import fs from "fs";
 import hre from "hardhat";
 
-const DEFAULT_BALANCE = "0x1000000000000000000000000000000000000000";
-
-// Get the required environment variable, throw an error if it's not set
-// We only check if the variable is set, not if it's empty
-function getRequiredEnvVar(name: string): string {
-  if (!(name in process.env)) {
-    throw new Error(`"${name}" env variable is not set`);
-  }
-  return process.env[name]!;
-}
-
-// Add fund to the given address
-async function fund(address: string, balance: string) {
-  await hre.ethers.provider.send("hardhat_setBalance", [address, balance]);
-}
-
-// Create a new random user with some funds
-export async function createAndFundRandomUser() {
-  const user = hre.ethers.Wallet.createRandom().connect(hre.ethers.provider);
-  await fund(user.address, DEFAULT_BALANCE);
-  return user;
-}
+import { getRequiredEnvVar } from "../../tasks/utils/loadVariables";
+import { createAndFundRandomUser, fund } from "./wallets";
 
 // Check if the given signer is a valid hardhat signer
 // This is needed because `hre.ethers.getSigner` does not throw an error if it used on a random address
@@ -47,7 +27,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
   // - the pauser can pause the protocol
   // - the user has no particular rights and is mostly used to check roles are properly set
   const owner = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY"), hre.ethers.provider);
-  await fund(owner.address, DEFAULT_BALANCE);
+  await fund(owner.address);
   const pauser = await hre.ethers.getSigner(getRequiredEnvVar("PAUSER_ADDRESS"));
   await checkIsHardhatSigner(pauser);
   const user = await createAndFundRandomUser();
