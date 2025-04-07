@@ -1,6 +1,6 @@
 import { assert } from 'console';
 
-import { FheType, Operator, OperatorArguments, ReturnType } from './common';
+import { AdjustedFheType, AliasFheType, FheType, Operator, OperatorArguments, ReturnType } from './common';
 import { getUint } from './utils';
 
 /**
@@ -15,11 +15,21 @@ import { getUint } from './utils';
  * @returns A string containing the Solidity type aliases, each on a new line.
  */
 export function createSolidityTypeAliasesFromFheTypes(fheTypes: FheType[]): string {
-  return fheTypes
+  let res = fheTypes
     .filter((fheType: FheType) => fheType.supportedOperators.length > 0)
-    .map((fheType: FheType) => `type e${fheType.type.toLowerCase()} is bytes32;`)
-    .concat(['type einput is bytes32;'])
-    .join('\n');
+    .map((fheType: FheType) => `type e${fheType.type.toLowerCase()} is bytes32;`);
+
+  res = res.concat(
+    fheTypes
+      .map((fheType: FheType) =>
+        (fheType.aliases?.filter((fheTypeAlias: AliasFheType) => fheTypeAlias.supportedOperators.length > 0) ?? []).map(
+          (fheTypeAlias: AliasFheType) => `type e${fheTypeAlias.type.toLowerCase()} is bytes32;`,
+        ),
+      )
+      .flat(),
+  );
+
+  return res.concat(['type einput is bytes32;']).join('\n');
 }
 
 /**
@@ -31,11 +41,7 @@ export function createSolidityTypeAliasesFromFheTypes(fheTypes: FheType[]): stri
 export function createSolidityEnumFromFheTypes(fheTypes: FheType[]): string {
   return `enum FheType {
     ${fheTypes
-      .filter((fheType: FheType) => !fheType.aliasType)
-      .map(
-        (fheType: FheType, index: number) =>
-          `${fheType.type}${index < fheTypes.filter((fheType: FheType) => !fheType.aliasType).length - 1 ? ',' : ''}`,
-      )
+      .map((fheType: FheType, index: number) => `${fheType.type}${index < fheTypes.length - 1 ? ',' : ''}`)
       .join('\n')}
 }`;
 }
@@ -47,6 +53,60 @@ export function generateSolidityFheType(fheTypes: FheType[]): string {
 
     ${createSolidityEnumFromFheTypes(fheTypes)}
 `;
+}
+
+/**
+ * Generates an array of adjusted FHE (Fully Homomorphic Encryption) types based on the provided FHE types.
+ *
+ * This function processes an array of `FheType` objects and creates a new array of `AdjustedFheType` objects.
+ * It includes the original FHE types that have supported operators and also processes their aliases, if any,
+ * to include them in the adjusted array with additional alias-specific properties.
+ *
+ * @param fheTypes - An array of `FheType` objects to be adjusted.
+ *
+ * @returns An array of `AdjustedFheType` objects containing the adjusted FHE types and their aliases.
+ *
+ * @remarks
+ * - Only FHE types with supported operators are included in the result.
+ * - Aliases are processed separately and marked with the `isAlias` property.
+ * - The `aliasType` property indicates the original type for an alias.
+ * - The `clearMatchingTypeAlias` property is included for aliases to reference the original clear matching type.
+ */
+function generateAdjustedFheTypeArray(fheTypes: FheType[]): AdjustedFheType[] {
+  let adjustedFheTypes: AdjustedFheType[] = [];
+
+  for (let i = 0; i < fheTypes.length; i++) {
+    const fheType = fheTypes[i];
+
+    if (fheType.supportedOperators.length > 0) {
+      adjustedFheTypes.push({
+        type: fheType.type,
+        bitLength: fheType.bitLength,
+        supportedOperators: fheType.supportedOperators,
+        clearMatchingType: fheType.clearMatchingType,
+        value: fheType.value,
+      });
+    }
+
+    if (fheType.aliases !== undefined && fheType.aliases.length > 0) {
+      for (let i = 0; i < fheType.aliases.length; i++) {
+        if (fheType.aliases[i].supportedOperators.length > 0) {
+          adjustedFheTypes.push({
+            type: fheType.aliases[i].type,
+            bitLength: fheType.bitLength,
+            supportedOperators: fheType.aliases[i].supportedOperators,
+            clearMatchingType: fheType.aliases[i].clearMatchingType,
+            value: fheType.value,
+            isAlias: true,
+            aliasType: fheType.type,
+            clearMatchingTypeAlias: fheType.clearMatchingType,
+          });
+        }
+      }
+    }
+  }
+
+  return adjustedFheTypes;
 }
 
 /**
@@ -391,16 +451,16 @@ export function generateSolidityTFHELib(operators: Operator[], fheTypes: FheType
   `);
 
   // 1. Exclude types that do not support any operators.
-  const adjustedFheTypes = fheTypes.filter((fheType: FheType) => fheType.supportedOperators.length > 0);
+  const adjustedFheTypes = generateAdjustedFheTypeArray(fheTypes);
 
   // 2. Generate isInitialized function for all supported types
-  adjustedFheTypes.forEach((fheType: FheType) => {
+  adjustedFheTypes.forEach((fheType: AdjustedFheType) => {
     res.push(handleSolidityTFHEIsInitialized(fheType));
   });
 
   // 3. Handle encrypted operators for two encrypted types
-  adjustedFheTypes.forEach((lhsFheType: FheType) => {
-    adjustedFheTypes.forEach((rhsFheType: FheType) => {
+  adjustedFheTypes.forEach((lhsFheType: AdjustedFheType) => {
+    adjustedFheTypes.forEach((rhsFheType: AdjustedFheType) => {
       operators.forEach((operator) => {
         res.push(handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(lhsFheType, rhsFheType, operator));
       });
@@ -408,43 +468,45 @@ export function generateSolidityTFHELib(operators: Operator[], fheTypes: FheType
   });
 
   // 4. Handle scalar operators for all supported types
-  adjustedFheTypes.forEach((fheType: FheType) => {
+  adjustedFheTypes.forEach((fheType: AdjustedFheType) => {
     operators.forEach((operator) => {
       res.push(generateSolidityTFHEScalarOperator(fheType, operator));
     });
   });
 
   // 5. Handle shift & rotate operators for all supported types
-  adjustedFheTypes.forEach((fheType: FheType) => {
+  adjustedFheTypes.forEach((fheType: AdjustedFheType) => {
     operators.forEach((operator) => {
       res.push(handleSolidityTFHEShiftOperator(fheType, operator));
     });
   });
 
   // 6. Handle ternary operator (i.e., select) for all supported types
-  adjustedFheTypes.forEach((fheType: FheType) => res.push(handleSolidityTFHESelect(fheType)));
+  adjustedFheTypes.forEach((fheType: AdjustedFheType) => res.push(handleSolidityTFHESelect(fheType)));
 
   // 7. Handle custom casting (1) between euint types and (2) between an euint type and ebool.
-  adjustedFheTypes.forEach((outputFheType: FheType) => {
-    adjustedFheTypes.forEach((inputFheType: FheType) => {
+  adjustedFheTypes.forEach((outputFheType: AdjustedFheType) => {
+    adjustedFheTypes.forEach((inputFheType: AdjustedFheType) => {
       res.push(handleSolidityTFHECustomCastBetweenTwoEuint(inputFheType, outputFheType));
     });
     res.push(handleSolidityTFHECustomCastBetweenEboolAndEuint(outputFheType));
   });
 
   // 8. Handle unary operators for all supported types.
-  adjustedFheTypes.forEach((fheType: FheType) => res.push(handleSolidityTFHEUnaryOperators(fheType, operators)));
+  adjustedFheTypes.forEach((fheType: AdjustedFheType) =>
+    res.push(handleSolidityTFHEUnaryOperators(fheType, operators)),
+  );
 
   // 9. Handle conversion from plaintext and einput to all supported types (e.g., einput --> ebool, bytes memory --> ebytes64, uint32 --> euint32)
-  adjustedFheTypes.forEach((fheType: FheType) =>
+  adjustedFheTypes.forEach((fheType: AdjustedFheType) =>
     res.push(handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType)),
   );
 
   // 10. Handle rand/randBounded for all supported types
-  adjustedFheTypes.forEach((fheType: FheType) => res.push(handleSolidityTFHERand(fheType)));
+  adjustedFheTypes.forEach((fheType: AdjustedFheType) => res.push(handleSolidityTFHERand(fheType)));
 
   // 11. Add padding to bytes for all ebytes types
-  adjustedFheTypes.forEach((fheType: FheType) => res.push(handleTFHEPadToBytesForEbytes(fheType)));
+  adjustedFheTypes.forEach((fheType: AdjustedFheType) => res.push(handleTFHEPadToBytesForEbytes(fheType)));
 
   // 12. Push ACL Solidity methods
   res.push(generateSolidityACLMethods(adjustedFheTypes));
@@ -455,8 +517,8 @@ export function generateSolidityTFHELib(operators: Operator[], fheTypes: FheType
 }
 
 function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
-  lhsFheType: FheType,
-  rhsFheType: FheType,
+  lhsFheType: AdjustedFheType,
+  rhsFheType: AdjustedFheType,
   operator: Operator,
 ): string {
   const res: string[] = [];
@@ -555,14 +617,14 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
           return ebool.wrap(Impl.${operator.name}(eaddress.unwrap(a), eaddress.unwrap(b), false));
       }
   `);
-  } else if (lhsFheType.type.startsWith('Eint') && rhsFheType.type.startsWith('Eint')) {
-    throw new Error('Eint types are not supported!');
+  } else if (lhsFheType.type.startsWith('Int') && rhsFheType.type.startsWith('Int')) {
+    throw new Error('Int types are not supported!');
   }
 
   return res.join('');
 }
 
-function generateSolidityTFHEScalarOperator(fheType: FheType, operator: Operator): string {
+function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: Operator): string {
   const res: string[] = [];
 
   if (operator.shiftOperator || operator.rotateOperator) {
@@ -597,8 +659,8 @@ function generateSolidityTFHEScalarOperator(fheType: FheType, operator: Operator
     implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(b?1:0))${scalarFlag})`;
   } else if (fheType.type.startsWith('Bytes')) {
     implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), b${scalarFlag})`;
-  } else if (fheType.type.startsWith('Eint')) {
-    throw new Error('Eint types are not supported!');
+  } else if (fheType.type.startsWith('Int')) {
+    throw new Error('Int types are not supported!');
   } else {
     implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(${
       fheType.isAlias && fheType.clearMatchingTypeAlias !== undefined
@@ -690,7 +752,7 @@ function generateSolidityTFHEScalarOperator(fheType: FheType, operator: Operator
   return res.join('');
 }
 
-function handleSolidityTFHEIsInitialized(fheType: FheType): string {
+function handleSolidityTFHEIsInitialized(fheType: AdjustedFheType): string {
   return `
       /**
       * @dev Returns true if the encrypted integer is initialized and false otherwise.
@@ -701,7 +763,7 @@ function handleSolidityTFHEIsInitialized(fheType: FheType): string {
     `;
 }
 
-function handleSolidityTFHEShiftOperator(fheType: FheType, operator: Operator): string {
+function handleSolidityTFHEShiftOperator(fheType: AdjustedFheType, operator: Operator): string {
   const res: string[] = [];
 
   if (!operator.shiftOperator && !operator.rotateOperator) {
@@ -753,7 +815,7 @@ function handleSolidityTFHEShiftOperator(fheType: FheType, operator: Operator): 
   return res.join('');
 }
 
-function handleSolidityTFHESelect(fheType: FheType): string {
+function handleSolidityTFHESelect(fheType: AdjustedFheType): string {
   let res = '';
 
   if (fheType.supportedOperators.includes('select')) {
@@ -770,7 +832,10 @@ function handleSolidityTFHESelect(fheType: FheType): string {
   return res;
 }
 
-function handleSolidityTFHECustomCastBetweenTwoEuint(inputFheType: FheType, outputFheType: FheType): string {
+function handleSolidityTFHECustomCastBetweenTwoEuint(
+  inputFheType: AdjustedFheType,
+  outputFheType: AdjustedFheType,
+): string {
   if (
     inputFheType.type == outputFheType.type ||
     !inputFheType.type.startsWith('Uint') ||
@@ -789,7 +854,7 @@ function handleSolidityTFHECustomCastBetweenTwoEuint(inputFheType: FheType, outp
     `;
 }
 
-function handleSolidityTFHECustomCastBetweenEboolAndEuint(fheType: FheType): string {
+function handleSolidityTFHECustomCastBetweenEboolAndEuint(fheType: AdjustedFheType): string {
   const res: string[] = [];
 
   if (fheType.type.startsWith('Uint')) {
@@ -818,7 +883,7 @@ function handleSolidityTFHECustomCastBetweenEboolAndEuint(fheType: FheType): str
   return res.join('');
 }
 
-function handleSolidityTFHEUnaryOperators(fheType: FheType, operators: Operator[]): string {
+function handleSolidityTFHEUnaryOperators(fheType: AdjustedFheType, operators: Operator[]): string {
   const res: string[] = [];
 
   operators.forEach((op) => {
@@ -840,7 +905,7 @@ function handleSolidityTFHEUnaryOperators(fheType: FheType, operators: Operator[
 /**
  * Generates Solidity functions to convert plaintext and encrypted input handles to their respective encrypted types.
  *
- * @param {FheType} fheType - The Fully Homomorphic Encryption (FHE) type information.
+ * @param {AdjustedFheType} fheType - The Fully Homomorphic Encryption (FHE) type information.
  * @returns {string} - The Solidity code for the conversion functions.
  *
  * The generated functions include:
@@ -849,7 +914,7 @@ function handleSolidityTFHEUnaryOperators(fheType: FheType, operators: Operator[
  * - If the type is `Bytes`, an additional function to convert plaintext bytes to the respective encrypted type.
  * - For other types, a function to convert a plaintext value to the respective encrypted type.
  */
-function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: FheType): string {
+function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: AdjustedFheType): string {
   let result = `
     /** 
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted e${fheType.type.toLowerCase()} integer.
@@ -917,10 +982,10 @@ function handleUnaryOperatorForImpl(op: Operator): string {
 /**
  * Generates Solidity ACL (Access Control List) methods for the provided FHE types.
  *
- * @param {FheType[]} fheTypes - An array of FHE types for which to generate the ACL methods.
+ * @param {AdjustedFheType[]} fheTypes - An array of FHE types for which to generate the ACL methods.
  * @returns {string} A string containing the generated Solidity code for the ACL methods.
  */
-function generateSolidityACLMethods(fheTypes: FheType[]): string {
+function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
   const res: string[] = [];
 
   res.push(
@@ -938,7 +1003,7 @@ function generateSolidityACLMethods(fheTypes: FheType[]): string {
   `,
   );
 
-  fheTypes.forEach((fheType: FheType) =>
+  fheTypes.forEach((fheType: AdjustedFheType) =>
     res.push(`
     /**
      * @dev Returns whether the account is allowed to use the value.
@@ -984,7 +1049,7 @@ function generateSolidityACLMethods(fheTypes: FheType[]): string {
   return res.join('');
 }
 
-function handleTFHEPadToBytesForEbytes(fheType: FheType): string {
+function handleTFHEPadToBytesForEbytes(fheType: AdjustedFheType): string {
   if (!fheType.type.startsWith('Bytes')) {
     return '';
   }
@@ -1192,7 +1257,7 @@ function generateCustomMethodsForImpl(): string {
     `;
 }
 
-function handleSolidityTFHERand(fheType: FheType): string {
+function handleSolidityTFHERand(fheType: AdjustedFheType): string {
   let res = '';
 
   if (fheType.supportedOperators.includes('rand')) {

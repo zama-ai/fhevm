@@ -11,10 +11,10 @@ type euint32 is bytes32;
 type euint64 is bytes32;
 type euint128 is bytes32;
 type euint256 is bytes32;
+type eaddress is bytes32;
 type ebytes64 is bytes32;
 type ebytes128 is bytes32;
 type ebytes256 is bytes32;
-type eaddress is bytes32;
 type einput is bytes32;
 
 /**
@@ -85,6 +85,13 @@ library TFHE {
     /**
      * @dev Returns true if the encrypted integer is initialized and false otherwise.
      */
+    function isInitialized(eaddress v) internal pure returns (bool) {
+        return eaddress.unwrap(v) != 0;
+    }
+
+    /**
+     * @dev Returns true if the encrypted integer is initialized and false otherwise.
+     */
     function isInitialized(euint256 v) internal pure returns (bool) {
         return euint256.unwrap(v) != 0;
     }
@@ -108,13 +115,6 @@ library TFHE {
      */
     function isInitialized(ebytes256 v) internal pure returns (bool) {
         return ebytes256.unwrap(v) != 0;
-    }
-
-    /**
-     * @dev Returns true if the encrypted integer is initialized and false otherwise.
-     */
-    function isInitialized(eaddress v) internal pure returns (bool) {
-        return eaddress.unwrap(v) != 0;
     }
 
     /**
@@ -5058,6 +5058,32 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates eq(eaddress a, eaddress b) and returns the result.
+     */
+    function eq(eaddress a, eaddress b) internal returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(address(0));
+        }
+        if (!isInitialized(b)) {
+            b = asEaddress(address(0));
+        }
+        return ebool.wrap(Impl.eq(eaddress.unwrap(a), eaddress.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates ne(eaddress a, eaddress b) and returns the result.
+     */
+    function ne(eaddress a, eaddress b) internal returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(address(0));
+        }
+        if (!isInitialized(b)) {
+            b = asEaddress(address(0));
+        }
+        return ebool.wrap(Impl.ne(eaddress.unwrap(a), eaddress.unwrap(b), false));
+    }
+
+    /**
      * @dev Evaluates and(euint256 a, euint8 b)  and returns the result.
      */
     function and(euint256 a, euint8 b) internal returns (euint256) {
@@ -5523,32 +5549,6 @@ library TFHE {
             b = asEbytes256(padToBytes256(hex""));
         }
         return ebool.wrap(Impl.ne(ebytes256.unwrap(a), ebytes256.unwrap(b), false));
-    }
-
-    /**
-     * @dev Evaluates eq(eaddress a, eaddress b) and returns the result.
-     */
-    function eq(eaddress a, eaddress b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
-        if (!isInitialized(b)) {
-            b = asEaddress(address(0));
-        }
-        return ebool.wrap(Impl.eq(eaddress.unwrap(a), eaddress.unwrap(b), false));
-    }
-
-    /**
-     * @dev Evaluates ne(eaddress a, eaddress b) and returns the result.
-     */
-    function ne(eaddress a, eaddress b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
-        if (!isInitialized(b)) {
-            b = asEaddress(address(0));
-        }
-        return ebool.wrap(Impl.ne(eaddress.unwrap(a), eaddress.unwrap(b), false));
     }
 
     /**
@@ -7157,6 +7157,46 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates eq(eaddress a, address b) and returns the result.
+     */
+    function eq(eaddress a, address b) internal returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(address(0));
+        }
+        return ebool.wrap(Impl.eq(eaddress.unwrap(a), bytes32(uint256(uint160(b))), true));
+    }
+
+    /**
+     * @dev Evaluates eq(address a, eaddress b) and returns the result.
+     */
+    function eq(address a, eaddress b) internal returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEaddress(address(0));
+        }
+        return ebool.wrap(Impl.eq(eaddress.unwrap(b), bytes32(uint256(uint160(a))), true));
+    }
+
+    /**
+     * @dev Evaluates ne(eaddress a, address b) and returns the result.
+     */
+    function ne(eaddress a, address b) internal returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(address(0));
+        }
+        return ebool.wrap(Impl.ne(eaddress.unwrap(a), bytes32(uint256(uint160(b))), true));
+    }
+
+    /**
+     * @dev Evaluates ne(address a, eaddress b) and returns the result.
+     */
+    function ne(address a, eaddress b) internal returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEaddress(address(0));
+        }
+        return ebool.wrap(Impl.ne(eaddress.unwrap(b), bytes32(uint256(uint160(a))), true));
+    }
+
+    /**
      * @dev Evaluates and(euint256 a, uint256 b) and returns the result.
      */
     function and(euint256 a, uint256 b) internal returns (euint256) {
@@ -7374,46 +7414,6 @@ library TFHE {
             b = asEbytes256(padToBytes256(hex""));
         }
         return ebool.wrap(Impl.ne(ebytes256.unwrap(b), a, true));
-    }
-
-    /**
-     * @dev Evaluates eq(eaddress a, address b) and returns the result.
-     */
-    function eq(eaddress a, address b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
-        return ebool.wrap(Impl.eq(eaddress.unwrap(a), bytes32(uint256(uint160(b))), true));
-    }
-
-    /**
-     * @dev Evaluates eq(address a, eaddress b) and returns the result.
-     */
-    function eq(address a, eaddress b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEaddress(address(0));
-        }
-        return ebool.wrap(Impl.eq(eaddress.unwrap(b), bytes32(uint256(uint160(a))), true));
-    }
-
-    /**
-     * @dev Evaluates ne(eaddress a, address b) and returns the result.
-     */
-    function ne(eaddress a, address b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
-        return ebool.wrap(Impl.ne(eaddress.unwrap(a), bytes32(uint256(uint160(b))), true));
-    }
-
-    /**
-     * @dev Evaluates ne(address a, eaddress b) and returns the result.
-     */
-    function ne(address a, eaddress b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEaddress(address(0));
-        }
-        return ebool.wrap(Impl.ne(eaddress.unwrap(b), bytes32(uint256(uint160(a))), true));
     }
 
     /**
@@ -8014,6 +8014,13 @@ library TFHE {
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
+    function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {
+        return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
+    }
+    /**
+     * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
+     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
+     */
     function select(ebool control, euint256 a, euint256 b) internal returns (euint256) {
         return euint256.wrap(Impl.select(ebool.unwrap(control), euint256.unwrap(a), euint256.unwrap(b)));
     }
@@ -8037,13 +8044,6 @@ library TFHE {
      */
     function select(ebool control, ebytes256 a, ebytes256 b) internal returns (ebytes256) {
         return ebytes256.wrap(Impl.select(ebool.unwrap(control), ebytes256.unwrap(a), ebytes256.unwrap(b)));
-    }
-    /**
-     * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
-     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
-     */
-    function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {
-        return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
     }
     /**
      * @dev Casts an encrypted integer from 'euint16' to 'euint8'.
@@ -8521,6 +8521,20 @@ library TFHE {
     }
 
     /**
+     * @dev Convert an inputHandle with corresponding inputProof to an encrypted eaddress integer.
+     */
+    function asEaddress(einput inputHandle, bytes memory inputProof) internal returns (eaddress) {
+        return eaddress.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint160));
+    }
+
+    /**
+     * @dev Convert a plaintext value to an encrypted eaddress integer.
+     */
+    function asEaddress(address value) internal returns (eaddress) {
+        return eaddress.wrap(Impl.trivialEncrypt(uint256(uint160(value)), FheType.Uint160));
+    }
+
+    /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint256 integer.
      */
     function asEuint256(einput inputHandle, bytes memory inputProof) internal returns (euint256) {
@@ -8574,20 +8588,6 @@ library TFHE {
      */
     function asEbytes256(bytes memory value) internal returns (ebytes256) {
         return ebytes256.wrap(Impl.trivialEncrypt(value, FheType.Uint2048));
-    }
-
-    /**
-     * @dev Convert an inputHandle with corresponding inputProof to an encrypted eaddress integer.
-     */
-    function asEaddress(einput inputHandle, bytes memory inputProof) internal returns (eaddress) {
-        return eaddress.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint160));
-    }
-
-    /**
-     * @dev Convert a plaintext value to an encrypted eaddress integer.
-     */
-    function asEaddress(address value) internal returns (eaddress) {
-        return eaddress.wrap(Impl.trivialEncrypt(uint256(uint160(value)), FheType.Uint160));
     }
 
     /**
@@ -9019,6 +9019,44 @@ library TFHE {
     /**
      * @dev Returns whether the account is allowed to use the value.
      */
+    function isAllowed(eaddress value, address account) internal view returns (bool) {
+        return Impl.isAllowed(eaddress.unwrap(value), account);
+    }
+
+    /**
+     * @dev Returns whether the sender is allowed to use the value.
+     */
+    function isSenderAllowed(eaddress value) internal view returns (bool) {
+        return Impl.isAllowed(eaddress.unwrap(value), msg.sender);
+    }
+
+    /**
+     * @dev Allows the use of value for the address account.
+     */
+    function allow(eaddress value, address account) internal returns (eaddress) {
+        Impl.allow(eaddress.unwrap(value), account);
+        return value;
+    }
+
+    /**
+     * @dev Allows the use of value for this address (address(this)).
+     */
+    function allowThis(eaddress value) internal returns (eaddress) {
+        Impl.allow(eaddress.unwrap(value), address(this));
+        return value;
+    }
+
+    /**
+     * @dev Allows the use of value by address account for this transaction.
+     */
+    function allowTransient(eaddress value, address account) internal returns (eaddress) {
+        Impl.allowTransient(eaddress.unwrap(value), account);
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the account is allowed to use the value.
+     */
     function isAllowed(euint256 value, address account) internal view returns (bool) {
         return Impl.isAllowed(euint256.unwrap(value), account);
     }
@@ -9165,44 +9203,6 @@ library TFHE {
      */
     function allowTransient(ebytes256 value, address account) internal returns (ebytes256) {
         Impl.allowTransient(ebytes256.unwrap(value), account);
-        return value;
-    }
-
-    /**
-     * @dev Returns whether the account is allowed to use the value.
-     */
-    function isAllowed(eaddress value, address account) internal view returns (bool) {
-        return Impl.isAllowed(eaddress.unwrap(value), account);
-    }
-
-    /**
-     * @dev Returns whether the sender is allowed to use the value.
-     */
-    function isSenderAllowed(eaddress value) internal view returns (bool) {
-        return Impl.isAllowed(eaddress.unwrap(value), msg.sender);
-    }
-
-    /**
-     * @dev Allows the use of value for the address account.
-     */
-    function allow(eaddress value, address account) internal returns (eaddress) {
-        Impl.allow(eaddress.unwrap(value), account);
-        return value;
-    }
-
-    /**
-     * @dev Allows the use of value for this address (address(this)).
-     */
-    function allowThis(eaddress value) internal returns (eaddress) {
-        Impl.allow(eaddress.unwrap(value), address(this));
-        return value;
-    }
-
-    /**
-     * @dev Allows the use of value by address account for this transaction.
-     */
-    function allowTransient(eaddress value, address account) internal returns (eaddress) {
-        Impl.allowTransient(eaddress.unwrap(value), account);
         return value;
     }
 }
