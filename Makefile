@@ -10,6 +10,9 @@ prettier:
 compile:
 	npx hardhat compile
 
+clean:
+	npx hardhat clean
+
 # Define it as a phony target to avoid conflicts with the test directory
 .PHONY: test
 test:

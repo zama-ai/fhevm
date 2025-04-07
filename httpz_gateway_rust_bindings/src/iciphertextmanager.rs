@@ -23,7 +23,7 @@ interface ICiphertextManager {
 
     event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenderAddresses);
 
-    function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, uint256 chainId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest) external;
+    function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest) external;
     function checkCiphertextMaterial(bytes32 ctHandle) external view;
     function getCiphertextMaterials(bytes32[] memory ctHandles) external view returns (CiphertextMaterial[] memory ctMaterials);
     function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view returns (SnsCiphertextMaterial[] memory snsCtMaterials);
@@ -44,11 +44,6 @@ interface ICiphertextManager {
       },
       {
         "name": "keyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "chainId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -1310,9 +1305,9 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
             }
         }
     };
-    /**Function with signature `addCiphertextMaterial(bytes32,uint256,uint256,bytes32,bytes32)` and selector `0xf7a96097`.
+    /**Function with signature `addCiphertextMaterial(bytes32,uint256,bytes32,bytes32)` and selector `0x90f30354`.
 ```solidity
-function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, uint256 chainId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest) external;
+function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1322,13 +1317,11 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, uint256 chainId,
         #[allow(missing_docs)]
         pub keyId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
         pub ciphertextDigest: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
         pub snsCiphertextDigest: alloy::sol_types::private::FixedBytes<32>,
     }
-    ///Container type for the return parameters of the [`addCiphertextMaterial(bytes32,uint256,uint256,bytes32,bytes32)`](addCiphertextMaterialCall) function.
+    ///Container type for the return parameters of the [`addCiphertextMaterial(bytes32,uint256,bytes32,bytes32)`](addCiphertextMaterialCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addCiphertextMaterialReturn {}
@@ -1345,14 +1338,12 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, uint256 chainId,
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::FixedBytes<32>,
-                alloy::sol_types::private::primitives::aliases::U256,
                 alloy::sol_types::private::primitives::aliases::U256,
                 alloy::sol_types::private::FixedBytes<32>,
                 alloy::sol_types::private::FixedBytes<32>,
@@ -1376,7 +1367,6 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, uint256 chainId,
                     (
                         value.ctHandle,
                         value.keyId,
-                        value.chainId,
                         value.ciphertextDigest,
                         value.snsCiphertextDigest,
                     )
@@ -1390,9 +1380,8 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, uint256 chainId,
                     Self {
                         ctHandle: tuple.0,
                         keyId: tuple.1,
-                        chainId: tuple.2,
-                        ciphertextDigest: tuple.3,
-                        snsCiphertextDigest: tuple.4,
+                        ciphertextDigest: tuple.2,
+                        snsCiphertextDigest: tuple.3,
                     }
                 }
             }
@@ -1435,7 +1424,6 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, uint256 chainId,
             type Parameters<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
@@ -1447,8 +1435,8 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, uint256 chainId,
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "addCiphertextMaterial(bytes32,uint256,uint256,bytes32,bytes32)";
-            const SELECTOR: [u8; 4] = [247u8, 169u8, 96u8, 151u8];
+            const SIGNATURE: &'static str = "addCiphertextMaterial(bytes32,uint256,bytes32,bytes32)";
+            const SELECTOR: [u8; 4] = [144u8, 243u8, 3u8, 84u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -1464,9 +1452,6 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, uint256 chainId,
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.keyId),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.ciphertextDigest),
@@ -1943,9 +1928,9 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [85u8, 196u8, 217u8, 151u8],
+            [144u8, 243u8, 3u8, 84u8],
             [161u8, 79u8, 137u8, 113u8],
             [212u8, 71u8, 111u8, 99u8],
-            [247u8, 169u8, 96u8, 151u8],
         ];
     }
     #[automatically_derived]
@@ -2003,6 +1988,19 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
                     getCiphertextMaterials
                 },
                 {
+                    fn addCiphertextMaterial(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<ICiphertextManagerCalls> {
+                        <addCiphertextMaterialCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(ICiphertextManagerCalls::addCiphertextMaterial)
+                    }
+                    addCiphertextMaterial
+                },
+                {
                     fn getSnsCiphertextMaterials(
                         data: &[u8],
                         validate: bool,
@@ -2027,19 +2025,6 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
                             .map(ICiphertextManagerCalls::checkCiphertextMaterial)
                     }
                     checkCiphertextMaterial
-                },
-                {
-                    fn addCiphertextMaterial(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<ICiphertextManagerCalls> {
-                        <addCiphertextMaterialCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(ICiphertextManagerCalls::addCiphertextMaterial)
-                    }
-                    addCiphertextMaterial
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -2566,7 +2551,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
             keyId: alloy::sol_types::private::primitives::aliases::U256,
-            chainId: alloy::sol_types::private::primitives::aliases::U256,
             ciphertextDigest: alloy::sol_types::private::FixedBytes<32>,
             snsCiphertextDigest: alloy::sol_types::private::FixedBytes<32>,
         ) -> alloy_contract::SolCallBuilder<T, &P, addCiphertextMaterialCall, N> {
@@ -2574,7 +2558,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 &addCiphertextMaterialCall {
                     ctHandle,
                     keyId,
-                    chainId,
                     ciphertextDigest,
                     snsCiphertextDigest,
                 },

@@ -3,7 +3,7 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import hre, { ethers } from "hardhat";
 
-import { loadTestVariablesFixture, toValues } from "./utils/";
+import { UINT64_MAX, loadTestVariablesFixture, toValues } from "./utils/";
 
 describe("HTTPZ", function () {
   async function getInputsForDeployFixture() {
@@ -68,27 +68,6 @@ describe("HTTPZ", function () {
   }
 
   describe("Deployment", function () {
-    it("Should revert because of bad KMS threshold", async function () {
-      const { HTTPZ, protocolMetadata, owner, pauser, kmsNodes, coprocessors } =
-        await loadFixture(getInputsForDeployFixture);
-      const proxyContract = await deployEmptyProxy(owner);
-
-      // Define a bad KMS threshold
-      // The threshold must verify `t <= n`, with `n` the number of KMS nodes
-      const badKmsThreshold = kmsNodes.length + 1;
-
-      // Check that the initialization reverts
-      const upgradeTx = hre.upgrades.upgradeProxy(proxyContract, HTTPZ, {
-        call: {
-          fn: "initialize",
-          args: [pauser.address, protocolMetadata, badKmsThreshold, kmsNodes, coprocessors],
-        },
-      });
-      await expect(upgradeTx)
-        .to.be.revertedWithCustomError(HTTPZ, "KmsThresholdTooHigh")
-        .withArgs(badKmsThreshold, kmsNodes.length);
-    });
-
     it("Should deploy", async function () {
       const { HTTPZ, protocolMetadata, owner, pauser, kmsThreshold, kmsNodes, coprocessors } =
         await loadFixture(getInputsForDeployFixture);
@@ -118,6 +97,27 @@ describe("HTTPZ", function () {
         toValues(kmsNodes).toString(),
         toValues(coprocessors).toString(),
       ]);
+    });
+
+    it("Should revert because of bad KMS threshold", async function () {
+      const { HTTPZ, protocolMetadata, owner, pauser, kmsNodes, coprocessors } =
+        await loadFixture(getInputsForDeployFixture);
+      const proxyContract = await deployEmptyProxy(owner);
+
+      // Define a bad KMS threshold
+      // The threshold must verify `t <= n`, with `n` the number of KMS nodes
+      const badKmsThreshold = kmsNodes.length + 1;
+
+      // Check that the initialization reverts
+      const upgradeTx = hre.upgrades.upgradeProxy(proxyContract, HTTPZ, {
+        call: {
+          fn: "initialize",
+          args: [pauser.address, protocolMetadata, badKmsThreshold, kmsNodes, coprocessors],
+        },
+      });
+      await expect(upgradeTx)
+        .to.be.revertedWithCustomError(HTTPZ, "KmsThresholdTooHigh")
+        .withArgs(badKmsThreshold, kmsNodes.length);
     });
 
     it("Should be registered as an pauser", async function () {
@@ -273,10 +273,14 @@ describe("HTTPZ", function () {
 
   describe("Add network", function () {
     it("Should add a new network metadata", async function () {
-      const { httpz, owner } = await loadFixture(loadTestVariablesFixture);
+      const { httpz, owner, chainIds } = await loadFixture(loadTestVariablesFixture);
+
+      // Define a new chainId that is not already registered (since the HTTPZ contract has already
+      // been deployed and networks have been registered)
+      const newChainId = chainIds[0] - 1;
 
       const newNetwork = {
-        chainId: hre.ethers.toNumber(hre.ethers.randomBytes(2)),
+        chainId: newChainId,
         httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
         aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
         name: "Network",
@@ -292,35 +296,59 @@ describe("HTTPZ", function () {
     it("Should revert because the network's chainId is null", async function () {
       const { httpz, owner } = await loadFixture(loadTestVariablesFixture);
 
-      const txResponse = httpz.connect(owner).addNetwork({
+      const fakeNetwork = {
         chainId: 0,
         httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
         aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
         name: "Network",
         website: "https://network.com",
-      });
+      };
 
-      // Check AddNetwork event has been emitted
-      await expect(txResponse).to.revertedWithCustomError(httpz, "InvalidNullChainId");
+      // Check that registering a network with a null chainId reverts
+      await expect(httpz.connect(owner).addNetwork(fakeNetwork)).to.revertedWithCustomError(
+        httpz,
+        "InvalidNullChainId",
+      );
     });
 
-    it("Should revert because a network with the same chainId already exists", async function () {
+    it("Should revert because the network's chainId is not representable by a uint64", async function () {
       const { httpz, owner } = await loadFixture(loadTestVariablesFixture);
 
-      const alreadyAddedNetwork = await httpz.networks(0);
+      // Define a chainId that is not representable by a uint64
+      const chainIdTooLarge = UINT64_MAX + 1n;
 
-      const txResponse = httpz.connect(owner).addNetwork({
-        chainId: alreadyAddedNetwork.chainId,
+      const fakeNetwork = {
+        chainId: chainIdTooLarge,
         httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
         aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
         name: "Network",
         website: "https://network.com",
-      });
+      };
 
-      // Check AddNetwork event has been emitted
-      await expect(txResponse)
+      // Check that registering a network with a chainId that is not representable by a uint64 reverts
+      await expect(httpz.connect(owner).addNetwork(fakeNetwork))
+        .to.revertedWithCustomError(httpz, "ChainIdNotUint64")
+        .withArgs(chainIdTooLarge);
+    });
+
+    it("Should revert because a network with the same chainId already exists", async function () {
+      const { httpz, owner, chainIds } = await loadFixture(loadTestVariablesFixture);
+
+      // Get a chainId that has been registered
+      const alreadyAddedChainId = chainIds[0];
+
+      const fakeNetwork = {
+        chainId: alreadyAddedChainId,
+        httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
+        aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
+        name: "Network",
+        website: "https://network.com",
+      };
+
+      // Check that registering a network whose chainId is already registered reverts
+      await expect(httpz.connect(owner).addNetwork(fakeNetwork))
         .to.revertedWithCustomError(httpz, "NetworkAlreadyRegistered")
-        .withArgs(alreadyAddedNetwork.chainId);
+        .withArgs(alreadyAddedChainId);
     });
   });
 });

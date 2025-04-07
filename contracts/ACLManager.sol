@@ -78,10 +78,9 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
 
     /// @dev See {IACLManager-allowAccount}.
     function allowAccount(
-        uint256 chainId,
         bytes32 ctHandle,
         address accountAddress
-    ) public virtual override onlyCoprocessorTxSender onlyRegisteredNetwork(chainId) {
+    ) public virtual override onlyCoprocessorTxSender onlyHandleFromRegisteredNetwork(ctHandle) {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
         /**
@@ -109,9 +108,8 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
 
     /// @dev See {IACLManager-allowPublicDecrypt}.
     function allowPublicDecrypt(
-        uint256 chainId,
         bytes32 ctHandle
-    ) public virtual override onlyCoprocessorTxSender onlyRegisteredNetwork(chainId) {
+    ) public virtual override onlyCoprocessorTxSender onlyHandleFromRegisteredNetwork(ctHandle) {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
         /**
