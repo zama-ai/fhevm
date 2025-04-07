@@ -37,10 +37,10 @@ docker-compose-down:
 	docker compose -vvv down
 
 check-bindings:
-	python3 tasks/bindings_update.py check
+	python3 scripts/bindings_update.py check
 
 update-bindings:
-	python3 tasks/bindings_update.py update
+	python3 scripts/bindings_update.py update
 
 # Here, we purposely use a logical OR (||) instead of an if statement with a negation to avoid having 
 # discrepancies between running locally and in the CI. This is because some shell environments 
