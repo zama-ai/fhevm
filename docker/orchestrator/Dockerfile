@@ -7,6 +7,7 @@ WORKDIR /usr/src/app
 RUN apt-get update -y && apt-get install -y openssl
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --lockfile
 RUN pnpm run --filter "./packages/**" build
+
 RUN pnpx prisma generate --schema apps/orchestrator/prisma/schema.prisma
 RUN pnpm --filter=orchestrator build
 RUN pnpm deploy --filter=orchestrator --prod /prod/orchestrator

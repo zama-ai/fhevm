@@ -1,0 +1,73 @@
+# "External" services needed to run the Console
+services:
+  local_redis:
+    image: redis:7.4-alpine
+    restart: always
+    container_name: console-redis
+    ports:
+      - "6379:6379"
+    # Note: we need to set maxmemory policy to noeviction in order to avoid
+    # automatic removal of keys which would cause unexpected errors in BullMQ
+    command: redis-server --save 20 1 --loglevel warning --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    volumes:
+      - cache:/data
+    networks:
+      - console-net
+  local_postgres:
+    image: postgres:17-alpine
+    restart: always
+    container_name: console-postgres
+    environment:
+      - POSTGRES_USER=${DB_USERNAME:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-console-db}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    networks:
+      - console-net
+
+  local_aws:
+    image: localstack/localstack:latest
+    container_name: console-aws
+    restart: always
+    ports:
+      - "127.0.0.1:4566:4566" # LocalStack Gateway
+      - "127.0.0.1:4510-4559:4510-4559" # external services port range
+    environment:
+      - SERVICES=sqs,sns
+      - DEBUG=${DEBUG:-0}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-eu-central-1}
+    volumes:
+      - "localstack:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      # Here we mount our setup file so it will be executed when
+      # the container start
+      - ./localstack-setup.sh:/etc/localstack/init/ready.d/script.sh
+    networks:
+      - console-net
+
+volumes:
+  cache:
+  postgres:
+  localstack:
+
+# It creates an isolated docker-network
+networks:
+  console-net:
+    name: console-net

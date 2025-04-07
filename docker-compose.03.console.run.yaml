@@ -1,0 +1,103 @@
+# Run commands for the console services
+services:
+  back-migrate:
+    image: zws_local/console/back:alpine-v1
+    container_name: console-back-migrate
+    env_file:
+      - ./apps/back/.env.compose
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for database to be ready..." &&
+        until nc -z local_postgres 5432; do sleep 1; done &&
+        echo "Running migrations..." &&
+        pnpm --filter back prisma:migrate
+    restart: on-failure
+    networks:
+      - console-net
+
+  back:
+    image: zws_local/console/back:alpine-v1
+    container_name: console-back
+    depends_on:
+      back-migrate:
+        condition: service_completed_successfully
+    env_file:
+      - ./apps/back/.env.compose
+    networks:
+      - console-net
+
+  email:
+    image: zws_local/console/email:alpine-v1
+    container_name: console-email
+    env_file:
+      - ./apps/email/.env.compose
+    networks:
+      - console-net
+
+  front:
+    image: zws_local/console/front:alpine-v1
+    container_name: console-front
+    env_file:
+      - ./apps/front/.env.compose
+    networks:
+      - console-net
+
+  orchestrator-migrate:
+    image: zws_local/console/orchestrator:alpine-v1
+    container_name: console-orchestrator-migrate
+    env_file:
+      - ./apps/orchestrator/.env.compose
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for database to be ready..." &&
+        until nc -z local_postgres 5432; do sleep 1; done &&
+        echo "Running migrations..." &&
+        pnpm --filter orchestrator prisma:migrate
+    restart: on-failure
+    networks:
+      - console-net
+
+  orchestrator:
+    image: zws_local/console/orchestrator:alpine-v1
+    container_name: console-orchestrator
+    depends_on:
+      orchestrator-migrate:
+        condition: service_completed_successfully
+    env_file:
+      - ./apps/orchestrator/.env.compose
+    networks:
+      - console-net
+
+  web3-migrate:
+    image: zws_local/console/web3:alpine-v1
+    container_name: console-web3-migrate
+    env_file:
+      - ./apps/web3/.env.compose
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for database to be ready..." &&
+        until nc -z local_postgres 5432; do sleep 1; done &&
+        echo "Running migrations..." &&
+        pnpm --filter web3 prisma:migrate
+    restart: on-failure
+    networks:
+      - console-net
+
+  web3:
+    image: zws_local/console/web3:alpine-v1
+    container_name: console-web3
+    depends_on:
+      web3-migrate:
+        condition: service_completed_successfully
+    env_file:
+      - ./apps/web3/.env.compose
+    networks:
+      - console-net
+
+# It uses an already created docker-network
+networks:
+  console-net:
+    external: true
