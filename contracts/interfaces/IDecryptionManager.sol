@@ -91,7 +91,7 @@ interface IDecryptionManager {
     /// @notice Requests an public decryption
     /// @dev This function can be called by a user or relayer
     /// @param ctHandles The handles of the ciphertexts to decrypt
-    function publicDecryptionRequest(uint256[] calldata ctHandles) external;
+    function publicDecryptionRequest(bytes32[] calldata ctHandles) external;
 
     /// @notice Responds to an public decryption request
     /// @dev This function can only be called by the KMS Connectors

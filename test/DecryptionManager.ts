@@ -21,6 +21,9 @@ import {
 import {
   EIP712,
   createAndFundRandomUser,
+  createBytes32,
+  createCtHandle,
+  createCtHandles,
   createEIP712RequestDelegatedUserDecrypt,
   createEIP712RequestUserDecrypt,
   createEIP712ResponsePublicDecrypt,
@@ -55,7 +58,7 @@ describe("DecryptionManager", function () {
   const chainId = hre.network.config.chainId!;
 
   // Create 3 dummy ciphertext handles
-  const ctHandles = [2025, 2026, 2027];
+  const ctHandles = createCtHandles(3);
 
   // Trigger a key generation in KeyManager contract and activate the key
   async function prepareWithActivatedKeyFixture() {
@@ -109,8 +112,8 @@ describe("DecryptionManager", function () {
     hostChainId = fixtureData.chainIds[0];
 
     // Define dummy ciphertext values
-    const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
-    const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+    const ciphertextDigest = createBytes32();
+    const snsCiphertextDigest = createBytes32();
 
     let snsCiphertextMaterials: SnsCiphertextMaterialStruct[] = [];
 
@@ -386,9 +389,9 @@ describe("DecryptionManager", function () {
       );
 
       // Define ciphertext dummy values
-      const ctHandle = 2050;
-      const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
-      const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+      const ctHandle = createCtHandle();
+      const ciphertextDigest = createBytes32();
+      const snsCiphertextDigest = createBytes32();
 
       // Store the ciphertext and allow public decryption
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
@@ -821,9 +824,9 @@ describe("DecryptionManager", function () {
       );
 
       // Define ciphertext dummy values
-      const fakeCtHandle = 2050;
-      const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
-      const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+      const fakeCtHandle = createCtHandle();
+      const ciphertextDigest = createBytes32();
+      const snsCiphertextDigest = createBytes32();
 
       // Store the ciphertext and allow public decryption
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
@@ -1022,7 +1025,7 @@ describe("DecryptionManager", function () {
         chainId,
         decryptionManagerAddress,
         publicKey,
-        ctHandleContractPairs.map((pair) => parseInt(pair.ctHandle.toString())),
+        ctHandleContractPairs.map((pair) => pair.ctHandle.toString()),
         reencryptedShare,
       );
 
@@ -1357,10 +1360,10 @@ describe("DecryptionManager", function () {
       );
 
       // Define ciphertext dummy values
-      const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
-      const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+      const ciphertextDigest = createBytes32();
+      const snsCiphertextDigest = createBytes32();
       const ctHandleContractPair = {
-        ctHandle: 2050,
+        ctHandle: createCtHandle(),
         contractAddress: ctHandleContractPairs[0].contractAddress,
       };
 

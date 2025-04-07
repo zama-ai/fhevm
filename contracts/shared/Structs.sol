@@ -48,7 +48,7 @@ struct Network {
  * the Gateway contracts.
  */
 struct SnsCiphertextMaterial {
-    uint256 ctHandle;
+    bytes32 ctHandle;
     uint256 keyId;
     bytes32 snsCiphertextDigest;
     address[] coprocessorTxSenderAddresses;
@@ -59,7 +59,7 @@ struct SnsCiphertextMaterial {
  * the Gateway contracts.
  */
 struct CiphertextMaterial {
-    uint256 ctHandle;
+    bytes32 ctHandle;
     uint256 keyId;
     bytes32 ciphertextDigest;
     address[] coprocessorTxSenderAddresses;
@@ -71,7 +71,7 @@ struct CiphertextMaterial {
  */
 struct CtHandleContractPair {
     /// @notice The handle of the ciphertext
-    uint256 ctHandle;
+    bytes32 ctHandle;
     /// @notice The address of the contract
     address contractAddress;
 }

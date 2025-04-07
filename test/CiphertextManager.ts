@@ -5,16 +5,16 @@ import { HDNodeWallet } from "ethers";
 import hre from "hardhat";
 
 import { CiphertextManager, HTTPZ } from "../typechain-types";
-import { createAndFundRandomUser, loadTestVariablesFixture } from "./utils";
+import { createAndFundRandomUser, createBytes32, createCtHandle, loadTestVariablesFixture } from "./utils";
 
 describe("CiphertextManager", function () {
-  const ctHandle = 2025;
+  const ctHandle = createCtHandle();
   const keyId = 0;
-  const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
-  const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+  const ciphertextDigest = createBytes32();
+  const snsCiphertextDigest = createBytes32();
 
   // Fake values
-  const fakeCtHandle = 11111;
+  const fakeCtHandle = createCtHandle();
   const fakeHostChainId = 123;
 
   let httpz: HTTPZ;
@@ -23,12 +23,18 @@ describe("CiphertextManager", function () {
   let hostChainId: number;
   let fakeTxSender: HDNodeWallet;
 
-  async function prepareCiphertextManagerFixture() {
+  async function prepareFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
-    const { ciphertextManager, coprocessorTxSenders } = fixtureData;
 
     // Define the hostChainId
     hostChainId = fixtureData.chainIds[0];
+
+    return fixtureData;
+  }
+
+  async function prepareViewTestFixture() {
+    const fixtureData = await loadFixture(loadTestVariablesFixture);
+    const { ciphertextManager, coprocessorTxSenders } = fixtureData;
 
     // Setup the CiphertextManager contract state with a ciphertext used during tests
     for (let txSender of coprocessorTxSenders) {
@@ -41,7 +47,7 @@ describe("CiphertextManager", function () {
 
   beforeEach(async function () {
     // Initialize globally used variables before each test
-    const fixture = await loadFixture(prepareCiphertextManagerFixture);
+    const fixture = await loadFixture(prepareFixture);
     httpz = fixture.httpz;
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     ciphertextManager = fixture.ciphertextManager;
@@ -62,23 +68,20 @@ describe("CiphertextManager", function () {
     });
 
     it("Should add a ciphertext material", async function () {
-      // Given
-      const newCtHandle = "0x0123";
-
       // When
       await ciphertextManager
         .connect(coprocessorTxSenders[0])
-        .addCiphertextMaterial(newCtHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
 
       // This transaction should make the consensus to be reached and thus emit the expected event
       const result = ciphertextManager
         .connect(coprocessorTxSenders[1])
-        .addCiphertextMaterial(newCtHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
 
       // Then
       await expect(result)
         .to.emit(ciphertextManager, "AddCiphertextMaterial")
-        .withArgs(newCtHandle, ciphertextDigest, snsCiphertextDigest, [
+        .withArgs(ctHandle, ciphertextDigest, snsCiphertextDigest, [
           coprocessorTxSenders[0].address,
           coprocessorTxSenders[1].address,
         ]);
@@ -86,36 +89,46 @@ describe("CiphertextManager", function () {
       // Then check that no other events get triggered
       await ciphertextManager
         .connect(coprocessorTxSenders[2])
-        .addCiphertextMaterial(newCtHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
-      const events = await ciphertextManager.queryFilter(ciphertextManager.filters.AddCiphertextMaterial(newCtHandle));
+        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
+
+      const events = await ciphertextManager.queryFilter(ciphertextManager.filters.AddCiphertextMaterial(ctHandle));
 
       // It should emit only the event once consensus is reached which means only the second transaction emits the event
       expect(events.length).to.equal(1);
     });
 
     it("Should revert because the transaction sender is not a Coprocessor", async function () {
-      const result = ciphertextManager
-        .connect(fakeTxSender)
-        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
-
-      // Then
-      await expect(result).revertedWithCustomError(httpz, "NotCoprocessorTxSender").withArgs(fakeTxSender.address);
+      await expect(
+        ciphertextManager
+          .connect(fakeTxSender)
+          .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest),
+      )
+        .revertedWithCustomError(httpz, "NotCoprocessorTxSender")
+        .withArgs(fakeTxSender.address);
     });
 
     it("Should revert because the coprocessor transaction sender has already added the ciphertext handle", async function () {
-      // When
-      const result = ciphertextManager
+      // Add the ciphertext with the first coprocessor transaction sender
+      ciphertextManager
         .connect(coprocessorTxSenders[0])
         .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
 
-      // Then
-      await expect(result).revertedWithCustomError(ciphertextManager, "CoprocessorTxSenderAlreadyAdded");
+      // Check that trying to add the same ciphertext with the same coprocessor transaction sender reverts
+      await expect(
+        ciphertextManager
+          .connect(coprocessorTxSenders[0])
+          .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest),
+      ).revertedWithCustomError(ciphertextManager, "CoprocessorTxSenderAlreadyAdded");
     });
 
     // TODO: Add test checking `isCurrentKeyId` once keys are generated through the Gateway
   });
 
-  describe("Get regular ciphertext materials", async function () {
+  describe("Get ciphertext materials", async function () {
+    beforeEach(async function () {
+      await loadFixture(prepareViewTestFixture);
+    });
+
     it("Should get regular ciphertext materials", async function () {
       // When
       const result = await ciphertextManager.getCiphertextMaterials([ctHandle]);
@@ -129,9 +142,7 @@ describe("CiphertextManager", function () {
         .revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
         .withArgs(fakeCtHandle);
     });
-  });
 
-  describe("Get SNS ciphertext materials", async function () {
     it("Should get SNS ciphertext materials", async function () {
       // When
       const result = await ciphertextManager.getSnsCiphertextMaterials([ctHandle]);
@@ -150,16 +161,16 @@ describe("CiphertextManager", function () {
   });
 
   describe("Check ciphertext material", async function () {
+    beforeEach(async function () {
+      await loadFixture(prepareViewTestFixture);
+    });
+
     it("Should not revert", async function () {
       await expect(ciphertextManager.checkCiphertextMaterial(ctHandle)).not.to.be.reverted;
     });
 
     it("Should revert as the ciphertext material does not exist", async function () {
-      // When
-      const result = ciphertextManager.checkCiphertextMaterial(fakeCtHandle);
-
-      // Then
-      await expect(result)
+      await expect(ciphertextManager.checkCiphertextMaterial(fakeCtHandle))
         .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
         .withArgs(fakeCtHandle);
     });
