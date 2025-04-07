@@ -25,6 +25,7 @@ interface IHTTPZ {
         string website;
     }
 
+    error ChainIdNotUint64(uint256 chainId);
     error InvalidNullChainId();
     error InvalidNullPauser();
     error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
@@ -619,6 +620,17 @@ interface IHTTPZ {
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "ChainIdNotUint64",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1728,6 +1740,79 @@ struct ProtocolMetadata { string name; string website; }
                 );
                 alloy_sol_types::abi::token::WordToken(
                     alloy_sol_types::private::keccak256(out),
+                )
+            }
+        }
+    };
+    /**Custom error with signature `ChainIdNotUint64(uint256)` and selector `0x4178de42`.
+```solidity
+error ChainIdNotUint64(uint256 chainId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct ChainIdNotUint64 {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<ChainIdNotUint64> for UnderlyingRustTuple<'_> {
+            fn from(value: ChainIdNotUint64) -> Self {
+                (value.chainId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ChainIdNotUint64 {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { chainId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for ChainIdNotUint64 {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "ChainIdNotUint64(uint256)";
+            const SELECTOR: [u8; 4] = [65u8, 120u8, 222u8, 66u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                 )
             }
         }
@@ -6368,6 +6453,8 @@ function updatePauser(address newPauser) external;
     ///Container for all the [`IHTTPZ`](self) custom errors.
     pub enum IHTTPZErrors {
         #[allow(missing_docs)]
+        ChainIdNotUint64(ChainIdNotUint64),
+        #[allow(missing_docs)]
         InvalidNullChainId(InvalidNullChainId),
         #[allow(missing_docs)]
         InvalidNullPauser(InvalidNullPauser),
@@ -6402,6 +6489,7 @@ function updatePauser(address newPauser) external;
             [38u8, 205u8, 117u8, 220u8],
             [42u8, 124u8, 110u8, 246u8],
             [53u8, 85u8, 174u8, 209u8],
+            [65u8, 120u8, 222u8, 66u8],
             [72u8, 103u8, 111u8, 224u8],
             [82u8, 215u8, 37u8, 245u8],
             [109u8, 246u8, 254u8, 137u8],
@@ -6413,10 +6501,13 @@ function updatePauser(address newPauser) external;
     impl alloy_sol_types::SolInterface for IHTTPZErrors {
         const NAME: &'static str = "IHTTPZErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 10usize;
+        const COUNT: usize = 11usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
+                Self::ChainIdNotUint64(_) => {
+                    <ChainIdNotUint64 as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::InvalidNullChainId(_) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -6532,6 +6623,19 @@ function updatePauser(address newPauser) external;
                     InvalidNullPauser
                 },
                 {
+                    fn ChainIdNotUint64(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IHTTPZErrors> {
+                        <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IHTTPZErrors::ChainIdNotUint64)
+                    }
+                    ChainIdNotUint64
+                },
+                {
                     fn KmsThresholdTooHigh(
                         data: &[u8],
                         validate: bool,
@@ -6610,6 +6714,11 @@ function updatePauser(address newPauser) external;
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
+                Self::ChainIdNotUint64(inner) => {
+                    <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::InvalidNullChainId(inner) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -6661,6 +6770,12 @@ function updatePauser(address newPauser) external;
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
+                Self::ChainIdNotUint64(inner) => {
+                    <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::InvalidNullChainId(inner) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,

@@ -5,37 +5,47 @@ import { HDNodeWallet } from "ethers";
 import hre from "hardhat";
 
 import { ACLManager, CiphertextManager, HTTPZ } from "../typechain-types";
-import { createAndFundRandomUser, createBytes32, createCtHandle, loadTestVariablesFixture } from "./utils";
+import {
+  createAndFundRandomUser,
+  createBytes32,
+  createCtHandleWithChainId,
+  loadChainIds,
+  loadTestVariablesFixture,
+} from "./utils";
 
 describe("ACLManager", function () {
+  // Define the host chainId(s)
+  const hostChainIds = loadChainIds();
+  const hostChainId = hostChainIds[0];
+
+  // Create a ctHandle with the host chain ID
+  const ctHandle = createCtHandleWithChainId(hostChainId);
+
+  // Define input values
   const keyId = 0;
-  const ctHandle = createCtHandle();
   const ciphertextDigest = createBytes32();
   const snsCiphertextDigest = createBytes32();
 
   // Fake values
-  const fakeCtHandle = createCtHandle();
   const fakeHostChainId = 123;
+  const ctHandleFakeChainId = createCtHandleWithChainId(fakeHostChainId);
+  const notAllowedCtHandle = createCtHandleWithChainId(hostChainId);
 
   let httpz: HTTPZ;
   let aclManager: ACLManager;
   let ciphertextManager: CiphertextManager;
   let coprocessorTxSenders: HardhatEthersSigner[];
-  let hostChainId: number;
   let fakeTxSender: HDNodeWallet;
 
   async function prepareACLManagerFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
     const { ciphertextManager, coprocessorTxSenders } = fixtureData;
 
-    // Define the hostChainId
-    hostChainId = fixtureData.chainIds[0];
-
     // Add the ciphertext to the CiphertextManager contract state which will be used during the tests
     for (let i = 0; i < coprocessorTxSenders.length; i++) {
       await ciphertextManager
         .connect(coprocessorTxSenders[i])
-        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
     }
 
     return fixtureData;
@@ -57,78 +67,67 @@ describe("ACLManager", function () {
 
     it("Should revert because the hostChainId is not registered in the HTTPZ contract", async function () {
       // Check that allowing an account to use a ciphertext on a fake chain ID reverts
-      await expect(aclManager.connect(coprocessorTxSenders[0]).allowAccount(fakeHostChainId, ctHandle, allowedAddress))
+      await expect(aclManager.connect(coprocessorTxSenders[0]).allowAccount(ctHandleFakeChainId, allowedAddress))
         .revertedWithCustomError(httpz, "NetworkNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
     it("Should allow account to use the ciphertext", async function () {
-      // When
-      await aclManager.connect(coprocessorTxSenders[0]).allowAccount(hostChainId, ctHandle, allowedAddress);
-      const txResponse = aclManager
-        .connect(coprocessorTxSenders[1])
-        .allowAccount(hostChainId, ctHandle, allowedAddress);
+      // Trigger two allow calls with different coprocessor transaction senders
+      await aclManager.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, allowedAddress);
+      const txResponse = aclManager.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, allowedAddress);
 
-      // Then
+      // Check that the right event is emitted
       await expect(txResponse).to.emit(aclManager, "AllowAccount").withArgs(ctHandle, allowedAddress);
     });
 
     it("Should revert with CoprocessorAlreadyAllowed", async function () {
-      // When
-      await aclManager.connect(coprocessorTxSenders[0]).allowAccount(hostChainId, ctHandle, allowedAddress);
-      const txResponse = aclManager
-        .connect(coprocessorTxSenders[0])
-        .allowAccount(hostChainId, ctHandle, allowedAddress);
+      // Trigger an allow call with the first coprocessor transaction sender
+      await aclManager.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, allowedAddress);
 
-      // Then
-      await expect(txResponse)
+      // Check that triggering an allow call with the same coprocessor transaction sender reverts
+      await expect(aclManager.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, allowedAddress))
         .revertedWithCustomError(aclManager, "CoprocessorAlreadyAllowed")
         .withArgs(coprocessorTxSenders[0].address, ctHandle);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
-      // When
-      const txResponse = aclManager.connect(fakeTxSender).allowAccount(hostChainId, ctHandle, allowedAddress);
-
-      // Then
-      await expect(txResponse).revertedWithCustomError(httpz, "NotCoprocessorTxSender").withArgs(fakeTxSender.address);
+      await expect(aclManager.connect(fakeTxSender).allowAccount(ctHandle, allowedAddress))
+        .revertedWithCustomError(httpz, "NotCoprocessorTxSender")
+        .withArgs(fakeTxSender.address);
     });
   });
 
   describe("Allow public decrypt", async function () {
     it("Should revert because the hostChainId is not registered in the HTTPZ contract", async function () {
-      // Check that allowing public decryption on a fake chain ID reverts
-      await expect(aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(fakeHostChainId, ctHandle))
+      await expect(aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandleFakeChainId))
         .revertedWithCustomError(httpz, "NetworkNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
     it("Should allow for public decryption", async function () {
-      // When
-      await aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(hostChainId, ctHandle);
-      const txResponse = aclManager.connect(coprocessorTxSenders[1]).allowPublicDecrypt(hostChainId, ctHandle);
+      // Trigger two allow calls with different coprocessor transaction senders
+      await aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandle);
+      const txResponse = aclManager.connect(coprocessorTxSenders[1]).allowPublicDecrypt(ctHandle);
 
-      // Then
+      // Check that the right event is emitted
       await expect(txResponse).to.emit(aclManager, "AllowPublicDecrypt").withArgs(ctHandle);
     });
 
     it("Should revert with CoprocessorAlreadyAllowed", async function () {
-      // When
-      await aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(hostChainId, ctHandle);
-      const txResponse = aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(hostChainId, ctHandle);
+      // Trigger an allow call with the first coprocessor transaction sender
+      await aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandle);
 
-      // Then
-      await expect(txResponse)
+      // Check that triggering an allow call with the same coprocessor transaction sender reverts
+      await expect(aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandle))
         .revertedWithCustomError(aclManager, "CoprocessorAlreadyAllowed")
         .withArgs(coprocessorTxSenders[0].address, ctHandle);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
-      // When
-      const txResponse = aclManager.connect(fakeTxSender).allowPublicDecrypt(hostChainId, ctHandle);
-
-      // Then
-      await expect(txResponse).revertedWithCustomError(httpz, "NotCoprocessorTxSender").withArgs(fakeTxSender.address);
+      await expect(aclManager.connect(fakeTxSender).allowPublicDecrypt(ctHandle))
+        .revertedWithCustomError(httpz, "NotCoprocessorTxSender")
+        .withArgs(fakeTxSender.address);
     });
   });
 
@@ -207,8 +206,8 @@ describe("ACLManager", function () {
     beforeEach(async function () {
       // Setup the account access permission
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, ctHandle, allowedUserAddress);
-        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, ctHandle, allowedContractAddress);
+        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, allowedUserAddress);
+        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, allowedContractAddress);
       }
     });
 
@@ -253,9 +252,9 @@ describe("ACLManager", function () {
 
   describe("Check public decrypt allowed", async function () {
     beforeEach(async function () {
-      // Setup the public decrypt permission for the given hostChainId and ctHandle used during tests
+      // Setup the public decrypt permission for the given ctHandle used during tests
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await aclManager.connect(coprocessorTxSenders[i]).allowPublicDecrypt(hostChainId, ctHandle);
+        await aclManager.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle);
       }
     });
 
@@ -264,10 +263,10 @@ describe("ACLManager", function () {
     });
 
     it("Should revert with PublicDecryptNotAllowed", async function () {
-      // Check that the fakeCtHandle is not allowed for public decryption
-      await expect(aclManager.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed([fakeCtHandle]))
+      // Check that the handle is not allowed for public decryption
+      await expect(aclManager.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed([notAllowedCtHandle]))
         .to.be.revertedWithCustomError(aclManager, "PublicDecryptNotAllowed")
-        .withArgs(fakeCtHandle);
+        .withArgs(notAllowedCtHandle);
     });
   });
 

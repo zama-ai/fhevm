@@ -13,6 +13,9 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
  * @dev See https://github.com/zama-ai/httpz-gateway/issues/98 for more details.
  */
 contract HTTPZ is IHTTPZ, Ownable2StepUpgradeable, UUPSUpgradeable {
+    /// @notice The maximum chain ID.
+    uint256 public constant MAX_CHAIN_ID = type(uint64).max;
+
     /// @notice The contract's metadata
     string private constant CONTRACT_NAME = "HTTPZ";
     uint256 private constant MAJOR_VERSION = 0;
@@ -257,6 +260,10 @@ contract HTTPZ is IHTTPZ, Ownable2StepUpgradeable, UUPSUpgradeable {
         if (network.chainId == 0) {
             revert InvalidNullChainId();
         }
+        if (network.chainId > MAX_CHAIN_ID) {
+            revert ChainIdNotUint64(network.chainId);
+        }
+
         HTTPZStorage storage $ = _getHTTPZStorage();
         if ($._isNetworkRegistered[network.chainId]) {
             revert NetworkAlreadyRegistered(network.chainId);

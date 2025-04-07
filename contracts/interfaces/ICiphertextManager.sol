@@ -54,13 +54,11 @@ interface ICiphertextManager {
     /// @notice version and other metadata.
     /// @param ctHandle The handle of the ciphertext.
     /// @param keyId The ID of the key under the ciphertext has been generated.
-    /// @param chainId The chain ID of the blockchain associated to the ciphertext handle.
     /// @param ciphertextDigest The digest of the "normal" ciphertext.
     /// @param snsCiphertextDigest The digest of the SNS ciphertext.
     function addCiphertextMaterial(
         bytes32 ctHandle,
         uint256 keyId,
-        uint256 chainId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
     ) external;

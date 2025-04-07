@@ -2,32 +2,41 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import { HDNodeWallet } from "ethers";
-import hre from "hardhat";
 
 import { CiphertextManager, HTTPZ } from "../typechain-types";
-import { createAndFundRandomUser, createBytes32, createCtHandle, loadTestVariablesFixture } from "./utils";
+import {
+  createAndFundRandomUser,
+  createBytes32,
+  createCtHandleWithChainId,
+  loadChainIds,
+  loadTestVariablesFixture,
+} from "./utils";
 
 describe("CiphertextManager", function () {
-  const ctHandle = createCtHandle();
+  // Define the host chainId(s)
+  const hostChainIds = loadChainIds();
+  const hostChainId = hostChainIds[0];
+
+  // Create a ctHandle with the host chain ID
+  const ctHandle = createCtHandleWithChainId(hostChainId);
+
+  // Define input values
   const keyId = 0;
   const ciphertextDigest = createBytes32();
   const snsCiphertextDigest = createBytes32();
 
-  // Fake values
-  const fakeCtHandle = createCtHandle();
+  // Define fake values
   const fakeHostChainId = 123;
+  const ctHandleFakeChainId = createCtHandleWithChainId(fakeHostChainId);
+  const notAddedCtHandle = createCtHandleWithChainId(hostChainId);
 
   let httpz: HTTPZ;
   let ciphertextManager: CiphertextManager;
   let coprocessorTxSenders: HardhatEthersSigner[];
-  let hostChainId: number;
   let fakeTxSender: HDNodeWallet;
 
   async function prepareFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
-
-    // Define the hostChainId
-    hostChainId = fixtureData.chainIds[0];
 
     return fixtureData;
   }
@@ -40,7 +49,7 @@ describe("CiphertextManager", function () {
     for (let txSender of coprocessorTxSenders) {
       await ciphertextManager
         .connect(txSender)
-        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
     }
     return fixtureData;
   }
@@ -61,7 +70,7 @@ describe("CiphertextManager", function () {
       await expect(
         ciphertextManager
           .connect(coprocessorTxSenders[0])
-          .addCiphertextMaterial(ctHandle, keyId, fakeHostChainId, ciphertextDigest, snsCiphertextDigest),
+          .addCiphertextMaterial(ctHandleFakeChainId, keyId, ciphertextDigest, snsCiphertextDigest),
       )
         .revertedWithCustomError(httpz, "NetworkNotRegistered")
         .withArgs(fakeHostChainId);
@@ -71,12 +80,12 @@ describe("CiphertextManager", function () {
       // When
       await ciphertextManager
         .connect(coprocessorTxSenders[0])
-        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
       // This transaction should make the consensus to be reached and thus emit the expected event
       const result = ciphertextManager
         .connect(coprocessorTxSenders[1])
-        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
       // Then
       await expect(result)
@@ -89,7 +98,7 @@ describe("CiphertextManager", function () {
       // Then check that no other events get triggered
       await ciphertextManager
         .connect(coprocessorTxSenders[2])
-        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
       const events = await ciphertextManager.queryFilter(ciphertextManager.filters.AddCiphertextMaterial(ctHandle));
 
@@ -101,7 +110,7 @@ describe("CiphertextManager", function () {
       await expect(
         ciphertextManager
           .connect(fakeTxSender)
-          .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest),
+          .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
       )
         .revertedWithCustomError(httpz, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
@@ -111,13 +120,13 @@ describe("CiphertextManager", function () {
       // Add the ciphertext with the first coprocessor transaction sender
       ciphertextManager
         .connect(coprocessorTxSenders[0])
-        .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest);
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
       // Check that trying to add the same ciphertext with the same coprocessor transaction sender reverts
       await expect(
         ciphertextManager
           .connect(coprocessorTxSenders[0])
-          .addCiphertextMaterial(ctHandle, keyId, hostChainId, ciphertextDigest, snsCiphertextDigest),
+          .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
       ).revertedWithCustomError(ciphertextManager, "CoprocessorTxSenderAlreadyAdded");
     });
 
@@ -138,9 +147,9 @@ describe("CiphertextManager", function () {
     });
 
     it("Should revert with CiphertextMaterialNotFound (regular)", async function () {
-      await expect(ciphertextManager.getCiphertextMaterials([fakeCtHandle]))
+      await expect(ciphertextManager.getCiphertextMaterials([notAddedCtHandle]))
         .revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
-        .withArgs(fakeCtHandle);
+        .withArgs(notAddedCtHandle);
     });
 
     it("Should get SNS ciphertext materials", async function () {
@@ -154,9 +163,9 @@ describe("CiphertextManager", function () {
     });
 
     it("Should revert with CiphertextMaterialNotFound (SNS)", async function () {
-      await expect(ciphertextManager.getSnsCiphertextMaterials([fakeCtHandle]))
+      await expect(ciphertextManager.getSnsCiphertextMaterials([notAddedCtHandle]))
         .revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
-        .withArgs(fakeCtHandle);
+        .withArgs(notAddedCtHandle);
     });
   });
 
@@ -170,9 +179,9 @@ describe("CiphertextManager", function () {
     });
 
     it("Should revert as the ciphertext material does not exist", async function () {
-      await expect(ciphertextManager.checkCiphertextMaterial(fakeCtHandle))
+      await expect(ciphertextManager.checkCiphertextMaterial(notAddedCtHandle))
         .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
-        .withArgs(fakeCtHandle);
+        .withArgs(notAddedCtHandle);
     });
   });
 });

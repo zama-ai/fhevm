@@ -9,6 +9,7 @@ import "./interfaces/ICiphertextManager.sol";
 import "./interfaces/IHTTPZ.sol";
 import "./interfaces/IKeyManager.sol";
 import "./shared/HttpzChecks.sol";
+import "./libraries/HandleOps.sol";
 
 /**
  * @title CiphertextManager smart contract
@@ -122,11 +123,16 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
     function addCiphertextMaterial(
         bytes32 ctHandle,
         uint256 keyId,
-        uint256 chainId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
-    ) public onlyCoprocessorTxSender onlyRegisteredNetwork(chainId) {
+    ) public onlyCoprocessorTxSender {
         CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
+
+        /// @dev Extract the chainId from the ciphertext handle
+        uint256 chainId = HandleOps.extractChainId(ctHandle);
+
+        /// @dev Check that the associated network is registered
+        _HTTPZ.checkNetworkIsRegistered(chainId);
 
         /**
          * @dev Check if the coprocessor transaction sender has already added the ciphertext handle.

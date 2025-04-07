@@ -65,16 +65,14 @@ interface IACLManager {
     /// @param contractAddress The address of the delegated contract.
     error AccountNotDelegated(uint256 chainId, address delegator, address delegatee, address contractAddress);
 
-    /// @notice Allows an account to access a ciphertext handle over a chainId.
-    /// @param chainId The network's chainId where the ciphertext handle belongs to.
+    /// @notice Allows an account to access a ciphertext handle.
     /// @param ctHandle The ciphertext handle.
     /// @param accountAddress The account's address.
-    function allowAccount(uint256 chainId, bytes32 ctHandle, address accountAddress) external;
+    function allowAccount(bytes32 ctHandle, address accountAddress) external;
 
     /// @notice Allows access to the ciphertext handle for public decryption.
-    /// @param chainId The network's chainId where the ciphertext handle belongs to.
     /// @param ctHandle The ciphertext handle.
-    function allowPublicDecrypt(uint256 chainId, bytes32 ctHandle) external;
+    function allowPublicDecrypt(bytes32 ctHandle) external;
 
     /// @notice Delegates the access to the delegatee and contracts.
     /// @param chainId The network's chainId where the contracts addresses belongs to.
