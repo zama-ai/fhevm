@@ -1,4 +1,15 @@
 # Stage 1: Build
+FROM node:20-slim AS build_contract
+
+# Set the working directory
+WORKDIR /app
+
+COPY ./contracts ./contracts
+
+# Compiled contracts for listeners
+WORKDIR /app/contracts
+RUN npm install && npx hardhat compile
+
 FROM rust:1.85.0-bookworm AS build
 
 WORKDIR /app
@@ -9,13 +20,13 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY ./contracts/contracts/ ./contracts/contracts/
-COPY ./contracts/artifacts/contracts/ ./contracts/artifacts/contracts/
+COPY --from=build_contract /app/contracts/artifacts/contracts /app/contracts/artifacts/contracts
 COPY ./fhevm-engine/ ./fhevm-engine/
 COPY ./proto/ ./proto/
 
 WORKDIR /app/fhevm-engine
 
-# Start the database service
+# Build all binaries
 RUN cargo fetch && \
     SQLX_OFFLINE=true cargo build --release
 
