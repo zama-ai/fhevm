@@ -7,7 +7,7 @@ export const CreateApiKeySchema = z.object({
     .max(50, 'Name should be at most 50 characters long'),
   description: z
     .string()
-    .max(200, 'Description should be at most 200 characters long'),
+    .max(500, 'Description should be at most 500 characters long'),
 })
 
 export type CreateApiKeySchemaType = z.infer<typeof CreateApiKeySchema>
