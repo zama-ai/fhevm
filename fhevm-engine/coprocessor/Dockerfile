@@ -8,6 +8,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends protobuf-compiler && \
     rm -rf /var/lib/apt/lists/*
 
+COPY ./contracts/artifacts/contracts/ ./contracts/artifacts/contracts/
 COPY ./fhevm-engine/ ./fhevm-engine/
 COPY ./proto/ ./proto/
 
