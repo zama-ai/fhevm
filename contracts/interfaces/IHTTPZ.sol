@@ -84,6 +84,10 @@ interface IHTTPZ {
     /// @notice Error indicating that a null chain ID is not allowed.
     error InvalidNullChainId();
 
+    /// @notice Error indicating that a chain ID is not represented by a uint64.
+    /// @param chainId The chain ID
+    error ChainIdNotUint64(uint256 chainId);
+
     /// @notice Update the pauser address
     /// @param newPauser The new pauser address
     function updatePauser(address newPauser) external;
@@ -166,6 +170,7 @@ interface IHTTPZ {
     function networks(uint256 index) external view returns (Network memory);
 
     /// @notice Add a new Network metadata to the HTTPZ contract.
+    /// @dev The associated chain ID must be non-zero and representable by a uint64.
     /// @param network The new network metadata to include.
     function addNetwork(Network calldata network) external;
 }

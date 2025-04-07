@@ -21,8 +21,8 @@ interface IACLManager {
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
     event DelegateAccount(uint256 indexed chainId, address delegator, address delegatee, address[] contractAddresses);
 
-    function allowAccount(uint256 chainId, bytes32 ctHandle, address accountAddress) external;
-    function allowPublicDecrypt(uint256 chainId, bytes32 ctHandle) external;
+    function allowAccount(bytes32 ctHandle, address accountAddress) external;
+    function allowPublicDecrypt(bytes32 ctHandle) external;
     function allowedAccounts(bytes32 ctHandle, address accountAddress) external view returns (bool);
     function allowedPublicDecrypts(bytes32 ctHandle) external view returns (bool);
     function checkAccountAllowed(address accountAddress, CtHandleContractPair[] memory ctHandleContractPairs) external view;
@@ -39,11 +39,6 @@ interface IACLManager {
     "type": "function",
     "name": "allowAccount",
     "inputs": [
-      {
-        "name": "chainId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
       {
         "name": "ctHandle",
         "type": "bytes32",
@@ -62,11 +57,6 @@ interface IACLManager {
     "type": "function",
     "name": "allowPublicDecrypt",
     "inputs": [
-      {
-        "name": "chainId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
       {
         "name": "ctHandle",
         "type": "bytes32",
@@ -1828,21 +1818,19 @@ event DelegateAccount(uint256 indexed chainId, address delegator, address delega
             }
         }
     };
-    /**Function with signature `allowAccount(uint256,bytes32,address)` and selector `0x377d0443`.
+    /**Function with signature `allowAccount(bytes32,address)` and selector `0xe638508a`.
 ```solidity
-function allowAccount(uint256 chainId, bytes32 ctHandle, address accountAddress) external;
+function allowAccount(bytes32 ctHandle, address accountAddress) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct allowAccountCall {
         #[allow(missing_docs)]
-        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
         pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
         pub accountAddress: alloy::sol_types::private::Address,
     }
-    ///Container type for the return parameters of the [`allowAccount(uint256,bytes32,address)`](allowAccountCall) function.
+    ///Container type for the return parameters of the [`allowAccount(bytes32,address)`](allowAccountCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct allowAccountReturn {}
@@ -1857,13 +1845,11 @@ function allowAccount(uint256 chainId, bytes32 ctHandle, address accountAddress)
         {
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
                 alloy::sol_types::private::FixedBytes<32>,
                 alloy::sol_types::private::Address,
             );
@@ -1882,7 +1868,7 @@ function allowAccount(uint256 chainId, bytes32 ctHandle, address accountAddress)
             #[doc(hidden)]
             impl ::core::convert::From<allowAccountCall> for UnderlyingRustTuple<'_> {
                 fn from(value: allowAccountCall) -> Self {
-                    (value.chainId, value.ctHandle, value.accountAddress)
+                    (value.ctHandle, value.accountAddress)
                 }
             }
             #[automatically_derived]
@@ -1890,9 +1876,8 @@ function allowAccount(uint256 chainId, bytes32 ctHandle, address accountAddress)
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for allowAccountCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        chainId: tuple.0,
-                        ctHandle: tuple.1,
-                        accountAddress: tuple.2,
+                        ctHandle: tuple.0,
+                        accountAddress: tuple.1,
                     }
                 }
             }
@@ -1931,7 +1916,6 @@ function allowAccount(uint256 chainId, bytes32 ctHandle, address accountAddress)
         #[automatically_derived]
         impl alloy_sol_types::SolCall for allowAccountCall {
             type Parameters<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
@@ -1943,8 +1927,8 @@ function allowAccount(uint256 chainId, bytes32 ctHandle, address accountAddress)
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "allowAccount(uint256,bytes32,address)";
-            const SELECTOR: [u8; 4] = [55u8, 125u8, 4u8, 67u8];
+            const SIGNATURE: &'static str = "allowAccount(bytes32,address)";
+            const SELECTOR: [u8; 4] = [230u8, 56u8, 80u8, 138u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -1954,9 +1938,6 @@ function allowAccount(uint256 chainId, bytes32 ctHandle, address accountAddress)
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
@@ -1977,19 +1958,17 @@ function allowAccount(uint256 chainId, bytes32 ctHandle, address accountAddress)
             }
         }
     };
-    /**Function with signature `allowPublicDecrypt(uint256,bytes32)` and selector `0xf5f4d4bd`.
+    /**Function with signature `allowPublicDecrypt(bytes32)` and selector `0x1d7a8586`.
 ```solidity
-function allowPublicDecrypt(uint256 chainId, bytes32 ctHandle) external;
+function allowPublicDecrypt(bytes32 ctHandle) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct allowPublicDecryptCall {
         #[allow(missing_docs)]
-        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
         pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
     }
-    ///Container type for the return parameters of the [`allowPublicDecrypt(uint256,bytes32)`](allowPublicDecryptCall) function.
+    ///Container type for the return parameters of the [`allowPublicDecrypt(bytes32)`](allowPublicDecryptCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct allowPublicDecryptReturn {}
@@ -2003,15 +1982,9 @@ function allowPublicDecrypt(uint256 chainId, bytes32 ctHandle) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::FixedBytes<32>,
-            );
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-                alloy::sol_types::private::FixedBytes<32>,
-            );
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
             fn _type_assertion(
@@ -2028,7 +2001,7 @@ function allowPublicDecrypt(uint256 chainId, bytes32 ctHandle) external;
             impl ::core::convert::From<allowPublicDecryptCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: allowPublicDecryptCall) -> Self {
-                    (value.chainId, value.ctHandle)
+                    (value.ctHandle,)
                 }
             }
             #[automatically_derived]
@@ -2036,10 +2009,7 @@ function allowPublicDecrypt(uint256 chainId, bytes32 ctHandle) external;
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for allowPublicDecryptCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        chainId: tuple.0,
-                        ctHandle: tuple.1,
-                    }
+                    Self { ctHandle: tuple.0 }
                 }
             }
         }
@@ -2078,10 +2048,7 @@ function allowPublicDecrypt(uint256 chainId, bytes32 ctHandle) external;
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for allowPublicDecryptCall {
-            type Parameters<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::FixedBytes<32>,
-            );
+            type Parameters<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
@@ -2090,8 +2057,8 @@ function allowPublicDecrypt(uint256 chainId, bytes32 ctHandle) external;
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "allowPublicDecrypt(uint256,bytes32)";
-            const SELECTOR: [u8; 4] = [245u8, 244u8, 212u8, 189u8];
+            const SIGNATURE: &'static str = "allowPublicDecrypt(bytes32)";
+            const SELECTOR: [u8; 4] = [29u8, 122u8, 133u8, 134u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2101,9 +2068,6 @@ function allowPublicDecrypt(uint256 chainId, bytes32 ctHandle) external;
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
@@ -3049,14 +3013,14 @@ function delegateAccount(uint256 chainId, address delegator, address delegatee, 
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [29u8, 122u8, 133u8, 134u8],
             [38u8, 188u8, 74u8, 178u8],
             [39u8, 216u8, 53u8, 136u8],
-            [55u8, 125u8, 4u8, 67u8],
             [76u8, 139u8, 227u8, 210u8],
             [79u8, 32u8, 200u8, 192u8],
             [106u8, 225u8, 14u8, 203u8],
             [210u8, 135u8, 92u8, 89u8],
-            [245u8, 244u8, 212u8, 189u8],
+            [230u8, 56u8, 80u8, 138u8],
         ];
     }
     #[automatically_derived]
@@ -3113,6 +3077,19 @@ function delegateAccount(uint256 chainId, address delegator, address delegatee, 
                 bool,
             ) -> alloy_sol_types::Result<IACLManagerCalls>] = &[
                 {
+                    fn allowPublicDecrypt(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IACLManagerCalls> {
+                        <allowPublicDecryptCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IACLManagerCalls::allowPublicDecrypt)
+                    }
+                    allowPublicDecrypt
+                },
+                {
                     fn checkPublicDecryptAllowed(
                         data: &[u8],
                         validate: bool,
@@ -3137,19 +3114,6 @@ function delegateAccount(uint256 chainId, address delegator, address delegatee, 
                             .map(IACLManagerCalls::delegateAccount)
                     }
                     delegateAccount
-                },
-                {
-                    fn allowAccount(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IACLManagerCalls> {
-                        <allowAccountCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IACLManagerCalls::allowAccount)
-                    }
-                    allowAccount
                 },
                 {
                     fn checkAccountAllowed(
@@ -3204,17 +3168,17 @@ function delegateAccount(uint256 chainId, address delegator, address delegatee, 
                     allowedAccounts
                 },
                 {
-                    fn allowPublicDecrypt(
+                    fn allowAccount(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<IACLManagerCalls> {
-                        <allowPublicDecryptCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <allowAccountCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                                 validate,
                             )
-                            .map(IACLManagerCalls::allowPublicDecrypt)
+                            .map(IACLManagerCalls::allowAccount)
                     }
-                    allowPublicDecrypt
+                    allowAccount
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -3999,13 +3963,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`allowAccount`] function.
         pub fn allowAccount(
             &self,
-            chainId: alloy::sol_types::private::primitives::aliases::U256,
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
             accountAddress: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<T, &P, allowAccountCall, N> {
             self.call_builder(
                 &allowAccountCall {
-                    chainId,
                     ctHandle,
                     accountAddress,
                 },
@@ -4014,15 +3976,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`allowPublicDecrypt`] function.
         pub fn allowPublicDecrypt(
             &self,
-            chainId: alloy::sol_types::private::primitives::aliases::U256,
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
         ) -> alloy_contract::SolCallBuilder<T, &P, allowPublicDecryptCall, N> {
-            self.call_builder(
-                &allowPublicDecryptCall {
-                    chainId,
-                    ctHandle,
-                },
-            )
+            self.call_builder(&allowPublicDecryptCall { ctHandle })
         }
         ///Creates a new call builder for the [`allowedAccounts`] function.
         pub fn allowedAccounts(

@@ -7,6 +7,13 @@ import hre from "hardhat";
 import { getRequiredEnvVar } from "../../tasks/utils/loadVariables";
 import { createAndFundRandomUser, fund } from "./wallets";
 
+export function loadChainIds() {
+  const nNetwork = parseInt(getRequiredEnvVar("NUM_NETWORKS"));
+  return [...Array(nNetwork)].map((_, i) => {
+    return parseInt(getRequiredEnvVar(`NETWORK_CHAIN_ID_${i}`));
+  });
+}
+
 // Check if the given signer is a valid hardhat signer
 // This is needed because `hre.ethers.getSigner` does not throw an error if it used on a random address
 async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
@@ -72,15 +79,12 @@ export async function loadTestVariablesFixture() {
   // Define the number of KMS nodes and coprocessors
   const nKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
   const nCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
-  const nNetwork = parseInt(getRequiredEnvVar("NUM_NETWORKS"));
+
+  // Load the networks' chain IDs
+  const chainIds = loadChainIds();
 
   // Load the transaction senders and signers
   const fixtureData = await initTestingWallets(nKmsNodes, nCoprocessors);
-
-  // Load the networks' chain IDs
-  const chainIds = [...Array(nNetwork)].map((_, i) => {
-    return parseInt(getRequiredEnvVar(`NETWORK_CHAIN_ID_${i}`));
-  });
 
   // Load the HTTPZ contract
   const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));

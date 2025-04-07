@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { httpzAddress } from "../../addresses/HttpzAddress.sol";
 import "../interfaces/IHTTPZ.sol";
+import "../libraries/HandleOps.sol";
 
 /**
  * @title HTTPZ Checks
@@ -33,6 +34,12 @@ abstract contract HttpzChecks {
     /// @dev Check that the network has been registered.
     modifier onlyRegisteredNetwork(uint256 chainId) {
         _HTTPZ.checkNetworkIsRegistered(chainId);
+        _;
+    }
+
+    /// @dev Check that the network associated with the handle has been registered.
+    modifier onlyHandleFromRegisteredNetwork(bytes32 handle) {
+        _HTTPZ.checkNetworkIsRegistered(HandleOps.extractChainId(handle));
         _;
     }
 }

@@ -22,8 +22,8 @@ import {
   EIP712,
   createAndFundRandomUser,
   createBytes32,
-  createCtHandle,
-  createCtHandles,
+  createCtHandleWithChainId,
+  createCtHandlesWithChainId,
   createEIP712RequestDelegatedUserDecrypt,
   createEIP712RequestUserDecrypt,
   createEIP712ResponsePublicDecrypt,
@@ -32,11 +32,29 @@ import {
   getSignaturesPublicDecrypt,
   getSignaturesUserDecryptRequest,
   getSignaturesUserDecryptResponse,
+  loadChainIds,
   loadTestVariablesFixture,
   toValues,
 } from "./utils";
 
 describe("DecryptionManager", function () {
+  // Define the host chainId(s)
+  const hostChainIds = loadChainIds();
+  const hostChainId = hostChainIds[0];
+
+  // Create 3 dummy ciphertext handles with the host chain ID
+  const ctHandles = createCtHandlesWithChainId(3, hostChainId);
+
+  // Define the gateway chain ID
+  const chainId = hre.network.config.chainId!;
+
+  // Define input values
+  const ciphertextDigest = createBytes32();
+  const snsCiphertextDigest = createBytes32();
+
+  // Define new valid ctHandle
+  const newCtHandle = createCtHandleWithChainId(hostChainId);
+
   let httpz: HTTPZ;
   let keyManager: KeyManager;
   let aclManager: ACLManager;
@@ -52,13 +70,6 @@ describe("DecryptionManager", function () {
   let fakeSigner: HDNodeWallet;
   let keyId1: BigNumberish;
   let fheParamsName: string;
-  let hostChainId: number;
-
-  // Define the gateway chain ID
-  const chainId = hre.network.config.chainId!;
-
-  // Create 3 dummy ciphertext handles
-  const ctHandles = createCtHandles(3);
 
   // Trigger a key generation in KeyManager contract and activate the key
   async function prepareWithActivatedKeyFixture() {
@@ -108,13 +119,6 @@ describe("DecryptionManager", function () {
     const fixtureData = await loadFixture(prepareWithActivatedKeyFixture);
     const { ciphertextManager, coprocessorTxSenders, keyId1 } = fixtureData;
 
-    // Define the host chainId
-    hostChainId = fixtureData.chainIds[0];
-
-    // Define dummy ciphertext values
-    const ciphertextDigest = createBytes32();
-    const snsCiphertextDigest = createBytes32();
-
     let snsCiphertextMaterials: SnsCiphertextMaterialStruct[] = [];
 
     // Allow public decryption
@@ -122,7 +126,7 @@ describe("DecryptionManager", function () {
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await ciphertextManager
           .connect(coprocessorTxSenders[i])
-          .addCiphertextMaterial(ctHandle, keyId1, hostChainId, ciphertextDigest, snsCiphertextDigest);
+          .addCiphertextMaterial(ctHandle, keyId1, ciphertextDigest, snsCiphertextDigest);
       }
 
       // Store the SNS ciphertext materials for event checks
@@ -225,7 +229,7 @@ describe("DecryptionManager", function () {
       // Allow public decryption
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await aclManager.connect(coprocessorTxSenders[i]).allowPublicDecrypt(hostChainId, ctHandle);
+          await aclManager.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle);
         }
       }
 
@@ -388,23 +392,18 @@ describe("DecryptionManager", function () {
         fheParamsName,
       );
 
-      // Define ciphertext dummy values
-      const ctHandle = createCtHandle();
-      const ciphertextDigest = createBytes32();
-      const snsCiphertextDigest = createBytes32();
-
       // Store the ciphertext and allow public decryption
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await ciphertextManager
           .connect(coprocessorTxSenders[i])
-          .addCiphertextMaterial(ctHandle, keyId2, hostChainId, ciphertextDigest, snsCiphertextDigest);
+          .addCiphertextMaterial(newCtHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
       }
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await aclManager.connect(coprocessorTxSenders[i]).allowPublicDecrypt(hostChainId, ctHandle);
+        await aclManager.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle);
       }
 
       // Request public decryption with ctMaterials tied to different key IDs
-      const requestTx = decryptionManager.connect(user).publicDecryptionRequest([...ctHandles, ctHandle]);
+      const requestTx = decryptionManager.connect(user).publicDecryptionRequest([...ctHandles, newCtHandle]);
 
       // Check that different key IDs are not allowed for batched public decryption
       await expect(requestTx)
@@ -512,8 +511,8 @@ describe("DecryptionManager", function () {
       // Allow user decryption for the user and contract address over all handles
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, ctHandle, user.address);
-          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, ctHandle, contractAddress);
+          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, user.address);
+          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress);
         }
       }
 
@@ -823,20 +822,15 @@ describe("DecryptionManager", function () {
         fheParamsName,
       );
 
-      // Define ciphertext dummy values
-      const fakeCtHandle = createCtHandle();
-      const ciphertextDigest = createBytes32();
-      const snsCiphertextDigest = createBytes32();
-
       // Store the ciphertext and allow public decryption
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await ciphertextManager
           .connect(coprocessorTxSenders[i])
-          .addCiphertextMaterial(fakeCtHandle, keyId2, hostChainId, ciphertextDigest, snsCiphertextDigest);
+          .addCiphertextMaterial(newCtHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
       }
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, fakeCtHandle, user.address);
-        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, fakeCtHandle, contractAddress);
+        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address);
+        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress);
       }
 
       // Create a fake input containing 2 handles tied to different key IDs
@@ -847,7 +841,7 @@ describe("DecryptionManager", function () {
         },
         {
           contractAddress,
-          ctHandle: fakeCtHandle,
+          ctHandle: newCtHandle,
         },
       ];
 
@@ -975,10 +969,8 @@ describe("DecryptionManager", function () {
       for (const ctHandle of ctHandles) {
         const contractAddress = hre.ethers.Wallet.createRandom().address;
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await aclManager
-            .connect(coprocessorTxSenders[i])
-            .allowAccount(hostChainId, ctHandle, delegationAccounts.delegatedAddress);
-          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, ctHandle, contractAddress);
+          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, delegationAccounts.delegatedAddress);
+          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress);
         }
         ctHandleContractPairs.push({
           contractAddress,
@@ -1359,11 +1351,8 @@ describe("DecryptionManager", function () {
         fheParamsName,
       );
 
-      // Define ciphertext dummy values
-      const ciphertextDigest = createBytes32();
-      const snsCiphertextDigest = createBytes32();
       const ctHandleContractPair = {
-        ctHandle: createCtHandle(),
+        ctHandle: newCtHandle,
         contractAddress: ctHandleContractPairs[0].contractAddress,
       };
 
@@ -1371,21 +1360,15 @@ describe("DecryptionManager", function () {
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await ciphertextManager
           .connect(coprocessorTxSenders[i])
-          .addCiphertextMaterial(
-            ctHandleContractPair.ctHandle,
-            keyId2,
-            hostChainId,
-            ciphertextDigest,
-            snsCiphertextDigest,
-          );
+          .addCiphertextMaterial(ctHandleContractPair.ctHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
       }
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await aclManager
           .connect(coprocessorTxSenders[i])
-          .allowAccount(hostChainId, ctHandleContractPair.ctHandle, delegationAccounts.delegatedAddress);
+          .allowAccount(ctHandleContractPair.ctHandle, delegationAccounts.delegatedAddress);
         await aclManager
           .connect(coprocessorTxSenders[i])
-          .allowAccount(hostChainId, ctHandleContractPair.ctHandle, ctHandleContractPair.contractAddress);
+          .allowAccount(ctHandleContractPair.ctHandle, ctHandleContractPair.contractAddress);
       }
 
       // Create dummy input data for the user decryption request
