@@ -31,7 +31,7 @@ services:
       tags:
         - "httpz-smart-contracts:0.7.0-local"
     env_file:
-      - ./.env.example
+      - ./.env
     environment:
       - HARDHAT_NETWORK=${HARDHAT_NETWORK:-staging}
       - CHAIN_ID_GATEWAY=54321

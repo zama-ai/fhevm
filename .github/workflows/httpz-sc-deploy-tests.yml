@@ -1,0 +1,68 @@
+name: HTTPZ Host Contracts Deployment Test
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/httpz-sc-tests.yml
+      - contracts/**
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-compose-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+    - name: Create .env file
+      run: |
+        cp contracts/.env.example contracts/.env
+
+    - name: Build and start Docker services
+      run: |
+        cd contracts
+        docker compose build
+        docker compose up -d
+
+    - name: Check smart contract deployment
+      run: |
+        cd contracts
+        # Wait for the deployment container to finish (timeout after reasonable time)
+        timeout 300s bash -c 'while docker ps --filter "name=httpz-sc-deploy" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
+        
+        # Save logs to a file for analysis
+        docker compose logs httpz-sc-deploy > deployment_logs.txt
+        
+        # Check if the container exited with success (exit code 0)
+        EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' httpz-sc-deploy)
+        
+        # Display logs for debugging
+        cat deployment_logs.txt
+        
+        # Check for exit code and expected message in logs
+        if [ "$EXIT_CODE" -ne 0 ]; then
+          echo "Deployment failed with exit code $EXIT_CODE"
+          exit 1
+        elif ! grep -q "Contract deployment done!" deployment_logs.txt; then
+          echo "Deployment did not complete successfully - 'Contract deployment done!' message not found in logs"
+          exit 1
+        else
+          echo "Deployment completed successfully with expected completion message"
+        fi
+
+    - name: Clean up
+      if: always()
+      run: |
+        cd contracts
+        docker compose down -v --remove-orphans
+
+permissions:
+  contents: read
+  checks: write
