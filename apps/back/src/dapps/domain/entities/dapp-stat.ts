@@ -2,11 +2,49 @@ import { z } from 'zod'
 import { DAppId, DAppStatId } from './value-objects.js'
 import { AppError, Entity, fail, ok, Result, validationError } from 'utils'
 
+const operationNames = [
+  'FheAdd',
+  'FheSub',
+  'FheMul',
+  'FheDiv',
+  'FheRem',
+  'FheBitAnd',
+  'FheBitOr',
+  'FheBitXor',
+  'FheShl',
+  'FheShr',
+  'FheRotl',
+  'FheRotr',
+  'FheEq',
+  'FheEqBytes',
+  'FheNe',
+  'FheNeBytes',
+  'FheGe',
+  'FheGt',
+  'FheLe',
+  'FheLt',
+  'FheMin',
+  'FheMax',
+  'FheNeg',
+  'FheNot',
+  'VerifyCiphertext',
+  'Cast',
+  'TrivialEncrypt',
+  'TrivialEncryptBytes',
+  'FheIfThenElse',
+  'FheRand',
+  'FheRandBounded',
+] as const
+
 const schema = z.object({
   id: DAppStatId.schema,
-  name: z.string(),
+  name: z.enum(operationNames),
   timestamp: z.date(),
   dappId: DAppId.schema,
+  type: z.enum(['COMPUTATION', 'ENCRYPTION']),
+  day: z.number().min(1).max(366),
+  month: z.number().min(0).max(11),
+  year: z.number().min(0),
   externalRef: z.string(),
 })
 
@@ -44,6 +82,22 @@ export class DAppStat
 
   get dappId() {
     return DAppId.fromString(this.get('dappId')).unwrap()
+  }
+
+  get type() {
+    return this.get('type')
+  }
+
+  get day() {
+    return this.get('day')
+  }
+
+  get month() {
+    return this.get('month')
+  }
+
+  get year() {
+    return this.get('year')
   }
 
   get externalRef() {

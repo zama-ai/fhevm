@@ -20,6 +20,7 @@ import { StatsResolver } from './stats.resolver.js'
     uc.DeployDApp,
     uc.GetDappRawStatsUseCase,
     uc.GetDappCumulativeStatsUseCase,
+    uc.GetDappDailyStatsUseCase,
     uc.AppDeployment,
     uc.AppUpdatesSubscription,
     uc.StoreDAppStats,

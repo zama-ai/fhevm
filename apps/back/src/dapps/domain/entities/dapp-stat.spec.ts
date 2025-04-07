@@ -3,6 +3,7 @@ import { DAppId, DAppStatId } from './value-objects.js'
 import { faker } from '@faker-js/faker'
 import { DAppStat } from './dapp-stat.js'
 import { z } from 'zod'
+import { StatsType } from '#prisma/client/index.js'
 
 describe('DappStat', () => {
   describe('parse', () => {
@@ -11,7 +12,11 @@ describe('DappStat', () => {
     beforeEach(() => {
       params = {
         id: DAppStatId.random().value,
-        name: faker.string.alphanumeric(10),
+        name: 'FheAdd',
+        type: StatsType.COMPUTATION,
+        day: faker.number.int({ min: 1, max: 365 }),
+        month: faker.number.int({ min: 0, max: 11 }),
+        year: faker.number.int({ min: 2020, max: 2025 }),
         timestamp: new Date(Date.now()),
         dappId: DAppId.random().value,
         externalRef: faker.string.alphanumeric(10),
@@ -106,8 +111,12 @@ describe('DappStat', () => {
 
     beforeEach(() => {
       const result = DAppStat.create({
-        name: faker.string.alphanumeric(10),
+        name: 'FheAdd',
         timestamp: new Date(Date.now()),
+        type: StatsType.COMPUTATION,
+        day: faker.number.int({ min: 1, max: 365 }),
+        month: faker.number.int({ min: 0, max: 11 }),
+        year: faker.number.int({ min: 2020, max: 2025 }),
         // Note: to fix
         dappId: DAppId.random().value as `dapp_${string}` & z.BRAND<'DAppId'>,
         externalRef: faker.string.alphanumeric(10),

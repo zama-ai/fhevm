@@ -46,7 +46,33 @@ export interface PieChartProps extends BoxProps {
  */
 export const PieChartComponent = ({
   data,
-  colors = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'],
+  colors = [
+    '#0088FE',
+    '#00C49F',
+    '#FFBB28',
+    '#FF8042',
+    '#FF6384',
+    '#36A2EB',
+    '#FFCE56',
+    '#4BC0C0',
+    '#9966FF',
+    '#FF9F40',
+    '#E57373',
+    '#81C784',
+    '#64B5F6',
+    '#FFD54F',
+    '#BA68C8',
+    '#4DD0E1',
+    '#7986CB',
+    '#F06292',
+    '#A1887F',
+    '#90A4AE',
+    '#DCE775',
+    '#AED581',
+    '#FF8A65',
+    '#D4E157',
+    '#FF7043',
+  ],
   innerRadius = 0,
   outerRadius = 80,
   label = false,
@@ -54,7 +80,6 @@ export const PieChartComponent = ({
   ...rest
 }: PieChartProps) => {
   const id = useId()
-
   return (
     <Box {...rest}>
       <ResponsiveContainer width="100%" height={containerHeight}>

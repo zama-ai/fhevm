@@ -79,15 +79,36 @@ describe('get-dapp-cumulative-stats', () => {
           const { cumulative } = result.data.stats
           expect(cumulative.total).toBe(0)
           expect(cumulative.FheAdd).toBe(0)
-          expect(cumulative.FheBitAnd).toBe(0)
-          expect(cumulative.FheIfThenElse).toBe(0)
-          expect(cumulative.FheLe).toBe(0)
-          expect(cumulative.FheOr).toBe(0)
           expect(cumulative.FheSub).toBe(0)
-          expect(cumulative.TrivialEncrypt).toBe(0)
-          expect(cumulative.VerifyCiphertext).toBe(0)
           expect(cumulative.FheMul).toBe(0)
           expect(cumulative.FheDiv).toBe(0)
+          expect(cumulative.FheRem).toBe(0)
+          expect(cumulative.FheBitAnd).toBe(0)
+          expect(cumulative.FheBitOr).toBe(0)
+          expect(cumulative.FheBitXor).toBe(0)
+          expect(cumulative.FheShl).toBe(0)
+          expect(cumulative.FheShr).toBe(0)
+          expect(cumulative.FheRotl).toBe(0)
+          expect(cumulative.FheRotr).toBe(0)
+          expect(cumulative.FheEq).toBe(0)
+          expect(cumulative.FheEqBytes).toBe(0)
+          expect(cumulative.FheNe).toBe(0)
+          expect(cumulative.FheNeBytes).toBe(0)
+          expect(cumulative.FheGe).toBe(0)
+          expect(cumulative.FheGt).toBe(0)
+          expect(cumulative.FheLe).toBe(0)
+          expect(cumulative.FheLt).toBe(0)
+          expect(cumulative.FheMin).toBe(0)
+          expect(cumulative.FheMax).toBe(0)
+          expect(cumulative.FheNeg).toBe(0)
+          expect(cumulative.FheNot).toBe(0)
+          expect(cumulative.VerifyCiphertext).toBe(0)
+          expect(cumulative.Cast).toBe(0)
+          expect(cumulative.TrivialEncrypt).toBe(0)
+          expect(cumulative.TrivialEncryptBytes).toBe(0)
+          expect(cumulative.FheIfThenElse).toBe(0)
+          expect(cumulative.FheRand).toBe(0)
+          expect(cumulative.FheRandBounded).toBe(0)
         }
       })
     })
@@ -128,9 +149,13 @@ describe('get-dapp-cumulative-stats', () => {
           requestId: faker.string.uuid(),
           chainId: LOCAL_FHEVM_CHAIN_ID,
           address,
-          name,
-          timestamp: faker.date.past().toISOString(),
-          externalRef: faker.string.alphanumeric(10),
+          events: [
+            {
+              name,
+              timestamp: faker.date.past().toISOString(),
+              externalRef: faker.string.alphanumeric(10),
+            },
+          ],
         },
         meta: {
           correlationId: faker.string.uuid(),
@@ -174,14 +199,35 @@ describe('get-dapp-cumulative-stats', () => {
             ['total', 3],
             ['FheAdd', 2],
             ['FheBitAnd', 1],
-            ['FheIfThenElse', 0],
-            ['FheLe', 0],
-            ['FheOr', 0],
             ['FheSub', 0],
-            ['TrivialEncrypt', 0],
-            ['VerifyCiphertext', 0],
             ['FheMul', 0],
             ['FheDiv', 0],
+            ['FheRem', 0],
+            ['FheBitOr', 0],
+            ['FheBitXor', 0],
+            ['FheShl', 0],
+            ['FheShr', 0],
+            ['FheRotl', 0],
+            ['FheRotr', 0],
+            ['FheEq', 0],
+            ['FheEqBytes', 0],
+            ['FheNe', 0],
+            ['FheNeBytes', 0],
+            ['FheGe', 0],
+            ['FheGt', 0],
+            ['FheLe', 0],
+            ['FheLt', 0],
+            ['FheMin', 0],
+            ['FheMax', 0],
+            ['FheNeg', 0],
+            ['FheNot', 0],
+            ['VerifyCiphertext', 0],
+            ['Cast', 0],
+            ['TrivialEncrypt', 0],
+            ['TrivialEncryptBytes', 0],
+            ['FheIfThenElse', 0],
+            ['FheRand', 0],
+            ['FheRandBounded', 0],
           ] as [keyof typeof cumulative, number][]
           for (const [field, value] of results) {
             expect(cumulative[field]).toBe(value)
