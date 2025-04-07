@@ -28,7 +28,7 @@ contract DecryptionManager is
     /// @dev EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
     struct PublicDecryptVerification {
         /// @notice The handles of the ciphertexts that have been decrypted.
-        uint256[] ctHandles;
+        bytes32[] ctHandles;
         /// @notice The decrypted result of the public decryption.
         bytes decryptedResult;
     }
@@ -56,7 +56,7 @@ contract DecryptionManager is
         /// @notice The user's public key used for the share reencryption.
         bytes publicKey;
         /// @notice The handles of the ciphertexts that have been decrypted.
-        uint256[] ctHandles;
+        bytes32[] ctHandles;
         /// @notice The partial decryption share reencrypted with the user's public key.
         bytes reencryptedShare;
     }
@@ -84,7 +84,7 @@ contract DecryptionManager is
         /// @notice The user's public key to be used for reencryption.
         bytes publicKey;
         /// @notice The handles of the ciphertexts requested for a user decryption
-        uint256[] ctHandles;
+        bytes32[] ctHandles;
     }
 
     /// @notice The address of the HTTPZ contract for checking if a signer is valid
@@ -104,7 +104,7 @@ contract DecryptionManager is
 
     /// @notice The definition of the PublicDecryptVerification structure typed data.
     string public constant EIP712_PUBLIC_DECRYPT_TYPE =
-        "PublicDecryptVerification(uint256[] ctHandles,bytes decryptedResult)";
+        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult)";
 
     /// @notice The hash of the PublicDecryptVerification structure typed data definition used for signature validation.
     bytes32 public constant EIP712_PUBLIC_DECRYPT_TYPE_HASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
@@ -127,7 +127,7 @@ contract DecryptionManager is
 
     /// @notice The definition of the UserDecryptResponseVerification structure typed data.
     string public constant EIP712_USER_DECRYPT_RESPONSE_TYPE =
-        "UserDecryptResponseVerification(bytes publicKey,uint256[] ctHandles,bytes reencryptedShare)";
+        "UserDecryptResponseVerification(bytes publicKey,bytes32[] ctHandles,bytes reencryptedShare)";
 
     /// @notice The hash of the UserDecryptResponseVerification structure typed data definition
     /// @notice used for signature validation.
@@ -161,7 +161,7 @@ contract DecryptionManager is
             mapping(bytes32 digest => bytes[] verifiedSignatures))
                 _verifiedPublicDecryptSignatures;
         /// @notice Handles of the ciphertexts requested for a public decryption
-        mapping(uint256 publicDecryptionId => uint256[] ctHandles) publicCtHandles;
+        mapping(uint256 publicDecryptionId => bytes32[] ctHandles) publicCtHandles;
         /// @notice Whether a public decryption has been done
         mapping(uint256 publicDecryptionId => bool publicDecryptionDone) publicDecryptionDone;
         // ----------------------------------------------------------------------------------------------
@@ -206,7 +206,7 @@ contract DecryptionManager is
     }
 
     /// @dev See {IDecryptionManager-publicDecryptionRequest}.
-    function publicDecryptionRequest(uint256[] calldata ctHandles) public virtual {
+    function publicDecryptionRequest(bytes32[] calldata ctHandles) public virtual {
         DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
 
         /// @dev Check that the public decryption is allowed for the given ctHandles.
@@ -312,7 +312,7 @@ contract DecryptionManager is
         /// @dev We do not deduplicate handles if the same handle appears multiple times
         /// @dev for different contracts, it remains in the list as is. This ensures that
         /// @dev the CiphertextManager retrieval below returns all corresponding materials.
-        uint256[] memory ctHandles = new uint256[](ctHandleContractPairs.length);
+        bytes32[] memory ctHandles = new bytes32[](ctHandleContractPairs.length);
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
             if (!_containsContractAddress(contractAddresses, ctHandleContractPairs[i].contractAddress)) {
@@ -372,7 +372,7 @@ contract DecryptionManager is
         /// @dev We do not deduplicate handles if the same handle appears multiple times
         /// @dev for different contracts, it remains in the list as is. This ensures that
         /// @dev the CiphertextManager retrieval below returns all corresponding materials.
-        uint256[] memory ctHandles = new uint256[](ctHandleContractPairs.length);
+        bytes32[] memory ctHandles = new bytes32[](ctHandleContractPairs.length);
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
             if (!_containsContractAddress(contractAddresses, ctHandleContractPairs[i].contractAddress)) {

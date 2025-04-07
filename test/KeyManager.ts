@@ -3,7 +3,7 @@ import { expect } from "chai";
 import { EventLog } from "ethers";
 import hre from "hardhat";
 
-import { loadTestVariablesFixture } from "./utils/common";
+import { loadTestVariablesFixture } from "./utils/contracts";
 
 describe("KeyManager", function () {
   const fakeFheParamsName = "FAKE_FHE_PARAMS_NAME";
