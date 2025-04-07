@@ -1,0 +1,475 @@
+[
+  {
+    "type": "function",
+    "name": "delegatedUserDecryptionRequest",
+    "inputs": [
+      {
+        "name": "ctHandleContractPairs",
+        "type": "tuple[]",
+        "internalType": "struct CtHandleContractPair[]",
+        "components": [
+          {
+            "name": "ctHandle",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "requestValidity",
+        "type": "tuple",
+        "internalType": "struct IDecryptionManager.RequestValidity",
+        "components": [
+          {
+            "name": "startTimestamp",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "durationDays",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "delegationAccounts",
+        "type": "tuple",
+        "internalType": "struct IDecryptionManager.DelegationAccounts",
+        "components": [
+          {
+            "name": "userAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "delegatedAddress",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "contractsChainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "contractAddresses",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "publicKey",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "isPublicDecryptionDone",
+    "inputs": [
+      {
+        "name": "publicDecryptionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isUserDecryptionDone",
+    "inputs": [
+      {
+        "name": "userDecryptionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "publicDecryptionRequest",
+    "inputs": [
+      {
+        "name": "ctHandles",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "publicDecryptionResponse",
+    "inputs": [
+      {
+        "name": "publicDecryptionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "decryptedResult",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "userDecryptionRequest",
+    "inputs": [
+      {
+        "name": "ctHandleContractPairs",
+        "type": "tuple[]",
+        "internalType": "struct CtHandleContractPair[]",
+        "components": [
+          {
+            "name": "ctHandle",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "requestValidity",
+        "type": "tuple",
+        "internalType": "struct IDecryptionManager.RequestValidity",
+        "components": [
+          {
+            "name": "startTimestamp",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "durationDays",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "contractsChainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "contractAddresses",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "userAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "publicKey",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "userDecryptionResponse",
+    "inputs": [
+      {
+        "name": "userDecryptionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reencryptedShare",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "PublicDecryptionRequest",
+    "inputs": [
+      {
+        "name": "publicDecryptionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "snsCtMaterials",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct SnsCiphertextMaterial[]",
+        "components": [
+          {
+            "name": "ctHandle",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "keyId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "snsCiphertextDigest",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "coprocessorTxSenderAddresses",
+            "type": "address[]",
+            "internalType": "address[]"
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PublicDecryptionResponse",
+    "inputs": [
+      {
+        "name": "publicDecryptionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "decryptedResult",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      },
+      {
+        "name": "signatures",
+        "type": "bytes[]",
+        "indexed": false,
+        "internalType": "bytes[]"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UserDecryptionRequest",
+    "inputs": [
+      {
+        "name": "userDecryptionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "snsCtMaterials",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct SnsCiphertextMaterial[]",
+        "components": [
+          {
+            "name": "ctHandle",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "keyId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "snsCiphertextDigest",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "coprocessorTxSenderAddresses",
+            "type": "address[]",
+            "internalType": "address[]"
+          }
+        ]
+      },
+      {
+        "name": "userAddress",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "publicKey",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UserDecryptionResponse",
+    "inputs": [
+      {
+        "name": "userDecryptionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "reencryptedShares",
+        "type": "bytes[]",
+        "indexed": false,
+        "internalType": "bytes[]"
+      },
+      {
+        "name": "signatures",
+        "type": "bytes[]",
+        "indexed": false,
+        "internalType": "bytes[]"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "ContractAddressesMaxLengthExceeded",
+    "inputs": [
+      {
+        "name": "maxLength",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "actualLength",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ContractNotInContractAddresses",
+    "inputs": [
+      {
+        "name": "contractAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "contractAddresses",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DifferentKeyIdsNotAllowed",
+    "inputs": [
+      {
+        "name": "keyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidUserSignature",
+    "inputs": [
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "KmsSignerAlreadyResponded",
+    "inputs": [
+      {
+        "name": "publicDecryptionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "signer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MaxDurationDaysExceeded",
+    "inputs": [
+      {
+        "name": "maxValue",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "actualValue",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  }
+]
