@@ -203,7 +203,38 @@ describe("HTTPZ", function () {
     });
   });
 
-  describe("KMS", function () {
+  describe("Pauser", function () {
+    it("Should revert because of access controls", async function () {
+      const { httpz, user } = await loadFixture(loadTestVariablesFixture);
+
+      // Check that someone else than the owner cannot update the pauser
+      await expect(httpz.connect(user).updatePauser(user.address))
+        .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
+        .withArgs(user.address);
+    });
+
+    it("Should update the pauser", async function () {
+      const { httpz, owner, user } = await loadFixture(loadTestVariablesFixture);
+
+      // Update the pauser
+      const tx = await httpz.connect(owner).updatePauser(user.address);
+
+      // Check the event
+      await expect(tx).to.emit(httpz, "UpdatePauser").withArgs(user.address);
+    });
+
+    it("Should revert because the pauser is the null address", async function () {
+      const { httpz, owner } = await loadFixture(loadTestVariablesFixture);
+
+      // Check that updating with the null address reverts
+      await expect(httpz.connect(owner).updatePauser(hre.ethers.ZeroAddress)).to.be.revertedWithCustomError(
+        httpz,
+        "InvalidNullPauser",
+      );
+    });
+  });
+
+  describe("KMS threshold", function () {
     it("Should revert because of access controls", async function () {
       const { httpz, user } = await loadFixture(loadTestVariablesFixture);
 

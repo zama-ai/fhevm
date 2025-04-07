@@ -111,6 +111,16 @@ contract HTTPZ is IHTTPZ, Ownable2StepUpgradeable, UUPSUpgradeable {
         emit Initialization(initialPauser, initialMetadata, initialKmsThreshold, initialKmsNodes, initialCoprocessors);
     }
 
+    /// @dev See {IHTTPZ-updatePauser}.
+    function updatePauser(address newPauser) external virtual onlyOwner {
+        if (newPauser == address(0)) {
+            revert InvalidNullPauser();
+        }
+        HTTPZStorage storage $ = _getHTTPZStorage();
+        $.pauser = newPauser;
+        emit UpdatePauser(newPauser);
+    }
+
     /// @dev See {IHTTPZ-updateKmsThreshold}.
     function updateKmsThreshold(uint256 newKmsThreshold) external virtual onlyOwner {
         HTTPZStorage storage $ = _getHTTPZStorage();
