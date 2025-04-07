@@ -1,5 +1,4 @@
 import { expect } from "chai";
-import { BaseContract } from "ethers";
 import { Context } from "mocha";
 
 import { Add } from "../../types";
@@ -16,11 +15,11 @@ describe("Test add", function () {
   before(async function (this: AddContext) {
     await initSigners();
     this.signers = await getSigners();
-    this.fhevm = await createInstance();
+    this.httpz = await createInstance();
     const contract = await deployAddFixture();
     this.contractAddress = await contract.getAddress();
     this.contract = contract;
-    decrypt = createDecrypt(this.fhevm, this.signers.alice, this.contractAddress);
+    decrypt = createDecrypt(this.httpz, this.signers.alice, [this.contractAddress]);
   });
 
   it("should add 4 bits", async function (this: AddContext) {
@@ -29,7 +28,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result4();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -39,7 +38,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result4();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -49,7 +48,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result8();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -59,7 +58,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result8();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -69,7 +68,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result16();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -79,7 +78,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result16();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -89,7 +88,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result32();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -99,7 +98,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result32();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -109,7 +108,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result64();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -119,7 +118,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result64();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -129,7 +128,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result128();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -139,7 +138,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result128();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -149,7 +148,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result256();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 
@@ -159,7 +158,7 @@ describe("Test add", function () {
 
     const handle = await this.contract.result256();
 
-    const result = await decrypt(handle);
+    const result = await decrypt([{ ctHandle: handle, contractAddress: this.contractAddress }]);
     expect(result).to.equal(3);
   });
 });

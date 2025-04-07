@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import { E2EFHEVMConfig } from "../E2EFHEVMConfig.sol";
+import { E2EFHEVMConfig } from "../E2EFHEVMConfigSepolia.sol";
 import "fhevm/lib/TFHE.sol";
 
 contract Div is E2EFHEVMConfig {

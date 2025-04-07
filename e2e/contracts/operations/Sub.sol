@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import { E2EFHEVMConfig } from "../E2EFHEVMConfig.sol";
+import { E2EFHEVMConfig } from "../E2EFHEVMConfigSepolia.sol";
 import "fhevm/lib/TFHE.sol";
 
 contract Sub is E2EFHEVMConfig {
@@ -13,7 +13,6 @@ contract Sub is E2EFHEVMConfig {
     euint64 public result64;
     euint128 public result128;
     euint256 public result256;
-
 
     function sub4() public {
         result4 = TFHE.sub(TFHE.asEuint4(2), TFHE.asEuint4(1));

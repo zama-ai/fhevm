@@ -11,16 +11,16 @@ describe("Benchmark ERC20", function () {
   before(async function () {
     await initSigners();
     this.signers = await getSigners();
-    this.fhevm = await createInstance();
+    this.httpz = await createInstance();
     const erc20 = await deployEncryptedERC20Fixture();
     this.erc20Address = await erc20.getAddress();
     this.erc20 = erc20;
   });
 
   it("benchmarks erc20", async function () {
-    decrypt = createDecrypt(this.fhevm, this.signers.alice, this.erc20Address);
+    decrypt = createDecrypt(this.httpz, this.signers.alice, [this.erc20Address]);
     // Minting the contract
-    let mintTiming: Timing = {
+    const mintTiming: Timing = {
       description: "Mint 1000 tokens",
       time: 0,
     };
@@ -32,19 +32,19 @@ describe("Benchmark ERC20", function () {
     timings.push(mintTiming);
 
     // Create input
-    let inputTiming: Timing = {
+    const inputTiming: Timing = {
       description: "Create an input with euint64 500",
       time: 0,
     };
     start = Date.now();
-    const input = this.fhevm.createEncryptedInput(this.erc20Address, this.signers.alice.address);
+    const input = this.httpz.createEncryptedInput(this.erc20Address, this.signers.alice.address);
     input.add64(500);
     const encryptedTransferAmount = await input.encrypt();
     inputTiming.time = Date.now() - start;
     timings.push(inputTiming);
 
     // Transfer
-    let transferTiming: Timing = {
+    const transferTiming: Timing = {
       description: "Transfer 500 tokens",
       time: 0,
     };
@@ -60,18 +60,14 @@ describe("Benchmark ERC20", function () {
     timings.push(transferTiming);
 
     // Bench reencrypt
-
-    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.fhevm.generateKeypair();
-    const eip712 = this.fhevm.createEIP712(publicKeyAlice, this.erc20Address);
-
-    let reencryptTiming: Timing = {
+    const reencryptTiming: Timing = {
       description: "Reencryption of a euint64 balance",
       time: 0,
     };
     await new Promise((resolve) => setTimeout(resolve, 10000));
     start = Date.now();
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
-    const balanceAlice = await decrypt(balanceHandleAlice);
+    await decrypt([{ ctHandle: balanceHandleAlice, contractAddress: this.erc20Address }]);
     reencryptTiming.time = Date.now() - start;
     timings.push(reencryptTiming);
 

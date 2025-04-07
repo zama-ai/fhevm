@@ -1,12 +1,12 @@
 import { ethers } from "hardhat";
 
-import type { Reencrypt } from "../../types";
+import type { UserDecrypt } from "../../types";
 import { getSigners } from "../signers";
 
-export async function deployReencryptFixture(): Promise<Reencrypt> {
+export async function deployUserDecryptFixture(): Promise<UserDecrypt> {
   const signers = await getSigners();
 
-  const contractFactory = await ethers.getContractFactory("Reencrypt");
+  const contractFactory = await ethers.getContractFactory("UserDecrypt");
   const contract = await contractFactory.connect(signers.alice).deploy();
   await contract.waitForDeployment();
 

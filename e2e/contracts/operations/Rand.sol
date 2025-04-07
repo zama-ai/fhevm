@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import { E2EFHEVMConfig } from "../E2EFHEVMConfig.sol";
+import { E2EFHEVMConfig } from "../E2EFHEVMConfigSepolia.sol";
 import "fhevm/lib/TFHE.sol";
 
 /// @notice Contract for generating random encrypted numbers
@@ -20,7 +20,6 @@ contract Rand is E2EFHEVMConfig {
     ebytes64 public value512;
     ebytes128 public value1024;
     ebytes256 public value2048;
-
 
     /// @notice Generate random 8-bit encrypted unsigned integer
     function generateBool() public {

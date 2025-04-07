@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import { E2EFHEVMConfig } from "../E2EFHEVMConfig.sol";
+import { E2EFHEVMConfig } from "../E2EFHEVMConfigSepolia.sol";
 import "fhevm/lib/TFHE.sol";
 
 contract Add is E2EFHEVMConfig {
@@ -13,7 +13,6 @@ contract Add is E2EFHEVMConfig {
     euint64 public result64;
     euint128 public result128;
     euint256 public result256;
-
 
     function add4() public {
         result4 = TFHE.add(TFHE.asEuint4(1), TFHE.asEuint4(2));

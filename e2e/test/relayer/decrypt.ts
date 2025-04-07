@@ -15,7 +15,7 @@ describe("TestAsyncDecrypt", function () {
   before(async function (this: AsyncDecryptContext) {
     await initSigners();
     this.signers = await getSigners();
-    this.fhevm = await createInstance();
+    this.httpz = await createInstance();
 
     const contractFactory = await ethers.getContractFactory("AsyncDecrypt");
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
@@ -91,7 +91,7 @@ describe("TestAsyncDecrypt", function () {
   });
 
   it("test async decrypt uint128 non-trivial", async function () {
-    const inputAlice = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAlice = this.httpz.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add128(184467440737095500429401496n);
     const encryptedAmount = await inputAlice.encrypt();
     const tx = await this.contract.requestUint128NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof, {
@@ -112,7 +112,7 @@ describe("TestAsyncDecrypt", function () {
   });
 
   it("test async decrypt uint256 non-trivial", async function () {
-    const inputAlice = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAlice = this.httpz.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add256(6985387162255149739023449108101809804435888681546n);
     const encryptedAmount = await inputAlice.encrypt();
     const tx = await this.contract.requestUint256NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof, {
@@ -146,7 +146,7 @@ describe("TestAsyncDecrypt", function () {
     const tx2 = await this.contract.connect(this.signers.carol).requestMixed(5, 15, { gasLimit: 5_000_000 });
     await tx2.wait();
     await waitNBlocks(20);
-    let yB = await this.contract.yBool();
+    const yB = await this.contract.yBool();
     expect(yB).to.equal(true);
     let y = await this.contract.yUint4();
     expect(y).to.equal(4);
@@ -154,7 +154,7 @@ describe("TestAsyncDecrypt", function () {
     expect(y).to.equal(42);
     y = await this.contract.yUint16();
     expect(y).to.equal(16);
-    let yAdd = await this.contract.yAddress();
+    const yAdd = await this.contract.yAddress();
     expect(yAdd).to.equal("0x8ba1f109551bD432803012645Ac136ddd64DBA72");
     y = await this.contract.yUint32();
     expect(y).to.equal(52); // 5+15+32
@@ -163,7 +163,7 @@ describe("TestAsyncDecrypt", function () {
   });
 
   it("test async decrypt uint64 non-trivial", async function () {
-    const inputAlice = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAlice = this.httpz.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(18446744073709550042n);
     const encryptedAmount = await inputAlice.encrypt();
     const tx = await this.contract.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof, {
@@ -184,7 +184,7 @@ describe("TestAsyncDecrypt", function () {
   });
 
   it("test async decrypt ebytes64 non-trivial", async function () {
-    const inputAlice = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAlice = this.httpz.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.addBytes64(
       bigIntToBytes64(98870780878070870878787887072921111299111111000000292928818818818818221112111n),
     );
@@ -218,7 +218,7 @@ describe("TestAsyncDecrypt", function () {
   });
 
   it("test async decrypt ebytes128 non-trivial", async function () {
-    const inputAlice = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAlice = this.httpz.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.addBytes128(
       bigIntToBytes128(
         9887078087807087087878788707292111129911111100000029292881881881881822111211198870780878070870878787887072921111299111111000000292928818818818818221112111n,
@@ -248,7 +248,7 @@ describe("TestAsyncDecrypt", function () {
   });
 
   it("test async decrypt ebytes256 non-trivial", async function () {
-    const inputAlice = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAlice = this.httpz.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.addBytes256(bigIntToBytes256(18446744073709550022n));
     const encryptedAmount = await inputAlice.encrypt();
     const tx = await this.contract.requestEbytes256NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof, {
@@ -263,7 +263,7 @@ describe("TestAsyncDecrypt", function () {
   it("test async decrypt ebytes256 non-trivial with snapshot [skip-on-coverage]", async function () {
     if (network.name === "hardhat") {
       this.snapshotId = await ethers.provider.send("evm_snapshot");
-      const inputAlice = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+      const inputAlice = this.httpz.createEncryptedInput(this.contractAddress, this.signers.alice.address);
       inputAlice.addBytes256(bigIntToBytes256(18446744073709550022n));
       const encryptedAmount = await inputAlice.encrypt();
       const tx = await this.contract.requestEbytes256NonTrivial(
@@ -277,7 +277,7 @@ describe("TestAsyncDecrypt", function () {
       expect(y).to.equal(ethers.toBeHex(18446744073709550022n, 256));
 
       await ethers.provider.send("evm_revert", [this.snapshotId]);
-      const inputAlice2 = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+      const inputAlice2 = this.httpz.createEncryptedInput(this.contractAddress, this.signers.alice.address);
       inputAlice2.addBytes256(bigIntToBytes256(424242n));
       const encryptedAmount2 = await inputAlice2.encrypt();
       const tx2 = await this.contract.requestEbytes256NonTrivial(
@@ -293,7 +293,7 @@ describe("TestAsyncDecrypt", function () {
   });
 
   it("test async decrypt mixed with ebytes256", async function () {
-    const inputAlice = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAlice = this.httpz.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.addBytes256(bigIntToBytes256(18446744073709550032n));
     const encryptedAmount = await inputAlice.encrypt();
     const tx = await this.contract.requestMixedBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof, {
@@ -312,7 +312,7 @@ describe("TestAsyncDecrypt", function () {
   });
 
   it("test async decrypt ebytes256 non-trivial trustless", async function () {
-    const inputAlice = this.fhevm.createEncryptedInput(await this.contract.getAddress(), this.signers.alice.address);
+    const inputAlice = this.httpz.createEncryptedInput(await this.contract.getAddress(), this.signers.alice.address);
     inputAlice.addBytes256(bigIntToBytes256(18446744073709550022n));
     const encryptedAmount = await inputAlice.encrypt();
     const tx = await this.contract.requestEbytes256NonTrivialTrustless(
@@ -327,7 +327,7 @@ describe("TestAsyncDecrypt", function () {
   });
 
   it("test async decrypt mixed with ebytes256 trustless", async function () {
-    const inputAlice = this.fhevm.createEncryptedInput(await this.contract.getAddress(), this.signers.alice.address);
+    const inputAlice = this.httpz.createEncryptedInput(await this.contract.getAddress(), this.signers.alice.address);
     inputAlice.addBytes256(bigIntToBytes256(18446744073709550032n));
     const encryptedAmount = await inputAlice.encrypt();
     const tx = await this.contract.requestMixedBytes256Trustless(

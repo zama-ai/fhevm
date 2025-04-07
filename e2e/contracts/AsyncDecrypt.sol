@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
 import "fhevm/gateway/GatewayCaller.sol";
-import { E2EFHEVMConfig } from "./E2EFHEVMConfig.sol";
+import { E2EFHEVMConfig } from "./E2EFHEVMConfigSepolia.sol";
 
 /// @notice Contract for testing asynchronous decryption using the Gateway
 contract AsyncDecrypt is GatewayCaller, E2EFHEVMConfig {
