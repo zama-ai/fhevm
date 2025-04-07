@@ -47,6 +47,7 @@ jobs:
           tag: prerelease
           token: ${{ secrets.NPM_TOKEN }}
           provenance: true
+          access: public
 
       - name: Publish release to npm
         if: ${{ inputs.release == 'true' }}
