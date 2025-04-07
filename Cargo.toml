@@ -1,0 +1,78 @@
+[package]
+name = "kms-connector"
+authors = ["Zama"]
+publish = true
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+version = "0.11.0-rc5"
+
+# TODO: use root Cargo.toml features, remove duplicates and shrink to bare minimum features
+[dependencies]
+aws-sdk-kms = "=1.50.0"
+alloy-primitives = "0.8.20"
+alloy-sol-types = "0.8.20"
+alloy-json-abi = "0.8.20"
+alloy-dyn-abi = "0.8.20"
+alloy = { version = "0.11", features = [
+    "eips",
+    "full",
+    "hyper",
+    "json-rpc",
+    "node-bindings",
+    "rpc-client",
+    "rpc-types-debug",
+    "rpc-types-trace",
+    "signer-mnemonic",
+] }
+alloy-provider = { version = "0.11.0", features = ["ws"] }
+alloy-contract = "0.11.0"
+alloy-signer = "0.11.0"
+alloy-signer-local = { version = "0.11.0", features = ["mnemonic"] }
+alloy-transport = "0.11.0"
+alloy-rpc-types = "0.11.0"
+alloy-rpc-types-eth = "0.11.1"
+bincode = "1.3.3"
+prost = "0.13"
+prost-types = "0.13"
+sha2 = "=0.10.8"
+sha3 = "0.10.8"
+tonic = { version = "0.12.3", features = ["transport","tls","tls-roots"] }
+tokio = { version = "1.43.0", features = ["full"] }
+clap = { version = "4.5.30", features = ["derive"] }
+toml = "0.8.20"
+futures = "0.3"
+thiserror = "2.0.11"
+anyhow = "1.0"
+tracing = "0.1"
+tower = "0.5.2"
+# kms-grpc = {workspace = true, default-features = true, features = ["insecure"]} # TODO: substitute
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio-stream = "0.1"
+async-trait = "0.1"
+futures-util = "0.3"
+url = "2.5.0"
+bip39 = "2.1.0"
+config = { version = "0.15.8", features = ["toml"] }
+rand = "=0.8.5"
+tfhe-versionable = "=0.5.0"
+tfhe = "=1.0"
+dashmap = "6.1.0"
+once_cell = "1.21.1"
+regex = "1.11.1"
+
+# AWS S3 dependencies for ciphertext retrieval
+aws-config = "=1.5.9"
+aws-sdk-s3 = "=1.62.0"
+alloy-signer-aws = "0.11.0"
+
+# TODO: substitute with existing KMS-Core implementation
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "=3.16.0"
+serial_test = "3.2.0"
+
+[[bin]]
+name = "kms-connector"
+path = "src/bin/kms-connector.rs"

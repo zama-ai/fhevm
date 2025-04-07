@@ -1,0 +1,47 @@
+service_name = "kms-connector-4"
+
+mnemonic = "test test test test test test test test test test test junk"
+
+chain_id = 31337
+
+decryption_manager_address = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+
+httpz_address = "0x0000000000000000000000000000000000000001"
+
+kms_core_endpoint = "http://[::1]:50200"
+
+gwl2_url = "ws://0.0.0.0:8545"
+
+channel_size = 2000
+
+# account_index = 1
+
+# decryption_timeout_secs = 300
+
+# reencryption_timeout_secs = 300
+
+# retry_interval_secs = 5
+
+# decryption_manager_domain_name = "DecryptionManager"
+
+# decryption_manager_domain_version = "1"
+
+# httpz_domain_name = "HTTPZ"
+
+# httpz_domain_version = "1"
+
+# signing_key_path = "./keys/PRIV-p4/SigningKey/e164d9de0bec6656928726433cc56bef6ee8417ad5a4f8c82fbcc2d3e5f220fd"
+
+# private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
+
+# [s3_config]
+# region = "us-east-1"
+# bucket = "my-ciphertext-bucket"
+# endpoint = "http://localhost:9876"
+
+# verify_coprocessors = true
+
+# [aws_kms_config]
+# key_id = "12345678-1234-1234-1234-123456789012"
+# region = "us-east-1"
+# endpoint = "https://kms.us-east-1.amazonaws.com"
