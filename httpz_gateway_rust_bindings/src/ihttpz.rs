@@ -26,6 +26,7 @@ interface IHTTPZ {
     }
 
     error InvalidNullChainId();
+    error InvalidNullPauser();
     error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
     error NetworkAlreadyRegistered(uint256 chainId);
     error NetworkNotRegistered(uint256 chainId);
@@ -38,6 +39,7 @@ interface IHTTPZ {
     event AddNetwork(Network network);
     event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
     event UpdateKmsThreshold(uint256 newKmsThreshold);
+    event UpdatePauser(address newPauser);
 
     function addNetwork(Network memory network) external;
     function checkIsCoprocessorSigner(address signerAddress) external view;
@@ -59,6 +61,7 @@ interface IHTTPZ {
     function kmsTxSenderAddresses(uint256 index) external view returns (address);
     function networks(uint256 index) external view returns (Network memory);
     function updateKmsThreshold(uint256 newKmsThreshold) external;
+    function updatePauser(address newPauser) external;
 }
 ```
 
@@ -456,6 +459,19 @@ interface IHTTPZ {
     "stateMutability": "nonpayable"
   },
   {
+    "type": "function",
+    "name": "updatePauser",
+    "inputs": [
+      {
+        "name": "newPauser",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
     "type": "event",
     "name": "AddNetwork",
     "inputs": [
@@ -592,8 +608,26 @@ interface IHTTPZ {
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "UpdatePauser",
+    "inputs": [
+      {
+        "name": "newPauser",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "InvalidNullChainId",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidNullPauser",
     "inputs": []
   },
   {
@@ -1762,6 +1796,70 @@ error InvalidNullChainId();
             }
         }
     };
+    /**Custom error with signature `InvalidNullPauser()` and selector `0x3555aed1`.
+```solidity
+error InvalidNullPauser();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidNullPauser {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidNullPauser> for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidNullPauser) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidNullPauser {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {}
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidNullPauser {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidNullPauser()";
+            const SELECTOR: [u8; 4] = [53u8, 85u8, 174u8, 209u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+        }
+    };
     /**Custom error with signature `KmsThresholdTooHigh(uint256,uint256)` and selector `0x48676fe0`.
 ```solidity
 error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
@@ -2774,6 +2872,138 @@ event UpdateKmsThreshold(uint256 newKmsThreshold);
         impl From<&UpdateKmsThreshold> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &UpdateKmsThreshold) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    /**Event with signature `UpdatePauser(address)` and selector `0xa690668c24d277243ff6fa650d3fd6e3d331a99ca0a8857c82e7f89452fc665d`.
+```solidity
+event UpdatePauser(address newPauser);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct UpdatePauser {
+        #[allow(missing_docs)]
+        pub newPauser: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for UpdatePauser {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
+            const SIGNATURE: &'static str = "UpdatePauser(address)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                166u8,
+                144u8,
+                102u8,
+                140u8,
+                36u8,
+                210u8,
+                119u8,
+                36u8,
+                63u8,
+                246u8,
+                250u8,
+                101u8,
+                13u8,
+                63u8,
+                214u8,
+                227u8,
+                211u8,
+                49u8,
+                169u8,
+                156u8,
+                160u8,
+                168u8,
+                133u8,
+                124u8,
+                130u8,
+                231u8,
+                248u8,
+                148u8,
+                82u8,
+                252u8,
+                102u8,
+                93u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self { newPauser: data.0 }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.newPauser,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(),)
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for UpdatePauser {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&UpdatePauser> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &UpdatePauser) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -5327,6 +5557,129 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
             }
         }
     };
+    /**Function with signature `updatePauser(address)` and selector `0x554bab3c`.
+```solidity
+function updatePauser(address newPauser) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct updatePauserCall {
+        #[allow(missing_docs)]
+        pub newPauser: alloy::sol_types::private::Address,
+    }
+    ///Container type for the return parameters of the [`updatePauser(address)`](updatePauserCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct updatePauserReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<updatePauserCall> for UnderlyingRustTuple<'_> {
+                fn from(value: updatePauserCall) -> Self {
+                    (value.newPauser,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for updatePauserCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { newPauser: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<updatePauserReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: updatePauserReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for updatePauserReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for updatePauserCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = updatePauserReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "updatePauser(address)";
+            const SELECTOR: [u8; 4] = [85u8, 75u8, 171u8, 60u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.newPauser,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
     ///Container for all the [`IHTTPZ`](self) function calls.
     pub enum IHTTPZCalls {
         #[allow(missing_docs)]
@@ -5369,6 +5722,8 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
         networks(networksCall),
         #[allow(missing_docs)]
         updateKmsThreshold(updateKmsThresholdCall),
+        #[allow(missing_docs)]
+        updatePauser(updatePauserCall),
     }
     #[automatically_derived]
     impl IHTTPZCalls {
@@ -5386,6 +5741,7 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
             [73u8, 4u8, 19u8, 170u8],
             [73u8, 33u8, 163u8, 189u8],
             [84u8, 211u8, 246u8, 117u8],
+            [85u8, 75u8, 171u8, 60u8],
             [90u8, 182u8, 211u8, 171u8],
             [103u8, 153u8, 239u8, 82u8],
             [108u8, 136u8, 235u8, 67u8],
@@ -5405,7 +5761,7 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
     impl alloy_sol_types::SolInterface for IHTTPZCalls {
         const NAME: &'static str = "IHTTPZCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 20usize;
+        const COUNT: usize = 21usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5464,6 +5820,9 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                 Self::networks(_) => <networksCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::updateKmsThreshold(_) => {
                     <updateKmsThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::updatePauser(_) => {
+                    <updatePauserCall as alloy_sol_types::SolCall>::SELECTOR
                 }
             }
         }
@@ -5576,6 +5935,19 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                             .map(IHTTPZCalls::kmsNodes)
                     }
                     kmsNodes
+                },
+                {
+                    fn updatePauser(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IHTTPZCalls> {
+                        <updatePauserCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IHTTPZCalls::updatePauser)
+                    }
+                    updatePauser
                 },
                 {
                     fn coprocessorTxSenderAddresses(
@@ -5854,6 +6226,11 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                         inner,
                     )
                 }
+                Self::updatePauser(inner) => {
+                    <updatePauserCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
             }
         }
         #[inline]
@@ -5979,6 +6356,12 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                         out,
                     )
                 }
+                Self::updatePauser(inner) => {
+                    <updatePauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
             }
         }
     }
@@ -5986,6 +6369,8 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
     pub enum IHTTPZErrors {
         #[allow(missing_docs)]
         InvalidNullChainId(InvalidNullChainId),
+        #[allow(missing_docs)]
+        InvalidNullPauser(InvalidNullPauser),
         #[allow(missing_docs)]
         KmsThresholdTooHigh(KmsThresholdTooHigh),
         #[allow(missing_docs)]
@@ -6016,6 +6401,7 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
             [34u8, 247u8, 63u8, 234u8],
             [38u8, 205u8, 117u8, 220u8],
             [42u8, 124u8, 110u8, 246u8],
+            [53u8, 85u8, 174u8, 209u8],
             [72u8, 103u8, 111u8, 224u8],
             [82u8, 215u8, 37u8, 245u8],
             [109u8, 246u8, 254u8, 137u8],
@@ -6027,12 +6413,15 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
     impl alloy_sol_types::SolInterface for IHTTPZErrors {
         const NAME: &'static str = "IHTTPZErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 9usize;
+        const COUNT: usize = 10usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::InvalidNullChainId(_) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::InvalidNullPauser(_) => {
+                    <InvalidNullPauser as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::KmsThresholdTooHigh(_) => {
                     <KmsThresholdTooHigh as alloy_sol_types::SolError>::SELECTOR
@@ -6130,6 +6519,19 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                     NotKmsSigner
                 },
                 {
+                    fn InvalidNullPauser(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IHTTPZErrors> {
+                        <InvalidNullPauser as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IHTTPZErrors::InvalidNullPauser)
+                    }
+                    InvalidNullPauser
+                },
+                {
                     fn KmsThresholdTooHigh(
                         data: &[u8],
                         validate: bool,
@@ -6213,6 +6615,11 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                         inner,
                     )
                 }
+                Self::InvalidNullPauser(inner) => {
+                    <InvalidNullPauser as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::KmsThresholdTooHigh(inner) => {
                     <KmsThresholdTooHigh as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -6256,6 +6663,12 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
             match self {
                 Self::InvalidNullChainId(inner) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::InvalidNullPauser(inner) => {
+                    <InvalidNullPauser as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6316,6 +6729,8 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
         Initialization(Initialization),
         #[allow(missing_docs)]
         UpdateKmsThreshold(UpdateKmsThreshold),
+        #[allow(missing_docs)]
+        UpdatePauser(UpdatePauser),
     }
     #[automatically_derived]
     impl IHTTPZEvents {
@@ -6326,6 +6741,40 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
+            [
+                166u8,
+                144u8,
+                102u8,
+                140u8,
+                36u8,
+                210u8,
+                119u8,
+                36u8,
+                63u8,
+                246u8,
+                250u8,
+                101u8,
+                13u8,
+                63u8,
+                214u8,
+                227u8,
+                211u8,
+                49u8,
+                169u8,
+                156u8,
+                160u8,
+                168u8,
+                133u8,
+                124u8,
+                130u8,
+                231u8,
+                248u8,
+                148u8,
+                82u8,
+                252u8,
+                102u8,
+                93u8,
+            ],
             [
                 184u8,
                 32u8,
@@ -6433,7 +6882,7 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IHTTPZEvents {
         const NAME: &'static str = "IHTTPZEvents";
-        const COUNT: usize = 3usize;
+        const COUNT: usize = 4usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -6466,6 +6915,14 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                         )
                         .map(Self::UpdateKmsThreshold)
                 }
+                Some(<UpdatePauser as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <UpdatePauser as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                            validate,
+                        )
+                        .map(Self::UpdatePauser)
+                }
                 _ => {
                     alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
                         name: <Self as alloy_sol_types::SolEventInterface>::NAME,
@@ -6493,6 +6950,9 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                 Self::UpdateKmsThreshold(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::UpdatePauser(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
             }
         }
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
@@ -6504,6 +6964,9 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UpdateKmsThreshold(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::UpdatePauser(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
             }
@@ -6862,6 +7325,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`updatePauser`] function.
+        pub fn updatePauser(
+            &self,
+            newPauser: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<T, &P, updatePauserCall, N> {
+            self.call_builder(&updatePauserCall { newPauser })
+        }
     }
     /// Event filters.
     #[automatically_derived]
@@ -6894,6 +7364,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<T, &P, UpdateKmsThreshold, N> {
             self.event_filter::<UpdateKmsThreshold>()
+        }
+        ///Creates a new event filter for the [`UpdatePauser`] event.
+        pub fn UpdatePauser_filter(
+            &self,
+        ) -> alloy_contract::Event<T, &P, UpdatePauser, N> {
+            self.event_filter::<UpdatePauser>()
         }
     }
 }

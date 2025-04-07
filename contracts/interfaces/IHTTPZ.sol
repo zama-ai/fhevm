@@ -33,6 +33,10 @@ interface IHTTPZ {
         Coprocessor[] coprocessors
     );
 
+    /// @notice Emitted when the pauser address has been updated
+    /// @param newPauser The new pauser address
+    event UpdatePauser(address newPauser);
+
     /// @notice Emitted when the KMS threshold has been updated
     /// @param newKmsThreshold The new KMS threshold
     event UpdateKmsThreshold(uint256 newKmsThreshold);
@@ -40,6 +44,9 @@ interface IHTTPZ {
     /// @notice Emitted when a new network metadata is added
     /// @param network The new network metadata
     event AddNetwork(Network network);
+
+    /// @notice Error emitted when the pauser address is the null address
+    error InvalidNullPauser();
 
     /// @notice Error emitted when the KMS threshold is too high with respect to the number of KMS nodes
     /// @notice For a set of `n` KMS nodes, the threshold `t` must verify `0 <= t <= n`.
@@ -76,6 +83,10 @@ interface IHTTPZ {
 
     /// @notice Error indicating that a null chain ID is not allowed.
     error InvalidNullChainId();
+
+    /// @notice Update the pauser address
+    /// @param newPauser The new pauser address
+    function updatePauser(address newPauser) external;
 
     /// @notice Update the KMS threshold
     /// @dev The new threshold must verify `0 <= t <= n`, with `n` the number of KMS nodes currently registered
