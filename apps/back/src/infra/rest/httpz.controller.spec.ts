@@ -12,7 +12,11 @@ import { faker } from '@faker-js/faker'
 import { GetKeyUrl, InputProof } from '#httpz/use-cases/index.js'
 // import { ApiKeyAllowsRequest, GetApiKey } from '#dapps/use-cases/index.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
-import { ApiKeyId, DAppId } from '#dapps/domain/entities/value-objects.js'
+import {
+  ApiKeyId,
+  DAppId,
+  Token,
+} from '#dapps/domain/entities/value-objects.js'
 
 describe('HttpzController', () => {
   // let module: TestingModule
@@ -86,6 +90,7 @@ describe('HttpzController', () => {
       inputProof.execute.mockReturnValue(Task.of({ handles, signatures }))
       apiKey = ApiKey.parse({
         id: ApiKeyId.random().value,
+        token: Token.random().value,
         dappId: DAppId.random().value,
         name: faker.string.alphanumeric(10),
       }).unwrap()

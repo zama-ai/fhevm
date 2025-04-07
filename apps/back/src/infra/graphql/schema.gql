@@ -22,6 +22,14 @@ type ApiKey {
   description: String
 }
 
+type CreateApiKey {
+  """API Key token to use for authentication"""
+  token: String!
+
+  """API Key details"""
+  apiKey: ApiKey!
+}
+
 type CumulativeDappStats {
   total: Int!
   FheAdd: Int!
@@ -137,7 +145,7 @@ type Mutation {
   createDapp(input: CreateDappInput!): Dapp!
   updateDapp(input: UpdateDappInput!): Dapp!
   deployDapp(input: DeployDAppInput!): Dapp!
-  createApiKey(input: CreateApiKeyInput!): ApiKey!
+  createApiKey(input: CreateApiKeyInput!): CreateApiKey!
   updateApiKey(input: UpdateApiKeyInput!): ApiKey!
   deleteApiKey(input: DeleteApiKeyInput!): ID!
 }

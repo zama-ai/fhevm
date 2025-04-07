@@ -5,6 +5,7 @@ import {
   ApiKeyId,
   DAppId,
   DAppStatId,
+  Token,
 } from '#dapps/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { AppError, every, executeTask, isAppError } from 'utils'
@@ -244,10 +245,13 @@ describe('PrismaDappRepository', () => {
 
       describe('when I create a api key', () => {
         let apiKeyId: ApiKeyId
+        let token: Token
         beforeEach(() => {
           apiKeyId = ApiKeyId.random()
+          token = Token.random()
           prisma.apiKey.create.mockResolvedValue({
             id: apiKeyId.value,
+            token: token.value,
             dappId: dappId.value,
             name: faker.string.alphanumeric(10),
             description: faker.lorem.sentence(),
@@ -259,6 +263,7 @@ describe('PrismaDappRepository', () => {
         test('then it should create a new api key', async () => {
           const apiKey = ApiKey.parse({
             id: apiKeyId.value,
+            token: token.value,
             dappId: dappId.value,
             name: faker.string.alphanumeric(10),
           }).unwrap()
@@ -275,14 +280,17 @@ describe('PrismaDappRepository', () => {
     describe(`given a DApp doesn't exist`, () => {
       describe('when I create a api key', () => {
         let apiKeyId: ApiKeyId
+        let token: Token
         let dappId: DAppId
         beforeEach(() => {
           apiKeyId = ApiKeyId.random()
           dappId = DAppId.random()
+          token = Token.random()
 
           prisma.dapp.findUnique.mockResolvedValue(null)
           prisma.apiKey.create.mockResolvedValue({
             id: apiKeyId.value,
+            token: token.value,
             dappId: dappId.value,
             name: faker.string.alphanumeric(10),
             description: null,
@@ -294,6 +302,7 @@ describe('PrismaDappRepository', () => {
         test('then it should fail', async () => {
           const apiKey = ApiKey.parse({
             id: apiKeyId.value,
+            token: token.value,
             dappId: dappId.value,
             name: faker.string.alphanumeric(10),
           }).unwrap()
@@ -330,11 +339,13 @@ describe('PrismaDappRepository', () => {
           apiKeys = [
             ApiKey.parse({
               id: ApiKeyId.random().value,
+              token: Token.random().value,
               dappId: dappId.value,
               name: faker.string.alphanumeric(10),
             }).unwrap(),
             ApiKey.parse({
               id: ApiKeyId.random().value,
+              token: Token.random().value,
               dappId: dappId.value,
               name: faker.string.alphanumeric(10),
             }).unwrap(),
@@ -342,6 +353,7 @@ describe('PrismaDappRepository', () => {
           prisma.apiKey.findMany.mockResolvedValue(
             apiKeys.map(apiKey => ({
               id: apiKey.id.value,
+              token: apiKey.token.value,
               dappId: apiKey.dappId.value,
               name: faker.string.alphanumeric(10),
               description: null,

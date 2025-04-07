@@ -14,3 +14,15 @@ export class ApiKeyType {
   @Field(() => String, { nullable: true, description: 'API key description' })
   description?: string | null
 }
+
+@ObjectType('CreateApiKey')
+export class CreateApiKeyType {
+  @Field(() => String, {
+    nullable: false,
+    description: 'API Key token to use for authentication',
+  })
+  token: string
+
+  @Field(() => ApiKeyType, { nullable: false, description: 'API Key details' })
+  apiKey: ApiKeyType
+}

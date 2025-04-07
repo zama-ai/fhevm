@@ -32,18 +32,16 @@ export class CreateApiKey implements UseCase<Input, Output> {
     // 2. check if the user is the owner of the dapp
     // 3. reject if not
     return this.uow.exec(
-      DAppId.fromString(input.dappId).asyncChain(dappId =>
-        this.repo
-          .findById(dappId)
-          .chain(() =>
-            ApiKey.create({
-              dappId: dappId.value,
-              name: input.name,
-              description: input.description,
-            }).async(),
-          )
-          .chain(this.repo.createApiKey),
-      ),
+      DAppId.fromString(input.dappId)
+        .asyncChain(this.repo.findById)
+        .chain(dapp =>
+          ApiKey.create({
+            dappId: dapp.id.value,
+            name: input.name,
+            description: input.description,
+          }).async(),
+        )
+        .chain(this.repo.createApiKey),
     )
   }
 }

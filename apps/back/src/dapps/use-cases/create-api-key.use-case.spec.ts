@@ -7,7 +7,11 @@ import {
   DAPP_REPOSITORY,
   DAppRepository,
 } from '#dapps/domain/repositories/dapp.repository.js'
-import { ApiKeyId, DAppId } from '#dapps/domain/entities/value-objects.js'
+import {
+  ApiKeyId,
+  DAppId,
+  Token,
+} from '#dapps/domain/entities/value-objects.js'
 import { DApp } from '#dapps/domain/entities/dapp.js'
 import { faker } from '@faker-js/faker'
 import { TeamId } from '#users/domain/entities/value-objects.js'
@@ -55,11 +59,13 @@ describe('CreateApiKey', () => {
 
     describe(`when I create a api key`, () => {
       let apiKeyId: ApiKeyId
+      let token: Token
       let name: string
       let description: string
 
       beforeEach(() => {
         apiKeyId = ApiKeyId.random()
+        token = Token.random()
         name = faker.string.alphanumeric(10)
         description = faker.lorem.sentence()
 
@@ -67,6 +73,7 @@ describe('CreateApiKey', () => {
           Task.of(
             ApiKey.parse({
               id: apiKeyId.value,
+              token: token.value,
               dappId: dappId.value,
               name,
               description,
@@ -122,6 +129,7 @@ describe('CreateApiKey', () => {
           Task.of(
             ApiKey.parse({
               id: apiKeyId.value,
+              token: Token.random().value,
               dappId: dappId.value,
               name,
               description,

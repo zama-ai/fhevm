@@ -69,21 +69,25 @@ describe('create-api-key', () => {
       })
 
       test('then the API key is created', async () => {
-        expect(createApiKey.success).toBe(true)
         if (createApiKey.success) {
           const apiKey = await manager.httpz.getApiKey({
             token,
-            id: createApiKey.data.id,
+            id: createApiKey.data.apiKey.id,
           })
           if (apiKey.success) {
             expect(apiKey.success).toBe(true)
-            expect(apiKey.data.id).toBe(createApiKey.data.id)
+            expect(apiKey.data.id).toBe(createApiKey.data.apiKey.id)
             expect(apiKey.data.dappId).toBe(dappId)
-            expect(apiKey.data.name).toBe(createApiKey.data.name)
+            expect(apiKey.data.name).toBe(createApiKey.data.apiKey.name)
           } else {
             console.log(`getApiKey failed: ${JSON.stringify(apiKey.errors)}`)
             expect(apiKey.success).toBe(true)
           }
+        } else {
+          console.log(
+            `failed to create api key: ${JSON.stringify(createApiKey.errors)}`,
+          )
+          expect(createApiKey.success).toBe(true)
         }
       })
     })

@@ -71,7 +71,7 @@ describe('input proof', () => {
         dappId,
       })
       if (createApiKey.success) {
-        apiKey = createApiKey.data.id
+        apiKey = createApiKey.data.token
       } else {
         console.log(`failed to create api key: ${JSON.stringify(createApiKey)}`)
         expect(createApiKey.success).toBe(true)

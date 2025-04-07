@@ -40,10 +40,13 @@ export class HttpzManager {
 }
 
 export type CreateApiKeyResult = {
-  id: string
-  dappId: string
-  name: string
-  description?: string
+  token: string
+  apiKey: {
+    id: string
+    dappId: string
+    name: string
+    description?: string
+  }
 }
 
 const CREATE_API_KEY = `
@@ -53,10 +56,13 @@ const CREATE_API_KEY = `
       name: $name
       description: $description
     }){
-      id
-      dappId
-      name
-      description
+      token
+      apiKey {
+        id
+        dappId
+        name
+        description
+      }
     }
   }
 `

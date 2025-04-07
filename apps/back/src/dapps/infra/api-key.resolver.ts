@@ -1,5 +1,5 @@
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql'
-import { ApiKeyType } from './types/api-key.type.js'
+import { ApiKeyType, CreateApiKeyType } from './types/api-key.type.js'
 import { Inject, Logger, UseFilters, UseGuards } from '@nestjs/common'
 import { AppErrorFilter } from '#auth/infra/filters/app-error.filter.js'
 import * as uc from '#dapps/use-cases/index.js'
@@ -29,13 +29,19 @@ export class ApiKeyResolver {
   @Inject(uc.DeleteApiKey)
   private readonly deleteApiKeyUC: uc.DeleteApiKey
 
-  @Mutation(() => ApiKeyType, { name: 'createApiKey' })
+  @Mutation(() => CreateApiKeyType, { name: 'createApiKey' })
   async createApiKey(
     @CurrentUser() user: User,
     @Args('input') input: CreateApiKeyInput,
-  ) {
+  ): Promise<CreateApiKeyType> {
     this.logger.verbose(`creating API key for dappId=${input.dappId}`)
-    return this.createApiKeyUC.execute(input, { user }).toPromise()
+    const entity = await this.createApiKeyUC
+      .execute(input, { user })
+      .toPromise()
+    return {
+      token: entity.token.value,
+      apiKey: entity.toJSON(),
+    }
   }
 
   @Query(() => ApiKeyType, { name: 'apiKey' })
