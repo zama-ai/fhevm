@@ -2,16 +2,19 @@ import { graphql, HttpResponse } from 'msw'
 import { faker } from '@faker-js/faker'
 
 export const handlers = [
-  graphql.mutation(`createApiKey`, ({ variables }) => {
+  graphql.mutation(`CreateApiKey`, ({ variables }) => {
     const { name, description, dappId } = variables
 
     return HttpResponse.json({
       data: {
         createApiKey: {
-          id: faker.string.nanoid(),
-          name,
-          description,
-          dappId,
+          token: `pk-${faker.string.nanoid(10)}`,
+          apiKey: {
+            id: faker.string.nanoid(),
+            name,
+            description,
+            dappId,
+          },
         },
       },
     })

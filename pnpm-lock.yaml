@@ -436,6 +436,9 @@ importers:
       '@graphql-typed-document-node/core':
         specifier: ^3.2.0
         version: 3.2.0(graphql@16.10.0)
+      '@storybook/addon-actions':
+        specifier: ^8.6.12
+        version: 8.6.12(storybook@8.6.4(prettier@3.5.3))
       '@storybook/addon-essentials':
         specifier: ^8.4.7
         version: 8.6.4(@types/react@18.3.18)(storybook@8.6.4(prettier@3.5.3))
@@ -2930,6 +2933,11 @@ packages:
       '@aws-sdk/client-sqs': ^3.600.0
       '@nestjs/common': ^6.10.11 || ^7.0.0 || ^8.0.0 || ^9.0.0 || ^10.0.0 || ^11.0.0
       '@nestjs/core': ^6.10.11 || ^7.0.0 || ^8.0.0 || ^9.0.0 || ^10.0.0 || ^11.0.0
+
+  '@storybook/addon-actions@8.6.12':
+    resolution: {integrity: sha512-B5kfiRvi35oJ0NIo53CGH66H471A3XTzrfaa6SxXEJsgxxSeKScG5YeXcCvLiZfvANRQ7QDsmzPUgg0o3hdMXw==}
+    peerDependencies:
+      storybook: ^8.6.12
 
   '@storybook/addon-actions@8.6.4':
     resolution: {integrity: sha512-mCcyfkeb19fJX0dpQqqZCnWBwjVn0/27xcpR0mbm/KW2wTByU6bKFFujgrHsX3ONl97IcIaUnmwwUwBr1ebZXw==}
@@ -11002,6 +11010,15 @@ snapshots:
       sqs-producer: 5.0.0(@aws-sdk/client-sqs@3.758.0)
     transitivePeerDependencies:
       - supports-color
+
+  '@storybook/addon-actions@8.6.12(storybook@8.6.4(prettier@3.5.3))':
+    dependencies:
+      '@storybook/global': 5.0.0
+      '@types/uuid': 9.0.8
+      dequal: 2.0.3
+      polished: 4.3.1
+      storybook: 8.6.4(prettier@3.5.3)
+      uuid: 9.0.1
 
   '@storybook/addon-actions@8.6.4(storybook@8.6.4(prettier@3.5.3))':
     dependencies:

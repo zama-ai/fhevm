@@ -45,35 +45,35 @@ describe('CreateApiKey', () => {
       test('then it creates a new api key', async () => {
         expect(await screen.findByText(/api key created/i)).toBeInTheDocument()
       })
+    })
 
-      describe('when the server rises an error', () => {
-        beforeEach(async () => {
-          server.use(
-            graphql.mutation('createApiKey', () => {
-              return HttpResponse.json({
-                errors: [{ message: 'mocked error' }],
-              })
-            }),
-          )
+    describe('when the server rises an error', () => {
+      beforeEach(async () => {
+        server.use(
+          graphql.mutation('CreateApiKey', () => {
+            return HttpResponse.json({
+              errors: [{ message: 'mocked error' }],
+            })
+          }),
+        )
 
-          const user = userEvent.setup()
+        const user = userEvent.setup()
 
-          const form = screen.getByRole('form')
+        const form = screen.getByRole('form')
 
-          await user.type(
-            within(form).getByLabelText(/name/i),
-            faker.lorem.words({ min: 1, max: 3 }),
-          )
-          await user.type(
-            within(form).getByLabelText(/description/i),
-            faker.lorem.paragraph(1),
-          )
-          await user.click(within(form).getByRole('button'))
-        })
+        await user.type(
+          within(form).getByLabelText(/name/i),
+          faker.lorem.words({ min: 1, max: 3 }),
+        )
+        await user.type(
+          within(form).getByLabelText(/description/i),
+          faker.lorem.paragraph(1),
+        )
+        await user.click(within(form).getByRole('button'))
+      })
 
-        test('then it shows it', async () => {
-          expect(await screen.findByText('mocked error')).toBeInTheDocument()
-        })
+      test('then it shows it', async () => {
+        expect(await screen.findByText('mocked error')).toBeInTheDocument()
       })
     })
   })

@@ -1,13 +1,15 @@
-import { graphql } from '@/__generated__/gql'
 import { CreateApiKeyMutation } from '@/__generated__/graphql'
-import { useMutation } from '@apollo/client'
+import { gql, useMutation } from '@apollo/client'
 import { useCallback } from 'react'
 
 export function useCreateApiKey(dappId: string) {
   const [createApiKey, { data, loading, error }] = useMutation<
     CreateApiKeyMutation,
     { dappId: string; name: string; description?: string }
-  >(CREATE_API_KEY)
+  >(CREATE_API_KEY, {
+    // TODO: invalidate the list API keys query
+    refetchQueries: [],
+  })
 
   const handleCreateApiKey = useCallback(
     async (variables: { name: string; description?: string }) => {
@@ -18,8 +20,6 @@ export function useCreateApiKey(dappId: string) {
             ...variables,
             dappId,
           },
-          // TODO: invalidate the list API keys query
-          refetchQueries: [],
         })
         // return response.data
       } catch (error) {
@@ -33,14 +33,15 @@ export function useCreateApiKey(dappId: string) {
 
   return {
     createApiKey: handleCreateApiKey,
-    data,
     loading,
     error,
+    token: data?.createApiKey.token,
+    apiKeyId: data?.createApiKey.apiKey.id,
   }
 }
 
-const CREATE_API_KEY = graphql(`
-  mutation createApiKey(
+const CREATE_API_KEY = gql(`
+  mutation CreateApiKey(
     $dappId: String!
     $name: String!
     $description: String
@@ -48,10 +49,13 @@ const CREATE_API_KEY = graphql(`
     createApiKey(
       input: { dappId: $dappId, name: $name, description: $description }
     ) {
-      id
-      dappId
-      name
-      description
+      token
+      apiKey {
+        id
+        dappId
+        name
+        description
+      }
     }
   }
 `)

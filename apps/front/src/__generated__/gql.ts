@@ -14,9 +14,9 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
+    "\n  mutation CreateApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      token\n      apiKey {\n        id\n        dappId\n        name\n        description\n      }\n    }\n  }\n": typeof types.CreateApiKeyDocument,
     "\n  query ValidateAddress($chainId: String!, $address: String!) {\n    validateAddress(input: { chainId: $chainId, address: $address }) {\n      check\n      message\n    }\n  }\n": typeof types.ValidateAddressDocument,
     "\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": typeof types.CreateDappDocument,
-    "\n  mutation createApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      id\n      dappId\n      name\n      description\n    }\n  }\n": typeof types.CreateApiKeyDocument,
     "\n  query GetDappDetails($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n      rawStats {\n        id\n        name\n        timestamp\n        externalRef\n      }\n      stats {\n        id\n        cumulative {\n          total\n          FheAdd\n          FheBitAnd\n          FheIfThenElse\n          FheLe\n          FheOr\n          FheSub\n          TrivialEncrypt\n          VerifyCiphertext\n          FheMul\n          FheDiv\n        }\n      }\n    }\n  }\n": typeof types.GetDappDetailsDocument,
     "\n  subscription DappUpdated($dappId: ID!) {\n    dappUpdated(input: { id: $dappId }) {\n      id\n      name\n      status\n      rawStats {\n        id\n        name\n        timestamp\n        externalRef\n      }\n      stats {\n        id\n        cumulative {\n          total\n        }\n      }\n    } \n  }\n": typeof types.DappUpdatedDocument,
     "\n  query Preferences {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n": typeof types.PreferencesDocument,
@@ -27,9 +27,9 @@ type Documents = {
     "\n  query Me {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n        dapps {\n          id\n          name\n          status\n          createdAt\n        }\n      }\n    }\n  }\n": typeof types.MeDocument,
 };
 const documents: Documents = {
+    "\n  mutation CreateApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      token\n      apiKey {\n        id\n        dappId\n        name\n        description\n      }\n    }\n  }\n": types.CreateApiKeyDocument,
     "\n  query ValidateAddress($chainId: String!, $address: String!) {\n    validateAddress(input: { chainId: $chainId, address: $address }) {\n      check\n      message\n    }\n  }\n": types.ValidateAddressDocument,
     "\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": types.CreateDappDocument,
-    "\n  mutation createApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      id\n      dappId\n      name\n      description\n    }\n  }\n": types.CreateApiKeyDocument,
     "\n  query GetDappDetails($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n      rawStats {\n        id\n        name\n        timestamp\n        externalRef\n      }\n      stats {\n        id\n        cumulative {\n          total\n          FheAdd\n          FheBitAnd\n          FheIfThenElse\n          FheLe\n          FheOr\n          FheSub\n          TrivialEncrypt\n          VerifyCiphertext\n          FheMul\n          FheDiv\n        }\n      }\n    }\n  }\n": types.GetDappDetailsDocument,
     "\n  subscription DappUpdated($dappId: ID!) {\n    dappUpdated(input: { id: $dappId }) {\n      id\n      name\n      status\n      rawStats {\n        id\n        name\n        timestamp\n        externalRef\n      }\n      stats {\n        id\n        cumulative {\n          total\n        }\n      }\n    } \n  }\n": types.DappUpdatedDocument,
     "\n  query Preferences {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n": types.PreferencesDocument,
@@ -57,15 +57,15 @@ export function graphql(source: string): unknown;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function graphql(source: "\n  mutation CreateApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      token\n      apiKey {\n        id\n        dappId\n        name\n        description\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation CreateApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      token\n      apiKey {\n        id\n        dappId\n        name\n        description\n      }\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function graphql(source: "\n  query ValidateAddress($chainId: String!, $address: String!) {\n    validateAddress(input: { chainId: $chainId, address: $address }) {\n      check\n      message\n    }\n  }\n"): (typeof documents)["\n  query ValidateAddress($chainId: String!, $address: String!) {\n    validateAddress(input: { chainId: $chainId, address: $address }) {\n      check\n      message\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  mutation createApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      id\n      dappId\n      name\n      description\n    }\n  }\n"): (typeof documents)["\n  mutation createApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      id\n      dappId\n      name\n      description\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

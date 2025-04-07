@@ -41,6 +41,7 @@
     "@graphql-codegen/cli": "^5.0.3",
     "@graphql-codegen/client-preset": "^4.5.1",
     "@graphql-typed-document-node/core": "^3.2.0",
+    "@storybook/addon-actions": "^8.6.12",
     "@storybook/addon-essentials": "^8.4.7",
     "@storybook/addon-interactions": "^8.4.7",
     "@storybook/addon-themes": "^8.4.7",
