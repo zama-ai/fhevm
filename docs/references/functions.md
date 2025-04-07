@@ -1,4 +1,4 @@
-# Smart contracts - fhEVM API
+# Smart contracts - HTTPZ API
 
 This document provides an overview of the functions available in the `TFHE` Solidity library. The TFHE library provides functionality for working with encrypted types and performing operations on them. It implements fully homomorphic encryption (FHE) operations in Solidity.
 
@@ -95,7 +95,7 @@ The `asEbool` functions behave similarly to the `asEuint` functions, but for enc
 function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal
 ```
 
-Sets the FHEVM configuration for encrypted operations.
+Sets the HTTPZ configuration for encrypted operations.
 
 ### Initialization Checks
 

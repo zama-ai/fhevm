@@ -2,7 +2,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/5d44c888-a30a-47a5-86b1-f1a10b58572d">
   <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/f9f6b6e1-db81-4cb7-b962-181802576398">
-  <img width=600 alt="Zama HTTPZ">
+  <img width=600 alt="HTTPZ">
 </picture>
 </p>
 
@@ -25,8 +25,7 @@
 </p>
 
 > [!NOTE]  
-> **Renaming in progress**: The fhEVM repositories are transitionning to **HTTPZ**. You may see both names referenced for a short time. [Sign up](https://share-eu1.hsforms.com/1F7Z672SsRAeOVyqLdXWn2Q2duixc) to stay informed about the official HTTPZ release.
-
+> **Renaming in progress**: The HTTPZ repositories are transitionning to **HTTPZ**. You may see both names referenced for a short time. [Sign up](https://share-eu1.hsforms.com/1F7Z672SsRAeOVyqLdXWn2Q2duixc) to stay informed about the official HTTPZ release.
 
 ## About
 
@@ -34,7 +33,7 @@
 
 **HTTPZ** is a technology that enables confidential smart contracts on the EVM using fully homomorphic encryption (FHE).
 
-Thanks to a breakthrough in homomorphic encryption, Zama’s HTTPZ makes it possible to run confidential smart contracts on encrypted data, guaranteeing both confidentiality and composability with:
+Thanks to a breakthrough in homomorphic encryption, HTTPZ makes it possible to run confidential smart contracts on encrypted data, guaranteeing both confidentiality and composability with:
 
 - **End-to-end encryption of transactions and state:** Data included in transactions is encrypted and never visible to anyone.
 - **Composability and data availability on-chain:** States are updated while remaining encrypted at all times.
@@ -70,8 +69,7 @@ HTTPZ is built for developers to write confidential smart contracts without lear
 _Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/tutorials/see-all-tutorials)._
 <br></br>
 
-> [!Note]
->  **Zama 5-Question Developer Survey**
+> [!Note] > **Zama 5-Question Developer Survey**
 > We want to hear from you! Take 1 minute to share your thoughts and help us enhance our documentation and libraries. 👉 **[Click here](https://www.zama.ai/developer-survey)** to participate.
 
 ### Citations
@@ -89,7 +87,7 @@ note={\url{https://github.com/zama-ai/httpz-solidity}},
 
 ### Contributing
 
-There are two ways to contribute to the Zama HTTPZ:
+There are two ways to contribute to the HTTPZ:
 
 - [Open issues](https://github.com/zama-ai/httpz-solidity/issues/new/choose) to report bugs and typos, or to suggest new ideas
 - Request to become an official contributor by emailing hello@zama.ai.

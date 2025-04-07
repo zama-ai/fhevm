@@ -1,6 +1,6 @@
-# FhEVM smart contract examples
+# HTTPZ smart contract examples
 
-This directory contains example contracts that demonstrate the usage of the fhEVM (Fully Homomorphic Encryption Virtual Machine) smart contract library. These contracts showcase various features and functionalities of encrypted computations on the blockchain, enabling privacy-preserving operations and opening up new possibilities for confidential blockchain applications.
+This directory contains example contracts that demonstrate the usage of the HTTPZ (Fully Homomorphic Encryption Virtual Machine) smart contract library. These contracts showcase various features and functionalities of encrypted computations on the blockchain, enabling privacy-preserving operations and opening up new possibilities for confidential blockchain applications.
 
 ## Quick overview
 
@@ -12,9 +12,9 @@ This directory contains example contracts that demonstrate the usage of the fhEV
 
 ## Usage
 
-These contracts serve as examples and can be used as references when building your own fhEVM-compatible smart contracts. Make sure to have the necessary fhEVM library and dependencies set up in your development environment.
+These contracts serve as examples and can be used as references when building your own HTTPZ-compatible smart contracts. Make sure to have the necessary HTTPZ library and dependencies set up in your development environment.
 
-For more information, refer to the [fhEVM documentation](https://docs.zama.ai/fhevm).
+For more information, refer to the [HTTPZ documentation](https://docs.zama.ai/fhevm).
 
 ## Contract summaries
 

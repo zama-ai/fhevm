@@ -54,12 +54,12 @@ resolve: {
 
 **Cause:** The library may not bundle correctly with certain frameworks, leading to errors during the build or runtime process.
 
-**Possible solutions:** Use the [prebundled version available](./webapp.md) with `fhevmjs/bundle`. Embed the library with a `<script>` tag and initialize it as shown below:
+**Possible solutions:** Use the [prebundled version available](./webapp.md) with `@httpz/sdk/bundle`. Embed the library with a `<script>` tag and initialize it as shown below:
 
 ```javascript
 const start = async () => {
-  await window.fhevm.initFhevm(); // load wasm needed
-  const instance = window.fhevm
+  await window.httpz.initHTTPZ(); // load wasm needed
+  const instance = window.httpz
     .createInstance({
       kmsContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
       aclContractAddress: "0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5",

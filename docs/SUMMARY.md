@@ -1,6 +1,6 @@
 # Table of contents
 
-- [Welcome to fhEVM](README.md)
+- [Welcome to HTTPZ](README.md)
 - [White paper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper-v2.pdf)
 
 ## Getting Started
@@ -28,7 +28,7 @@
 
 - [Key features](smart_contracts/key_concepts.md)
 - [Configuration](smart_contracts/configure.md)
-- [FhEVM contracts](smart_contracts/contracts.md)
+- [HTTPZ contracts](smart_contracts/contracts.md)
 - [Supported types](smart_contracts/types.md)
 - [Operations on encrypted types](smart_contracts/operations.md)
 - [Access Control List](smart_contracts/acl/README.md)
@@ -63,14 +63,14 @@
 
 - [Architectural overview](smart_contracts/architecture_overview.md)
 - [FHE on blockchain](smart_contracts/architecture_overview/fhe-on-blockchain.md)
-- [fhEVM components](smart_contracts/architecture_overview/fhevm-components.md)
+- [HTTPZ components](smart_contracts/architecture_overview/fhevm-components.md)
 - [Encryption, decryption, re-encryption, and computation](smart_contracts/d_re_ecrypt_compute.md)
 
 ## References
 
 - [Table of all addresses](references/table_of_addresses.md)
-- [Smart contracts - fhEVM API](references/functions.md)
-- [Frontend - fhevmjs lib](references/fhevmjs.md)
+- [Smart contracts - HTTPZ API](references/functions.md)
+- [Frontend - HTTPZ SDK](references/fhevmjs.md)
 - [Repositories](references/repositories.md)
 
 ## Developer

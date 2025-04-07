@@ -1,8 +1,8 @@
 ---
-name: 🐛 fhevmjs Bug report
-about: Use this template to report issues encountered while using the fhevmjs library for interacting with fhEVM smart contracts.
+name: 🐛 @httpz/sdk Bug report
+about: Use this template to report issues encountered while using the @httpz/sdk library for interacting with fhEVM smart contracts.
 title: ""
-labels: bug, fhevmjs
+labels: bug, @httpz/sdk
 assignees: ""
 ---
 
@@ -24,7 +24,7 @@ Fill in the relevant environment details where the issue was observed:
 
 - **Browser**: [e.g., Chrome v90, Firefox v88]
 - **Node.js Version**: [e.g., `v14.17.0`]
-- **`fhEVMjs` Version**: [e.g., `v0.2.1`]
+- **`@httpz/sdk` Version**: [e.g., `v0.2.1`]
 - **Package Manager**: [npm, yarn, pnpm]
 - **Network Configuration**:
   - **Chain ID**: [e.g., `9000`]
@@ -51,4 +51,4 @@ If applicable, include links to any related documentation or reference materials
 
 ---
 
-By including these details, we can ensure a faster and more accurate resolution for your issue. Thank you for helping improve `fhevmjs`!
+By including these details, we can ensure a faster and more accurate resolution for your issue. Thank you for helping improve `@httpz/sdk`!

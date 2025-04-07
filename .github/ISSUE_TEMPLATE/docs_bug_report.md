@@ -67,4 +67,4 @@ Choose the impact of the bug on the documentation quality and user experience:
 
 ---
 
-By including these details, we can ensure a faster and more accurate resolution for your issue. Thank you for helping improve `fhEVM docs`!
+By including these details, we can ensure a faster and more accurate resolution for your issue. Thank you for helping improve `HTTPZ docs`!

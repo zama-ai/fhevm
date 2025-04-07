@@ -1,10 +1,10 @@
 # Key features
 
-This document provides an overview of key features of the fhEVM smart contract library.
+This document provides an overview of key features of the HTTPZ smart contract library.
 
 ### Configuration and initialization
 
-Smart contracts using fhEVM require proper configuration and initialization:
+Smart contracts using HTTPZ require proper configuration and initialization:
 
 - **Environment setup**: Import and inherit from environment-specific configuration contracts
 - **Gateway configuration**: Configure secure gateway access for cryptographic operations
@@ -14,7 +14,7 @@ For more information see [Configuration](configure.md).
 
 ### Encrypted data types
 
-fhEVM introduces encrypted data types compatible with Solidity:
+HTTPZ introduces encrypted data types compatible with Solidity:
 
 - **Booleans**: `ebool`
 - **Unsigned Integers**: `euint4`, `euint8`, `euint16`, `euint32`, `euint64`, `euint128`, `euint256`
@@ -28,7 +28,7 @@ For more information see [use of encrypted types](types.md).
 
 ### Casting types
 
-fhEVM provides functions to cast between encrypted types:
+HTTPZ provides functions to cast between encrypted types:
 
 - **Casting between encrypted types**: `TFHE.asEbool` converts encrypted integers to encrypted booleans
 - **Casting to encrypted types**: `TFHE.asEuintX` converts plaintext values to encrypted types
@@ -39,7 +39,7 @@ For more information see [use of encrypted types](types.md).
 
 ### Confidential computation
 
-fhEVM enables symbolic execution of encrypted operations, supporting:
+HTTPZ enables symbolic execution of encrypted operations, supporting:
 
 - **Arithmetic:** `TFHE.add`, `TFHE.sub`, `TFHE.mul`, `TFHE.min`, `TFHE.max`, `TFHE.neg`, `TFHE.div`, `TFHE.rem`
   - Note: `div` and `rem` operations are supported only with plaintext divisors
@@ -55,7 +55,7 @@ For more information on random number generation, see [Generate Random Encrypted
 
 ### Access control mechanism
 
-fhEVM enforces access control with a blockchain-based Access Control List (ACL):
+HTTPZ enforces access control with a blockchain-based Access Control List (ACL):
 
 - **Persistent access**: `TFHE.allow`, `TFHE.allowThis` grants permanent permissions for ciphertexts.
 - **Transient access**: `TFHE.allowTransient` provides temporary access for specific transactions.

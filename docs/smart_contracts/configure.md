@@ -1,10 +1,10 @@
 # Configuration
 
-This document explains how to enable encrypted computations in your smart contract by setting up the `fhEVM` environment. Learn how to integrate essential libraries, configure encryption, and add secure computation logic to your contracts.
+This document explains how to enable encrypted computations in your smart contract by setting up the `HTTPZ` environment. Learn how to integrate essential libraries, configure encryption, and add secure computation logic to your contracts.
 
 ## Core configuration setup
 
-To utilize encrypted computations in Solidity contracts, you must configure the **TFHE library** and **Gateway addresses**. The `fhevm` package simplifies this process with prebuilt configuration contracts, allowing you to focus on developing your contract’s logic without handling the underlying cryptographic setup.
+To utilize encrypted computations in Solidity contracts, you must configure the **TFHE library** and **Gateway addresses**. The `httpz` package simplifies this process with prebuilt configuration contracts, allowing you to focus on developing your contract’s logic without handling the underlying cryptographic setup.
 
 ## Key components configured automatically
 
@@ -16,7 +16,7 @@ By inheriting these configuration contracts, you ensure seamless initialization 
 
 ## ZamaFHEVMConfig.sol
 
-This configuration contract initializes the **fhEVM environment** with required encryption parameters.
+This configuration contract initializes the **HTTPZ environment** with required encryption parameters.
 
 **Import based on your environment:**
 
@@ -28,7 +28,7 @@ import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 **Purpose:**
 
 - Sets encryption parameters such as cryptographic keys and supported ciphertext types.
-- Ensures proper initialization of the FHEVM environment.
+- Ensures proper initialization of the HTTPZ environment.
 
 **Example: using Sepolia configuration**
 
@@ -71,7 +71,7 @@ import "fhevm/gateway/GatewayCaller.sol";
 
 contract Test is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, GatewayCaller {
   constructor() {
-    // Gateway and FHEVM environment initialized automatically
+    // Gateway and HTTPZ environment initialized automatically
   }
 }
 ```
