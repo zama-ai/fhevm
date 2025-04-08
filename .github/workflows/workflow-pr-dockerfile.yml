@@ -1,0 +1,62 @@
+name: "[Workflow-PR-Dockerfile] Pipeline Run"
+
+on:
+  pull_request:
+    paths:
+      - '**.dockerfile'
+
+concurrency:
+  group: workflow-pr-dockerfile-${{ github.ref }}
+  cancel-in-progress: ${{ !contains(fromJSON('["release/", "main"]'),github.ref) }}
+
+jobs:
+    prepare-batch:
+        runs-on: ubuntu-latest
+        outputs:
+          DOCKERFILE_CHANGED: ${{ steps.list_dockerfile.outputs.DOCKERFILE_CHANGED }}
+          LIST_DOCKERFILES: ${{ steps.list_dockerfile.outputs.LIST_DOCKERFILES }}
+
+        steps:
+          - name: Checkout parent Repo
+            uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683    ## v4.2.2
+            with:
+              submodules: true
+              token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+
+          - name: Get changed product files
+            id: list_changed_files
+            uses: tj-actions/changed-files@4edd678ac3f81e2dc578756871e4d00c19191daf     ## v45.0.4
+            with:
+                files: |
+                    **.dockerfile
+                    **/Dockerfile
+
+          - name: List all changed product files
+            id: list_dockerfile
+            env:
+                ALL_CHANGED_FILES: ${{ steps.list_changed_files.outputs.all_changed_files }}
+            run: |
+                IFS=$'\n' # Set Internal Field Separator to newline
+                for filepath in $ALL_CHANGED_FILES; do
+                    echo "File changed: $filepath"
+                done
+                echo "LIST_DOCKERFILES=$ALL_CHANGED_FILES" >> "$GITHUB_OUTPUT"
+                echo "DOCKERFILE_CHANGED=${{ steps.list_changed_files.outputs.any_changed }}" >> "$GITHUB_OUTPUT"
+
+    lint-dockerfile:
+        needs: prepare-batch
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683    ## v4.2.2
+
+          - name: Lint All Dockerfiles (adapt find to suit your needs)
+            run: |
+                curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.19.2
+                for filepath in ${{ needs.prepare-batch.outputs.LIST_DOCKERFILES }}; do
+                    echo "Linting $filepath"
+                    trivy config "$filepath"
+                done
+
+    docker-scanning:
+        uses: zama-ai/security-hub/.github/workflows/03-sca-trivy-docker-kms-callable-wf.yml@31e7d441c1f986608983c2015d7d7c08879c417d
+        secrets: inherit
