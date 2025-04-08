@@ -1,9 +1,7 @@
 use alloy_primitives::Address;
 use fhevm_engine_common::tenant_keys::TfheTenantKeys;
 use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
-use fhevm_engine_common::tfhe_ops::{
-    current_ciphertext_version, extract_ct_list,
-};
+use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
 use fhevm_engine_common::utils::safe_deserialize;
@@ -36,9 +34,7 @@ pub(crate) struct Ciphertext {
 }
 
 /// Executes the main loop for handling verify_proofs requests inserted in the database
-pub async fn execute_verify_proofs_loop(
-    conf: &Config,
-) -> Result<(), ExecutionError> {
+pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionError> {
     info!("Starting with config {:?}", conf);
 
     // Tenants key cache is shared amongst all workers
@@ -47,8 +43,7 @@ pub async fn execute_verify_proofs_loop(
     )));
 
     // Each worker needs at least 3 pg connections
-    let pool_connections =
-        std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
+    let pool_connections = std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
 
     // DB Connection pool is shared amongst all workers
     let pool = PgPoolOptions::new()
@@ -67,9 +62,7 @@ pub async fn execute_verify_proofs_loop(
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         task_set.spawn(async move {
-            if let Err(err) =
-                execute_worker(&conf, &pool, &tenant_key_cache).await
-            {
+            if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache).await {
                 error!("executor failed with {}", err);
             }
         });
@@ -92,13 +85,10 @@ async fn execute_worker(
 ) -> Result<(), ExecutionError> {
     let mut listener = PgListener::connect_with(pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
-    let idle_poll_interval =
-        Duration::from_secs(conf.pg_polling_interval as u64);
+    let idle_poll_interval = Duration::from_secs(conf.pg_polling_interval as u64);
 
     loop {
-        if let Err(e) =
-            execute_verify_proof_routine(pool, tenant_key_cache, conf).await
-        {
+        if let Err(e) = execute_verify_proof_routine(pool, tenant_key_cache, conf).await {
             error!(target: "zkpok", "Execution err: {}", e);
         } else {
             let count = get_remaining_tasks(pool).await?;
@@ -161,14 +151,9 @@ async fn execute_verify_proof_routine(
             input_len = format!("{}", input.len()),
         );
 
-        let keys = tenant_keys::fetch_tenant_server_key(
-            chain_id,
-            pool,
-            tenant_key_cache,
-            false,
-        )
-        .await
-        .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
+        let keys = tenant_keys::fetch_tenant_server_key(chain_id, pool, tenant_key_cache, false)
+            .await
+            .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
 
         let tenant_id = keys.tenant_id;
         info!(message = "Keys retrieved", request_id, chain_id);
@@ -248,9 +233,7 @@ pub(crate) fn verify_proof(
     set_server_key(keys.server_key.clone());
 
     let cts: Vec<SupportedFheCiphertexts> =
-        try_verify_and_expand_ciphertext_list(
-            request_id, raw_ct, keys, aux_data,
-        )?;
+        try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data)?;
 
     let mut h = Keccak256::new();
     h.update(raw_ct);
@@ -292,10 +275,9 @@ fn create_ciphertext(
     aux_data: &auxiliary::ZkData,
 ) -> Ciphertext {
     let (serialized_type, compressed) = the_ct.compress();
-    let chain_id_bytes: [u8; 32] =
-        alloy_primitives::U256::from(aux_data.chain_id)
-            .to_owned()
-            .to_be_bytes();
+    let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(aux_data.chain_id)
+        .to_owned()
+        .to_be_bytes();
 
     let mut handle_hash = Keccak256::new();
     handle_hash.update(blob_hash);
@@ -311,7 +293,9 @@ fn create_ciphertext(
     assert_eq!(handle.len(), 32);
     // idx cast to u8 must succeed because we don't allow
     // more handles than u8 size
-    handle[29] = ct_idx as u8;
+    handle[21] = ct_idx as u8;
+    // TODO: change chain ID to be u64
+    handle[22..30].copy_from_slice(&(aux_data.chain_id as u64).to_be_bytes());
     handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
 
