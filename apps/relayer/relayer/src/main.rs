@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use fhevm_relayer::{
-    blockchain::ethereum::{ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient},
+    blockchain::ethereum::ChainName,
     config::settings::KeyUrl,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
@@ -400,48 +400,21 @@ async fn main() {
 
     // Initialize EVM Host adapters
     for host_chain in settings.host_chains.clone() {
-        let host_client =
-            EthereumJsonRPCWsClient::new(ChainName::Httpz, host_chain.chain_config.ws_url.as_str())
-                .await
-                .expect("Couldn't connect to websocket of Host L1 blockchain ");
-        let host_client = Arc::new(host_client);
-        let filter_httpz_host =
-            ContractAndTopicsFilter::new(vec![host_chain.decryption_oracle], vec![]);
-        let subscription_httpz_host = host_client
-            .new_subscription(filter_httpz_host, None)
-            .await
-            .expect("Subscription to L1 failed");
         tokio::spawn(blockchain_event_listener(
-            subscription_httpz_host,
+            ChainName::Httpz,
+            host_chain.chain_config.ws_url,
+            vec![host_chain.decryption_oracle],
+            Some(1000),
             Arc::clone(&orchestrator),
             "Host".to_owned(),
         ));
     }
 
-    // Initialize Gateway adapter
-    let gateway_client = EthereumJsonRPCWsClient::new(
-        ChainName::Gateway,
-        settings.gateway_chain.chain_config.ws_url.as_str(),
-    )
-    .await
-    .expect("Couldn't connect to websocket of Gateway L2 blockchain ");
-    let gateway = Arc::new(gateway_client);
-    let filter_gateway = ContractAndTopicsFilter::new(
-        vec![
-            settings.gateway_chain.zkpok_manager,
-            settings.gateway_chain.decryption_manager,
-        ],
-        vec![],
-    );
-    let subscription_gateway = gateway
-        .new_subscription(filter_gateway, None)
-        .await
-        .expect("Subscription to Gateway failed");
-
     // Relayer SQS event listener
     tokio::spawn(sqs_listener(
         sqs_client.clone(),
         settings.queues.relayer_queue,
+        Some(1000),
         Arc::clone(&orchestrator),
     ));
 
@@ -449,12 +422,19 @@ async fn main() {
     tokio::spawn(sqs_listener(
         sqs_client.clone(),
         settings.queues.transaction_queue,
+        Some(1000),
         Arc::clone(&orchestrator),
     ));
 
     // Blockchain event listener
     tokio::spawn(blockchain_event_listener(
-        subscription_gateway,
+        ChainName::Gateway,
+        settings.gateway_chain.chain_config.ws_url,
+        vec![
+            settings.gateway_chain.zkpok_manager,
+            settings.gateway_chain.decryption_manager,
+        ],
+        Some(1000),
         Arc::clone(&orchestrator),
         "Gateway".to_owned(),
     ));

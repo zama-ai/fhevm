@@ -45,28 +45,17 @@ publish-web3-fhe-event-requested:
 		--queue-url 'http://localhost:4566/000000000000/web3-queue' \
 		--region eu-central-1 \
 		--message-body '{"type": "web3:fhe-event:detected", "payload": {"chainId": "123456", "address": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}, "meta": {"correlationId": "ea0ca1c2-3fde-4f80-8abb-08aecee4107c"}}'
-
-# run the blockchaion on docker
-blockchain-install:
-	bash scripts/install-blockchain-checks.sh && \
-	bash scripts/install-blockchain-submodules.sh && \
-	$(MAKE) clean-fhevm-devops && \
-	$(MAKE) run-fhevm-devops
-
-# test the blockchain
-blockchain-test:
-	bash scripts/blockchain-test.sh
-
-# display blockchain operations
-blockchain-listen:
-	bash scripts/blockchain-listen.sh
 	
-# Hardhat
-# First launch node and deploy contracts
-httpz-run:
+# HTTPZ
+## Up & Down
+httpz-up:
 	bash scripts/httpz-run.sh
 	
-# Then launch some public decryption test
+# Then clean nodes
+httpz-down:
+	bash scripts/httpz-clean.sh
+
+## Tests
 httpz-test-public-decrypt:
 	bash scripts/httpz-test-public-decrypt.sh
 
@@ -76,16 +65,15 @@ httpz-test-private-decrypt:
 httpz-test-input:
 	bash scripts/httpz-test-input.sh
 
-# Then clean nodes
-httpz-clean:
-	bash scripts/httpz-clean.sh
-
-console-side-clean:
-	docker compose down --volumes --remove-orphans
-
-console-side-run:
+# Console
+## Up & Down
+console-side-up:
 	docker compose up -d --wait
 
+console-side-down:
+	docker compose down --volumes --remove-orphans
+
+## Relayer specific
 relayer-run:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer
 
