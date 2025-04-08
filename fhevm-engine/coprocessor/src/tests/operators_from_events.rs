@@ -69,7 +69,7 @@ fn binary_op_to_event(
         *rhs
     };
     let result = *result;
-    match S::try_from(op.operand).unwrap() {
+    match S::try_from(op.operator).unwrap() {
         S::FheAdd => E::FheAdd(C::FheAdd {
             caller,
             lhs,
@@ -234,7 +234,7 @@ fn binary_op_to_event(
                 })
             }
         }
-        _ => panic!("unknown operation: {:?}", op.operand),
+        _ => panic!("unknown operation: {:?}", op.operator),
     }
 }
 
@@ -266,7 +266,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         if !supported_types().contains(&op.input_types) {
             continue;
         }
-        let support_bytes = matches!(S::try_from(op.operand).unwrap(), S::FheEq | S::FheNe);
+        let support_bytes = matches!(S::try_from(op.operator).unwrap(), S::FheEq | S::FheNe);
         if op.bits > 256 && op.is_scalar && !support_bytes {
             continue;
         }
@@ -279,7 +279,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
 
         println!(
             "Operations for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{}",
-            op.bits, op.operand, op.is_scalar, op.lhs, op.rhs
+            op.bits, op.operator, op.is_scalar, op.lhs, op.rhs
         );
         let caller = "0x0000000000000000000000000000000000000000"
             .parse()
@@ -322,7 +322,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
         let decr_response = &resp[0];
         println!("Checking computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
-            op.bits, op.operand, op.is_scalar, op.lhs, op.rhs, decr_response.value);
+            op.bits, op.operator, op.is_scalar, op.lhs, op.rhs, decr_response.value);
         assert_eq!(
             decr_response.output_type, op.expected_output_type as i16,
             "operand types not equal"

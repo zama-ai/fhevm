@@ -21,7 +21,7 @@ use tonic::metadata::MetadataValue;
 
 pub struct BinaryOperatorTestCase {
     pub bits: i32,
-    pub operand: i32,
+    pub operator: i32,
     pub input_types: i32,
     pub expected_output_type: i32,
     pub lhs: BigInt,
@@ -114,7 +114,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
         println!(
             "Encrypting inputs for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{}",
-            op.bits, op.operand, op.is_scalar, op.lhs, op.rhs
+            op.bits, op.operator, op.is_scalar, op.lhs, op.rhs
         );
         enc_request_payload.push(TrivialEncryptRequestSingle {
             handle: lhs_handle.clone(),
@@ -132,7 +132,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("rhs handle: 0x{}", hex::encode(&rhs_handle));
         println!("Scheduling computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
-            op.bits, op.operand, op.is_scalar, op.lhs, op.rhs, op.expected_output);
+            op.bits, op.operator, op.is_scalar, op.lhs, op.rhs, op.expected_output);
 
         let mut inputs = vec![AsyncComputationInput {
             input: Some(Input::InputHandle(lhs_handle)),
@@ -147,7 +147,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
         async_computations.push(AsyncComputation {
-            operation: op.operand,
+            operation: op.operator,
             output_handle,
             inputs,
         });
@@ -188,7 +188,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
     for (idx, op) in ops.iter().enumerate() {
         let decr_response = &resp[idx];
         println!("Checking computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
-            op.bits, op.operand, op.is_scalar, op.lhs, op.rhs, op.expected_output);
+            op.bits, op.operator, op.is_scalar, op.lhs, op.rhs, op.expected_output);
         assert_eq!(
             decr_response.output_type, op.expected_output_type as i16,
             "operand types not equal"
@@ -745,7 +745,7 @@ pub fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
         };
         cases.push(BinaryOperatorTestCase {
             bits,
-            operand,
+            operator: operand,
             expected_output_type,
             input_types: supported_bits_to_bit_type_in_db(bits),
             lhs,
@@ -780,7 +780,7 @@ pub fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
                 if does_fhe_operation_support_both_encrypted_operands(&op) {
                     bool_cases.push(BinaryOperatorTestCase {
                         bits,
-                        operand: op as i32,
+                        operator: op as i32,
                         expected_output_type: fhe_bool_type,
                         input_types: supported_bits_to_bit_type_in_db(bits),
                         lhs: lhs.clone(),
@@ -793,7 +793,7 @@ pub fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
                 if does_fhe_operation_support_scalar(&op) {
                     bool_cases.push(BinaryOperatorTestCase {
                         bits,
-                        operand: op as i32,
+                        operator: op as i32,
                         expected_output_type: fhe_bool_type,
                         input_types: supported_bits_to_bit_type_in_db(bits),
                         lhs,
