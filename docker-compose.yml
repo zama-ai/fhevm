@@ -5,39 +5,34 @@ services:
     container_name: anvil-node
     image: ghcr.io/foundry-rs/foundry:stable
     env_file:
-      - ./.env.example.deployment
+      - ./.env
     entrypoint:
-      [
-        "anvil",
-        "--block-time",
-        "0.1",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "8546",
-        "--chain-id",
-        "54321",
-        "--accounts",
-        "20",
-        "--mnemonic",
-        "${MNEMONIC}",
-      ]
+      - anvil
+      - --block-time
+      - "0.1"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8546"
+      - --chain-id
+      - "54321"
+      - --accounts
+      - "20"
+      - --mnemonic
+      - "${MNEMONIC:-adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer}"
     ports:
       - "8546:8546"
-    volumes:
-      - .:/anvil
 
   deploy-gateway-contracts:
     container_name: deploy-gateway-contracts
-    image: httpz-gateway/sc-bundle:0.1.0-local
     build:
       context: .
       dockerfile: Dockerfile
-      tags:
-        - httpz-gateway/sc-bundle:0.1.0-local
-    env_file: ./.env.example.deployment
+    env_file:
+      - ./.env
     environment:
       - HARDHAT_NETWORK=staging
+      - CHAIN_ID_GATEWAY=54321
     command:
       - /bin/bash
       - "-c"
@@ -49,19 +44,18 @@ services:
 
   add-httpz-networks:
     container_name: add-httpz-networks
-    image: httpz-gateway/sc-bundle:0.1.0-local
     build:
       context: .
       dockerfile: Dockerfile
-      tags:
-        - httpz-gateway/sc-bundle:0.1.0-local
+    env_file:
+      - ./.env
+    environment:
+      - HARDHAT_NETWORK=staging
+      - CHAIN_ID_GATEWAY=54321
     command:
       - /bin/bash
       - "-c"
       - cd /app/ && npx hardhat task:addNetworksToHttpz
-    env_file: ./.env.example.deployment
-    environment:
-      - HARDHAT_NETWORK=staging
     depends_on:
       anvil-node:
         condition: service_started
