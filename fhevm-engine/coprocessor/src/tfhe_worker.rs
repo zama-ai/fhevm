@@ -144,6 +144,7 @@ async fn tfhe_worker_cycle(
                 )
                 AND dc.output_handle = ANY(c.dependencies)
                 AND dc.tenant_id = c.tenant_id
+                AND NOT ROW(c.tenant_id, c.output_handle) = ANY(dc.produced_handles)
             ) SEARCH DEPTH FIRST BY output_handle SET computation_order,
            limited_computations AS (
               SELECT tenant_id, output_handle
