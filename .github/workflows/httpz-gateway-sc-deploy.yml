@@ -1,0 +1,73 @@
+name: HTTPZ Gateway Contracts Deployment
+
+on:
+  pull_request:
+    paths-ignore:
+    - "httpz_gateway_rust_bindings/**"
+    - "docs/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  httpz-gateway-sc-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+    - name: Build and start Docker services
+      run: |
+        make docker-compose-build
+        make docker-compose-up
+
+    - name: Check smart contract deployment
+      run: |
+
+        ## Check Contracts Deployment
+        timeout 300s bash -c 'while docker ps --filter "name=deploy-gateway-contracts" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
+        docker compose logs deploy-gateway-contracts > deployment_logs.txt
+        EXIT_CODE_SC=$(docker inspect --format='{{.State.ExitCode}}' deploy-gateway-contracts)
+        # display logs for debugging
+        # cat deployment_logs.txt
+        if [ "$EXIT_CODE_SC" -ne 0 ]; then
+          echo "Deployment failed with exit code $EXIT_CODE_SC"
+          exit 1
+        ######### TODO: This doesn't include revert error codes, to be implemented with https://github.com/zama-ai/httpz-gateway/issues/275
+        elif ! grep -q "Contract deployment done!" deployment_logs.txt; then
+          echo "Deployment did not complete successfully - 'Contract deployment done!' message not found in logs"
+          exit 1
+        else
+          echo "Deployment completed successfully with expected completion message"
+        fi
+
+        ## Check Network Registration
+        timeout 300s bash -c 'while docker ps --filter "name=add-httpz-networks" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
+        docker compose logs add-httpz-networks > network_registration_logs.txt
+        EXIT_CODE_NETWORK=$(docker inspect --format='{{.State.ExitCode}}' add-httpz-networks)
+        # display logs for debugging
+        # cat network_registration_logs.txt
+        if [ "$EXIT_CODE_NETWORK" -ne 0 ]; then
+          echo "Network registration failed with exit code $EXIT_CODE_NETWORK"
+          exit 1
+        ######### TODO: This doesn't include revert error codes, to be implemented with https://github.com/zama-ai/httpz-gateway/issues/275
+        elif ! grep -q "Networks registration done!" network_registration_logs.txt; then
+          echo "Network registration did not complete successfully - 'Networks registration done!' message not found in logs"
+          exit 1
+        else
+          echo "Network registration completed successfully with expected completion message"
+        fi
+
+    - name: Clean up
+      if: always()
+      run: |
+        make docker-compose-down
+
+permissions:
+  contents: read
+  checks: write

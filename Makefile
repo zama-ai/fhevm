@@ -31,13 +31,15 @@ deploy-contracts-local:
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:addNetworksToHttpz --use-internal-httpz-address true
 
 docker-compose-build:
+	cp .env.example.deployment .env
 	docker compose -vvv build
 
 docker-compose-up:
+	cp .env.example.deployment .env
 	docker compose -vvv up -d
 
 docker-compose-down:
-	docker compose -vvv down
+	docker compose -vvv down -v --remove-orphans
 
 check-bindings:
 	python3 scripts/bindings_update.py check
