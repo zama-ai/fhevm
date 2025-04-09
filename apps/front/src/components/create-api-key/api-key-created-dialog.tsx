@@ -1,4 +1,12 @@
-import { Alert, CloseButton, Dialog, Portal, Text } from '@chakra-ui/react'
+import {
+  Alert,
+  CloseButton,
+  Dialog,
+  Flex,
+  Portal,
+  Text,
+} from '@chakra-ui/react'
+import { ClipboardButton, ClipboardRoot } from '../ui/clipboard'
 
 export type ApiKeyCreatedDialogProps = {
   token: string
@@ -16,14 +24,19 @@ export function ApiKeyCreatedDialog({
           <Dialog.Content>
             <Dialog.Header>New API Key created</Dialog.Header>
             <Dialog.Body>
-              <Alert.Root role="alert">
+              <Alert.Root role="alert" mb="4">
                 <Alert.Indicator />
                 <Alert.Title>
                   Make sure to copy your personal access token now. You won't be
                   able to see it again!
                 </Alert.Title>
               </Alert.Root>
-              <Text py="4">{token}</Text>
+              <Flex py="2" alignItems="center">
+                <Text flex="1">{token}</Text>
+                <ClipboardRoot value={token}>
+                  <ClipboardButton />
+                </ClipboardRoot>
+              </Flex>
             </Dialog.Body>
             <Dialog.CloseTrigger asChild>
               <CloseButton size="sm" />
