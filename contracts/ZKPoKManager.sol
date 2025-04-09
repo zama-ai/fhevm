@@ -259,7 +259,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeab
          * @dev Retrieve the coprocessor signer address from the HTTPZ contract using the
          * coprocessor transaction sender address (second element of the tuple returned).
          */
-        Coprocessor memory coprocessor = _HTTPZ.coprocessors(coprocessorTxSenderAddress);
+        Coprocessor memory coprocessor = _HTTPZ.getCoprocessor(coprocessorTxSenderAddress);
         address coprocessorSignerAddress = coprocessor.signerAddress;
 
         /**

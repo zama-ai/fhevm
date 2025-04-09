@@ -176,12 +176,12 @@ describe("HTTPZ", function () {
       const { httpz, kmsTxSenders } = await loadFixture(loadTestVariablesFixture);
 
       // Get all KMS node transaction sender addresses
-      const kmsTxSenderAddresses = await httpz.getAllKmsTxSenderAddresses();
+      const kmsTxSenderAddresses = await httpz.getKmsTxSenders();
 
       // Check that the number of KMS node transaction sender addresses is correct
       expect(kmsTxSenderAddresses.length).to.equal(kmsTxSenders.length);
 
-      // Check that all KMS node addresses are in the list
+      // Check that all KMS node transaction sender addresses are in the list
       for (const kmsTxSender of kmsTxSenders) {
         expect(kmsTxSenderAddresses).to.include(kmsTxSender.address);
       }
@@ -191,7 +191,7 @@ describe("HTTPZ", function () {
       const { httpz, coprocessorTxSenders } = await loadFixture(loadTestVariablesFixture);
 
       // Get all coprocessor transaction sender addresses
-      const coprocessorTxSenderAddresses = await httpz.getAllCoprocessorTxSenderAddresses();
+      const coprocessorTxSenderAddresses = await httpz.getCoprocessorTxSenders();
 
       // Check that the number of coprocessor transaction sender addresses is correct
       expect(coprocessorTxSenderAddresses.length).to.equal(coprocessorTxSenders.length);
@@ -199,6 +199,51 @@ describe("HTTPZ", function () {
       // Check that all coprocessor transaction sender addresses are in the list
       for (const coprocessorTxSender of coprocessorTxSenders) {
         expect(coprocessorTxSenderAddresses).to.include(coprocessorTxSender.address);
+      }
+    });
+
+    it("Should get all KMS node signer addresses", async function () {
+      const { httpz, kmsSigners } = await loadFixture(loadTestVariablesFixture);
+
+      // Get all KMS node signer addresses
+      const kmsSignerAddresses = await httpz.getKmsSigners();
+
+      // Check that the number of KMS node signer addresses is correct
+      expect(kmsSignerAddresses.length).to.equal(kmsSigners.length);
+
+      // Check that all KMS node signer addresses are in the list
+      for (const kmsSigner of kmsSigners) {
+        expect(kmsSignerAddresses).to.include(kmsSigner.address);
+      }
+    });
+
+    it("Should get all coprocessor signer addresses", async function () {
+      const { httpz, coprocessorSigners } = await loadFixture(loadTestVariablesFixture);
+
+      // Get all coprocessor signer addresses
+      const coprocessorSignerAddresses = await httpz.getCoprocessorSigners();
+
+      // Check that the number of coprocessor signer addresses is correct
+      expect(coprocessorSignerAddresses.length).to.equal(coprocessorSigners.length);
+
+      // Check that all coprocessor signer addresses are in the list
+      for (const coprocessorTxSender of coprocessorSigners) {
+        expect(coprocessorSignerAddresses).to.include(coprocessorTxSender.address);
+      }
+    });
+
+    it("Should get all networks' metadata", async function () {
+      const { httpz, chainIds } = await loadFixture(loadTestVariablesFixture);
+
+      // Get all coprocessor signer addresses
+      const networks = await httpz.getNetworks();
+
+      // Check that the number of coprocessor signer addresses is correct
+      expect(networks.length).to.equal(chainIds.length);
+
+      // Check that all coprocessor signer addresses are in the list
+      for (const network of networks) {
+        expect(chainIds).to.include(Number(network.chainId));
       }
     });
   });
