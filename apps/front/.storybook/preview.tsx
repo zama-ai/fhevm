@@ -1,8 +1,13 @@
 import React from 'react'
+import { ApolloProvider } from '@apollo/client'
 import { ChakraProvider } from '@chakra-ui/react'
 import { withThemeByClassName } from '@storybook/addon-themes'
 import type { Preview } from '@storybook/react'
+import { initialize, mswLoader } from 'msw-storybook-addon'
 import { system } from '../src/theme'
+import { apolloClient } from '../src/providers/apollo'
+
+initialize()
 
 const preview: Preview = {
   globalTypes: {
@@ -37,15 +42,18 @@ const preview: Preview = {
   },
   decorators: [
     Story => (
-      <ChakraProvider value={system}>
-        <Story />
-      </ChakraProvider>
+      <ApolloProvider client={apolloClient}>
+        <ChakraProvider value={system}>
+          <Story />
+        </ChakraProvider>
+      </ApolloProvider>
     ),
     withThemeByClassName({
       defaultTheme: 'dark',
       themes: { light: '', dark: 'dark' },
     }),
   ],
+  loaders: [mswLoader],
 }
 
 export default preview

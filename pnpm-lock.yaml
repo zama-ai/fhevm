@@ -505,6 +505,9 @@ importers:
       msw:
         specifier: ^2.7.3
         version: 2.7.3(@types/node@20.17.24)(typescript@5.6.3)
+      msw-storybook-addon:
+        specifier: ^2.0.4
+        version: 2.0.4(msw@2.7.3(@types/node@20.17.24)(typescript@5.6.3))
       storybook:
         specifier: ^8.4.7
         version: 8.6.4(prettier@3.5.3)
@@ -6461,6 +6464,11 @@ packages:
 
   msgpackr@1.11.2:
     resolution: {integrity: sha512-F9UngXRlPyWCDEASDpTf6c9uNhGPTqnTeLVt7bN+bU1eajoR/8V9ys2BRaV5C/e5ihE6sJ9uPIKaYt6bFuO32g==}
+
+  msw-storybook-addon@2.0.4:
+    resolution: {integrity: sha512-rstO8+r01sRMg6PPP7OxM8LG5/6r4+wmp2uapHeHvm9TQQRHvpPXOU/Y9/Somysz8Oi4Ea1aummXH3JlnP2LIA==}
+    peerDependencies:
+      msw: ^2.0.0
 
   msw@2.7.3:
     resolution: {integrity: sha512-+mycXv8l2fEAjFZ5sjrtjJDmm2ceKGjrNbBr1durRg6VkU9fNUE/gsmQ51hWbHqs+l35W1iM+ZsmOD9Fd6lspw==}
@@ -15389,6 +15397,11 @@ snapshots:
   msgpackr@1.11.2:
     optionalDependencies:
       msgpackr-extract: 3.0.3
+
+  msw-storybook-addon@2.0.4(msw@2.7.3(@types/node@20.17.24)(typescript@5.6.3)):
+    dependencies:
+      is-node-process: 1.2.0
+      msw: 2.7.3(@types/node@20.17.24)(typescript@5.6.3)
 
   msw@2.7.3(@types/node@20.17.24)(typescript@5.6.3):
     dependencies:

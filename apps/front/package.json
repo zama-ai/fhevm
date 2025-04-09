@@ -64,6 +64,7 @@
     "globals": "^15.11.0",
     "jsdom": "^26.0.0",
     "msw": "^2.7.3",
+    "msw-storybook-addon": "^2.0.4",
     "storybook": "^8.4.7",
     "storybook-addon-remix-react-router": "^4.0.1",
     "typescript": "catalog:",
@@ -75,6 +76,11 @@
   "eslintConfig": {
     "extends": [
       "plugin:storybook/recommended"
+    ]
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
     ]
   }
 }
