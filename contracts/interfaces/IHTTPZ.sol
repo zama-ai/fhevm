@@ -143,31 +143,35 @@ interface IHTTPZ {
 
     /// @notice Get the metadata of the KMS node with the given transaction sender address
     /// @return The KMS node's metadata
-    function kmsNodes(address kmsTxSenderAddress) external view returns (KmsNode memory);
-
-    /// @notice Get the address of the KMS transaction sender with the given index
-    /// @return The KMS transaction sender's address
-    function kmsTxSenderAddresses(uint256 index) external view returns (address);
+    function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
 
     /// @notice Get the list of all KMS nodes' transaction sender addresses currently registered
     /// @return The list of KMS nodes' transaction sender addresses
-    function getAllKmsTxSenderAddresses() external view returns (address[] memory);
+    function getKmsTxSenders() external view returns (address[] memory);
+
+    /// @notice Get the list of all KMS nodes' signer addresses currently registered
+    /// @return The list of KMS nodes' signer addresses
+    function getKmsSigners() external view returns (address[] memory);
 
     /// @notice Get the metadata of the coprocessor with the given transaction sender address
     /// @return The coprocessor's metadata
-    function coprocessors(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
-
-    /// @notice Get the address of the coprocessor transaction sender with the given index
-    /// @return The coprocessor transaction sender's address
-    function coprocessorTxSenderAddresses(uint256 index) external view returns (address);
+    function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
 
     /// @notice Get the list of all coprocessors' transaction sender addresses currently registered
     /// @return The list of coprocessors' transaction sender addresses
-    function getAllCoprocessorTxSenderAddresses() external view returns (address[] memory);
+    function getCoprocessorTxSenders() external view returns (address[] memory);
+
+    /// @notice Get the list of all coprocessors' signer addresses currently registered
+    /// @return The list of coprocessors' signer addresses
+    function getCoprocessorSigners() external view returns (address[] memory);
 
     /// @notice Get the metadata of the network with the given index
     /// @return The network's metadata
-    function networks(uint256 index) external view returns (Network memory);
+    function getNetwork(uint256 index) external view returns (Network memory);
+
+    /// @notice Get the metadata of all the registered networks
+    /// @return The networks' metadata
+    function getNetworks() external view returns (Network[] memory);
 
     /// @notice Add a new Network metadata to the HTTPZ contract.
     /// @dev The associated chain ID must be non-zero and representable by a uint64.

@@ -43,6 +43,8 @@ contract HTTPZ is IHTTPZ, Ownable2StepUpgradeable, UUPSUpgradeable {
         mapping(address kmsTxSenderAddress => KmsNode kmsNode) kmsNodes;
         /// @notice The KMS nodes' transaction sender address list
         address[] kmsTxSenderAddresses;
+        /// @notice The KMS nodes' signer address list
+        address[] kmsSignerAddresses;
         /// @notice The KMS' threshold to consider for majority vote or reconstruction. For a set ot `n`
         /// @notice KMS nodes, the threshold `t` must verify `3t < n`.
         uint256 kmsThreshold;
@@ -50,6 +52,8 @@ contract HTTPZ is IHTTPZ, Ownable2StepUpgradeable, UUPSUpgradeable {
         mapping(address coprocessorTxSenderAddress => Coprocessor coprocessor) coprocessors;
         /// @notice The coprocessors' transaction sender address list
         address[] coprocessorTxSenderAddresses;
+        /// @notice The coprocessors' signer address list
+        address[] coprocessorSignerAddresses;
         /// @notice The networks' metadata
         Network[] networks;
     }
@@ -101,6 +105,7 @@ contract HTTPZ is IHTTPZ, Ownable2StepUpgradeable, UUPSUpgradeable {
             $.kmsNodes[initialKmsNodes[i].txSenderAddress] = initialKmsNodes[i];
             $.kmsTxSenderAddresses.push(initialKmsNodes[i].txSenderAddress);
             $._isKmsSigner[initialKmsNodes[i].signerAddress] = true;
+            $.kmsSignerAddresses.push(initialKmsNodes[i].signerAddress);
         }
 
         /// @dev Register the coprocessors
@@ -109,6 +114,7 @@ contract HTTPZ is IHTTPZ, Ownable2StepUpgradeable, UUPSUpgradeable {
             $.coprocessors[initialCoprocessors[i].txSenderAddress] = initialCoprocessors[i];
             $.coprocessorTxSenderAddresses.push(initialCoprocessors[i].txSenderAddress);
             $._isCoprocessorSigner[initialCoprocessors[i].signerAddress] = true;
+            $.coprocessorSignerAddresses.push(initialCoprocessors[i].signerAddress);
         }
 
         emit Initialization(initialPauser, initialMetadata, initialKmsThreshold, initialKmsNodes, initialCoprocessors);
@@ -213,46 +219,52 @@ contract HTTPZ is IHTTPZ, Ownable2StepUpgradeable, UUPSUpgradeable {
         return $.coprocessorTxSenderAddresses.length / 2 + 1;
     }
 
-    /// @dev See {IHTTPZ-kmsNodes}.
-    function kmsNodes(address kmsTxSenderAddress) external view virtual returns (KmsNode memory) {
+    /// @dev See {IHTTPZ-getKmsNode}.
+    function getKmsNode(address kmsTxSenderAddress) external view virtual returns (KmsNode memory) {
         HTTPZStorage storage $ = _getHTTPZStorage();
         return $.kmsNodes[kmsTxSenderAddress];
     }
 
-    /// @dev See {IHTTPZ-kmsTxSenderAddresses}.
-    function kmsTxSenderAddresses(uint256 index) external view virtual returns (address) {
-        HTTPZStorage storage $ = _getHTTPZStorage();
-        return $.kmsTxSenderAddresses[index];
-    }
-
-    /// @dev See {IHTTPZ-getAllKmsTxSenderAddresses}.
-    function getAllKmsTxSenderAddresses() external view virtual returns (address[] memory) {
+    /// @dev See {IHTTPZ-getKmsTxSenders}.
+    function getKmsTxSenders() external view virtual returns (address[] memory) {
         HTTPZStorage storage $ = _getHTTPZStorage();
         return $.kmsTxSenderAddresses;
     }
 
-    /// @dev See {IHTTPZ-coprocessors}.
-    function coprocessors(address coprocessorTxSenderAddress) external view virtual returns (Coprocessor memory) {
+    /// @dev See {IHTTPZ-getKmsSigners}.
+    function getKmsSigners() external view virtual returns (address[] memory) {
+        HTTPZStorage storage $ = _getHTTPZStorage();
+        return $.kmsSignerAddresses;
+    }
+
+    /// @dev See {IHTTPZ-getCoprocessor}.
+    function getCoprocessor(address coprocessorTxSenderAddress) external view virtual returns (Coprocessor memory) {
         HTTPZStorage storage $ = _getHTTPZStorage();
         return $.coprocessors[coprocessorTxSenderAddress];
     }
 
-    /// @dev See {IHTTPZ-coprocessorTxSenderAddresses}.
-    function coprocessorTxSenderAddresses(uint256 index) external view virtual returns (address) {
-        HTTPZStorage storage $ = _getHTTPZStorage();
-        return $.coprocessorTxSenderAddresses[index];
-    }
-
-    /// @dev See {IHTTPZ-getAllCoprocessorTxSenderAddresses}.
-    function getAllCoprocessorTxSenderAddresses() external view virtual returns (address[] memory) {
+    /// @dev See {IHTTPZ-getCoprocessorTxSenders}.
+    function getCoprocessorTxSenders() external view virtual returns (address[] memory) {
         HTTPZStorage storage $ = _getHTTPZStorage();
         return $.coprocessorTxSenderAddresses;
     }
 
-    /// @dev See {IHTTPZ-networks}.
-    function networks(uint256 index) external view virtual returns (Network memory) {
+    /// @dev See {IHTTPZ-getCoprocessorSigners}.
+    function getCoprocessorSigners() external view virtual returns (address[] memory) {
+        HTTPZStorage storage $ = _getHTTPZStorage();
+        return $.coprocessorSignerAddresses;
+    }
+
+    /// @dev See {IHTTPZ-getNetwork}.
+    function getNetwork(uint256 index) external view virtual returns (Network memory) {
         HTTPZStorage storage $ = _getHTTPZStorage();
         return $.networks[index];
+    }
+
+    /// @dev See {IHTTPZ-getNetworks}.
+    function getNetworks() external view virtual returns (Network[] memory) {
+        HTTPZStorage storage $ = _getHTTPZStorage();
+        return $.networks;
     }
 
     /// @dev See {IHTTPZ-addNetwork}.
