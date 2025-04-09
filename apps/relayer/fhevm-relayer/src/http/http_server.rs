@@ -1,5 +1,5 @@
 use crate::config::settings::Settings;
-use crate::core::event::RelayerEvent;
+use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::http::input_http_listener::{InputProofHandler, InputProofRequestJson};
 use crate::http::keyurl_http_listener::KeyUrlResponseJson;
 use crate::http::userdecrypt_http_listener::{UserDecryptHandler, UserDecryptRequestJson};
@@ -16,13 +16,18 @@ pub async fn run_http_server<D>(orchestrator: Arc<Orchestrator<D, RelayerEvent>>
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
+    let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
+
     // Build our application with the POST endpoint '/input-proof'
-    let input_proof_handler = Arc::new(InputProofHandler::new(orchestrator.clone()));
-    let user_decrypt_handler = Arc::new(UserDecryptHandler::new(orchestrator));
+    let input_proof_handler = Arc::new(InputProofHandler::new(
+        orchestrator.clone(),
+        api_version.clone(),
+    ));
+    let user_decrypt_handler = Arc::new(UserDecryptHandler::new(orchestrator, api_version.clone()));
     let app =
         Router::new()
             .route(
-                "/input-proof",
+                format!("/{}/input-proof", api_version).as_str(),
                 post({
                     info!("Enabling handler for POST request to '/input-proof'");
                     let handler = Arc::new(input_proof_handler);
@@ -32,7 +37,7 @@ where
                 }),
             )
             .route(
-                "/user-decrypt",
+                format!("/{}/user-decrypt", api_version).as_str(),
                 post({
                     info!("Enabling handler for POST request to '/user-decrypt'");
                     let handler = Arc::new(user_decrypt_handler);
@@ -42,7 +47,7 @@ where
                 }),
             )
             .route(
-                "/keyurl",
+                format!("/{}/keyurl", api_version).as_str(),
                 get(|| async {
                     info!("Enabling handler for GET request to '/keyurl'");
                     let keyurl_response = KeyUrlResponseJson::from_settings();

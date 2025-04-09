@@ -123,7 +123,7 @@ impl Event for RelayerEvent {
                 PublicDecryptEventData::RespRcvdFromGw { .. } => {
                     PublicDecryptEventId::RespRcvdFromGw.into()
                 }
-                PublicDecryptEventData::RespSentToHostBc { .. } => {
+                PublicDecryptEventData::RespSentToHostBc => {
                     PublicDecryptEventId::RespSentToHostBc.into()
                 }
                 PublicDecryptEventData::Failed { .. } => PublicDecryptEventId::Failed.into(),
@@ -136,9 +136,7 @@ impl Event for RelayerEvent {
                 UserDecryptEventData::RespRcvdFromGw { .. } => {
                     UserDecryptEventId::RespRcvdFromGw.into()
                 }
-                UserDecryptEventData::RespSentToHostBc { .. } => {
-                    UserDecryptEventId::RespSentToUser.into()
-                }
+                UserDecryptEventData::RespSentToHostBc => UserDecryptEventId::RespSentToUser.into(),
                 UserDecryptEventData::Failed { .. } => UserDecryptEventId::Failed.into(),
             },
             RelayerEventData::InputProof(input_event) => match input_event {
@@ -167,7 +165,16 @@ pub struct ApiVersion {
 
 impl Display for ApiVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}/v{}", self.category, self.number)
+        match self.category {
+            ApiCategory::PRODUCTION => write!(f, "v{}", self.number),
+            ApiCategory::EXPERIMENTAL => write!(f, "exp/v{}", self.number),
+        }
+    }
+}
+
+impl ApiVersion {
+    pub fn new(category: ApiCategory, number: u8) -> Self {
+        ApiVersion { category, number }
     }
 }
 

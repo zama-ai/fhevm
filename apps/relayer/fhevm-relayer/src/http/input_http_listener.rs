@@ -1,6 +1,6 @@
 use crate::core::event::{
-    ApiCategory, ApiVersion, InputProofEventData, InputProofEventId, InputProofRequest,
-    RelayerEvent, RelayerEventData,
+    ApiVersion, InputProofEventData, InputProofEventId, InputProofRequest, RelayerEvent,
+    RelayerEventData,
 };
 use crate::core::utils::OnceHandler;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -55,11 +55,15 @@ where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
 {
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+    api_version: ApiVersion,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProofHandler<D> {
-    pub fn new(orchestrator: Arc<Orchestrator<D, RelayerEvent>>) -> Self {
-        Self { orchestrator }
+    pub fn new(orchestrator: Arc<Orchestrator<D, RelayerEvent>>, api_version: ApiVersion) -> Self {
+        Self {
+            orchestrator,
+            api_version,
+        }
     }
 
     /// Handles POST requests to '/input-proof'. This function is responsible only for handling
@@ -103,10 +107,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
 
         let event = RelayerEvent::new(
             request_id,
-            ApiVersion {
-                category: ApiCategory::PRODUCTION,
-                number: 1,
-            },
+            self.api_version.clone(),
             RelayerEventData::InputProof(request_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;

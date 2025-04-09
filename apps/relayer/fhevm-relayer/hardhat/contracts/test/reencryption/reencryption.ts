@@ -31,19 +31,14 @@ describe('Reencryption', function () {
     const startTimeStamp = Math.floor(Date.now() / 1000).toString();
     const durationDays = "10"; // String for consistency
     const contractAddresses = [this.contractAddress];
-    const gatewayChainId = process.env.CHAIN_ID_GATEWAY || 654321;
-    const hostChainId = process.env.CHAIN_ID_HTTPZ || "123456";
-
     
-    // Use the new createEIP712UserDecrypt function
-    const eip712 = this.instances.alice.createEIP712UserDecrypt(
-      gatewayChainId,
-      process.env.DECRYPTION_MANAGER_ADDRESS, // Decryption Manager contract
+    // Use the new createEIP712 function
+    const eip712 = this.instances.alice.createEIP712(
       publicKey,
       contractAddresses,
-      hostChainId,
       startTimeStamp,
-      durationDays
+      durationDays,
+      false
     );
 
     console.log('EIP712 structure:', {
@@ -91,19 +86,14 @@ describe('Reencryption', function () {
     const startTimeStamp = Math.floor(Date.now() / 1000).toString();
     const durationDays = "10"; // String for consistency
     const contractAddresses = [this.contractAddress];
-    const gatewayChainId = process.env.CHAIN_ID_GATEWAY || 654321;
-    const hostChainId = process.env.CHAIN_ID_HTTPZ || "123456";
 
     
-    // Use the new createEIP712UserDecrypt function
-    const eip712 = this.instances.alice.createEIP712UserDecrypt(
-      gatewayChainId,
-      process.env.DECRYPTION_MANAGER_ADDRESS, // Decryption Manager contract
+    const eip712 = this.instances.alice.createEIP712(
       publicKey,
       contractAddresses,
-      hostChainId,
       startTimeStamp,
-      durationDays
+      durationDays,
+      false
     );
 
     console.log('EIP712 structure:', {
@@ -121,7 +111,6 @@ describe('Reencryption', function () {
     );
 
     const decryptedValue = await this.instances.alice.userDecrypt(
-      process.env.DECRYPTION_MANAGER_ADDRESS, 
       ctHandleContractPairs,
       privateKey,
       publicKey,
