@@ -47,39 +47,35 @@ publish-web3-fhe-event-requested:
 		--message-body '{"type": "web3:fhe-event:detected", "payload": {"chainId": "123456", "address": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}, "meta": {"correlationId": "ea0ca1c2-3fde-4f80-8abb-08aecee4107c"}}'
 	
 # HTTPZ
-## Up & Down
 httpz-up:
-	bash scripts/httpz-run.sh
-	
-# Then clean nodes
+	bash scripts/httpz-up.sh
 httpz-down:
-	bash scripts/httpz-clean.sh
-
-## Tests
+	bash scripts/httpz-down.sh
+	
+# HTTPZ Tests
 httpz-test-public-decrypt:
 	bash scripts/httpz-test-public-decrypt.sh
-
 httpz-test-private-decrypt:
 	bash scripts/httpz-test-private-decrypt.sh
-
 httpz-test-input:
 	bash scripts/httpz-test-input.sh
 
-# Console
-## Up & Down
-console-side-up:
-	docker compose up -d --wait
+# Console + Docker
+console-build:
+	docker compose -f ./docker-compose.02.console.build.yaml -f ./docker-compose.04.console.ghcr.yaml build
 
-console-side-down:
-	docker compose down --volumes --remove-orphans
+console-up:
+	bash scripts/console-up.sh
 
-## Relayer specific
+console-down:
+	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.run.yaml down --volumes --remove-orphans
+
+# Relayer
 relayer-run:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer
 
+relayer-build:
+	cd $(TOP)apps/relayer && cargo build --bin zws-relayer
+
 relayer-run-debug:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer -- --config-file debug.toml
-
-# `--ssh default` used to forward ssh agent to allow fhevm-relayer dependency to be reached
-docker-compose-build:
-	docker compose -f $(TOP)docker/docker-compose.yaml build --ssh default

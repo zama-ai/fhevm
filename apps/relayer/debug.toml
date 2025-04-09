@@ -3,10 +3,10 @@ mock_console = true
 [key_url]
 [key_url.fhe_public_key]
 data_id = "fhe-public-key-data-id"
-url = "http://0.0.0.0:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee"
+url = "http://0.0.0.0:9000/kms-public/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee"
 [key_url.crs]
 data_id = "crs-data-id"
-url = "http://0.0.0.0:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002"
+url = "http://0.0.0.0:9000/kms-public/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002"
 
 [[host_chains]]
 decryption_oracle = "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"

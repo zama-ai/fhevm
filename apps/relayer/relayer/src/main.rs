@@ -218,21 +218,29 @@ async fn main() {
         }
     }
 
-    let args = CliArgs::parse();
-
-    // Check if the config file exists
-    if let Some(conf) = &args.config_file {
-        if !Path::new(&conf).exists() {
-            eprintln!("Config file not found: {}", conf);
-            std::process::exit(1);
-        }
-    }
-
     // Observability
     // https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#example-syntax
     let filter = tracing_subscriber::EnvFilter::from_default_env();
     let subscriber = FmtSubscriber::builder().with_env_filter(filter).finish();
     tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");
+
+    let args = CliArgs::parse();
+
+    // Check if the config file exists
+    if let Some(conf) = &args.config_file {
+        let conf_path = Path::new(&conf);
+        if !conf_path.exists() {
+            error!("Config file not found: {}", conf);
+            std::process::exit(1);
+        }
+        if !conf_path.is_file() {
+            error!("Config file is not a file: {}", conf);
+            std::process::exit(1);
+        }
+        debug!("Using configuration file: {:?}", conf);
+    } else {
+        debug!("Not using configuration file");
+    }
 
     // Settings
     // TODO: add cli arg to specify path to config file with default

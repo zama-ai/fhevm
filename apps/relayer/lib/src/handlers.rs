@@ -44,11 +44,7 @@ impl ZWSTransactionManagerMockHandler {
         queue_url: String,
         transaction_services: HashMap<u64, Arc<TransactionService>>,
     ) -> Self {
-        let config = aws_config::from_env()
-            .endpoint_url("http://127.0.0.1:4566")
-            .region("eu-central-1")
-            .load()
-            .await;
+        let config = aws_config::from_env().load().await;
 
         let sqs_client = aws_sdk_sqs::Client::new(&config);
         ZWSTransactionManagerMockHandler {
@@ -169,7 +165,10 @@ impl EventHandler<ZwsRelayerEvent> for ZWSTransactionManagerMockHandler {
                         debug!("Successfuly sent authorization response")
                     }
                     Err(error) => {
-                        error!("Error sending authorization response: {:?}", error)
+                        error!(
+                            "Error sending SQSRelayerTransactionResponse to {:?}: {:?}",
+                            self.queue_url, error
+                        )
                     }
                 }
             }
@@ -193,11 +192,7 @@ pub struct ZWSConsoleMockHandler {
 
 impl ZWSConsoleMockHandler {
     pub async fn new(queue_url: String) -> Self {
-        let config = aws_config::from_env()
-            .endpoint_url("http://127.0.0.1:4566")
-            .region("eu-central-1")
-            .load()
-            .await;
+        let config = aws_config::from_env().load().await;
         let sqs_client = aws_sdk_sqs::Client::new(&config);
         ZWSConsoleMockHandler {
             sqs_client,
@@ -240,7 +235,10 @@ impl EventHandler<ZwsRelayerEvent> for ZWSConsoleMockHandler {
                         debug!("Successfuly sent authorization response")
                     }
                     Err(error) => {
-                        error!("Error sending authorization response: {:?}", error)
+                        error!(
+                            "Error sending SQSRelayerAuthorizationResponse to {:?}: {:?}",
+                            self.queue_url, error
+                        )
                     }
                 }
             }
@@ -528,7 +526,10 @@ impl ZWSRelayerHandler {
                                 debug!("Successfuly sent authorization response")
                             }
                             Err(error) => {
-                                error!("Error sending authorization response: {:?}", error)
+                                error!(
+                                    "Error sending SQSRelayerAuthorizationRequest: {:?} to {:?}",
+                                    error, self.console_queue_url
+                                )
                             }
                         }
                     }
@@ -611,7 +612,7 @@ impl ZWSRelayerHandler {
                             }
                             Err(error) => {
                                 error!(
-                                    "Error sending input registration response to {:?}: {:?}",
+                                    "Error sending SQSRelayerInputRegistrationResponse to {:?}: {:?}",
                                     self.console_queue_url, error
                                 )
                             }
@@ -800,7 +801,10 @@ impl ZWSRelayerHandler {
                 debug!("Successfuly sent transaction request")
             }
             Err(error) => {
-                error!("Error sending transaction request: {:?}", error)
+                error!(
+                    "Error sending SQSRelayerTransactionRequest to {:?}: {:?}",
+                    self.tx_manager_queue_url, error,
+                )
             }
         }
     }

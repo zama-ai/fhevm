@@ -19,6 +19,12 @@ These docker-compose files build a local development environment. It includes:
 
 ## Steps
 
+```bash
+make httpz-up
+make console-up
+make httpz-test-input
+```
+
 ### 1. Deploy a Local Infra Requirements
 
 These steps deploy a local version of required AWS services and databases.

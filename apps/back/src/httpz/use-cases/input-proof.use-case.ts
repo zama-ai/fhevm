@@ -27,7 +27,7 @@ export class InputProof implements UseCase<Input, Output> {
     private readonly pubsub: IPubSub<back.BackEvent>,
     @Inject(PRODUCER)
     private readonly publisher: IProducer,
-  ) {}
+  ) { }
 
   execute = (input: Input): Task<Output, AppError> => {
     this.logger.debug(`input=${JSON.stringify(input)}`)
@@ -40,6 +40,7 @@ export class InputProof implements UseCase<Input, Output> {
       Web3Address.parse(input.contractAddress),
       Web3Address.parse(input.userAddress),
     ]).asyncChain(([contractChainId, contractAddress, userAddress]) => {
+      this.logger.debug(`PUBLISHING`);
       return Task.race([
         this.publisher
           .publish(
@@ -90,7 +91,7 @@ export class InputProof implements UseCase<Input, Output> {
                 )
               }),
           ),
-        Task.timeout(30),
+        Task.timeout(parseInt(process.env.DEFAULT_TIMEOUT ?? '30', 10)),
       ])
     })
   }

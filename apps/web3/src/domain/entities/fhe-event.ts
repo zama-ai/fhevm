@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import { ChainId, FheEventId, Web3Address } from './value-objects.js'
 import { AppError, Entity, fail, ok, Result } from 'utils'
+import { operationEnum } from 'messages'
 import { fromZodError } from 'utils/dist/src/app-error.js'
 
 const schema = z.object({
   chainId: ChainId.schema,
   id: FheEventId.schema,
-  name: z.string(), // Note: should we use an enum?
+  name: operationEnum,
   callerAddress: Web3Address.schema,
   blockNumber: z.number(),
   args: z.string(),
@@ -18,12 +19,11 @@ type FheEventProps = z.infer<typeof schema>
 export class FheEvent
   extends Entity<FheEventProps>
   implements
-    Readonly<
-      Omit<FheEventProps, 'chainId' | 'id' | 'callerAddress'> & {
-        id: FheEventId
-      }
-    >
-{
+  Readonly<
+    Omit<FheEventProps, 'chainId' | 'id' | 'callerAddress'> & {
+      id: FheEventId
+    }
+  > {
   static parse(data: unknown): Result<FheEvent, AppError> {
     const check = schema.safeParse(data)
     return check.success

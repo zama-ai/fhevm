@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1
+# TODO: move this image to use a safer base
+
 # Base from https://docs.docker.com/guides/rust/develop/
 ARG RUST_VERSION=1.83.0
 ARG CARGO_NET_GIT_FETCH_WITH_CLI=false
@@ -45,8 +47,8 @@ EOF
 # most recent version of that tag when you build your Dockerfile. If
 # reproducibility is important, consider using a digest
 # (e.g.,    debian@sha256:ac707220fbd7b67fc19b112cee8170b41a9e97f703f588b2cdbbcdcecdd8af57).
-FROM debian:bullseye-slim AS final
-RUN apt update && apt install libssl-dev libpq-dev libsqlite3-dev -y
+FROM debian:bullseye-slim AS runtime
+RUN apt update && apt install libssl-dev libpq-dev libsqlite3-dev ca-certificates -y && update-ca-certificates
 
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/   #user

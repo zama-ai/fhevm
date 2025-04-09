@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { faker } from '@faker-js/faker'
 import * as web3 from './web3.events.js'
 import { generateRequestId } from './shared.js'
+import { getRandomOperation } from './test.utils.js'
 
 describe('web3', () => {
   describe('isWeb3Event', () => {
@@ -45,12 +46,12 @@ describe('web3', () => {
             events: [
               {
                 id: faker.string.alphanumeric(),
-                name: faker.string.alphanumeric(),
+                name: getRandomOperation(),
                 timestamp: faker.date.past().toISOString(),
               },
               {
                 id: faker.string.alphanumeric(),
-                name: faker.string.alphanumeric(),
+                name: getRandomOperation(),
                 timestamp: faker.date.past().toISOString(),
               },
             ],

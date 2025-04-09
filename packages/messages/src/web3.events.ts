@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { chainId, meta, metaFactory, requestId, web3Address } from './shared.js'
+import { chainId, meta, metaFactory, requestId, web3Address, operationEnum } from './shared.js'
 
 type EventTypes =
   | 'contract:validation:requested'
@@ -37,7 +37,7 @@ const schemas = [
     events: z.array(
       z.object({
         id: z.string(),
-        name: z.string(),
+        name: operationEnum,
         timestamp: z.string().datetime(),
       }),
     ),

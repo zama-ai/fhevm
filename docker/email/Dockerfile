@@ -1,15 +1,39 @@
-FROM node:22-slim AS final
+# --- Base stage ---
+FROM node:22.14.0-alpine3.21 AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
-COPY . /usr/src/app
-WORKDIR /usr/src/app
-RUN apt-get update -y && apt-get install -y openssl
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --lockfile
-RUN pnpm run --filter "./packages/**" build
-RUN pnpm --filter=email build 
+
+# --- Builder stage ---
+FROM base AS builder
+WORKDIR /wrkspc
+COPY . .
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+RUN pnpm --filter "./packages/**" build
+# RUN pnpx prisma generate --schema apps/email/prisma/schema.prisma
+RUN pnpm --filter=email build
+# RUN pnpm --filter=email run copy:generated
 RUN pnpm deploy --filter=email --prod /prod/email
-ENV NODE_ENV=production
-EXPOSE 8002
-ENV PORT=8002
-CMD [ "pnpm", "start" ]
+RUN cp -r apps/email/dist /prod/email/
+
+# --- Runtime stage ---
+FROM base AS runtime
+WORKDIR /prod-wrkspc
+COPY --from=builder /prod/email ./
+EXPOSE 3300
+# EXPOSE 8002
+
+# RUN addgroup -g 10002 zwsgrp && \
+#     adduser -D -H -u 10001 -G zwsgrp zwsusr && \
+#     apk add --no-cache openssl wget
+# RUN chown -R zwsusr:zwsgrp /prod/email
+# USER zwsusr:zwsgrp
+
+# TODO: update endpoint if healthcheck is implemented
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    # CMD wget -qO- http://localhost:3300/healthcheck || exit 1
+    CMD pgrep -f "dist/src/main" > /dev/null || exit 1
+
+CMD ["pnpm", "start:prod"]
+# HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+#     CMD wget -qO- http://localhost:8002/ || exit 1

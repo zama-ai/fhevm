@@ -1,44 +1,12 @@
 import { z } from 'zod'
 import { DAppId, DAppStatId } from './value-objects.js'
 import { AppError, Entity, fail, ok, Result, validationError } from 'utils'
+import { operationEnum } from 'messages'
 
-const operationNames = [
-  'FheAdd',
-  'FheSub',
-  'FheMul',
-  'FheDiv',
-  'FheRem',
-  'FheBitAnd',
-  'FheBitOr',
-  'FheBitXor',
-  'FheShl',
-  'FheShr',
-  'FheRotl',
-  'FheRotr',
-  'FheEq',
-  'FheEqBytes',
-  'FheNe',
-  'FheNeBytes',
-  'FheGe',
-  'FheGt',
-  'FheLe',
-  'FheLt',
-  'FheMin',
-  'FheMax',
-  'FheNeg',
-  'FheNot',
-  'VerifyCiphertext',
-  'Cast',
-  'TrivialEncrypt',
-  'TrivialEncryptBytes',
-  'FheIfThenElse',
-  'FheRand',
-  'FheRandBounded',
-] as const
 
 const schema = z.object({
   id: DAppStatId.schema,
-  name: z.enum(operationNames),
+  name: operationEnum,
   timestamp: z.date(),
   dappId: DAppId.schema,
   type: z.enum(['COMPUTATION', 'ENCRYPTION']),
@@ -48,18 +16,18 @@ const schema = z.object({
   externalRef: z.string(),
 })
 
+
 export type DAppStatProps = z.infer<typeof schema>
 
 export class DAppStat
   extends Entity<DAppStatProps>
   implements
-    Readonly<
-      Omit<DAppStatProps, 'id' | 'dappId'> & {
-        id: DAppStatId
-        dappId: DAppId
-      }
-    >
-{
+  Readonly<
+    Omit<DAppStatProps, 'id' | 'dappId'> & {
+      id: DAppStatId
+      dappId: DAppId
+    }
+  > {
   static parse(data: unknown): Result<DAppStat, AppError> {
     if (!data) return fail(validationError('data is undefined'))
     const check = schema.safeParse(data)

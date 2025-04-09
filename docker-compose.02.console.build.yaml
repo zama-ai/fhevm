@@ -1,35 +1,39 @@
 # Build docker compose
 services:
-
   back:
-    image: zws_local/console/back:alpine-v1
+    image: zws_local/console/back:${DOCKER_TAG-latest}
     build:
       context: .
-      dockerfile: ./docker/back/Dockerfile.alpine
+      dockerfile: ./docker/back/Dockerfile
 
   email:
-    image: zws_local/console/email:alpine-v1
+    image: zws_local/console/email:${DOCKER_TAG-latest}
     build:
       context: .
-      dockerfile: ./docker/email/Dockerfile.alpine
+      dockerfile: ./docker/email/Dockerfile
 
   front:
-    image: zws_local/console/front:alpine-v1
+    image: zws_local/console/front:${DOCKER_TAG-latest}
     build:
       context: .
       # This doesn't work because vite is a devDependency
       # Updated Dockerfile to use temp http-server to serve SPA
-      dockerfile: ./docker/front/Dockerfile.alpine
+      dockerfile: ./docker/front/Dockerfile
 
   orchestrator:
-    image: zws_local/console/orchestrator:alpine-v1
+    image: zws_local/console/orchestrator:${DOCKER_TAG-latest}
     build:
       context: .
-      dockerfile: ./docker/orchestrator/Dockerfile.alpine
+      dockerfile: ./docker/orchestrator/Dockerfile
 
   web3:
-    image: zws_local/console/web3:alpine-v1
+    image: zws_local/console/web3:${DOCKER_TAG-latest}
     build:
       context: .
-      dockerfile: ./docker/web3/Dockerfile.alpine
+      dockerfile: ./docker/web3/Dockerfile
 
+  relayer:
+    image: zws_local/console/relayer:${DOCKER_TAG-latest}
+    build:
+      context: ./apps/relayer/
+      dockerfile: ../../docker/relayer/Dockerfile
