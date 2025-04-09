@@ -299,7 +299,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
      * @dev             If there are too many signers, it could be out-of-gas.
      * @return signers  List of signers.
      */
-    function getSigners() public view virtual returns (address[] memory) {
+    function getCoprocessorSigners() public view virtual returns (address[] memory) {
         InputVerifierStorage storage $ = _getInputVerifierStorage();
         return $.signers;
     }

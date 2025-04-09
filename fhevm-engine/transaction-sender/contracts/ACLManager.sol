@@ -11,8 +11,5 @@ contract ACLManager {
         address accountAddress
     ) public {}
 
-     function allowPublicDecrypt(
-        uint256 chainId,
-        uint256 ctHandle
-    ) public {}
+    function allowPublicDecrypt(uint256 chainId, bytes32 ctHandle) public {}
 }

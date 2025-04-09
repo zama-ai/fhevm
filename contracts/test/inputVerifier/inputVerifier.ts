@@ -29,7 +29,7 @@ describe('InputVerifier', function () {
       const tx = await inputVerifier.connect(deployer).addSigner(addressSigner);
       await tx.wait();
 
-      expect((await inputVerifier.getSigners()).length).to.equal(2); // one signer has been added
+      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(2); // one signer has been added
 
       const contractFactory = await ethers.getContractFactory('TestInput');
       const contract = await contractFactory.connect(this.signers.alice).deploy();
@@ -59,7 +59,7 @@ describe('InputVerifier', function () {
       const addressSigner2 = process.env['COPROCESSOR_SIGNER_ADDRESS_2']!;
       const tx3 = await inputVerifier.connect(deployer).addSigner(addressSigner2);
       await tx3.wait();
-      expect((await inputVerifier.getSigners()).length).to.equal(3);
+      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(3);
 
       const inputAlice2 = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
       inputAlice2.add64(42);
@@ -74,7 +74,7 @@ describe('InputVerifier', function () {
       const addressSigner3 = process.env['COPROCESSOR_SIGNER_ADDRESS_3']!;
       const tx5 = await inputVerifier.connect(deployer).addSigner(addressSigner3);
       await tx5.wait();
-      expect((await inputVerifier.getSigners()).length).to.equal(4);
+      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(4);
 
       const inputAlice3 = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
       inputAlice3.add64(19);
@@ -105,13 +105,13 @@ describe('InputVerifier', function () {
 
       const tx8 = await inputVerifier.connect(deployer).removeSigner(addressSigner3);
       await tx8.wait();
-      expect((await inputVerifier.getSigners()).length).to.equal(3);
+      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(3);
       const tx9 = await inputVerifier.connect(deployer).removeSigner(addressSigner2);
       await tx9.wait();
-      expect((await inputVerifier.getSigners()).length).to.equal(2);
+      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(2);
       const tx10 = await inputVerifier.connect(deployer).removeSigner(addressSigner);
       await tx10.wait();
-      expect((await inputVerifier.getSigners()).length).to.equal(1);
+      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(1);
       process.env.NUM_COPROCESSORS = '1';
     }
   });
@@ -123,13 +123,13 @@ describe('InputVerifier', function () {
       const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
       const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
       const inputVerifier = await this.inputVerifierFactory.attach(origIVAdd);
-      expect((await inputVerifier.getSigners()).length).to.equal(1);
+      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(1);
 
       const addressSigner = process.env['COPROCESSOR_SIGNER_ADDRESS_1']!;
       const tx = await inputVerifier.connect(deployer).addSigner(addressSigner);
       await tx.wait();
 
-      expect((await inputVerifier.getSigners()).length).to.equal(2); // one signer has been added
+      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(2); // one signer has been added
 
       const contractFactory = await ethers.getContractFactory('TestInput');
       const contract = await contractFactory.connect(this.signers.alice).deploy();
@@ -174,10 +174,10 @@ describe('InputVerifier', function () {
       expect(y_8).to.equal(42);
       expect(y_Add).to.equal('0x1E69D5aa8750Ff56c556C164fE6feaE71BBA9a09');
 
-      expect((await inputVerifier.getSigners()).length).to.equal(2);
+      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(2);
       const tx10 = await inputVerifier.connect(deployer).removeSigner(addressSigner);
       await tx10.wait();
-      expect((await inputVerifier.getSigners()).length).to.equal(1);
+      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(1);
       process.env.NUM_COPROCESSORS = '1';
     }
   });

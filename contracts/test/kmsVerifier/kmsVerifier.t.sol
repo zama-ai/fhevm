@@ -144,7 +144,7 @@ contract KMSVerifierTest is Test {
     /// @dev Tests that the initial threshold, owner, and signers list are correctly set after deployment
     function test_postDeployment() public view {
         assertEq(kmsVerifier.getThreshold(), 0);
-        assertEq(kmsVerifier.getSigners().length, 0);
+        assertEq(kmsVerifier.getKmsSigners().length, 0);
         assertEq(kmsVerifier.owner(), owner);
     }
 
@@ -185,7 +185,7 @@ contract KMSVerifierTest is Test {
         vm.expectEmit();
         emit KMSVerifier.NewContextSet(newSigners, 1);
         kmsVerifier.defineNewContext(newSigners, 1);
-        assertEq(kmsVerifier.getSigners()[0], randomSigner);
+        assertEq(kmsVerifier.getKmsSigners()[0], randomSigner);
         assertTrue(kmsVerifier.isSigner(randomSigner));
     }
 
@@ -194,7 +194,7 @@ contract KMSVerifierTest is Test {
      */
     function test_OwnerCannotAddSameSignerTwice() public {
         test_OwnerCanAddNewSigner();
-        address randomSigner = kmsVerifier.getSigners()[0];
+        address randomSigner = kmsVerifier.getKmsSigners()[0];
         address[] memory newSigners = new address[](2);
         newSigners[0] = randomSigner;
         newSigners[1] = randomSigner;
@@ -217,13 +217,13 @@ contract KMSVerifierTest is Test {
         newSigners[0] = address(42);
         newSigners[1] = randomSigner;
         kmsVerifier.defineNewContext(newSigners, 2);
-        assertEq(kmsVerifier.getSigners().length, 2);
+        assertEq(kmsVerifier.getKmsSigners().length, 2);
 
         address[] memory newSigners2 = new address[](1);
         newSigners2[0] = address(42);
         kmsVerifier.defineNewContext(newSigners2, 1);
         assertFalse(kmsVerifier.isSigner(randomSigner));
-        assertEq(kmsVerifier.getSigners().length, 1);
+        assertEq(kmsVerifier.getKmsSigners().length, 1);
     }
 
     /**

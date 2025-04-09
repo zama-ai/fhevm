@@ -178,7 +178,7 @@ task('task:deployFHEGasLimit').setAction(async function (taskArguments: TaskArgu
   console.log('FHEGasLimit code set successfully at address:', proxyAddress);
 });
 
-task('task:getAllSigners')
+task('task:getKmsSigners')
   .addOptionalParam(
     'customKmsVerifierAddress',
     'Use a custom address for the KMSVerifier contract instead of the default one - ie stored inside .env.kmsverifier',
@@ -191,9 +191,30 @@ task('task:getAllSigners')
     } else {
       kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
     }
-    const kmsVerifier = (await factory.attach(kmsAdd).connect(ethers.provider)) as KMSVerifier;
-    const listCurrentKMSSigners = await kmsVerifier.getSigners();
+    const kmsVerifier = factory.attach(kmsAdd).connect(ethers.provider) as KMSVerifier;
+    const listCurrentKMSSigners = await kmsVerifier.getKmsSigners();
     console.log('The list of current KMS Signers stored inside KMSVerifier contract is: ', listCurrentKMSSigners);
+  });
+
+task('task:getCoprocessorSigners')
+  .addOptionalParam(
+    'customInputVerifierAddress',
+    'Use a custom address for the InputVerifier contract instead of the default one - ie stored inside .env.inputverifier',
+  )
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const factory = await ethers.getContractFactory('./contracts/InputVerifier.sol:InputVerifier');
+    let inputVerifierAdd;
+    if (taskArguments.customInputVerifierAddress) {
+      inputVerifierAdd = taskArguments.customInputVerifierAddress;
+    } else {
+      inputVerifierAdd = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
+    }
+    const inputVerifier = factory.attach(inputVerifierAdd).connect(ethers.provider) as InputVerifier;
+    const listCurrentCoprocessorSigners = await inputVerifier.getCoprocessorSigners();
+    console.log(
+      'The list of current Coprocessor Signers stored inside InputVerifier contract is: ',
+      listCurrentCoprocessorSigners,
+    );
   });
 
 task('task:setDecryptionOracleAddress')

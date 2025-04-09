@@ -28,12 +28,12 @@ describe('KMSVerifier', function () {
       expect(await kmsVerifier.getVersion()).to.equal('KMSVerifier v0.1.0');
 
       const addressSigner = process.env['KMS_SIGNER_ADDRESS_1']!;
-      let setSigners = await kmsVerifier.getSigners();
+      let setSigners = await kmsVerifier.getKmsSigners();
       setSigners = [...setSigners, addressSigner];
       const tx1 = await kmsVerifier.connect(deployer).defineNewContext(setSigners, 1);
       await tx1.wait();
 
-      expect((await kmsVerifier.getSigners()).length).to.equal(2); // one signer has been added
+      expect((await kmsVerifier.getKmsSigners()).length).to.equal(2); // one signer has been added
 
       const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
       const contract = (await contractFactory.connect(this.signers.alice).deploy()) as TestAsyncDecrypt;
@@ -47,15 +47,15 @@ describe('KMSVerifier', function () {
         kmsVerifier,
         'KMSAlreadySigner',
       ); // cannot add duplicated signer
-      expect((await kmsVerifier.getSigners()).length).to.equal(2);
+      expect((await kmsVerifier.getKmsSigners()).length).to.equal(2);
 
       const kmsSigner2Address = process.env['KMS_SIGNER_ADDRESS_2']!;
       const kmsSigner3Address = process.env['KMS_SIGNER_ADDRESS_3']!;
-      let setSigners2 = await kmsVerifier.getSigners();
+      let setSigners2 = await kmsVerifier.getKmsSigners();
       setSigners2 = [...setSigners2, kmsSigner2Address, kmsSigner3Address];
       const tx3 = await kmsVerifier.connect(deployer).defineNewContext(setSigners2, 1);
       await tx3.wait();
-      expect((await kmsVerifier.getSigners()).length).to.equal(4); // 3rd and 4th signer has been added successfully
+      expect((await kmsVerifier.getKmsSigners()).length).to.equal(4); // 3rd and 4th signer has been added successfully
 
       const tx4 = await kmsVerifier.connect(deployer).setThreshold(2n);
       await tx4.wait();
@@ -99,7 +99,7 @@ describe('KMSVerifier', function () {
       expect(await contract.yUint16()).to.equal(0);
 
       process.env.NUM_KMS_NODES = '1';
-      let setSigners3 = [...(await kmsVerifier.getSigners())];
+      let setSigners3 = [...(await kmsVerifier.getKmsSigners())];
       setSigners3.pop();
 
       const tx9 = await kmsVerifier.connect(deployer).defineNewContext(setSigners3, 1);
@@ -116,7 +116,7 @@ describe('KMSVerifier', function () {
   it('cannot add/remove signers if not the owner', async function () {
     const origKMSAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
     const kmsVerifier = await this.kmsFactory.attach(origKMSAdd);
-    let setSigners = await kmsVerifier.getSigners();
+    let setSigners = await kmsVerifier.getKmsSigners();
     const randomAccount = this.signers.carol;
     setSigners = [...setSigners, randomAccount];
     await expect(kmsVerifier.connect(randomAccount).defineNewContext(setSigners, 2)).to.be.revertedWithCustomError(
