@@ -1,0 +1,65 @@
+# Run fhevm coprocessor benchmarks on a CPU instance and return parsed results to Slab.
+name: Coprocessor CPU benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      benchmarks:
+        description: "Benchmark set"
+        required: true
+        type: choice
+        options:
+          - "erc20"
+          - "synthetics"
+          - "all"
+      batch_size:
+        description: "Batch sizes (# FHE operations executed per batch)"
+        required: true
+        type: string
+        default: "5000"
+
+env:
+  CARGO_TERM_COLOR: always
+  RESULTS_FILENAME: parsed_benchmark_results_${{ github.sha }}.json
+  ACTION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  RUST_BACKTRACE: "full"
+  RUST_MIN_STACK: "8388608"
+  CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  setup-instance:
+    name: Setup instance (fhevm-coprocessor-benchmarks-cpu)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      runner-name: ${{ steps.start-remote-instance.outputs.label }}
+    steps:
+      - name: Start remote instance
+        id: start-remote-instance
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: aws
+          profile: bench
+
+  teardown-instance:
+    name: Teardown instance (fhevm-coprocessor-benchmarks-cpu)
+    if: ${{ always() && needs.setup-instance.result == 'success' }}
+    needs: setup-instance
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Stop remote instance
+        id: stop-instance
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.setup-instance.outputs.runner-name }}
