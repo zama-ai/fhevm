@@ -5,8 +5,10 @@ use foundry_compilers::{
 };
 use semver::Version;
 use std::path::Path;
+
 fn main() {
     println!("cargo::warning=build.rs run ...");
+    // build tests contracts
     let paths =
         ProjectPathsConfig::hardhat(Path::new(env!("CARGO_MANIFEST_DIR")))
             .unwrap();
