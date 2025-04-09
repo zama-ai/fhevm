@@ -19,4 +19,37 @@ export const handlers = [
       },
     })
   }),
+  graphql.query(`ListApiKeys`, ({ variables }) => {
+    const { dappId } = variables
+    return HttpResponse.json({
+      data: {
+        dapp: {
+          apiKeys: [
+            {
+              id: faker.string.uuid(),
+              name: faker.string.alphanumeric(10),
+              description: null,
+              dappId,
+            },
+            {
+              id: faker.string.uuid(),
+              name: faker.string.alphanumeric(10),
+              description: faker.lorem.paragraph(),
+              dappId,
+            },
+          ],
+        },
+      },
+    })
+  }),
+  graphql.mutation(`DeleteApiKey`, ({ variables }) => {
+    console.log(`variables: ${JSON.stringify(variables)}`)
+    const { apiKeyId } = variables
+
+    return HttpResponse.json({
+      data: {
+        deleteApiKey: apiKeyId,
+      },
+    })
+  }),
 ]

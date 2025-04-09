@@ -28,7 +28,9 @@ describe('ListApiKeys', () => {
       })
 
       test('then it shows all the API Keys', async () => {
-        expect(await screen.findAllByRole('listitem')).toBeInTheDocument()
+        expect((await screen.findAllByRole('listitem')).length).toBeGreaterThan(
+          0,
+        )
       })
     })
   })

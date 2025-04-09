@@ -37,7 +37,7 @@ describe('ApiKeyCreatedDialog', () => {
   })
 
   test('should show a close button', async () => {
-    const btn = screen.getByRole('button')
+    const btn = screen.getByRole('button', { name: 'Close' })
     expect(btn).toBeInTheDocument()
     const user = userEvent.setup()
     await user.click(btn)
