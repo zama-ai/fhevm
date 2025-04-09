@@ -49,18 +49,19 @@ interface IHTTPZ {
     function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
     function checkIsPauser(address pauserAddress) external view;
     function checkNetworkIsRegistered(uint256 chainId) external view;
-    function coprocessorTxSenderAddresses(uint256 index) external view returns (address);
-    function coprocessors(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
-    function getAllCoprocessorTxSenderAddresses() external view returns (address[] memory);
-    function getAllKmsTxSenderAddresses() external view returns (address[] memory);
+    function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
     function getCoprocessorMajorityThreshold() external view returns (uint256);
+    function getCoprocessorSigners() external view returns (address[] memory);
+    function getCoprocessorTxSenders() external view returns (address[] memory);
     function getKmsMajorityThreshold() external view returns (uint256);
+    function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
     function getKmsReconstructionThreshold() external view returns (uint256);
+    function getKmsSigners() external view returns (address[] memory);
     function getKmsThreshold() external view returns (uint256);
+    function getKmsTxSenders() external view returns (address[] memory);
+    function getNetwork(uint256 index) external view returns (Network memory);
+    function getNetworks() external view returns (Network[] memory);
     function getProtocolMetadata() external view returns (ProtocolMetadata memory);
-    function kmsNodes(address kmsTxSenderAddress) external view returns (KmsNode memory);
-    function kmsTxSenderAddresses(uint256 index) external view returns (address);
-    function networks(uint256 index) external view returns (Network memory);
     function updateKmsThreshold(uint256 newKmsThreshold) external;
     function updatePauser(address newPauser) external;
 }
@@ -189,26 +190,7 @@ interface IHTTPZ {
   },
   {
     "type": "function",
-    "name": "coprocessorTxSenderAddresses",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "coprocessors",
+    "name": "getCoprocessor",
     "inputs": [
       {
         "name": "coprocessorTxSenderAddress",
@@ -244,32 +226,6 @@ interface IHTTPZ {
   },
   {
     "type": "function",
-    "name": "getAllCoprocessorTxSenderAddresses",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getAllKmsTxSenderAddresses",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getCoprocessorMajorityThreshold",
     "inputs": [],
     "outputs": [
@@ -277,6 +233,32 @@ interface IHTTPZ {
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCoprocessorSigners",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCoprocessorTxSenders",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
       }
     ],
     "stateMutability": "view"
@@ -296,58 +278,7 @@ interface IHTTPZ {
   },
   {
     "type": "function",
-    "name": "getKmsReconstructionThreshold",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getKmsThreshold",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getProtocolMetadata",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct ProtocolMetadata",
-        "components": [
-          {
-            "name": "name",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "website",
-            "type": "string",
-            "internalType": "string"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "kmsNodes",
+    "name": "getKmsNode",
     "inputs": [
       {
         "name": "kmsTxSenderAddress",
@@ -383,26 +314,59 @@ interface IHTTPZ {
   },
   {
     "type": "function",
-    "name": "kmsTxSenderAddresses",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "name": "getKmsReconstructionThreshold",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "address",
-        "internalType": "address"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "networks",
+    "name": "getKmsSigners",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getKmsThreshold",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getKmsTxSenders",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getNetwork",
     "inputs": [
       {
         "name": "index",
@@ -431,6 +395,71 @@ interface IHTTPZ {
             "type": "address",
             "internalType": "address"
           },
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "website",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getNetworks",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct Network[]",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "httpzExecutor",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "aclAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "website",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getProtocolMetadata",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct ProtocolMetadata",
+        "components": [
           {
             "name": "name",
             "type": "string",
@@ -3978,152 +4007,20 @@ function checkNetworkIsRegistered(uint256 chainId) external view;
             }
         }
     };
-    /**Function with signature `coprocessorTxSenderAddresses(uint256)` and selector `0x5ab6d3ab`.
+    /**Function with signature `getCoprocessor(address)` and selector `0xef6997f9`.
 ```solidity
-function coprocessorTxSenderAddresses(uint256 index) external view returns (address);
+function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct coprocessorTxSenderAddressesCall {
-        #[allow(missing_docs)]
-        pub index: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    ///Container type for the return parameters of the [`coprocessorTxSenderAddresses(uint256)`](coprocessorTxSenderAddressesCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct coprocessorTxSenderAddressesReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<coprocessorTxSenderAddressesCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: coprocessorTxSenderAddressesCall) -> Self {
-                    (value.index,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for coprocessorTxSenderAddressesCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { index: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<coprocessorTxSenderAddressesReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: coprocessorTxSenderAddressesReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for coprocessorTxSenderAddressesReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for coprocessorTxSenderAddressesCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = coprocessorTxSenderAddressesReturn;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "coprocessorTxSenderAddresses(uint256)";
-            const SELECTOR: [u8; 4] = [90u8, 182u8, 211u8, 171u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.index),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    /**Function with signature `coprocessors(address)` and selector `0xecbd96ab`.
-```solidity
-function coprocessors(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct coprocessorsCall {
+    pub struct getCoprocessorCall {
         #[allow(missing_docs)]
         pub coprocessorTxSenderAddress: alloy::sol_types::private::Address,
     }
-    ///Container type for the return parameters of the [`coprocessors(address)`](coprocessorsCall) function.
+    ///Container type for the return parameters of the [`getCoprocessor(address)`](getCoprocessorCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct coprocessorsReturn {
+    pub struct getCoprocessorReturn {
         #[allow(missing_docs)]
         pub _0: <Coprocessor as alloy::sol_types::SolType>::RustType,
     }
@@ -4153,14 +4050,14 @@ function coprocessors(address coprocessorTxSenderAddress) external view returns 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<coprocessorsCall> for UnderlyingRustTuple<'_> {
-                fn from(value: coprocessorsCall) -> Self {
+            impl ::core::convert::From<getCoprocessorCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getCoprocessorCall) -> Self {
                     (value.coprocessorTxSenderAddress,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for coprocessorsCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getCoprocessorCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         coprocessorTxSenderAddress: tuple.0,
@@ -4188,32 +4085,34 @@ function coprocessors(address coprocessorTxSenderAddress) external view returns 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<coprocessorsReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: coprocessorsReturn) -> Self {
+            impl ::core::convert::From<getCoprocessorReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCoprocessorReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for coprocessorsReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCoprocessorReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for coprocessorsCall {
+        impl alloy_sol_types::SolCall for getCoprocessorCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = coprocessorsReturn;
+            type Return = getCoprocessorReturn;
             type ReturnTuple<'a> = (Coprocessor,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "coprocessors(address)";
-            const SELECTOR: [u8; 4] = [236u8, 189u8, 150u8, 171u8];
+            const SIGNATURE: &'static str = "getCoprocessor(address)";
+            const SELECTOR: [u8; 4] = [239u8, 105u8, 151u8, 249u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4227,264 +4126,6 @@ function coprocessors(address coprocessorTxSenderAddress) external view returns 
                         &self.coprocessorTxSenderAddress,
                     ),
                 )
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    /**Function with signature `getAllCoprocessorTxSenderAddresses()` and selector `0x8f4a7f5e`.
-```solidity
-function getAllCoprocessorTxSenderAddresses() external view returns (address[] memory);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getAllCoprocessorTxSenderAddressesCall {}
-    ///Container type for the return parameters of the [`getAllCoprocessorTxSenderAddresses()`](getAllCoprocessorTxSenderAddressesCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getAllCoprocessorTxSenderAddressesReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getAllCoprocessorTxSenderAddressesCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getAllCoprocessorTxSenderAddressesCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getAllCoprocessorTxSenderAddressesCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getAllCoprocessorTxSenderAddressesReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getAllCoprocessorTxSenderAddressesReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getAllCoprocessorTxSenderAddressesReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getAllCoprocessorTxSenderAddressesCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getAllCoprocessorTxSenderAddressesReturn;
-            type ReturnTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-            );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getAllCoprocessorTxSenderAddresses()";
-            const SELECTOR: [u8; 4] = [143u8, 74u8, 127u8, 94u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    /**Function with signature `getAllKmsTxSenderAddresses()` and selector `0xbda0b948`.
-```solidity
-function getAllKmsTxSenderAddresses() external view returns (address[] memory);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getAllKmsTxSenderAddressesCall {}
-    ///Container type for the return parameters of the [`getAllKmsTxSenderAddresses()`](getAllKmsTxSenderAddressesCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getAllKmsTxSenderAddressesReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getAllKmsTxSenderAddressesCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getAllKmsTxSenderAddressesCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getAllKmsTxSenderAddressesCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getAllKmsTxSenderAddressesReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getAllKmsTxSenderAddressesReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getAllKmsTxSenderAddressesReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getAllKmsTxSenderAddressesCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getAllKmsTxSenderAddressesReturn;
-            type ReturnTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-            );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getAllKmsTxSenderAddresses()";
-            const SELECTOR: [u8; 4] = [189u8, 160u8, 185u8, 72u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
             }
             #[inline]
             fn abi_decode_returns(
@@ -4601,6 +4242,264 @@ function getCoprocessorMajorityThreshold() external view returns (uint256);
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getCoprocessorMajorityThreshold()";
             const SELECTOR: [u8; 4] = [103u8, 153u8, 239u8, 82u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    /**Function with signature `getCoprocessorSigners()` and selector `0x9164d0ae`.
+```solidity
+function getCoprocessorSigners() external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCoprocessorSignersCall {}
+    ///Container type for the return parameters of the [`getCoprocessorSigners()`](getCoprocessorSignersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCoprocessorSignersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCoprocessorSignersCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCoprocessorSignersCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCoprocessorSignersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCoprocessorSignersReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCoprocessorSignersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCoprocessorSignersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getCoprocessorSignersCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getCoprocessorSignersReturn;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getCoprocessorSigners()";
+            const SELECTOR: [u8; 4] = [145u8, 100u8, 208u8, 174u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    /**Function with signature `getCoprocessorTxSenders()` and selector `0x1ea5bd42`.
+```solidity
+function getCoprocessorTxSenders() external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCoprocessorTxSendersCall {}
+    ///Container type for the return parameters of the [`getCoprocessorTxSenders()`](getCoprocessorTxSendersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCoprocessorTxSendersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCoprocessorTxSendersCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCoprocessorTxSendersCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCoprocessorTxSendersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCoprocessorTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCoprocessorTxSendersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCoprocessorTxSendersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getCoprocessorTxSendersCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getCoprocessorTxSendersReturn;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getCoprocessorTxSenders()";
+            const SELECTOR: [u8; 4] = [30u8, 165u8, 189u8, 66u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4748,6 +4647,136 @@ function getKmsMajorityThreshold() external view returns (uint256);
             }
         }
     };
+    /**Function with signature `getKmsNode(address)` and selector `0xe3b2a874`.
+```solidity
+function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getKmsNodeCall {
+        #[allow(missing_docs)]
+        pub kmsTxSenderAddress: alloy::sol_types::private::Address,
+    }
+    ///Container type for the return parameters of the [`getKmsNode(address)`](getKmsNodeCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getKmsNodeReturn {
+        #[allow(missing_docs)]
+        pub _0: <KmsNode as alloy::sol_types::SolType>::RustType,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getKmsNodeCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getKmsNodeCall) -> Self {
+                    (value.kmsTxSenderAddress,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getKmsNodeCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        kmsTxSenderAddress: tuple.0,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (KmsNode,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                <KmsNode as alloy::sol_types::SolType>::RustType,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getKmsNodeReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getKmsNodeReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getKmsNodeReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getKmsNodeCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getKmsNodeReturn;
+            type ReturnTuple<'a> = (KmsNode,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getKmsNode(address)";
+            const SELECTOR: [u8; 4] = [227u8, 178u8, 168u8, 116u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.kmsTxSenderAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
     /**Function with signature `getKmsReconstructionThreshold()` and selector `0x490413aa`.
 ```solidity
 function getKmsReconstructionThreshold() external view returns (uint256);
@@ -4851,6 +4880,131 @@ function getKmsReconstructionThreshold() external view returns (uint256);
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getKmsReconstructionThreshold()";
             const SELECTOR: [u8; 4] = [73u8, 4u8, 19u8, 170u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    /**Function with signature `getKmsSigners()` and selector `0x7eaac8f2`.
+```solidity
+function getKmsSigners() external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getKmsSignersCall {}
+    ///Container type for the return parameters of the [`getKmsSigners()`](getKmsSignersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getKmsSignersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getKmsSignersCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getKmsSignersCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getKmsSignersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getKmsSignersReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getKmsSignersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getKmsSignersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getKmsSignersCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getKmsSignersReturn;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getKmsSigners()";
+            const SELECTOR: [u8; 4] = [126u8, 170u8, 200u8, 242u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4996,6 +5150,388 @@ function getKmsThreshold() external view returns (uint256);
             }
         }
     };
+    /**Function with signature `getKmsTxSenders()` and selector `0x7420f3d4`.
+```solidity
+function getKmsTxSenders() external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getKmsTxSendersCall {}
+    ///Container type for the return parameters of the [`getKmsTxSenders()`](getKmsTxSendersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getKmsTxSendersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getKmsTxSendersCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getKmsTxSendersCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getKmsTxSendersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getKmsTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getKmsTxSendersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getKmsTxSendersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getKmsTxSendersCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getKmsTxSendersReturn;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getKmsTxSenders()";
+            const SELECTOR: [u8; 4] = [116u8, 32u8, 243u8, 212u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    /**Function with signature `getNetwork(uint256)` and selector `0x95ea5717`.
+```solidity
+function getNetwork(uint256 index) external view returns (Network memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getNetworkCall {
+        #[allow(missing_docs)]
+        pub index: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    ///Container type for the return parameters of the [`getNetwork(uint256)`](getNetworkCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getNetworkReturn {
+        #[allow(missing_docs)]
+        pub _0: <Network as alloy::sol_types::SolType>::RustType,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getNetworkCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getNetworkCall) -> Self {
+                    (value.index,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getNetworkCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { index: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (Network,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                <Network as alloy::sol_types::SolType>::RustType,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getNetworkReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getNetworkReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getNetworkReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getNetworkCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getNetworkReturn;
+            type ReturnTuple<'a> = (Network,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getNetwork(uint256)";
+            const SELECTOR: [u8; 4] = [149u8, 234u8, 87u8, 23u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.index),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    /**Function with signature `getNetworks()` and selector `0x01a20520`.
+```solidity
+function getNetworks() external view returns (Network[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getNetworksCall {}
+    ///Container type for the return parameters of the [`getNetworks()`](getNetworksCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getNetworksReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<
+            <Network as alloy::sol_types::SolType>::RustType,
+        >,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getNetworksCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getNetworksCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getNetworksCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Array<Network>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<
+                    <Network as alloy::sol_types::SolType>::RustType,
+                >,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getNetworksReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getNetworksReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getNetworksReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getNetworksCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getNetworksReturn;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Array<Network>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getNetworks()";
+            const SELECTOR: [u8; 4] = [1u8, 162u8, 5u8, 32u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
     /**Function with signature `getProtocolMetadata()` and selector `0x48144c61`.
 ```solidity
 function getProtocolMetadata() external view returns (ProtocolMetadata memory);
@@ -5108,398 +5644,6 @@ function getProtocolMetadata() external view returns (ProtocolMetadata memory);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    /**Function with signature `kmsNodes(address)` and selector `0x54d3f675`.
-```solidity
-function kmsNodes(address kmsTxSenderAddress) external view returns (KmsNode memory);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct kmsNodesCall {
-        #[allow(missing_docs)]
-        pub kmsTxSenderAddress: alloy::sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the [`kmsNodes(address)`](kmsNodesCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct kmsNodesReturn {
-        #[allow(missing_docs)]
-        pub _0: <KmsNode as alloy::sol_types::SolType>::RustType,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<kmsNodesCall> for UnderlyingRustTuple<'_> {
-                fn from(value: kmsNodesCall) -> Self {
-                    (value.kmsTxSenderAddress,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for kmsNodesCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        kmsTxSenderAddress: tuple.0,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (KmsNode,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                <KmsNode as alloy::sol_types::SolType>::RustType,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<kmsNodesReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: kmsNodesReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for kmsNodesReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for kmsNodesCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = kmsNodesReturn;
-            type ReturnTuple<'a> = (KmsNode,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "kmsNodes(address)";
-            const SELECTOR: [u8; 4] = [84u8, 211u8, 246u8, 117u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.kmsTxSenderAddress,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    /**Function with signature `kmsTxSenderAddresses(uint256)` and selector `0xd5244bf1`.
-```solidity
-function kmsTxSenderAddresses(uint256 index) external view returns (address);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct kmsTxSenderAddressesCall {
-        #[allow(missing_docs)]
-        pub index: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    ///Container type for the return parameters of the [`kmsTxSenderAddresses(uint256)`](kmsTxSenderAddressesCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct kmsTxSenderAddressesReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<kmsTxSenderAddressesCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: kmsTxSenderAddressesCall) -> Self {
-                    (value.index,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for kmsTxSenderAddressesCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { index: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<kmsTxSenderAddressesReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: kmsTxSenderAddressesReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for kmsTxSenderAddressesReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for kmsTxSenderAddressesCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = kmsTxSenderAddressesReturn;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "kmsTxSenderAddresses(uint256)";
-            const SELECTOR: [u8; 4] = [213u8, 36u8, 75u8, 241u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.index),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    /**Function with signature `networks(uint256)` and selector `0x8bb0a17c`.
-```solidity
-function networks(uint256 index) external view returns (Network memory);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct networksCall {
-        #[allow(missing_docs)]
-        pub index: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    ///Container type for the return parameters of the [`networks(uint256)`](networksCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct networksReturn {
-        #[allow(missing_docs)]
-        pub _0: <Network as alloy::sol_types::SolType>::RustType,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<networksCall> for UnderlyingRustTuple<'_> {
-                fn from(value: networksCall) -> Self {
-                    (value.index,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for networksCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { index: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (Network,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                <Network as alloy::sol_types::SolType>::RustType,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<networksReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: networksReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for networksReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for networksCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = networksReturn;
-            type ReturnTuple<'a> = (Network,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "networks(uint256)";
-            const SELECTOR: [u8; 4] = [139u8, 176u8, 161u8, 124u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.index),
-                )
             }
             #[inline]
             fn abi_decode_returns(
@@ -5782,29 +5926,31 @@ function updatePauser(address newPauser) external;
         #[allow(missing_docs)]
         checkNetworkIsRegistered(checkNetworkIsRegisteredCall),
         #[allow(missing_docs)]
-        coprocessorTxSenderAddresses(coprocessorTxSenderAddressesCall),
-        #[allow(missing_docs)]
-        coprocessors(coprocessorsCall),
-        #[allow(missing_docs)]
-        getAllCoprocessorTxSenderAddresses(getAllCoprocessorTxSenderAddressesCall),
-        #[allow(missing_docs)]
-        getAllKmsTxSenderAddresses(getAllKmsTxSenderAddressesCall),
+        getCoprocessor(getCoprocessorCall),
         #[allow(missing_docs)]
         getCoprocessorMajorityThreshold(getCoprocessorMajorityThresholdCall),
         #[allow(missing_docs)]
+        getCoprocessorSigners(getCoprocessorSignersCall),
+        #[allow(missing_docs)]
+        getCoprocessorTxSenders(getCoprocessorTxSendersCall),
+        #[allow(missing_docs)]
         getKmsMajorityThreshold(getKmsMajorityThresholdCall),
+        #[allow(missing_docs)]
+        getKmsNode(getKmsNodeCall),
         #[allow(missing_docs)]
         getKmsReconstructionThreshold(getKmsReconstructionThresholdCall),
         #[allow(missing_docs)]
+        getKmsSigners(getKmsSignersCall),
+        #[allow(missing_docs)]
         getKmsThreshold(getKmsThresholdCall),
         #[allow(missing_docs)]
+        getKmsTxSenders(getKmsTxSendersCall),
+        #[allow(missing_docs)]
+        getNetwork(getNetworkCall),
+        #[allow(missing_docs)]
+        getNetworks(getNetworksCall),
+        #[allow(missing_docs)]
         getProtocolMetadata(getProtocolMetadataCall),
-        #[allow(missing_docs)]
-        kmsNodes(kmsNodesCall),
-        #[allow(missing_docs)]
-        kmsTxSenderAddresses(kmsTxSenderAddressesCall),
-        #[allow(missing_docs)]
-        networks(networksCall),
         #[allow(missing_docs)]
         updateKmsThreshold(updateKmsThresholdCall),
         #[allow(missing_docs)]
@@ -5819,34 +5965,35 @@ function updatePauser(address newPauser) external;
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [1u8, 162u8, 5u8, 32u8],
             [2u8, 25u8, 21u8, 15u8],
             [25u8, 90u8, 253u8, 230u8],
+            [30u8, 165u8, 189u8, 66u8],
             [71u8, 205u8, 75u8, 62u8],
             [72u8, 20u8, 76u8, 97u8],
             [73u8, 4u8, 19u8, 170u8],
             [73u8, 33u8, 163u8, 189u8],
-            [84u8, 211u8, 246u8, 117u8],
             [85u8, 75u8, 171u8, 60u8],
-            [90u8, 182u8, 211u8, 171u8],
             [103u8, 153u8, 239u8, 82u8],
             [108u8, 136u8, 235u8, 67u8],
             [112u8, 204u8, 154u8, 60u8],
-            [139u8, 176u8, 161u8, 124u8],
-            [143u8, 74u8, 127u8, 94u8],
-            [189u8, 160u8, 185u8, 72u8],
+            [116u8, 32u8, 243u8, 212u8],
+            [126u8, 170u8, 200u8, 242u8],
+            [145u8, 100u8, 208u8, 174u8],
+            [149u8, 234u8, 87u8, 23u8],
             [198u8, 39u8, 82u8, 88u8],
             [198u8, 179u8, 2u8, 77u8],
             [203u8, 102u8, 23u8, 85u8],
             [205u8, 180u8, 194u8, 185u8],
-            [213u8, 36u8, 75u8, 241u8],
-            [236u8, 189u8, 150u8, 171u8],
+            [227u8, 178u8, 168u8, 116u8],
+            [239u8, 105u8, 151u8, 249u8],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IHTTPZCalls {
         const NAME: &'static str = "IHTTPZCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 21usize;
+        const COUNT: usize = 22usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5871,38 +6018,45 @@ function updatePauser(address newPauser) external;
                 Self::checkNetworkIsRegistered(_) => {
                     <checkNetworkIsRegisteredCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::coprocessorTxSenderAddresses(_) => {
-                    <coprocessorTxSenderAddressesCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::coprocessors(_) => {
-                    <coprocessorsCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getAllCoprocessorTxSenderAddresses(_) => {
-                    <getAllCoprocessorTxSenderAddressesCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getAllKmsTxSenderAddresses(_) => {
-                    <getAllKmsTxSenderAddressesCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::getCoprocessor(_) => {
+                    <getCoprocessorCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getCoprocessorMajorityThreshold(_) => {
                     <getCoprocessorMajorityThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::getCoprocessorSigners(_) => {
+                    <getCoprocessorSignersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getCoprocessorTxSenders(_) => {
+                    <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getKmsMajorityThreshold(_) => {
                     <getKmsMajorityThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getKmsNode(_) => {
+                    <getKmsNodeCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getKmsReconstructionThreshold(_) => {
                     <getKmsReconstructionThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::getKmsSigners(_) => {
+                    <getKmsSignersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getKmsThreshold(_) => {
                     <getKmsThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getKmsTxSenders(_) => {
+                    <getKmsTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getNetwork(_) => {
+                    <getNetworkCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getNetworks(_) => {
+                    <getNetworksCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getProtocolMetadata(_) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::kmsNodes(_) => <kmsNodesCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::kmsTxSenderAddresses(_) => {
-                    <kmsTxSenderAddressesCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::networks(_) => <networksCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::updateKmsThreshold(_) => {
                     <updateKmsThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -5931,6 +6085,19 @@ function updatePauser(address newPauser) external;
                 bool,
             ) -> alloy_sol_types::Result<IHTTPZCalls>] = &[
                 {
+                    fn getNetworks(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IHTTPZCalls> {
+                        <getNetworksCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IHTTPZCalls::getNetworks)
+                    }
+                    getNetworks
+                },
+                {
                     fn updateKmsThreshold(
                         data: &[u8],
                         validate: bool,
@@ -5955,6 +6122,19 @@ function updatePauser(address newPauser) external;
                             .map(IHTTPZCalls::checkIsPauser)
                     }
                     checkIsPauser
+                },
+                {
+                    fn getCoprocessorTxSenders(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IHTTPZCalls> {
+                        <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IHTTPZCalls::getCoprocessorTxSenders)
+                    }
+                    getCoprocessorTxSenders
                 },
                 {
                     fn getKmsMajorityThreshold(
@@ -6009,19 +6189,6 @@ function updatePauser(address newPauser) external;
                     getKmsThreshold
                 },
                 {
-                    fn kmsNodes(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IHTTPZCalls> {
-                        <kmsNodesCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IHTTPZCalls::kmsNodes)
-                    }
-                    kmsNodes
-                },
-                {
                     fn updatePauser(
                         data: &[u8],
                         validate: bool,
@@ -6033,19 +6200,6 @@ function updatePauser(address newPauser) external;
                             .map(IHTTPZCalls::updatePauser)
                     }
                     updatePauser
-                },
-                {
-                    fn coprocessorTxSenderAddresses(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IHTTPZCalls> {
-                        <coprocessorTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IHTTPZCalls::coprocessorTxSenderAddresses)
-                    }
-                    coprocessorTxSenderAddresses
                 },
                 {
                     fn getCoprocessorMajorityThreshold(
@@ -6087,43 +6241,56 @@ function updatePauser(address newPauser) external;
                     addNetwork
                 },
                 {
-                    fn networks(
+                    fn getKmsTxSenders(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<IHTTPZCalls> {
-                        <networksCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKmsTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                                 validate,
                             )
-                            .map(IHTTPZCalls::networks)
+                            .map(IHTTPZCalls::getKmsTxSenders)
                     }
-                    networks
+                    getKmsTxSenders
                 },
                 {
-                    fn getAllCoprocessorTxSenderAddresses(
+                    fn getKmsSigners(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<IHTTPZCalls> {
-                        <getAllCoprocessorTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKmsSignersCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                                 validate,
                             )
-                            .map(IHTTPZCalls::getAllCoprocessorTxSenderAddresses)
+                            .map(IHTTPZCalls::getKmsSigners)
                     }
-                    getAllCoprocessorTxSenderAddresses
+                    getKmsSigners
                 },
                 {
-                    fn getAllKmsTxSenderAddresses(
+                    fn getCoprocessorSigners(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<IHTTPZCalls> {
-                        <getAllKmsTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCoprocessorSignersCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                                 validate,
                             )
-                            .map(IHTTPZCalls::getAllKmsTxSenderAddresses)
+                            .map(IHTTPZCalls::getCoprocessorSigners)
                     }
-                    getAllKmsTxSenderAddresses
+                    getCoprocessorSigners
+                },
+                {
+                    fn getNetwork(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IHTTPZCalls> {
+                        <getNetworkCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IHTTPZCalls::getNetwork)
+                    }
+                    getNetwork
                 },
                 {
                     fn checkIsKmsTxSender(
@@ -6178,30 +6345,30 @@ function updatePauser(address newPauser) external;
                     checkIsCoprocessorSigner
                 },
                 {
-                    fn kmsTxSenderAddresses(
+                    fn getKmsNode(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<IHTTPZCalls> {
-                        <kmsTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKmsNodeCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                                 validate,
                             )
-                            .map(IHTTPZCalls::kmsTxSenderAddresses)
+                            .map(IHTTPZCalls::getKmsNode)
                     }
-                    kmsTxSenderAddresses
+                    getKmsNode
                 },
                 {
-                    fn coprocessors(
+                    fn getCoprocessor(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<IHTTPZCalls> {
-                        <coprocessorsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCoprocessorCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                                 validate,
                             )
-                            .map(IHTTPZCalls::coprocessors)
+                            .map(IHTTPZCalls::getCoprocessor)
                     }
-                    coprocessors
+                    getCoprocessor
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -6250,23 +6417,8 @@ function updatePauser(address newPauser) external;
                         inner,
                     )
                 }
-                Self::coprocessorTxSenderAddresses(inner) => {
-                    <coprocessorTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::coprocessors(inner) => {
-                    <coprocessorsCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::getAllCoprocessorTxSenderAddresses(inner) => {
-                    <getAllCoprocessorTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::getAllKmsTxSenderAddresses(inner) => {
-                    <getAllKmsTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::getCoprocessor(inner) => {
+                    <getCoprocessorCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -6275,13 +6427,31 @@ function updatePauser(address newPauser) external;
                         inner,
                     )
                 }
+                Self::getCoprocessorSigners(inner) => {
+                    <getCoprocessorSignersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getCoprocessorTxSenders(inner) => {
+                    <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getKmsMajorityThreshold(inner) => {
                     <getKmsMajorityThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
+                Self::getKmsNode(inner) => {
+                    <getKmsNodeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
                 Self::getKmsReconstructionThreshold(inner) => {
                     <getKmsReconstructionThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getKmsSigners(inner) => {
+                    <getKmsSignersCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -6290,21 +6460,23 @@ function updatePauser(address newPauser) external;
                         inner,
                     )
                 }
+                Self::getKmsTxSenders(inner) => {
+                    <getKmsTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getNetwork(inner) => {
+                    <getNetworkCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
+                Self::getNetworks(inner) => {
+                    <getNetworksCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getProtocolMetadata(inner) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
-                }
-                Self::kmsNodes(inner) => {
-                    <kmsNodesCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::kmsTxSenderAddresses(inner) => {
-                    <kmsTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::networks(inner) => {
-                    <networksCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::updateKmsThreshold(inner) => {
                     <updateKmsThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -6363,26 +6535,8 @@ function updatePauser(address newPauser) external;
                         out,
                     )
                 }
-                Self::coprocessorTxSenderAddresses(inner) => {
-                    <coprocessorTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::coprocessors(inner) => {
-                    <coprocessorsCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::getAllCoprocessorTxSenderAddresses(inner) => {
-                    <getAllCoprocessorTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::getAllKmsTxSenderAddresses(inner) => {
-                    <getAllKmsTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::getCoprocessor(inner) => {
+                    <getCoprocessorCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6393,8 +6547,26 @@ function updatePauser(address newPauser) external;
                         out,
                     )
                 }
+                Self::getCoprocessorSigners(inner) => {
+                    <getCoprocessorSignersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getCoprocessorTxSenders(inner) => {
+                    <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::getKmsMajorityThreshold(inner) => {
                     <getKmsMajorityThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getKmsNode(inner) => {
+                    <getKmsNodeCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6405,32 +6577,38 @@ function updatePauser(address newPauser) external;
                         out,
                     )
                 }
+                Self::getKmsSigners(inner) => {
+                    <getKmsSignersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::getKmsThreshold(inner) => {
                     <getKmsThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
+                Self::getKmsTxSenders(inner) => {
+                    <getKmsTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getNetwork(inner) => {
+                    <getNetworkCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getNetworks(inner) => {
+                    <getNetworksCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::getProtocolMetadata(inner) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::kmsNodes(inner) => {
-                    <kmsNodesCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::kmsTxSenderAddresses(inner) => {
-                    <kmsTxSenderAddressesCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::networks(inner) => {
-                    <networksCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -7320,47 +7498,16 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`coprocessorTxSenderAddresses`] function.
-        pub fn coprocessorTxSenderAddresses(
-            &self,
-            index: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, coprocessorTxSenderAddressesCall, N> {
-            self.call_builder(
-                &coprocessorTxSenderAddressesCall {
-                    index,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`coprocessors`] function.
-        pub fn coprocessors(
+        ///Creates a new call builder for the [`getCoprocessor`] function.
+        pub fn getCoprocessor(
             &self,
             coprocessorTxSenderAddress: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<T, &P, coprocessorsCall, N> {
+        ) -> alloy_contract::SolCallBuilder<T, &P, getCoprocessorCall, N> {
             self.call_builder(
-                &coprocessorsCall {
+                &getCoprocessorCall {
                     coprocessorTxSenderAddress,
                 },
             )
-        }
-        ///Creates a new call builder for the [`getAllCoprocessorTxSenderAddresses`] function.
-        pub fn getAllCoprocessorTxSenderAddresses(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<
-            T,
-            &P,
-            getAllCoprocessorTxSenderAddressesCall,
-            N,
-        > {
-            self.call_builder(
-                &getAllCoprocessorTxSenderAddressesCall {
-                },
-            )
-        }
-        ///Creates a new call builder for the [`getAllKmsTxSenderAddresses`] function.
-        pub fn getAllKmsTxSenderAddresses(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, getAllKmsTxSenderAddressesCall, N> {
-            self.call_builder(&getAllKmsTxSenderAddressesCall {})
         }
         ///Creates a new call builder for the [`getCoprocessorMajorityThreshold`] function.
         pub fn getCoprocessorMajorityThreshold(
@@ -7376,11 +7523,34 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`getCoprocessorSigners`] function.
+        pub fn getCoprocessorSigners(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getCoprocessorSignersCall, N> {
+            self.call_builder(&getCoprocessorSignersCall {})
+        }
+        ///Creates a new call builder for the [`getCoprocessorTxSenders`] function.
+        pub fn getCoprocessorTxSenders(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getCoprocessorTxSendersCall, N> {
+            self.call_builder(&getCoprocessorTxSendersCall {})
+        }
         ///Creates a new call builder for the [`getKmsMajorityThreshold`] function.
         pub fn getKmsMajorityThreshold(
             &self,
         ) -> alloy_contract::SolCallBuilder<T, &P, getKmsMajorityThresholdCall, N> {
             self.call_builder(&getKmsMajorityThresholdCall {})
+        }
+        ///Creates a new call builder for the [`getKmsNode`] function.
+        pub fn getKmsNode(
+            &self,
+            kmsTxSenderAddress: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getKmsNodeCall, N> {
+            self.call_builder(
+                &getKmsNodeCall {
+                    kmsTxSenderAddress,
+                },
+            )
         }
         ///Creates a new call builder for the [`getKmsReconstructionThreshold`] function.
         pub fn getKmsReconstructionThreshold(
@@ -7396,38 +7566,42 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`getKmsSigners`] function.
+        pub fn getKmsSigners(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getKmsSignersCall, N> {
+            self.call_builder(&getKmsSignersCall {})
+        }
         ///Creates a new call builder for the [`getKmsThreshold`] function.
         pub fn getKmsThreshold(
             &self,
         ) -> alloy_contract::SolCallBuilder<T, &P, getKmsThresholdCall, N> {
             self.call_builder(&getKmsThresholdCall {})
         }
+        ///Creates a new call builder for the [`getKmsTxSenders`] function.
+        pub fn getKmsTxSenders(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getKmsTxSendersCall, N> {
+            self.call_builder(&getKmsTxSendersCall {})
+        }
+        ///Creates a new call builder for the [`getNetwork`] function.
+        pub fn getNetwork(
+            &self,
+            index: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getNetworkCall, N> {
+            self.call_builder(&getNetworkCall { index })
+        }
+        ///Creates a new call builder for the [`getNetworks`] function.
+        pub fn getNetworks(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getNetworksCall, N> {
+            self.call_builder(&getNetworksCall {})
+        }
         ///Creates a new call builder for the [`getProtocolMetadata`] function.
         pub fn getProtocolMetadata(
             &self,
         ) -> alloy_contract::SolCallBuilder<T, &P, getProtocolMetadataCall, N> {
             self.call_builder(&getProtocolMetadataCall {})
-        }
-        ///Creates a new call builder for the [`kmsNodes`] function.
-        pub fn kmsNodes(
-            &self,
-            kmsTxSenderAddress: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<T, &P, kmsNodesCall, N> {
-            self.call_builder(&kmsNodesCall { kmsTxSenderAddress })
-        }
-        ///Creates a new call builder for the [`kmsTxSenderAddresses`] function.
-        pub fn kmsTxSenderAddresses(
-            &self,
-            index: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, kmsTxSenderAddressesCall, N> {
-            self.call_builder(&kmsTxSenderAddressesCall { index })
-        }
-        ///Creates a new call builder for the [`networks`] function.
-        pub fn networks(
-            &self,
-            index: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, networksCall, N> {
-            self.call_builder(&networksCall { index })
         }
         ///Creates a new call builder for the [`updateKmsThreshold`] function.
         pub fn updateKmsThreshold(
