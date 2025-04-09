@@ -23,7 +23,7 @@ export function ApiKeyForm({ error, onCreate }: ApiKeyFormProps) {
   })
 
   return (
-    <Fieldset.Root>
+    <Fieldset.Root size="lg" maxW="md" py="4">
       <form onSubmit={formik.handleSubmit} role="form">
         <Fieldset.Legend>
           <Heading>Create a new API KEY</Heading>
@@ -56,7 +56,9 @@ export function ApiKeyForm({ error, onCreate }: ApiKeyFormProps) {
               />
             </Field>
 
-            <Button type="submit">Create</Button>
+            <Button type="submit" alignSelf="end">
+              Create
+            </Button>
           </HStack>
           {error && (
             <span key="remote-error" role="alert">

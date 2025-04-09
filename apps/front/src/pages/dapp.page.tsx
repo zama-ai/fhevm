@@ -17,6 +17,7 @@ import {
   calculateTotal,
 } from '@/lib/stats.js'
 import { CreateApiKey } from '@/components/create-api-key/create-api-key'
+import { ListApiKeys } from '@/components/list-api-keys/list-api-keys'
 
 const GET_DAPP_DETAILS = graphql(`
   query GetDappDetails($dappId: ID!) {
@@ -130,7 +131,12 @@ export function DappPage() {
           </Stack>
         </Stack>
       )}
-      {dappId && <CreateApiKey key="create-api-key" dappId={dappId} />}
+      {dappId && (
+        <>
+          <CreateApiKey key="create-api-key" dappId={dappId} />
+          <ListApiKeys key="list-api-keys" dappId={dappId} />
+        </>
+      )}
     </Box>
   )
 }

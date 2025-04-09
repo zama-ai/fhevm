@@ -34,7 +34,7 @@ export class ApiKeyResolver {
     @CurrentUser() user: User,
     @Args('input') input: CreateApiKeyInput,
   ): Promise<CreateApiKeyType> {
-    this.logger.verbose(`creating API key for dappId=${input.dappId}`)
+    this.logger.log(`creating API key for dappId=${input.dappId}`)
     const entity = await this.createApiKeyUC
       .execute(input, { user })
       .toPromise()
@@ -49,7 +49,7 @@ export class ApiKeyResolver {
     @CurrentUser() user: User,
     @Args('input') input: QueryApiKeyInput,
   ) {
-    this.logger.verbose(`getting API key by id=${input.id}`)
+    this.logger.log(`getting API key by id=${input.id}`)
     return this.getApiKeyUC
       .execute({ apiKeyId: input.id }, { user })
       .toPromise()
@@ -60,7 +60,7 @@ export class ApiKeyResolver {
     @CurrentUser() user: User,
     @Args('input') input: UpdateApiKeyInput,
   ): Promise<ApiKeyType> {
-    this.logger.verbose(`updating API key by id=${input.id}`)
+    this.logger.log(`updating API key by id=${input.id}`)
     const { id, ...props } = input
     return this.updateApiKeyUC
       .execute({ apiKeyId: id, props }, { user })
@@ -73,8 +73,10 @@ export class ApiKeyResolver {
     @CurrentUser() user: User,
     @Args('input') input: DeleteApiKeyInput,
   ): Promise<string> {
-    this.logger.verbose(`deleting API key by id=${input.id}`)
-    await this.deleteApiKeyUC.execute({ apiKeyId: input.id }, { user })
+    this.logger.log(`deleting API key by id=${input.id}`)
+    await this.deleteApiKeyUC
+      .execute({ apiKeyId: input.id }, { user })
+      .toPromise()
     return input.id
   }
 }

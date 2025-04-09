@@ -62,7 +62,7 @@ export class ComplexityPlugin implements ApolloServerPlugin {
           )
           throw new GraphQLError(`query is too complex: ${complexity}`)
         }
-        logger.debug(`query complexity: ${complexity}`)
+        logger.verbose(`query complexity: ${complexity}`)
       },
     }
   }

@@ -8,7 +8,7 @@ export function useCreateApiKey(dappId: string) {
     { dappId: string; name: string; description?: string }
   >(CREATE_API_KEY, {
     // TODO: invalidate the list API keys query
-    refetchQueries: [],
+    refetchQueries: ['ListApiKeys'],
   })
 
   const handleCreateApiKey = useCallback(
