@@ -204,9 +204,9 @@ async function kmsSign(handlesList: string[], decryptedResult: string, kmsSigner
   };
 
   const types = {
-    PublicDecryptionResult: [
+    PublicDecryptVerification: [
       {
-        name: 'handlesList',
+        name: 'ctHandles',
         type: 'bytes32[]',
       },
       {
@@ -216,7 +216,7 @@ async function kmsSign(handlesList: string[], decryptedResult: string, kmsSigner
     ],
   };
   const message = {
-    handlesList: handlesList,
+    ctHandles: handlesList,
     decryptedResult: decryptedResult,
   };
 

@@ -45,21 +45,22 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @param newThreshold   The new threshold set by the owner.
     event NewContextSet(address[] newKmsSignersSet, uint256 newThreshold);
 
-    /**
-     * @param handlesList       List of handles.
-     * @param decryptedResult   Decrypted result.
-     */
-    struct PublicDecryptionResult {
-        bytes32[] handlesList;
+    /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
+    /// @dev The name of this struct is not relevant for the signature validation, only the one defined
+    /// @dev EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
+    struct PublicDecryptVerification {
+        /// @notice The handles of the ciphertexts that have been decrypted.
+        bytes32[] ctHandles;
+        /// @notice The decrypted result of the public decryption.
         bytes decryptedResult;
     }
 
     /// @notice Decryption result type.
-    string public constant DECRYPTION_RESULT_TYPE =
-        "PublicDecryptionResult(bytes32[] handlesList,bytes decryptedResult)";
+    string public constant EIP712_PUBLIC_DECRYPT_TYPE =
+        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult)";
 
     /// @notice Decryption result typehash.
-    bytes32 public constant DECRYPTION_RESULT_TYPEHASH = keccak256(bytes(DECRYPTION_RESULT_TYPE));
+    bytes32 public constant DECRYPTION_RESULT_TYPEHASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
 
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "KMSVerifier";
@@ -170,8 +171,8 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         bytes memory decryptedResult,
         bytes[] memory signatures
     ) public virtual returns (bool) {
-        PublicDecryptionResult memory decRes;
-        decRes.handlesList = handlesList;
+        PublicDecryptVerification memory decRes;
+        decRes.ctHandles = handlesList;
         decRes.decryptedResult = decryptedResult;
         bytes32 digest = _hashDecryptionResult(decRes);
         return _verifySignaturesDigest(digest, signatures);
@@ -316,13 +317,13 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
      * @param decRes            Decryption result.
      * @return hashTypedData    Hash typed data.
      */
-    function _hashDecryptionResult(PublicDecryptionResult memory decRes) internal view virtual returns (bytes32) {
+    function _hashDecryptionResult(PublicDecryptVerification memory decRes) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
                     abi.encode(
                         DECRYPTION_RESULT_TYPEHASH,
-                        keccak256(abi.encodePacked(decRes.handlesList)),
+                        keccak256(abi.encodePacked(decRes.ctHandles)),
                         keccak256(decRes.decryptedResult)
                     )
                 )
