@@ -21,9 +21,9 @@ interface IDecryptionManager {
     /// @notice A struct that specifies addresses of the user account and the delegated account
     /// @notice for a given delegated user decryption request.
     struct DelegationAccounts {
-        /// @notice The user's address
-        address userAddress;
-        /// @notice The address of the delegated account for the user decryption
+        /// @notice The address of the account that delegates access to its handles.
+        address delegatorAddress;
+        /// @notice The address of the account that receives the delegation.
         address delegatedAddress;
     }
 
