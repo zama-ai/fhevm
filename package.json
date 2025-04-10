@@ -5,11 +5,7 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "main": "lib/TFHE.sol",
-  "directories": {
-    "example": "examples",
-    "lib": "lib"
-  },
+  "main": "lib/HTTPZ.sol",
   "scripts": {
     "clean": "rimraf ./artifacts ./cache ./coverage ./types ./coverage.json && npm run typechain",
     "compile": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",

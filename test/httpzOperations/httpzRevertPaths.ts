@@ -4,12 +4,12 @@ import { ethers } from 'hardhat';
 
 import { getSigners, initSigners } from '../signers';
 
-describe('TFHE revert paths', function () {
+describe('HTTPZ revert paths', function () {
   before(async function () {
     await initSigners(1);
     this.signers = await getSigners();
 
-    const contractFactory = await ethers.getContractFactory('TFHERevertTest');
+    const contractFactory = await ethers.getContractFactory('HTTPZRevertTest');
     const contract = await contractFactory.connect(this.signers.alice).deploy();
     await contract.waitForDeployment();
 

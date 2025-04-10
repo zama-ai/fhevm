@@ -59,7 +59,7 @@ Here `callbackName` is a custom name given by the developer to the callback func
 
 `maxTimestamp` is the maximum timestamp after which the callback will not be able to receive the results of decryption, i.e the fulfillment transaction will fail in this case. This can be used for time-sensitive applications, where we prefer to reject decryption results on too old, out-of-date, values.
 
-`passSignaturesToCaller` determines whether the callback needs to transmit signatures from the KMS or not. This is useful if the dApp developer wants to remove trust from the Gateway service and prefers to check the KMS signatures directly from within his dApp smart contract. A concrete example of how to verify the KMS signatures inside a dApp is available [here](https://github.com/zama-ai/fhevm/blob/2ff952e8e038e56246c840af31ca3fadd7fccedd/examples/TestAsyncDecrypt.sol#L82-L94) in the `requestBoolTrustless` function.
+`passSignaturesToCaller` determines whether the callback needs to transmit signatures from the KMS or not. This is useful if the dApp developer wants to remove trust from the Gateway service and prefers to check the KMS signatures directly from within his dApp smart contract. A concrete example of how to verify the KMS signatures inside a dApp is available [here](https://github.com/zama-ai/httpz-solidity/tree/v0.6.2/examples/TestAsyncDecrypt.sol#L82-L94) in the `requestBoolTrustless` function.
 
 > _**WARNING:**_ Notice that the callback should be protected by the `onlyGateway` modifier to ensure security, as only the `GatewayContract` contract should be able to call it.
 
@@ -148,7 +148,7 @@ event ResultCallback(uint256 indexed requestID, bool success, bytes result);
 
 The first argument is the `requestID` of the corresponding decryption request, `success` is a boolean assessing if the call to the callback succeeded, and `result` is the bytes array corresponding to the return data from the callback.
 
-In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfillment of those decryptions, you should import the two helper methods `initGateway` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on a HTTPZ node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](https://github.com/zama-ai/fhevm/blob/main/test/gatewayDecrypt/testAsyncDecrypt.ts)):
+In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfillment of those decryptions, you should import the two helper methods `initGateway` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on a HTTPZ node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](https://github.com/zama-ai/httpz-solidity/tree/v0.6.2/test/gatewayDecrypt/testAsyncDecrypt.ts)):
 
 ```js
 import { initGateway, awaitAllDecryptionResults } from "../asyncDecrypt";
