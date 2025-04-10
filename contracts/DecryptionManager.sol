@@ -69,8 +69,8 @@ contract DecryptionManager is
         bytes publicKey;
         /// @notice The contract addresses that verification is requested for.
         address[] contractAddresses;
-        /// @notice The address of the account that is delegated to decrypt.
-        address delegatedAccount;
+        /// @notice The address of the account that delegates access to its handles.
+        address delegatorAddress;
         /// @notice The chain ID of the contract addresses.
         uint256 contractsChainId;
         /// @notice The start timestamp of the user decryption request.
@@ -119,7 +119,7 @@ contract DecryptionManager is
     bytes32 public constant EIP712_USER_DECRYPT_REQUEST_TYPE_HASH = keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE));
 
     string public constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
-        "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatedAccount,"
+        "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,"
         "uint256 contractsChainId,uint256 startTimestamp,uint256 durationDays)";
 
     bytes32 public constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
@@ -293,7 +293,7 @@ contract DecryptionManager is
             revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
         }
 
-        /// @dev Check that the user decryption is allowed for the given userAddress and ctHandleContractPairs.
+        /// @dev Check that the user and the contract addresses have access to the handles.
         _ACL_MANAGER.checkAccountAllowed(userAddress, ctHandleContractPairs);
 
         /// @dev Initialize the UserDecryptRequestVerification structure for the signature validation.
@@ -365,8 +365,8 @@ contract DecryptionManager is
             revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
         }
 
-        /// @dev Check that the user decryption is allowed for the given userAddress and ctHandleContractPairs.
-        _ACL_MANAGER.checkAccountAllowed(delegationAccounts.delegatedAddress, ctHandleContractPairs);
+        /// @dev Check that the delegator and the contract addresses have access to the handles.
+        _ACL_MANAGER.checkAccountAllowed(delegationAccounts.delegatorAddress, ctHandleContractPairs);
 
         /// @dev Extract the ctHandles from the given ctHandleContractPairs.
         /// @dev We do not deduplicate handles if the same handle appears multiple times
@@ -381,10 +381,10 @@ contract DecryptionManager is
             ctHandles[i] = ctHandleContractPairs[i].ctHandle;
         }
 
-        /// @dev Check that the user decryption is allowed for the given delegatedAccount and contractAddresses.
+        /// @dev Check that the delegatee has been granted access to the given contractAddresses by the delegator.
         _ACL_MANAGER.checkAccountDelegated(
             contractsChainId,
-            delegationAccounts.userAddress,
+            delegationAccounts.delegatorAddress,
             delegationAccounts.delegatedAddress,
             contractAddresses
         );
@@ -394,7 +394,7 @@ contract DecryptionManager is
             memory delegatedUserDecryptRequestVerification = DelegatedUserDecryptRequestVerification(
                 publicKey,
                 contractAddresses,
-                delegationAccounts.delegatedAddress,
+                delegationAccounts.delegatorAddress,
                 contractsChainId,
                 requestValidity.startTimestamp,
                 requestValidity.durationDays
@@ -403,7 +403,7 @@ contract DecryptionManager is
         /// @dev Validate the received EIP712 signature on the user decryption request.
         _validateDelegatedUserDecryptRequestEIP712Signature(
             delegatedUserDecryptRequestVerification,
-            delegationAccounts.userAddress,
+            delegationAccounts.delegatedAddress,
             signature
         );
 
@@ -428,7 +428,7 @@ contract DecryptionManager is
 
         // TODO: Implement sending service fees to PaymentManager contract
 
-        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, delegationAccounts.userAddress, publicKey);
+        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, delegationAccounts.delegatedAddress, publicKey);
     }
 
     /// @dev See {IDecryptionManager-userDecryptionResponse}.
@@ -542,17 +542,17 @@ contract DecryptionManager is
     }
 
     /// @notice Validates the EIP712 signature for a given user decryption request
-    /// @dev This function checks that the signer address is the same as the user address.
+    /// @dev This function checks that the signer address is the same as the delegated address.
     /// @param delegatedUserDecryptRequestVerification The signed DelegatedUserDecryptRequestVerification structure
     /// @param signature The signature to be validated
     function _validateDelegatedUserDecryptRequestEIP712Signature(
         DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
-        address userAddress,
+        address delegatedAddress,
         bytes calldata signature
     ) internal view virtual {
         bytes32 digest = _hashDelegatedUserDecryptRequestVerification(delegatedUserDecryptRequestVerification);
         address signer = ECDSA.recover(digest, signature);
-        if (signer != userAddress) {
+        if (signer != delegatedAddress) {
             revert InvalidUserSignature(signature);
         }
     }
@@ -632,7 +632,7 @@ contract DecryptionManager is
                         EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH,
                         keccak256(delegatedUserDecryptRequestVerification.publicKey),
                         keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.contractAddresses)),
-                        delegatedUserDecryptRequestVerification.delegatedAccount,
+                        delegatedUserDecryptRequestVerification.delegatorAddress,
                         delegatedUserDecryptRequestVerification.contractsChainId,
                         delegatedUserDecryptRequestVerification.startTimestamp,
                         delegatedUserDecryptRequestVerification.durationDays

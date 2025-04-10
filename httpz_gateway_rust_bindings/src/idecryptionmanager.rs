@@ -8,7 +8,7 @@ interface IDecryptionManager {
         address contractAddress;
     }
     struct DelegationAccounts {
-        address userAddress;
+        address delegatorAddress;
         address delegatedAddress;
     }
     struct RequestValidity {
@@ -91,7 +91,7 @@ interface IDecryptionManager {
         "internalType": "struct IDecryptionManager.DelegationAccounts",
         "components": [
           {
-            "name": "userAddress",
+            "name": "delegatorAddress",
             "type": "address",
             "internalType": "address"
           },
@@ -775,13 +775,13 @@ struct CtHandleContractPair { bytes32 ctHandle; address contractAddress; }
         }
     };
     /**```solidity
-struct DelegationAccounts { address userAddress; address delegatedAddress; }
+struct DelegationAccounts { address delegatorAddress; address delegatedAddress; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct DelegationAccounts {
         #[allow(missing_docs)]
-        pub userAddress: alloy::sol_types::private::Address,
+        pub delegatorAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
         pub delegatedAddress: alloy::sol_types::private::Address,
     }
@@ -818,7 +818,7 @@ struct DelegationAccounts { address userAddress; address delegatedAddress; }
         #[doc(hidden)]
         impl ::core::convert::From<DelegationAccounts> for UnderlyingRustTuple<'_> {
             fn from(value: DelegationAccounts) -> Self {
-                (value.userAddress, value.delegatedAddress)
+                (value.delegatorAddress, value.delegatedAddress)
             }
         }
         #[automatically_derived]
@@ -826,7 +826,7 @@ struct DelegationAccounts { address userAddress; address delegatedAddress; }
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for DelegationAccounts {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    userAddress: tuple.0,
+                    delegatorAddress: tuple.0,
                     delegatedAddress: tuple.1,
                 }
             }
@@ -841,7 +841,7 @@ struct DelegationAccounts { address userAddress; address delegatedAddress; }
             fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.userAddress,
+                        &self.delegatorAddress,
                     ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.delegatedAddress,
@@ -920,7 +920,7 @@ struct DelegationAccounts { address userAddress; address delegatedAddress; }
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "DelegationAccounts(address userAddress,address delegatedAddress)",
+                    "DelegationAccounts(address delegatorAddress,address delegatedAddress)",
                 )
             }
             #[inline]
@@ -937,7 +937,7 @@ struct DelegationAccounts { address userAddress; address delegatedAddress; }
             fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
                 [
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.userAddress,
+                            &self.delegatorAddress,
                         )
                         .0,
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
@@ -954,7 +954,7 @@ struct DelegationAccounts { address userAddress; address delegatedAddress; }
             fn topic_preimage_length(rust: &Self::RustType) -> usize {
                 0usize
                     + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.userAddress,
+                        &rust.delegatorAddress,
                     )
                     + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.delegatedAddress,
@@ -969,7 +969,7 @@ struct DelegationAccounts { address userAddress; address delegatedAddress; }
                     <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
                 );
                 <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.userAddress,
+                    &rust.delegatorAddress,
                     out,
                 );
                 <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
