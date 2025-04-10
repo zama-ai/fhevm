@@ -1,7 +1,7 @@
 {
   "name": "@httpz/solidity",
   "description": "A Solidity library for interacting with HTTPZ protocol",
-  "version": "0.7.0-1",
+  "version": "0.7.0-2",
   "engines": {
     "node": ">=20.0.0"
   },
