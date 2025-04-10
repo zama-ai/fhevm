@@ -1,13 +1,13 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import type { TFHETestSuite1 } from '../../types/contracts/tests/TFHETestSuite1';
-import type { TFHETestSuite2 } from '../../types/contracts/tests/TFHETestSuite2';
-import type { TFHETestSuite3 } from '../../types/contracts/tests/TFHETestSuite3';
-import type { TFHETestSuite4 } from '../../types/contracts/tests/TFHETestSuite4';
-import type { TFHETestSuite5 } from '../../types/contracts/tests/TFHETestSuite5';
-import type { TFHETestSuite6 } from '../../types/contracts/tests/TFHETestSuite6';
-import type { TFHETestSuite7 } from '../../types/contracts/tests/TFHETestSuite7';
+import type { HTTPZTestSuite1 } from '../../types/contracts/tests/HTTPZTestSuite1';
+import type { HTTPZTestSuite2 } from '../../types/contracts/tests/HTTPZTestSuite2';
+import type { HTTPZTestSuite3 } from '../../types/contracts/tests/HTTPZTestSuite3';
+import type { HTTPZTestSuite4 } from '../../types/contracts/tests/HTTPZTestSuite4';
+import type { HTTPZTestSuite5 } from '../../types/contracts/tests/HTTPZTestSuite5';
+import type { HTTPZTestSuite6 } from '../../types/contracts/tests/HTTPZTestSuite6';
+import type { HTTPZTestSuite7 } from '../../types/contracts/tests/HTTPZTestSuite7';
 import {
   createInstances,
   decrypt8,
@@ -20,113 +20,113 @@ import {
 } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
-async function deployTfheTestFixture1(): Promise<TFHETestSuite1> {
+async function deployHTTPZTestFixture1(): Promise<HTTPZTestSuite1> {
   const signers = await getSigners();
   const admin = signers.alice;
 
-  const contractFactory = await ethers.getContractFactory('TFHETestSuite1');
+  const contractFactory = await ethers.getContractFactory('HTTPZTestSuite1');
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
 }
 
-async function deployTfheTestFixture2(): Promise<TFHETestSuite2> {
+async function deployHTTPZTestFixture2(): Promise<HTTPZTestSuite2> {
   const signers = await getSigners();
   const admin = signers.alice;
 
-  const contractFactory = await ethers.getContractFactory('TFHETestSuite2');
+  const contractFactory = await ethers.getContractFactory('HTTPZTestSuite2');
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
 }
 
-async function deployTfheTestFixture3(): Promise<TFHETestSuite3> {
+async function deployHTTPZTestFixture3(): Promise<HTTPZTestSuite3> {
   const signers = await getSigners();
   const admin = signers.alice;
 
-  const contractFactory = await ethers.getContractFactory('TFHETestSuite3');
+  const contractFactory = await ethers.getContractFactory('HTTPZTestSuite3');
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
 }
 
-async function deployTfheTestFixture4(): Promise<TFHETestSuite4> {
+async function deployHTTPZTestFixture4(): Promise<HTTPZTestSuite4> {
   const signers = await getSigners();
   const admin = signers.alice;
 
-  const contractFactory = await ethers.getContractFactory('TFHETestSuite4');
+  const contractFactory = await ethers.getContractFactory('HTTPZTestSuite4');
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
 }
 
-async function deployTfheTestFixture5(): Promise<TFHETestSuite5> {
+async function deployHTTPZTestFixture5(): Promise<HTTPZTestSuite5> {
   const signers = await getSigners();
   const admin = signers.alice;
 
-  const contractFactory = await ethers.getContractFactory('TFHETestSuite5');
+  const contractFactory = await ethers.getContractFactory('HTTPZTestSuite5');
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
 }
 
-async function deployTfheTestFixture6(): Promise<TFHETestSuite6> {
+async function deployHTTPZTestFixture6(): Promise<HTTPZTestSuite6> {
   const signers = await getSigners();
   const admin = signers.alice;
 
-  const contractFactory = await ethers.getContractFactory('TFHETestSuite6');
+  const contractFactory = await ethers.getContractFactory('HTTPZTestSuite6');
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
 }
 
-async function deployTfheTestFixture7(): Promise<TFHETestSuite7> {
+async function deployHTTPZTestFixture7(): Promise<HTTPZTestSuite7> {
   const signers = await getSigners();
   const admin = signers.alice;
 
-  const contractFactory = await ethers.getContractFactory('TFHETestSuite7');
+  const contractFactory = await ethers.getContractFactory('HTTPZTestSuite7');
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
 }
 
-describe('TFHE operations 13', function () {
+describe('HTTPZ operations 13', function () {
   before(async function () {
     await initSigners(1);
     this.signers = await getSigners();
 
-    const contract1 = await deployTfheTestFixture1();
+    const contract1 = await deployHTTPZTestFixture1();
     this.contract1Address = await contract1.getAddress();
     this.contract1 = contract1;
 
-    const contract2 = await deployTfheTestFixture2();
+    const contract2 = await deployHTTPZTestFixture2();
     this.contract2Address = await contract2.getAddress();
     this.contract2 = contract2;
 
-    const contract3 = await deployTfheTestFixture3();
+    const contract3 = await deployHTTPZTestFixture3();
     this.contract3Address = await contract3.getAddress();
     this.contract3 = contract3;
 
-    const contract4 = await deployTfheTestFixture4();
+    const contract4 = await deployHTTPZTestFixture4();
     this.contract4Address = await contract4.getAddress();
     this.contract4 = contract4;
 
-    const contract5 = await deployTfheTestFixture5();
+    const contract5 = await deployHTTPZTestFixture5();
     this.contract5Address = await contract5.getAddress();
     this.contract5 = contract5;
 
-    const contract6 = await deployTfheTestFixture6();
+    const contract6 = await deployHTTPZTestFixture6();
     this.contract6Address = await contract6.getAddress();
     this.contract6 = contract6;
 
-    const contract7 = await deployTfheTestFixture7();
+    const contract7 = await deployHTTPZTestFixture7();
     this.contract7Address = await contract7.getAddress();
     this.contract7 = contract7;
 
@@ -134,13 +134,13 @@ describe('TFHE operations 13', function () {
     this.instances = instances;
   });
 
-  it('test operator "not" overload (euint256) => euint256 test 1 (115792089237316195423570985008687907853269984665640564039457579079749521729809)', async function () {
+  it('test operator "not" overload (euint256) => euint256 test 1 (115792089237316195423570985008687907853269984665640564039457576423959183408333)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract7Address, this.signers.alice.address);
-    input.add256(115792089237316195423570985008687907853269984665640564039457579079749521729809n);
+    input.add256(115792089237316195423570985008687907853269984665640564039457576423959183408333n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract7.not_euint256(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const res = await decrypt256(await this.contract7.resEuint256());
-    expect(res).to.equal(4928163607910126n);
+    expect(res).to.equal(7583953946231602n);
   });
 });

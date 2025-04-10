@@ -77,16 +77,16 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @custom:storage-location erc7201:fhevm.storage.KMSVerifier
+    /// @custom:storage-location erc7201:httpz.storage.KMSVerifier
     struct KMSVerifierStorage {
         mapping(address => bool) isSigner; /// @notice Mapping to keep track of addresses that are signers
         address[] signers; /// @notice Array to keep track of all signers
         uint256 threshold; /// @notice The threshold for the number of signers required for a signature to be valid
     }
 
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
+    /// keccak256(abi.encode(uint256(keccak256("httpz.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant KMSVerifierStorageLocation =
-        0x7e81a744be86773af8644dd7304fa1dc9350ccabf16cfcaa614ddb78b4ce8900;
+        0x32de30c1e77d61b92590445ba1ed3bfeff4550f0ca57d996d78b6bad53c38800;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {

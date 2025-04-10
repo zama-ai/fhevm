@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import type { TFHEManualTestSuite } from '../../types/contracts/tests/TFHEManualTestSuite';
+import type { HTTPZManualTestSuite } from '../../types/contracts/tests/HTTPZManualTestSuite';
 import {
   createInstances,
   decrypt8,
@@ -19,7 +19,7 @@ import {
 import { getSigners, initSigners } from '../signers';
 import { bigIntToBytes256 } from '../utils';
 
-async function deployTfheManualTestFixture(): Promise<TFHEManualTestSuite> {
+async function deployHTTPZManualTestFixture(): Promise<HTTPZManualTestSuite> {
   const signers = await getSigners();
   const admin = signers.alice;
 
@@ -35,7 +35,7 @@ describe('TFHE manual operations', function () {
     await initSigners(1);
     this.signers = await getSigners();
 
-    const contract = await deployTfheManualTestFixture();
+    const contract = await deployHTTPZManualTestFixture();
     this.contractAddress = await contract.getAddress();
     this.contract = contract;
     const instances = await createInstances(this.signers);

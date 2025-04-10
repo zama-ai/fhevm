@@ -37,7 +37,7 @@ abstract contract EIP712UpgradeableCrossChain is Initializable, IERC5267 {
     bytes32 private constant TYPE_HASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
-    /// @custom:storage-location fhevm.storage.EIP712UpgradeableCrossChain
+    /// @custom:storage-location httpz.storage.EIP712UpgradeableCrossChain
     struct EIP712Storage {
         /// @custom:oz-renamed-from _HASHED_NAME
         bytes32 _hashedName;
@@ -49,9 +49,9 @@ abstract contract EIP712UpgradeableCrossChain is Initializable, IERC5267 {
         uint64 _chainIDSource;
     }
 
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.EIP712UpgradeableCrossChain")) - 1)) & ~bytes32(uint256(0xff))
+    /// keccak256(abi.encode(uint256(keccak256("httpz.storage.EIP712UpgradeableCrossChain")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant EIP712UpgradeableCrossChainLocation =
-        0xe910845fd818f61127c84f3586776436a37dead33625056c65162537e3373600;
+        0xfd601ba311512060d5d89e8cb10f24d6d2649ba5f9a3148780d80b96ebcac200;
 
     function _getEIP712Storage() private pure returns (EIP712Storage storage $) {
         assembly {

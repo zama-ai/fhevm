@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import "../lib/TFHE.sol";
+import "../lib/HTTPZ.sol";
 import "../decryptionOracleLib/DecryptionOracleCaller.sol";
 import "../addresses/DecryptionOracleAddress.sol";
 
@@ -17,12 +17,12 @@ contract TestInput is DecryptionOracleCaller {
     address public yAddress;
 
     constructor() {
-        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
+        HTTPZ.setCoprocessor(HTTPZConfig.defaultConfig());
         setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
     }
 
     function requestUint64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        euint64 inputNonTrivial = TFHE.asEuint64(inputHandle, inputProof);
+        euint64 inputNonTrivial = HTTPZ.asEuint64(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackUint64.selector);
@@ -42,9 +42,9 @@ contract TestInput is DecryptionOracleCaller {
         einput inputHandleAddress,
         bytes calldata inputProof
     ) public {
-        ebool encBool = TFHE.asEbool(inputHandleBool, inputProof);
-        euint8 encUint8 = TFHE.asEuint8(inputHandleUint8, inputProof);
-        eaddress encAddress = TFHE.asEaddress(inputHandleAddress, inputProof);
+        ebool encBool = HTTPZ.asEbool(inputHandleBool, inputProof);
+        euint8 encUint8 = HTTPZ.asEuint8(inputHandleUint8, inputProof);
+        eaddress encAddress = HTTPZ.asEaddress(inputHandleAddress, inputProof);
         bytes32[] memory cts = new bytes32[](3);
         cts[0] = toBytes32(encBool);
         cts[1] = toBytes32(encUint8);

@@ -2,10 +2,10 @@
 
 pragma solidity ^0.8.24;
 
-import "../lib/TFHE.sol";
+import "../lib/HTTPZ.sol";
 import "../lib/Impl.sol";
 
-import "../lib/FHEVMConfig.sol";
+import "../lib/HTTPZConfig.sol";
 
 interface IKMSVerifier {
     function verifyDecryptionEIP712KMSSignatures(
@@ -120,9 +120,9 @@ abstract contract DecryptionOracleCaller {
         return paramsUint256[requestID];
     }
 
-    // keccak256(abi.encode(uint256(keccak256("fhevm.storage.DecryptionOracleConfig")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("httpz.storage.DecryptionOracleConfig")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant DecryptionOracleLocation =
-        0xde725b831312c6c6cbab76ff954da6836e26d78fc467781757c36be9c3d67d00;
+        0xd32a9093b7ac7851a2281334e46d88e2ade0a764d3acf8784e882e0899ed1d00;
 
     function getDecryptionOracleConfig() internal pure returns (DecryptionOracleConfigStruct storage $) {
         assembly {
@@ -189,7 +189,7 @@ abstract contract DecryptionOracleCaller {
         bytes4 callbackSelector
     ) internal returns (uint256 requestID) {
         requestID = counterRequest;
-        FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+        HTTPZConfigStruct storage $ = Impl.getHTTPZConfig();
         IACL($.ACLAddress).allowForDecryption(ctsHandles);
         DecryptionOracleConfigStruct storage $$ = getDecryptionOracleConfig();
         IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption(requestID, ctsHandles, callbackSelector);
@@ -205,7 +205,7 @@ abstract contract DecryptionOracleCaller {
         assembly {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
         }
-        FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+        HTTPZConfigStruct storage $ = Impl.getHTTPZConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
                 handlesList,

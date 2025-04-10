@@ -3,7 +3,9 @@ name: Pull request tests (contracts)
 on:
   pull_request:
     branches:
-      - main
+      - "*"
+    paths:
+      - contracts/**
 
 jobs:
   build:

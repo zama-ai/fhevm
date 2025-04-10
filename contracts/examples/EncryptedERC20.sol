@@ -2,10 +2,10 @@
 
 pragma solidity ^0.8.24;
 
-import "../lib/TFHE.sol";
+import "../lib/HTTPZ.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 
-import "../lib/FHEVMConfig.sol";
+import "../lib/HTTPZConfig.sol";
 
 /// @notice This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE (Fully Homomorphic Encryption) library.
 /// @dev It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances, but uses encrypted data types.
@@ -36,7 +36,7 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param name_ The name of the token
     /// @param symbol_ The symbol of the token
     constructor(string memory name_, string memory symbol_) Ownable(msg.sender) {
-        TFHE.setFHEVM(FHEVMConfig.defaultConfig()); // Set up the FHEVM configuration for this contract
+        HTTPZ.setCoprocessor(HTTPZConfig.defaultConfig()); // Set up the FHEVM configuration for this contract
         _name = name_;
         _symbol = symbol_;
     }
@@ -60,9 +60,9 @@ contract EncryptedERC20 is Ownable2Step {
     /// @dev Only the contract owner can call this function.
     /// @param mintedAmount The amount of tokens to mint
     function mint(uint64 mintedAmount) public virtual onlyOwner {
-        balances[owner()] = TFHE.add(balances[owner()], mintedAmount); // overflow impossible because of next line
-        TFHE.allowThis(balances[owner()]);
-        TFHE.allow(balances[owner()], owner());
+        balances[owner()] = HTTPZ.add(balances[owner()], mintedAmount); // overflow impossible because of next line
+        HTTPZ.allowThis(balances[owner()]);
+        HTTPZ.allow(balances[owner()], owner());
         _totalSupply = _totalSupply + mintedAmount;
         emit Mint(owner(), mintedAmount);
     }
@@ -73,7 +73,7 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param inputProof The proof for the encrypted input
     /// @return bool indicating success of the transfer
     function transfer(address to, einput encryptedAmount, bytes calldata inputProof) public virtual returns (bool) {
-        transfer(to, TFHE.asEuint64(encryptedAmount, inputProof));
+        transfer(to, HTTPZ.asEuint64(encryptedAmount, inputProof));
         return true;
     }
 
@@ -82,9 +82,9 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param amount The encrypted amount to transfer
     /// @return bool indicating success of the transfer
     function transfer(address to, euint64 amount) public virtual returns (bool) {
-        require(TFHE.isSenderAllowed(amount));
+        require(HTTPZ.isSenderAllowed(amount));
         /// @dev Makes sure the owner has enough tokens
-        ebool canTransfer = TFHE.le(amount, balances[msg.sender]);
+        ebool canTransfer = HTTPZ.le(amount, balances[msg.sender]);
         _transfer(msg.sender, to, amount, canTransfer);
         return true;
     }
@@ -102,7 +102,7 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param inputProof The proof for the encrypted input
     /// @return bool indicating success of the approval
     function approve(address spender, einput encryptedAmount, bytes calldata inputProof) public virtual returns (bool) {
-        approve(spender, TFHE.asEuint64(encryptedAmount, inputProof));
+        approve(spender, HTTPZ.asEuint64(encryptedAmount, inputProof));
         return true;
     }
 
@@ -111,7 +111,7 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param amount The amount to approve
     /// @return bool indicating success of the approval
     function approve(address spender, euint64 amount) public virtual returns (bool) {
-        require(TFHE.isSenderAllowed(amount));
+        require(HTTPZ.isSenderAllowed(amount));
         address owner = msg.sender;
         _approve(owner, spender, amount);
         emit Approval(owner, spender);
@@ -138,7 +138,7 @@ contract EncryptedERC20 is Ownable2Step {
         einput encryptedAmount,
         bytes calldata inputProof
     ) public virtual returns (bool) {
-        transferFrom(from, to, TFHE.asEuint64(encryptedAmount, inputProof));
+        transferFrom(from, to, HTTPZ.asEuint64(encryptedAmount, inputProof));
         return true;
     }
 
@@ -148,7 +148,7 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param amount The amount to transfer
     /// @return bool indicating success of the transfer
     function transferFrom(address from, address to, euint64 amount) public virtual returns (bool) {
-        require(TFHE.isSenderAllowed(amount));
+        require(HTTPZ.isSenderAllowed(amount));
         address spender = msg.sender;
         ebool isTransferable = _updateAllowance(from, spender, amount);
         _transfer(from, to, amount, isTransferable);
@@ -162,9 +162,9 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param amount The amount to approve
     function _approve(address owner, address spender, euint64 amount) internal virtual {
         allowances[owner][spender] = amount;
-        TFHE.allowThis(amount);
-        TFHE.allow(amount, owner);
-        TFHE.allow(amount, spender);
+        HTTPZ.allowThis(amount);
+        HTTPZ.allow(amount, owner);
+        HTTPZ.allow(amount, spender);
     }
 
     /// @notice Returns the internal allowance of a spender for a specific owner.
@@ -184,11 +184,11 @@ contract EncryptedERC20 is Ownable2Step {
     function _updateAllowance(address owner, address spender, euint64 amount) internal virtual returns (ebool) {
         euint64 currentAllowance = _allowance(owner, spender);
         /// @dev Makes sure the allowance suffices
-        ebool allowedTransfer = TFHE.le(amount, currentAllowance);
+        ebool allowedTransfer = HTTPZ.le(amount, currentAllowance);
         /// @dev Makes sure the owner has enough tokens
-        ebool canTransfer = TFHE.le(amount, balances[owner]);
-        ebool isTransferable = TFHE.and(canTransfer, allowedTransfer);
-        _approve(owner, spender, TFHE.select(isTransferable, TFHE.sub(currentAllowance, amount), currentAllowance));
+        ebool canTransfer = HTTPZ.le(amount, balances[owner]);
+        ebool isTransferable = HTTPZ.and(canTransfer, allowedTransfer);
+        _approve(owner, spender, HTTPZ.select(isTransferable, HTTPZ.sub(currentAllowance, amount), currentAllowance));
         return isTransferable;
     }
 
@@ -200,15 +200,15 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param isTransferable Boolean indicating if the transfer is allowed
     function _transfer(address from, address to, euint64 amount, ebool isTransferable) internal virtual {
         /// @dev Add to the balance of `to` and subract from the balance of `from`.
-        euint64 transferValue = TFHE.select(isTransferable, amount, TFHE.asEuint64(0));
-        euint64 newBalanceTo = TFHE.add(balances[to], transferValue);
+        euint64 transferValue = HTTPZ.select(isTransferable, amount, HTTPZ.asEuint64(0));
+        euint64 newBalanceTo = HTTPZ.add(balances[to], transferValue);
         balances[to] = newBalanceTo;
-        TFHE.allowThis(newBalanceTo);
-        TFHE.allow(newBalanceTo, to);
-        euint64 newBalanceFrom = TFHE.sub(balances[from], transferValue);
+        HTTPZ.allowThis(newBalanceTo);
+        HTTPZ.allow(newBalanceTo, to);
+        euint64 newBalanceFrom = HTTPZ.sub(balances[from], transferValue);
         balances[from] = newBalanceFrom;
-        TFHE.allowThis(newBalanceFrom);
-        TFHE.allow(newBalanceFrom, from);
+        HTTPZ.allowThis(newBalanceFrom);
+        HTTPZ.allow(newBalanceFrom, from);
         emit Transfer(from, to);
     }
 }

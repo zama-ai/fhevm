@@ -14,7 +14,7 @@ export function generateSolidityFHEGasLimit(priceData: PriceData): string {
   import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
   import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
   import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-  import {tfheExecutorAdd} from "../addresses/TFHEExecutorAddress.sol";
+  import {httpzExecutorAdd} from "../addresses/TFHEExecutorAddress.sol";
 
   import {FheType} from "./FheType.sol"; 
 
@@ -47,21 +47,21 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @notice TFHEExecutor address.
-    address private constant tfheExecutorAddress = tfheExecutorAdd;
+    /// @notice HTTPZExecutor address.
+    address private constant tfheExecutorAddress = httpzExecutorAdd;
 
     /// @notice Gas block limit for FHEGas operation.
     uint256 private constant FHE_GAS_BLOCKLIMIT = 10_000_000;
 
-    /// @custom:storage-location erc7201:fhevm.storage.FHEGasLimit
+    /// @custom:storage-location erc7201:httpz.storage.FHEGasLimit
     struct FHEGasLimitStorage {
         uint256 lastBlock;
         uint256 currentBlockConsumption;
     }
 
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEGasLimit")) - 1)) & ~bytes32(uint256(0xff))
+    /// keccak256(abi.encode(uint256(keccak256("httpz.storage.FHEGasLimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEGasLimitStorageLocation =
-        0xb5c80b3bbe0bcbcea690f6dbe62b32a45bd1ad263b78db2f25ef8414efe9bc00;
+        0x17cabe3f71c2cdebfa03ba613a35f892b2ea48b8aebad7e046dd440ad1c34c00;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -116,7 +116,7 @@ ${generatePriceChecks(data.nonScalar)}
   return (
     output +
     `    /**
-     * @notice                     Getter function for the TFHEExecutor contract address.
+     * @notice                     Getter function for the HTTPZExecutor contract address.
      * @return tfheExecutorAddress Address of the TFHEExecutor.
      */
     function getTFHEExecutorAddress() public view virtual returns (address) {

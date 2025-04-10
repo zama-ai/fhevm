@@ -7,7 +7,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 
 import {ACL} from "../../contracts/ACL.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
-import {tfheExecutorAdd} from "../../addresses/TFHEExecutorAddress.sol";
+import {httpzExecutorAdd} from "../../addresses/TFHEExecutorAddress.sol";
 
 contract ACLTest is Test {
     ACL internal acl;
@@ -47,7 +47,7 @@ contract ACLTest is Test {
     }
 
     function test_TFHEExecutorAddress() public view {
-        assertEq(acl.getTFHEExecutorAddress(), tfheExecutorAdd);
+        assertEq(acl.getTFHEExecutorAddress(), httpzExecutorAdd);
     }
 
     function test_isAllowedReturnsFalseIfNotAllowed(bytes32 handle, address account) public view {

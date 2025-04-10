@@ -7,15 +7,15 @@ import "../addresses/KMSVerifierAddress.sol";
 import "../addresses/InputVerifierAddress.sol";
 import "../addresses/TFHEExecutorAddress.sol";
 
-import {FHEVMConfigStruct} from "./TFHE.sol";
+import {HTTPZConfigStruct} from "./HTTPZ.sol";
 
-library FHEVMConfig {
+library HTTPZConfig {
     /// @dev Function to return an immutable struct
-    function defaultConfig() internal pure returns (FHEVMConfigStruct memory) {
+    function defaultConfig() internal pure returns (HTTPZConfigStruct memory) {
         return
-            FHEVMConfigStruct({
+            HTTPZConfigStruct({
                 ACLAddress: aclAdd,
-                TFHEExecutorAddress: tfheExecutorAdd,
+                TFHEExecutorAddress: httpzExecutorAdd,
                 KMSVerifierAddress: kmsVerifierAdd,
                 InputVerifierAddress: inputVerifierAdd
             });

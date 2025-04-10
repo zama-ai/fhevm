@@ -89,7 +89,7 @@ task('task:deployTFHEExecutor').setAction(async function (taskArguments: TaskArg
   const proxyAddress = parsedEnv.TFHE_EXECUTOR_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem);
-  console.log('TFHEExecutor code set successfully at address:', proxyAddress);
+  console.log('HTTPZExecutor code set successfully at address:', proxyAddress);
 });
 
 task('task:deployKMSVerifier')
@@ -283,16 +283,16 @@ task('task:setTFHEExecutorAddress')
     const content = `TFHE_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.log(`TFHEExecutor address ${taskArguments.address} written successfully!`);
+      console.log(`HTTPZExecutor address ${taskArguments.address} written successfully!`);
     } catch (err) {
-      console.error('Failed to write TFHEExecutor address:', err);
+      console.error('Failed to write HTTPZExecutor address:', err);
     }
 
     const solidityTemplateCoprocessor = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
 pragma solidity ^0.8.24;
 
-address constant tfheExecutorAdd = ${taskArguments.address};\n`;
+address constant httpzExecutorAdd = ${taskArguments.address};\n`;
 
     try {
       fs.writeFileSync('./addresses/TFHEExecutorAddress.sol', solidityTemplateCoprocessor, {

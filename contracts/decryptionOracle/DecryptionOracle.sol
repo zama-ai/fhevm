@@ -35,7 +35,7 @@ contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
      */
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
-    /// @custom:storage-location erc7201:fhevm.storage.DecryptionOracle
+    /// @custom:storage-location erc7201:httpz.storage.DecryptionOracle
     struct DecryptionOracleStorage {
         uint256 counter; // tracks the number of decryption requests, and used to compute the requestID by hashing it with the dApp address
     }
@@ -45,9 +45,9 @@ contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
         return $.counter;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("fhevm.storage.DecryptionOracle")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("httpz.storage.DecryptionOracle")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant DecryptionOracleStorageLocation =
-        0xd86fa2a52e99634194c279afa011b5f5166614c3198dd09bbd002d5fb5c0bc00;
+        0x936e06112e7fc4b8f5465a83d43e3a1585e7666ab7af39c4044235360fa2ea00;
 
     /**
      * @dev Returns the DecryptionOracle storage location.

@@ -6,7 +6,7 @@ import { generateOverloads } from './generateOverloads';
 import { ALL_OPERATORS } from './operators';
 import operatorsPrices from './operatorsPrices.json';
 import { generateSolidityFHEGasLimit } from './payments';
-import { generateSolidityFheType, generateSolidityImplLib, generateSolidityTFHELib } from './templates';
+import { generateSolidityFheType, generateSolidityHTTPZLib, generateSolidityImplLib } from './templates';
 import {
   generateSolidityOverloadTestFiles,
   generateSolidityUnitTestContracts,
@@ -38,7 +38,7 @@ function generateAllFiles() {
   /// Generate core Solidity contract files.
   writeFileSync('contracts/FheType.sol', generateSolidityFheType(ALL_FHE_TYPES));
   writeFileSync('lib/Impl.sol', generateSolidityImplLib(ALL_OPERATORS));
-  writeFileSync('lib/TFHE.sol', generateSolidityTFHELib(ALL_OPERATORS, ALL_FHE_TYPES));
+  writeFileSync('lib/HTTPZ.sol', generateSolidityHTTPZLib(ALL_OPERATORS, ALL_FHE_TYPES));
   writeFileSync('contracts/FHEGasLimit.sol', generateSolidityFHEGasLimit(operatorsPrices));
 
   // TODO: For now, the testgen only supports automatically generated tests for euintXX.
@@ -52,11 +52,11 @@ function generateAllFiles() {
   const overloadShards = splitOverloadsToShards(generateSolidityOverloadTestFiles(ALL_OPERATORS, ALL_FHE_TYPES));
   mkdirSync('contracts/tests', { recursive: true });
   overloadShards.forEach((os) => {
-    writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, generateSolidityUnitTestContracts(os));
+    writeFileSync(`examples/tests/HTTPZTestSuite${os.shardNumber}.sol`, generateSolidityUnitTestContracts(os));
   });
 
   const tsSplits: string[] = generateTypeScriptTestCode(overloadShards, numberOfTestSplits);
-  tsSplits.forEach((split, splitIdx) => writeFileSync(`test/tfheOperations/tfheOperations${splitIdx + 1}.ts`, split));
+  tsSplits.forEach((split, splitIdx) => writeFileSync(`test/httpzOperations/httpzOperations${splitIdx + 1}.ts`, split));
 }
 
 generateAllFiles();

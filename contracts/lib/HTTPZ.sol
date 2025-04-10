@@ -18,11 +18,11 @@ type ebytes256 is bytes32;
 type einput is bytes32;
 
 /**
- * @title   TFHE
+ * @title   HTTPZ
  * @notice  This library is the interaction point for all smart contract developers
- *          that interact with TFHE.
+ *          that interact with the HTTPZ protocol.
  */
-library TFHE {
+library HTTPZ {
     /// @notice Returned if the input's length is greater than 64 bytes.
     error InputLengthAbove64Bytes(uint256 inputLength);
 
@@ -33,11 +33,11 @@ library TFHE {
     error InputLengthAbove256Bytes(uint256 inputLength);
 
     /**
-     * @notice            Sets the FHEVM addresses.
-     * @param fhevmConfig FHEVM config struct that contains contract addresses.
+     * @notice            Sets the coprocessor addresses.
+     * @param httpzConfig HTTPZ config struct that contains contract addresses.
      */
-    function setFHEVM(FHEVMConfigStruct memory fhevmConfig) internal {
-        Impl.setFHEVM(fhevmConfig);
+    function setCoprocessor(HTTPZConfigStruct memory httpzConfig) internal {
+        Impl.setCoprocessor(httpzConfig);
     }
 
     /**

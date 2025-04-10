@@ -73,7 +73,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         address contractAddress;
     }
 
-    /// @custom:storage-location erc7201:fhevm.storage.TFHEExecutor
+    /// @custom:storage-location erc7201:httpz.storage.HTTPZExecutor
     struct TFHEExecutorStorage {
         /// @dev Counter used for computing handles of randomness operators. It is also used for OPRF, which is used to
         ///      generate pseudo-random ciphertexts.
@@ -135,9 +135,9 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice IInputVerifier.
     IInputVerifier private constant inputVerifier = IInputVerifier(inputVerifierAdd);
 
-    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.TFHEExecutor")) - 1)) & ~bytes32(uint256(0xff))
+    /// keccak256(abi.encode(uint256(keccak256("httpz.storage.HTTPZExecutor")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant TFHEExecutorStorageLocation =
-        0xa436a06f0efce5ea38c956a21e24202a59b3b746d48a23fb52b4a5bc33fe3e00;
+        0x3d02b8d0de856b0609b3629cf5f3cd56c0504e3831cd53973d36422116206500;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -1002,7 +1002,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @dev Returns the TFHEExecutor storage location.
+     * @dev Returns the HTTPZExecutor storage location.
      */
     function _getTFHEExecutorStorage() internal pure returns (TFHEExecutorStorage storage $) {
         assembly {

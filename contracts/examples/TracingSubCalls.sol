@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
 pragma solidity ^0.8.24;
-import "../lib/TFHE.sol";
+import "../lib/HTTPZ.sol";
 
 /// @notice Main contract for testing various subcalls and their behaviors
 contract TracingSubCalls {
@@ -31,7 +31,7 @@ contract SubContractCreate {
     /// @dev Constructor that encrypts the input
     /// @param input The value to be encrypted
     constructor(uint64 input) {
-        TFHE.asEuint64(input);
+        HTTPZ.asEuint64(input);
     }
 }
 
@@ -40,7 +40,7 @@ contract SubContractCreateFail {
     /// @dev Constructor that encrypts the input and then fails
     /// @param input The value to be encrypted before failing
     constructor(uint64 input) {
-        TFHE.asEuint64(input);
+        HTTPZ.asEuint64(input);
         require(false, "This constructor always fails");
     }
 }
@@ -50,13 +50,13 @@ contract SubContract {
     /// @notice Function that always succeeds
     /// @dev Encrypts a specific value (601)
     function succeed() external {
-        TFHE.asEuint64(601);
+        HTTPZ.asEuint64(601);
     }
 
     /// @notice Function that always fails
     /// @dev Encrypts a value (602) before failing
     function fail() external {
-        TFHE.asEuint64(602);
+        HTTPZ.asEuint64(602);
         require(false, "This function always fails");
     }
 
@@ -64,14 +64,14 @@ contract SubContract {
     /// @dev Encrypts the input before failing
     /// @param input The value to be encrypted before failing
     function fail2(uint64 input) external {
-        TFHE.asEuint64(input);
+        HTTPZ.asEuint64(input);
         require(false, "This function always fails with custom input");
     }
 
     /// @notice Function that succeeds and then calls a failing function
     /// @dev Encrypts a value (603) and then attempts to call fail2
     function succeedFail() external {
-        TFHE.asEuint64(603);
+        HTTPZ.asEuint64(603);
         try this.fail2(604) {} catch {}
     }
 
@@ -79,26 +79,26 @@ contract SubContract {
     /// @dev Calls fail2 and then attempts to encrypt a value (606)
     function failSucceed() external {
         this.fail2(605);
-        TFHE.asEuint64(606);
+        HTTPZ.asEuint64(606);
     }
 
     /// @notice Function that runs out of gas
     /// @dev Encrypts a value (607) and then enters an infinite loop
     function oogFail() external {
-        TFHE.asEuint64(607);
+        HTTPZ.asEuint64(607);
         while (true) {}
     }
 
     /// @notice Another function that always succeeds
     /// @dev Encrypts a specific value (608)
     function succeed2() external {
-        TFHE.asEuint64(608);
+        HTTPZ.asEuint64(608);
     }
 
     /// @notice Function that fails with an invalid operation
     /// @dev Encrypts a value (609) and then executes an invalid operation
     function invalidFail() external {
-        TFHE.asEuint64(609);
+        HTTPZ.asEuint64(609);
         assembly {
             invalid()
         }
@@ -107,7 +107,7 @@ contract SubContract {
     /// @notice Function that succeeds and then stops execution
     /// @dev Encrypts a value (610) and then stops the execution
     function succeedStop() external {
-        TFHE.asEuint64(610);
+        HTTPZ.asEuint64(610);
         assembly {
             stop()
         }
@@ -116,7 +116,7 @@ contract SubContract {
     /// @notice Function that succeeds and then self-destructs the contract
     /// @dev Encrypts a value (611) and then self-destructs the contract
     function succeedSelfDestruct() external {
-        TFHE.asEuint64(611);
+        HTTPZ.asEuint64(611);
         selfdestruct(payable(address(1)));
     }
 }

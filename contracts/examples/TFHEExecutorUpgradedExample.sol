@@ -5,7 +5,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {TFHEExecutor} from "../contracts/TFHEExecutor.sol";
 
 /// @title TFHEExecutorUpgradedExample
-/// @dev Contract that extends TFHEExecutor with version information
+/// @dev Contract that extends HTTPZExecutor with version information
 contract TFHEExecutorUpgradedExample is TFHEExecutor {
     /// @dev Name of the contract
     string private constant CONTRACT_NAME = "TFHEExecutor";

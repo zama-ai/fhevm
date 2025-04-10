@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import "../lib/TFHE.sol";
+import "../lib/HTTPZ.sol";
 import "../decryptionOracleLib/DecryptionOracleCaller.sol";
 import "../addresses/DecryptionOracleAddress.sol";
 
@@ -43,33 +43,33 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     /// @notice Constructor to initialize the contract and set up encrypted values
     constructor() {
-        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
+        HTTPZ.setCoprocessor(HTTPZConfig.defaultConfig());
         setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
 
         /// @dev Initialize encrypted variables with sample values
-        xBool = TFHE.asEbool(true);
-        TFHE.allowThis(xBool);
+        xBool = HTTPZ.asEbool(true);
+        HTTPZ.allowThis(xBool);
 
-        xUint8 = TFHE.asEuint8(42);
-        TFHE.allowThis(xUint8);
-        xUint16 = TFHE.asEuint16(16);
-        TFHE.allowThis(xUint16);
-        xUint32 = TFHE.asEuint32(32);
-        TFHE.allowThis(xUint32);
-        xUint64 = TFHE.asEuint64(18446744073709551600);
-        TFHE.allowThis(xUint64);
-        xUint64_2 = TFHE.asEuint64(76575465786);
-        TFHE.allowThis(xUint64_2);
-        xUint64_3 = TFHE.asEuint64(6400);
-        TFHE.allowThis(xUint64_3);
-        xUint128 = TFHE.asEuint128(1267650600228229401496703205443);
-        TFHE.allowThis(xUint128);
-        xUint256 = TFHE.asEuint256(27606985387162255149739023449108101809804435888681546220650096895197251);
-        TFHE.allowThis(xUint256);
-        xAddress = TFHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
-        TFHE.allowThis(xAddress);
-        xAddress2 = TFHE.asEaddress(0xf48b8840387ba3809DAE990c930F3b4766A86ca3);
-        TFHE.allowThis(xAddress2);
+        xUint8 = HTTPZ.asEuint8(42);
+        HTTPZ.allowThis(xUint8);
+        xUint16 = HTTPZ.asEuint16(16);
+        HTTPZ.allowThis(xUint16);
+        xUint32 = HTTPZ.asEuint32(32);
+        HTTPZ.allowThis(xUint32);
+        xUint64 = HTTPZ.asEuint64(18446744073709551600);
+        HTTPZ.allowThis(xUint64);
+        xUint64_2 = HTTPZ.asEuint64(76575465786);
+        HTTPZ.allowThis(xUint64_2);
+        xUint64_3 = HTTPZ.asEuint64(6400);
+        HTTPZ.allowThis(xUint64_3);
+        xUint128 = HTTPZ.asEuint128(1267650600228229401496703205443);
+        HTTPZ.allowThis(xUint128);
+        xUint256 = HTTPZ.asEuint256(27606985387162255149739023449108101809804435888681546220650096895197251);
+        HTTPZ.allowThis(xUint256);
+        xAddress = HTTPZ.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
+        HTTPZ.allowThis(xAddress);
+        xAddress2 = HTTPZ.asEaddress(0xf48b8840387ba3809DAE990c930F3b4766A86ca3);
+        HTTPZ.allowThis(xAddress2);
     }
 
     /// @notice Function to request decryption of a boolean value with an infinite loop in the callback
@@ -239,7 +239,7 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @param inputHandle The input handle for the encrypted value
     /// @param inputProof The input proof for the encrypted value
     function requestUint64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        euint64 inputNonTrivial = TFHE.asEuint64(inputHandle, inputProof);
+        euint64 inputNonTrivial = HTTPZ.asEuint64(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackUint64.selector);
@@ -264,7 +264,7 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     }
 
     function requestUint128NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        euint128 inputNonTrivial = TFHE.asEuint128(inputHandle, inputProof);
+        euint128 inputNonTrivial = HTTPZ.asEuint128(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackUint128.selector);
@@ -286,7 +286,7 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     }
 
     function requestUint256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        euint256 inputNonTrivial = TFHE.asEuint256(inputHandle, inputProof);
+        euint256 inputNonTrivial = HTTPZ.asEuint256(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackUint256.selector);
@@ -302,14 +302,14 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     }
 
     function requestEbytes64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        ebytes64 inputNonTrivial = TFHE.asEbytes64(inputHandle, inputProof);
+        ebytes64 inputNonTrivial = HTTPZ.asEbytes64(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackBytes64.selector);
     }
 
     function requestEbytes64Trivial(bytes calldata value) public {
-        ebytes64 inputTrivial = TFHE.asEbytes64(TFHE.padToBytes64(value));
+        ebytes64 inputTrivial = HTTPZ.asEbytes64(HTTPZ.padToBytes64(value));
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = toBytes32(inputTrivial);
         requestDecryption(cts, this.callbackBytes64.selector);
@@ -325,14 +325,14 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     }
 
     function requestEbytes128NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        ebytes128 inputNonTrivial = TFHE.asEbytes128(inputHandle, inputProof);
+        ebytes128 inputNonTrivial = HTTPZ.asEbytes128(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackBytes128.selector);
     }
 
     function requestEbytes128Trivial(bytes calldata value) public {
-        ebytes128 inputTrivial = TFHE.asEbytes128(TFHE.padToBytes128(value));
+        ebytes128 inputTrivial = HTTPZ.asEbytes128(HTTPZ.padToBytes128(value));
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = toBytes32(inputTrivial);
         requestDecryption(cts, this.callbackBytes128.selector);
@@ -348,14 +348,14 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     }
 
     function requestEbytes256Trivial(bytes calldata value) public {
-        ebytes256 inputTrivial = TFHE.asEbytes256(TFHE.padToBytes256(value));
+        ebytes256 inputTrivial = HTTPZ.asEbytes256(HTTPZ.padToBytes256(value));
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = toBytes32(inputTrivial);
         requestDecryption(cts, this.callbackBytes256.selector);
     }
 
     function requestEbytes256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        ebytes256 inputNonTrivial = TFHE.asEbytes256(inputHandle, inputProof);
+        ebytes256 inputNonTrivial = HTTPZ.asEbytes256(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackBytes256.selector);
@@ -428,12 +428,12 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @param inputHandle The encrypted input handle for the bytes256
     /// @param inputProof The proof for the encrypted bytes256
     function requestMixedBytes256(einput inputHandle, bytes calldata inputProof) public {
-        ebytes256 xBytes256 = TFHE.asEbytes256(inputHandle, inputProof);
+        ebytes256 xBytes256 = HTTPZ.asEbytes256(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](4);
         cts[0] = toBytes32(xBool);
         cts[1] = toBytes32(xAddress);
         cts[2] = toBytes32(xBytes256);
-        ebytes64 input64Bytes = TFHE.asEbytes64(TFHE.padToBytes64(hex"aaff42"));
+        ebytes64 input64Bytes = HTTPZ.asEbytes64(HTTPZ.padToBytes64(hex"aaff42"));
         cts[3] = toBytes32(input64Bytes);
         requestDecryption(cts, this.callbackMixedBytes256.selector);
     }
