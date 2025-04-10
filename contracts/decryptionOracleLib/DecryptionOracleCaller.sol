@@ -135,7 +135,7 @@ abstract contract DecryptionOracleCaller {
         $.DecryptionOracleAddress = decryptionOracleAddress;
     }
 
-    function gatewayContractAddress() internal view returns (address) {
+    function getDecryptionOracleAddress() internal view returns (address) {
         DecryptionOracleConfigStruct storage $ = getDecryptionOracleConfig();
         return $.DecryptionOracleAddress;
     }
