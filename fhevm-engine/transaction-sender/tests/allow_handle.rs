@@ -3,6 +3,7 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::Address, providers::WsConnect};
 use common::{ACLManager, TestEnvironment};
 
+use fhevm_engine_common::types::AllowEvents;
 use rand::random;
 use serial_test::serial;
 use sqlx::PgPool;
@@ -15,7 +16,19 @@ mod common;
 
 #[tokio::test]
 #[serial(db)]
-async fn test_allow_handle() -> anyhow::Result<()> {
+async fn test_allow_account() -> anyhow::Result<()> {
+    test_allow_call(AllowEvents::AllowedAccount).await
+    // TODO: Emit AllowAccount event in the mocked contract and assert AllowAccount is called.
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_allow_for_decrypt() -> anyhow::Result<()> {
+    test_allow_call(AllowEvents::AllowedForDecryption).await
+    // TODO: Emit AllowedForDecryption event in the mocked contract and assert AllowedForDecryption is called.
+}
+
+async fn test_allow_call(event_type: AllowEvents) -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
@@ -53,6 +66,7 @@ async fn test_allow_handle() -> anyhow::Result<()> {
         tenant_id,
         handle.clone(),
         PrivateKeySigner::random().address(),
+        event_type,
     )
     .await?;
 
@@ -97,6 +111,7 @@ async fn test_allow_handle() -> anyhow::Result<()> {
 
     env.cancel_token.cancel();
     run_handle.await??;
+
     Ok(())
 }
 
@@ -105,15 +120,17 @@ async fn insert_allowed_handle(
     tenant_id: i32,
     handle: Vec<u8>,
     account_address: Address,
+    event_type: AllowEvents,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-        INSERT INTO allowed_handles (tenant_id, handle, account_address)
-        VALUES ($1, $2, $3)
+        INSERT INTO allowed_handles (tenant_id, handle, account_address, event_type)
+        VALUES ($1, $2, $3, $4)
         "#,
         tenant_id,
         handle,
         account_address.to_string(),
+        event_type as i16,
     )
     .execute(pool)
     .await?;

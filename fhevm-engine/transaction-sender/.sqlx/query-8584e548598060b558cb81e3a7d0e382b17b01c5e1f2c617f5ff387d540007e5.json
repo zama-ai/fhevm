@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT handle, tenant_id, account_address\n            FROM allowed_handles\n            WHERE account_address IS NOT NULL\n                AND TRIM(account_address) <> ''\n                AND txn_is_sent = false\n                AND txn_retry_count < $1\n            LIMIT $2;\n            ",
+  "query": "\n            SELECT handle, tenant_id, account_address, event_type \n            FROM allowed_handles \n            WHERE txn_is_sent = false \n            AND txn_retry_count < $1\n            LIMIT $2;\n            ",
   "describe": {
     "columns": [
       {
@@ -17,6 +17,11 @@
         "ordinal": 2,
         "name": "account_address",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "event_type",
+        "type_info": "Int2"
       }
     ],
     "parameters": {
@@ -28,8 +33,9 @@
     "nullable": [
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "642e2ca2e879ec7c854e01b947fc3afa206abce4f1f4f84bf14ea5417c217876"
+  "hash": "8584e548598060b558cb81e3a7d0e382b17b01c5e1f2c617f5ff387d540007e5"
 }

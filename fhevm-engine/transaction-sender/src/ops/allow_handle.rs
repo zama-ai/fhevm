@@ -16,7 +16,7 @@ use alloy::{
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{tenant_keys::query_tenant_info, utils::compact_hex};
+use fhevm_engine_common::{tenant_keys::query_tenant_info, types::AllowEvents, utils::compact_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{debug, error, info};
@@ -31,16 +31,18 @@ struct Key {
     handle: Vec<u8>,
     account_addr: String,
     tenant_id: i32,
+    event_type: AllowEvents,
 }
 
 impl Display for Key {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Key {{ handle: {}, account: {}, tenant_id: {} }}",
+            "Key {{ handle: {}, account: {}, tenant_id: {}, event_type: {:?} }}",
             compact_hex(&self.handle),
             self.account_addr,
-            self.tenant_id
+            self.tenant_id,
+            self.event_type
         )
     }
 }
@@ -100,10 +102,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
         if receipt.status() {
             sqlx::query!(
                 "UPDATE allowed_handles
-                 SET txn_is_sent = true
-                 WHERE handle = $1
-                 AND account_address = $2
-                 AND tenant_id = $3",
+                     SET txn_is_sent = true
+                     WHERE handle = $1
+                     AND account_address = $2
+                     AND tenant_id = $3",
                 key.handle,
                 key.account_addr,
                 key.tenant_id
@@ -111,10 +113,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
             .execute(&self.db_pool)
             .await?;
 
-            info!(
-                "allowAccount txn: {} succeeded, {}",
-                receipt.transaction_hash, key,
-            );
+            info!("Allow txn: {} succeeded, {}", receipt.transaction_hash, key,);
         } else {
             error!(
                 "allowAccount txn: {} failed with status {}, handle: {}",
@@ -195,12 +194,10 @@ where
     async fn execute(&self) -> anyhow::Result<bool> {
         let rows = sqlx::query!(
             "
-            SELECT handle, tenant_id, account_address
-            FROM allowed_handles
-            WHERE account_address IS NOT NULL
-                AND TRIM(account_address) <> ''
-                AND txn_is_sent = false
-                AND txn_retry_count < $1
+            SELECT handle, tenant_id, account_address, event_type 
+            FROM allowed_handles 
+            WHERE txn_is_sent = false 
+            AND txn_retry_count < $1
             LIMIT $2;
             ",
             self.conf.allow_handle_max_retries as i32,
@@ -233,30 +230,59 @@ where
             let chain_id = tenant.chain_id;
             let handle: Vec<u8> = row.handle.clone();
             let h_as_hex = compact_hex(&handle);
-
-            let account_addr = row.account_address;
-            info!(
-                "Allow handle: {}, account: {}, chain_id: {}",
-                h_as_hex, account_addr, chain_id
-            );
-
-            let handle_u256 = U256::from_be_bytes(try_into_array::<32>(handle)?);
-            let address = match Address::from_str(&account_addr) {
-                Ok(addr) => addr,
-                Err(e) => {
-                    error!("Failed to parse address: {}, error: {}", account_addr, e);
+            let event_type = match AllowEvents::try_from(row.event_type) {
+                Ok(event_type) => event_type,
+                Err(_) => {
+                    error!(
+                        "Invalid event_type: {} for tenant_id: {}",
+                        row.event_type, row.tenant_id
+                    );
                     continue;
                 }
             };
 
-            let txn_request = match &self.gas {
-                Some(gas_limit) => acl_manager
-                    .allowAccount(U256::from(chain_id), handle_u256, address)
-                    .into_transaction_request()
-                    .with_gas_limit(*gas_limit),
-                None => acl_manager
-                    .allowAccount(U256::from(chain_id), handle_u256, address)
-                    .into_transaction_request(),
+            let account_addr = row.account_address;
+            info!(
+                "Allow handle: {}, event_type: {:?}, account: {:?}, chain_id: {},",
+                h_as_hex, event_type, account_addr, chain_id,
+            );
+
+            let handle_u256 = U256::from_be_bytes(try_into_array::<32>(handle)?);
+
+            let txn_request = match event_type {
+                AllowEvents::AllowedForDecryption => {
+                    // Call allowPublicDecrypt when account_address is null
+                    match &self.gas {
+                        Some(gas_limit) => acl_manager
+                            .allowPublicDecrypt(U256::from(chain_id), handle_u256)
+                            .into_transaction_request()
+                            .with_gas_limit(*gas_limit),
+                        None => acl_manager
+                            .allowPublicDecrypt(U256::from(chain_id), handle_u256)
+                            .into_transaction_request(),
+                    }
+                }
+                AllowEvents::AllowedAccount => {
+                    let address = if let Ok(addr) = Address::from_str(&account_addr) {
+                        addr
+                    } else {
+                        error!(
+                            "Invalid account address: {:?} for tenant_id: {}",
+                            account_addr, row.tenant_id
+                        );
+                        continue;
+                    };
+
+                    match &self.gas {
+                        Some(gas_limit) => acl_manager
+                            .allowAccount(U256::from(chain_id), handle_u256, address)
+                            .into_transaction_request()
+                            .with_gas_limit(*gas_limit),
+                        None => acl_manager
+                            .allowAccount(U256::from(chain_id), handle_u256, address)
+                            .into_transaction_request(),
+                    }
+                }
             };
 
             let handle = row.handle;
@@ -265,6 +291,7 @@ where
                 handle,
                 account_addr,
                 tenant_id: row.tenant_id,
+                event_type,
             };
 
             let operation = self.clone();

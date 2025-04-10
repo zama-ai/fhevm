@@ -779,3 +779,24 @@ pub fn get_ct_type(handle: &[u8]) -> Result<i16, FhevmError> {
 pub fn is_ebytes_type(inp: i16) -> bool {
     (9..=11).contains(&inp)
 }
+
+#[derive(Copy, Clone, Debug)]
+pub enum AllowEvents {
+    AllowedAccount = 0,
+    AllowedForDecryption = 1,
+}
+
+pub enum AllowEventsError {
+    InvalidValue(i16),
+}
+
+impl TryFrom<i16> for AllowEvents {
+    type Error = AllowEventsError;
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(AllowEvents::AllowedAccount),
+            1 => Ok(AllowEvents::AllowedForDecryption),
+            _ => Err(AllowEventsError::InvalidValue(value)),
+        }
+    }
+}

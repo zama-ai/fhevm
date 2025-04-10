@@ -10,4 +10,9 @@ contract ACLManager {
         uint256 ctHandle,
         address accountAddress
     ) public {}
+
+     function allowPublicDecrypt(
+        uint256 chainId,
+        uint256 ctHandle
+    ) public {}
 }
