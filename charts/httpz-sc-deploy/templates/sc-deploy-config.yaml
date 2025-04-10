@@ -41,6 +41,24 @@ data:
       fi
       kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
     }
+    add_annotation_to_configmap() {
+      configmap_name="${1}"
+      key="${2}"
+      value="${3}"
+      if [[ -z "$configmap_name" ]]; then
+        echo "error: you must supply a configmap name" 1>&2
+        exit 1
+      fi
+      if [[ -z "$key" ]]; then
+        echo "error: you must supply an annotation key" 1>&2
+        exit 1
+      fi
+      if [[ -z "$value" ]]; then
+        echo "error: you must supply an annotation value" 1>&2
+        exit 1
+      fi
+      kubectl annotate configmap "${configmap_name}" "${key}='${value}'"
+    }
     CONFIGMAP_NAME="{{ .Values.scDeploy.configmapName }}"
 
     echo "creating kubernetes configmap for smart contract configuration outputs"
@@ -83,4 +101,4 @@ data:
     {{ . }}
     {{- end }}
     echo "${CONFIGMAP_NAME} configmap updated successfully"
-{{- end -}}
+    {{- end -}}
