@@ -34,6 +34,7 @@
 //! ```
 
 use alloy::primitives::Address;
+use alloy::signers::{local::PrivateKeySigner, Signer};
 use std::{str::FromStr, sync::Arc};
 use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
@@ -80,14 +81,17 @@ async fn main() -> eyre::Result<()> {
         .validate_addresses()
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
 
+    let mut host_signer: PrivateKeySigner =
+        std::env::var(&settings.transaction.private_key_httpz_env)
+            .unwrap_or(String::new())
+            .parse()?;
+    host_signer.set_chain_id(Some(settings.networks.fhevm.chain_id));
+
     // Prepare tx service for L1
-    let tx_service = TransactionService::new(
-        &settings.networks.fhevm.http_url,
-        &settings.transaction.private_key_httpz_env,
-        settings.networks.fhevm.chain_id,
-    )
-    .await
-    .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
+    let tx_service =
+        TransactionService::new(&settings.networks.fhevm.http_url, Arc::new(host_signer))
+            .await
+            .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
     Arc::clone(&tx_service).spawn_maintenance_tasks();
 
@@ -96,14 +100,17 @@ async fn main() -> eyre::Result<()> {
         .cloned()
         .map_err(|e| eyre::eyre!("Failed to get rollup settings: {}", e))?;
 
+    let mut gateway_signer: PrivateKeySigner =
+        std::env::var(&settings.transaction.private_key_gateway_env)
+            .unwrap_or(String::new())
+            .parse()?;
+    gateway_signer.set_chain_id(Some(rollup_settings.chain_id));
+
     // Prepare tx service for rollup
-    let tx_service_rollup = TransactionService::new(
-        &rollup_settings.http_url,
-        &settings.transaction.private_key_gateway_env,
-        rollup_settings.chain_id,
-    )
-    .await
-    .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
+    let tx_service_rollup =
+        TransactionService::new(&rollup_settings.http_url, Arc::new(gateway_signer))
+            .await
+            .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
     Arc::clone(&tx_service_rollup).spawn_maintenance_tasks();
 

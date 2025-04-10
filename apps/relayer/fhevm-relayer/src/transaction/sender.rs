@@ -1,9 +1,10 @@
 use alloy::{
-    network::{EthereumWallet, TransactionBuilder},
+    network::TransactionBuilder,
+    // network::{EthereumWallet, TransactionBuilder},
     primitives::{Address, Bytes, B256, U256},
     providers::{Provider, ProviderBuilder},
     rpc::types::{TransactionReceipt, TransactionRequest},
-    signers::{local::PrivateKeySigner, Signer},
+    signers::Signer,
     transports::http::{Client, Http},
 };
 use eyre::Result;
@@ -120,28 +121,31 @@ impl Default for TxConfig {
     }
 }
 
-#[derive(Clone)]
 pub struct TransactionManager {
     pub provider: Arc<dyn Provider<Http<Client>>>,
-    wallet: EthereumWallet,
-    chain_id: u64,
+    signer: Arc<dyn Signer + Sync + Send>,
 }
 
 impl fmt::Debug for TransactionManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TransactionManager")
-            .field("chain_id", &self.chain_id)
-            .field("wallet_address", &self.wallet.default_signer().address())
+            .field("chain_id", &self.signer.chain_id())
+            .field("wallet_address", &self.signer.address())
             .field("provider", &"<provider>") // Skip detailed provider debug
             .finish()
     }
 }
 
+// Diagnostics:
+// 1. expected a type, found a trait [E0782]
+// 2. use a new generic type parameter, constrained by `Signer`: `T`, `<T: Signer>` [E0782]
+// 3. you can also use an opaque type, but users won't be able to specify the type parameter when calling the `fn`, having to rely exclusively on type inference: `impl ` [E0782]
+// 4. alternatively, use a trait object to accept any type that implements `Signer`, accessing its methods at runtime using dynamic dispatch: `&dyn ` [E0782]
 impl TransactionManager {
     pub async fn new(
         rpc_url: &str,
-        private_key: &str,
-        chain_id: u64,
+        // private_key: &str,
+        signer: Arc<dyn Signer + Sync + Send>,
     ) -> Result<Self, TransactionError> {
         let url = Url::parse(rpc_url)
             .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {}", e)))?;
@@ -150,23 +154,17 @@ impl TransactionManager {
             .with_recommended_fillers()
             .on_http(url);
 
-        let mut signer: PrivateKeySigner = private_key.parse().map_err(|e| {
-            TransactionError::InvalidPrivateKey(format!("Invalid private key format: {}", e))
-        })?;
-
-        signer.set_chain_id(Some(chain_id));
-        let wallet = EthereumWallet::from(signer);
+        // let wallet = EthereumWallet::from(signer);
 
         info!(
-            address = ?wallet.default_signer().address(),
-            chain_id,
+            address = ?signer.address(),
+            chain_id = ?signer.chain_id(),
             "Initialized TransactionManager"
         );
 
         Ok(Self {
             provider: Arc::new(provider),
-            wallet,
-            chain_id,
+            signer,
         })
     }
 
@@ -175,7 +173,7 @@ impl TransactionManager {
     }
 
     pub fn sender_address(&self) -> Address {
-        self.wallet.default_signer().address()
+        self.signer.address()
     }
 
     pub async fn estimate_gas(
@@ -514,6 +512,7 @@ impl TransactionManager {
 mod tests {
     use super::*;
     use alloy::primitives::{hex, keccak256, U256};
+    use alloy::signers::local::PrivateKeySigner;
 
     #[tokio::test]
     /// For this test having a running node is MANDATORY
@@ -528,7 +527,10 @@ mod tests {
         });
 
         println!("Setting up manager with test private key...");
-        let manager = TransactionManager::new("http://localhost:8756", &private_key, 123456)
+        let mut signer: PrivateKeySigner = private_key.parse().unwrap();
+        signer.set_chain_id(Some(123456));
+
+        let manager = TransactionManager::new("http://localhost:8756", Arc::new(signer))
             .await
             .expect("Failed to create transaction manager");
 

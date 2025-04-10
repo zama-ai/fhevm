@@ -33,7 +33,10 @@
 //! [Ethereum L1] ← [L1 Handler] ← [Orchestrator] ← [L2 Listener]
 //! ```
 
-use alloy::primitives::Address;
+use alloy::{
+    primitives::Address,
+    signers::{local::PrivateKeySigner, Signer},
+};
 use std::{str::FromStr, sync::Arc};
 use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
@@ -77,14 +80,15 @@ async fn main() -> eyre::Result<()> {
         .cloned()
         .map_err(|e| eyre::eyre!("Failed to get rollup settings: {}", e))?;
 
+    let mut signer: PrivateKeySigner = std::env::var(&settings.transaction.private_key_gateway_env)
+        .unwrap_or(String::new())
+        .parse()?;
+    signer.set_chain_id(Some(rollup_settings.chain_id));
+
     // Prepare tx service for rollup
-    let tx_service_rollup = TransactionService::new(
-        &rollup_settings.http_url,
-        &settings.transaction.private_key_gateway_env,
-        rollup_settings.chain_id,
-    )
-    .await
-    .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
+    let tx_service_rollup = TransactionService::new(&rollup_settings.http_url, Arc::new(signer))
+        .await
+        .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
     Arc::clone(&tx_service_rollup).spawn_maintenance_tasks();
 

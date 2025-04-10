@@ -488,6 +488,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     use crate::transaction::sender::TransactionManager;
     use crate::transaction::TxConfig;
     use alloy::primitives::{Address, Bytes, U256};
+    use alloy::signers::{local::PrivateKeySigner, Signer};
     use std::str::FromStr;
 
     // Load configuration
@@ -504,16 +505,14 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
         std::env::var(&settings.transaction.private_key_gateway_env).unwrap_or_else(|_| {
             "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f".to_string()
         });
+    let mut gateway_signer: PrivateKeySigner = private_key.parse()?;
+    gateway_signer.set_chain_id(Some(rollup_settings.chain_id));
 
     // Create transaction manager
     println!("Setting up manager with configured private key...");
-    let manager = TransactionManager::new(
-        &rollup_settings.http_url,
-        &private_key,
-        rollup_settings.chain_id,
-    )
-    .await
-    .expect("Failed to create transaction manager");
+    let manager = TransactionManager::new(&rollup_settings.http_url, Arc::new(gateway_signer))
+        .await
+        .expect("Failed to create transaction manager");
 
     println!("Using address: {:?}", manager.sender_address());
 
@@ -602,6 +601,8 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
     use alloy::primitives::{keccak256, Address};
     use std::str::FromStr;
 
+    use alloy::signers::{local::PrivateKeySigner, Signer};
+
     println!("========== RUNNING DIAGNOSTIC TEST FOR USER DECRYPTION REQUEST ==========");
 
     // Load configuration
@@ -611,20 +612,18 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
         .cloned()
         .expect("Failed to get rollup settings");
 
-    // Create transaction manager
+    // Test private key from environment variable or use default
     let private_key =
         std::env::var(&settings.transaction.private_key_gateway_env).unwrap_or_else(|_| {
             "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f".to_string()
         });
+    let mut gateway_signer: PrivateKeySigner = private_key.parse()?;
+    gateway_signer.set_chain_id(Some(rollup_settings.chain_id));
 
     println!("Setting up manager with configured private key...");
-    let manager = TransactionManager::new(
-        &rollup_settings.http_url,
-        &private_key,
-        rollup_settings.chain_id,
-    )
-    .await
-    .expect("Failed to create transaction manager");
+    let manager = TransactionManager::new(&rollup_settings.http_url, Arc::new(gateway_signer))
+        .await
+        .expect("Failed to create transaction manager");
 
     let decryption_manager_address =
         Address::from_str(&settings.contracts.decryption_manager_address)

@@ -1,6 +1,7 @@
 use alloy::{
     primitives::{Address, Bytes, B256},
     rpc::types::TransactionReceipt,
+    signers::Signer,
 };
 use dashmap::DashMap;
 use rand::Rng;
@@ -67,28 +68,10 @@ impl TransactionService {
     /// Creates a new instance of TransactionService
     pub async fn new(
         rpc_url: &str,
-        private_key_env: &str,
-        chain_id: u64,
+        // private_key_env: &str,
+        signer: Arc<dyn Signer + Send + Sync>,
     ) -> Result<Arc<Self>, TransactionServiceError> {
-        let private_key = match std::env::var(private_key_env) {
-            Ok(key) => {
-                info!(
-                    "Using private key from environment variable: {}",
-                    private_key_env
-                );
-                key
-            }
-            Err(_) => {
-                warn!(
-                    "Private key environment variable {} not found, using development key",
-                    private_key_env
-                );
-                // Default development private key (do NOT use in production!)
-                "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f".to_string()
-            }
-        };
-
-        let manager = TransactionManager::new(rpc_url, &private_key, chain_id)
+        let manager = TransactionManager::new(rpc_url, signer)
             .await
             .map_err(|e| TransactionServiceError::Failed(e.to_string()))?;
 
