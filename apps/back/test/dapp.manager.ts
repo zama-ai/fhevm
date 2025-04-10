@@ -34,15 +34,36 @@ export interface DAppStats {
 export interface CumulativeDappStats {
   total: number
   FheAdd: number
-  FheBitAnd: number
-  FheIfThenElse: number
-  FheLe: number
-  FheOr: number
   FheSub: number
-  TrivialEncrypt: number
-  VerifyCiphertext: number
   FheMul: number
   FheDiv: number
+  FheRem: number
+  FheBitAnd: number
+  FheBitOr: number
+  FheBitXor: number
+  FheShl: number
+  FheShr: number
+  FheRotl: number
+  FheRotr: number
+  FheEq: number
+  FheEqBytes: number
+  FheNe: number
+  FheNeBytes: number
+  FheGe: number
+  FheGt: number
+  FheLe: number
+  FheLt: number
+  FheMin: number
+  FheMax: number
+  FheNeg: number
+  FheNot: number
+  VerifyCiphertext: number
+  Cast: number
+  TrivialEncrypt: number
+  TrivialEncryptBytes: number
+  FheIfThenElse: number
+  FheRand: number
+  FheRandBounded: number
 }
 
 export interface DappStats {
@@ -276,15 +297,36 @@ const GET_DAPP_STATS = `
         cumulative {
           total
           FheAdd
-          FheBitAnd
-          FheIfThenElse
-          FheLe
-          FheOr
           FheSub
-          TrivialEncrypt
-          VerifyCiphertext
           FheMul
           FheDiv
+          FheRem
+          FheBitAnd
+          FheBitOr
+          FheBitXor
+          FheShl
+          FheShr
+          FheRotl
+          FheRotr
+          FheEq
+          FheEqBytes
+          FheNe
+          FheNeBytes
+          FheGe
+          FheGt
+          FheLe
+          FheLt
+          FheMin
+          FheMax
+          FheNeg
+          FheNot
+          VerifyCiphertext
+          Cast
+          TrivialEncrypt
+          TrivialEncryptBytes
+          FheIfThenElse
+          FheRand
+          FheRandBounded
         }
       }
     }

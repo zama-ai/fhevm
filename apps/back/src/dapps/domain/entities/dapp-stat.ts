@@ -1,27 +1,33 @@
 import { z } from 'zod'
 import { DAppId, DAppStatId } from './value-objects.js'
 import { AppError, Entity, fail, ok, Result, validationError } from 'utils'
+import { operationEnum } from 'messages'
+
 
 const schema = z.object({
   id: DAppStatId.schema,
-  name: z.string(),
+  name: operationEnum,
   timestamp: z.date(),
   dappId: DAppId.schema,
+  type: z.enum(['COMPUTATION', 'ENCRYPTION']),
+  day: z.number().min(1).max(366),
+  month: z.number().min(0).max(11),
+  year: z.number().min(0),
   externalRef: z.string(),
 })
+
 
 export type DAppStatProps = z.infer<typeof schema>
 
 export class DAppStat
   extends Entity<DAppStatProps>
   implements
-    Readonly<
-      Omit<DAppStatProps, 'id' | 'dappId'> & {
-        id: DAppStatId
-        dappId: DAppId
-      }
-    >
-{
+  Readonly<
+    Omit<DAppStatProps, 'id' | 'dappId'> & {
+      id: DAppStatId
+      dappId: DAppId
+    }
+  > {
   static parse(data: unknown): Result<DAppStat, AppError> {
     if (!data) return fail(validationError('data is undefined'))
     const check = schema.safeParse(data)
@@ -44,6 +50,22 @@ export class DAppStat
 
   get dappId() {
     return DAppId.fromString(this.get('dappId')).unwrap()
+  }
+
+  get type() {
+    return this.get('type')
+  }
+
+  get day() {
+    return this.get('day')
+  }
+
+  get month() {
+    return this.get('month')
+  }
+
+  get year() {
+    return this.get('year')
   }
 
   get externalRef() {

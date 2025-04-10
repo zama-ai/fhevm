@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { faker } from '@faker-js/faker'
 import * as back from './back.events.js'
 import { generateRequestId } from './shared.js'
+import { getRandomOperation } from './test.utils.js'
 
 describe('back', () => {
   describe('isBackEvent', () => {
@@ -96,12 +97,12 @@ describe('back', () => {
             address: faker.string.hexadecimal({ length: 40 }),
             events: [
               {
-                name: faker.string.alphanumeric(),
+                name: getRandomOperation(),
                 timestamp: faker.date.past().toISOString(),
                 externalRef: faker.string.alphanumeric(10),
               },
               {
-                name: faker.string.alphanumeric(),
+                name: getRandomOperation(),
                 timestamp: faker.date.past().toISOString(),
                 externalRef: faker.string.alphanumeric(10),
               },

@@ -1,11 +1,14 @@
 use crate::events::*;
-use alloy::rpc::types::Log;
+use alloy::primitives::Address;
 use axum::routing::{get, post};
 use axum::{debug_handler, extract::State};
 use axum::{
     http::StatusCode,
     response::{Html, IntoResponse},
     Json, Router,
+};
+use fhevm_relayer::blockchain::ethereum::{
+    ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
 };
 use fhevm_relayer::orchestrator::traits::Event;
 use fhevm_relayer::{
@@ -53,7 +56,7 @@ pub async fn wait_for_response_with_id(
         {
             Ok(value) => value,
             Err(err) => {
-                warn!("{:?}", err);
+                warn!("SQS listenning error: {:?}", err);
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 continue;
             }
@@ -392,6 +395,7 @@ pub async fn http_listener(
 pub async fn sqs_listener(
     sqs_client: aws_sdk_sqs::Client,
     request_queue_url: String,
+    retry_wait_time: Option<u64>,
     orchestrator: Arc<
         Orchestrator<
             impl EventDispatcher<ZwsRelayerEvent> + HandlerRegistry<ZwsRelayerEvent>,
@@ -411,8 +415,11 @@ pub async fn sqs_listener(
         {
             Ok(value) => value,
             Err(err) => {
-                warn!("{:?}", err);
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                warn!("SQS listenning error: {:?}", err);
+                tokio::time::sleep(tokio::time::Duration::from_millis(
+                    retry_wait_time.unwrap_or(1000),
+                ))
+                .await;
                 continue;
             }
         };
@@ -485,9 +492,14 @@ pub async fn sqs_listener(
     }
 }
 
-// Listener per contract type?
+// NOTE: Listener per contract type?
+// TODO: Find a cleaner way to handle ctrl+c events
 pub async fn blockchain_event_listener(
-    mut subscription: alloy::pubsub::SubscriptionStream<Log>,
+    // mut subscription: alloy::pubsub::SubscriptionStream<Log>,
+    chain_name: ChainName,
+    ws_url: String,
+    contract_addresses: Vec<Address>,
+    retry_wait_time: Option<u64>,
     orchestrator: Arc<
         Orchestrator<
             impl EventDispatcher<ZwsRelayerEvent> + HandlerRegistry<ZwsRelayerEvent>,
@@ -496,47 +508,128 @@ pub async fn blockchain_event_listener(
     >,
     name: String,
 ) {
-    loop {
-        tokio::select! {
-            event = subscription.next() => match event {
-                Some(event_log) => {
-                    // NOTE: we should probably parse event log here instead of in the handler
-                    // and populate the event accordingly
-                    let id = orchestrator.new_request_id();
-                    let event = ZwsRelayerEvent::BlockchainEvent(BlockchainEvent{
-                        request_id: id,
-                        event_log,
-                    });
-
-                    debug!(
-                        file = file!(),
-                        line = line!(),
-                        event_id = ?id,
-                        blockchain = name,
-                        "Dispatching event"
-                    );
-
-                    // Dispatch with error logging
-                    if let Err(e) = orchestrator.dispatch_event(event).await {
-                        error!(
-                            file = file!(),
-                            line = line!(),
-                            blockchain = name,
-                            error = %e,
-                            "Failed to dispatch event"
+    let retry_wait = retry_wait_time.unwrap_or(1000);
+    'outer: loop {
+        // Try to create client with timeout to avoid blocking the task indefinitely
+        let client_future = EthereumJsonRPCWsClient::new(chain_name.clone(), ws_url.as_str());
+        let client = tokio::select! {
+            result = client_future => {
+                match result {
+                    Ok(value) => value,
+                    Err(error) => {
+                        warn!(
+                            "Couldn't create EthereumJsonRPCWsClient {:?}, {:?} blockchain: {:?}",
+                            chain_name, name, error
                         );
+
+                        // Check for ctrl+c during the retry wait
+                        tokio::select! {
+                            _ = tokio::time::sleep(tokio::time::Duration::from_millis(retry_wait)) => {
+                                continue 'outer;
+                            },
+                            _ = tokio::signal::ctrl_c() => {
+                                info!(blockchain = name, "Received ctrl + c signal while reconnecting, stopping {:?}, {:?} listener...", chain_name, name);
+                                break 'outer;
+                            }
+                        }
                     }
-                }
-                None => {
-                    info!(blockchain = name,
-                        "Subscription stream ended");
-                    break;
                 }
             },
             _ = tokio::signal::ctrl_c() => {
-                info!(blockchain = name,"Received ctrl + c signal, stopping...");
-                break;
+                info!(blockchain = name, "Received ctrl + c signal during connection attempt, stopping {:?}, {:?} listener...", chain_name, name);
+                break 'outer;
             }
         };
+
+        let client = Arc::new(client);
+        let filter_httpz_host = ContractAndTopicsFilter::new(contract_addresses.clone(), vec![]);
+
+        // Try to create subscription with timeout
+        let subscription_future = client.new_subscription(filter_httpz_host.clone(), None);
+        let subscription = tokio::select! {
+            result = subscription_future => {
+                match result {
+                    Ok(value) => value,
+                    Err(error) => {
+                        warn!(
+                            "Couldn't create subscription to {:?}, {:?} blockchain {:?} : {:?}",
+                            chain_name, name, filter_httpz_host, error
+                        );
+
+                        // Check for ctrl+c during the retry wait
+                        tokio::select! {
+                            _ = tokio::time::sleep(tokio::time::Duration::from_millis(retry_wait)) => {
+                                continue 'outer;
+                            },
+                            _ = tokio::signal::ctrl_c() => {
+                                info!(blockchain = name, "Received ctrl + c signal while reconnecting subscription, stopping {:?}, {:?} listener...", chain_name, name);
+                                break 'outer;
+                            }
+                        }
+                    }
+                }
+            },
+            _ = tokio::signal::ctrl_c() => {
+                info!(blockchain = name, "Received ctrl + c signal during subscription creation, stopping {:?}, {:?} listener...", chain_name, name);
+                break 'outer;
+            }
+        };
+
+        let mut subscription = subscription;
+
+        info!(
+            blockchain = name,
+            "Successfully connected to {:?}, {:?} blockchain", chain_name, name
+        );
+
+        'inner: loop {
+            tokio::select! {
+                event = subscription.next() => match event {
+                    Some(event_log) => {
+                        // NOTE: we should probably parse event log here instead of in the handler
+                        // and populate the event accordingly
+                        let id = orchestrator.new_request_id();
+                        let event = ZwsRelayerEvent::BlockchainEvent(BlockchainEvent{
+                            request_id: id,
+                            event_log,
+                        });
+
+                        debug!(
+                            file = file!(),
+                            line = line!(),
+                            event_id = ?id,
+                            blockchain = name,
+                            "Dispatching event"
+                        );
+
+                        // Dispatch with error logging
+                        // TODO: add mitigation policy in case of dispatch failure
+                        if let Err(e) = orchestrator.dispatch_event(event).await {
+                            error!(
+                                file = file!(),
+                                line = line!(),
+                                blockchain = name,
+                                error = %e,
+                                "Failed to dispatch event"
+                            );
+                        }
+                        continue;
+                    }
+                    None => {
+                        info!(blockchain = name,
+                            "Subscription stream ended");
+                        break 'inner;
+                    }
+                },
+                _ = tokio::signal::ctrl_c() => {
+                    info!(blockchain = name,"Received ctrl + c signal, stopping {:?}, {:?} listener...", chain_name, name);
+                    break 'outer;
+                }
+                else => {
+                    info!(blockchain = name,"Else , stopping {:?}, {:?} listener...", chain_name, name);
+                    break 'outer;
+                }
+            };
+        }
     }
 }

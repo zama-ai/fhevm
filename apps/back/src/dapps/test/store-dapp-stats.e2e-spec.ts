@@ -13,7 +13,7 @@ import {
   vi,
 } from 'vitest'
 
-describe('store dapp stats', () => {
+describe('store-dapp-stats', () => {
   const manager = new IntegrationManager()
 
   beforeAll(async () => {
@@ -59,7 +59,9 @@ describe('store dapp stats', () => {
     })
 
     describe('when we receive a dapp stats available event', () => {
+      let timestamp: string
       beforeEach(async () => {
+        timestamp = faker.date.past().toISOString()
         await manager.sendMessage(
           JSON.stringify(
             back.dappStatsAvailable(
@@ -70,7 +72,7 @@ describe('store dapp stats', () => {
                 events: [
                   {
                     name: 'FheAdd',
-                    timestamp: faker.date.past().toISOString(),
+                    timestamp,
                     externalRef: faker.string.alphanumeric(10),
                   },
                 ],
@@ -93,6 +95,9 @@ describe('store dapp stats', () => {
           expect(res.data.id, 'Wrong dapp id').toBe(dappId)
           expect(res.data.rawStats.length, 'Wrong stats count').toBe(1)
           expect(res.data.rawStats[0].name).toBe('FheAdd')
+          expect(res.data.rawStats[0].timestamp).toBe(
+            new Date(timestamp).getTime(),
+          )
         } else {
           console.log(`res: ${JSON.stringify(res)}`)
           expect(res.success, 'Failed to fetch stats').toBe(true)

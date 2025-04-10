@@ -1,16 +1,42 @@
-FROM node:22-slim AS final
+# --- Base stage ---
+FROM node:22.14.0-alpine3.21 AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
-COPY . /usr/src/app
-WORKDIR /usr/src/app
-RUN apt-get update -y && apt-get install -y openssl
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --lockfile
-RUN pnpm run --filter "./packages/**" build
+
+# --- Builder stage ---
+FROM base AS builder
+WORKDIR /wrkspc
+COPY . .
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+RUN pnpm --filter "./packages/**" build
 RUN pnpx prisma generate --schema apps/orchestrator/prisma/schema.prisma
 RUN pnpm --filter=orchestrator build
+RUN pnpm --filter=orchestrator run copy:generated
 RUN pnpm deploy --filter=orchestrator --prod /prod/orchestrator
-ENV NODE_ENV=production
-EXPOSE 8003
-ENV PORT=8003
-CMD [ "pnpm", "start" ]
+RUN cp -r apps/orchestrator/dist /prod/orchestrator/
+
+# --- Runtime stage ---
+FROM base AS runtime
+WORKDIR /prod-wrkspc
+COPY --from=builder /prod/orchestrator ./
+EXPOSE 3001
+# EXPOSE 8003
+
+# RUN addgroup -g 10002 zwsgrp && \
+#     adduser -D -H -u 10001 -G zwsgrp zwsusr && \
+#     apk add --no-cache openssl wget
+# RUN chown -R zwsusr:zwsgrp /prod/orchestrator
+# USER zwsusr:zwsgrp
+
+# TODO: update endpoint if healthcheck is implemented
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD pgrep -f "dist/src/main" > /dev/null || exit 1
+
+CMD ["pnpm", "start:prod"]
+
+# HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+#     CMD wget -qO- http://localhost:3001/healthcheck || exit 1
+#     CMD wget -qO- http://localhost:8003/ || exit 1
+#     CMD pgrep -f "dist/src/main" > /dev/null || exit 1
+

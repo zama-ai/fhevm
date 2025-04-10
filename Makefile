@@ -45,53 +45,37 @@ publish-web3-fhe-event-requested:
 		--queue-url 'http://localhost:4566/000000000000/web3-queue' \
 		--region eu-central-1 \
 		--message-body '{"type": "web3:fhe-event:detected", "payload": {"chainId": "123456", "address": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}, "meta": {"correlationId": "ea0ca1c2-3fde-4f80-8abb-08aecee4107c"}}'
-
-# run the blockchaion on docker
-blockchain-install:
-	bash scripts/install-blockchain-checks.sh && \
-	bash scripts/install-blockchain-submodules.sh && \
-	$(MAKE) clean-fhevm-devops && \
-	$(MAKE) run-fhevm-devops
-
-# test the blockchain
-blockchain-test:
-	bash scripts/blockchain-test.sh
-
-# display blockchain operations
-blockchain-listen:
-	bash scripts/blockchain-listen.sh
 	
-# Hardhat
-# First launch node and deploy contracts
-httpz-run:
-	bash scripts/httpz-run.sh
+# HTTPZ
+httpz-up:
+	bash scripts/httpz-up.sh
+httpz-down:
+	bash scripts/httpz-down.sh
 	
-# Then launch some public decryption test
+# HTTPZ Tests
 httpz-test-public-decrypt:
 	bash scripts/httpz-test-public-decrypt.sh
-
 httpz-test-private-decrypt:
 	bash scripts/httpz-test-private-decrypt.sh
-
 httpz-test-input:
 	bash scripts/httpz-test-input.sh
 
-# Then clean nodes
-httpz-clean:
-	bash scripts/httpz-clean.sh
+# Console + Docker
+console-build:
+	docker compose -f ./docker-compose.02.console.build.yaml -f ./docker-compose.04.console.ghcr.yaml build
 
-console-side-clean:
-	docker compose down --volumes --remove-orphans
+console-up:
+	bash scripts/console-up.sh
 
-console-side-run:
-	docker compose up -d --wait
+console-down:
+	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.run.yaml down --volumes --remove-orphans
 
+# Relayer
 relayer-run:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer
 
+relayer-build:
+	cd $(TOP)apps/relayer && cargo build --bin zws-relayer
+
 relayer-run-debug:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer -- --config-file debug.toml
-
-# `--ssh default` used to forward ssh agent to allow fhevm-relayer dependency to be reached
-docker-compose-build:
-	docker compose -f $(TOP)docker/docker-compose.yaml build --ssh default

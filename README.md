@@ -46,19 +46,6 @@ pnpm --filter back start
 pnpm --filter orchestrator start
 pnpm --filter web3 start
 ```
-
-### run a blockchain locally
-
-```bash
-make blockchain-install
-
-# create some noise on the blockchain
-make blockchain-test
-
-# listen to the blockchain activity
-make blockchain-listen
-```
-
 ### run fhevm contracts with events using hardhat
 
 An alternative to running the full stack is to use hardhat.
