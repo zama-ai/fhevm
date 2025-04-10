@@ -1,0 +1,58 @@
+services:
+  gateway-node:
+    container_name: httpz-gateway-node
+    image: ghcr.io/foundry-rs/foundry:stable
+    env_file:
+      - ../env/staging/.env.gateway.local
+    entrypoint:
+      - anvil
+      - --block-time
+      - "0.1"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8546"
+      - --chain-id
+      - "54321"
+      - --accounts
+      - "20"
+      - --mnemonic
+      - "${MNEMONIC}"
+    ports:
+      - "8546:8546"
+  
+  gateway-sc-deploy:
+    container_name: httpz-gateway-sc-deploy
+    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:v0.1.0-rc8
+    env_file:
+      - ../env/staging/.env.gateway.local
+    environment:
+      - HARDHAT_NETWORK=staging
+      - CHAIN_ID_GATEWAY=54321
+    command:
+      - /bin/bash
+      - -c
+      - |
+        npx hardhat task:deployAllContracts
+    depends_on:
+      gateway-node:
+        condition: service_started
+
+  gateway-sc-add-network:
+    container_name: httpz-gateway-sc-add-network
+    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:v0.1.0-rc8
+    env_file:
+      - ../env/staging/.env.gateway.local
+    environment:
+      - HARDHAT_NETWORK=staging
+      - CHAIN_ID_GATEWAY=54321
+    command:
+      - /bin/bash
+      - -c
+      - |
+        npx hardhat task:addNetworksToHttpz
+    depends_on:
+      gateway-node:
+        condition: service_started
+      gateway-sc-deploy:
+        condition: service_completed_successfully

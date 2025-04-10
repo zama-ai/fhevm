@@ -1,0 +1,5 @@
+backup
+**.bak
+**/.env.*.local
+**/config/**/*.yaml.local
+e164d9de0bec6656928726433cc56bef6ee8417ad5a4f8c82fbcc2d3e5f220fd
