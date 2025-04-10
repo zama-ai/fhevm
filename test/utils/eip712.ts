@@ -203,7 +203,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
   verifyingContract: string,
   publicKey: Uint8Array,
   contractAddresses: string[],
-  delegatedAccount: string,
+  delegatorAddress: string,
   contractsChainId: number,
   startTimestamp: string,
   durationDays: string,
@@ -222,7 +222,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
       DelegatedUserDecryptRequestVerification: [
         { name: "publicKey", type: "bytes" },
         { name: "contractAddresses", type: "address[]" },
-        { name: "delegatedAccount", type: "address" },
+        { name: "delegatorAddress", type: "address" },
         { name: "contractsChainId", type: "uint256" },
         { name: "startTimestamp", type: "uint256" },
         { name: "durationDays", type: "uint256" },
@@ -238,7 +238,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
     message: {
       publicKey,
       contractAddresses,
-      delegatedAccount,
+      delegatorAddress,
       contractsChainId,
       startTimestamp,
       durationDays,

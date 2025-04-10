@@ -302,6 +302,24 @@ describe("DecryptionManager", function () {
         .withArgs(ctHandles[0]);
     });
 
+    it("Should revert because of unavailable ciphertext material", async function () {
+      const { aclManager, ciphertextManager, decryptionManager, user, coprocessorTxSenders } = await loadFixture(
+        prepareAllowPublicDecryptionFixture,
+      );
+
+      // Allow for public decryption a ctHandle whose associated ciphertext material has not
+      // yet been added to the CiphertextStorage state.
+      for (const coprocessorTxSender of coprocessorTxSenders) {
+        await aclManager.connect(coprocessorTxSender).allowPublicDecrypt(newCtHandle);
+      }
+
+      // Check that the request fails because the ciphertext material is unavailable
+      // Note: the function should be reverted on the unavailable ctHandle since it loops over the handles
+      await expect(decryptionManager.connect(user).publicDecryptionRequest(ctHandles.concat([newCtHandle])))
+        .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
+        .withArgs(newCtHandle);
+    });
+
     it("Should revert because the message sender is not a KMS transaction sender", async function () {
       const { httpz, decryptionManager } = await loadFixture(prepareGetEIP712Fixture);
 
@@ -695,7 +713,24 @@ describe("DecryptionManager", function () {
         .withArgs(365, durationDays);
     });
 
-    it("Should revert because user is not allowed for user decryption over given handles", async function () {
+    it("Should revert because the user address is included in ctHandleContractPairs", async function () {
+      // Check that the request fails because the user address is included in the ctHandleContractPairs list
+      await expect(
+        decryptionManager.userDecryptionRequest(
+          ctHandleContractPairs.concat([{ contractAddress: user.address, ctHandle: ctHandles[0] }]),
+          requestValidity,
+          hostChainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        ),
+      )
+        .to.be.revertedWithCustomError(aclManager, "AccountAddressInContractAddresses")
+        .withArgs(user.address);
+    });
+
+    it("Should revert because the user is not allowed for user decryption on a ctHandle", async function () {
       // Check that the request fails because the given userAddress is not allowed for user decryption
       // Note: the function should be reverted on the first handle since it loops over the handles
       // in order internally
@@ -712,6 +747,50 @@ describe("DecryptionManager", function () {
       )
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
         .withArgs(ctHandles[0], fakeUserAddress);
+    });
+
+    it("Should revert because a contract is not allowed for decryption on a ctHandle", async function () {
+      const fakeContractAddress = hre.ethers.Wallet.createRandom().address;
+      // Check that the request fails because the contractAddress is not allowed for user decryption
+      // Note: the function should be reverted on the not allowed contract address since it loops over the handles
+      await expect(
+        decryptionManager.userDecryptionRequest(
+          ctHandleContractPairs.concat([{ contractAddress: fakeContractAddress, ctHandle: ctHandles[0] }]),
+          requestValidity,
+          hostChainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        ),
+      )
+        .to.be.revertedWithCustomError(aclManager, "ContractNotAllowedToUseCiphertext")
+        .withArgs(ctHandles[0], fakeContractAddress);
+    });
+
+    it("Should revert because of unavailable ciphertext material", async function () {
+      // Allow for user decryption a ctHandle whose associated ciphertext material has not
+      // yet been added to the CiphertextStorage state.
+      for (const coprocessorTxSender of coprocessorTxSenders) {
+        await aclManager.connect(coprocessorTxSender).allowAccount(newCtHandle, user.address);
+        await aclManager.connect(coprocessorTxSender).allowAccount(newCtHandle, contractAddress);
+      }
+
+      // Check that the request fails because the ciphertext material is unavailable
+      // Note: the function should be reverted on the unavailable ctHandle since it loops over the handles
+      await expect(
+        decryptionManager.userDecryptionRequest(
+          ctHandleContractPairs.concat([{ contractAddress, ctHandle: newCtHandle }]),
+          requestValidity,
+          hostChainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        ),
+      )
+        .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
+        .withArgs(newCtHandle);
     });
 
     it("Should revert because of invalid EIP712 user request signature", async function () {
@@ -741,7 +820,6 @@ describe("DecryptionManager", function () {
       // Request user decryption
       // This step is necessary, else the publicDecryptionId won't be set in the state and the
       // signature verification will use wrong handles
-      // Request user decryption
       await decryptionManager.userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
@@ -959,9 +1037,13 @@ describe("DecryptionManager", function () {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
       const { coprocessorTxSenders, aclManager, user } = fixtureData;
 
+      // Create a random user to receive delegation rights
+      // This user will be used to sign the EIP712 message for delegated user decryption request
+      const delegatedUser = await createAndFundRandomUser();
+
       const delegationAccounts: IDecryptionManager.DelegationAccountsStruct = {
-        userAddress: user.address,
-        delegatedAddress: hre.ethers.Wallet.createRandom().address,
+        delegatorAddress: user.address,
+        delegatedAddress: delegatedUser.address,
       };
 
       // Allow user decryption and build ctHandleContractPairs
@@ -969,7 +1051,7 @@ describe("DecryptionManager", function () {
       for (const ctHandle of ctHandles) {
         const contractAddress = hre.ethers.Wallet.createRandom().address;
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, delegationAccounts.delegatedAddress);
+          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, delegationAccounts.delegatorAddress);
           await aclManager.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress);
         }
         ctHandleContractPairs.push({
@@ -988,12 +1070,12 @@ describe("DecryptionManager", function () {
         );
       }
 
-      return { ...fixtureData, user, ctHandleContractPairs, delegationAccounts };
+      return { ...fixtureData, delegatedUser, ctHandleContractPairs, delegationAccounts };
     }
 
     async function prepareDelegatedUserDecryptEIP712Fixture() {
       const fixtureData = await loadFixture(prepareAllowDelegatedUserDecryptionFixture);
-      const { decryptionManager, ctHandleContractPairs, delegationAccounts } = fixtureData;
+      const { delegatedUser, decryptionManager, ctHandleContractPairs, delegationAccounts } = fixtureData;
 
       const publicKey = hre.ethers.randomBytes(32);
       const requestValidity: IDecryptionManager.RequestValidityStruct = {
@@ -1008,7 +1090,7 @@ describe("DecryptionManager", function () {
         decryptionManagerAddress,
         publicKey,
         ctHandleContractPairs.map((pair) => pair.contractAddress.toString()),
-        delegationAccounts.delegatedAddress.toString(),
+        delegationAccounts.delegatorAddress.toString(),
         hostChainId,
         requestValidity.startTimestamp.toString(),
         requestValidity.durationDays.toString(),
@@ -1021,8 +1103,14 @@ describe("DecryptionManager", function () {
         reencryptedShare,
       );
 
+      // Sign the message with the delegated user account
+      const [delegatedUserSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [
+        delegatedUser,
+      ]);
+
       return {
         ...fixtureData,
+        delegatedUserSignature,
         ctHandleContractPairs,
         delegationAccounts,
         publicKey,
@@ -1035,120 +1123,109 @@ describe("DecryptionManager", function () {
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
       const {
         decryptionManager,
-        user,
         ctHandleContractPairs,
         delegationAccounts,
         publicKey,
         requestValidity,
         snsCiphertextMaterials,
-        eip712RequestMessage,
+        delegatedUserSignature,
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [user]);
-
       // Request user decryption
-      const requestTx = await decryptionManager
-        .connect(user)
-        .delegatedUserDecryptionRequest(
-          ctHandleContractPairs,
-          requestValidity,
-          delegationAccounts,
-          hostChainId,
-          contractAddresses,
-          publicKey,
-          userSignature,
-        );
+      const requestTx = await decryptionManager.delegatedUserDecryptionRequest(
+        ctHandleContractPairs,
+        requestValidity,
+        delegationAccounts,
+        hostChainId,
+        contractAddresses,
+        publicKey,
+        delegatedUserSignature,
+      );
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, toValues(snsCiphertextMaterials), user.address, publicKey);
+        .withArgs(userDecryptionId, toValues(snsCiphertextMaterials), delegationAccounts.delegatedAddress, publicKey);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
       const {
         decryptionManager,
-        user,
         delegationAccounts,
         ctHandleContractPairs,
         publicKey,
         requestValidity,
         snsCiphertextMaterials,
-        eip712RequestMessage,
+        delegatedUserSignature,
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
-
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [user]);
 
       const singleCtHandleContractPairs = ctHandleContractPairs.slice(0, 1);
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
 
       // Request user decryption
-      const requestTx = await decryptionManager
-        .connect(user)
-        .delegatedUserDecryptionRequest(
-          singleCtHandleContractPairs,
-          requestValidity,
-          delegationAccounts,
-          hostChainId,
-          contractAddresses,
-          publicKey,
-          userSignature,
-        );
+      const requestTx = await decryptionManager.delegatedUserDecryptionRequest(
+        singleCtHandleContractPairs,
+        requestValidity,
+        delegationAccounts,
+        hostChainId,
+        contractAddresses,
+        publicKey,
+        delegatedUserSignature,
+      );
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey);
+        .withArgs(
+          userDecryptionId,
+          toValues(singleSnsCiphertextMaterials),
+          delegationAccounts.delegatedAddress,
+          publicKey,
+        );
     });
 
     it("Should request a user decryption with empty ctHandleContractPairs list", async function () {
       const {
         decryptionManager,
-        user,
         delegationAccounts,
         ctHandleContractPairs,
         publicKey,
         requestValidity,
-        eip712RequestMessage,
+        delegatedUserSignature,
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [user]);
-
       // Request user decryption with an empty list of ctHandleContractPairs
-      const requestTx = await decryptionManager
-        .connect(user)
-        .delegatedUserDecryptionRequest(
-          [],
-          requestValidity,
-          delegationAccounts,
-          hostChainId,
-          contractAddresses,
-          publicKey,
-          userSignature,
-        );
+      const requestTx = await decryptionManager.delegatedUserDecryptionRequest(
+        [],
+        requestValidity,
+        delegationAccounts,
+        hostChainId,
+        contractAddresses,
+        publicKey,
+        delegatedUserSignature,
+      );
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, [], user.address, publicKey);
+        .withArgs(userDecryptionId, [], delegationAccounts.delegatedAddress, publicKey);
     });
 
     it("Should revert because contractAddresses exceeds maximum length allowed", async function () {
-      const { decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
+      const { decryptionManager } = await loadFixture(loadTestVariablesFixture);
 
       // Create dummy input data for the user decryption request
+      const delegatorAddress = hre.ethers.Wallet.createRandom().address;
+      const delegatedAddress = hre.ethers.Wallet.createRandom().address;
       const contractAddresses = [];
       for (let i = 0; i < 11; i++) {
         contractAddresses.push(hre.ethers.Wallet.createRandom().address);
@@ -1156,26 +1233,26 @@ describe("DecryptionManager", function () {
 
       // Check that the request fails because the given contractAddresses exceeds the maximum length allowed
       await expect(
-        decryptionManager
-          .connect(user)
-          .delegatedUserDecryptionRequest(
-            [],
-            { durationDays: 120, startTimestamp: Date.now() },
-            { userAddress: user.address, delegatedAddress: hre.ethers.Wallet.createRandom().address },
-            hostChainId,
-            contractAddresses,
-            hre.ethers.randomBytes(32),
-            hre.ethers.randomBytes(32),
-          ),
+        decryptionManager.delegatedUserDecryptionRequest(
+          [],
+          { durationDays: 120, startTimestamp: Date.now() },
+          { delegatorAddress, delegatedAddress },
+          hostChainId,
+          contractAddresses,
+          hre.ethers.randomBytes(32),
+          hre.ethers.randomBytes(32),
+        ),
       )
         .to.be.revertedWithCustomError(decryptionManager, "ContractAddressesMaxLengthExceeded")
         .withArgs(10, contractAddresses.length);
     });
 
     it("Should revert because durationDays exceeds maximum allowed", async function () {
-      const { decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
+      const { decryptionManager } = await loadFixture(loadTestVariablesFixture);
 
       // Create dummy input data for the user decryption request
+      const delegatorAddress = hre.ethers.Wallet.createRandom().address;
+      const delegatedAddress = hre.ethers.Wallet.createRandom().address;
       const requestValidity: IDecryptionManager.RequestValidityStruct = {
         durationDays: 400,
         startTimestamp: Date.now(),
@@ -1183,29 +1260,60 @@ describe("DecryptionManager", function () {
 
       // Check that the request fails because the given requestValidity.durationDays exceeds the maximum allowed
       await expect(
-        decryptionManager
-          .connect(user)
-          .delegatedUserDecryptionRequest(
-            [],
-            requestValidity,
-            { userAddress: user.address, delegatedAddress: hre.ethers.Wallet.createRandom().address },
-            hostChainId,
-            [],
-            hre.ethers.randomBytes(32),
-            hre.ethers.randomBytes(32),
-          ),
+        decryptionManager.delegatedUserDecryptionRequest(
+          [],
+          requestValidity,
+          { delegatorAddress, delegatedAddress },
+          hostChainId,
+          [],
+          hre.ethers.randomBytes(32),
+          hre.ethers.randomBytes(32),
+        ),
       )
         .to.be.revertedWithCustomError(decryptionManager, "MaxDurationDaysExceeded")
         .withArgs(365, requestValidity.durationDays);
     });
 
-    it("Should revert because user is not allowed for user decryption over given handles", async function () {
-      const { aclManager, decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
+    it("Should revert because the delegator address is included in ctHandleContractPairs", async function () {
+      const {
+        aclManager,
+        decryptionManager,
+        ctHandleContractPairs,
+        delegationAccounts,
+        publicKey,
+        requestValidity,
+        delegatedUserSignature,
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
+
+      // Create dummy input data for the user decryption request
+      const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
+
+      // Check that the request fails because the delegated address is included in the ctHandleContractPairs list
+      await expect(
+        decryptionManager.delegatedUserDecryptionRequest(
+          ctHandleContractPairs.concat([
+            { contractAddress: delegationAccounts.delegatorAddress, ctHandle: ctHandles[0] },
+          ]),
+          requestValidity,
+          delegationAccounts,
+          hostChainId,
+          contractAddresses,
+          publicKey,
+          delegatedUserSignature,
+        ),
+      )
+        .to.be.revertedWithCustomError(aclManager, "AccountAddressInContractAddresses")
+        .withArgs(delegationAccounts.delegatorAddress);
+    });
+
+    it("Should revert because user is not allowed for decryption on ctHandle", async function () {
+      const { aclManager, decryptionManager } = await loadFixture(loadTestVariablesFixture);
 
       // Create dummy input data for the user decryption request
       const contractAddress = hre.ethers.Wallet.createRandom().address;
       const publicKey = hre.ethers.randomBytes(32);
       const userSignature = hre.ethers.randomBytes(32);
+      const delegatorAddress = hre.ethers.Wallet.createRandom().address;
       const delegatedAddress = hre.ethers.Wallet.createRandom().address;
       const ctHandleContractPairs: CtHandleContractPairStruct[] = [
         {
@@ -1222,26 +1330,132 @@ describe("DecryptionManager", function () {
       // Note: the function should be reverted on the first handle since it loops over the handles
       // in order internally
       await expect(
-        decryptionManager
-          .connect(user)
-          .delegatedUserDecryptionRequest(
-            ctHandleContractPairs,
-            requestValidity,
-            { userAddress: user.address, delegatedAddress },
-            hostChainId,
-            [contractAddress],
-            publicKey,
-            userSignature,
-          ),
+        decryptionManager.delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          { delegatorAddress, delegatedAddress },
+          hostChainId,
+          [contractAddress],
+          publicKey,
+          userSignature,
+        ),
       )
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-        .withArgs(ctHandles[0], delegatedAddress);
+        .withArgs(ctHandles[0], delegatorAddress);
+    });
+
+    it("Should revert because contract is not allowed for user decryption on ctHandle", async function () {
+      const {
+        aclManager,
+        decryptionManager,
+        ctHandleContractPairs,
+        delegationAccounts,
+        publicKey,
+        requestValidity,
+        delegatedUserSignature,
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
+
+      // Create dummy input data for the user decryption request
+      const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
+
+      // Check that the request fails because the included contractAddress is not allowed for user decryption
+      // Note: the function should be reverted on the not allowed contract address since it loops over the handles
+      const fakeContractAddress = hre.ethers.Wallet.createRandom().address;
+      await expect(
+        decryptionManager.delegatedUserDecryptionRequest(
+          ctHandleContractPairs.concat([{ contractAddress: fakeContractAddress, ctHandle: ctHandles[0] }]),
+          requestValidity,
+          delegationAccounts,
+          hostChainId,
+          contractAddresses,
+          publicKey,
+          delegatedUserSignature,
+        ),
+      )
+        .to.be.revertedWithCustomError(aclManager, "ContractNotAllowedToUseCiphertext")
+        .withArgs(ctHandles[0], fakeContractAddress);
+    });
+
+    it("Should revert because of unavailable ciphertext material", async function () {
+      const {
+        decryptionManager,
+        aclManager,
+        ciphertextManager,
+        ctHandleContractPairs,
+        delegationAccounts,
+        publicKey,
+        requestValidity,
+        delegatedUserSignature,
+        coprocessorTxSenders,
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
+
+      // Create dummy input data for the user decryption request
+      const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
+
+      // Allow for user decryption a ctHandle whose associated ciphertext material has not
+      // yet been added to the CiphertextStorage state.
+      for (const coprocessorTxSender of coprocessorTxSenders) {
+        await aclManager.connect(coprocessorTxSender).allowAccount(newCtHandle, delegationAccounts.delegatorAddress);
+        await aclManager.connect(coprocessorTxSender).allowAccount(newCtHandle, contractAddresses[0]);
+      }
+
+      // Check that the request fails because the ciphertext material is unavailable
+      // Note: the function should be reverted on the unavailable ctHandle since it loops over the handles
+      await expect(
+        decryptionManager.delegatedUserDecryptionRequest(
+          ctHandleContractPairs.concat([{ contractAddress: contractAddresses[0], ctHandle: newCtHandle }]),
+          requestValidity,
+          delegationAccounts,
+          hostChainId,
+          contractAddresses,
+          publicKey,
+          delegatedUserSignature,
+        ),
+      )
+        .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
+        .withArgs(newCtHandle);
+    });
+
+    it("Should revert because the account has not been delegated for the contract", async function () {
+      const {
+        aclManager,
+        decryptionManager,
+        ctHandleContractPairs,
+        delegationAccounts,
+        publicKey,
+        requestValidity,
+        delegatedUserSignature,
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
+
+      // Create dummy input data for the user decryption request
+      const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
+
+      // Check that the request fails because the account has not been delegated for the contracts
+      // Note: the function should be reverted on the contract not delegated since it loops over the contractAddresses
+      const notDelegatedContractAddress = hre.ethers.Wallet.createRandom().address;
+      await expect(
+        decryptionManager.delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          delegationAccounts,
+          hostChainId,
+          contractAddresses.concat([notDelegatedContractAddress]),
+          publicKey,
+          delegatedUserSignature,
+        ),
+      )
+        .to.be.revertedWithCustomError(aclManager, "AccountNotDelegated")
+        .withArgs(
+          hostChainId,
+          delegationAccounts.delegatorAddress,
+          delegationAccounts.delegatedAddress,
+          notDelegatedContractAddress,
+        );
     });
 
     it("Should revert because of invalid EIP712 user request signature", async function () {
       const {
         decryptionManager,
-        user,
         delegationAccounts,
         ctHandleContractPairs,
         publicKey,
@@ -1257,17 +1471,15 @@ describe("DecryptionManager", function () {
       const [fakeSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [fakeSigner]);
 
       // Request user decryption
-      const requestTx = decryptionManager
-        .connect(user)
-        .delegatedUserDecryptionRequest(
-          ctHandleContractPairs,
-          requestValidity,
-          delegationAccounts,
-          hostChainId,
-          contractAddresses,
-          publicKey,
-          fakeSignature,
-        );
+      const requestTx = decryptionManager.delegatedUserDecryptionRequest(
+        ctHandleContractPairs,
+        requestValidity,
+        delegationAccounts,
+        hostChainId,
+        contractAddresses,
+        publicKey,
+        fakeSignature,
+      );
 
       // Check that the request has been reverted because of an invalid EIP712 user request signature
       await expect(requestTx)
@@ -1275,50 +1487,31 @@ describe("DecryptionManager", function () {
         .withArgs(fakeSignature);
     });
 
-    it("Should revert because contract in ctHandleContractPairs not included in contractAddresses list", async function () {
-      const { decryptionManager, user, delegationAccounts, ctHandleContractPairs } = await loadFixture(
-        prepareAllowDelegatedUserDecryptionFixture,
-      );
+    it("Should revert because contract in ctHandleContractPairs is not included in contractAddresses list", async function () {
+      const {
+        decryptionManager,
+        delegationAccounts,
+        ctHandleContractPairs,
+        publicKey,
+        requestValidity,
+        delegatedUserSignature,
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const fakeContractAddresses = [hre.ethers.Wallet.createRandom().address];
-      const publicKey = hre.ethers.randomBytes(32);
-      const requestValidity: IDecryptionManager.RequestValidityStruct = {
-        durationDays: 120,
-        startTimestamp: Date.now(),
-      };
 
-      // Create EIP712 messages
-      const decryptionManagerAddress = await decryptionManager.getAddress();
-      const eip712RequestMessage = createEIP712RequestDelegatedUserDecrypt(
-        chainId,
-        decryptionManagerAddress,
-        publicKey,
-        ctHandleContractPairs.map((pair) => pair.contractAddress.toString()),
-        delegationAccounts.delegatedAddress.toString(),
-        hostChainId,
-        requestValidity.startTimestamp.toString(),
-        requestValidity.durationDays.toString(),
-      );
-
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [user]);
-
-      // Request user decryption
-      const requestTx = decryptionManager
-        .connect(user)
-        .delegatedUserDecryptionRequest(
+      // Check that the request fails because the contract address is not included in the contractAddresses list
+      await expect(
+        decryptionManager.delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
           hostChainId,
           fakeContractAddresses,
           publicKey,
-          userSignature,
-        );
-
-      // Check request event
-      await expect(requestTx)
+          delegatedUserSignature,
+        ),
+      )
         .to.be.revertedWithCustomError(decryptionManager, "ContractNotInContractAddresses")
         .withArgs(ctHandleContractPairs[0].contractAddress, fakeContractAddresses);
     });
@@ -1332,13 +1525,12 @@ describe("DecryptionManager", function () {
         owner,
         coprocessorTxSenders,
         kmsTxSenders,
-        user,
         keyId1,
         ctHandleContractPairs,
         delegationAccounts,
         requestValidity,
         publicKey,
-        eip712RequestMessage,
+        delegatedUserSignature,
         fheParamsName,
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
@@ -1365,7 +1557,7 @@ describe("DecryptionManager", function () {
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await aclManager
           .connect(coprocessorTxSenders[i])
-          .allowAccount(ctHandleContractPair.ctHandle, delegationAccounts.delegatedAddress);
+          .allowAccount(ctHandleContractPair.ctHandle, delegationAccounts.delegatorAddress);
         await aclManager
           .connect(coprocessorTxSenders[i])
           .allowAccount(ctHandleContractPair.ctHandle, ctHandleContractPair.contractAddress);
@@ -1374,21 +1566,16 @@ describe("DecryptionManager", function () {
       // Create dummy input data for the user decryption request
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [user]);
-
       // Request user decryption with ctMaterials tied to different key IDs
-      const requestTx = decryptionManager
-        .connect(user)
-        .delegatedUserDecryptionRequest(
-          [ctHandleContractPair, ...ctHandleContractPairs.slice(1)],
-          requestValidity,
-          delegationAccounts,
-          hostChainId,
-          contractAddresses,
-          publicKey,
-          userSignature,
-        );
+      const requestTx = decryptionManager.delegatedUserDecryptionRequest(
+        [ctHandleContractPair, ...ctHandleContractPairs.slice(1)],
+        requestValidity,
+        delegationAccounts,
+        hostChainId,
+        contractAddresses,
+        publicKey,
+        delegatedUserSignature,
+      );
 
       // Check that different key IDs are not allowed for batched user decryption
       await expect(requestTx)
@@ -1406,15 +1593,12 @@ describe("DecryptionManager", function () {
         publicKey,
         kmsTxSenders,
         kmsSigners,
-        eip712RequestMessage,
         eip712ResponseMessage,
+        delegatedUserSignature,
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
-
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [user]);
 
       // Request user decryption
       await decryptionManager
@@ -1426,7 +1610,7 @@ describe("DecryptionManager", function () {
           hostChainId,
           contractAddresses,
           publicKey,
-          userSignature,
+          delegatedUserSignature,
         );
 
       // Sign the message with all KMS signers and get the first 3 signatures
@@ -1459,42 +1643,36 @@ describe("DecryptionManager", function () {
         );
 
       // Check that the user decryption is done
-      const isUserDecryptionDone = await decryptionManager.connect(user).isUserDecryptionDone(userDecryptionId);
+      const isUserDecryptionDone = await decryptionManager.isUserDecryptionDone(userDecryptionId);
       expect(isUserDecryptionDone).to.be.true;
     });
 
     it("Should ignore other valid responses", async function () {
       const {
         decryptionManager,
-        user,
         publicKey,
         ctHandleContractPairs,
         requestValidity,
         delegationAccounts,
         kmsTxSenders,
         kmsSigners,
-        eip712RequestMessage,
         eip712ResponseMessage,
+        delegatedUserSignature,
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [user]);
-
       // Request user decryption
-      await decryptionManager
-        .connect(user)
-        .delegatedUserDecryptionRequest(
-          ctHandleContractPairs,
-          requestValidity,
-          delegationAccounts,
-          hostChainId,
-          contractAddresses,
-          publicKey,
-          userSignature,
-        );
+      await decryptionManager.delegatedUserDecryptionRequest(
+        ctHandleContractPairs,
+        requestValidity,
+        delegationAccounts,
+        hostChainId,
+        contractAddresses,
+        publicKey,
+        delegatedUserSignature,
+      );
 
       // Sign the message with all KMS signers and get the first 3 signatures
       const [signature1, signature2, signature3, signature4] = await getSignaturesUserDecryptResponse(
