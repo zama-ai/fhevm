@@ -92,7 +92,7 @@ impl EthereumHostL1Handler {
 
                 let mut ct_handles: Vec<[u8; 32]> = Vec::new();
                 for ct_handle in eth_decryption_request.cts {
-                    ct_handles.push(ct_handle.to_be_bytes());
+                    ct_handles.push(ct_handle.into());
                 }
                 event.derive_next_event(RelayerEventData::PublicDecrypt(
                     PublicDecryptEventData::ReqRcvdFromHostBc {

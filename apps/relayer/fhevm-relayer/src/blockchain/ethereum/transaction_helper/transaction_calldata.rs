@@ -9,7 +9,7 @@ use crate::blockchain::ethereum::bindings::ZKPoKManager;
 use crate::blockchain::public_decrypt_handler::DecryptionRequestData;
 use crate::core::errors::EventProcessingError;
 use crate::core::event::UserDecryptRequest;
-use alloy::primitives::{Address, Bytes, Uint, U256};
+use alloy::primitives::{Address, Bytes, FixedBytes, Uint, U256};
 use alloy::signers::SignerSync;
 use rusqlite::{Connection, Result};
 use serde::Serialize;
@@ -82,7 +82,7 @@ impl ComputeCalldata {
     }
 
     pub fn public_decryption_req(
-        handles: Vec<Uint<256, 4>>,
+        handles: Vec<FixedBytes<32>>,
     ) -> Result<Bytes, EventProcessingError> {
         let calldata = DecyptionManager::publicDecryptionRequestCall::new((handles,)).abi_encode();
 
@@ -101,7 +101,7 @@ impl ComputeCalldata {
             .ct_handle_contract_pairs
             .iter()
             .map(|d| CtHandleContractPair {
-                ctHandle: d.ct_handle,
+                ctHandle: d.ct_handle.into(),
                 contractAddress: d.contract_address,
             })
             .collect::<Vec<_>>();
@@ -236,7 +236,7 @@ impl ComputeCalldata {
         results.push(DynSolValue::Uint(U256::from(42), 256)); // requestID placeholder
 
         for sns_ct_material in req.snsCtMaterials.clone() {
-            let handle: [u8; 32] = sns_ct_material.ctHandle.to_be_bytes();
+            let handle: [u8; 32] = sns_ct_material.ctHandle.into();
 
             // Using a hardcoded value for now
 
@@ -254,7 +254,7 @@ impl ComputeCalldata {
 
             match handle[30] {
                 9 => {
-                    // Parse the string to Uint, handle potential parsing errors
+                    // Parse the string to Uint, handle  potential parsing errors
                     let num: Uint<512, 8> = clear_text.parse().map_err(|e| {
                         EventProcessingError::ParseError(format!(
                             "Failed to parse to Uint<512,8>: {}",
@@ -333,7 +333,7 @@ impl ComputeCalldata {
 
         let mut ct_handles: Vec<U256> = Vec::new();
         for sns_ct_material in req.snsCtMaterials {
-            ct_handles.push(sns_ct_material.ctHandle);
+            ct_handles.push(sns_ct_material.ctHandle.into());
         }
         let public_decryption_result = PublicDecryptionResult {
             handlesList: ct_handles,

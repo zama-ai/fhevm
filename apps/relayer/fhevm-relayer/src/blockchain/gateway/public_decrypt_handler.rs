@@ -17,7 +17,7 @@ use crate::{
 use std::str::FromStr;
 
 use alloy::{
-    primitives::{keccak256, Address, FixedBytes, Uint, U256},
+    primitives::{keccak256, Address, FixedBytes, U256},
     rpc::types::TransactionReceipt,
 };
 
@@ -86,9 +86,9 @@ impl PublicDecryptGatewayHandler {
         event: RelayerEvent,
         handles: Vec<[u8; 32]>,
     ) {
-        let handles: Vec<Uint<256, 4>> = handles
+        let handles: Vec<FixedBytes<32>> = handles
             .iter()
-            .map(|bytes| Uint::from_be_bytes(*bytes))
+            .map(|bytes| FixedBytes::from(*bytes))
             .collect();
 
         info!(
@@ -325,7 +325,7 @@ impl PublicDecryptGatewayHandler {
     /// * `Err(`[`EventProcessingError`]`)` - If the transaction fails
     async fn process_decryption_request(
         &self,
-        handles: Vec<Uint<256, 4>>,
+        handles: Vec<FixedBytes<32>>,
     ) -> Result<U256, EventProcessingError> {
         let processor = PublicDecryptionRequestProcessor {
             handler: Arc::new(self.clone()),

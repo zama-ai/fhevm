@@ -253,7 +253,7 @@ impl GatewayProcessorsHandler {
 
                     let mut ciphertext_handles: Vec<U256> = Vec::new();
                     for sns_ct_material in req.snsCtMaterials.clone() {
-                        ciphertext_handles.push(sns_ct_material.ctHandle);
+                        ciphertext_handles.push(sns_ct_material.ctHandle.into());
                     }
 
                     info!(

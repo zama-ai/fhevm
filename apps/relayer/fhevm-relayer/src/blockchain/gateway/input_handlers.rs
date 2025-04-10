@@ -313,7 +313,7 @@ impl ArbitrumGatewayL2InputHandler {
                             Ok(request_event) => {
                                 info!(
                                     zkpok_id = ?request_event.zkProofId,
-                                    handles = ?request_event.handles,
+                                    handles = ?request_event.ctHandles,
                                     signatures = ?request_event.signatures,
                                     "Processing InputResponse event"
                                 );
@@ -334,7 +334,7 @@ impl ArbitrumGatewayL2InputHandler {
                                         RelayerEventData::InputProof(
                                             InputProofEventData::RespRcvdFromGw {
                                                 input_proof_response: InputProofResponse {
-                                                    handles: request_event.handles,
+                                                    handles: request_event.ctHandles,
                                                     signatures: request_event.signatures,
                                                 },
                                             },
