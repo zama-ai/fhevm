@@ -22,26 +22,25 @@ Encrypted integers in HTTPZ are represented as FHE ciphertexts, abstracted using
 
 The `TFHE` library currently supports the following encrypted types:
 
-| Type        | Supported       |
-| ----------- | --------------- |
-| `ebool`     | Yes             |
-| `euint4`    | Yes             |
-| `euint8`    | Yes             |
-| `euint16`   | Yes             |
-| `euint32`   | Yes             |
-| `euint64`   | Yes             |
-| `euint128`  | Yes             |
-| `euint256`  | Yes             |
-| `eaddress`  | Yes             |
-| `ebytes64`  | Yes             |
-| `ebytes128` | Yes             |
-| `ebytes256` | Yes             |
-| `eint8`     | No, coming soon |
-| `eint16`    | No, coming soon |
-| `eint32`    | No, coming soon |
-| `eint64`    | No, coming soon |
-| `eint128`   | No, coming soon |
-| `eint256`   | No, coming soon |
+| Type        | Supported             |
+| ----------- | --------------------- |
+| `ebool`     | Yes                   |
+| `euint8`    | Yes                   |
+| `euint16`   | Yes                   |
+| `euint32`   | Yes                   |
+| `euint64`   | Yes                   |
+| `euint128`  | Yes                   |
+| `euint256`  | Yes (partial support) |
+| `eaddress`  | Yes                   |
+| `ebytes64`  | Yes                   |
+| `ebytes128` | Yes                   |
+| `ebytes256` | Yes                   |
+| `eint8`     | No, coming soon       |
+| `eint16`    | No, coming soon       |
+| `eint32`    | No, coming soon       |
+| `eint64`    | No, coming soon       |
+| `eint128`   | No, coming soon       |
+| `eint256`   | No, coming soon       |
 
 {% hint style="info" %}
 Higher-precision integer types are available in the `TFHE-rs` library and can be added to `HTTPZ` as needed.

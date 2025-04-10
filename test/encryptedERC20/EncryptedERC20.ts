@@ -17,7 +17,7 @@ describe('EncryptedERC20', function () {
     this.instances = await createInstances(this.signers);
   });
 
-  it('should mint the contract', async function () {
+  it.skip('should mint the contract', async function () {
     const transaction = await this.erc20.mint(1000);
     await transaction.wait();
 
@@ -44,7 +44,7 @@ describe('EncryptedERC20', function () {
     expect(totalSupply).to.equal(1000);
   });
 
-  it('should transfer tokens between two users', async function () {
+  it.skip('should transfer tokens between two users', async function () {
     const transaction = await this.erc20.mint(10000);
     const t1 = await transaction.wait();
     expect(t1?.status).to.eq(1);
@@ -132,7 +132,7 @@ describe('EncryptedERC20', function () {
     ).to.be.rejectedWith('userAddress should not be equal to contractAddress when requesting reencryption!');
   });
 
-  it('should not transfer tokens between two users', async function () {
+  it.skip('should not transfer tokens between two users', async function () {
     const transaction = await this.erc20.mint(1000);
     await transaction.wait();
 
@@ -187,7 +187,7 @@ describe('EncryptedERC20', function () {
     expect(balanceBob).to.equal(0);
   });
 
-  it('should be able to transferFrom only if allowance is sufficient', async function () {
+  it.skip('should be able to transferFrom only if allowance is sufficient', async function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 

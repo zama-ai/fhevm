@@ -4,21 +4,22 @@ import dotenv from 'dotenv';
 import * as fs from 'fs-extra';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
-import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
+import { HardhatUserConfig, extendProvider } from 'hardhat/config';
 import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 import * as path from 'path';
 
 import CustomProvider from './CustomProvider';
-// Adjust the import path as needed
 import './tasks/accounts';
-import './tasks/getEthereumAddress';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
 
-extendProvider((provider) => {
-  return new CustomProvider(provider);
+const NUM_ACCOUNTS = 15;
+
+extendProvider(async (provider, _config, _network) => {
+  const newProvider = new CustomProvider(provider);
+  return newProvider;
 });
 
 task('compile:specific', 'Compiles only the specified contract')
@@ -26,7 +27,6 @@ task('compile:specific', 'Compiles only the specified contract')
   .setAction(async ({ contract }, hre) => {
     // Adjust the configuration to include only the specified contract
     hre.config.paths.sources = contract;
-
     await hre.run('compile');
   });
 
@@ -39,50 +39,6 @@ if (!mnemonic) {
   mnemonic = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'; // default mnemonic in case it is undefined (needed to avoid panicking when deploying on real network)
 }
 
-const chainIds = {
-  zama: 8009,
-  local: 9000,
-  localCoprocessor: 12345,
-  localNetwork1: 9000,
-  multipleValidatorTestnet: 8009,
-  sepolia: 11155111,
-};
-
-function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
-  let jsonRpcUrl: string;
-  switch (chain) {
-    case 'local':
-      jsonRpcUrl = 'http://localhost:8545';
-      break;
-    case 'localCoprocessor':
-      jsonRpcUrl = 'http://localhost:8745';
-      break;
-    case 'localNetwork1':
-      jsonRpcUrl = 'http://127.0.0.1:9650/ext/bc/fhevm/rpc';
-      break;
-    case 'multipleValidatorTestnet':
-      jsonRpcUrl = 'https://rpc.fhe-ethermint.zama.ai';
-      break;
-    case 'zama':
-      jsonRpcUrl = 'https://devnet.zama.ai';
-      break;
-    case 'sepolia':
-      jsonRpcUrl = process.env.SEPOLIA_RPC_URL!;
-      break;
-    default:
-      throw new Error(`Unsupported chain: ${chain}`);
-  }
-  return {
-    accounts: {
-      count: 10,
-      mnemonic,
-      path: "m/44'/60'/0'/0",
-    },
-    chainId: chainIds[chain],
-    url: jsonRpcUrl,
-  };
-}
-
 task('coverage').setAction(async (taskArgs, hre, runSuper) => {
   hre.config.networks.hardhat.allowUnlimitedContractSize = true;
   hre.config.networks.hardhat.blockGasLimit = 1099511627775;
@@ -91,57 +47,53 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 });
 
 task('test', async (_taskArgs, hre, runSuper) => {
+  if (!fs.existsSync('node_modules/@httpz/core-contracts/addresses')) {
+    fs.mkdirSync('node_modules/@httpz/core-contracts/addresses');
+  }
+
+  const sourceDir = path.resolve(__dirname, 'node_modules/@httpz/core-contracts/contracts');
+  const destinationDir = path.resolve(__dirname, 'httpzTemp/contracts');
+  fs.copySync(sourceDir, destinationDir, { dereference: true });
+  const sourceDir2 = path.resolve(__dirname, 'node_modules/@httpz/core-contracts/addresses');
+  const destinationDir2 = path.resolve(__dirname, 'httpzTemp/addresses');
+  fs.copySync(sourceDir2, destinationDir2, { dereference: true });
+
   // Run modified test task
   if (hre.network.name === 'hardhat') {
-    // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
-    const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
-    const privKeyFhevmRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
-    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
-
-    if (!fs.existsSync('node_modules/fhevm-core-contracts/addresses')) {
-      fs.mkdirSync('node_modules/fhevm-core-contracts/addresses');
-    }
-
-    const sourceDir = path.resolve(__dirname, 'node_modules/fhevm-core-contracts/contracts');
-    const destinationDir = path.resolve(__dirname, 'fhevmTemp/contracts');
-    fs.copySync(sourceDir, destinationDir, { dereference: true });
-    const sourceDir2 = path.resolve(__dirname, 'node_modules/fhevm-core-contracts/addresses');
-    const destinationDir2 = path.resolve(__dirname, 'fhevmTemp/addresses');
-    fs.copySync(sourceDir2, destinationDir2, { dereference: true });
-    const sourceDir3 = path.resolve(__dirname, 'node_modules/fhevm-core-contracts/decryptionOracle');
-    const destinationDir3 = path.resolve(__dirname, 'fhevmTemp/decryptionOracle');
-    fs.copySync(sourceDir3, destinationDir3, { dereference: true });
-
-    await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxy' });
-    await hre.run('task:deployEmptyUUPSProxies', { privateKey: privKeyFhevmDeployer, useCoprocessorAddress: false });
-
-    fs.copySync(destinationDir2, sourceDir2, { dereference: true });
-
-    await hre.run('compile:specific', { contract: 'fhevmTemp/contracts' });
-    await hre.run('compile:specific', { contract: 'fhevmTemp/decryptionOracle' });
-    await hre.run('compile:specific', { contract: 'lib' });
-    await hre.run('compile:specific', { contract: 'decryption' });
-
-    await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployTFHEExecutor', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployKMSVerifier', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployInputVerifier', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployFHEGasLimit', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployDecryptionOracle', { privateKey: privKeyFhevmDeployer });
-
-    await hre.run('task:addSigners', {
-      numSigners: process.env.NUM_KMS_SIGNERS!,
-      privateKey: privKeyFhevmDeployer,
-      useAddress: false,
-    });
+    await hre.run('task:deployAllHostContracts');
   }
+
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
 });
 
+const chainIds = {
+  localHostChain: 123456,
+  sepolia: 11155111,
+  staging: 12345,
+  zwsDev: 1337,
+  mainnet: 1,
+  custom: 9999,
+};
+
+function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
+  let jsonRpcUrl: string | undefined = process.env.RPC_URL;
+  if (!jsonRpcUrl) {
+    jsonRpcUrl = 'http://127.0.0.1:8756';
+  }
+  return {
+    accounts: {
+      count: NUM_ACCOUNTS,
+      mnemonic,
+      path: "m/44'/60'/0'/0",
+    },
+    chainId: process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : chainIds[chain],
+    url: jsonRpcUrl,
+  };
+}
+
 const config: HardhatUserConfig = {
-  defaultNetwork: 'local',
+  defaultNetwork: 'sepolia',
   namedAccounts: {
     deployer: 0,
   },
@@ -152,28 +104,27 @@ const config: HardhatUserConfig = {
     currency: 'USD',
     enabled: process.env.REPORT_GAS ? true : false,
     excludeContracts: [],
-    src: './examples',
+    src: './contracts',
   },
   networks: {
     hardhat: {
       accounts: {
-        count: 10,
+        count: 20,
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
     },
+    staging: getChainConfig('staging'),
+    zwsDev: getChainConfig('zwsDev'),
     sepolia: getChainConfig('sepolia'),
-    zama: getChainConfig('zama'),
-    localDev: getChainConfig('local'),
-    local: getChainConfig('local'),
-    localCoprocessor: getChainConfig('localCoprocessor'),
-    localNetwork1: getChainConfig('localNetwork1'),
-    multipleValidatorTestnet: getChainConfig('multipleValidatorTestnet'),
+    localHostChain: getChainConfig('localHostChain'),
+    mainnet: getChainConfig('mainnet'),
+    custom: getChainConfig('custom'),
   },
   paths: {
     artifacts: './artifacts',
     cache: './cache',
-    sources: './examples',
+    sources: './contracts',
     tests: './test',
   },
   solidity: {
@@ -190,8 +141,8 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 800,
       },
-      viaIR: false,
       evmVersion: 'cancun',
+      viaIR: false,
     },
   },
   etherscan: {

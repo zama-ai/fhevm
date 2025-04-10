@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "fhevm-core-contracts/addresses/ACLAddress.sol";
-import "fhevm-core-contracts/addresses/InputVerifierAddress.sol";
-import "fhevm-core-contracts/addresses/KMSVerifierAddress.sol";
-import "fhevm-core-contracts/addresses/TFHEExecutorAddress.sol";
-import "../lib/Impl.sol";
+import "../httpzTemp/addresses/ACLAddress.sol";
+import "../httpzTemp/addresses/InputVerifierAddress.sol";
+import "../httpzTemp/addresses/KMSVerifierAddress.sol";
+import "../httpzTemp/addresses/TFHEExecutorAddress.sol";
+
+import {FHEVMConfigStruct} from "../lib/Impl.sol";
 
 /**
  * @title   FHEVMConfig

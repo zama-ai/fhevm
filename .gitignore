@@ -137,4 +137,4 @@ typechain
 typechain-types
 .openzeppelin/unknown*
 .openzeppelin/sepolia.json
-fhevmTemp/
+httpzTemp/

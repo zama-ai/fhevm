@@ -1,7 +1,7 @@
 {
   "name": "@httpz/solidity",
   "description": "A Solidity library for interacting with HTTPZ protocol",
-  "version": "0.6.2",
+  "version": "0.7.0-1",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -72,8 +72,8 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "ethers": "^6.8.0",
-    "fhevm-core-contracts": "0.7.0-3",
-    "fhevmjs": "^0.6.0-8",
+    "@httpz/core-contracts": "^0.7.0-5",
+    "@httpz/sdk": "^0.7.0-13",
     "hardhat": "^2.22.10",
     "hardhat-deploy": "^0.11.29",
     "hardhat-gas-reporter": "^1.0.2",

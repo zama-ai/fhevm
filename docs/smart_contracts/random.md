@@ -18,7 +18,6 @@ The `TFHE` library allows you to generate random encrypted numbers of various bi
 ```solidity
 // Generate random encrypted numbers
 ebool rb = TFHE.randEbool();       // Random encrypted boolean
-euint4 r4 = TFHE.randEuint4();     // Random 4-bit number
 euint8 r8 = TFHE.randEuint8();     // Random 8-bit number
 euint16 r16 = TFHE.randEuint16();  // Random 16-bit number
 euint32 r32 = TFHE.randEuint32();  // Random 32-bit number

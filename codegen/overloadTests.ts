@@ -23,6 +23,6 @@ const transformBigInt = (o: { [methodName: string]: OverloadTestJSON[] }) => {
 
 transformBigInt(overloads);
 
-export const overloadTests: { [methodName: string]: OverloadTest[] } = overloads as unknown as {
-  [methodName: string]: OverloadTest[];
-};
+type OverloadTests = { [methodName: string]: OverloadTest[] };
+
+export const overloadTests: OverloadTests = overloads as unknown as OverloadTests;

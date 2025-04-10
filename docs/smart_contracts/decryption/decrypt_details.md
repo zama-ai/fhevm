@@ -24,7 +24,7 @@ The interface of the `Gateway.requestDecryption` function from previous snippet 
 
 ### Parameters
 
-The first argument, `ctsHandles`, should be an array of ciphertexts handles which could be of different types, i.e `uint256` values coming from unwrapping handles of type either `ebool`, `euint4`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`.&#x20;
+The first argument, `ctsHandles`, should be an array of ciphertexts handles which could be of different types, i.e `uint256` values coming from unwrapping handles of type either `ebool`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`.&#x20;
 
 `ct` is the list of ciphertexts that are requested to be decrypted. Calling `requestDecryption` will emit an `EventDecryption` on the `GatewayContract` contract which will be detected by a relayer. Then, the relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
 
@@ -45,7 +45,6 @@ Notice that `XXX` should be the decrypted type, which is a native Solidity type 
 | Ciphertext type | Decrypted type |
 | --------------- | -------------- |
 | ebool           | bool           |
-| euint4          | uint8          |
 | euint8          | uint8          |
 | euint16         | uint16         |
 | euint32         | uint32         |
@@ -69,8 +68,6 @@ Finally, if you need to pass additional arguments to be used inside the callback
 ```solidity
 function addParamsEBool(uint256 requestID, ebool _ebool) internal;
 
-function addParamsEUint4(uint256 requestID, euint4 _euint4) internal;
-
 function addParamsEUint8(uint256 requestID, euint8 _euint8) internal;
 
 function addParamsEUint16(uint256 requestID, euint16 _euint16) internal;
@@ -90,8 +87,6 @@ With their corresponding getter functions to be used inside the callback:
 
 ```solidity
 function getParamsEBool(uint256 requestID) internal;
-
-function getParamsEUint4(uint256 requestID) internal;
 
 function getParamsEUint8(uint256 requestID) internal;
 

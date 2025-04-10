@@ -21,11 +21,10 @@ The `debug.decrypt[XX]` functions allow you to decrypt encrypted handles into pl
 
 ### Integer decryption
 
-Decrypts encrypted integers of different bit-widths (`euint4`, `euint8`, ..., `euint256`).
+Decrypts encrypted integers of different bit-widths (`euint8`, `euint16`, ..., `euint256`).
 
 | Function Name | Returns  | Encrypted Type |
 | ------------- | -------- | -------------- |
-| `decrypt4`    | `bigint` | `euint4`       |
 | `decrypt8`    | `bigint` | `euint8`       |
 | `decrypt16`   | `bigint` | `euint16`      |
 | `decrypt32`   | `bigint` | `euint32`      |

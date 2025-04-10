@@ -17,7 +17,7 @@ For more information see [Configuration](configure.md).
 HTTPZ introduces encrypted data types compatible with Solidity:
 
 - **Booleans**: `ebool`
-- **Unsigned Integers**: `euint4`, `euint8`, `euint16`, `euint32`, `euint64`, `euint128`, `euint256`
+- **Unsigned Integers**: `euint8`, `euint16`, `euint32`, `euint64`, `euint128`, `euint256`
 - **Addresses**: `eaddress`
 - **Bytes**: `ebytes64`, `ebytes128`, `ebytes256`
 - **Input**: `einput` for handling encrypted input data

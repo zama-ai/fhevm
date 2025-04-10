@@ -32,7 +32,6 @@ The library ensures that all operations on encrypted data follow the constraints
 
 #### Unsigned Integers
 
-- `euint4`: Encrypted 4-bit unsigned integer
 - `euint8`: Encrypted 8-bit unsigned integer
 - `euint16`: Encrypted 16-bit unsigned integer
 - `euint32`: Encrypted 32-bit unsigned integer

@@ -1,3 +1,4 @@
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { toBufferBE } from 'bigint-buffer';
 import { ContractMethodArgs, Typed } from 'ethers';
 import { ethers, network } from 'hardhat';
@@ -5,6 +6,18 @@ import { ethers, network } from 'hardhat';
 import type { Counter } from '../types';
 import { TypedContractMethod } from '../types/common';
 import { getSigners } from './signers';
+
+const hre = require('hardhat');
+
+export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
+  const signers = await hre.ethers.getSigners();
+  if (signers.findIndex((s) => s.address === signer.address) === -1) {
+    throw new Error(
+      `The provided address (${signer.address}) is not the address of a valid hardhat signer.
+      Please use addresses listed via the 'npx hardhat get-accounts --network hardhat' command.`,
+    );
+  }
+}
 
 export const waitForBlock = (blockNumber: bigint | number) => {
   if (network.name === 'hardhat') {

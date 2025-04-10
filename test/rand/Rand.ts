@@ -3,7 +3,6 @@ import { ethers, network } from 'hardhat';
 
 import {
   createInstances,
-  decrypt4,
   decrypt8,
   decrypt16,
   decrypt32,
@@ -38,36 +37,6 @@ describe('Rand', function () {
       await txn.wait();
       const valueHandle = await this.rand.valueb();
       const value = await decryptBool(valueHandle);
-      values.push(value);
-    }
-    // Expect at least two different generated values.
-    const unique = new Set(values);
-    expect(unique.size).to.be.greaterThanOrEqual(2);
-  });
-
-  it('4 bits generate and decrypt', async function () {
-    const values: number[] = [];
-    for (let i = 0; i < 5; i++) {
-      const txn = await this.rand.generate4();
-      await txn.wait();
-      const valueHandle = await this.rand.value4();
-      const value = await decrypt4(valueHandle);
-      expect(value).to.be.lessThanOrEqual(0xf);
-      values.push(value);
-    }
-    // Expect at least two different generated values.
-    const unique = new Set(values);
-    expect(unique.size).to.be.greaterThanOrEqual(2);
-  });
-
-  it('4 bits generate with upper bound and decrypt', async function () {
-    const values: number[] = [];
-    for (let i = 0; i < 7; i++) {
-      const txn = await this.rand.generate4UpperBound(8);
-      await txn.wait();
-      const valueHandle = await this.rand.value4();
-      const value = await decrypt4(valueHandle);
-      expect(value).to.be.lessThanOrEqual(7);
       values.push(value);
     }
     // Expect at least two different generated values.

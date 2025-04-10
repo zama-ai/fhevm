@@ -14,18 +14,11 @@ jobs:
       - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
           node-version: 20.x
-      - run: cp .env.example .env
       - run: npm ci --include=optional
-      - run: mkdir node_modules/fhevm-core-contracts/addresses
-      - run: source .env && npx hardhat task:computeGatewayAddress --private-key "$PRIVATE_KEY_GATEWAY_DEPLOYER"
-      - run: source .env && npx hardhat task:computeACLAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
-      - run: source .env && npx hardhat task:computeTFHEExecutorAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
-      - run: source .env && npx hardhat task:computeKMSVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
-      - run: source .env && npx hardhat task:computeInputVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address false
-      - run: source .env && npx hardhat task:computeFHEGasLimitAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
       - run: npm run compile
       - uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
           tag: prerelease
           token: ${{ secrets.NPM_TOKEN }}
           provenance: true
+          access: public

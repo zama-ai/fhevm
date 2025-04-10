@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "./TFHE.sol";
+import {FheType} from "./FheType.sol";
 
 /**
  * @title   FHEVMConfigStruct
@@ -26,7 +26,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheSub operation.
@@ -35,7 +35,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheSub(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheMul operation.
@@ -44,7 +44,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheMul(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheDiv operation.
@@ -53,7 +53,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheDiv(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheRem operation.
@@ -62,7 +62,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheRem(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheBitAnd operation.
@@ -71,7 +71,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheBitAnd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheBitOr operation.
@@ -80,7 +80,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheBitOr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheBitXor operation.
@@ -89,7 +89,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheBitXor(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheShl operation.
@@ -98,7 +98,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheShl(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheShr operation.
@@ -107,7 +107,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheShr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheRotl operation.
@@ -116,7 +116,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheRotl(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheRotr operation.
@@ -125,7 +125,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheRotr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheEq operation.
@@ -134,7 +134,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheEq(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheNe operation.
@@ -143,7 +143,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheNe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheGe operation.
@@ -152,7 +152,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheGe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheGt operation.
@@ -161,7 +161,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheGt(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheLe operation.
@@ -170,7 +170,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheLe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheLt operation.
@@ -179,7 +179,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheLt(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheMin operation.
@@ -188,7 +188,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheMin(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheMax operation.
@@ -197,21 +197,21 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheMax(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheNeg operation.
      * @param ct            Ct
      * @return result       Result.
      */
-    function fheNeg(uint256 ct) external returns (uint256 result);
+    function fheNeg(bytes32 ct) external returns (bytes32 result);
 
     /**
      * @notice              Computes fheNot operation.
      * @param ct            Ct
      * @return result       Result.
      */
-    function fheNot(uint256 ct) external returns (uint256 result);
+    function fheNot(bytes32 ct) external returns (bytes32 result);
     /**
      * @notice                Verifies the ciphertext.
      * @param inputHandle     Input handle.
@@ -224,8 +224,8 @@ interface ITFHEExecutor {
         bytes32 inputHandle,
         address callerAddress,
         bytes memory inputProof,
-        bytes1 inputType
-    ) external returns (uint256 result);
+        FheType inputType
+    ) external returns (bytes32 result);
 
     /**
      * @notice          Performs the casting to a target type.
@@ -233,7 +233,7 @@ interface ITFHEExecutor {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function cast(uint256 ct, bytes1 toType) external returns (uint256 result);
+    function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
 
     /**
      * @notice          Does trivial encryption.
@@ -241,7 +241,7 @@ interface ITFHEExecutor {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(uint256 ct, bytes1 toType) external returns (uint256 result);
+    function trivialEncrypt(uint256 ct, FheType toType) external returns (bytes32 result);
 
     /**
      * @notice          Does trivial encryption.
@@ -249,7 +249,7 @@ interface ITFHEExecutor {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(bytes memory ct, bytes1 toType) external returns (uint256 result);
+    function trivialEncrypt(bytes memory ct, FheType toType) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHEEq operation.
@@ -258,7 +258,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheEq(uint256 lhs, bytes memory rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheEq(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHENe operation.
@@ -267,7 +267,7 @@ interface ITFHEExecutor {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheNe(uint256 lhs, bytes memory rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheNe(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHEIfThenElse operation.
@@ -276,14 +276,14 @@ interface ITFHEExecutor {
      * @param ifFalse       If false.
      * @return result       Result.
      */
-    function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external returns (uint256 result);
+    function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHERand operation.
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRand(bytes1 randType) external returns (uint256 result);
+    function fheRand(FheType randType) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHERandBounded operation.
@@ -291,7 +291,7 @@ interface ITFHEExecutor {
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (uint256 result);
+    function fheRandBounded(uint256 upperBound, FheType randType) external returns (bytes32 result);
 }
 
 /**
@@ -308,7 +308,7 @@ interface IACL {
      * @param ciphertext    Ciphertext.
      * @param account       Address of the account.
      */
-    function allowTransient(uint256 ciphertext, address account) external;
+    function allowTransient(bytes32 ciphertext, address account) external;
 
     /**
      * @notice              Allows the use of handle for the address account.
@@ -316,7 +316,7 @@ interface IACL {
      * @param handle        Handle.
      * @param account       Address of the account.
      */
-    function allow(uint256 handle, address account) external;
+    function allow(bytes32 handle, address account) external;
 
     /**
      * @dev This function removes the transient allowances, which could be useful for integration with
@@ -331,13 +331,13 @@ interface IACL {
      * @param account       Address of the account.
      * @return isAllowed    Whether the account can access the handle.
      */
-    function isAllowed(uint256 handle, address account) external view returns (bool);
+    function isAllowed(bytes32 handle, address account) external view returns (bool);
 
     /**
      * @notice              Allows a list of handles to be decrypted.
      * @param handlesList   List of handles.
      */
-    function allowForDecryption(uint256[] memory handlesList) external;
+    function allowForDecryption(bytes32[] memory handlesList) external;
 }
 
 /**
@@ -357,7 +357,7 @@ interface IInputVerifier {
  * @notice  This library is the core implementation for computing FHE operations (e.g. add, sub, xor).
  */
 library Impl {
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
+    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEVMConfigLocation = 0xed8d60e34876f751cc8b014c560745351147d9de11b9347c854e881b128ea600;
 
     /**
@@ -384,7 +384,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function add(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function add(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -398,7 +398,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function sub(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function sub(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -412,7 +412,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function mul(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function mul(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -426,7 +426,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function div(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
+    function div(bytes32 lhs, bytes32 rhs) internal returns (bytes32 result) {
         bytes1 scalarByte = 0x01;
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheDiv(lhs, rhs, scalarByte);
@@ -435,7 +435,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function rem(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
+    function rem(bytes32 lhs, bytes32 rhs) internal returns (bytes32 result) {
         bytes1 scalarByte = 0x01;
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheRem(lhs, rhs, scalarByte);
@@ -444,7 +444,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function and(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function and(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -458,7 +458,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function or(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function or(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -472,7 +472,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function xor(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function xor(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -486,7 +486,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function shl(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function shl(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -500,7 +500,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function shr(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function shr(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -514,7 +514,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function rotl(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function rotl(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -528,7 +528,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function rotr(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function rotr(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -542,7 +542,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function eq(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function eq(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -556,7 +556,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function ne(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function ne(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -570,7 +570,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function ge(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function ge(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -584,7 +584,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function gt(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function gt(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -598,7 +598,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function le(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function le(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -612,7 +612,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function lt(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function lt(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -626,7 +626,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function min(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function min(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -640,7 +640,7 @@ library Impl {
     /**
      * @dev Returns the FHEVM config.
      */
-    function max(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+    function max(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -651,21 +651,21 @@ library Impl {
         result = ITFHEExecutor($.TFHEExecutorAddress).fheMax(lhs, rhs, scalarByte);
     }
 
-    function neg(uint256 ct) internal returns (uint256 result) {
+    function neg(bytes32 ct) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheNeg(ct);
     }
 
-    function not(uint256 ct) internal returns (uint256 result) {
+    function not(bytes32 ct) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheNot(ct);
     }
 
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
-     *         If 'control's value is 'false', the result has the same value as 'ifFalse'.
+     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
-    function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal returns (uint256 result) {
+    function select(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheIfThenElse(control, ifTrue, ifFalse);
     }
@@ -677,14 +677,9 @@ library Impl {
      * @param toType        Input type.
      * @return result       Result.
      */
-    function verify(bytes32 inputHandle, bytes memory inputProof, uint8 toType) internal returns (uint256 result) {
+    function verify(bytes32 inputHandle, bytes memory inputProof, FheType toType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).verifyCiphertext(
-            inputHandle,
-            msg.sender,
-            inputProof,
-            bytes1(toType)
-        );
+        result = ITFHEExecutor($.TFHEExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
         IACL($.ACLAddress).allowTransient(result, msg.sender);
     }
 
@@ -694,9 +689,9 @@ library Impl {
      * @param toType      Target type.
      * @return result     Result value of the target type.
      */
-    function cast(uint256 ciphertext, uint8 toType) internal returns (uint256 result) {
+    function cast(bytes32 ciphertext, FheType toType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).cast(ciphertext, bytes1(toType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).cast(ciphertext, toType);
     }
 
     /**
@@ -705,9 +700,9 @@ library Impl {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(uint256 value, uint8 toType) internal returns (uint256 result) {
+    function trivialEncrypt(uint256 value, FheType toType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -716,9 +711,9 @@ library Impl {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(bytes memory value, uint8 toType) internal returns (uint256 result) {
+    function trivialEncrypt(bytes memory value, FheType toType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -728,7 +723,7 @@ library Impl {
      * @param scalar        Scalar byte.
      * @return result       Result.
      */
-    function eq(uint256 lhs, bytes memory rhs, bool scalar) internal returns (uint256 result) {
+    function eq(bytes32 lhs, bytes memory rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -746,7 +741,7 @@ library Impl {
      * @param scalar        Scalar byte.
      * @return result       Result.
      */
-    function ne(uint256 lhs, bytes memory rhs, bool scalar) internal returns (uint256 result) {
+    function ne(bytes32 lhs, bytes memory rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -757,14 +752,14 @@ library Impl {
         result = ITFHEExecutor($.TFHEExecutorAddress).fheNe(lhs, rhs, scalarByte);
     }
 
-    function rand(uint8 randType) internal returns (uint256 result) {
+    function rand(FheType randType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).fheRand(bytes1(randType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).fheRand(randType);
     }
 
-    function randBounded(uint256 upperBound, uint8 randType) internal returns (uint256 result) {
+    function randBounded(uint256 upperBound, FheType randType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).fheRandBounded(upperBound, bytes1(randType));
+        result = ITFHEExecutor($.TFHEExecutorAddress).fheRandBounded(upperBound, randType);
     }
 
     /**
@@ -775,7 +770,7 @@ library Impl {
      * @param handle        Handle.
      * @param account       Address of the account.
      */
-    function allowTransient(uint256 handle, address account) internal {
+    function allowTransient(bytes32 handle, address account) internal {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         IACL($.ACLAddress).allowTransient(handle, account);
     }
@@ -786,7 +781,7 @@ library Impl {
      * @param handle        Handle.
      * @param account       Address of the account.
      */
-    function allow(uint256 handle, address account) internal {
+    function allow(bytes32 handle, address account) internal {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         IACL($.ACLAddress).allow(handle, account);
     }
@@ -816,7 +811,7 @@ library Impl {
      * @param account       Address of the account.
      * @return isAllowed    Whether the account can access the handle.
      */
-    function isAllowed(uint256 handle, address account) internal view returns (bool) {
+    function isAllowed(bytes32 handle, address account) internal view returns (bool) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         return IACL($.ACLAddress).isAllowed(handle, account);
     }

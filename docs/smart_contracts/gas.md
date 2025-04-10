@@ -91,29 +91,6 @@ The current devnet has a FHEGas limit of **10,000,000** per block. Here's what y
 
 Gas costs increase with the bit-width of the encrypted integer type. Below are the detailed costs for various operations on encrypted types.
 
-#### **4-bit Encrypted Integers (`euint4`)**
-
-| function name          | FHEGas  |
-| ---------------------- | ------- |
-| `add`/`sub`            | 65,000  |
-| `add`/`sub` (scalar)   | 65,000  |
-| `mul`                  | 150,000 |
-| `mul` (scalar)         | 88,000  |
-| `div` (scalar)         | 139,000 |
-| `rem` (scalar)         | 286,000 |
-| `and`/`or`/`xor`       | 32,000  |
-| `shr`/`shl`            | 116,000 |
-| `shr`/`shl` (scalar)   | 35,000  |
-| `rotr`/`rotl`          | 116,000 |
-| `rotr`/`rotl` (scalar) | 35,000  |
-| `eq`/`ne`              | 51,000  |
-| `ge`/`gt`/`le`/`lt`    | 70,000  |
-| `min`/`max`            | 121,000 |
-| `min`/`max` (scalar)   | 121,000 |
-| `neg`                  | 60,000  |
-| `not`                  | 33,000  |
-| `select`               | 45,000  |
-
 #### **8-bit Encrypted integers (`euint8`)**
 
 | Function name          | FHEGas  |
@@ -235,26 +212,20 @@ Gas costs increase with the bit-width of the encrypted integer type. Below are t
 
 #### **256-bit Encrypted integers (`euint256`)**
 
-| function name          | FHEGas    |
-| ---------------------- | --------- |
-| `add`/`sub`            | 253,000   |
-| `add`/`sub` (scalar)   | 253,000   |
-| `mul`                  | 2,045,000 |
-| `mul` (scalar)         | 647,000   |
-| `div` (scalar)         | 1,258,000 |
-| `rem` (scalar)         | 2,052,000 |
-| `and`/`or`/`xor`       | 44,000    |
-| `shr`/`shl`            | 350,000   |
-| `shr`/`shl` (scalar)   | 44,000    |
-| `rotr`/`rotl`          | 350,000   |
-| `rotr`/`rotl` (scalar) | 44,000    |
-| `eq`/`ne`              | 100,000   |
-| `ge`/`gt`/`le`/`lt`    | 231,000   |
-| `min`/`max`            | 277,000   |
-| `min`/`max` (scalar)   | 264,000   |
-| `neg`                  | 309,000   |
-| `not`                  | 39,000    |
-| `select`               | 90,000    |
+| function name          | FHEGas  |
+| ---------------------- | ------- |
+| `and`/`or`/`xor`       | 44,000  |
+| `shr`/`shl`            | 350,000 |
+| `shr`/`shl` (scalar)   | 44,000  |
+| `rotr`/`rotl`          | 350,000 |
+| `rotr`/`rotl` (scalar) | 44,000  |
+| `eq`/`ne`              | 100,000 |
+| `ge`/`gt`/`le`/`lt`    | 231,000 |
+| `min`/`max`            | 277,000 |
+| `min`/`max` (scalar)   | 264,000 |
+| `neg`                  | 309,000 |
+| `not`                  | 39,000  |
+| `select`               | 90,000  |
 
 ### eAddress
 
