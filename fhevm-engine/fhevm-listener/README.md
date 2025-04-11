@@ -9,11 +9,13 @@ Our contracts actively emits events that forms the trace of a symbolic execution
 ## Command-line
 
 If already compiled you can just call the binary directly:
+
 ```
 ../target/debug/listen -coprocessor-api-key 00000000000000000000000000000000
 ```
 
 If you have no coprocessor-api-key, for local tests, you can do
+
 ```
 psql
 postgres=# insert into tenants values (13, '00000000000000000000000000000000', 0, 'contract verify', 'contract acl', '0'::bytea, '0'::bytea, '0'::bytea);
@@ -31,29 +33,35 @@ By default the listener propagate TFHE operation events to the database.
 You can change the database url using --database-url, it defaults to a local test database url.
 If you want to disable TFHE operation events propagation, you can provide an empty database-url.
 
-## Events in FHEVM
+## Events in HTTPZ
 
 ### Blockchain Events
+
 > Status: in progress
-Blockchain events are used export the symbolic execution of TFHE operations from a blockchain node configured to accept pubsub requests.
-A listener subscribe to the blockchain node and converts the events to a TFHE workload in a database.
+> Blockchain events are used export the symbolic execution of TFHE operations from a blockchain node configured to accept pubsub requests.
+> A listener subscribe to the blockchain node and converts the events to a TFHE workload in a database.
 
 There are 3 types of events related to:
+
 - TFHE operations
 - ACL, can be used to preprocess ciphertext for certain use case
 - Public and User Decryption
 
 ### Database Events
+
 > Status: proposal
-Database events are used to hint the scheduler to dispath workload and to notice workload completion.
+> Database events are used to hint the scheduler to dispath workload and to notice workload completion.
 
 > https://stackoverflow.com/questions/56747634/how-do-i-use-the-postgres-crate-to-receive-table-modification-events-from-postgr
 
 ### Decryption Events
+
 > Status: in progress
 
 ### Overview FHEVM
-> **_NOTE:_**  Listener and scheduler could be in the same service.**
+
+> **_NOTE:_** Listener and scheduler could be in the same service.\*\*
+
 ```mermaid
 sequenceDiagram
     participant BC App Node
@@ -67,7 +75,7 @@ sequenceDiagram
 
     loop Block Execution - Symbolic Operations
         Note over BC App Node: Solidity traces a Symbolic Sequence
-        Note over BC App Node: TFHEExecutor contract
+        Note over BC App Node: HTTPZExecutor contract
         Note over BC App Node: ACL contract
     end
 
@@ -117,4 +125,3 @@ sequenceDiagram
     DB-)Scheduler: Notice TFHE Operations Status<br/>(proposal)
     Scheduler-)Relayer: Notice Ciphertext ready for decryption
 ```
-

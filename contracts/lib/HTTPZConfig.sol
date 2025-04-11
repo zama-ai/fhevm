@@ -5,7 +5,7 @@ pragma solidity ^0.8.24;
 import "../addresses/ACLAddress.sol";
 import "../addresses/KMSVerifierAddress.sol";
 import "../addresses/InputVerifierAddress.sol";
-import "../addresses/TFHEExecutorAddress.sol";
+import "../addresses/HTTPZExecutorAddress.sol";
 
 import {HTTPZConfigStruct} from "./HTTPZ.sol";
 
@@ -15,7 +15,7 @@ library HTTPZConfig {
         return
             HTTPZConfigStruct({
                 ACLAddress: aclAdd,
-                TFHEExecutorAddress: httpzExecutorAdd,
+                HTTPZExecutorAddress: httpzExecutorAdd,
                 KMSVerifierAddress: kmsVerifierAdd,
                 InputVerifierAddress: inputVerifierAdd
             });

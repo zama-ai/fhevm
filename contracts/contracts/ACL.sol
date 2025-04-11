@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import {httpzExecutorAdd} from "../addresses/TFHEExecutorAddress.sol";
+import {httpzExecutorAdd} from "../addresses/HTTPZExecutorAddress.sol";
 
 /**
  * @title  ACL
@@ -83,7 +83,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice HTTPZExecutor address.
-    address private constant tfheExecutorAddress = httpzExecutorAdd;
+    address private constant httpzExecutorAddress = httpzExecutorAdd;
 
     /// @notice maximum length of contractAddresses array during delegation.
     uint256 private constant MAX_NUM_CONTRACT_ADDRESSES = 10;
@@ -141,7 +141,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param account       Address of the account.
      */
     function allowTransient(bytes32 handle, address account) public virtual {
-        if (msg.sender != tfheExecutorAddress) {
+        if (msg.sender != httpzExecutorAddress) {
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
             }
@@ -248,10 +248,10 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     /**
      * @notice                     Getter function for the HTTPZExecutor contract address.
-     * @return tfheExecutorAddress Address of the TFHEExecutor.
+     * @return httpzExecutorAddress Address of the HTTPZExecutor.
      */
-    function getTFHEExecutorAddress() public view virtual returns (address) {
-        return tfheExecutorAddress;
+    function getHTTPZExecutorAddress() public view virtual returns (address) {
+        return httpzExecutorAddress;
     }
 
     /**
@@ -288,7 +288,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     /**
      * @dev This function removes the transient allowances, which could be useful for integration with
-     *      Account Abstraction when bundling several UserOps calling the TFHEExecutorCoprocessor.
+     *      Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
      */
     function cleanTransientStorage() external virtual {
         assembly {

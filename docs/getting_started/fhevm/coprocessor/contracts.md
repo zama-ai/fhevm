@@ -27,10 +27,10 @@ For the `SEPOLIA_RPC_URL` env variable, you can either get one from a service pr
 **Important** : the `PRIVATE_KEY_FHEVM_DEPLOYER` and `PRIVATE_KEY_GATEWAY_DEPLOYER` are expected to have a nonce of `0` initially (i.e never sent any tx before with those) for the deployment scripts to succeed later. If you have [foundry](https://book.getfoundry.sh/getting-started/installation) installed, you can generate fresh Ethereum private key / address pairs locally with this command:
 `cast wallet new`.
 
-2/ Then run the precomputing contract addresses script [`./precompute-addresses.sh`](https://github.com/zama-ai/fhevm/blob/v0.6.0-0/precompute-addresses.sh) -> this will write on disk the correct contract addresses needed to launch the modified Geth node (`TFHEExecutor` address) and the Gateway service (`GatewayContract` one) and the `ACL` and `KMSVerifier` addresses which would be needed to setup some values inside the ASC contract on KMS chain. The precomputed addresses for the core contracts are located inside:
+2/ Then run the precomputing contract addresses script [`./precompute-addresses.sh`](https://github.com/zama-ai/fhevm/blob/v0.6.0-0/precompute-addresses.sh) -> this will write on disk the correct contract addresses needed to launch the modified Geth node (`HTTPZExecutor` address) and the Gateway service (`GatewayContract` one) and the `ACL` and `KMSVerifier` addresses which would be needed to setup some values inside the ASC contract on KMS chain. The precomputed addresses for the core contracts are located inside:
 
 - `node_modules/fhevm-core-contracts/addresses/.env.acl` for ACL address
-- `node_modules/fhevm-core-contracts/addresses/.env.exec` for TFHEExecutor address
+- `node_modules/fhevm-core-contracts/addresses/.env.exec` for HTTPZExecutor address
 - `node_modules/fhevm-core-contracts/addresses/.env.kmsverifier` for KMSVerifier address
 - `node_modules/fhevm-core-contracts/addresses/.env.inputverifier` for InputVerifier address
 - `node_modules/fhevm-core-contracts/addresses/.env.fhegaslimit` for FHEGasLimit address
@@ -47,7 +47,7 @@ PRIVATE_KEY_FHEVM_DEPLOYER=$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -
 
 npx hardhat task:computeGatewayAddress --private-key "$PRIVATE_KEY_GATEWAY_DEPLOYER"
 npx hardhat task:computeACLAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
-npx hardhat task:computeTFHEExecutorAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:computeHTTPZExecutorAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 npx hardhat task:computeKMSVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 npx hardhat task:computeInputVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true
 npx hardhat task:computeFHEGasLimitAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
@@ -86,7 +86,7 @@ npx hardhat compile:specific --contract lib
 npx hardhat compile:specific --contract gateway
 
 npx hardhat task:deployACL --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
-npx hardhat task:deployTFHEExecutor --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
+npx hardhat task:deployHTTPZExecutor --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 npx hardhat task:deployKMSVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 npx hardhat task:deployInputVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 npx hardhat task:deployFHEGasLimit --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
@@ -98,7 +98,7 @@ npx hardhat task:launchFhevm --skip-get-coin true --use-address true --network s
 echo "Waiting 2 minutes before contract verification... Please wait..."
 sleep 120 # makes sure that contracts bytescode propagates on Etherscan, otherwise contracts verification might fail in next step
 npx hardhat task:verifyACL --network sepolia
-npx hardhat task:verifyTFHEExecutor --network sepolia
+npx hardhat task:verifyHTTPZExecutor --network sepolia
 npx hardhat task:verifyKMSVerifier --network sepolia
 npx hardhat task:verifyInputVerifier --network sepolia
 npx hardhat task:verifyFHEGasLimit --network sepolia
@@ -153,7 +153,7 @@ You can use similar commands for any contracts that you wish to upgrade, just us
 ```
 
 task:upgradeACL
-task:upgradeTFHEExecutor
+task:upgradeHTTPZExecutor
 task:upgradeKMSVerifier
 task:upgradeInputVerifier
 task:upgradeFHEGasLimit

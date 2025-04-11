@@ -72,14 +72,14 @@ task('task:upgradeACL')
     );
   });
 
-task('task:upgradeTFHEExecutor')
+task('task:upgradeHTTPZExecutor')
   .addParam(
     'currentImplementation',
-    'The currently deployed implementation solidity contract path and name, eg: contracts/TFHEExecutor.sol:TFHEExecutor',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/HTTPZExecutor.sol:HTTPZExecutor',
   )
   .addParam(
     'newImplementation',
-    'The new implementation solidity contract path and name, eg: examples/TFHEExecutorUpgradedExample.sol:TFHEExecutorUpgradedExample',
+    'The new implementation solidity contract path and name, eg: examples/HTTPZExecutorUpgradedExample.sol:HTTPZExecutorUpgradedExample',
   )
   .addParam('privateKey', 'The deployer private key')
   .addOptionalParam(

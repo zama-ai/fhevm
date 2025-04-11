@@ -2,13 +2,13 @@
 pragma solidity ^0.8.24;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {TFHEExecutor} from "../contracts/TFHEExecutor.sol";
+import {HTTPZExecutor} from "../contracts/HTTPZExecutor.sol";
 
-/// @title TFHEExecutorUpgradedExample
+/// @title HTTPZExecutorUpgradedExample
 /// @dev Contract that extends HTTPZExecutor with version information
-contract TFHEExecutorUpgradedExample is TFHEExecutor {
+contract HTTPZExecutorUpgradedExample is HTTPZExecutor {
     /// @dev Name of the contract
-    string private constant CONTRACT_NAME = "TFHEExecutor";
+    string private constant CONTRACT_NAME = "HTTPZExecutor";
 
     /// @dev Version numbers
     uint256 private constant MAJOR_VERSION = 0;

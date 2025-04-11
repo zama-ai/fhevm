@@ -14,7 +14,7 @@ export function generateSolidityFHEGasLimit(priceData: PriceData): string {
   import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
   import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
   import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-  import {httpzExecutorAdd} from "../addresses/TFHEExecutorAddress.sol";
+  import {httpzExecutorAdd} from "../addresses/HTTPZExecutorAddress.sol";
 
   import {FheType} from "./FheType.sol"; 
 
@@ -23,8 +23,8 @@ export function generateSolidityFHEGasLimit(priceData: PriceData): string {
    * @notice This contract manages the amount of gas to be paid for FHE operations.
   */
 contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
-    /// @notice Returned if the sender is not the TFHEExecutor.
-    error CallerMustBeTFHEExecutorContract();
+    /// @notice Returned if the sender is not the HTTPZExecutor.
+    error CallerMustBeHTTPZExecutorContract();
 
     /// @notice Returned if the block limit is higher than limit for FHE operation.
     error FHEGasBlockLimitExceeded();
@@ -48,7 +48,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice HTTPZExecutor address.
-    address private constant tfheExecutorAddress = httpzExecutorAdd;
+    address private constant httpzExecutorAddress = httpzExecutorAdd;
 
     /// @notice Gas block limit for FHEGas operation.
     uint256 private constant FHE_GAS_BLOCKLIMIT = 10_000_000;
@@ -79,7 +79,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
      function ${functionName}(FheType resultType, bytes1 scalarByte) external virtual {
-        if(msg.sender != tfheExecutorAddress) revert CallerMustBeTFHEExecutorContract();
+        if(msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
         _checkIfNewBlock();
 `;
     } else {
@@ -88,7 +88,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param resultType    Result type.
      */
     function ${functionName}(FheType resultType) external virtual {
-        if(msg.sender != tfheExecutorAddress) revert CallerMustBeTFHEExecutorContract();
+        if(msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
         _checkIfNewBlock();
 `;
     }
@@ -117,10 +117,10 @@ ${generatePriceChecks(data.nonScalar)}
     output +
     `    /**
      * @notice                     Getter function for the HTTPZExecutor contract address.
-     * @return tfheExecutorAddress Address of the TFHEExecutor.
+     * @return httpzExecutorAddress Address of the HTTPZExecutor.
      */
-    function getTFHEExecutorAddress() public view virtual returns (address) {
-        return tfheExecutorAddress;
+    function getHTTPZExecutorAddress() public view virtual returns (address) {
+        return httpzExecutorAddress;
     }
 
     /**

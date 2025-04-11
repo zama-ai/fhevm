@@ -88,7 +88,7 @@ enum FheType {
     Int248
 }
 
-contract TFHEExecutorTest {
+contract HTTPZExecutorTest {
     event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);

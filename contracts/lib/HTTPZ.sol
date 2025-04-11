@@ -8781,7 +8781,7 @@ library HTTPZ {
      * @dev This function cleans the transient storage for the ACL (accounts) and the InputVerifier
      *      (input proofs).
      *      This could be useful for integration with Account Abstraction when bundling several
-     *      UserOps calling the TFHEExecutor.
+     *      UserOps calling the HTTPZExecutor.
      */
     function cleanTransientStorage() internal {
         Impl.cleanTransientStorageACL();

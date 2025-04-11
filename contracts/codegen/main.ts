@@ -21,7 +21,7 @@ import { ALL_FHE_TYPES } from './types';
  * This function performs the following steps:
  * 1. Generates FHE types from a JSON file.
  * 2. Validates and processes the list of operators.
- * 3. Generates Solidity source code for TFHE and implementation contracts.
+ * 3. Generates Solidity source code for HTTPZ and implementation contracts.
  * 4. Splits the generated overloads into multiple shards to avoid exceeding Solidity's contract size limit.
  * 5. Writes the generated Solidity contracts and test files to the appropriate directories.
  * 6. Generates TypeScript test code for the split overloads and writes them to the test directory.

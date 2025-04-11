@@ -15,8 +15,8 @@ describe('Upgrades', function () {
     this.aclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample');
     this.kmsFactory = await ethers.getContractFactory('KMSVerifier');
     this.kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample');
-    this.executorFactory = await ethers.getContractFactory('contracts/TFHEExecutor.sol:TFHEExecutor');
-    this.executorFactoryUpgraded = await ethers.getContractFactory('TFHEExecutorUpgradedExample');
+    this.executorFactory = await ethers.getContractFactory('contracts/HTTPZExecutor.sol:HTTPZExecutor');
+    this.executorFactoryUpgraded = await ethers.getContractFactory('HTTPZExecutorUpgradedExample');
     this.paymentFactory = await ethers.getContractFactory('FHEGasLimit');
     this.paymentFactoryUpgraded = await ethers.getContractFactory('FHEGasLimitUpgradedExample');
     this.decryptionOracleFactory = await ethers.getContractFactory('DecryptionOracle');
@@ -58,17 +58,17 @@ describe('Upgrades', function () {
     expect(await kms2.getVersion()).to.equal('KMSVerifier v0.2.0');
   });
 
-  it('deploy upgradable TFHEExecutor', async function () {
+  it('deploy upgradable HTTPZExecutor', async function () {
     const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
     const executor = await upgrades.upgradeProxy(emptyUUPS, this.executorFactory);
     await executor.waitForDeployment();
-    expect(await executor.getVersion()).to.equal('TFHEExecutor v0.1.0');
+    expect(await executor.getVersion()).to.equal('HTTPZExecutor v0.1.0');
     const executor2 = await upgrades.upgradeProxy(executor, this.executorFactoryUpgraded);
     await executor2.waitForDeployment();
-    expect(await executor2.getVersion()).to.equal('TFHEExecutor v0.2.0');
+    expect(await executor2.getVersion()).to.equal('HTTPZExecutor v0.2.0');
   });
 
   it('deploy upgradable FHEGasLimit', async function () {

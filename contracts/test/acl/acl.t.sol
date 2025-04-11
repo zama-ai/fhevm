@@ -7,7 +7,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 
 import {ACL} from "../../contracts/ACL.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
-import {httpzExecutorAdd} from "../../addresses/TFHEExecutorAddress.sol";
+import {httpzExecutorAdd} from "../../addresses/HTTPZExecutorAddress.sol";
 
 contract ACLTest is Test {
     ACL internal acl;
@@ -16,11 +16,11 @@ contract ACLTest is Test {
 
     address internal proxy;
     address internal implementation;
-    address internal tfheExecutor;
+    address internal httpzExecutor;
 
     /// @dev This helper function allows to add any handle for any account.
     function _allowHandle(bytes32 handle, address account) internal {
-        vm.prank(tfheExecutor);
+        vm.prank(httpzExecutor);
         acl.allowTransient(handle, account);
         vm.prank(account);
         acl.allow(handle, account);
@@ -37,7 +37,7 @@ contract ACLTest is Test {
         implementation = address(new ACL());
         UnsafeUpgrades.upgradeProxy(proxy, implementation, "", owner);
         acl = ACL(proxy);
-        tfheExecutor = acl.getTFHEExecutorAddress();
+        httpzExecutor = acl.getHTTPZExecutorAddress();
 
         assertEq(acl.owner(), owner);
     }
@@ -46,8 +46,8 @@ contract ACLTest is Test {
         assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.1.0")));
     }
 
-    function test_TFHEExecutorAddress() public view {
-        assertEq(acl.getTFHEExecutorAddress(), httpzExecutorAdd);
+    function test_HTTPZExecutorAddress() public view {
+        assertEq(acl.getHTTPZExecutorAddress(), httpzExecutorAdd);
     }
 
     function test_isAllowedReturnsFalseIfNotAllowed(bytes32 handle, address account) public view {
@@ -76,15 +76,15 @@ contract ACLTest is Test {
         acl.allowTransient(handle, account);
     }
 
-    function test_CanAllowTransientIfTFHEExecutor(bytes32 handle, address account) public {
-        vm.prank(tfheExecutor);
+    function test_CanAllowTransientIfhttpzAddress(bytes32 handle, address account) public {
+        vm.prank(httpzExecutor);
         acl.allowTransient(handle, account);
         assertTrue(acl.allowedTransient(handle, account));
         assertTrue(acl.isAllowed(handle, account));
     }
 
-    function test_CanAllowTransientIfTFHEExecutorButOnlyUntilItGetsCleaned(bytes32 handle, address account) public {
-        vm.prank(tfheExecutor);
+    function test_CanAllowTransientIfhttpzAddressButOnlyUntilItGetsCleaned(bytes32 handle, address account) public {
+        vm.prank(httpzExecutor);
         acl.allowTransient(handle, account);
         acl.cleanTransientStorage();
         assertFalse(acl.allowedTransient(handle, account));

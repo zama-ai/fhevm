@@ -3,11 +3,8 @@
 !/artifacts/contracts/FHEGasLimit.sol/FHEGasLimit.json
 !/artifacts/contracts/InputVerifier.sol/InputVerifier.json
 !/artifacts/contracts/KMSVerifier.sol/KMSVerifier.json
-!/artifacts/contracts/TFHEExecutor.sol/TFHEExecutor.json
-!/artifacts/contracts/TFHEExecutorWithEvents.sol/TFHEExecutorWithEvents.json
-!/artifacts/decryptionOracle/DecryptionOracle.sol/DecryptionOracle.json
+!/artifacts/contracts/HTTPZExecutor.sol/HTTPZExecutor.json
 !contracts/**
-!decryptionOracle/**
 !package.json
 !LICENSE
 !README.md

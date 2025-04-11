@@ -30,9 +30,9 @@ task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: Tas
     address: aclAddress,
   });
 
-  const tfheExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setTFHEExecutorAddress', {
-    address: tfheExecutorAddress,
+  const httpzExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setHTTPZExecutorAddress', {
+    address: httpzExecutorAddress,
   });
 
   const kmsVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
@@ -80,13 +80,13 @@ task('task:deployACL').setAction(async function (taskArguments: TaskArguments, {
   console.log('ACL code set successfully at address:', proxyAddress);
 });
 
-task('task:deployTFHEExecutor').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+task('task:deployHTTPZExecutor').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplem = await ethers.getContractFactory('./contracts/TFHEExecutor.sol:TFHEExecutor', deployer);
+  const newImplem = await ethers.getContractFactory('./contracts/HTTPZExecutor.sol:HTTPZExecutor', deployer);
   const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.exec'));
-  const proxyAddress = parsedEnv.TFHE_EXECUTOR_CONTRACT_ADDRESS;
+  const proxyAddress = parsedEnv.HTTPZ_EXECUTOR_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem);
   console.log('HTTPZExecutor code set successfully at address:', proxyAddress);
@@ -276,11 +276,11 @@ address constant aclAdd = ${taskArguments.address};\n`;
     }
   });
 
-task('task:setTFHEExecutorAddress')
+task('task:setHTTPZExecutorAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const envFilePath = path.join(__dirname, '../addresses/.env.exec');
-    const content = `TFHE_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    const content = `HTTPZ_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
       console.log(`HTTPZExecutor address ${taskArguments.address} written successfully!`);
@@ -295,13 +295,13 @@ pragma solidity ^0.8.24;
 address constant httpzExecutorAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./addresses/TFHEExecutorAddress.sol', solidityTemplateCoprocessor, {
+      fs.writeFileSync('./addresses/HTTPZExecutorAddress.sol', solidityTemplateCoprocessor, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.log('./addresses/TFHEExecutorAddress.sol file generated successfully!');
+      console.log('./addresses/HTTPZExecutorAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./addresses/TFHEExecutorAddress.sol', error);
+      console.error('Failed to write ./addresses/HTTPZExecutorAddress.sol', error);
     }
   });
 
@@ -444,7 +444,7 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
   await hre.run('compile:specific', { contract: 'decryptionOracle' });
 
   await hre.run('task:deployACL');
-  await hre.run('task:deployTFHEExecutor');
+  await hre.run('task:deployHTTPZExecutor');
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:deployInputVerifier');
   await hre.run('task:deployFHEGasLimit');

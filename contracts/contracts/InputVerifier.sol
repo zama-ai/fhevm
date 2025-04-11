@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {TFHEExecutor} from "./TFHEExecutor.sol";
+import {HTTPZExecutor} from "./HTTPZExecutor.sol";
 
 // Importing OpenZeppelin contracts for cryptographic signature verification and access control.
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -173,7 +173,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
      * @return result       Result.
      */
     function verifyCiphertext(
-        TFHEExecutor.ContextUserInputs memory context,
+        HTTPZExecutor.ContextUserInputs memory context,
         bytes32 inputHandle,
         bytes memory inputProof
     ) public virtual returns (bytes32) {

@@ -244,9 +244,9 @@ export function splitOverloadsToShards(overloads: OverloadSignature[]): Overload
 }
 
 /**
- * Generates the first part of the test code for TFHE operations.
+ * Generates the first part of the test code for HTTPZ operations.
  *
- * This function dynamically creates TypeScript code for testing TFHE operations
+ * This function dynamically creates TypeScript code for testing HTTPZ operations
  * based on the provided shards and index split. It imports necessary modules,
  * defines deployment functions for each shard, and sets up the test suite
  * with the appropriate contracts and instances.

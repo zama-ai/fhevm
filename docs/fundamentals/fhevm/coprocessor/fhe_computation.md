@@ -1,10 +1,11 @@
 # FHE Computation
 
 Block execution in fhEVM-coprocessor is split into two parts:
- * Symbolic Execution (onchain)
- * FHE Computation (offchain)
 
-Symbolic execution happens onchain, inside the [TFHEExecutor](../../../../contracts/contracts/TFHEExecutor.sol) contract (inside the EVM). Essentially, the EVM accumulates all requested FHE operations in a block with their input handles and the corresponding result handles. Then, at the end of block execution, it sends an `AsyncCompute` request to the coprocessor such that FHE computation can be done **eventually**. Note that FHE computation can be done at a future point in time, after the block has been committed on the host blockchain. We can do that, symbolic execution only needs handles and doesn't actual FHE ciphertexts. Actual FHE ciphertexts are needed only on **decryption** and **reencryption**, i.e. when a user wants to see the plaintext value.
+- Symbolic Execution (onchain)
+- FHE Computation (offchain)
+
+Symbolic execution happens onchain, inside the [HTTPZExecutor](../../../../contracts/contracts/HTTPZExecutor.sol) contract (inside the EVM). Essentially, the EVM accumulates all requested FHE operations in a block with their input handles and the corresponding result handles. Then, at the end of block execution, it sends an `AsyncCompute` request to the coprocessor such that FHE computation can be done **eventually**. Note that FHE computation can be done at a future point in time, after the block has been committed on the host blockchain. We can do that, symbolic execution only needs handles and doesn't actual FHE ciphertexts. Actual FHE ciphertexts are needed only on **decryption** and **reencryption**, i.e. when a user wants to see the plaintext value.
 
 ```mermaid
 sequenceDiagram

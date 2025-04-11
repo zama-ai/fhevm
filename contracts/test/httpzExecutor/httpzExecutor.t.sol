@@ -6,11 +6,11 @@ import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import {TFHEExecutorNoEvents} from "../../contracts/TFHEExecutorNoEvents.sol";
+import {HTTPZExecutorNoEvents} from "../../contracts/HTTPZExecutorNoEvents.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 
-contract TFHEExecutorTest is Test {
-    TFHEExecutorNoEvents internal tfheExecutor;
+contract HTTPZExecutorTest is Test {
+    HTTPZExecutorNoEvents internal httpzExecutor;
 
     address internal constant owner = address(456);
 
@@ -30,18 +30,18 @@ contract TFHEExecutorTest is Test {
 
     /**
      * @dev Internal function to upgrade the deployed proxy to a new implementation.
-     * The new implementation is an instance of the TFHEExecutorNoEvents contract.
+     * The new implementation is an instance of the HTTPZExecutorNoEvents contract.
      * The proxy is upgraded using the UnsafeUpgrades library and the owner address.
      */
     function _upgradeProxy() internal {
-        implementation = address(new TFHEExecutorNoEvents());
+        implementation = address(new HTTPZExecutorNoEvents());
         UnsafeUpgrades.upgradeProxy(proxy, implementation, "", owner);
-        tfheExecutor = TFHEExecutorNoEvents(proxy);
+        httpzExecutor = HTTPZExecutorNoEvents(proxy);
     }
 
     /**
      * @dev Public function to set up the test environment.
-     * This function deploys the proxy, upgrades it to the TFHEExecutorNoEvents implementation.
+     * This function deploys the proxy, upgrades it to the HTTPZExecutorNoEvents implementation.
      */
     function setUp() public {
         _deployProxy();

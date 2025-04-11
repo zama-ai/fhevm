@@ -135,7 +135,7 @@ function handleSolidityBinaryOperatorForImpl(op: Operator): string {
     function ${op.name}(bytes32 lhs, bytes32 rhs${scalarArg}) internal returns (bytes32 result) {
         ${scalarSection}
         HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).${op.fheLibName}(lhs, rhs, scalarByte);
+        result = IHTTPZExecutor($.HTTPZExecutorAddress).${op.fheLibName}(lhs, rhs, scalarByte);
     }` + '\n'
   );
 }
@@ -185,7 +185,7 @@ library Impl {
   function setCoprocessor(HTTPZConfigStruct memory httpzConfig) internal {
       HTTPZConfigStruct storage $ = getHTTPZConfig();
       $.ACLAddress = httpzConfig.ACLAddress;
-      $.TFHEExecutorAddress = httpzConfig.TFHEExecutorAddress;
+      $.HTTPZExecutorAddress = httpzConfig.HTTPZExecutorAddress;
       $.KMSVerifierAddress = httpzConfig.KMSVerifierAddress;
       $.InputVerifierAddress = httpzConfig.InputVerifierAddress;
   }
@@ -219,16 +219,16 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
      */
     struct HTTPZConfigStruct {
         address ACLAddress;
-        address TFHEExecutorAddress;
+        address HTTPZExecutorAddress;
         address KMSVerifierAddress;
         address InputVerifierAddress;
     }
 
     /**
-    * @title   ITFHEExecutor
+    * @title   IHTTPZExecutor
     * @notice  This interface contains all functions to conduct FHE operations.
     */
-    interface ITFHEExecutor {`);
+    interface IHTTPZExecutor {`);
   operators.forEach((op) => {
     const tail = 'external returns (bytes32 result);';
     let functionArguments: string;
@@ -375,7 +375,7 @@ function generateACLInterface(): string {
 
     /**
      * @dev This function removes the transient allowances, which could be useful for integration with
-     *      Account Abstraction when bundling several UserOps calling the TFHEExecutorCoprocessor.
+     *      Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
      */
     function cleanTransientStorage() external;
 
@@ -407,7 +407,7 @@ function generateInputVerifierInterface(): string {
 
   /**
    * @dev This function removes the transient allowances, which could be useful for integration with
-   *      Account Abstraction when bundling several UserOps calling the TFHEExecutorCoprocessor.
+   *      Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
    */
   function cleanTransientStorage() external;
   }
@@ -974,7 +974,7 @@ function handleUnaryOperatorForImpl(op: Operator): string {
   return `
     function ${op.name}(bytes32 ct) internal returns (bytes32 result) {
       HTTPZConfigStruct storage $ = getHTTPZConfig();
-      result = ITFHEExecutor($.TFHEExecutorAddress).${op.fheLibName}(ct);
+      result = IHTTPZExecutor($.HTTPZExecutorAddress).${op.fheLibName}(ct);
     }
   `;
 }
@@ -994,7 +994,7 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
      * @dev This function cleans the transient storage for the ACL (accounts) and the InputVerifier
      *      (input proofs).
      *      This could be useful for integration with Account Abstraction when bundling several 
-     *      UserOps calling the TFHEExecutor.
+     *      UserOps calling the HTTPZExecutor.
      */
     function cleanTransientStorage() internal {
       Impl.cleanTransientStorageACL();
@@ -1090,11 +1090,11 @@ function generateCustomMethodsForImpl(): string {
     */
     function select(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) internal returns (bytes32 result) {
         HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).fheIfThenElse(control, ifTrue, ifFalse);
+        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
     /**
-     * @notice              Verifies the ciphertext (TFHEExecutor) and allows transient (ACL).
+     * @notice              Verifies the ciphertext (HTTPZExecutor) and allows transient (ACL).
      * @param inputHandle   Input handle.
      * @param inputProof    Input proof.
      * @param toType        Input type.
@@ -1106,7 +1106,7 @@ function generateCustomMethodsForImpl(): string {
         FheType toType
     ) internal returns (bytes32 result) {
         HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
+        result = IHTTPZExecutor($.HTTPZExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
         IACL($.ACLAddress).allowTransient(result, msg.sender);
     }
 
@@ -1121,7 +1121,7 @@ function generateCustomMethodsForImpl(): string {
         FheType toType
     ) internal returns (bytes32 result) {
         HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).cast(ciphertext, toType);
+        result = IHTTPZExecutor($.HTTPZExecutorAddress).cast(ciphertext, toType);
     }
 
     /**
@@ -1135,7 +1135,7 @@ function generateCustomMethodsForImpl(): string {
         FheType toType
     ) internal returns (bytes32 result) {
       HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, toType);
+        result = IHTTPZExecutor($.HTTPZExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -1149,7 +1149,7 @@ function generateCustomMethodsForImpl(): string {
       FheType toType
     ) internal returns (bytes32 result) {
       HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, toType);
+        result = IHTTPZExecutor($.HTTPZExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -1167,7 +1167,7 @@ function generateCustomMethodsForImpl(): string {
           scalarByte = 0x00;
       }
       HTTPZConfigStruct storage $ = getHTTPZConfig();
-      result = ITFHEExecutor($.TFHEExecutorAddress).fheEq(lhs, rhs, scalarByte);
+      result = IHTTPZExecutor($.HTTPZExecutorAddress).fheEq(lhs, rhs, scalarByte);
   }
 
   /**
@@ -1185,17 +1185,17 @@ function generateCustomMethodsForImpl(): string {
           scalarByte = 0x00;
       }
       HTTPZConfigStruct storage $ = getHTTPZConfig();
-      result = ITFHEExecutor($.TFHEExecutorAddress).fheNe(lhs, rhs, scalarByte);
+      result = IHTTPZExecutor($.HTTPZExecutorAddress).fheNe(lhs, rhs, scalarByte);
   }
 
     function rand(FheType randType) internal returns(bytes32 result) {
       HTTPZConfigStruct storage $ = getHTTPZConfig();
-      result = ITFHEExecutor($.TFHEExecutorAddress).fheRand(randType);
+      result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRand(randType);
     }
 
     function randBounded(uint256 upperBound, FheType randType) internal returns(bytes32 result) {
       HTTPZConfigStruct storage $ = getHTTPZConfig();
-      result = ITFHEExecutor($.TFHEExecutorAddress).fheRandBounded(upperBound, randType);
+      result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRandBounded(upperBound, randType);
     }
 
     /**
@@ -1225,7 +1225,7 @@ function generateCustomMethodsForImpl(): string {
 
     /**
      * @dev This function removes the transient allowances in the ACL, which could be useful for integration
-     *      with Account Abstraction when bundling several UserOps calling the TFHEExecutorCoprocessor.
+     *      with Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
      */
     function cleanTransientStorageACL() internal {
       HTTPZConfigStruct storage $ = getHTTPZConfig();
@@ -1235,7 +1235,7 @@ function generateCustomMethodsForImpl(): string {
 
     /**
      * @dev This function removes the transient proofs in the InputVerifier, which could be useful for integration 
-     *      with Account Abstraction when bundling several UserOps calling the TFHEExecutorCoprocessor.
+     *      with Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
      */
     function cleanTransientStorageInputVerifier() internal {
       HTTPZConfigStruct storage $ = getHTTPZConfig();

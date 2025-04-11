@@ -1,10 +1,11 @@
 # FHE Computation
 
 Block execution in fhEVM-native is split into two parts:
- * Symbolic Execution
- * FHE Computation
 
-Symbolic execution happens onchain, inside the [TFHEExecutor](../../../../contracts/contracts/TFHEExecutor.sol) contract (inside the EVM). Essentially, the EVM accumulates all requested FHE operations in a block with their input handles and the corresponding result handles. It also remembers which result handles are stored via the SSTORE opcode. No FHE computations are done inside the EVM itself.
+- Symbolic Execution
+- FHE Computation
+
+Symbolic execution happens onchain, inside the [HTTPZExecutor](../../../../contracts/contracts/HTTPZExecutor.sol) contract (inside the EVM). Essentially, the EVM accumulates all requested FHE operations in a block with their input handles and the corresponding result handles. It also remembers which result handles are stored via the SSTORE opcode. No FHE computations are done inside the EVM itself.
 
 For more on symbolic execution, please see [Symbolic Execution](../symbolic_execution.md).
 
@@ -35,9 +36,9 @@ sequenceDiagram
     Note over Node: Commit Block
 ```
 
-## Interaction with the TFHEExecutor Contract
+## Interaction with the HTTPZExecutor Contract
 
-The [TFHEExecutor](../../../../contracts/contracts/TFHEExecutor.sol) contract is deployed when the chain is created and is at a well-known address that is also known by blockchain nodes. When a node (validator or full node) detects a call to this address (a CALL or STATICCALL opcode), the EVM running in the node looks at the function signature and determines which FHE computation is being requested. The result handle is the result of this particular call to the TFHEExecutor contract and the EVM can accumulate it in the computations list for the block.
+The [HTTPZExecutor](../../../../contracts/contracts/HTTPZExecutor.sol) contract is deployed when the chain is created and is at a well-known address that is also known by blockchain nodes. When a node (validator or full node) detects a call to this address (a CALL or STATICCALL opcode), the EVM running in the node looks at the function signature and determines which FHE computation is being requested. The result handle is the result of this particular call to the HTTPZExecutor contract and the EVM can accumulate it in the computations list for the block.
 
 ## Scheduling Policies
 
