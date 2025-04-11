@@ -1,7 +1,9 @@
 use alloy::{
     hex,
-    primitives::{Address, Bytes, U256},
+    primitives::{Address, U256},
 };
+use alloy_dyn_abi::DynSolValue;
+use alloy_primitives::{Bytes, Uint};
 use kms_grpc::kms::v1::{FheType, TypedPlaintext};
 use tracing::{error, info};
 
@@ -94,74 +96,140 @@ pub fn format_request_id(request_id: U256) -> String {
     hex::encode(bytes)
 }
 
-/// ABI encode multiple plaintexts into a single Bytes object
-/// This follows the Solidity ABI encoding for dynamic arrays, matching the KMS Core implementation
-pub fn abi_encode_plaintexts(plaintexts: &[TypedPlaintext]) -> Bytes {
-    use alloy_dyn_abi::DynSolValue;
+/// ABI encodes a list of typed plaintexts into a single byte vector for Ethereum compatibility.
+/// This follows the encoding pattern used in the JavaScript version for decrypted results.
+pub fn abi_encode_plaintexts(ptxts: &[TypedPlaintext]) -> Bytes {
+    let mut results: Vec<DynSolValue> = Vec::new();
+    results.push(DynSolValue::Uint(U256::from(42), 256)); // requestID placeholder
 
-    // This is a hack to get the offsets right for Byte types.
-    // Every offset needs to be shifted by 32 bytes (256 bits), so we prepend a U256 and delete it at the and, after encoding.
-    let mut data = vec![DynSolValue::Uint(U256::from(0), 256)];
-
-    // This is another hack to handle Euint512, Euint1024 and Euint2048 Bytes properly (alloy adds another all-zero 256 bytes to the beginning of the encoded bytes)
-    let mut offset_mul = 1;
-
-    for ptxt in plaintexts.iter() {
-        info!("Encoding Plaintext with FheType: {:#?}", ptxt.fhe_type());
-        let res = match ptxt.fhe_type() {
-            FheType::Ebool => {
-                let val = if ptxt.as_bool() { 1_u8 } else { 0 };
-                DynSolValue::Uint(U256::from(val), 256)
-            }
-            FheType::Euint4 => DynSolValue::Uint(U256::from(ptxt.as_u4()), 256),
-            FheType::Euint8 => DynSolValue::Uint(U256::from(ptxt.as_u8()), 256),
-            FheType::Euint16 => DynSolValue::Uint(U256::from(ptxt.as_u16()), 256),
-            FheType::Euint32 => DynSolValue::Uint(U256::from(ptxt.as_u32()), 256),
-            FheType::Euint64 => DynSolValue::Uint(U256::from(ptxt.as_u64()), 256),
-            FheType::Euint128 => DynSolValue::Uint(U256::from(ptxt.as_u128()), 256),
-            FheType::Euint160 => {
-                let mut cake = vec![0u8; 32];
-                ptxt.as_u160().copy_to_be_byte_slice(cake.as_mut_slice());
-                DynSolValue::Uint(U256::from_be_slice(&cake), 256)
-            }
-            FheType::Euint256 => {
-                let mut cake = vec![0u8; 32];
-                ptxt.as_u256().copy_to_be_byte_slice(cake.as_mut_slice());
-                DynSolValue::Uint(U256::from_be_slice(&cake), 256)
-            }
+    for clear_text in ptxts.iter() {
+        match clear_text.fhe_type() {
             FheType::Euint512 => {
-                // if we have at least 1 Euint larger than 256 bits, we need to throw away 256 more bytes at the beginning of the encoding below, thus set offset_mul to 2
-                offset_mul = 2;
-                let mut cake = vec![0u8; 64];
-                ptxt.as_u512().copy_to_be_byte_slice(cake.as_mut_slice());
-                DynSolValue::Bytes(cake)
+                if clear_text.bytes.len() != 64 {
+                    error!(
+                        "Invalid length for Euint512: expected 64, got {}",
+                        clear_text.bytes.len()
+                    );
+                    results.push(DynSolValue::Bytes(vec![0u8; 64]));
+                } else {
+                    let arr: [u8; 64] = match clear_text.bytes.as_slice().try_into() {
+                        Ok(arr) => arr,
+                        Err(e) => {
+                            error!("Failed to convert bytes to array for Euint512: {}", e);
+                            [0u8; 64]
+                        }
+                    };
+                    let value = Uint::<512, 8>::from_le_bytes(arr);
+                    let bytes: [u8; 64] = value.to_be_bytes();
+                    results.push(DynSolValue::Bytes(bytes.to_vec()));
+                }
             }
             FheType::Euint1024 => {
-                // if we have at least 1 Euint larger than 256 bits, we need to throw away 256 more bytes at the beginning of the encoding below, thus set offset_mul to 2
-                offset_mul = 2;
-                let mut cake = vec![0u8; 128];
-                ptxt.as_u1024().copy_to_be_byte_slice(cake.as_mut_slice());
-                DynSolValue::Bytes(cake)
+                if clear_text.bytes.len() != 128 {
+                    error!(
+                        "Invalid length for Euint1024: expected 128, got {}",
+                        clear_text.bytes.len()
+                    );
+                    results.push(DynSolValue::Bytes(vec![0u8; 128]));
+                } else {
+                    let arr: [u8; 128] = match clear_text.bytes.as_slice().try_into() {
+                        Ok(arr) => arr,
+                        Err(e) => {
+                            error!("Failed to convert bytes to array for Euint1024: {}", e);
+                            [0u8; 128]
+                        }
+                    };
+                    let value = Uint::<1024, 16>::from_le_bytes(arr);
+                    let bytes: [u8; 128] = value.to_be_bytes();
+                    results.push(DynSolValue::Bytes(bytes.to_vec()));
+                }
             }
             FheType::Euint2048 => {
-                // if we have at least 1 Euint larger than 256 bits, we need to throw away 256 more bytes at the beginning of the encoding below, thus set offset_mul to 2
-                offset_mul = 2;
-                let mut cake = vec![0u8; 256];
-                ptxt.as_u2048().copy_to_be_byte_slice(cake.as_mut_slice());
-                DynSolValue::Bytes(cake)
+                if clear_text.bytes.len() != 256 {
+                    error!(
+                        "Invalid length for Euint2048: expected 256, got {}",
+                        clear_text.bytes.len()
+                    );
+                    results.push(DynSolValue::Bytes(vec![0u8; 256]));
+                } else {
+                    let arr: [u8; 256] = match clear_text.bytes.as_slice().try_into() {
+                        Ok(arr) => arr,
+                        Err(e) => {
+                            error!("Failed to convert bytes to array for Euint2048: {}", e);
+                            [0u8; 256]
+                        }
+                    };
+                    let value = Uint::<2048, 32>::from_le_bytes(arr);
+                    let bytes: [u8; 256] = value.to_be_bytes();
+                    results.push(DynSolValue::Bytes(bytes.to_vec()));
+                }
             }
-        };
-        data.push(res);
+            _ => {
+                // For other types, convert to U256
+                if clear_text.bytes.len() > 32 {
+                    error!(
+                        "Byte length too large for U256: got {}, max is 32",
+                        clear_text.bytes.len()
+                    );
+                    results.push(DynSolValue::Uint(U256::from(0), 256));
+                } else {
+                    // Pad the bytes to 32 bytes for U256 (assuming little-endian input)
+                    let mut padded = [0u8; 32];
+                    padded[..clear_text.bytes.len()].copy_from_slice(&clear_text.bytes);
+                    let value = U256::from_le_bytes(padded);
+                    results.push(DynSolValue::Uint(value, 256));
+                }
+            }
+        }
     }
 
-    // wrap data in a Tuple, so we can encode it with position information
-    let encoded = DynSolValue::Tuple(data).abi_encode();
+    results.push(DynSolValue::Array(vec![])); // signatures placeholder
 
-    // strip off the extra U256 at the beginning, and possibly also 256 bytes more zero bytes, when we encode one or more Euint2048s
-    let encoded_bytes: Vec<u8> = encoded[offset_mul * 32..].to_vec();
+    let data = DynSolValue::Tuple(results).abi_encode_params();
+    let decrypted_result = data[32..data.len() - 32].to_vec(); // remove placeholder corresponding to requestID and signatures
+    Bytes::from(decrypted_result)
+}
 
-    let hexbytes = hex::encode(encoded_bytes.clone());
-    info!("Encoded plaintext ABI {:?}", hexbytes);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    Bytes::from(encoded_bytes)
+    #[test]
+    fn test_js_compatibility() {
+        let res = "0x000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffffffffffffff0";
+        let plaintexts = [TypedPlaintext::from_u512(18446744073709551600_u64.into())];
+        let rust_result = abi_encode_plaintexts(&plaintexts);
+        let rust_hex = format!("0x{}", hex::encode(&rust_result));
+        assert_eq!(rust_hex, res);
+    }
+
+    #[test]
+    fn test_js_compatibility_multiple() {
+        let res = "0x0000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000002a00000000000000000000000000000000000000000000000000000000000000380000000000000000000000000000000000000000000000000000000000000013000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e0";
+        let plaintexts = [
+            TypedPlaintext::from_u16(22_u16),         // type 3 (uint256)
+            TypedPlaintext::from_u32(42_u32),         // type 4 (uint256)
+            TypedPlaintext::from_u64(56_u64),         // type 5 (uint256)
+            TypedPlaintext::from_u128(19_u128),       // type 6 (uint256)
+            TypedPlaintext::from_u160(32_u64.into()), // type 7 (uint256)
+        ];
+        let rust_result = abi_encode_plaintexts(&plaintexts);
+        let rust_hex = format!("0x{}", hex::encode(&rust_result));
+        assert_eq!(rust_hex, res);
+    }
+
+    #[test]
+    fn test_js_compatibility_mixed_types() {
+        let res = "0x00000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000002a000000000000000000000000000000000000000000000000000000000000014000000000000000000000000000000000000000000000000000000000000001e00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffffffffffffff000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000038000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000013";
+        let plaintexts = [
+            TypedPlaintext::from_u512(18446744073709551600_u64.into()), // type 9 (bytes)
+            TypedPlaintext::from_u64(42_u64),                           // type 5 (uint256)
+            TypedPlaintext::from_u1024(56_u64.into()),                  // type 10 (bytes)
+            TypedPlaintext::from_u2048(19_u64.into()),                  // type 11 (bytes)
+            TypedPlaintext::from_u32(32_u32),                           // type 4 (uint256)
+        ];
+        let rust_result = abi_encode_plaintexts(&plaintexts);
+        let rust_hex = format!("0x{}", hex::encode(&rust_result));
+        assert_eq!(rust_hex, res);
+    }
 }

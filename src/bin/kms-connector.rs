@@ -6,7 +6,7 @@ use kms_connector::{
         cli::{Cli, Commands},
         config::Config,
         connector::KmsCoreConnector,
-        utils::wallet_factory::{AwsKmsConfig, WalletFactory},
+        utils::wallet::KmsWallet,
     },
     error::{Error, Result},
     kms_core_adapters::service::KmsServiceImpl,
@@ -67,23 +67,31 @@ async fn run_connector(
     gw_provider: Arc<impl Provider + Clone + std::fmt::Debug + 'static>,
     shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<()> {
-    // Initialize wallet based on configuration using the wallet factory
-    let aws_kms_config = config.aws_kms_config.as_ref().map(|aws_cfg| AwsKmsConfig {
-        key_id: aws_cfg.key_id.clone(),
-        region: aws_cfg.region.clone(),
-        endpoint: aws_cfg.endpoint.clone(),
-    });
-
-    let account_index = config.get_account_index();
-    let wallet = WalletFactory::initialize_wallet(
-        aws_kms_config,
-        config.signing_key_path.as_deref(),
-        config.private_key.as_deref(),
-        &config.mnemonic,
-        account_index,
-        Some(config.chain_id),
-    )
-    .await?;
+    // Initialize wallet based on configuration
+    let wallet = if let Some(aws_kms_config) = &config.aws_kms_config {
+        info!(
+            "Using AWS KMS for signing with key ID: {}",
+            aws_kms_config.key_id
+        );
+        KmsWallet::from_aws_kms(
+            aws_kms_config.key_id.clone(),
+            aws_kms_config.region.clone(),
+            aws_kms_config.endpoint.clone(),
+            Some(config.chain_id),
+        )
+        .await?
+    } else if let Some(signing_key_path) = &config.signing_key_path {
+        info!("Using signing key from file: {}", signing_key_path);
+        KmsWallet::from_signing_key_file(Some(signing_key_path), Some(config.chain_id))?
+    } else if let Some(private_key) = &config.private_key {
+        info!("Using private key from configuration");
+        KmsWallet::from_private_key_str(private_key, Some(config.chain_id))?
+    } else {
+        // Initialize wallet with account index derived from service name
+        let account_index = config.get_account_index();
+        info!("Using mnemonic with account index: {}", account_index);
+        KmsWallet::from_mnemonic_with_index(&config.mnemonic, account_index, Some(config.chain_id))?
+    };
 
     info!(
         "Wallet created successfully with address: {:#x}",
