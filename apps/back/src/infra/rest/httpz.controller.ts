@@ -14,10 +14,10 @@ export class HttpzController {
   constructor(
     private readonly getKeyUrlUC: GetKeyUrl,
     private readonly inputProofUC: InputProof,
-  ) { }
+  ) {}
 
-  @Get('/helthcheck')
-  helthcheck() {
+  @Get('/healthcheck')
+  healthcheck() {
     return { response: 'ok' }
   }
 
