@@ -31,7 +31,7 @@ on:
       host_version:
         description: 'Host Image Version'
         required: false
-        default: 'v0.7.0-rc2'
+        default: 'v0.7.0-rc4'
         type: string
       relayer_version:
         description: 'Relayer Image Version'
@@ -41,7 +41,7 @@ on:
       tests_version:
         description: 'E2E Tests Image Version'
         required: false
-        default: '6ff6eed'
+        default: 'eaa23e9'
         type: string
   pull_request:
     paths:

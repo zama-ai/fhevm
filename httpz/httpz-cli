@@ -11,7 +11,7 @@ export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc4"}
 export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.1.0-rc9"}
 export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc4"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"eaa23e9"}
-export TESTS_VERSION=${TESTS_VERSION:-"6ff6eed"}
+export TESTS_VERSION=${TESTS_VERSION:-"eaa23e9"}
 
 function usage {
   echo "Usage: httpz-cli COMMAND [OPTIONS]"
@@ -35,17 +35,6 @@ shift
 
 case $COMMAND in
   deploy)
-    echo "Deploying HTTPZ stack..."
-    echo "Using component versions:"
-    echo "  CORE: ${CORE_VERSION}"
-    echo "  CONNECTOR: ${CONNECTOR_VERSION}"
-    echo "  COPROCESSOR: ${COPROCESSOR_VERSION}"
-    echo "  DB MIGRATION: ${DB_MIGRATION_VERSION}"
-    echo "  GATEWAY: ${GATEWAY_VERSION}"
-    echo "  HOST: ${HOST_VERSION}"
-    echo "  RELAYER: ${RELAYER_VERSION}"
-    echo "  TESTS: ${TESTS_VERSION}"
-
     "${SCRIPT_DIR}/scripts/run-httpz.sh"
     ;;
     

@@ -198,6 +198,17 @@ cleanup "$@"
 prepare_all_env_files
 prepare_local_config_relayer
 
+log_info "Deploying HTTPZ stack..."
+log_info "Using component versions:"
+log_info "  CORE: ${CORE_VERSION}"
+log_info "  CONNECTOR: ${CONNECTOR_VERSION}"
+log_info "  COPROCESSOR: ${COPROCESSOR_VERSION}"
+log_info "  DB MIGRATION: ${DB_MIGRATION_VERSION}"
+log_info "  GATEWAY: ${GATEWAY_VERSION}"
+log_info "  HOST: ${HOST_VERSION}"
+log_info "  RELAYER: ${RELAYER_VERSION}"
+log_info "  TESTS: ${TESTS_VERSION}"
+
 run_compose "minio" "MinIO Services" \
     "${PROJECT}-minio:running" \
     "${PROJECT}-minio-setup:complete"
