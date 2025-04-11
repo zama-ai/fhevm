@@ -36,7 +36,7 @@ services:
 
   db-migration:
     container_name: httpz-db-migration
-    image: ghcr.io/zama-ai/fhevm-db-migration:${COPROCESSOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm-db-migration:${DB_MIGRATION_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     environment:

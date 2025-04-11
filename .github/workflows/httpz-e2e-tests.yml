@@ -16,6 +16,11 @@ on:
       coprocessor_version:
         description: 'Coprocessor Image Version'
         required: false
+        default: '5a6a813'
+        type: string
+      db_migration_version:
+        description: 'Coprocessor DB Migration Image Version'
+        required: false
         default: 'v0.7.0-rc4'
         type: string
       gateway_version:
@@ -31,7 +36,7 @@ on:
       relayer_version:
         description: 'Relayer Image Version'
         required: false
-        default: '163346b'
+        default: 'eaa23e9'
         type: string
       tests_version:
         description: 'E2E Tests Image Version'
@@ -75,6 +80,7 @@ jobs:
           CORE_VERSION: ${{ inputs.core_version }}
           CONNECTOR_VERSION: ${{ inputs.connector_version }}
           COPROCESSOR_VERSION: ${{ inputs.coprocessor_version }}
+          DB_MIGRATION_VERSION: ${{ inputs.db_migration_version }}
           GATEWAY_VERSION: ${{ inputs.gateway_version }}
           HOST_VERSION: ${{ inputs.host_version }}
           RELAYER_VERSION: ${{ inputs.relayer_version }}
