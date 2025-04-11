@@ -484,6 +484,9 @@ importers:
       '@vitejs/plugin-react-swc':
         specifier: ^3.7.1
         version: 3.8.0(@swc/helpers@0.5.15)(vite@5.4.14(@types/node@20.17.24)(terser@5.39.0))
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.4.7
       eslint:
         specifier: 'catalog:'
         version: 9.22.0(jiti@2.4.2)
