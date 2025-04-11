@@ -37,7 +37,7 @@ describe('HttpzController', () => {
     expect(controller).toBeDefined()
   })
 
-  describe('GET /keyurl', () => {
+  describe('GET /v1/keyurl', () => {
     let getKeyUrl: MockProxy<GetKeyUrl>
     beforeEach(() => {
       getKeyUrl = module.get(GetKeyUrl)
@@ -80,7 +80,7 @@ describe('HttpzController', () => {
     })
   })
 
-  describe(`POST /input-proof`, () => {
+  describe(`POST /v1/input-proof`, () => {
     let inputProof: MockProxy<InputProof>
     let handles: string[]
     let signatures: string[]

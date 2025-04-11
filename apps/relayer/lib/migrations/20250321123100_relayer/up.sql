@@ -4,9 +4,10 @@ CREATE TYPE Gateway_Operation_Type AS ENUM ('PublicDecryption', 'PrivateDecrypti
 
 CREATE TABLE "gateway_requests" (
 	"request_id" UUID NOT NULL PRIMARY KEY,
-	"on_chain_request_id" BYTEA UNIQUE,
+	"on_chain_request_id" BYTEA,
 	"op" Gateway_Operation_Type NOT NULL,
-	"status" Gateway_Operation_Status_Type NOT NULL
+	"status" Gateway_Operation_Status_Type NOT NULL,
+	UNIQUE (op, on_chain_request_id)
 );
 
 CREATE TABLE "httpz_host_events"(

@@ -35,3 +35,9 @@ services:
     build:
       context: ./apps/relayer/
       dockerfile: ../../docker/relayer/Dockerfile
+
+  relayer-migrate:
+    image: zws_local/console/relayer-migrate:${DOCKER_TAG-latest}
+    build:
+      context: ./apps/relayer/
+      dockerfile: ../../docker/relayer-migrate/Dockerfile

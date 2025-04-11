@@ -35,6 +35,7 @@ jobs:
           - {name: "web3", context: "."}
           - {name: "front", context: "."}
           - {name: "relayer", context: "./apps/relayer"}
+          - {name: "relayer-migrate", context: "./apps/relayer"}
       fail-fast: false
     runs-on: ubuntu-latest
     permissions:

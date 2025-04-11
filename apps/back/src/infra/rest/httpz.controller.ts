@@ -14,24 +14,24 @@ export class HttpzController {
   constructor(
     private readonly getKeyUrlUC: GetKeyUrl,
     private readonly inputProofUC: InputProof,
-  ) {}
+  ) { }
 
   @Get('/helthcheck')
   helthcheck() {
     return { response: 'ok' }
   }
 
-  @Get('/keyurl')
+  @Get('/v1/keyurl')
   async getKeyUrl() {
-    this.logger.log('GET /keyurl')
+    this.logger.log('GET /v1/keyurl')
     const { fhe_key_info, crs } = await this.getKeyUrlUC.execute().toPromise()
     return { response: { fhe_key_info, crs } }
   }
 
-  @Post('/input-proof')
+  @Post('/v1/input-proof')
   @UsePipes(new ZodValidationPipe(inputProofSchema))
   async postInputProof(@Body() input: InputProofRequest) {
-    this.logger.log('POST /input-proof')
+    this.logger.log('POST /v1/input-proof')
     const response = await this.inputProofUC.execute(input).toPromise()
     return { response }
   }

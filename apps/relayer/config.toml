@@ -4,7 +4,8 @@ decryption_oracle = "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
 chain_id = 12345
 ws_url = "ws://localhost:8546"
 http_url = "http://localhost:8546"
-[host_chains.chain_config.signer_config.Local]
+[host_chains.chain_config.signer_config]
+type = "LOCAL"
 private_key_env = "HTTPZ_PRIVATE_KEY"
 
 [gateway_chain]
@@ -14,7 +15,8 @@ decryption_manager = "0x2Fb4341027eb1d2aD8B5D9708187df8633cAFA92"
 chain_id = 54321
 ws_url = "ws://localhost:8546"
 http_url = "http://localhost:8546"
-[gateway_chain.chain_config.signer_config.Local]
+[gateway_chain.chain_config.signer_config]
+type = "LOCAL"
 private_key_env = "GATEWAY_PRIVATE_KEY"
 
 [queues]

@@ -1,49 +1,6 @@
 # Run commands for the console services
 name: console
 services:
-  back-migrate:
-    image: zws_local/console/back:alpine-v1
-    container_name: console-back-migrate
-    env_file:
-      - ./apps/back/.env.compose
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "Waiting for database to be ready..." &&
-        until nc -z console-postgres 5432; do sleep 1; done &&
-        echo "Running migrations..." &&
-        pnpm --filter back prisma:migrate
-    depends_on:
-      console_postgres:
-        condition: service_healthy
-    restart: on-failure
-    networks:
-      - console-net
-
-  relayer-migrate:
-    image: rust:1.85
-    container_name: relayer-migrate
-    env_file:
-      - ./apps/relayer/.env.compose
-    entrypoint: ["/bin/sh", "-c"]
-    command: 
-    - |
-      cargo install diesel_cli && 
-      apt update &&
-      apt install netcat-traditional -y &&
-      until nc -z console-postgres 5432; do sleep 1; done &&
-      cd /app/lib &&
-      diesel setup &&
-      diesel migration run --migration-dir /app/lib/migrations
-    depends_on:
-      relayer_postgres:
-        condition: service_healthy
-    working_dir: /app
-    volumes: 
-      - ./apps/relayer:/app
-    networks:
-      - console-net
-
   back:
     image: zws_local/console/back:alpine-v1
     container_name: console-back
@@ -99,25 +56,6 @@ services:
       back:
         condition: service_started
 
-  orchestrator-migrate:
-    image: zws_local/console/orchestrator:alpine-v1
-    container_name: console-orchestrator-migrate
-    env_file:
-      - ./apps/orchestrator/.env.compose
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "Waiting for database to be ready..." &&
-        until nc -z console-postgres 5432; do sleep 1; done &&
-        echo "Running migrations..." &&
-        pnpm --filter orchestrator prisma:migrate
-    restart: on-failure
-    depends_on:
-      console_postgres:
-        condition: service_healthy
-    networks:
-      - console-net
-
   orchestrator:
     image: zws_local/console/orchestrator:alpine-v1
     container_name: console-orchestrator
@@ -133,23 +71,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-    networks:
-      - console-net
-
-  web3-migrate:
-    image: zws_local/console/web3:alpine-v1
-    container_name: console-web3-migrate
-    env_file:
-      - ./apps/web3/.env.compose
-    entrypoint: ["/bin/sh", "-c"]
-    # pnpx prisma migrate deploy
-    command:
-      - |
-        echo "Waiting for database to be ready..." &&
-        until nc -z console-postgres 5432; do sleep 1; done &&
-        echo "Running migrations..." &&
-        pnpm --filter web3 prisma:migrate
-    restart: on-failure
     networks:
       - console-net
 

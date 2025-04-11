@@ -13,14 +13,17 @@ use fhevm_relayer::blockchain::ethereum::{
 use fhevm_relayer::orchestrator::traits::Event;
 use fhevm_relayer::{
     config::settings::KeyUrl,
-    core::event::InputProofRequest,
-    core::utils::OnceHandler,
+    core::event::{InputProofRequest, UserDecryptRequest},
     http::{
         input_http_listener::{
             InputProofErrorResponseJson, InputProofRequestJson, InputProofResponseJson,
             InputProofResponsePayloadJson,
         },
         keyurl_http_listener,
+        publicdecrypt_http_listener::PublicDecryptErrorResponseJson,
+        userdecrypt_http_listener::{
+            UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
+        },
     },
     orchestrator::{
         traits::{EventDispatcher, HandlerRegistry},
@@ -30,16 +33,8 @@ use fhevm_relayer::{
 use futures_util::StreamExt;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::oneshot;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
-
-pub struct ProofHandlerState<T>
-where
-    T: EventDispatcher<ZwsRelayerEvent> + HandlerRegistry<ZwsRelayerEvent>,
-{
-    orchestrator: Arc<Orchestrator<T, ZwsRelayerEvent>>,
-}
 
 pub async fn wait_for_response_with_id(
     sqs_client: &aws_sdk_sqs::Client,
@@ -112,8 +107,103 @@ pub struct HTTPListenerState {
     orchestrator_queue_url: String,
 }
 
+// TODO: change payload type
 #[debug_handler]
-pub async fn input_registration_handler_sqs(
+pub async fn public_decryption_handler(
+    State(_listener_state): State<Arc<HTTPListenerState>>,
+    Json(_payload): Json<InputProofRequestJson>,
+) -> impl IntoResponse {
+    debug!("Handling input proof request");
+    // Validate the payload
+    let error_response = PublicDecryptErrorResponseJson {
+        message: "Public decryption isn't implemented yet".to_string(),
+    };
+    (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
+}
+
+// TODO: make sure that data-types are correct
+// it looks like multiple ciphertext can be packed in the same request
+#[debug_handler]
+pub async fn private_decryption_handler(
+    State(listener_state): State<Arc<HTTPListenerState>>,
+    Json(payload): Json<UserDecryptRequestJson>,
+) -> impl IntoResponse {
+    debug!("Handling input proof request");
+    // Validate the payload
+    if let Err(message) = payload.validate() {
+        let error_response = InputProofErrorResponseJson { message };
+        return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+    }
+
+    let request_id = Uuid::new_v4();
+
+    // Prepare and send an event
+    let request_data: UserDecryptRequest = match payload.try_into() {
+        Ok(event_data) => event_data,
+        Err(message) => {
+            let error_response = UserDecryptErrorResponseJson {
+                message: message.to_string(),
+            };
+            return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+        }
+    };
+
+    let event = ZwsRelayerEvent::HTTPPrivateDecryptionRequest(PrivateDecryptionRequest {
+        request_id,
+        ct_handle_contract_pairs: request_data.ct_handle_contract_pairs,
+        request_validity: request_data.request_validity,
+        contracts_chain_id: request_data.contracts_chain_id,
+        contract_addresses: request_data.contract_addresses,
+        user_address: request_data.user_address,
+        public_key: request_data.public_key,
+        signature: request_data.signature,
+    });
+
+    match send_message_to_sqs_queue(
+        true,
+        &listener_state.sqs_client,
+        &listener_state.relayer_queue_url,
+        event,
+    )
+    .await
+    {
+        Ok(_) => debug!("success sending request"),
+        Err(error) => {
+            error!("Couldn't send request to sqs");
+            let error_response = UserDecryptErrorResponseJson { message: error };
+            return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+        }
+    }
+
+    // TODO: implement the callback
+    // Wait for response on the rx of Onshot channel.
+    loop {
+        match wait_for_response_with_id(
+            &listener_state.sqs_client,
+            &listener_state.orchestrator_queue_url,
+            request_id,
+        )
+        .await
+        {
+            ZwsRelayerEvent::HTTPPrivateDecryptionResponse(value) => {
+                info!("Received response event.");
+                return (
+                    StatusCode::OK,
+                    Json(UserDecryptResponseJson {
+                        response: value.responses,
+                    }),
+                )
+                    .into_response();
+            }
+            _ => {
+                debug!("Received an event but not the response yet")
+            }
+        };
+    }
+}
+
+#[debug_handler]
+pub async fn input_registration_handler(
     State(listener_state): State<Arc<HTTPListenerState>>,
     Json(payload): Json<InputProofRequestJson>,
 ) -> impl IntoResponse {
@@ -137,14 +227,13 @@ pub async fn input_registration_handler_sqs(
 
     // NOTE: we could use SNS insteaf of the orchestrator dispatch here
     // but since it's just a mock it should be fine
-    let event =
-        ZwsRelayerEvent::SQSRelayerInputRegistrationRequest(SQSRelayerInputRegistrationRequest {
-            request_id,
-            contract_chain_id: request_data.contract_chain_id,
-            contract_address: request_data.contract_address,
-            user_address: request_data.user_address,
-            ciphetext_with_zk_proof: request_data.ciphetext_with_zk_proof,
-        });
+    let event = ZwsRelayerEvent::HTTPInputRegistrationRequest(HTTPInputRegistrationRequest {
+        request_id,
+        contract_chain_id: request_data.contract_chain_id,
+        contract_address: request_data.contract_address,
+        user_address: request_data.user_address,
+        ciphetext_with_zk_proof: request_data.ciphetext_with_zk_proof,
+    });
 
     match send_message_to_sqs_queue(
         true,
@@ -171,7 +260,7 @@ pub async fn input_registration_handler_sqs(
         )
         .await
         {
-            ZwsRelayerEvent::SQSRelayerInputRegistrationResponse(value) => {
+            ZwsRelayerEvent::HTTPInputRegistrationResponse(value) => {
                 info!("Received response event.");
                 return (
                     StatusCode::OK,
@@ -192,109 +281,6 @@ pub async fn input_registration_handler_sqs(
                 debug!("Received an event but not the response yet")
             }
         };
-    }
-}
-
-#[debug_handler]
-pub async fn input_registration_handler_orchestrator(
-    State(input_handler_state): State<
-        Arc<ProofHandlerState<TokioEventDispatcher<ZwsRelayerEvent>>>,
-    >,
-    Json(payload): Json<InputProofRequestJson>,
-) -> impl IntoResponse {
-    debug!("Handling input proof request");
-    // Validate the payload
-    if let Err(message) = payload.validate() {
-        let error_response = InputProofErrorResponseJson { message };
-        return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
-    }
-
-    // Generate Request ID
-    let request_id = input_handler_state.orchestrator.new_request_id();
-
-    info!("validated and assigned request id: {}", request_id);
-
-    // Register once handlers for receiving the decryption response from the gateway l2
-    let (handler, rx): (
-        OnceHandler<ZwsRelayerEvent>,
-        oneshot::Receiver<ZwsRelayerEvent>,
-    ) = OnceHandler::new();
-    let handler = Arc::new(handler);
-
-    input_handler_state.orchestrator.register_once_handler(
-        SQSRelayerInputRegistrationResponse::event_id(),
-        request_id,
-        handler,
-    );
-    info!("registered once handler");
-
-    // Prepare and send an event
-    let request_data: InputProofRequest = match payload.try_into() {
-        Ok(event_data) => event_data,
-        Err(message) => {
-            let error_response = InputProofErrorResponseJson { message };
-            return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
-        }
-    };
-
-    // NOTE: we could use SNS insteaf of the orchestrator dispatch here
-    // but since it's just a mock it should be fine
-    let event =
-        ZwsRelayerEvent::SQSRelayerInputRegistrationRequest(SQSRelayerInputRegistrationRequest {
-            request_id,
-            contract_chain_id: request_data.contract_chain_id,
-            contract_address: request_data.contract_address,
-            user_address: request_data.user_address,
-            ciphetext_with_zk_proof: request_data.ciphetext_with_zk_proof,
-        });
-
-    let _ = input_handler_state.orchestrator.dispatch_event(event).await;
-    debug!("dispatched event to orchestrator to initiate processing");
-
-    debug!("waiting for reponse event");
-
-    // Wait for response on the rx of Onshot channel.
-    match rx.await {
-        Ok(event) => {
-            match event {
-                ZwsRelayerEvent::SQSRelayerInputRegistrationResponse(value) => {
-                    info!("Received response event.");
-                    (
-                        StatusCode::OK,
-                        Json(InputProofResponseJson {
-                            response: InputProofResponsePayloadJson {
-                                handles: value.handles.iter().map(|elt| elt.to_string()).collect(),
-                                signatures: value
-                                    .signatures
-                                    .iter()
-                                    .map(|elt| elt.to_string())
-                                    .collect(),
-                            },
-                        }),
-                    )
-                        .into_response()
-                }
-                _ => {
-                    // TODO: properly manage errors here
-                    let error_response = InputProofErrorResponseJson {
-                        message: "Failed to handle input registration.".to_string(),
-                    };
-
-                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
-                }
-            }
-        }
-        Err(error) => {
-            debug!(
-                "Received errror while waiting for response event: {:?}",
-                error
-            );
-            // TODO: properly manage errors here
-            let error_response = InputProofErrorResponseJson {
-                message: "Failed to handle input registration.".to_string(),
-            };
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
-        }
     }
 }
 
@@ -330,19 +316,36 @@ pub async fn http_listener(
     key_url: KeyUrl,
     _orchestrator: Arc<Orchestrator<TokioEventDispatcher<ZwsRelayerEvent>, ZwsRelayerEvent>>,
 ) {
-    // let input_handler = Arc::new(InputProofHandler::new(orchestrator));
-    // let shared_state = Arc::new(orchestrator);
-    //
-    //
-
-    // TODO: add private/user-decryption route
     let app = Router::new()
-        .route("/input-proof", post(input_registration_handler_sqs))
+        // Input registration
+        .route("/v1/input-proof", post(input_registration_handler))
         .with_state(Arc::new(HTTPListenerState {
-            sqs_client,
-            relayer_queue_url,
-            orchestrator_queue_url,
+            sqs_client: sqs_client.clone(),
+            relayer_queue_url: relayer_queue_url.clone(),
+            orchestrator_queue_url: orchestrator_queue_url.clone(),
         }))
+        .route("/v1/user-decrypt", post(private_decryption_handler))
+        .with_state(Arc::new(HTTPListenerState {
+            sqs_client: sqs_client.clone(),
+            relayer_queue_url: relayer_queue_url.clone(),
+            orchestrator_queue_url: orchestrator_queue_url.clone(),
+        }))
+        .route("/v1/public-decrypt", post(public_decryption_handler))
+        .with_state(Arc::new(HTTPListenerState {
+            sqs_client: sqs_client.clone(),
+            relayer_queue_url: relayer_queue_url.clone(),
+            orchestrator_queue_url: orchestrator_queue_url.clone(),
+        }))
+        // Key-URL
+        .route(
+            "/v1/keyurl",
+            get(|| async {
+                info!("Received GET request to '/keyurl'");
+                // TODO: implement -> should be in config back
+                Json(key_url_route(key_url))
+            }),
+        )
+        // Root
         .route(
             "/",
             get({
@@ -350,14 +353,6 @@ pub async fn http_listener(
                     info!("root");
                     Html("<p>Welcome to the relayer!</p>")
                 }
-            }),
-        )
-        .route(
-            "/keyurl",
-            get(|| async {
-                info!("Received GET request to '/keyurl'");
-                // TODO: implement -> should be in config back
-                Json(key_url_route(key_url))
             }),
         );
     // .with_state(Arc::new(KeyUrlState { key_url }));

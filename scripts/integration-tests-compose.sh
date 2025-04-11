@@ -16,4 +16,5 @@ echo "Orchestrator:"
 docker logs console-orchestrator
 echo "Relayer:"
 docker logs console-relayer
+
 exit $status

@@ -7,7 +7,11 @@ RUN corepack enable
 # --- Builder stage ---
 FROM base AS builder
 WORKDIR /wrkspc
-COPY . .
+COPY package.json package.json
+COPY pnpm-workspace.yaml pnpm-workspace.yaml
+COPY pnpm-lock.yaml pnpm-lock.yaml
+COPY ./packages packages
+COPY ./apps/back apps/back
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm --filter "./packages/**" build
 RUN pnpx prisma generate --schema apps/back/prisma/schema.prisma
