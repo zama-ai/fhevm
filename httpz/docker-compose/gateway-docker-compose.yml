@@ -23,29 +23,23 @@ services:
   
   gateway-sc-deploy:
     container_name: httpz-gateway-sc-deploy
-    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:${GATEWAY_VERSION}
+    image: ghcr.io/zama-ai/httpz-gateway/sc-bundle:${GATEWAY_VERSION}
     env_file:
       - ../env/staging/.env.gateway.local
-    environment:
-      - HARDHAT_NETWORK=staging
-      - CHAIN_ID_GATEWAY=54321
     command:
       - /bin/bash
       - -c
       - |
-        npx hardhat task:deployAllContracts
+        npx hardhat task:deployAllGatewayContracts
     depends_on:
       gateway-node:
         condition: service_started
 
   gateway-sc-add-network:
     container_name: httpz-gateway-sc-add-network
-    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:${GATEWAY_VERSION}
+    image: ghcr.io/zama-ai/httpz-gateway/sc-bundle:${GATEWAY_VERSION}
     env_file:
       - ../env/staging/.env.gateway.local
-    environment:
-      - HARDHAT_NETWORK=staging
-      - CHAIN_ID_GATEWAY=54321
     command:
       - /bin/bash
       - -c

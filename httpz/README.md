@@ -5,6 +5,7 @@
 The test suite offers a unified CLI for all operations:
 
 ```sh
+cd httpz
 # Deploy the entire stack
 ./httpz-cli deploy
 

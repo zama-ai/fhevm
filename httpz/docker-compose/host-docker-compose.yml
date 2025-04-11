@@ -29,9 +29,7 @@ services:
     command:
       - /bin/bash
       - -c
-      - /app/deploy-core-contracts.sh staging
-    volumes:
-      - ../env/staging/.env.host.local:/app/.env
+      - npx hardhat task:deployAllHostContracts
     depends_on:
       host-node:
         condition: service_started

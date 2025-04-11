@@ -81,14 +81,12 @@ prepare_local_env_file() {
     local base_env_file="$SCRIPT_DIR/../env/staging/.env.$component"
     local local_env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
 
-    if [[ ! -f "$local_env_file" ]]; then
-        echo -e "${GREEN}[INFO]${NC} Creating local environment file for $component..." >&2
-        cp "$base_env_file" "$local_env_file"
-    elif [[ ! -f "$base_env_file" ]]; then
+    if [[ ! -f "$base_env_file" ]]; then
         echo -e "${RED}[ERROR]${NC} Base environment file for $component not found: $base_env_file" >&2
         return 1
     else
-        echo -e "${GREEN}[INFO]${NC} Local environment file for $component already exists, skipping creation." >&2
+        echo -e "${GREEN}[INFO]${NC} Creating/updating local environment file for $component..." >&2
+        cp "$base_env_file" "$local_env_file"
     fi
 
     printf "%s" "$local_env_file"
@@ -98,14 +96,13 @@ prepare_local_config_relayer() {
     local base_config_file="$SCRIPT_DIR/../config/relayer/local.yaml"
     local local_config_file="$SCRIPT_DIR/../config/relayer/local.yaml.local"
 
-    if [[ ! -f "$local_config_file" ]]; then
-        echo -e "${GREEN}[INFO]${NC} Creating local configuration file for relayer..." >&2
-        cp "$base_config_file" "$local_config_file"
-    elif [[ ! -f "$base_config_file" ]]; then
+    if [[ ! -f "$base_config_file" ]]; then
         echo -e "${RED}[ERROR]${NC} Base configuration file for relayer not found: $base_config_file" >&2
         return 1
     else
-        echo -e "${GREEN}[INFO]${NC} Local configuration file for relayer already exists, skipping creation." >&2
+        # Always copy the base file to the local file
+        echo -e "${GREEN}[INFO]${NC} Creating/updating local configuration file for relayer..." >&2
+        cp "$base_config_file" "$local_config_file"
     fi
 
     printf "%s" "$local_config_file"
@@ -128,7 +125,7 @@ prepare_all_env_files() {
 run_compose() {
     local component=$1
     local service_desc=$2
-    local env_file=$(prepare_local_env_file "$component")
+    local env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
     local compose_file="$SCRIPT_DIR/../docker-compose/$component-docker-compose.yml"
     shift 2
 

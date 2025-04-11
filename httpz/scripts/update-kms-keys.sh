@@ -46,14 +46,14 @@ if [[ ! "$SIGNER_ADDRESS" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
 fi
 
 # HOST
-log_info "Updating ADDRESS_KMS_SIGNER_0 in $ENV_HOST..."
-cat $ENV_HOST | sed "s|^export ADDRESS_KMS_SIGNER_0=.*|export ADDRESS_KMS_SIGNER_0=\"$SIGNER_ADDRESS\"|g" > /tmp/env.host.new
-if grep -q "export ADDRESS_KMS_SIGNER_0=\"$SIGNER_ADDRESS\"" /tmp/env.host.new; then
+log_info "Updating KMS_SIGNER_ADDRESS_0 in $ENV_HOST..."
+cat $ENV_HOST | sed "s|^KMS_SIGNER_ADDRESS_0=.*|KMS_SIGNER_ADDRESS_0=$SIGNER_ADDRESS|g" > /tmp/env.host.new
+if grep -q "KMS_SIGNER_ADDRESS_0=$SIGNER_ADDRESS" /tmp/env.host.new; then
     cat /tmp/env.host.new > $ENV_HOST
-    log_info "ADDRESS_KMS_SIGNER_0 successfully updated to: $SIGNER_ADDRESS in $ENV_HOST"
+    log_info "KMS_SIGNER_ADDRESS_0 successfully updated to: $SIGNER_ADDRESS in $ENV_HOST"
 else
-    log_warn "Failed to update ADDRESS_KMS_SIGNER_0. Please update manually in $ENV_HOST."
-    log_info "The value that should be set: \"$SIGNER_ADDRESS\""
+    log_warn "Failed to update KMS_SIGNER_ADDRESS_0. Please update manually in $ENV_HOST."
+    log_info "The value that should be set: $SIGNER_ADDRESS"
 fi
 
 # GATEWAY
