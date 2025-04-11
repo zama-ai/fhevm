@@ -9,5 +9,6 @@ export {
   requestId,
   generateRequestId,
   MS_PREFIXES,
-  operationEnum, operationName,
+  operationEnum,
+  operationName,
 } from './shared.js'
