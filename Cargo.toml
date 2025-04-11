@@ -45,7 +45,6 @@ thiserror = "2.0.11"
 anyhow = "1.0"
 tracing = "0.1"
 tower = "0.5.2"
-# kms-grpc = {workspace = true, default-features = true, features = ["insecure"]} # TODO: substitute
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio-stream = "0.1"
@@ -68,6 +67,9 @@ alloy-signer-aws = "0.11.0"
 
 # TODO: substitute with existing KMS-Core implementation
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# TODO: replace git submodule and path import by git import when kms-core becomes open-source
+kms-grpc = { path = "kms-core/core/grpc", default-features = true, features = ["insecure"] }
 
 [dev-dependencies]
 tempfile = "=3.16.0"
