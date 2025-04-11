@@ -58,5 +58,5 @@ jobs:
                 done
 
     docker-scanning:
-        uses: zama-ai/security-hub/.github/workflows/03-sca-trivy-docker-kms-callable-wf.yml@31e7d441c1f986608983c2015d7d7c08879c417d
+        uses: zama-ai/security-hub/.github/workflows/03-sca-trivy-docker-kms-callable-wf.yml@fd8e5dd445cf9504fd354aa231c1339510151764
         secrets: inherit
