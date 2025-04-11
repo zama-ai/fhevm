@@ -36,7 +36,7 @@ services:
 
   db-migration:
     container_name: httpz-db-migration
-    image: ghcr.io/zama-ai/fhevm-db-migration:v0.7.0-rc3
+    image: ghcr.io/zama-ai/fhevm-db-migration:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     environment:
@@ -52,7 +52,7 @@ services:
   ####################### COPROCESSOR SERVICES #######################
   httpz-listener:
     container_name: httpz-httpz-listener
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
+    image: ghcr.io/zama-ai/fhevm-coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -68,7 +68,7 @@ services:
 
   gw-listener:
     container_name: httpz-gw-listener
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
+    image: ghcr.io/zama-ai/fhevm-coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -85,7 +85,7 @@ services:
 
   tfhe-worker:
     container_name: httpz-tfhe-worker
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
+    image: ghcr.io/zama-ai/fhevm-coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -106,7 +106,7 @@ services:
 
   zkproof-worker:
     container_name: httpz-zkproof-worker
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
+    image: ghcr.io/zama-ai/fhevm-coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -125,7 +125,7 @@ services:
 
   sns-worker:
     container_name: httpz-sns-worker
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
+    image: ghcr.io/zama-ai/fhevm-coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -147,7 +147,7 @@ services:
 
   transaction-sender:
     container_name: httpz-transaction-sender
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc3
+    image: ghcr.io/zama-ai/fhevm-coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:

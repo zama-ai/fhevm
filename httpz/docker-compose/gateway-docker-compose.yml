@@ -23,7 +23,7 @@ services:
   
   gateway-sc-deploy:
     container_name: httpz-gateway-sc-deploy
-    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:v0.1.0-rc8
+    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:${GATEWAY_VERSION}
     env_file:
       - ../env/staging/.env.gateway.local
     environment:
@@ -40,7 +40,7 @@ services:
 
   gateway-sc-add-network:
     container_name: httpz-gateway-sc-add-network
-    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:v0.1.0-rc8
+    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:${GATEWAY_VERSION}
     env_file:
       - ../env/staging/.env.gateway.local
     environment:

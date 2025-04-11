@@ -4,6 +4,14 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT="httpz"
 
+export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc5"}
+export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.11.0-rc5"}
+export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"v0.7.0-rc3"}
+export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.1.0-rc8"}
+export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc2"}
+export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc3"}
+export TESTS_VERSION=${TESTS_VERSION:-"v0.1.0-rc4"}
+
 function usage {
   echo "Usage: httpz-cli COMMAND [OPTIONS]"
   echo
@@ -27,6 +35,15 @@ shift
 case $COMMAND in
   deploy)
     echo "Deploying HTTPZ stack..."
+    echo "Using component versions:"
+    echo "  CORE: ${CORE_VERSION}"
+    echo "  CONNECTOR: ${CONNECTOR_VERSION}"
+    echo "  COPROCESSOR: ${COPROCESSOR_VERSION}"
+    echo "  GATEWAY: ${GATEWAY_VERSION}"
+    echo "  HOST: ${HOST_VERSION}"
+    echo "  RELAYER: ${RELAYER_VERSION}"
+    echo "  TESTS: ${TESTS_VERSION}"
+
     "${SCRIPT_DIR}/scripts/run-httpz.sh"
     ;;
     

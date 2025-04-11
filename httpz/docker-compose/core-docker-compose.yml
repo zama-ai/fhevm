@@ -2,7 +2,7 @@ services:
 
   kms-core:
     container_name: kms-core
-    image: ghcr.io/zama-ai/kms-service:v0.11.0-rc5
+    image: ghcr.io/zama-ai/kms-service:${CORE_VERSION}
     env_file:
       - ../env/staging/.env.core.local
     entrypoint:
@@ -30,7 +30,7 @@ services:
 
   generate-fhe-keys:
     container_name: httpz-generate-fhe-keys
-    image: ghcr.io/zama-ai/kms-core-client:v0.11.0-rc5
+    image: ghcr.io/zama-ai/kms-core-client:${CORE_VERSION}
     env_file:
       - ../env/staging/.env.core.local
     entrypoint:

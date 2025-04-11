@@ -1,0 +1,99 @@
+name: HTTPZ E2E Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_version:
+        description: 'KMS Core Version'
+        required: false
+        default: 'v0.11.0-rc5'
+        type: string
+      connector_version:
+        description: 'Connector Version'
+        required: false
+        default: 'v0.11.0-rc5'
+        type: string
+      coprocessor_version:
+        description: 'Coprocessor Image Version'
+        required: false
+        default: 'v0.7.0-rc3'
+        type: string
+      gateway_version:
+        description: 'Gateway Image Version'
+        required: false
+        default: 'v0.1.0-rc8'
+        type: string
+      host_version:
+        description: 'Host Image Version'
+        required: false
+        default: 'v0.7.0-rc2'
+        type: string
+      relayer_version:
+        description: 'Relayer Image Version'
+        required: false
+        default: 'v0.1.0-rc3'
+        type: string
+      tests_version:
+        description: 'E2E Tests Image Version'
+        required: false
+        default: 'v0.1.0-rc4'
+        type: string
+  pull_request:
+    paths:
+      - '.github/workflows/httpz-e2e-tests.yml'
+      - 'httpz/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  httpz-e2e-test:
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "read"
+
+    runs-on: large_ubuntu_16
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Docker
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+      
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_READ_TOKEN }}
+
+      - name: Deploy HTTPZ Stack
+        working-directory: httpz
+        env:
+          CORE_VERSION: ${{ inputs.core_version }}
+          CONNECTOR_VERSION: ${{ inputs.connector_version }}
+          COPROCESSOR_VERSION: ${{ inputs.coprocessor_version }}
+          GATEWAY_VERSION: ${{ inputs.gateway_version }}
+          HOST_VERSION: ${{ inputs.host_version }}
+          RELAYER_VERSION: ${{ inputs.relayer_version }}
+          TESTS_VERSION: ${{ inputs.tests_version }}
+        run: |
+              ./httpz-cli deploy
+
+      - name: Input proof test
+        working-directory: httpz
+        run: |
+              ./httpz-cli test input-proof
+
+      - name: User Decryption test
+        working-directory: httpz
+        run: |
+              ./httpz-cli test user-decryption
+
+      - name: Cleanup
+        working-directory: httpz
+        if: always()
+        run: |
+              ./httpz-cli clean
