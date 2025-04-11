@@ -6,7 +6,7 @@ use alloy::{
 use std::sync::Arc;
 
 use crate::{
-    core::utils::wallet_factory::KmsWallet,
+    core::utils::wallet::KmsWallet,
     error::{Error, Result},
 };
 

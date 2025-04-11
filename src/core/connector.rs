@@ -17,7 +17,7 @@ use crate::{
     kms_core_adapters::service::KmsServiceImpl,
 };
 
-use super::{event_processor::processors::EventProcessor, utils::wallet_factory::KmsWallet};
+use super::{event_processor::processors::EventProcessor, utils::wallet::KmsWallet};
 
 /// Core KMS connector that handles all interactions with L2
 pub struct KmsCoreConnector<P: Provider + Clone> {

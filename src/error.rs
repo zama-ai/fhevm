@@ -3,7 +3,7 @@ use alloy_transport::RpcError;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 
-use crate::core::utils::wallet_factory::dev_wallet::WalletError;
+use crate::core::utils::wallet::WalletError;
 
 /// Error type for the KMS connector
 #[derive(Debug, Error)]

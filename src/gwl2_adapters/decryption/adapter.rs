@@ -1,4 +1,4 @@
-use crate::{core::utils::wallet_factory::KmsWallet, gwl2_contracts::IDecryptionManager};
+use crate::{core::utils::wallet::KmsWallet, gwl2_contracts::IDecryptionManager};
 use alloy::{
     primitives::{Address, Bytes, U256},
     providers::Provider,

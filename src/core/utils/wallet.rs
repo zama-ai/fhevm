@@ -1,5 +1,5 @@
 use alloy::hex::decode;
-use alloy_primitives::{Address, ChainId, B256};
+use alloy_primitives::{Address, Bytes, ChainId, B256, U256};
 use alloy_signer::{Signer, SignerSync};
 use alloy_signer_local::{coins_bip39::English, MnemonicBuilder, PrivateKeySigner};
 use std::fs::File;
@@ -110,6 +110,11 @@ mod private_sig_key {
 // Re-export the PrivateSigKey for use in this module
 use private_sig_key::PrivateSigKey;
 
+// Import AWS KMS signer
+use alloy_signer_aws::AwsSigner;
+use aws_config::BehaviorVersion;
+use aws_sdk_kms::Client as KmsClient;
+
 #[derive(Debug, Error)]
 pub enum WalletError {
     #[error("Signer error: {0}")]
@@ -124,6 +129,8 @@ pub enum WalletError {
     IoError(#[from] std::io::Error),
     #[error("Invalid private key: {0}")]
     InvalidPrivateKey(String),
+    #[error("AWS KMS error: {0}")]
+    AwsKmsError(String),
 }
 
 pub type Result<T> = std::result::Result<T, WalletError>;
@@ -133,14 +140,25 @@ pub type Result<T> = std::result::Result<T, WalletError>;
 /// This wallet implementation provides functionality for:
 /// - Creating wallets from mnemonic phrases or files
 /// - Creating wallets from signing key files
-/// - Generating random wallets
+/// - Creating wallets from private key strings
+/// - Creating wallets from AWS KMS keys
 /// - Signing messages, hashes, and decryption responses
 ///
 /// It serves as a critical security component in the KMS Connector,
 /// handling all cryptographic operations for blockchain interactions.
 #[derive(Clone, Debug)]
 pub struct KmsWallet {
-    pub signer: PrivateKeySigner,
+    /// The signer implementation - either local or AWS KMS
+    signer: WalletSigner,
+}
+
+/// Internal enum to hold either a local or AWS KMS signer
+#[derive(Clone, Debug)]
+enum WalletSigner {
+    /// Local signer using a private key
+    Local(PrivateKeySigner),
+    /// AWS KMS signer
+    AwsKms(AwsSigner),
 }
 
 impl KmsWallet {
@@ -164,7 +182,9 @@ impl KmsWallet {
             .with_chain_id(chain_id);
 
         info!("Created wallet from mnemonic phrase");
-        Ok(Self { signer })
+        Ok(Self {
+            signer: WalletSigner::Local(signer),
+        })
     }
 
     /// Create a new wallet from a mnemonic file
@@ -216,7 +236,9 @@ impl KmsWallet {
         let signer = PrivateKeySigner::from_signing_key(sk.sk().clone()).with_chain_id(chain_id);
 
         info!("Created wallet from signing key file");
-        Ok(Self { signer })
+        Ok(Self {
+            signer: WalletSigner::Local(signer),
+        })
     }
 
     /// Create a new wallet from a private key string
@@ -252,44 +274,130 @@ impl KmsWallet {
         let signer = PrivateKeySigner::from_signing_key(signing_key).with_chain_id(chain_id);
 
         info!("Created wallet from private key string");
-        Ok(Self { signer })
+        Ok(Self {
+            signer: WalletSigner::Local(signer),
+        })
     }
 
     /// Create a new random wallet
     pub fn random(chain_id: Option<ChainId>) -> Result<Self> {
         let signer = PrivateKeySigner::random().with_chain_id(chain_id);
         info!("Created random wallet");
-        Ok(Self { signer })
+        Ok(Self {
+            signer: WalletSigner::Local(signer),
+        })
+    }
+
+    /// Create a new wallet from AWS KMS configuration
+    pub async fn from_aws_kms(
+        key_id: String,
+        region: Option<String>,
+        endpoint: Option<String>,
+        chain_id: Option<ChainId>,
+    ) -> Result<Self> {
+        info!("Creating wallet from AWS KMS with key ID: {}", key_id);
+
+        // Create AWS config builder
+        let mut config_loader = aws_config::defaults(BehaviorVersion::latest());
+
+        // Add region if specified
+        if let Some(region) = region {
+            debug!("Using AWS region: {}", region);
+            config_loader = config_loader.region(aws_config::Region::new(region));
+        }
+
+        // Add endpoint if specified
+        if let Some(endpoint) = endpoint {
+            debug!("Using AWS endpoint: {}", endpoint);
+            config_loader = config_loader.endpoint_url(endpoint);
+        }
+
+        // Load AWS config
+        let config = config_loader.load().await;
+
+        // Create KMS client
+        let kms_client = KmsClient::new(&config);
+
+        // Create AWS KMS signer
+        let aws_signer = AwsSigner::new(kms_client, key_id, chain_id)
+            .await
+            .map_err(|e| WalletError::AwsKmsError(e.to_string()))?;
+
+        info!(
+            "Created wallet from AWS KMS with address: {}",
+            aws_signer.address()
+        );
+        Ok(Self {
+            signer: WalletSigner::AwsKms(aws_signer),
+        })
     }
 
     /// Get the wallet's address
     pub fn address(&self) -> Address {
         debug!("Getting wallet address");
-        self.signer.address()
+        match &self.signer {
+            WalletSigner::Local(signer) => signer.address(),
+            WalletSigner::AwsKms(signer) => signer.address(),
+        }
     }
 
     /// Sign a message
-    pub fn sign_message(&self, message: &[u8]) -> Result<Vec<u8>> {
+    pub async fn sign_message(&self, message: &[u8]) -> Result<Vec<u8>> {
         debug!("Signing message");
-        Ok(self.signer.sign_message_sync(message)?.as_bytes().to_vec())
+        match &self.signer {
+            WalletSigner::Local(signer) => {
+                Ok(signer.sign_message_sync(message)?.as_bytes().to_vec())
+            }
+            WalletSigner::AwsKms(signer) => {
+                let sig = signer
+                    .sign_message(message)
+                    .await
+                    .map_err(WalletError::SignerError)?;
+                Ok(sig.as_bytes().to_vec())
+            }
+        }
     }
 
     /// Sign a hash
-    pub fn sign_hash(&self, hash: &B256) -> Result<Vec<u8>> {
-        // Get signature
+    pub async fn sign_hash(&self, hash: &B256) -> Result<Vec<u8>> {
         debug!("Signing hash");
-        let sig = self.signer.sign_hash_sync(hash)?;
-        Ok(Vec::from(&sig))
+        match &self.signer {
+            WalletSigner::Local(signer) => {
+                let sig = signer.sign_hash_sync(hash)?;
+                Ok(Vec::from(&sig))
+            }
+            WalletSigner::AwsKms(signer) => {
+                let sig = signer
+                    .sign_hash(hash)
+                    .await
+                    .map_err(WalletError::SignerError)?;
+                Ok(Vec::from(&sig))
+            }
+        }
     }
 
     /// Sign a decryption response
-    pub fn sign_decryption_response(&self, id: &[u8], result: &[u8]) -> Result<Vec<u8>> {
+    pub async fn sign_decryption_response(&self, id: &[u8], result: &[u8]) -> Result<Vec<u8>> {
         // Create message to sign: keccak256(abi.encodePacked(id, result))
         debug!("Signing decryption response");
         let mut message = Vec::with_capacity(id.len() + result.len());
         message.extend_from_slice(id);
         message.extend_from_slice(result);
-        self.sign_message(&message)
+        self.sign_message(&message).await
+    }
+
+    /// Sign a decryption response with U256 ID and Bytes result
+    pub async fn sign_decryption_response_u256(
+        &self,
+        id: &U256,
+        result: &Bytes,
+    ) -> Result<Vec<u8>> {
+        debug!("Signing decryption response with U256 ID");
+        // Convert U256 to bytes (32 bytes, big-endian)
+        let id_bytes = id.to_be_bytes::<32>();
+        // Sign using the existing method
+        self.sign_decryption_response(&id_bytes, result.as_ref())
+            .await
     }
 }
 
@@ -305,13 +413,13 @@ mod tests {
         assert!(wallet.address() != Address::ZERO);
     }
 
-    #[test]
-    fn test_sign_decryption_response() {
+    #[tokio::test]
+    async fn test_sign_decryption_response() {
         let wallet = KmsWallet::random(Some(TEST_CHAIN_ID)).unwrap();
 
         let id = b"test_id";
         let result = b"test_result";
-        let signature = wallet.sign_decryption_response(id, result).unwrap();
+        let signature = wallet.sign_decryption_response(id, result).await.unwrap();
 
         assert!(!signature.is_empty());
     }
@@ -326,8 +434,8 @@ mod tests {
         assert!(wallet.unwrap().address() != Address::ZERO);
     }
 
-    #[test]
-    fn test_wallet_from_private_key_str() {
+    #[tokio::test]
+    async fn test_wallet_from_private_key_str() {
         // Test private key (this is a test key, never use in production)
         let private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f";
 
@@ -349,7 +457,7 @@ mod tests {
 
         // Test signing
         let message = b"test message";
-        let signature = wallet.sign_message(message).unwrap();
+        let signature = wallet.sign_message(message).await.unwrap();
         assert!(!signature.is_empty());
     }
 

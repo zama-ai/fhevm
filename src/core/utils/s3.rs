@@ -61,7 +61,7 @@ pub async fn call_httpz_to_get_s3_url<P: Provider + Clone>(
     let contract = HTTPZ::new(httpz_address, provider);
 
     // Call getCoprocessor method
-    let coprocessor = match contract.coprocessors(coprocessor_address).call().await {
+    let coprocessor = match contract.getCoprocessor(coprocessor_address).call().await {
         Ok(result) => result,
         Err(e) => {
             warn!(
