@@ -1,6 +1,44 @@
 import { z } from 'zod'
 import { v7 as uuid } from 'uuid'
 
+export const operationNames = [
+  'FheAdd',
+  'FheSub',
+  'FheMul',
+  'FheDiv',
+  'FheRem',
+  'FheBitAnd',
+  'FheBitOr',
+  'FheBitXor',
+  'FheShl',
+  'FheShr',
+  'FheRotl',
+  'FheRotr',
+  'FheEq',
+  'FheEqBytes',
+  'FheNe',
+  'FheNeBytes',
+  'FheGe',
+  'FheGt',
+  'FheLe',
+  'FheLt',
+  'FheMin',
+  'FheMax',
+  'FheNeg',
+  'FheNot',
+  'VerifyCiphertext',
+  'Cast',
+  'TrivialEncrypt',
+  'TrivialEncryptBytes',
+  'FheIfThenElse',
+  'FheRand',
+  'FheRandBounded',
+] as const
+
+export const operationEnum = z.enum(operationNames)
+
+export type operationName = z.infer<typeof operationEnum>
+
 export const MS_PREFIXES = ['back', 'orch', 'relayer', 'web3'] as const
 export type MSPrefix = (typeof MS_PREFIXES)[number]
 
@@ -49,7 +87,7 @@ export function metaFactory<
       meta: Meta
     } = Extract<Events, { type: `${Prefix}:${Key}` }>,
   >(key: Key) {
-    return function (payload: Event['payload'], meta: Event['meta']) {
+    return function(payload: Event['payload'], meta: Event['meta']) {
       return {
         type: `${prefix}:${key}`,
         payload,

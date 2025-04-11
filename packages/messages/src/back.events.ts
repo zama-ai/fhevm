@@ -1,5 +1,7 @@
 import { z } from 'zod'
-import { chainId, meta, metaFactory, requestId, web3Address } from './shared.js'
+import { chainId, meta, metaFactory, requestId, web3Address, operationEnum } from './shared.js'
+
+
 
 type EventTypes =
   | 'dapp:created'
@@ -69,7 +71,7 @@ const schemas = [
     address: web3Address,
     events: z.array(
       z.object({
-        name: z.string(),
+        name: operationEnum,
         timestamp: z.string().datetime(),
         externalRef: z.string(),
       }),

@@ -11,8 +11,8 @@ import {
 import { DApp, DAppProps } from '#dapps/domain/entities/dapp.js'
 import {
   DAppRepository,
-  type Operation,
   type CumulativeStats,
+  type DailyStats,
 } from '#dapps/domain/repositories/dapp.repository.js'
 
 import { PrismaService } from '../prisma.service.js'
@@ -25,6 +25,7 @@ import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import { Computation } from '#dapps/domain/utilities/computation.js'
+import { StatsType } from '#prisma/client/index.js'
 
 @Injectable()
 export class PrismaDAppRepository implements DAppRepository {
@@ -215,10 +216,10 @@ export class PrismaDAppRepository implements DAppRepository {
           this.logger.debug(`stats: ${JSON.stringify(stats)}`)
           const operations = stats.reduce(
             (acc, stat) => {
-              acc[stat.name as Operation] = stat._count.name
+              acc[stat.name as DAppStat['name']] = stat._count.name
               return acc
             },
-            {} as Record<Operation, number>,
+            {} as Record<DAppStat['name'], number>,
           )
           const computation = new Computation(operations)
           resolve(computation)
@@ -226,6 +227,67 @@ export class PrismaDAppRepository implements DAppRepository {
         .catch((err: unknown) => {
           this.logger.warn(
             `failed to run findCumulativeStats for ${id.value}: ${err}`,
+          )
+          reject(unknownError(String(err)))
+        })
+    })
+  }
+
+  findDailyStats = (id: DAppId): Task<DailyStats, AppError> => {
+    const LIMIT_BYDAY_AGO = 30 // default 30 days
+
+    return new Task<DailyStats, AppError>((resolve, reject) => {
+      const daysago = new Date()
+      daysago.setUTCHours(0, 0, 0, 0) // full days in UTC, partial day stats are ugly
+      daysago.setUTCDate(daysago.getUTCDate() - LIMIT_BYDAY_AGO)
+
+      this.db.dappStat
+        .groupBy({
+          by: ['type', 'day', 'year'],
+          where: {
+            dappId: id.value,
+            timestamp: {
+              gte: daysago.toISOString(),
+            },
+          },
+          _count: {
+            _all: true,
+          },
+        })
+        .then(stats => {
+          const dailyStatsMap = new Map<string, DailyStats[0]>()
+
+          stats.forEach(stat => {
+            const date = new Date(stat.year, 0, 1)
+            // reminder: stat.day is 1-366
+            date.setUTCDate(date.getUTCDate() + stat.day - 1)
+            const formattedDay = date.toISOString().split('T')[0]
+            const dayId = `day_${formattedDay.replace(/-/g, '')}`
+
+            if (!dailyStatsMap.has(dayId)) {
+              dailyStatsMap.set(dayId, {
+                id: dayId,
+                day: formattedDay,
+                total: 0,
+                computation: 0,
+                encryption: 0,
+              })
+            }
+
+            const dayStats = dailyStatsMap.get(dayId)!
+            if (stat.type === StatsType.COMPUTATION) {
+              dayStats.computation = stat._count._all
+            } else {
+              dayStats.encryption = stat._count._all
+            }
+            dayStats.total += stat._count._all
+          })
+
+          resolve(Array.from(dailyStatsMap.values()))
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `failed to run findDailyStats for ${id.value}: ${err}`,
           )
           reject(unknownError(String(err)))
         })

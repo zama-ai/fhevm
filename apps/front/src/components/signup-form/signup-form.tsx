@@ -157,7 +157,7 @@ export function SignupForm({
                 value={String(formik.values.agree)}
                 onChange={formik.handleChange}
               >
-                I agree the{' '}
+                I agree to the{' '}
                 <Link to="https://www.zama.ai/legal-notice" variant="underline">
                   terms and conditions
                 </Link>

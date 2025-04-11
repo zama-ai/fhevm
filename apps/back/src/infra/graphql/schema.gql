@@ -33,21 +33,52 @@ type CreateApiKey {
 type CumulativeDappStats {
   total: Int!
   FheAdd: Int!
-  FheBitAnd: Int!
-  FheIfThenElse: Int!
-  FheLe: Int!
-  FheOr: Int!
   FheSub: Int!
-  TrivialEncrypt: Int!
-  VerifyCiphertext: Int!
   FheMul: Int!
   FheDiv: Int!
+  FheRem: Int!
+  FheBitAnd: Int!
+  FheBitOr: Int!
+  FheBitXor: Int!
+  FheShl: Int!
+  FheShr: Int!
+  FheRotl: Int!
+  FheRotr: Int!
+  FheEq: Int!
+  FheEqBytes: Int!
+  FheNe: Int!
+  FheNeBytes: Int!
+  FheGe: Int!
+  FheGt: Int!
+  FheLe: Int!
+  FheLt: Int!
+  FheMin: Int!
+  FheMax: Int!
+  FheNeg: Int!
+  FheNot: Int!
+  VerifyCiphertext: Int!
+  Cast: Int!
+  TrivialEncrypt: Int!
+  TrivialEncryptBytes: Int!
+  FheIfThenElse: Int!
+  FheRand: Int!
+  FheRandBounded: Int!
+}
+
+type DailyDappStats {
+  """The id of the day"""
+  id: ID!
+  day: String!
+  total: Int!
+  computation: Int!
+  encryption: Int!
 }
 
 type DappStats {
   """The id of the dapp"""
   id: ID!
   cumulative: CumulativeDappStats!
+  byDay: [DailyDappStats!]!
 }
 
 type RawStats {

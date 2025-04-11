@@ -27,6 +27,11 @@ export class HttpzController {
     private readonly inputProofUC: InputProof,
   ) {}
 
+  @Get('/helthcheck')
+  helthcheck() {
+    return { response: 'ok' }
+  }
+
   @Get('/keyurl')
   async getKeyUrl() {
     this.logger.log('GET /keyurl')

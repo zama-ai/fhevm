@@ -7,23 +7,22 @@ import { DAppStat, DAppStatProps } from '../entities/dapp-stat.js'
 import { ApiKey } from '../entities/api-key.js'
 
 export const DAPP_REPOSITORY = 'DAPP_REPOSITORY'
-export type Operation =
-  | 'FheAdd'
-  | 'FheBitAnd'
-  | 'FheIfThenElse'
-  | 'FheLe'
-  | 'FheOr'
-  | 'FheSub'
-  | 'TrivialEncrypt'
-  | 'VerifyCiphertext'
-  | 'FheMul'
-  | 'FheDiv'
 
-export type CumulativeStats = Record<Operation, number> & { total: number }
+export type CumulativeStats = Record<DAppStat['name'], number> & {
+  total: number
+}
+
+export type DailyStats = {
+  id: string
+  day: string
+  total: number
+  computation: number
+  encryption: number
+}[]
+
 export interface DAppRepository {
   create(data: DApp): Task<DApp, AppError>
   update(id: DAppId, data: Partial<Omit<DAppProps, 'id'>>): Task<DApp, AppError>
-
   delete(id: DAppId): Task<void, AppError>
   findById(id: DAppId): Task<DApp, AppError>
   findByAddress(chainId: string | number, address: string): Task<DApp, AppError>
@@ -32,8 +31,8 @@ export interface DAppRepository {
 
   createStat(id: DAppId, props: DAppStatProps): Task<DAppStat, AppError>
   findAllStats(id: DAppId): Task<DAppStat[], AppError>
-  findAllStats(id: DAppId): Task<DAppStat[], AppError>
   findCumulativeStats(id: DAppId): Task<CumulativeStats, AppError>
+  findDailyStats(id: DAppId): Task<DailyStats, AppError>
 
   createApiKey(apiKey: ApiKey): Task<ApiKey, AppError>
   findAllApiKeys(id: DAppId): Task<ApiKey[], AppError>

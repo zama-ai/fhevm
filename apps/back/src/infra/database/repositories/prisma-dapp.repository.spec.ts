@@ -12,7 +12,7 @@ import { AppError, every, executeTask, isAppError } from 'utils'
 import { faker } from '@faker-js/faker'
 import { z } from 'zod'
 import { TeamId } from '#users/domain/entities/value-objects.js'
-import { Dapp, DappStatus } from '#prisma/client/index.js'
+import { Dapp, DappStatus, StatsType } from '#prisma/client/index.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import { TestBed } from '@suites/unit'
 import { Mocked } from '@suites/doubles.vitest'
@@ -77,9 +77,13 @@ describe('PrismaDappRepository', () => {
       const stats: DAppStatProps[] = [
         {
           id: DAppStatId.random().value as string & z.BRAND<'DAppStatId'>,
-          name: faker.string.alphanumeric(10),
+          name: 'FheAdd',
           timestamp: new Date(Date.now()),
           dappId: DAppId.random().value as `dapp_${string}` & z.BRAND<'DAppId'>,
+          type: StatsType.COMPUTATION,
+          day: 1,
+          month: 0,
+          year: 2024,
           externalRef: faker.string.alphanumeric(10),
         },
       ]
@@ -127,6 +131,10 @@ describe('PrismaDappRepository', () => {
               timestamp: new Date(Date.now()),
               dappId: DAppId.random().value as `dapp_${string}` &
                 z.BRAND<'DAppId'>,
+              type: StatsType.COMPUTATION,
+              day: 1,
+              month: 0,
+              year: 2024,
               externalRef: faker.string.alphanumeric(16),
             },
             {
@@ -135,6 +143,10 @@ describe('PrismaDappRepository', () => {
               timestamp: new Date(Date.now()),
               dappId: DAppId.random().value as `dapp_${string}` &
                 z.BRAND<'DAppId'>,
+              type: StatsType.COMPUTATION,
+              day: 1,
+              month: 0,
+              year: 2024,
               externalRef: faker.string.alphanumeric(16),
             },
           ])

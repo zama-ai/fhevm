@@ -29,8 +29,10 @@ awslocal sqs create-queue --queue-name email-dlq
 awslocal sqs create-queue --queue-name email-queue \
   --attributes '{"RedrivePolicy":"{\"deadLetterTargetArn\":\"arn:aws:sqs:eu-central-1:000000000000:email-dlq\",\"maxReceiveCount\":\"1\"}"}'
 
-echo "Creating relayer queue"
-awslocal sqs create-queue --queue-name relayer-queue
-
 echo "Creating tx-manager queue"
-awslocal sqs create-queue --queue-name tx-manager-queue
+awslocal sqs create-queue --queue-name tx-manager-dlq
+awslocal sqs create-queue --queue-name tx-manager-queue \
+  --attributes '{"RedrivePolicy":"{\"deadLetterTargetArn\":\"arn:aws:sqs:eu-central-1:000000000000:tx-manager-dlq\",\"maxReceiveCount\":\"1\"}"}'
+
+# Used in docker compose to check the health of the container
+ touch /tmp/done

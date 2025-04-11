@@ -105,7 +105,7 @@ export class InputProof implements UseCase<Input, Output> {
                     )
                   }),
               ),
-            Task.timeout(30),
+            Task.timeout(parseInt(process.env.DEFAULT_TIMEOUT ?? '30', 10)),
           ])
         }),
       )

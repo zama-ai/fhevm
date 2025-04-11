@@ -2,12 +2,17 @@ import { z } from 'zod'
 import { DAppId, DAppStatId } from './value-objects.js'
 import { AppError, Entity, fail, ok, Result, validationError } from 'utils'
 import { fromZodError } from 'utils/dist/src/app-error.js'
+import { operationEnum } from 'messages'
 
 const schema = z.object({
   id: DAppStatId.schema,
-  name: z.string(),
+  name: operationEnum,
   timestamp: z.date(),
   dappId: DAppId.schema,
+  type: z.enum(['COMPUTATION', 'ENCRYPTION']),
+  day: z.number().min(1).max(366),
+  month: z.number().min(0).max(11),
+  year: z.number().min(0),
   externalRef: z.string(),
 })
 
@@ -45,6 +50,22 @@ export class DAppStat
 
   get dappId() {
     return DAppId.fromString(this.get('dappId')).unwrap()
+  }
+
+  get type() {
+    return this.get('type')
+  }
+
+  get day() {
+    return this.get('day')
+  }
+
+  get month() {
+    return this.get('month')
+  }
+
+  get year() {
+    return this.get('year')
   }
 
   get externalRef() {
