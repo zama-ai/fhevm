@@ -5,11 +5,7 @@ pragma solidity ^0.8.24;
 /// @dev source: github.com/zama-ai/gateway-l2/blob/main/contracts/ACLManager.sol
 /// @notice This contract is a mock of the ACLManager contract from L2.
 contract ACLManager {
-    function allowAccount(
-        uint256 chainId,
-        bytes32 ctHandle,
-        address accountAddress
-    ) public {}
+    function allowAccount(bytes32 ctHandle, address accountAddress) public {}
 
-    function allowPublicDecrypt(uint256 chainId, bytes32 ctHandle) public {}
+    function allowPublicDecrypt(bytes32 ctHandle) public {}
 }

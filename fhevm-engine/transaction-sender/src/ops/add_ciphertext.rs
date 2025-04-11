@@ -199,7 +199,6 @@ where
                 }
             };
 
-            let chain_id = tenant_info.chain_id;
             let handle: Vec<u8> = row.handle.clone();
 
             let (ciphertext64_digest, ciphertext128_digest) =
@@ -231,7 +230,6 @@ where
                     .addCiphertextMaterial(
                         handle_bytes32,
                         key_id,
-                        U256::from(chain_id),
                         ciphertext64_digest,
                         ciphertext128_digest,
                     )
@@ -241,7 +239,6 @@ where
                     .addCiphertextMaterial(
                         handle_bytes32,
                         key_id,
-                        U256::from(chain_id),
                         ciphertext64_digest,
                         ciphertext128_digest,
                     )

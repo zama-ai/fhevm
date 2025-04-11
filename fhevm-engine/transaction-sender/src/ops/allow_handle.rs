@@ -9,7 +9,7 @@ use crate::{nonce_managed_provider::NonceManagedProvider, ops::common::try_into_
 use super::TransactionOperation;
 use alloy::{
     network::{Ethereum, TransactionBuilder},
-    primitives::{Address, FixedBytes, U256},
+    primitives::{Address, FixedBytes},
     providers::Provider,
     rpc::types::TransactionRequest,
     sol,
@@ -254,11 +254,11 @@ where
                     // Call allowPublicDecrypt when account_address is null
                     match &self.gas {
                         Some(gas_limit) => acl_manager
-                            .allowPublicDecrypt(U256::from(chain_id), handle_bytes32)
+                            .allowPublicDecrypt(handle_bytes32)
                             .into_transaction_request()
                             .with_gas_limit(*gas_limit),
                         None => acl_manager
-                            .allowPublicDecrypt(U256::from(chain_id), handle_bytes32)
+                            .allowPublicDecrypt(handle_bytes32)
                             .into_transaction_request(),
                     }
                 }
@@ -275,11 +275,11 @@ where
 
                     match &self.gas {
                         Some(gas_limit) => acl_manager
-                            .allowAccount(U256::from(chain_id), handle_bytes32, address)
+                            .allowAccount(handle_bytes32, address)
                             .into_transaction_request()
                             .with_gas_limit(*gas_limit),
                         None => acl_manager
-                            .allowAccount(U256::from(chain_id), handle_bytes32, address)
+                            .allowAccount(handle_bytes32, address)
                             .into_transaction_request(),
                     }
                 }

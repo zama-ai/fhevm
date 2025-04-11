@@ -7,7 +7,6 @@ contract CiphertextManager {
     function addCiphertextMaterial(
         bytes32 ctHandle,
         uint256 keyId,
-        uint256 chainId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
     ) public {}
