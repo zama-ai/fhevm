@@ -116,7 +116,7 @@ jobs:
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'docker'))
     uses: ./.github/workflows/common-docker.yml
     with:
-      working-directory: "./"
+      working-directory: "./kms-connector"
       push_image: true
       image-name: 'kms-connector'
       app-cache-dir: 'kms-connector'
