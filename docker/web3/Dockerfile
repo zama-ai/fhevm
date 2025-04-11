@@ -22,13 +22,13 @@ WORKDIR /prod-wrkspc
 COPY --from=builder /prod/web3 ./
 EXPOSE 3002
 
-# RUN addgroup -g 10002 zwsgrp && \
-#     adduser -D -H -u 10001 -G zwsgrp zwsusr && \
-#     apk add --no-cache openssl wget
-# RUN chown -R zwsusr:zwsgrp /prod/web3
-# USER zwsusr:zwsgrp
+RUN addgroup -g 10002 zwsgrp && \
+    adduser -D -u 10001 -G zwsgrp zwsusr
+RUN chown -R zwsusr:zwsgrp /prod-wrkspc
+USER zwsusr:zwsgrp
 
 # TODO: update endpoint if healthcheck is implemented
+# RUN apk add --no-cache openssl wget
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD pgrep -f "dist/src/main" > /dev/null || exit 1
     # CMD wget -qO- http://localhost:3002/healthcheck || exit 1

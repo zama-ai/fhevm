@@ -21,19 +21,14 @@ FROM base AS runtime
 WORKDIR /prod-wrkspc
 COPY --from=builder /prod/email ./
 EXPOSE 3300
-# EXPOSE 8002
 
-# RUN addgroup -g 10002 zwsgrp && \
-#     adduser -D -H -u 10001 -G zwsgrp zwsusr && \
-#     apk add --no-cache openssl wget
-# RUN chown -R zwsusr:zwsgrp /prod/email
-# USER zwsusr:zwsgrp
+RUN addgroup -g 10002 zwsgrp && \
+    adduser -D -H -u 10001 -G zwsgrp zwsusr
+RUN chown -R zwsusr:zwsgrp /prod-wrkspc
+USER zwsusr:zwsgrp
 
 # TODO: update endpoint if healthcheck is implemented
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    # CMD wget -qO- http://localhost:3300/healthcheck || exit 1
     CMD pgrep -f "dist/src/main" > /dev/null || exit 1
 
 CMD ["pnpm", "start:prod"]
-# HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-#     CMD wget -qO- http://localhost:8002/ || exit 1

@@ -19,25 +19,18 @@ RUN cp -r apps/front/dist /prod/front/
 # --- Runtime stage ---
 FROM base AS runtime
 WORKDIR /prod-wrkspc
-# COPY --from=builder /prod/front ./
 COPY --from=builder /prod/front/dist ./front/dist
 RUN pnpm add -g http-server
 EXPOSE 8001
 
-# RUN addgroup -g 10002 zwsgrp && \
-#     adduser -D -H -u 10001 -G zwsgrp zwsusr && \
-#     apk add --no-cache openssl wget
-# RUN chown -R zwsusr:zwsgrp /prod/front
-# USER zwsusr:zwsgrp
+RUN addgroup -g 10002 zwsgrp && \
+    adduser -D -u 10001 -G zwsgrp zwsusr
+RUN chown -R zwsusr:zwsgrp /prod-wrkspc
+USER zwsusr:zwsgrp
 
 # TODO: update endpoint if healthcheck is implemented
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD pgrep -f "http-server" > /dev/null || exit 1
-
-# Error: sh: vite: not found
-# HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-#     CMD wget -qO- http://localhost:8001/ || exit 1
-    # CMD wget -qO- http://localhost:8001/healthcheck || exit 1
 
 # Error: sh: vite: not found
 # CMD ["pnpm", "start"]

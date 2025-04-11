@@ -51,22 +51,28 @@ dc643dfe8857   console-postgres                postgres:17-alpine               
 
 ```sh
 # Build all docker images locally (it doesn't push to ghcr.io)
-docker compose -f docker-compose.02.console.build.yaml build
+DOCKER_TAG="v2" docker compose -f docker-compose.02.console.build.yaml build
 
 # Build a specific image through docker-compose file
-docker compose -f docker-compose.02.console.build.yaml build orchestrator
+DOCKER_TAG="v2" docker compose -f docker-compose.02.console.build.yaml build orchestrator
+DOCKER_TAG="v2" docker compose -f docker-compose.02.console.build.yaml build
 
 # Build a specific docker image using its dockerfile
-docker build --load -t ghcr.io/zama-zws/console/back:alpine-v1.2.3 -f docker/back/Dockerfile.alpine . 
+DOCKER_TAG="v2" docker build --load -t ghcr.io/zama-zws/console/back:alpine-v1.2.3 -f docker/back/Dockerfile.alpine . 
 
 # Check images created
 docker images | grep zws_local
 
-ghcr.io/zama-zws/console/web3                           alpine-v1            7cf917966194   3 minutes ago    274MB
-ghcr.io/zama-zws/console/back                           alpine-v1            5c580aef234d   3 minutes ago    266MB
-ghcr.io/zama-zws/console/orchestrator                   alpine-v1            393214d555b8   3 minutes ago    256MB
-ghcr.io/zama-zws/console/email                          alpine-v1            06309e35377d   3 minutes ago    174MB
-ghcr.io/zama-zws/console/front                          alpine-v1            67702f253a08   13 hours ago     185MB
+zws_local/console/web3                           v2                   9efab9e32675   33 seconds ago       394MB
+zws_local/console/back                           v2                   6591c47edac6   49 seconds ago       378MB
+zws_local/console/orchestrator                   v2                   759ea231f34a   About a minute ago   356MB
+zws_local/console/email                          v2                   ba9e602a29af   About a minute ago   192MB
+zws_local/console/front                          v2                   dc77f13eb0de   10 minutes ago       187MB
+zws_local/console/web3                           alpine-v1            79514b5317c1   6 days ago           274MB
+zws_local/console/orchestrator                   alpine-v1            d501633629b2   6 days ago           256MB
+zws_local/console/back                           alpine-v1            4ec9934f0504   6 days ago           266MB
+zws_local/console/email                          alpine-v1            7b4e9be08732   6 days ago           174MB
+zws_local/console/front                          alpine-v1            0002ec86b1f3   6 days ago           185MB
 ```
 
 ### 3. Run all docker images
