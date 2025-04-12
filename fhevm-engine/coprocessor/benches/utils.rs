@@ -331,14 +331,8 @@ pub mod shortint_utils {
     use itertools::iproduct;
     use std::vec::IntoIter;
     use tfhe::shortint::parameters::compact_public_key_only::CompactPublicKeyEncryptionParameters;
-    #[cfg(not(feature = "gpu"))]
-    use tfhe::shortint::parameters::current_params::V1_1_PARAM_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS_GAUSSIAN_2M128;
     use tfhe::shortint::parameters::list_compression::CompressionParameters;
-    #[cfg(feature = "gpu")]
-    use tfhe::shortint::parameters::PARAM_GPU_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS;
-    use tfhe::shortint::parameters::{
-        ShortintKeySwitchingParameters, PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
-    };
+    use tfhe::shortint::parameters::ShortintKeySwitchingParameters;
     use tfhe::shortint::{
         CarryModulus, ClassicPBSParameters, MessageModulus, MultiBitPBSParameters, PBSParameters,
         ShortintParameterSet,
@@ -356,27 +350,11 @@ pub mod shortint_utils {
         fn default() -> Self {
             let env_config = EnvConfig::new();
 
-            if env_config.is_multi_bit {
-                #[cfg(feature = "gpu")]
-                let params = vec![PARAM_GPU_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS.into()];
-                #[cfg(not(feature = "gpu"))]
-                let params = vec![
-                    V1_1_PARAM_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS_GAUSSIAN_2M128.into(),
-                ];
+            let params = vec![fhevm_engine_common::keys::TFHE_PARAMS.into()];
 
-                let params_and_bit_sizes = iproduct!(params, env_config.bit_sizes());
-                Self {
-                    params_and_bit_sizes,
-                }
-            } else {
-                // FIXME One set of parameter is tested since we want to benchmark only quickest
-                // operations.
-                let params = vec![PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128.into()];
-
-                let params_and_bit_sizes = iproduct!(params, env_config.bit_sizes());
-                Self {
-                    params_and_bit_sizes,
-                }
+            let params_and_bit_sizes = iproduct!(params, env_config.bit_sizes());
+            Self {
+                params_and_bit_sizes,
             }
         }
     }
