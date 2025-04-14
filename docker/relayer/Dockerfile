@@ -47,7 +47,7 @@ EOF
 # reproducibility is important, consider using a digest
 # (e.g.,    debian@sha256:ac707220fbd7b67fc19b112cee8170b41a9e97f703f588b2cdbbcdcecdd8af57).
 FROM debian:bullseye-slim AS runtime
-RUN apt update && apt install libssl-dev libpq-dev libsqlite3-dev ca-certificates -y && update-ca-certificates
+RUN apt update && apt install libssl-dev libpq-dev libsqlite3-dev ca-certificates gettext -y && update-ca-certificates
 
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/   #user
