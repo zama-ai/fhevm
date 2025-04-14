@@ -15,7 +15,7 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  */
 type Documents = {
     "\n  mutation CreateApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      token\n      apiKey {\n        id\n        dappId\n        name\n        description\n      }\n    }\n  }\n": typeof types.CreateApiKeyDocument,
-    "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n      }\n    }\n  }\n": typeof types.ListApiKeysDocument,
+    "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n": typeof types.ListApiKeysDocument,
     "\n  mutation DeleteApiKey($apiKeyId: ID!) {\n    deleteApiKey(input: {\n      id: $apiKeyId\n    })\n  }\n": typeof types.DeleteApiKeyDocument,
     "\n  query ValidateAddress($chainId: String!, $address: String!) {\n    validateAddress(input: { chainId: $chainId, address: $address }) {\n      check\n      message\n    }\n  }\n": typeof types.ValidateAddressDocument,
     "\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": typeof types.CreateDappDocument,
@@ -30,7 +30,7 @@ type Documents = {
 };
 const documents: Documents = {
     "\n  mutation CreateApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      token\n      apiKey {\n        id\n        dappId\n        name\n        description\n      }\n    }\n  }\n": types.CreateApiKeyDocument,
-    "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n      }\n    }\n  }\n": types.ListApiKeysDocument,
+    "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n": types.ListApiKeysDocument,
     "\n  mutation DeleteApiKey($apiKeyId: ID!) {\n    deleteApiKey(input: {\n      id: $apiKeyId\n    })\n  }\n": types.DeleteApiKeyDocument,
     "\n  query ValidateAddress($chainId: String!, $address: String!) {\n    validateAddress(input: { chainId: $chainId, address: $address }) {\n      check\n      message\n    }\n  }\n": types.ValidateAddressDocument,
     "\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": types.CreateDappDocument,
@@ -65,7 +65,7 @@ export function graphql(source: "\n  mutation CreateApiKey(\n    $dappId: String
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n      }\n    }\n  }\n"): (typeof documents)["\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n      }\n    }\n  }\n"];
+export function graphql(source: "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n"): (typeof documents)["\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

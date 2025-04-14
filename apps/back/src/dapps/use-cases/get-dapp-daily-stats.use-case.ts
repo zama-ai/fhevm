@@ -1,6 +1,9 @@
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
-import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
-import { Injectable, Logger } from '@nestjs/common'
+import {
+  DAPP_REPOSITORY,
+  DAppRepository,
+} from '#dapps/domain/repositories/dapp.repository.js'
 import { AppError, Task, UseCase } from 'utils'
 
 type Input = {
@@ -19,7 +22,7 @@ type Output = {
 export class GetDappDailyStatsUseCase implements UseCase<Input, Output> {
   private readonly logger = new Logger(GetDappDailyStatsUseCase.name)
 
-  constructor(private readonly repo: DAppRepository) {}
+  constructor(@Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository) {}
 
   execute = (input: Input): Task<Output, AppError> => {
     return DAppId.fromString(input.dappId)

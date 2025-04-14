@@ -6,11 +6,13 @@ let apiKeys = [
   {
     id: 'api-00001',
     name: 'Test API Key 1',
+    createdAt: 1744627138231,
   },
   {
     id: 'api-00002',
     name: 'Test API Key 2',
     description: 'This API Key has a description',
+    createdAt: 1744627458231,
   },
 ]
 

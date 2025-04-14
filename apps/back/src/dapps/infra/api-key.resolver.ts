@@ -35,12 +35,17 @@ export class ApiKeyResolver {
     @Args('input') input: CreateApiKeyInput,
   ): Promise<CreateApiKeyType> {
     this.logger.log(`creating API key for dappId=${input.dappId}`)
-    const entity = await this.createApiKeyUC
-      .execute(input, { user })
-      .toPromise()
+    const { token, id, name, description, dappId, createdAt } =
+      await this.createApiKeyUC.execute(input, { user }).toPromise()
     return {
-      token: entity.token.value,
-      apiKey: entity.toJSON(),
+      token: token.value,
+      apiKey: {
+        id: id.value,
+        name: name,
+        description: description,
+        createdAt: Number(createdAt),
+        dappId: dappId.value,
+      },
     }
   }
 
@@ -64,7 +69,14 @@ export class ApiKeyResolver {
     const { id, ...props } = input
     return this.updateApiKeyUC
       .execute({ apiKeyId: id, props }, { user })
-      .map(({ apiKey }) => apiKey.toJSON())
+      .map(({ apiKey }) => ({
+        ...apiKey,
+        id: apiKey.id.value,
+        name: apiKey.name,
+        description: apiKey.description,
+        createdAt: Number(apiKey.createdAt),
+        dappId: apiKey.dappId.value,
+      }))
       .toPromise()
   }
 

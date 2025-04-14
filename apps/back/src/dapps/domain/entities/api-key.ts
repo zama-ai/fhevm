@@ -9,6 +9,9 @@ const schema = z.object({
   token: Token.schema,
   name: z.string().min(3).max(64),
   description: z.string().nullish(),
+  createdAt: z
+    .date()
+    .refine(date => date <= new Date(), 'CreatedAt should be in the past'),
 })
 
 export type ApiKeyProps = z.infer<typeof schema>
@@ -24,6 +27,7 @@ export class ApiKey
       ...data,
       id: ApiKeyId.random().value,
       token: Token.random().value,
+      createdAt: new Date(),
     })
   }
   static parse(data: unknown): Result<ApiKey, AppError> {
@@ -52,6 +56,10 @@ export class ApiKey
 
   get token() {
     return new Token(this.get('token'))
+  }
+
+  get createdAt() {
+    return this.get('createdAt')
   }
 
   checkToken(token: string): Result<boolean, AppError> {

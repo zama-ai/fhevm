@@ -20,6 +20,9 @@ type ApiKey {
 
   """API key description"""
   description: String
+
+  """unix timestamp ms"""
+  createdAt: Float!
 }
 
 type CreateApiKey {
@@ -95,6 +98,8 @@ type Dapp {
   address: String
   teamId: String! @deprecated(reason: "Do not use this, it shall go away when I find a way to make it disappear")
   team: Team!
+
+  """unix timestamp ms"""
   createdAt: Float!
 
   """DApp usage aggregated statistics"""

@@ -13,6 +13,9 @@ export class ApiKeyType {
 
   @Field(() => String, { nullable: true, description: 'API key description' })
   description?: string | null
+
+  @Field({ nullable: false, description: 'unix timestamp ms' })
+  createdAt: number
 }
 
 @ObjectType('CreateApiKey')

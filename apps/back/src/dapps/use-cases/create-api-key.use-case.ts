@@ -39,6 +39,7 @@ export class CreateApiKey implements UseCase<Input, Output> {
             dappId: dapp.id.value,
             name: input.name,
             description: input.description,
+            createdAt: new Date(),
           }).async(),
         )
         .chain(this.repo.createApiKey),

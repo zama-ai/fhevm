@@ -74,7 +74,7 @@ export class DappType {
   @Field(() => TeamType, { nullable: false })
   team: TeamType
 
-  @Field({ nullable: false })
+  @Field({ nullable: false, description: 'unix timestamp ms' })
   createdAt: number
 
   @Field(() => DappStatsType, {

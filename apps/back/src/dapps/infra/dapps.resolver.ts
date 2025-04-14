@@ -143,7 +143,7 @@ export class DappsResolver {
   }
 
   @ResolveField(() => [ApiKeyType], { name: 'apiKeys' })
-  async getAllApiKeys(
+  async apiKeys(
     @CurrentUser() user: User,
     @Parent() dapp: DappType,
   ): Promise<ApiKeyType[]> {
@@ -152,6 +152,12 @@ export class DappsResolver {
       .execute({ dappId: dapp.id }, { user })
       .toPromise()
     this.logger.verbose(`apiKeys: ${JSON.stringify(apiKeys)}`)
-    return apiKeys
+    return apiKeys.map(apiKey => ({
+      id: apiKey.id,
+      name: apiKey.name,
+      description: apiKey.description,
+      createdAt: Number(apiKey.createdAt),
+      dappId: apiKey.dappId,
+    }))
   }
 }

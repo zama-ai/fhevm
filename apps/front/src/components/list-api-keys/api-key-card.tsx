@@ -1,19 +1,23 @@
-import { Box, Card, IconButton, SkeletonCircle } from '@chakra-ui/react'
-import { SkeletonText } from '../ui/skeleton'
-import { Trash2 } from 'lucide-react'
 import { useCallback, useState } from 'react'
+import { Box, Card, IconButton, SkeletonCircle } from '@chakra-ui/react'
+import { Trash2 } from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
+
+import { SkeletonText } from '../ui/skeleton'
 import { ConfirmDialog } from '../confirm-dialog/confirm-dialog'
 
 export type ApiKeyCardProps = {
   id: string
   name: string
   description: string | null
+  createdAt: number
   onDelete: (id: string) => void
 }
 export function ApiKeyCard({
   id,
   name,
   description,
+  createdAt,
   onDelete,
 }: ApiKeyCardProps) {
   const [showDialog, setShowDialog] = useState(false)
@@ -45,6 +49,7 @@ export function ApiKeyCard({
           <Card.Body>
             <Card.Title mb="2">{name}</Card.Title>
             {description && <Card.Description>{description}</Card.Description>}
+            created {formatDistanceToNow(createdAt)}
           </Card.Body>
         </Box>
         <Card.Footer alignContent="center">
