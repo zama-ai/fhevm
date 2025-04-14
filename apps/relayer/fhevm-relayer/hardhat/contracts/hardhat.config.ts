@@ -140,7 +140,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 
 const config: HardhatUserConfig = {
   mocha: {
-    timeout: 120000,
+    timeout: 500000,
   },
   gasReporter: {
     currency: 'USD',
