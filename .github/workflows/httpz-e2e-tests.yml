@@ -89,14 +89,24 @@ jobs:
               ./httpz-cli deploy
 
       - name: Input proof test
+        id: input-proof
         working-directory: httpz
         run: |
               ./httpz-cli test input-proof
 
       - name: User Decryption test
+        id: user-decryption
         working-directory: httpz
         run: |
               ./httpz-cli test user-decryption
+
+      - name: Show logs on test failure
+        if: failure() && (steps.input-proof.outcome == 'failure' || steps.user-decryption.outcome == 'failure')
+        working-directory: httpz
+        run: |
+          echo "::group::Relayer Logs"
+          ./httpz-cli logs relayer
+          echo "::endgroup::"
 
       - name: Cleanup
         working-directory: httpz
