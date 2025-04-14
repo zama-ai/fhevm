@@ -75,3 +75,13 @@ struct CtHandleContractPair {
     /// @notice The address of the contract
     address contractAddress;
 }
+
+/**
+ * @notice A struct that contains the delegator and the delegated addresses
+ */
+struct DelegationAccounts {
+    /// @notice The address of the account that delegates access to its handles.
+    address delegatorAddress;
+    /// @notice The address of the account that receives the delegation.
+    address delegatedAddress;
+}

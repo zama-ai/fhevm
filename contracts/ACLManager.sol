@@ -57,7 +57,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
                 _alreadyDelegatedCoprocessors;
         // prettier-ignore
         /// @dev Tracks the account delegations for a given contract after reaching consensus.
-        mapping(address delegator => mapping(address delegatee =>
+        mapping(address delegator => mapping(address delegated =>
             mapping(uint256 chainId => mapping(address contractAddress => bool isDelegated))))
                 _delegatedContracts;
     }
@@ -74,6 +74,32 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     /// @notice Initializes the contract.
     function initialize() public reinitializer(2) {
         __Ownable_init(owner());
+    }
+
+    /// @dev See {IACLManager-allowPublicDecrypt}.
+    function allowPublicDecrypt(
+        bytes32 ctHandle
+    ) public virtual override onlyCoprocessorTxSender onlyHandleFromRegisteredNetwork(ctHandle) {
+        ACLManagerStorage storage $ = _getACLManagerStorage();
+
+        /**
+         * @dev Check if the coprocessor has already allowed the ciphertext handle for public decryption.
+         * A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
+         * the same ctHandle for different chainIds, hence the chainId is not included in the mapping.
+         */
+        if ($._allowPublicDecryptCoprocessors[ctHandle][msg.sender]) {
+            revert CoprocessorAlreadyAllowed(msg.sender, ctHandle);
+        }
+        $._allowPublicDecryptCounters[ctHandle]++;
+        $._allowPublicDecryptCoprocessors[ctHandle][msg.sender] = true;
+
+        /// @dev Only send the event if consensus has not been reached in a previous call
+        /// @dev and the consensus is reached in the current call.
+        /// @dev This means a "late" allow will not be reverted, just ignored
+        if (!$.allowedPublicDecrypts[ctHandle] && _isConsensusReached($._allowPublicDecryptCounters[ctHandle])) {
+            $.allowedPublicDecrypts[ctHandle] = true;
+            emit AllowPublicDecrypt(ctHandle);
+        }
     }
 
     /// @dev See {IACLManager-allowAccount}.
@@ -106,37 +132,10 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
         }
     }
 
-    /// @dev See {IACLManager-allowPublicDecrypt}.
-    function allowPublicDecrypt(
-        bytes32 ctHandle
-    ) public virtual override onlyCoprocessorTxSender onlyHandleFromRegisteredNetwork(ctHandle) {
-        ACLManagerStorage storage $ = _getACLManagerStorage();
-
-        /**
-         * @dev Check if the coprocessor has already allowed the ciphertext handle for public decryption.
-         * A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
-         * the same ctHandle for different chainIds, hence the chainId is not included in the mapping.
-         */
-        if ($._allowPublicDecryptCoprocessors[ctHandle][msg.sender]) {
-            revert CoprocessorAlreadyAllowed(msg.sender, ctHandle);
-        }
-        $._allowPublicDecryptCounters[ctHandle]++;
-        $._allowPublicDecryptCoprocessors[ctHandle][msg.sender] = true;
-
-        /// @dev Only send the event if consensus has not been reached in a previous call
-        /// @dev and the consensus is reached in the current call.
-        /// @dev This means a "late" allow will not be reverted, just ignored
-        if (!$.allowedPublicDecrypts[ctHandle] && _isConsensusReached($._allowPublicDecryptCounters[ctHandle])) {
-            $.allowedPublicDecrypts[ctHandle] = true;
-            emit AllowPublicDecrypt(ctHandle);
-        }
-    }
-
     /// @dev See {IACLManager-delegateAccount}.
     function delegateAccount(
         uint256 chainId,
-        address delegator,
-        address delegatee,
+        DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
     ) public virtual override onlyCoprocessorTxSender {
         ACLManagerStorage storage $ = _getACLManagerStorage();
@@ -147,14 +146,14 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
         /// @dev The delegateAccountHash is the hash of all input arguments.
         /// @dev This hash is used to track the delegation consensus over the whole contractAddresses list,
         /// @dev and assumes that the Coprocessors will delegate the same list of contracts and keep the same order.
-        bytes32 delegateAccountHash = keccak256(abi.encode(chainId, delegator, delegatee, contractAddresses));
+        bytes32 delegateAccountHash = keccak256(abi.encode(chainId, delegationAccounts, contractAddresses));
 
         mapping(address => bool) storage alreadyDelegatedCoprocessors = $._alreadyDelegatedCoprocessors[
             delegateAccountHash
         ];
 
         if (alreadyDelegatedCoprocessors[msg.sender]) {
-            revert CoprocessorAlreadyDelegated(msg.sender, chainId, delegator, delegatee, contractAddresses);
+            revert CoprocessorAlreadyDelegated(msg.sender, chainId, delegationAccounts, contractAddresses);
         }
 
         $._delegateAccountHashCounters[delegateAccountHash]++;
@@ -166,66 +165,50 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
             !$._delegatedAccountHashes[delegateAccountHash] &&
             _isConsensusReached($._delegateAccountHashCounters[delegateAccountHash])
         ) {
-            mapping(address => bool) storage delegatedContracts = $._delegatedContracts[delegator][delegatee][chainId];
+            mapping(address => bool) storage delegatedContracts = $._delegatedContracts[
+                delegationAccounts.delegatorAddress
+            ][delegationAccounts.delegatedAddress][chainId];
             for (uint256 i = 0; i < contractAddresses.length; i++) {
                 delegatedContracts[contractAddresses[i]] = true;
             }
             $._delegatedAccountHashes[delegateAccountHash] = true;
-            emit DelegateAccount(chainId, delegator, delegatee, contractAddresses);
-        }
-    }
-
-    /// @dev See {IACLManager-checkAccountAllowed}.
-    function checkAccountAllowed(
-        address accountAddress,
-        CtHandleContractPair[] calldata ctHandleContractPairs
-    ) public view virtual {
-        ACLManagerStorage storage $ = _getACLManagerStorage();
-
-        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            bytes32 ctHandle = ctHandleContractPairs[i].ctHandle;
-            address contractAddress = ctHandleContractPairs[i].contractAddress;
-
-            /// @dev Check that the contract address is different from the account address
-            if (accountAddress == contractAddress) {
-                revert AccountAddressInContractAddresses(accountAddress);
-            }
-
-            /// @dev Check that the account address is allowed to use this ciphertext.
-            if (!$.allowedAccounts[ctHandle][accountAddress]) {
-                revert AccountNotAllowedToUseCiphertext(ctHandle, accountAddress);
-            }
-
-            /// @dev Check that the contract is allowed to use this ciphertext.
-            if (!$.allowedAccounts[ctHandle][contractAddress]) {
-                revert ContractNotAllowedToUseCiphertext(ctHandle, contractAddress);
-            }
+            emit DelegateAccount(chainId, delegationAccounts, contractAddresses);
         }
     }
 
     /// @dev See {IACLManager-checkPublicDecryptAllowed}.
-    function checkPublicDecryptAllowed(bytes32[] calldata ctHandles) public view virtual {
+    function checkPublicDecryptAllowed(bytes32 ctHandle) public view virtual {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
-        /// @dev Iterate over the ctHandles to check if the public decryption is allowed.
-        for (uint256 i = 0; i < ctHandles.length; i++) {
-            if (!$.allowedPublicDecrypts[ctHandles[i]]) {
-                revert PublicDecryptNotAllowed(ctHandles[i]);
-            }
+        if (!$.allowedPublicDecrypts[ctHandle]) {
+            revert PublicDecryptNotAllowed(ctHandle);
+        }
+    }
+
+    /// @dev See {IACLManager-checkAccountAllowed}.
+    function checkAccountAllowed(address accountAddress, bytes32 ctHandle) public view virtual {
+        ACLManagerStorage storage $ = _getACLManagerStorage();
+
+        /// @dev Check that the account address is allowed to use this ciphertext.
+        if (!$.allowedAccounts[ctHandle][accountAddress]) {
+            revert AccountNotAllowedToUseCiphertext(accountAddress, ctHandle);
         }
     }
 
     /// @dev See {IACLManager-isAccountDelegated}.
     function checkAccountDelegated(
         uint256 chainId,
-        address delegator,
-        address delegatee,
+        DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
     ) public view virtual {
         ACLManagerStorage storage $ = _getACLManagerStorage();
         for (uint256 i = 0; i < contractAddresses.length; i++) {
-            if (!$._delegatedContracts[delegator][delegatee][chainId][contractAddresses[i]]) {
-                revert AccountNotDelegated(chainId, delegator, delegatee, contractAddresses[i]);
+            if (
+                !$._delegatedContracts[delegationAccounts.delegatorAddress][delegationAccounts.delegatedAddress][
+                    chainId
+                ][contractAddresses[i]]
+            ) {
+                revert AccountNotDelegated(chainId, delegationAccounts, contractAddresses[i]);
             }
         }
     }
@@ -254,18 +237,6 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     function _isConsensusReached(uint8 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = _HTTPZ.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
-    }
-
-    /// @dev See {IACLManager-allowedAccounts}.
-    function allowedAccounts(bytes32 ctHandle, address accountAddress) external view virtual returns (bool) {
-        ACLManagerStorage storage $ = _getACLManagerStorage();
-        return $.allowedAccounts[ctHandle][accountAddress];
-    }
-
-    /// @dev See {IACLManager-allowedPublicDecrypts}.
-    function allowedPublicDecrypts(bytes32 ctHandle) external view virtual returns (bool) {
-        ACLManagerStorage storage $ = _getACLManagerStorage();
-        return $.allowedPublicDecrypts[ctHandle];
     }
 
     /**

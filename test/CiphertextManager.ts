@@ -8,6 +8,7 @@ import {
   createAndFundRandomUser,
   createBytes32,
   createCtHandleWithChainId,
+  createCtHandlesWithChainId,
   loadChainIds,
   loadTestVariablesFixture,
 } from "./utils";
@@ -25,10 +26,13 @@ describe("CiphertextManager", function () {
   const ciphertextDigest = createBytes32();
   const snsCiphertextDigest = createBytes32();
 
+  // Define new valid ctHandles
+  const newCtHandles = createCtHandlesWithChainId(3, hostChainId);
+  const newCtHandle = newCtHandles[0];
+
   // Define fake values
   const fakeHostChainId = 123;
   const ctHandleFakeChainId = createCtHandleWithChainId(fakeHostChainId);
-  const notAddedCtHandle = createCtHandleWithChainId(hostChainId);
 
   let httpz: HTTPZ;
   let ciphertextManager: CiphertextManager;
@@ -147,9 +151,9 @@ describe("CiphertextManager", function () {
     });
 
     it("Should revert with CiphertextMaterialNotFound (regular)", async function () {
-      await expect(ciphertextManager.getCiphertextMaterials([notAddedCtHandle]))
+      await expect(ciphertextManager.getCiphertextMaterials([newCtHandle]))
         .revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
-        .withArgs(notAddedCtHandle);
+        .withArgs(newCtHandle);
     });
 
     it("Should get SNS ciphertext materials", async function () {
@@ -163,9 +167,9 @@ describe("CiphertextManager", function () {
     });
 
     it("Should revert with CiphertextMaterialNotFound (SNS)", async function () {
-      await expect(ciphertextManager.getSnsCiphertextMaterials([notAddedCtHandle]))
+      await expect(ciphertextManager.getSnsCiphertextMaterials([newCtHandle]))
         .revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
-        .withArgs(notAddedCtHandle);
+        .withArgs(newCtHandle);
     });
   });
 
@@ -174,14 +178,14 @@ describe("CiphertextManager", function () {
       await loadFixture(prepareViewTestFixture);
     });
 
-    it("Should not revert", async function () {
+    it("Should not revert as the ciphertext material have been added", async function () {
       await expect(ciphertextManager.checkCiphertextMaterial(ctHandle)).not.to.be.reverted;
     });
 
-    it("Should revert as the ciphertext material does not exist", async function () {
-      await expect(ciphertextManager.checkCiphertextMaterial(notAddedCtHandle))
+    it("Should revert as the ciphertext material has not been added", async function () {
+      await expect(ciphertextManager.checkCiphertextMaterial(newCtHandle))
         .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
-        .withArgs(notAddedCtHandle);
+        .withArgs(newCtHandle);
     });
   });
 });
