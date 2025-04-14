@@ -4,21 +4,21 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT="httpz"
 
-export CORE_VERSION=${CORE_VERSION:-"3d8cb2a"}
-export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"3d8cb2a"}
+export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc7"}
+export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.11.0-rc7"}
 export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"5a6a813"}
 export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc4"}
 export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.1.0-rc9"}
 export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc4"}
-export RELAYER_VERSION=${RELAYER_VERSION:-"eaa23e9"}
-export TESTS_VERSION=${TESTS_VERSION:-"eaa23e9"}
+export RELAYER_VERSION=${RELAYER_VERSION:-"c7f38fd"}
+export TESTS_VERSION=${TESTS_VERSION:-"c7f38fd"}
 
 function usage {
   echo "Usage: httpz-cli COMMAND [OPTIONS]"
   echo
   echo "Commands:"
   echo "  deploy              Deploy the full HTTPZ stack"
-  echo "  test [TYPE]         Run tests (input-proof|user-decryption|debug)"
+  echo "  test [TYPE]         Run tests (input-proof|user-decryption|public-decryption|erc20|debug)"
   echo "  upgrade [SERVICE]   Upgrade specific service (host|gateway|connector|coprocessor|relayer|tests)"
   echo "  clean               Remove all containers and volumes"
   echo "  logs [SERVICE]      View logs for a specific service"
@@ -27,6 +27,9 @@ function usage {
   echo "Examples:"
   echo "  ./httpz-cli deploy"
   echo "  ./httpz-cli test input-proof"
+  echo "  ./httpz-cli test user-decryption"
+  echo "  ./httpz-cli test public-decryption"
+  echo "  ./httpz-cli test erc20"
   echo "  ./httpz-cli upgrade coprocessor"
 }
 
@@ -48,6 +51,14 @@ case $COMMAND in
       user-decryption)
         echo "Running user decryption test: ebool type..."
         docker exec httpz-tests-e2e-debug ./run-tests.sh "test reencrypt ebool"
+        ;;
+      public-decryption)
+        echo "Running public decryption test: euint64 type..."
+        docker exec httpz-tests-e2e-debug ./run-tests.sh "test async decrypt uint64 trivial"
+        ;;
+      erc20)
+        echo "Running erc20 test..."
+        docker exec httpz-tests-e2e-debug ./run-tests.sh "should transfer tokens between two users."
         ;;
       debug)
         echo "Running e2e test debug..."

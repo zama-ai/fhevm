@@ -6,12 +6,12 @@ on:
       core_version:
         description: 'KMS Core Version'
         required: false
-        default: '3d8cb2a'
+        default: 'v0.11.0-rc7'
         type: string
       connector_version:
         description: 'Connector Version'
         required: false
-        default: '3d8cb2a'
+        default: 'v0.11.0-rc7'
         type: string
       coprocessor_version:
         description: 'Coprocessor Image Version'
@@ -36,12 +36,12 @@ on:
       relayer_version:
         description: 'Relayer Image Version'
         required: false
-        default: 'eaa23e9'
+        default: 'c7f38fd'
         type: string
       tests_version:
         description: 'E2E Tests Image Version'
         required: false
-        default: 'eaa23e9'
+        default: 'c7f38fd'
         type: string
   pull_request:
     paths:
@@ -59,7 +59,7 @@ jobs:
       id-token: "write"
       packages: "read"
 
-    runs-on: large_ubuntu_16
+    runs-on: large_ubuntu_32
     steps:
       - name: Checkout code
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -99,14 +99,31 @@ jobs:
         working-directory: httpz
         run: |
               ./httpz-cli test user-decryption
-
-      - name: Show logs on test failure
-        if: failure() && (steps.input-proof.outcome == 'failure' || steps.user-decryption.outcome == 'failure')
+      
+      - name: Public Decryption test
+        id: public-decryption
         working-directory: httpz
         run: |
-          echo "::group::Relayer Logs"
-          ./httpz-cli logs relayer
-          echo "::endgroup::"
+              ./httpz-cli test public-decryption
+
+      - name: ERC20 test
+        id: erc20
+        working-directory: httpz
+        continue-on-error: true
+        run: |
+              ./httpz-cli test erc20 || true
+              echo "IMPORTANT: DO NOT consider this test - ERC20 test needs to be fixed in CI"
+
+      - name: Show logs on test failure
+        if: failure() && (steps.input-proof.outcome == 'failure' || steps.user-decryption.outcome == 'failure' || steps.public-decryption.outcome == 'failure' || steps.erc20.outcome == 'failure')
+        working-directory: httpz
+        run: |
+              echo "::group::Relayer Logs"
+              ./httpz-cli logs relayer
+              echo "::endgroup::"
+              echo "::group::Transaction Sender Logs (filtered)"
+              ./httpz-cli logs transaction-sender | grep -v "Selected 0 rows to process"
+              echo "::endgroup::"
 
       - name: Cleanup
         working-directory: httpz

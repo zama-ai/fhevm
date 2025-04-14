@@ -3,3 +3,4 @@
 self-hosted-runner:
   labels:
     - large_ubuntu_16
+    - large_ubuntu_32

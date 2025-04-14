@@ -11,7 +11,11 @@ cd httpz
 
 # Run specific tests
 ./httpz-cli test input-proof
+# Trivial
 ./httpz-cli test user-decryption
+# Trivial
+./httpz-cli test public-decryption
+./httpz-cli test erc20
 
 # Upgrade a specific service
 ./httpz-cli upgrade coprocessor
