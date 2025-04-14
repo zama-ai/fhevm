@@ -68,56 +68,6 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         __Ownable_init(owner());
     }
 
-    /// @notice See {ICiphertextManager-checkCiphertextMaterial}.
-    function checkCiphertextMaterial(bytes32 ctHandle) public view virtual {
-        CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
-        if (!$._isCiphertextMaterialAdded[ctHandle]) {
-            revert CiphertextMaterialNotFound(ctHandle);
-        }
-    }
-
-    /// @notice See {ICiphertextManager-getCiphertextMaterials}.
-    function getCiphertextMaterials(
-        bytes32[] calldata ctHandles
-    ) public view returns (CiphertextMaterial[] memory ctMaterials) {
-        CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
-        ctMaterials = new CiphertextMaterial[](ctHandles.length);
-
-        for (uint256 i = 0; i < ctHandles.length; i++) {
-            checkCiphertextMaterial(ctHandles[i]);
-
-            ctMaterials[i] = CiphertextMaterial(
-                ctHandles[i],
-                $._keyIds[ctHandles[i]],
-                $._ciphertextDigests[ctHandles[i]],
-                $._coprocessorTxSenderAddresses[ctHandles[i]]
-            );
-        }
-
-        return ctMaterials;
-    }
-
-    /// @notice See {ICiphertextManager-getSnsCiphertextMaterials}.
-    function getSnsCiphertextMaterials(
-        bytes32[] calldata ctHandles
-    ) public view returns (SnsCiphertextMaterial[] memory snsCtMaterials) {
-        CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
-        snsCtMaterials = new SnsCiphertextMaterial[](ctHandles.length);
-
-        for (uint256 i = 0; i < ctHandles.length; i++) {
-            checkCiphertextMaterial(ctHandles[i]);
-
-            snsCtMaterials[i] = SnsCiphertextMaterial(
-                ctHandles[i],
-                $._keyIds[ctHandles[i]],
-                $._snsCiphertextDigests[ctHandles[i]],
-                $._coprocessorTxSenderAddresses[ctHandles[i]]
-            );
-        }
-
-        return snsCtMaterials;
-    }
-
     /// @notice See {ICiphertextManager-addCiphertextMaterial}.
     /// @dev This function calls the HTTPZ contract to check that the sender address is a Coprocessor.
     function addCiphertextMaterial(
@@ -125,7 +75,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         uint256 keyId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
-    ) public onlyCoprocessorTxSender {
+    ) public virtual onlyCoprocessorTxSender {
         CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
 
         /// @dev Extract the chainId from the ciphertext handle
@@ -185,6 +135,56 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
                 $._coprocessorTxSenderAddresses[ctHandle]
             );
         }
+    }
+
+    /// @notice See {ICiphertextManager-checkCiphertextMaterial}.
+    function checkCiphertextMaterial(bytes32 ctHandle) public view virtual {
+        CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
+        if (!$._isCiphertextMaterialAdded[ctHandle]) {
+            revert CiphertextMaterialNotFound(ctHandle);
+        }
+    }
+
+    /// @notice See {ICiphertextManager-getCiphertextMaterials}.
+    function getCiphertextMaterials(
+        bytes32[] calldata ctHandles
+    ) public view virtual returns (CiphertextMaterial[] memory ctMaterials) {
+        CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
+        ctMaterials = new CiphertextMaterial[](ctHandles.length);
+
+        for (uint256 i = 0; i < ctHandles.length; i++) {
+            checkCiphertextMaterial(ctHandles[i]);
+
+            ctMaterials[i] = CiphertextMaterial(
+                ctHandles[i],
+                $._keyIds[ctHandles[i]],
+                $._ciphertextDigests[ctHandles[i]],
+                $._coprocessorTxSenderAddresses[ctHandles[i]]
+            );
+        }
+
+        return ctMaterials;
+    }
+
+    /// @notice See {ICiphertextManager-getSnsCiphertextMaterials}.
+    function getSnsCiphertextMaterials(
+        bytes32[] calldata ctHandles
+    ) public view virtual returns (SnsCiphertextMaterial[] memory snsCtMaterials) {
+        CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
+        snsCtMaterials = new SnsCiphertextMaterial[](ctHandles.length);
+
+        for (uint256 i = 0; i < ctHandles.length; i++) {
+            checkCiphertextMaterial(ctHandles[i]);
+
+            snsCtMaterials[i] = SnsCiphertextMaterial(
+                ctHandles[i],
+                $._keyIds[ctHandles[i]],
+                $._snsCiphertextDigests[ctHandles[i]],
+                $._coprocessorTxSenderAddresses[ctHandles[i]]
+            );
+        }
+
+        return snsCtMaterials;
     }
 
     /// @notice Returns the versions of the CiphertextManager contract in SemVer format.

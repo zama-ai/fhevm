@@ -5,12 +5,16 @@ import { HDNodeWallet } from "ethers";
 import hre from "hardhat";
 
 import { ACLManager, CiphertextManager, HTTPZ } from "../typechain-types";
+// The type needs to be imported separately because it is not properly detected by the linter
+// as this type is defined as a shared structs instead of directly in the IACLManager interface
+import { DelegationAccountsStruct } from "../typechain-types/contracts/interfaces/IACLManager";
 import {
   createAndFundRandomUser,
   createBytes32,
   createCtHandleWithChainId,
   loadChainIds,
   loadTestVariablesFixture,
+  toValues,
 } from "./utils";
 
 describe("ACLManager", function () {
@@ -132,9 +136,13 @@ describe("ACLManager", function () {
   });
 
   describe("Delegate account", async function () {
-    // Given arbitrary delegator, delegatee and contract addresses
+    // Given arbitrary delegator, delegated and contract addresses
     const delegator = hre.ethers.Wallet.createRandom().address;
-    const delegatee = hre.ethers.Wallet.createRandom().address;
+    const delegated = hre.ethers.Wallet.createRandom().address;
+    const delegationAccounts: DelegationAccountsStruct = {
+      delegatorAddress: delegator,
+      delegatedAddress: delegated,
+    };
     const allowedContract1 = hre.ethers.Wallet.createRandom().address;
     const allowedContract2 = hre.ethers.Wallet.createRandom().address;
     const allowedContract3 = hre.ethers.Wallet.createRandom().address;
@@ -143,37 +151,37 @@ describe("ACLManager", function () {
       // When
       await aclManager
         .connect(coprocessorTxSenders[0])
-        .delegateAccount(hostChainId, delegator, delegatee, [allowedContract1, allowedContract2, allowedContract3]);
+        .delegateAccount(hostChainId, delegationAccounts, [allowedContract1, allowedContract2, allowedContract3]);
       const txResponse = aclManager
         .connect(coprocessorTxSenders[1])
-        .delegateAccount(hostChainId, delegator, delegatee, [allowedContract1, allowedContract2, allowedContract3]);
+        .delegateAccount(hostChainId, delegationAccounts, [allowedContract1, allowedContract2, allowedContract3]);
 
       // Then
       await expect(txResponse)
         .to.emit(aclManager, "DelegateAccount")
-        .withArgs(hostChainId, delegator, delegatee, [allowedContract1, allowedContract2, allowedContract3]);
+        .withArgs(hostChainId, toValues(delegationAccounts), [allowedContract1, allowedContract2, allowedContract3]);
     });
 
     it("Should revert with CoprocessorAlreadyDelegated", async function () {
       // When
       await aclManager
         .connect(coprocessorTxSenders[0])
-        .delegateAccount(hostChainId, delegator, delegatee, [allowedContract1]);
+        .delegateAccount(hostChainId, delegationAccounts, [allowedContract1]);
       const txResponse = aclManager
         .connect(coprocessorTxSenders[0])
-        .delegateAccount(hostChainId, delegator, delegatee, [allowedContract1]);
+        .delegateAccount(hostChainId, delegationAccounts, [allowedContract1]);
 
       // Then
       await expect(txResponse)
         .revertedWithCustomError(aclManager, "CoprocessorAlreadyDelegated")
-        .withArgs(coprocessorTxSenders[0].address, hostChainId, delegator, delegatee, [allowedContract1]);
+        .withArgs(coprocessorTxSenders[0].address, hostChainId, toValues(delegationAccounts), [allowedContract1]);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
       // When
       const txResponse = aclManager
         .connect(fakeTxSender)
-        .delegateAccount(hostChainId, delegator, delegatee, [allowedContract1]);
+        .delegateAccount(hostChainId, delegationAccounts, [allowedContract1]);
 
       // Then
       await expect(txResponse).revertedWithCustomError(httpz, "NotCoprocessorTxSender").withArgs(fakeTxSender.address);
@@ -189,7 +197,7 @@ describe("ACLManager", function () {
       // When
       const txResponse = aclManager
         .connect(coprocessorTxSenders[0])
-        .delegateAccount(hostChainId, delegator, delegatee, exceededContracts);
+        .delegateAccount(hostChainId, delegationAccounts, exceededContracts);
 
       // Then
       await expect(txResponse)
@@ -201,7 +209,6 @@ describe("ACLManager", function () {
   describe("Check account allowed", async function () {
     const allowedUserAddress = hre.ethers.Wallet.createRandom().address;
     const allowedContractAddress = hre.ethers.Wallet.createRandom().address;
-    const ctHandleContractPairs = [{ ctHandle, contractAddress: allowedContractAddress }];
 
     beforeEach(async function () {
       // Setup the account access permission
@@ -212,41 +219,25 @@ describe("ACLManager", function () {
     });
 
     it("Should check account is allowed to use the ciphertext", async function () {
-      await aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(allowedUserAddress, ctHandleContractPairs);
-    });
-
-    it("Should revert because user part of the contract addresses", async function () {
-      const fakeCtHandleContractPairs = [{ ctHandle: ctHandle, contractAddress: allowedUserAddress }];
-
-      // Check that the fakeUserAddress is not allowed to use the ciphertext
-      await expect(
-        aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(allowedUserAddress, fakeCtHandleContractPairs),
-      )
-        .to.be.revertedWithCustomError(aclManager, "AccountAddressInContractAddresses")
-        .withArgs(allowedUserAddress);
+      await aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(allowedUserAddress, ctHandle);
     });
 
     it("Should revert because user is not allowed to use the ciphertext", async function () {
       const fakeUserAddress = hre.ethers.Wallet.createRandom().address;
 
       // Check that the fakeUserAddress is not allowed to use the ciphertext
-      await expect(
-        aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(fakeUserAddress, ctHandleContractPairs),
-      )
+      await expect(aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(fakeUserAddress, ctHandle))
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-        .withArgs(ctHandle, fakeUserAddress);
+        .withArgs(fakeUserAddress, ctHandle);
     });
 
     it("Should revert because contract is not allowed to use the ciphertext", async function () {
       const fakeContractAddress = hre.ethers.Wallet.createRandom().address;
-      const fakeCtHandleContractPairs = [{ ctHandle: ctHandle, contractAddress: fakeContractAddress }];
 
       // Check that the fakeContractAddress is not allowed to use the ciphertext
-      await expect(
-        aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(allowedUserAddress, fakeCtHandleContractPairs),
-      )
-        .to.be.revertedWithCustomError(aclManager, "ContractNotAllowedToUseCiphertext")
-        .withArgs(ctHandle, fakeContractAddress);
+      await expect(aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(fakeContractAddress, ctHandle))
+        .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
+        .withArgs(fakeContractAddress, ctHandle);
     });
   });
 
@@ -259,65 +250,77 @@ describe("ACLManager", function () {
     });
 
     it("Should check public decrypt is allowed", async function () {
-      await aclManager.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed([ctHandle]);
+      await aclManager.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed(ctHandle);
     });
 
     it("Should revert with PublicDecryptNotAllowed", async function () {
       // Check that the handle is not allowed for public decryption
-      await expect(aclManager.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed([notAllowedCtHandle]))
+      await expect(aclManager.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed(notAllowedCtHandle))
         .to.be.revertedWithCustomError(aclManager, "PublicDecryptNotAllowed")
         .withArgs(notAllowedCtHandle);
     });
   });
 
   describe("Is account delegated", async function () {
-    // Given arbitrary delegator, delegatee and contract addresses
+    // Given arbitrary delegator, delegated and contract addresses
     const delegator = hre.ethers.Wallet.createRandom().address;
-    const delegatee = hre.ethers.Wallet.createRandom().address;
+    const delegated = hre.ethers.Wallet.createRandom().address;
+    const delegationAccounts: DelegationAccountsStruct = {
+      delegatorAddress: delegator,
+      delegatedAddress: delegated,
+    };
     const allowedContract1 = hre.ethers.Wallet.createRandom().address;
     const allowedContract2 = hre.ethers.Wallet.createRandom().address;
     const allowedContracts = [allowedContract1, allowedContract2];
 
     beforeEach(async function () {
-      // Setup the account delegation for the given hostChainId, delegator, delegatee and allowedContracts used during tests
+      // Setup the account delegation for the given hostChainId, delegator, delegated and allowedContracts used during tests
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await aclManager
           .connect(coprocessorTxSenders[i])
-          .delegateAccount(hostChainId, delegator, delegatee, allowedContracts);
+          .delegateAccount(hostChainId, delegationAccounts, allowedContracts);
       }
     });
 
     it("Should check account is delegated", async function () {
-      await aclManager.checkAccountDelegated(hostChainId, delegator, delegatee, allowedContracts);
+      await aclManager.checkAccountDelegated(hostChainId, delegationAccounts, allowedContracts);
     });
 
     it("Should revert because none of the inputs has account delegation", async function () {
       // Given
       const fakeDelegator = hre.ethers.Wallet.createRandom().address;
-      const fakeDelegatee = hre.ethers.Wallet.createRandom().address;
+      const fakeDelegated = hre.ethers.Wallet.createRandom().address;
+      const fakeDelegationAccounts: DelegationAccountsStruct = {
+        delegatorAddress: fakeDelegator,
+        delegatedAddress: delegated,
+      };
+      const fakeDelegationAccounts2: DelegationAccountsStruct = {
+        delegatorAddress: delegator,
+        delegatedAddress: fakeDelegated,
+      };
 
       // When
-      const txResponse1 = aclManager.checkAccountDelegated(fakeHostChainId, delegator, delegatee, allowedContracts);
-      const txResponse2 = aclManager.checkAccountDelegated(hostChainId, fakeDelegator, delegatee, allowedContracts);
-      const txResponse3 = aclManager.checkAccountDelegated(hostChainId, delegator, fakeDelegatee, allowedContracts);
+      const txResponse1 = aclManager.checkAccountDelegated(fakeHostChainId, delegationAccounts, allowedContracts);
+      const txResponse2 = aclManager.checkAccountDelegated(hostChainId, fakeDelegationAccounts, allowedContracts);
+      const txResponse3 = aclManager.checkAccountDelegated(hostChainId, fakeDelegationAccounts2, allowedContracts);
 
       // Then
       await expect(txResponse1)
         .revertedWithCustomError(aclManager, "AccountNotDelegated")
-        .withArgs(fakeHostChainId, delegator, delegatee, allowedContracts[0]);
+        .withArgs(fakeHostChainId, toValues(delegationAccounts), allowedContracts[0]);
       await expect(txResponse2)
         .revertedWithCustomError(aclManager, "AccountNotDelegated")
-        .withArgs(hostChainId, fakeDelegator, delegatee, allowedContracts[0]);
+        .withArgs(hostChainId, toValues(fakeDelegationAccounts), allowedContracts[0]);
       await expect(txResponse3)
         .revertedWithCustomError(aclManager, "AccountNotDelegated")
-        .withArgs(hostChainId, delegator, fakeDelegatee, allowedContracts[0]);
+        .withArgs(hostChainId, toValues(fakeDelegationAccounts2), allowedContracts[0]);
     });
 
     it("Should not distinguish between differently ordered contract list", async function () {
       // Given
       const alteredAllowedContracts = [allowedContract2, allowedContract1];
 
-      await aclManager.checkAccountDelegated(hostChainId, delegator, delegatee, alteredAllowedContracts);
+      await aclManager.checkAccountDelegated(hostChainId, delegationAccounts, alteredAllowedContracts);
     });
   });
 });

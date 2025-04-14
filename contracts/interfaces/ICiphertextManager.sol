@@ -32,19 +32,19 @@ interface ICiphertextManager {
     /// @notice associated with the given chain ID.
     error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
 
-    /// @notice Checks if the ciphertext material represented by the given handle has been added in the contract.
-    /// @param ctHandle The handle of the ciphertext material.
+    /// @notice Checks if the ciphertext material represented by the handle has been added in the contract.
+    /// @param ctHandle The handle to check.
     function checkCiphertextMaterial(bytes32 ctHandle) external view;
 
     /// @notice Retrieves the list of "normal" ciphertext materials for the given handles.
-    /// @param ctHandles The list of handles of the ciphertexts to retrieve.
+    /// @param ctHandles The list of handles to retrieve.
     /// @return ctMaterials The list of regular ciphertext digests, its handles and its key IDs.
     function getCiphertextMaterials(
         bytes32[] calldata ctHandles
     ) external view returns (CiphertextMaterial[] memory ctMaterials);
 
     /// @notice Retrieves the list of SNS ciphertext materials for the given handles.
-    /// @param ctHandles The list of handles of the ciphertexts to retrieve.
+    /// @param ctHandles The list of handles to retrieve.
     /// @return snsCtMaterials The list of SNS ciphertext digests, its handles and its key IDs.
     function getSnsCiphertextMaterials(
         bytes32[] calldata ctHandles

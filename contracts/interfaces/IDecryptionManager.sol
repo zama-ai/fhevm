@@ -18,15 +18,6 @@ interface IDecryptionManager {
         uint256 durationDays;
     }
 
-    /// @notice A struct that specifies addresses of the user account and the delegated account
-    /// @notice for a given delegated user decryption request.
-    struct DelegationAccounts {
-        /// @notice The address of the account that delegates access to its handles.
-        address delegatorAddress;
-        /// @notice The address of the account that receives the delegation.
-        address delegatedAddress;
-    }
-
     /// @notice Emitted when an public decryption request is made
     /// @dev This event is meant to be listened by the KMS Connectors
     /// @param publicDecryptionId The public decryption request's unique ID
@@ -77,6 +68,16 @@ interface IDecryptionManager {
     /// @param actualValue The actual durationDays requested
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
 
+    /// @notice Error indicating that the user address is included in the contract addresses list
+    /// @param userAddress The user address that is included in the list
+    /// @param contractAddresses The list of expected contract addresses
+    error UserAddressInContractAddresses(address userAddress, address[] contractAddresses);
+
+    /// @notice Error indicating that the delegator address is included in the contract addresses list
+    /// @param delegatorAddress The delegator address that is included in the list
+    /// @param contractAddresses The list of expected contract addresses
+    error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
+
     /// @notice Error indicating that the contract address is not included in the contract addresses list
     /// @param contractAddress The contract address that is not in the list
     /// @param contractAddresses The list of expected contract addresses
@@ -87,6 +88,14 @@ interface IDecryptionManager {
     /// @dev This will be removed in the future as multiple keyIds processing is implemented.
     /// @dev See https://github.com/zama-ai/httpz-gateway/issues/104.
     error DifferentKeyIdsNotAllowed(uint256 keyId);
+
+    /// @notice Error indicating that the public decryption is not done
+    /// @param publicDecryptionId The public decryption request's unique ID
+    error PublicDecryptionNotDone(uint256 publicDecryptionId);
+
+    /// @notice Error indicating that the user decryption is not done
+    /// @param userDecryptionId The user decryption request's unique ID
+    error UserDecryptionNotDone(uint256 userDecryptionId);
 
     /// @notice Requests an public decryption
     /// @dev This function can be called by a user or relayer
@@ -153,11 +162,35 @@ interface IDecryptionManager {
         bytes calldata signature
     ) external;
 
-    /// @notice Returns whether a public decryption is done
-    /// @param publicDecryptionId The public decryption request's unique ID
-    function isPublicDecryptionDone(uint256 publicDecryptionId) external view returns (bool);
+    /// @notice Checks if handles are ready to be decrypted publicly
+    /// @param ctHandles The ciphertext handles.
+    function checkPublicDecryptionReady(bytes32[] calldata ctHandles) external view;
 
-    /// @notice Returns whether a user decryption is done
+    /// @notice Checks if handles are ready to be decrypted by a user
+    /// @param userAddress The user's address.
+    /// @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
+    function checkUserDecryptionReady(
+        address userAddress,
+        CtHandleContractPair[] calldata ctHandleContractPairs
+    ) external view;
+
+    /// @notice Checks if handles are ready to be decrypted by a delegated address
+    /// @param contractsChainId The contract's chain ID.
+    /// @param delegationAccounts The delegator and delegated address.
+    /// @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
+    /// @param contractAddresses The contract addresses.
+    function checkDelegatedUserDecryptionReady(
+        uint256 contractsChainId,
+        DelegationAccounts calldata delegationAccounts,
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        address[] calldata contractAddresses
+    ) external view;
+
+    /// @notice Checks if a public decryption is done
+    /// @param publicDecryptionId The public decryption request's unique ID
+    function checkPublicDecryptionDone(uint256 publicDecryptionId) external view;
+
+    /// @notice Checks if a user decryption is done
     /// @param userDecryptionId The user decryption request's unique ID
-    function isUserDecryptionDone(uint256 userDecryptionId) external view returns (bool);
+    function checkUserDecryptionDone(uint256 userDecryptionId) external view;
 }
