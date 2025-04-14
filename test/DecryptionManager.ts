@@ -16,13 +16,13 @@ import {
 // as this type is defined as a shared structs instead of directly in the IDecryptionManager interface
 import {
   CtHandleContractPairStruct,
+  DelegationAccountsStruct,
   SnsCiphertextMaterialStruct,
 } from "../typechain-types/contracts/interfaces/IDecryptionManager";
 import {
   EIP712,
   createAndFundRandomUser,
   createBytes32,
-  createCtHandleWithChainId,
   createCtHandlesWithChainId,
   createEIP712RequestDelegatedUserDecrypt,
   createEIP712RequestUserDecrypt,
@@ -44,7 +44,7 @@ describe("DecryptionManager", function () {
 
   // Create 3 dummy ciphertext handles with the host chain ID
   const ctHandles = createCtHandlesWithChainId(3, hostChainId);
-
+  const ctHandle = ctHandles[0];
   // Define the gateway chain ID
   const chainId = hre.network.config.chainId!;
 
@@ -52,8 +52,9 @@ describe("DecryptionManager", function () {
   const ciphertextDigest = createBytes32();
   const snsCiphertextDigest = createBytes32();
 
-  // Define new valid ctHandle
-  const newCtHandle = createCtHandleWithChainId(hostChainId);
+  // Define new valid ctHandles
+  const newCtHandles = createCtHandlesWithChainId(3, hostChainId);
+  const newCtHandle = newCtHandles[0];
 
   let httpz: HTTPZ;
   let keyManager: KeyManager;
@@ -295,29 +296,28 @@ describe("DecryptionManager", function () {
       const { aclManager, decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
 
       // Check that the request fails because the handles are not allowed for public decryption
-      // Note: the function should be reverted on the first handle since it loops over the handles
-      // in order internally
-      await expect(decryptionManager.connect(user).publicDecryptionRequest(ctHandles))
+      await expect(decryptionManager.publicDecryptionRequest(newCtHandles))
         .to.be.revertedWithCustomError(aclManager, "PublicDecryptNotAllowed")
-        .withArgs(ctHandles[0]);
+        .withArgs(newCtHandles[0]);
     });
 
-    it("Should revert because of unavailable ciphertext material", async function () {
-      const { aclManager, ciphertextManager, decryptionManager, user, coprocessorTxSenders } = await loadFixture(
-        prepareAllowPublicDecryptionFixture,
-      );
+    it("Should revert because ciphertext material has not been added", async function () {
+      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      const { ciphertextManager, decryptionManager, coprocessorTxSenders, aclManager } = fixtureData;
 
-      // Allow for public decryption a ctHandle whose associated ciphertext material has not
-      // yet been added to the CiphertextStorage state.
-      for (const coprocessorTxSender of coprocessorTxSenders) {
-        await aclManager.connect(coprocessorTxSender).allowPublicDecrypt(newCtHandle);
+      // Allow public decryption for handles that have not been added
+      // We need to do this because `checkPublicDecryptionReady` first checks if the handles
+      // have been allowed for public decryption
+      for (const newCtHandle of newCtHandles) {
+        for (let i = 0; i < coprocessorTxSenders.length; i++) {
+          await aclManager.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle);
+        }
       }
 
       // Check that the request fails because the ciphertext material is unavailable
-      // Note: the function should be reverted on the unavailable ctHandle since it loops over the handles
-      await expect(decryptionManager.connect(user).publicDecryptionRequest(ctHandles.concat([newCtHandle])))
+      await expect(decryptionManager.publicDecryptionRequest(newCtHandles))
         .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
-        .withArgs(newCtHandle);
+        .withArgs(newCtHandles[0]);
     });
 
     it("Should revert because the message sender is not a KMS transaction sender", async function () {
@@ -455,8 +455,7 @@ describe("DecryptionManager", function () {
         .withArgs(publicDecryptionId, decryptedResult, [signature1, signature2]);
 
       // Check that the public decryption is done
-      const isPublicDecryptionDone = await decryptionManager.connect(user).isPublicDecryptionDone(publicDecryptionId);
-      expect(isPublicDecryptionDone).to.be.true;
+      await expect(decryptionManager.checkPublicDecryptionDone(publicDecryptionId)).to.not.be.reverted;
     });
 
     it("Should ignore other valid responses", async function () {
@@ -496,6 +495,49 @@ describe("DecryptionManager", function () {
       await expect(responseTx3).to.not.emit(decryptionManager, "PublicDecryptionResponse");
       await expect(responseTx4).to.not.emit(decryptionManager, "PublicDecryptionResponse");
     });
+
+    describe("Checks", function () {
+      it("Should not revert because public decryption is ready", async function () {
+        const { decryptionManager } = await loadFixture(prepareGetEIP712Fixture);
+
+        await expect(decryptionManager.checkPublicDecryptionReady(ctHandles)).to.not.be.reverted;
+      });
+
+      it("Should revert because handles have not been allowed for public decryption", async function () {
+        const fixtureData = await loadFixture(loadTestVariablesFixture);
+        const { aclManager, decryptionManager } = fixtureData;
+
+        await expect(decryptionManager.checkPublicDecryptionReady(newCtHandles))
+          .to.be.revertedWithCustomError(aclManager, "PublicDecryptNotAllowed")
+          .withArgs(newCtHandles[0]);
+      });
+
+      it("Should revert because ciphertext material has not been added", async function () {
+        const fixtureData = await loadFixture(loadTestVariablesFixture);
+        const { ciphertextManager, decryptionManager, coprocessorTxSenders, aclManager } = fixtureData;
+
+        // Allow public decryption for handles that have not been added
+        // We need to do this because `checkPublicDecryptionReady` first checks if the handles
+        // have been allowed for public decryption
+        for (const newCtHandle of newCtHandles) {
+          for (let i = 0; i < coprocessorTxSenders.length; i++) {
+            await aclManager.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle);
+          }
+        }
+
+        await expect(decryptionManager.checkPublicDecryptionReady(newCtHandles))
+          .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
+          .withArgs(newCtHandles[0]);
+      });
+
+      it("Should revert because the public decryption is not done", async function () {
+        const { decryptionManager } = await loadFixture(prepareGetEIP712Fixture);
+
+        await expect(decryptionManager.checkPublicDecryptionDone(publicDecryptionId))
+          .to.be.revertedWithCustomError(decryptionManager, "PublicDecryptionNotDone")
+          .withArgs(publicDecryptionId);
+      });
+    });
   });
 
   describe("User Decryption", function () {
@@ -520,6 +562,12 @@ describe("DecryptionManager", function () {
       durationDays: 120,
       startTimestamp: Date.now(),
     };
+
+    // Define new valid inputs
+    const newCtHandleContractPairs: CtHandleContractPairStruct[] = newCtHandles.map((newCtHandle) => ({
+      contractAddress,
+      ctHandle: newCtHandle,
+    }));
 
     // Allow access the the handles for the user and the contract
     async function prepareAllowAccountFixture() {
@@ -713,27 +761,33 @@ describe("DecryptionManager", function () {
         .withArgs(365, durationDays);
     });
 
-    it("Should revert because the user address is included in ctHandleContractPairs", async function () {
-      // Check that the request fails because the user address is included in the ctHandleContractPairs list
+    it("Should revert because the user address is a contract address", async function () {
+      // Define fake ctHandleContractPairs with user address as contract address
+      const fakeCtHandleContractPairs: CtHandleContractPairStruct[] = [
+        {
+          contractAddress: user.address,
+          ctHandle,
+        },
+      ];
+
+      const fakeContractAddresses = [user.address];
+
       await expect(
         decryptionManager.userDecryptionRequest(
-          ctHandleContractPairs.concat([{ contractAddress: user.address, ctHandle: ctHandles[0] }]),
+          fakeCtHandleContractPairs,
           requestValidity,
           hostChainId,
-          contractAddresses,
+          fakeContractAddresses,
           user.address,
           publicKey,
           userSignature,
         ),
       )
-        .to.be.revertedWithCustomError(aclManager, "AccountAddressInContractAddresses")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(decryptionManager, "UserAddressInContractAddresses")
+        .withArgs(user.address, fakeContractAddresses);
     });
 
     it("Should revert because the user is not allowed for user decryption on a ctHandle", async function () {
-      // Check that the request fails because the given userAddress is not allowed for user decryption
-      // Note: the function should be reverted on the first handle since it loops over the handles
-      // in order internally
       await expect(
         decryptionManager.userDecryptionRequest(
           ctHandleContractPairs,
@@ -746,16 +800,22 @@ describe("DecryptionManager", function () {
         ),
       )
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-        .withArgs(ctHandles[0], fakeUserAddress);
+        .withArgs(fakeUserAddress, ctHandleContractPairs[0].ctHandle);
     });
 
-    it("Should revert because a contract is not allowed for decryption on a ctHandle", async function () {
+    it("Should revert because a contract is not allowed for user decryption on a ctHandle", async function () {
+      // Define fake ctHandleContractPairs with a contract address that is not allowed for user decryption
       const fakeContractAddress = hre.ethers.Wallet.createRandom().address;
-      // Check that the request fails because the contractAddress is not allowed for user decryption
-      // Note: the function should be reverted on the not allowed contract address since it loops over the handles
+      const fakeCtHandleContractPairs: CtHandleContractPairStruct[] = [
+        {
+          contractAddress: fakeContractAddress,
+          ctHandle,
+        },
+      ];
+
       await expect(
         decryptionManager.userDecryptionRequest(
-          ctHandleContractPairs.concat([{ contractAddress: fakeContractAddress, ctHandle: ctHandles[0] }]),
+          fakeCtHandleContractPairs,
           requestValidity,
           hostChainId,
           contractAddresses,
@@ -764,23 +824,24 @@ describe("DecryptionManager", function () {
           userSignature,
         ),
       )
-        .to.be.revertedWithCustomError(aclManager, "ContractNotAllowedToUseCiphertext")
-        .withArgs(ctHandles[0], fakeContractAddress);
+        .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
+        .withArgs(fakeContractAddress, fakeCtHandleContractPairs[0].ctHandle);
     });
 
-    it("Should revert because of unavailable ciphertext material", async function () {
-      // Allow for user decryption a ctHandle whose associated ciphertext material has not
-      // yet been added to the CiphertextStorage state.
-      for (const coprocessorTxSender of coprocessorTxSenders) {
-        await aclManager.connect(coprocessorTxSender).allowAccount(newCtHandle, user.address);
-        await aclManager.connect(coprocessorTxSender).allowAccount(newCtHandle, contractAddress);
+    it("Should revert because ciphertext material has not been added", async function () {
+      // Allow public decryption for handles that have not been added
+      // We need to do this because `checkPublicDecryptionReady` first checks if the handles
+      // have been allowed for public decryption
+      for (const newCtHandle of newCtHandles) {
+        for (let i = 0; i < coprocessorTxSenders.length; i++) {
+          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address);
+          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress);
+        }
       }
 
-      // Check that the request fails because the ciphertext material is unavailable
-      // Note: the function should be reverted on the unavailable ctHandle since it loops over the handles
       await expect(
         decryptionManager.userDecryptionRequest(
-          ctHandleContractPairs.concat([{ contractAddress, ctHandle: newCtHandle }]),
+          newCtHandleContractPairs,
           requestValidity,
           hostChainId,
           contractAddresses,
@@ -790,7 +851,7 @@ describe("DecryptionManager", function () {
         ),
       )
         .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
-        .withArgs(newCtHandle);
+        .withArgs(newCtHandleContractPairs[0].ctHandle);
     });
 
     it("Should revert because of invalid EIP712 user request signature", async function () {
@@ -981,8 +1042,7 @@ describe("DecryptionManager", function () {
         );
 
       // Check that the user decryption is done
-      const isUserDecryptionDone = await decryptionManager.connect(user).isUserDecryptionDone(userDecryptionId);
-      expect(isUserDecryptionDone).to.be.true;
+      await expect(decryptionManager.checkUserDecryptionDone(userDecryptionId)).to.not.be.reverted;
     });
 
     it("Should ignore other valid responses", async function () {
@@ -1023,6 +1083,56 @@ describe("DecryptionManager", function () {
       await expect(responseTx2).to.not.emit(decryptionManager, "UserDecryptionResponse");
       await expect(responseTx4).to.not.emit(decryptionManager, "UserDecryptionResponse");
     });
+
+    describe("Checks", function () {
+      it("Should not revert because user decryption is ready", async function () {
+        await expect(decryptionManager.checkUserDecryptionReady(user.address, ctHandleContractPairs)).to.not.be
+          .reverted;
+      });
+
+      it("Should revert because the user is not allowed for user decryption on a ctHandle", async function () {
+        await expect(decryptionManager.checkUserDecryptionReady(fakeUserAddress, ctHandleContractPairs))
+          .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
+          .withArgs(fakeUserAddress, ctHandleContractPairs[0].ctHandle);
+      });
+
+      it("Should revert because a contract is not allowed for user decryption on a ctHandle", async function () {
+        // Define fake ctHandleContractPairs with a contract address that is not allowed for user decryption
+        const fakeContractAddress = hre.ethers.Wallet.createRandom().address;
+        const fakeCtHandleContractPairs: CtHandleContractPairStruct[] = [
+          {
+            contractAddress: fakeContractAddress,
+            ctHandle,
+          },
+        ];
+
+        await expect(decryptionManager.checkUserDecryptionReady(user.address, fakeCtHandleContractPairs))
+          .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
+          .withArgs(fakeContractAddress, fakeCtHandleContractPairs[0].ctHandle);
+      });
+
+      it("Should revert because ciphertext material has not been added", async function () {
+        // Allow public decryption for handles that have not been added
+        // We need to do this because `checkPublicDecryptionReady` first checks if the handles
+        // have been allowed for public decryption
+        for (const newCtHandle of newCtHandles) {
+          for (let i = 0; i < coprocessorTxSenders.length; i++) {
+            await aclManager.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address);
+            await aclManager.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress);
+          }
+        }
+
+        await expect(decryptionManager.checkUserDecryptionReady(user.address, newCtHandleContractPairs))
+          .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
+          .withArgs(newCtHandleContractPairs[0].ctHandle);
+      });
+
+      it("Should revert because the user decryption is not done", async function () {
+        await expect(decryptionManager.checkUserDecryptionDone(userDecryptionId))
+          .to.be.revertedWithCustomError(decryptionManager, "UserDecryptionNotDone")
+          .withArgs(userDecryptionId);
+      });
+    });
   });
 
   describe("Delegated User Decryption", function () {
@@ -1041,7 +1151,7 @@ describe("DecryptionManager", function () {
       // This user will be used to sign the EIP712 message for delegated user decryption request
       const delegatedUser = await createAndFundRandomUser();
 
-      const delegationAccounts: IDecryptionManager.DelegationAccountsStruct = {
+      const delegationAccounts: DelegationAccountsStruct = {
         delegatorAddress: user.address,
         delegatedAddress: delegatedUser.address,
       };
@@ -1064,8 +1174,7 @@ describe("DecryptionManager", function () {
       for (const txSender of coprocessorTxSenders) {
         await aclManager.connect(txSender).delegateAccount(
           hostChainId,
-          user.address,
-          delegationAccounts.delegatedAddress,
+          delegationAccounts,
           ctHandleContractPairs.map((pair) => pair.contractAddress),
         );
       }
@@ -1274,9 +1383,8 @@ describe("DecryptionManager", function () {
         .withArgs(365, requestValidity.durationDays);
     });
 
-    it("Should revert because the delegator address is included in ctHandleContractPairs", async function () {
+    it("Should revert because the delegator address is a contract address", async function () {
       const {
-        aclManager,
         decryptionManager,
         ctHandleContractPairs,
         delegationAccounts,
@@ -1288,6 +1396,8 @@ describe("DecryptionManager", function () {
       // Create dummy input data for the user decryption request
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
+      const fakeContractAddresses = [...contractAddresses, delegationAccounts.delegatorAddress];
+
       // Check that the request fails because the delegated address is included in the ctHandleContractPairs list
       await expect(
         decryptionManager.delegatedUserDecryptionRequest(
@@ -1297,16 +1407,16 @@ describe("DecryptionManager", function () {
           requestValidity,
           delegationAccounts,
           hostChainId,
-          contractAddresses,
+          fakeContractAddresses,
           publicKey,
           delegatedUserSignature,
         ),
       )
-        .to.be.revertedWithCustomError(aclManager, "AccountAddressInContractAddresses")
-        .withArgs(delegationAccounts.delegatorAddress);
+        .to.be.revertedWithCustomError(decryptionManager, "DelegatorAddressInContractAddresses")
+        .withArgs(delegationAccounts.delegatorAddress, fakeContractAddresses);
     });
 
-    it("Should revert because user is not allowed for decryption on ctHandle", async function () {
+    it("Should revert because the delegator is not allowed for user decryption on a ctHandle", async function () {
       const { aclManager, decryptionManager } = await loadFixture(loadTestVariablesFixture);
 
       // Create dummy input data for the user decryption request
@@ -1341,10 +1451,10 @@ describe("DecryptionManager", function () {
         ),
       )
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-        .withArgs(ctHandles[0], delegatorAddress);
+        .withArgs(delegatorAddress, ctHandles[0]);
     });
 
-    it("Should revert because contract is not allowed for user decryption on ctHandle", async function () {
+    it("Should revert because a contract is not allowed for user decryption on a ctHandle", async function () {
       const {
         aclManager,
         decryptionManager,
@@ -1372,11 +1482,11 @@ describe("DecryptionManager", function () {
           delegatedUserSignature,
         ),
       )
-        .to.be.revertedWithCustomError(aclManager, "ContractNotAllowedToUseCiphertext")
-        .withArgs(ctHandles[0], fakeContractAddress);
+        .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
+        .withArgs(fakeContractAddress, ctHandles[0]);
     });
 
-    it("Should revert because of unavailable ciphertext material", async function () {
+    it("Should revert because ciphertext material has not been added", async function () {
       const {
         decryptionManager,
         aclManager,
@@ -1416,7 +1526,7 @@ describe("DecryptionManager", function () {
         .withArgs(newCtHandle);
     });
 
-    it("Should revert because the account has not been delegated for the contract", async function () {
+    it("Should revert because the delegated address has not been delegated for a contract", async function () {
       const {
         aclManager,
         decryptionManager,
@@ -1430,8 +1540,6 @@ describe("DecryptionManager", function () {
       // Create dummy input data for the user decryption request
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
-      // Check that the request fails because the account has not been delegated for the contracts
-      // Note: the function should be reverted on the contract not delegated since it loops over the contractAddresses
       const notDelegatedContractAddress = hre.ethers.Wallet.createRandom().address;
       await expect(
         decryptionManager.delegatedUserDecryptionRequest(
@@ -1439,18 +1547,13 @@ describe("DecryptionManager", function () {
           requestValidity,
           delegationAccounts,
           hostChainId,
-          contractAddresses.concat([notDelegatedContractAddress]),
+          [...contractAddresses, notDelegatedContractAddress],
           publicKey,
           delegatedUserSignature,
         ),
       )
         .to.be.revertedWithCustomError(aclManager, "AccountNotDelegated")
-        .withArgs(
-          hostChainId,
-          delegationAccounts.delegatorAddress,
-          delegationAccounts.delegatedAddress,
-          notDelegatedContractAddress,
-        );
+        .withArgs(hostChainId, toValues(delegationAccounts), notDelegatedContractAddress);
     });
 
     it("Should revert because of invalid EIP712 user request signature", async function () {
@@ -1643,8 +1746,7 @@ describe("DecryptionManager", function () {
         );
 
       // Check that the user decryption is done
-      const isUserDecryptionDone = await decryptionManager.isUserDecryptionDone(userDecryptionId);
-      expect(isUserDecryptionDone).to.be.true;
+      await expect(decryptionManager.checkUserDecryptionDone(userDecryptionId)).to.not.be.reverted;
     });
 
     it("Should ignore other valid responses", async function () {
@@ -1703,6 +1805,131 @@ describe("DecryptionManager", function () {
       await expect(responseTx1).to.not.emit(decryptionManager, "UserDecryptionResponse");
       await expect(responseTx2).to.not.emit(decryptionManager, "UserDecryptionResponse");
       await expect(responseTx4).to.not.emit(decryptionManager, "UserDecryptionResponse");
+    });
+
+    describe("Checks", function () {
+      it("Should not revert because delegated user decryption is ready", async function () {
+        const { decryptionManager, ctHandleContractPairs, delegationAccounts } = await loadFixture(
+          prepareDelegatedUserDecryptEIP712Fixture,
+        );
+
+        // Get the list of contract addresses
+        const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
+
+        await expect(
+          decryptionManager.checkDelegatedUserDecryptionReady(
+            hostChainId,
+            delegationAccounts,
+            ctHandleContractPairs,
+            contractAddresses,
+          ),
+        ).to.not.be.reverted;
+      });
+
+      it("Should revert because the delegator is not allowed for user decryption on a ctHandle", async function () {
+        const { decryptionManager, aclManager, ctHandleContractPairs, delegationAccounts } = await loadFixture(
+          prepareDelegatedUserDecryptEIP712Fixture,
+        );
+
+        // Define a fake user address
+        const fakeUserAddress = (await createAndFundRandomUser()).address;
+
+        // Define a fake delegation accounts
+        const fakeDelegationAccounts: DelegationAccountsStruct = {
+          delegatorAddress: fakeUserAddress,
+          delegatedAddress: delegationAccounts.delegatedAddress,
+        };
+
+        await expect(
+          decryptionManager.checkDelegatedUserDecryptionReady(
+            hostChainId,
+            fakeDelegationAccounts,
+            ctHandleContractPairs,
+            [],
+          ),
+        )
+          .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
+          .withArgs(fakeUserAddress, ctHandleContractPairs[0].ctHandle);
+      });
+
+      it("Should revert because a contract is not allowed for user decryption on a ctHandle", async function () {
+        const { decryptionManager, aclManager, delegationAccounts } = await loadFixture(
+          prepareDelegatedUserDecryptEIP712Fixture,
+        );
+
+        // Define fake ctHandleContractPairs with a contract address that is not allowed for user decryption
+        const fakeContractAddress = hre.ethers.Wallet.createRandom().address;
+        const fakeCtHandleContractPairs: CtHandleContractPairStruct[] = [
+          {
+            contractAddress: fakeContractAddress,
+            ctHandle,
+          },
+        ];
+
+        await expect(
+          decryptionManager.checkDelegatedUserDecryptionReady(
+            hostChainId,
+            delegationAccounts,
+            fakeCtHandleContractPairs,
+            [],
+          ),
+        )
+          .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
+          .withArgs(fakeContractAddress, fakeCtHandleContractPairs[0].ctHandle);
+      });
+
+      it("Should revert because the delegated address has not been delegated for a contract", async function () {
+        const { aclManager, decryptionManager, ctHandleContractPairs, delegationAccounts } = await loadFixture(
+          prepareDelegatedUserDecryptEIP712Fixture,
+        );
+
+        // Define a contract address that has not been delegated for the delegated address
+        const notDelegatedContractAddress = hre.ethers.Wallet.createRandom().address;
+
+        await expect(
+          decryptionManager.checkDelegatedUserDecryptionReady(hostChainId, delegationAccounts, ctHandleContractPairs, [
+            notDelegatedContractAddress,
+          ]),
+        )
+          .to.be.revertedWithCustomError(aclManager, "AccountNotDelegated")
+          .withArgs(hostChainId, toValues(delegationAccounts), notDelegatedContractAddress);
+      });
+
+      it("Should revert because ciphertext material has not been added", async function () {
+        const { decryptionManager, ctHandleContractPairs, ciphertextManager, delegationAccounts } = await loadFixture(
+          prepareDelegatedUserDecryptEIP712Fixture,
+        );
+
+        const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
+        const contractAddress = contractAddresses[0];
+
+        // Define new valid inputs
+        const newCtHandleContractPairs: CtHandleContractPairStruct[] = newCtHandles.map((newCtHandle) => ({
+          contractAddress,
+          ctHandle: newCtHandle,
+        }));
+
+        // Allow public decryption for handles that have not been added
+        // We need to do this because `checkPublicDecryptionReady` first checks if the handles
+        // have been allowed for public decryption
+        for (const newCtHandle of newCtHandles) {
+          for (let i = 0; i < coprocessorTxSenders.length; i++) {
+            await aclManager.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address);
+            await aclManager.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress);
+          }
+        }
+
+        await expect(
+          decryptionManager.checkDelegatedUserDecryptionReady(
+            hostChainId,
+            delegationAccounts,
+            newCtHandleContractPairs,
+            contractAddresses,
+          ),
+        )
+          .to.be.revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotFound")
+          .withArgs(newCtHandleContractPairs[0].ctHandle);
+      });
     });
   });
 });

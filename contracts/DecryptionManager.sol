@@ -209,8 +209,10 @@ contract DecryptionManager is
     function publicDecryptionRequest(bytes32[] calldata ctHandles) public virtual {
         DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
 
-        /// @dev Check that the public decryption is allowed for the given ctHandles.
-        _ACL_MANAGER.checkPublicDecryptAllowed(ctHandles);
+        /// @dev Check that the handles are allowed for public decryption.
+        for (uint256 i = 0; i < ctHandles.length; i++) {
+            _ACL_MANAGER.checkPublicDecryptAllowed(ctHandles[i]);
+        }
 
         /// @dev Fetch the SNS ciphertexts from the CiphertextManager contract
         /// @dev This call is reverted if any of the ciphertexts are not found in the contract, but
@@ -293,8 +295,33 @@ contract DecryptionManager is
             revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
         }
 
-        /// @dev Check that the user and the contract addresses have access to the handles.
-        _ACL_MANAGER.checkAccountAllowed(userAddress, ctHandleContractPairs);
+        /// @dev Check the user address is not included in the contract addresses.
+        if (_containsContractAddress(contractAddresses, userAddress)) {
+            revert UserAddressInContractAddresses(userAddress, contractAddresses);
+        }
+
+        /// @dev Extract the ctHandles from the given ctHandleContractPairs and check that both the
+        /// @dev user and the contract accounts have access to them.
+        /// @dev We do not deduplicate handles if the same handle appears multiple times
+        /// @dev for different contracts, it remains in the list as is. This ensures that
+        /// @dev the CiphertextManager retrieval below returns all corresponding materials.
+        bytes32[] memory ctHandles = new bytes32[](ctHandleContractPairs.length);
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            bytes32 ctHandle = ctHandleContractPairs[i].ctHandle;
+            address contractAddress = ctHandleContractPairs[i].contractAddress;
+
+            /// @dev Check that the user account has access to the handles.
+            _ACL_MANAGER.checkAccountAllowed(userAddress, ctHandle);
+
+            /// @dev Check that the contract account has access to the handles.
+            _ACL_MANAGER.checkAccountAllowed(contractAddress, ctHandle);
+
+            /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
+            if (!_containsContractAddress(contractAddresses, contractAddress)) {
+                revert ContractNotInContractAddresses(contractAddress, contractAddresses);
+            }
+            ctHandles[i] = ctHandle;
+        }
 
         /// @dev Initialize the UserDecryptRequestVerification structure for the signature validation.
         UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
@@ -307,19 +334,6 @@ contract DecryptionManager is
 
         /// @dev Validate the received EIP712 signature on the user decryption request.
         _validateUserDecryptRequestEIP712Signature(userDecryptRequestVerification, userAddress, signature);
-
-        /// @dev Extract the ctHandles from the given ctHandleContractPairs.
-        /// @dev We do not deduplicate handles if the same handle appears multiple times
-        /// @dev for different contracts, it remains in the list as is. This ensures that
-        /// @dev the CiphertextManager retrieval below returns all corresponding materials.
-        bytes32[] memory ctHandles = new bytes32[](ctHandleContractPairs.length);
-        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
-            if (!_containsContractAddress(contractAddresses, ctHandleContractPairs[i].contractAddress)) {
-                revert ContractNotInContractAddresses(ctHandleContractPairs[i].contractAddress, contractAddresses);
-            }
-            ctHandles[i] = ctHandleContractPairs[i].ctHandle;
-        }
 
         /// @dev Fetch the ciphertexts from the CiphertextManager contract
         /// @dev This call is reverted if any of the ciphertexts are not found in the contract, but
@@ -365,29 +379,37 @@ contract DecryptionManager is
             revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
         }
 
-        /// @dev Check that the delegator and the contract addresses have access to the handles.
-        _ACL_MANAGER.checkAccountAllowed(delegationAccounts.delegatorAddress, ctHandleContractPairs);
+        /// @dev Check the delegator address is not included in the contract addresses.
+        if (_containsContractAddress(contractAddresses, delegationAccounts.delegatorAddress)) {
+            revert DelegatorAddressInContractAddresses(delegationAccounts.delegatorAddress, contractAddresses);
+        }
 
-        /// @dev Extract the ctHandles from the given ctHandleContractPairs.
+        /// @dev Extract the ctHandles from the given ctHandleContractPairs and check that both the
+        /// @dev delegated and the contract accounts have access to them.
         /// @dev We do not deduplicate handles if the same handle appears multiple times
         /// @dev for different contracts, it remains in the list as is. This ensures that
         /// @dev the CiphertextManager retrieval below returns all corresponding materials.
         bytes32[] memory ctHandles = new bytes32[](ctHandleContractPairs.length);
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            bytes32 ctHandle = ctHandleContractPairs[i].ctHandle;
+            address contractAddress = ctHandleContractPairs[i].contractAddress;
+
+            /// @dev Check that the delegator account has access to the handles.
+            _ACL_MANAGER.checkAccountAllowed(delegationAccounts.delegatorAddress, ctHandle);
+
+            /// @dev Check that the contract account has access to the handles.
+            _ACL_MANAGER.checkAccountAllowed(contractAddress, ctHandle);
+
             /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
-            if (!_containsContractAddress(contractAddresses, ctHandleContractPairs[i].contractAddress)) {
-                revert ContractNotInContractAddresses(ctHandleContractPairs[i].contractAddress, contractAddresses);
+            if (!_containsContractAddress(contractAddresses, contractAddress)) {
+                revert ContractNotInContractAddresses(contractAddress, contractAddresses);
             }
-            ctHandles[i] = ctHandleContractPairs[i].ctHandle;
+            ctHandles[i] = ctHandle;
         }
 
-        /// @dev Check that the delegatee has been granted access to the given contractAddresses by the delegator.
-        _ACL_MANAGER.checkAccountDelegated(
-            contractsChainId,
-            delegationAccounts.delegatorAddress,
-            delegationAccounts.delegatedAddress,
-            contractAddresses
-        );
+        /// @dev Check that the delegated address has been granted access to the given contractAddresses
+        /// @dev by the delegator.
+        _ACL_MANAGER.checkAccountDelegated(contractsChainId, delegationAccounts, contractAddresses);
 
         /// @dev Initialize the EIP712UserDecryptRequest structure for the signature validation.
         DelegatedUserDecryptRequestVerification
@@ -473,16 +495,70 @@ contract DecryptionManager is
         }
     }
 
-    /// @dev See {IDecryptionManager-isPublicDecryptionDone}.
-    function isPublicDecryptionDone(uint256 publicDecryptionId) public view virtual returns (bool) {
-        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
-        return $.publicDecryptionDone[publicDecryptionId];
+    /// @dev See {IDecryptionManager-checkPublicDecryptionReady}.
+    function checkPublicDecryptionReady(bytes32[] calldata ctHandles) external view {
+        /// @dev Check that the handles are allowed for public decryption and that the ciphertext materials
+        /// @dev represented by them have been added.
+        for (uint256 i = 0; i < ctHandles.length; i++) {
+            _ACL_MANAGER.checkPublicDecryptAllowed(ctHandles[i]);
+            _CIPHERTEXT_MANAGER.checkCiphertextMaterial(ctHandles[i]);
+        }
     }
 
-    /// @dev See {IDecryptionManager-isUserDecryptionDone}.
-    function isUserDecryptionDone(uint256 userDecryptionId) public view virtual returns (bool) {
+    /// @dev See {IDecryptionManager-checkUserDecryptionReady}.
+    function checkUserDecryptionReady(
+        address userAddress,
+        CtHandleContractPair[] calldata ctHandleContractPairs
+    ) external view {
+        /// @dev Check that the user and contracts accounts have access to the handles and that the
+        /// @dev ciphertext materials represented by them have been added.
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            _ACL_MANAGER.checkAccountAllowed(userAddress, ctHandleContractPairs[i].ctHandle);
+            _ACL_MANAGER.checkAccountAllowed(
+                ctHandleContractPairs[i].contractAddress,
+                ctHandleContractPairs[i].ctHandle
+            );
+            _CIPHERTEXT_MANAGER.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
+        }
+    }
+
+    /// @dev See {IDecryptionManager-checkDelegatedUserDecryptionReady}.
+    function checkDelegatedUserDecryptionReady(
+        uint256 contractsChainId,
+        DelegationAccounts calldata delegationAccounts,
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        address[] calldata contractAddresses
+    ) external view {
+        /// @dev Check that the delegated address has been granted access to the given contractAddresses
+        /// @dev by the delegator.
+        _ACL_MANAGER.checkAccountDelegated(contractsChainId, delegationAccounts, contractAddresses);
+
+        /// @dev Check that the delegator and contract accounts have access to the handles and that the
+        /// @dev ciphertext materials represented by them have been added.
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            _ACL_MANAGER.checkAccountAllowed(delegationAccounts.delegatorAddress, ctHandleContractPairs[i].ctHandle);
+            _ACL_MANAGER.checkAccountAllowed(
+                ctHandleContractPairs[i].contractAddress,
+                ctHandleContractPairs[i].ctHandle
+            );
+            _CIPHERTEXT_MANAGER.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
+        }
+    }
+
+    /// @dev See {IDecryptionManager-checkPublicDecryptionDone}.
+    function checkPublicDecryptionDone(uint256 publicDecryptionId) public view virtual {
         DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
-        return $.userDecryptionDone[userDecryptionId];
+        if (!$.publicDecryptionDone[publicDecryptionId]) {
+            revert PublicDecryptionNotDone(publicDecryptionId);
+        }
+    }
+
+    /// @dev See {IDecryptionManager-checkUserDecryptionDone}.
+    function checkUserDecryptionDone(uint256 userDecryptionId) public view virtual {
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
+        if (!$.userDecryptionDone[userDecryptionId]) {
+            revert UserDecryptionNotDone(userDecryptionId);
+        }
     }
 
     /// @notice Returns the versions of the DecryptionManager contract in SemVer format.
