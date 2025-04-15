@@ -1,0 +1,30 @@
+name: "[Release KMS] - Create Docker Images"
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        type: string
+        description: 'Branch, tag or SHA to generate the Docker images from. (Default main)'
+        required: false
+        default: 'main'
+
+jobs:
+  docker-connector:
+    uses: ./.github/workflows/common-docker.yml
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'write'
+    with:
+      working-directory: "./kms-connector"
+      push_image: true
+      image-name: 'kms-connector'
+      ref: ${{ inputs.ref || '' }}
+      app-cache-dir: 'kms-connector'
+    secrets:
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
