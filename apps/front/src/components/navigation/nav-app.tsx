@@ -12,11 +12,8 @@ export function NavApp({ id, name, status }: OwnProps) {
   const color = ['LIVE', 'DEPLOYING'].includes(status)
     ? 'green.200'
     : 'gray.300'
-  const link = ['LIVE', 'DEPLOYING'].includes(status)
-    ? `/dapp/${id}`
-    : `/create/2/${id}`
   return (
-    <NavLink to={link}>
+    <NavLink to={`/dapp/${id}`}>
       {({ isActive }) => (
         <PureNavApp name={name} color={color} isActive={isActive} />
       )}
