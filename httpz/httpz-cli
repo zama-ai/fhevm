@@ -10,8 +10,8 @@ export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"5a6a813"}
 export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc4"}
 export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.1.0-rc9"}
 export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc4"}
-export RELAYER_VERSION=${RELAYER_VERSION:-"c7f38fd"}
-export TESTS_VERSION=${TESTS_VERSION:-"c7f38fd"}
+export RELAYER_VERSION=${RELAYER_VERSION:-"dc02dc0"}
+export TESTS_VERSION=${TESTS_VERSION:-"dc02dc0"}
 
 function usage {
   echo "Usage: httpz-cli COMMAND [OPTIONS]"
@@ -55,6 +55,10 @@ case $COMMAND in
       public-decryption)
         echo "Running public decryption test: euint64 type..."
         docker exec httpz-tests-e2e-debug ./run-tests.sh "test async decrypt uint64 trivial"
+        ;;
+      public-decryption-ebytes256)
+        echo "Running public decryption test: ebytes256 type..."
+        docker exec httpz-tests-e2e-debug ./run-tests.sh "test async decrypt ebytes256 trivial"
         ;;
       erc20)
         echo "Running erc20 test..."
