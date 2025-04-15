@@ -37,6 +37,8 @@ opentelemetry-semantic-conventions = { workspace = true }
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu"]
+latency = []
+throughput = []
 
 [build-dependencies]
 tonic-build = { workspace = true }

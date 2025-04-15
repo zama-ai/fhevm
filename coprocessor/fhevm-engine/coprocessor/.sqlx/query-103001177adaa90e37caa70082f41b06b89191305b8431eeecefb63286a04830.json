@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                            UPDATE computations\n                            SET created_at = CURRENT_TIMESTAMP\n                            WHERE tenant_id = $1\n                            AND output_handle = $2\n                        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "103001177adaa90e37caa70082f41b06b89191305b8431eeecefb63286a04830"
+}
