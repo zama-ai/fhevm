@@ -3,19 +3,31 @@ use crate::HandleItem;
 use crate::KeySet;
 use crate::{Config, DBConfig, ExecutionError};
 use fhevm_engine_common::utils::compact_hex;
-use fhevm_engine_common::utils::safe_serialize;
+use serde::Serialize;
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::PgListener;
 use sqlx::{Acquire, PgPool, Postgres, Transaction};
 use std::time::Duration;
 use tfhe::integer::IntegerCiphertext;
+use tfhe::named::Named;
 use tfhe::set_server_key;
+use tfhe::Versionize;
 use tokio::select;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
+
+pub const SAFE_SER_CT_128_LIMIT: u64 = 1024 * 1024 * 66;
+
+pub fn safe_serialize<T: Serialize + Named + Versionize>(
+    object: &T,
+) -> Result<Vec<u8>, ExecutionError> {
+    let mut out = vec![];
+    tfhe::safe_serialization::safe_serialize(object, &mut out, SAFE_SER_CT_128_LIMIT)?;
+    Ok(out)
+}
 
 const RETRY_DB_CONN_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -233,7 +245,7 @@ fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), Executio
 
         let ciphertext128 = keys.sns_key.to_large_ciphertext(&raw_ct)?;
 
-        info!(target: "sns",  { handle }, "Ciphertext converted");
+        info!(target: "sns",  { handle }, "Ciphertext converted, blocks: {}", ciphertext128.len());
 
         // Optional: Decrypt and log for debugging
         #[cfg(feature = "test_decrypt_128")]
@@ -244,8 +256,16 @@ fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), Executio
             }
         }
 
-        let ciphertext128 = safe_serialize(&ciphertext128);
-        task.ct128_uncompressed = Some(ciphertext128);
+        match safe_serialize(&ciphertext128) {
+            Ok(ct128) => {
+                info!(target: "sns", { handle }, "ct128 serialized, bytes_len: {}", ct128.len());
+                task.ct128_uncompressed = Some(ct128);
+            }
+            Err(err) => {
+                error!(target: "sns", { handle }, "Failed to serialize ct128: {err} ,
+                    size_limit: {}",  SAFE_SER_CT_128_LIMIT );
+            }
+        }
     }
 
     Ok(())
