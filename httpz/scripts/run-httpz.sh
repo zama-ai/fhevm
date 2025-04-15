@@ -171,7 +171,7 @@ get_minio_ip() {
     local minio_container_name=$1
     local minio_ip
     minio_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$minio_container_name")
-    local coprocessor_file="$SCRIPT_DIR/../env/staging/.env.coprocessor"
+    local coprocessor_file="$SCRIPT_DIR/../env/staging/.env.coprocessor.local"
     if [ -n "$minio_ip" ]; then
     echo "Found $minio_container_name container IP: $minio_ip"
     sed -i.bak "s|AWS_ENDPOINT_URL=http://[^:]*:9000|AWS_ENDPOINT_URL=http://$minio_ip:9000|" \
