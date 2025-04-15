@@ -318,6 +318,13 @@ impl ArbitrumGatewayL2InputHandler {
                                     "Processing InputResponse event"
                                 );
 
+                                // FIXME: https://github.com/zama-ai/httpz-relayer/issues/234
+                                info!("Wait half a second to make sure we receive and process the request ");
+                                info!("event before the current response one");
+                                info!("This race conditions should not happen in a real scenario");
+                                info!("Please REMOVE this SLEEP when using websocket instead");
+                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
                                 // Use get_key_value to get both key and value, or use remove if you want to clean up
                                 if let Some(entry) =
                                     self.zkpok_id_to_request_id.get(&request_event.zkProofId)
