@@ -40,7 +40,7 @@ jobs:
           package: ./oracle/package.json
           tag: prerelease
           token: ${{ secrets.NPM_TOKEN }}
-          provenance: true
+          provenance: false
           access: public
 
       - name: Publish release to npm
@@ -49,5 +49,5 @@ jobs:
         with:
           package: ./oracle/package.json
           token: ${{ secrets.NPM_TOKEN }}
-          provenance: true
+          provenance: false
           access: public
