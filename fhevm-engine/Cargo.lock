@@ -5350,18 +5350,6 @@ dependencies = [
 
 [[package]]
 name = "pulp"
-version = "0.20.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9e3f19bdeda2e49d16c8ae90f9615adc2298ee16974bb250d0afb705e33043f"
-dependencies = [
- "bytemuck",
- "libm",
- "num-complex",
- "reborrow",
-]
-
-[[package]]
-name = "pulp"
 version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95fb7a99b37aaef4c7dd2fd15a819eb8010bfc7a2c2155230d51f497316cad6d"
@@ -7019,9 +7007,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.0.1"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6e9c8cc15c3ba99f02a3027135ff1c0db33cd561324fc4e6a93006f7c8de5a1"
+checksum = "f722461f1ec9570f4d278b8efe974217a6263ecc97905c0486ed55789fd7dc38"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -7029,11 +7017,12 @@ dependencies = [
  "dyn-stack",
  "itertools 0.14.0",
  "paste",
- "pulp 0.21.4",
+ "pulp",
  "rand_core 0.6.4",
  "rayon",
  "serde",
  "sha3",
+ "strum 0.27.1",
  "tfhe-csprng",
  "tfhe-cuda-backend",
  "tfhe-fft",
@@ -7055,9 +7044,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-cuda-backend"
-version = "0.8.1"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cbdc32365be8b82cb7ba67c439883d40db1074893025b54d4cc050a44de6404"
+checksum = "c52ffd9a1d5e5f8938bba8614db71f150230cd2508e8249d43c172621f98ad8a"
 dependencies = [
  "bindgen",
  "cmake",
@@ -7066,28 +7055,28 @@ dependencies = [
 
 [[package]]
 name = "tfhe-fft"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fd167dab126860cfcdce2cdcf9a17826d0789b95f3b6984e6b171c7713085e6"
+checksum = "c8621277f2fcbcf56e4cd0e19476854bd9ac195f17f6906476826dceff4063fc"
 dependencies = [
  "aligned-vec",
  "bytemuck",
  "dyn-stack",
  "js-sys",
  "num-complex",
- "pulp 0.20.1",
+ "pulp",
  "serde",
 ]
 
 [[package]]
 name = "tfhe-ntt"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cd83664188b7640456ed938f7414f0d414e96bdc07b95aaba05c2ba13e3c478"
+checksum = "5c64925e25d6ba666f75332ce44fbd2e80be64dbd657e3c2652a6a07f2868d17"
 dependencies = [
  "aligned-vec",
  "bytemuck",
- "pulp 0.20.1",
+ "pulp",
 ]
 
 [[package]]
