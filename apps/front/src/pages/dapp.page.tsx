@@ -154,7 +154,7 @@ export function DappPage() {
     <Box>
       {data ? (
         <Stack direction="row" align="center" alignItems="flex-start">
-          <Heading mb="5">
+          <Heading size="xl" mb="5">
             {liveData ? liveData.dappUpdated.name : data.dapp.name}
           </Heading>
           <DappStatus

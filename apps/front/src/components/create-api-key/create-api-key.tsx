@@ -22,7 +22,8 @@ export function CreateApiKey({ dappId }: OwnProps) {
   return (
     <>
       {showModal && <ApiKeyCreatedDialog token={token!} onClose={closeModal} />}
-      <ApiKeyForm error={error?.message} onCreate={createApiKey} />
+      {/** https://react.dev/learn/preserving-and-resetting-state#option-2-resetting-state-with-a-key */}
+      <ApiKeyForm error={error?.message} onCreate={createApiKey} key={token} />
     </>
   )
 }

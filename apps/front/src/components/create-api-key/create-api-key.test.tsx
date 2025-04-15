@@ -28,22 +28,17 @@ describe('CreateApiKey', () => {
     describe('when the user fill the form', () => {
       beforeEach(async () => {
         const user = userEvent.setup()
-
         const form = screen.getByRole('form')
 
         await user.type(
-          within(form).getByLabelText(/name/i),
-          faker.lorem.words({ min: 1, max: 3 }),
-        )
-        await user.type(
-          within(form).getByLabelText(/description/i),
-          faker.lorem.paragraph(),
+          within(form).getByTestId('api-key-name'),
+          faker.lorem.words({ min: 3, max: 10 }),
         )
         await user.click(within(form).getByRole('button'))
       })
 
       test('then it creates a new api key', async () => {
-        expect(await screen.findByText(/api key created/i)).toBeInTheDocument()
+        expect(await screen.findByRole('code')).toBeInTheDocument()
       })
     })
 
@@ -58,16 +53,11 @@ describe('CreateApiKey', () => {
         )
 
         const user = userEvent.setup()
-
         const form = screen.getByRole('form')
 
         await user.type(
-          within(form).getByLabelText(/name/i),
-          faker.lorem.words({ min: 1, max: 3 }),
-        )
-        await user.type(
-          within(form).getByLabelText(/description/i),
-          faker.lorem.paragraph(1),
+          within(form).getByTestId('api-key-name'),
+          faker.string.alpha(10),
         )
         await user.click(within(form).getByRole('button'))
       })

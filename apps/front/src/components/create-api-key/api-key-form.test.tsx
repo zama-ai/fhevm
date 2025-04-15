@@ -23,15 +23,12 @@ describe('ApiKeyForm', () => {
     })
 
     test('should have a name input', () => {
-      expect(screen.getByLabelText(/name/i)).toBeInTheDocument()
-    })
-
-    test('should have a description input', () => {
-      expect(screen.getByLabelText(/description/i)).toBeInTheDocument()
+      expect(screen.getByTestId('api-key-name')).toBeInTheDocument()
     })
 
     test('should have a button', () => {
       expect(screen.getByRole('button')).toBeInTheDocument()
+      expect(screen.getByRole('button')).toBeDisabled()
     })
   })
 
@@ -48,76 +45,42 @@ describe('ApiKeyForm', () => {
 
     describe('when the form is compiled correctly', () => {
       let name: string
-      let description: string
 
       beforeEach(async () => {
-        name = faker.internet.displayName()
-        description = faker.lorem.sentence()
+        name = faker.string.alpha({ length: { min: 5, max: 10 } })
 
         const user = userEvent.setup()
-        await user.type(screen.getByLabelText(/name/i), name)
-        await user.type(screen.getByLabelText(/description/i), description)
+        await user.type(screen.getByTestId('api-key-name'), name)
         await user.click(screen.getByRole('button'))
       })
 
       test('then it call onCreate', () => {
-        expect(onCreate).toHaveBeenCalledExactlyOnceWith({ name, description })
+        expect(onCreate).toHaveBeenCalledExactlyOnceWith({ name })
       })
 
-      test('then name should be fine', () => {
+      test('then there is no error', async () => {
         expect(
-          within(screen.getByLabelText(/name/i)).queryByRole('alert'),
+          within(screen.getByRole('form')).queryByRole('alert'),
         ).not.toBeInTheDocument()
-      })
-
-      test('then description should be fine', () => {
-        expect(
-          within(screen.getByLabelText(/description/i)).queryByRole('alert'),
-        ).not.toBeInTheDocument()
-      })
-    })
-
-    describe('when name is missing', () => {
-      beforeEach(async () => {
-        const user = userEvent.setup()
-        await user.type(
-          screen.getByLabelText(/description/i),
-          faker.lorem.sentence(),
-        )
-        await user.click(screen.getByRole('button'))
-      })
-
-      test('then it show name missing error', () => {
-        const error = within(
-          screen.getByLabelText(/name/i).parentElement!,
-        ).queryByRole('alert')
-        expect(error).toBeInTheDocument()
-        expect(error).toHaveTextContent(/name must be at least/i)
-      })
-
-      test(`then it doesn't call onCreate`, () => {
-        expect(onCreate).not.toHaveBeenCalled()
       })
     })
   })
 
   describe('errors', () => {
     describe('when there is a remote error', () => {
-      let error: string
+      let errorText: string
       beforeEach(() => {
-        error = faker.lorem.sentence()
+        errorText = faker.lorem.sentence()
 
         render(
           <ChakraProvider value={system}>
-            <ApiKeyForm onCreate={vi.fn()} error={error} />
+            <ApiKeyForm onCreate={vi.fn()} error={errorText} />
           </ChakraProvider>,
         )
       })
 
       test('then it shows it', async () => {
-        const text = await screen.findByRole('alert')
-        expect(text).toBeInTheDocument()
-        expect(text).toHaveTextContent(error)
+        expect(within(screen.getByRole('form')).getByText(errorText))
       })
     })
   })

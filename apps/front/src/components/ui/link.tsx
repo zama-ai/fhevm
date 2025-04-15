@@ -1,4 +1,5 @@
 import { RefAttributes } from 'react'
+import { ExternalLink } from 'lucide-react'
 import {
   Link as RouterLink,
   LinkProps as RouterLinkProps,
@@ -53,6 +54,24 @@ export function NavLink({
     </ChakraLink>
   )
 }
+
+/**
+ * LinkDoc is used to link to the documentation
+ * @usage <LinkDoc to="/docs">Documentation</LinkDoc>
+ */
+export function LinkDoc({ children, ...props }: ChakraLinkProps) {
+  return (
+    <ChakraLink {...props}>
+      {children}
+      <ExternalLink size="14px" />
+    </ChakraLink>
+  )
+}
+
+/**
+ * LinkOverlay is used in conjunction with a LinkBox (see chakra docs)
+ * @usage <LinkBox><LinkOverlay to="/home">Home</LinkOverlay></LinkBox>
+ */
 
 type LinkOverlayProps = ChakraLinkOverlayProps &
   RouterLinkProps &

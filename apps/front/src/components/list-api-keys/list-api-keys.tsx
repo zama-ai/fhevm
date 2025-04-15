@@ -1,6 +1,7 @@
-import { Stack } from '@chakra-ui/react'
+import { Box, EmptyState, Table } from '@chakra-ui/react'
 import { useApiKeys } from './use-api-keys'
-import { ApiKeyCard, SkeletonApiKeyCard } from './api-key-card'
+import { KeyRound } from 'lucide-react'
+import { ApiKeyItem, SkeletonApiKeyItem } from './api-key-item'
 import { useDeleteApiKey } from './use-delete-api-key'
 
 export type ListApiKeysProps = {
@@ -12,24 +13,51 @@ export function ListApiKeys({ dappId }: ListApiKeysProps) {
   const { deleteApiKey } = useDeleteApiKey()
 
   return (
-    <Stack role="list">
-      {loading ? (
-        <>
-          <SkeletonApiKeyCard />
-          <SkeletonApiKeyCard />
-          <SkeletonApiKeyCard />
-        </>
-      ) : (
-        apiKeys?.dapp.apiKeys.map(apiKey => (
-          <ApiKeyCard
-            key={apiKey.id}
-            id={apiKey.id}
-            name={apiKey.name}
-            description={apiKey.description ?? null}
-            onDelete={deleteApiKey}
-          />
-        ))
-      )}
-    </Stack>
+    <Box maxW="2xl">
+      <Table.Root size="sm" interactive variant="outline" rounded="md">
+        {apiKeys?.dapp.apiKeys.length === 0 ? (
+          <EmptyState.Root>
+            <EmptyState.Content>
+              <EmptyState.Indicator>
+                <KeyRound />
+              </EmptyState.Indicator>
+              <EmptyState.Title>No API keys</EmptyState.Title>
+              <EmptyState.Description>
+                Create an API key to enable private descriptions.
+              </EmptyState.Description>
+            </EmptyState.Content>
+          </EmptyState.Root>
+        ) : (
+          <>
+            <Table.Header>
+              <Table.Row>
+                <Table.ColumnHeader>Name</Table.ColumnHeader>
+                <Table.ColumnHeader>Created</Table.ColumnHeader>
+                <Table.ColumnHeader></Table.ColumnHeader>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body role="list">
+              {loading && (
+                <>
+                  <SkeletonApiKeyItem key="a" />
+                  <SkeletonApiKeyItem key="b" />
+                </>
+              )}
+
+              {apiKeys?.dapp.apiKeys.map(item => (
+                <ApiKeyItem
+                  key={item.id}
+                  id={item.id}
+                  name={item.name}
+                  description={item.description ?? null}
+                  createdAt={item.createdAt}
+                  onDelete={deleteApiKey}
+                />
+              ))}
+            </Table.Body>
+          </>
+        )}
+      </Table.Root>
+    </Box>
   )
 }

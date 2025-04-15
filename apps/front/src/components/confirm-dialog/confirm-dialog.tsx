@@ -1,4 +1,4 @@
-import { Button, Dialog, Portal } from '@chakra-ui/react'
+import { Button, Dialog, Portal, Text } from '@chakra-ui/react'
 
 export type ConfirmDialogProps = {
   title?: string
@@ -23,7 +23,7 @@ export function ConfirmDialog({
               <Dialog.Title>{title}</Dialog.Title>
             </Dialog.Header>
             <Dialog.Body>
-              <p>{message}</p>
+              <Text>{message}</Text>
             </Dialog.Body>
             <Dialog.Footer>
               <Button variant="outline" onClick={onCancel}>

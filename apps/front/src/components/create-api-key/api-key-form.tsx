@@ -1,8 +1,9 @@
 import { useFormik } from 'formik'
-import { Fieldset, Heading, Input, HStack, Button } from '@chakra-ui/react'
+import { Fieldset, Input, HStack, Button } from '@chakra-ui/react'
 import { Field } from '@/components/ui/field.js'
 import { toFormikValidate } from '@/lib/zod-schema-validator'
 import { CreateApiKeySchema } from './create-api-key.schema'
+import { LinkDoc } from '../ui/link'
 
 export type ApiKeyFormProps = {
   error?: string
@@ -22,49 +23,52 @@ export function ApiKeyForm({ error, onCreate }: ApiKeyFormProps) {
     },
   })
 
-  return (
-    <Fieldset.Root size="lg" maxW="md" py="4">
-      <form onSubmit={formik.handleSubmit} role="form">
-        <Fieldset.Legend>
-          <Heading>Create a new API KEY</Heading>
-        </Fieldset.Legend>
+  const canAdd = formik.values.name.trim() !== '' && !formik.errors.name
+  const invalid = Boolean(error) || Boolean(formik.errors.name)
 
-        <Fieldset.Content>
+  return (
+    <Fieldset.Root size="lg" maxW="md" pt="8">
+      <form onSubmit={formik.handleSubmit} role="form">
+        <Fieldset.Legend>API Keys</Fieldset.Legend>
+        <Fieldset.HelperText>
+          Enter a unique name for your token to differentiate it from other
+          tokens.
+        </Fieldset.HelperText>
+
+        <Fieldset.Content my="4">
           <HStack>
             <Field
-              label="Name"
-              invalid={Boolean(formik.errors.name)}
-              errorText={formik.errors.name}
+              label="Create a new API Key"
+              invalid={invalid}
+              errorText={error || formik.errors.name}
+              helperText={
+                <span>
+                  {' '}
+                  Learn more about{' '}
+                  <LinkDoc href="https://zama.ai" target="_blank">
+                    API Keys
+                  </LinkDoc>
+                </span>
+              }
             >
               <Input
+                data-testid="api-key-name"
                 name="name"
                 type="text"
                 value={formik.values.name}
                 onChange={formik.handleChange}
               />
             </Field>
-            <Field
-              label="Description"
-              invalid={Boolean(formik.errors.description)}
-              errorText={formik.errors.description}
-            >
-              <Input
-                name="description"
-                type="text"
-                value={formik.values.description}
-                onChange={formik.handleChange}
-              />
-            </Field>
 
-            <Button type="submit" alignSelf="end">
+            <Button
+              type="submit"
+              mt="26px"
+              alignSelf="start"
+              disabled={!canAdd}
+            >
               Create
             </Button>
           </HStack>
-          {error && (
-            <span key="remote-error" role="alert">
-              {error}
-            </span>
-          )}
         </Fieldset.Content>
       </form>
     </Fieldset.Root>
