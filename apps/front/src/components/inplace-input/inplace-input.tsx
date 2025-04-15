@@ -1,5 +1,5 @@
-import { Editable, IconButton, Heading, useDisclosure } from "@chakra-ui/react"
-import { Check, PencilLine, X } from "lucide-react"
+import { Editable, IconButton, Heading, useDisclosure } from '@chakra-ui/react'
+import { Check, PencilLine, X } from 'lucide-react'
 
 type OwnProps = {
   title: string
@@ -17,16 +17,16 @@ export const InplaceInput = ({ title, onChange, onUpdate }: OwnProps) => {
       onValueChange={onChange}
       onValueCommit={onUpdate}
     >
-      <Heading size="lg">
+      <Heading size="xl">
         <Editable.Preview onMouseEnter={onOpen} onMouseLeave={onClose} />
-        <Editable.Input border={"none"} />
+        <Editable.Input border={'none'} />
       </Heading>
       <Editable.Control>
         <Editable.EditTrigger asChild>
           <IconButton
             variant="ghost"
             size="xs"
-            display={open ? "inline-block" : "none"}
+            display={open ? 'inline-block' : 'none'}
           >
             <PencilLine />
           </IconButton>

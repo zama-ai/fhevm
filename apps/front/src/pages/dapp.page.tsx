@@ -1,6 +1,6 @@
 import { gql, useQuery, useSubscription } from '@apollo/client'
 import { useParams } from 'react-router'
-import { Box, Heading, Skeleton, Stack } from '@chakra-ui/react'
+import { Box } from '@chakra-ui/react'
 import { graphql } from '@/__generated__/gql.js'
 
 import {
@@ -8,10 +8,9 @@ import {
   GetDappDetailsQuery,
 } from '@/__generated__/graphql.js'
 
-import { DappStatus } from '@/components/dapp-status/dapp-status.js'
+import { DappHeader } from '@/components/dapp-header/dapp-header'
 import { CreateApiKey } from '@/components/create-api-key/create-api-key'
 import { ListApiKeys } from '@/components/list-api-keys/list-api-keys'
-
 import { DappActivity } from '@/components/dapp-activity/dapp-activity'
 
 const GET_DAPP_DETAILS = graphql(`
@@ -152,20 +151,7 @@ export function DappPage() {
 
   return (
     <Box>
-      {data ? (
-        <Stack direction="row" align="center" alignItems="flex-start">
-          <Heading size="xl" mb="5">
-            {liveData ? liveData.dappUpdated.name : data.dapp.name}
-          </Heading>
-          <DappStatus
-            status={liveData ? liveData.dappUpdated.status : data.dapp.status}
-            ml="2"
-            size="xs"
-          />
-        </Stack>
-      ) : (
-        <Skeleton height="5" my="5" width="30rem" />
-      )}
+      <DappHeader dapp={data?.dapp} dappUpdated={liveData?.dappUpdated} />
       {data && (
         <DappActivity
           cumulativeDappStats={data.dapp.stats.cumulative}
