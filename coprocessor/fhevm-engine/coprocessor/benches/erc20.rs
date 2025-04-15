@@ -10,6 +10,8 @@ use coprocessor::server::coprocessor::{
     fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputeRequest,
     InputToUpload, InputUploadBatch,
 };
+#[cfg(feature = "bench")]
+use coprocessor::tfhe_worker::TIMING;
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
 };
@@ -18,6 +20,7 @@ use std::str::FromStr;
 use std::time::SystemTime;
 use tokio::runtime::Runtime;
 use tonic::metadata::MetadataValue;
+use utils::EnvConfig;
 
 fn test_random_user_address() -> String {
     let _private_key = "bd2400c676871534a682ca1c5e4cd647ec9c3e122f188c6e3f54e6900d586c7b";
@@ -30,14 +33,15 @@ fn test_random_contract_address() -> String {
 }
 
 fn main() {
+    let ecfg = EnvConfig::new();
     let mut c = Criterion::default().sample_size(10).configure_from_args();
     let bench_name = "erc20::transfer";
+    let bench_optimization_target = if cfg!(feature = "latency") {"opt_latency"} else {"opt_throughput"};
 
     let mut group = c.benchmark_group(bench_name);
-    for num_elems in [10, 50, 200, 500] {
-        group.throughput(Throughput::Elements(num_elems));
-        let bench_id =
-            format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems");
+    if ecfg.benchmark_type == "LATENCY" || ecfg.benchmark_type == "ALL" {
+        let num_elems = 1;
+        let bench_id = format!("{bench_name}::latency::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             let _ = Runtime::new().unwrap().block_on(schedule_erc20_whitepaper(
                 b,
@@ -46,8 +50,7 @@ fn main() {
             ));
         });
 
-        group.throughput(Throughput::Elements(num_elems));
-        let bench_id = format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems");
+        let bench_id = format!("{bench_name}::latency::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             let _ = Runtime::new().unwrap().block_on(schedule_erc20_no_cmux(
                 b,
@@ -55,19 +58,66 @@ fn main() {
                 bench_id.clone(),
             ));
         });
+    }
 
-        group.throughput(Throughput::Elements(num_elems));
-        let bench_id =
-            format!("{bench_name}::throughput::dependent_no_cmux::FHEUint64::{num_elems}_elems");
-        group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-            let _ = Runtime::new()
-                .unwrap()
-                .block_on(schedule_dependent_erc20_no_cmux(
+    if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
+        for num_elems in [
+            10,
+            50,
+            200,
+            500,
+            #[cfg(feature = "gpu")]
+            2000,
+        ] {
+            group.throughput(Throughput::Elements(num_elems));
+            let bench_id =
+                format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
+                let _ = Runtime::new().unwrap().block_on(schedule_erc20_whitepaper(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
                 ));
-        });
+            });
+
+            group.throughput(Throughput::Elements(num_elems));
+            let bench_id =
+                format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
+                let _ = Runtime::new().unwrap().block_on(schedule_erc20_no_cmux(
+                    b,
+                    num_elems as usize,
+                    bench_id.clone(),
+                ));
+            });
+
+            group.throughput(Throughput::Elements(num_elems));
+            let bench_id = format!(
+                "{bench_name}::throughput::dependent_whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}"
+            );
+            group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
+                let _ = Runtime::new()
+                    .unwrap()
+                    .block_on(schedule_dependent_erc20_whitepaper(
+                        b,
+                        num_elems as usize,
+                        bench_id.clone(),
+                    ));
+            });
+            group.throughput(Throughput::Elements(num_elems));
+            let bench_id = format!(
+                "{bench_name}::throughput::dependent_no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}"
+            );
+            group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
+                let _ = Runtime::new()
+                    .unwrap()
+                    .block_on(schedule_dependent_erc20_no_cmux(
+                        b,
+                        num_elems as usize,
+                        bench_id.clone(),
+                    ));
+            });
+        }
     }
     group.finish();
 
@@ -110,34 +160,34 @@ async fn schedule_erc20_whitepaper(
         })?;
     let keys = &keys[0];
 
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let the_list = builder
+        .push(100_u64) // Balance source
+        .push(10_u64) // Transfer amount
+        .push(20_u64) // Balance destination
+        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .unwrap();
+
+    let serialized = safe_serialize(&the_list);
+    let mut input_request = tonic::Request::new(InputUploadBatch {
+        input_ciphertexts: vec![InputToUpload {
+            input_payload: serialized,
+            signatures: Vec::new(),
+            user_address: test_random_user_address(),
+            contract_address: test_random_contract_address(),
+        }],
+    });
+    input_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let resp = client.upload_inputs(input_request).await?;
+    let resp = resp.get_ref();
+    assert_eq!(resp.upload_responses.len(), 1);
+    let first_resp = &resp.upload_responses[0];
+    assert_eq!(first_resp.input_handles.len(), 3);
+
     for _ in 0..=(num_samples - 1) as u32 {
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.0.pks);
-        let the_list = builder
-            .push(100_u64) // Balance source
-            .push(10_u64) // Transfer amount
-            .push(20_u64) // Balance destination
-            .build_with_proof_packed(&keys.0.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
-            .unwrap();
-
-        let serialized = safe_serialize(&the_list);
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: vec![InputToUpload {
-                input_payload: serialized,
-                signatures: Vec::new(),
-                user_address: test_random_user_address(),
-                contract_address: test_random_contract_address(),
-            }],
-        });
-        input_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.upload_inputs(input_request).await?;
-        let resp = resp.get_ref();
-        assert_eq!(resp.upload_responses.len(), 1);
-        let first_resp = &resp.upload_responses[0];
-        assert_eq!(first_resp.input_handles.len(), 3);
-
         let handle_bals = first_resp.input_handles[0].handle.clone();
         let bals = AsyncComputationInput {
             input: Some(Input::InputHandle(handle_bals.clone())),
@@ -212,15 +262,30 @@ async fn schedule_erc20_whitepaper(
         "authorization",
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
-    let _resp = client.async_compute(compute_request).await.unwrap();
+    let _resp = client.clone().async_compute(compute_request).await.unwrap();
+    let app_ref = &app;
+    bencher
+        .to_async(FuturesExecutor)
+        .iter_custom(|iters| async move {
+            let db_url = app_ref.db_url().to_string();
+            let now = SystemTime::now();
+            let _ = tokio::task::spawn_blocking(move || {
+                Runtime::new()
+                    .unwrap()
+                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                println!(
+                    "Execution time: {} -- {}",
+                    now.elapsed().unwrap().as_millis(),
+                    TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
+                );
+            })
+            .await;
+            std::time::Duration::from_micros(
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+            )
+        });
 
-    bencher.to_async(FuturesExecutor).iter(|| async {
-        let now = SystemTime::now();
-        wait_until_all_ciphertexts_computed(&app).await.unwrap();
-        println!("Execution time: {}", now.elapsed().unwrap().as_millis());
-    });
-
-    let params = keys.1.computation_parameters();
+    let params = keys.cks.computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,
@@ -270,34 +335,34 @@ async fn schedule_erc20_no_cmux(
         })?;
     let keys = &keys[0];
 
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let the_list = builder
+        .push(100_u64) // Balance source
+        .push(10_u64) // Transfer amount
+        .push(20_u64) // Balance destination
+        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .unwrap();
+
+    let serialized = safe_serialize(&the_list);
+    let mut input_request = tonic::Request::new(InputUploadBatch {
+        input_ciphertexts: vec![InputToUpload {
+            input_payload: serialized,
+            signatures: Vec::new(),
+            user_address: test_random_user_address(),
+            contract_address: test_random_contract_address(),
+        }],
+    });
+    input_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let resp = client.upload_inputs(input_request).await?;
+    let resp = resp.get_ref();
+    assert_eq!(resp.upload_responses.len(), 1);
+    let first_resp = &resp.upload_responses[0];
+    assert_eq!(first_resp.input_handles.len(), 3);
+
     for _ in 0..=(num_samples - 1) as u32 {
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.0.pks);
-        let the_list = builder
-            .push(100_u64) // Balance source
-            .push(10_u64) // Transfer amount
-            .push(20_u64) // Balance destination
-            .build_with_proof_packed(&keys.0.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
-            .unwrap();
-
-        let serialized = safe_serialize(&the_list);
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: vec![InputToUpload {
-                input_payload: serialized,
-                signatures: Vec::new(),
-                user_address: test_random_user_address(),
-                contract_address: test_random_contract_address(),
-            }],
-        });
-        input_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.upload_inputs(input_request).await?;
-        let resp = resp.get_ref();
-        assert_eq!(resp.upload_responses.len(), 1);
-        let first_resp = &resp.upload_responses[0];
-        assert_eq!(first_resp.input_handles.len(), 3);
-
         let handle_bals = first_resp.input_handles[0].handle.clone();
         let bals = AsyncComputationInput {
             input: Some(Input::InputHandle(handle_bals.clone())),
@@ -378,15 +443,30 @@ async fn schedule_erc20_no_cmux(
         "authorization",
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
-    let _resp = client.async_compute(compute_request).await?;
+    let _resp = client.clone().async_compute(compute_request).await.unwrap();
+    let app_ref = &app;
+    bencher
+        .to_async(FuturesExecutor)
+        .iter_custom(|iters| async move {
+            let db_url = app_ref.db_url().to_string();
+            let now = SystemTime::now();
+            let _ = tokio::task::spawn_blocking(move || {
+                Runtime::new()
+                    .unwrap()
+                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                println!(
+                    "Execution time: {} -- {}",
+                    now.elapsed().unwrap().as_millis(),
+                    TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
+                );
+            })
+            .await;
+            std::time::Duration::from_micros(
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+            )
+        });
 
-    bencher.to_async(FuturesExecutor).iter(|| async {
-        let now = SystemTime::now();
-        wait_until_all_ciphertexts_computed(&app).await.unwrap();
-        println!("Execution time: {}", now.elapsed().unwrap().as_millis());
-    });
-
-    let params = keys.1.computation_parameters();
+    let params = keys.cks.computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,
@@ -396,6 +476,208 @@ async fn schedule_erc20_no_cmux(
         64,
         vec![],
     );
+    Ok(())
+}
+
+async fn schedule_dependent_erc20_whitepaper(
+    bencher: &mut Bencher<'_, WallTime>,
+    num_tx: usize,
+    bench_id: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(app.db_url())
+        .await?;
+    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
+
+    let mut handle_counter: u64 = random_handle();
+    let mut next_handle = || {
+        let out: u64 = handle_counter;
+        handle_counter += 1;
+        out.to_be_bytes().to_vec()
+    };
+    let api_key_header = format!("bearer {}", default_api_key());
+
+    let mut output_handles = vec![];
+    let mut async_computations = vec![];
+    let mut num_samples: usize = num_tx;
+    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
+    if let Ok(samples) = samples {
+        num_samples = samples.parse::<usize>().unwrap();
+    }
+
+    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
+        .await
+        .map_err(|e| {
+            let e: Box<dyn std::error::Error> = e;
+            e
+        })?;
+    let keys = &keys[0];
+
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let the_list = builder
+        .push(20_u64) // Initial balance destination
+        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .unwrap();
+    let serialized = safe_serialize(&the_list);
+    let mut input_request = tonic::Request::new(InputUploadBatch {
+        input_ciphertexts: vec![InputToUpload {
+            input_payload: serialized,
+            signatures: Vec::new(),
+            user_address: test_random_user_address(),
+            contract_address: test_random_contract_address(),
+        }],
+    });
+    input_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let resp = client.upload_inputs(input_request).await?;
+    let resp = resp.get_ref();
+    assert_eq!(resp.upload_responses.len(), 1);
+    let first_resp = &resp.upload_responses[0];
+    assert_eq!(first_resp.input_handles.len(), 1);
+    let handle_bald = first_resp.input_handles[0].handle.clone();
+    let mut bald = AsyncComputationInput {
+        input: Some(Input::InputHandle(handle_bald.clone())),
+    };
+
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let the_list = builder
+        .push(100_u64) // Balance source
+        .push(10_u64) // Transfer amount
+        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .unwrap();
+
+    let serialized = safe_serialize(&the_list);
+    let mut input_request = tonic::Request::new(InputUploadBatch {
+        input_ciphertexts: vec![InputToUpload {
+            input_payload: serialized,
+            signatures: Vec::new(),
+            user_address: test_random_user_address(),
+            contract_address: test_random_contract_address(),
+        }],
+    });
+    input_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let resp = client.upload_inputs(input_request).await?;
+    let resp = resp.get_ref();
+    assert_eq!(resp.upload_responses.len(), 1);
+    let first_resp = &resp.upload_responses[0];
+    assert_eq!(first_resp.input_handles.len(), 2);
+
+    for _ in 0..=(num_samples - 1) as u32 {
+        let handle_bals = first_resp.input_handles[0].handle.clone();
+        let bals = AsyncComputationInput {
+            input: Some(Input::InputHandle(handle_bals.clone())),
+        };
+        let handle_trxa = first_resp.input_handles[1].handle.clone();
+        let trxa = AsyncComputationInput {
+            input: Some(Input::InputHandle(handle_trxa.clone())),
+        };
+
+        let has_enough_funds_handle = next_handle();
+        output_handles.push(has_enough_funds_handle.clone());
+        let new_to_amount_target_handle = next_handle();
+        output_handles.push(new_to_amount_target_handle.clone());
+        let new_to_amount_handle = next_handle();
+        output_handles.push(new_to_amount_handle.clone());
+        let new_from_amount_target_handle = next_handle();
+        output_handles.push(new_from_amount_target_handle.clone());
+        let new_from_amount_handle = next_handle();
+        output_handles.push(new_from_amount_handle.clone());
+
+        async_computations.push(AsyncComputation {
+            operation: FheOperation::FheGe.into(),
+            output_handle: has_enough_funds_handle.clone(),
+            inputs: vec![bals.clone(), trxa.clone()],
+        });
+        async_computations.push(AsyncComputation {
+            operation: FheOperation::FheAdd.into(),
+            output_handle: new_to_amount_target_handle.clone(),
+            inputs: vec![bald.clone(), trxa.clone()],
+        });
+        async_computations.push(AsyncComputation {
+            operation: FheOperation::FheIfThenElse.into(),
+            output_handle: new_to_amount_handle.clone(),
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(new_to_amount_target_handle.clone())),
+                },
+                bald.clone(),
+            ],
+        });
+        async_computations.push(AsyncComputation {
+            operation: FheOperation::FheSub.into(),
+            output_handle: new_from_amount_target_handle.clone(),
+            inputs: vec![bals.clone(), trxa.clone()],
+        });
+        async_computations.push(AsyncComputation {
+            operation: FheOperation::FheIfThenElse.into(),
+            output_handle: new_from_amount_handle.clone(),
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(new_from_amount_target_handle.clone())),
+                },
+                bals.clone(),
+            ],
+        });
+
+        bald = AsyncComputationInput {
+            input: Some(Input::InputHandle(new_to_amount_handle.clone())),
+        };
+    }
+
+    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
+        computations: async_computations,
+    });
+    compute_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let _resp = client.clone().async_compute(compute_request).await.unwrap();
+    let app_ref = &app;
+    bencher
+        .to_async(FuturesExecutor)
+        .iter_custom(|iters| async move {
+            let db_url = app_ref.db_url().to_string();
+            let now = SystemTime::now();
+            let _ = tokio::task::spawn_blocking(move || {
+                Runtime::new()
+                    .unwrap()
+                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                println!(
+                    "Execution time: {} -- {}",
+                    now.elapsed().unwrap().as_millis(),
+                    TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
+                );
+            })
+            .await;
+            std::time::Duration::from_micros(
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+            )
+        });
+
+    let params = keys.cks.computation_parameters();
+    write_to_json::<u64, _>(
+        &bench_id,
+        params,
+        "",
+        "erc20-transfer",
+        &OperatorType::Atomic,
+        64,
+        vec![],
+    );
+
     Ok(())
 }
 
@@ -435,10 +717,10 @@ async fn schedule_dependent_erc20_no_cmux(
         })?;
     let keys = &keys[0];
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.0.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
     let the_list = builder
         .push(20_u64) // Initial balance destination
-        .build_with_proof_packed(&keys.0.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
     let serialized = safe_serialize(&the_list);
     let mut input_request = tonic::Request::new(InputUploadBatch {
@@ -463,33 +745,33 @@ async fn schedule_dependent_erc20_no_cmux(
         input: Some(Input::InputHandle(handle_bald.clone())),
     };
 
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let the_list = builder
+        .push(100_u64) // Balance source
+        .push(10_u64) // Transfer amount
+        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .unwrap();
+
+    let serialized = safe_serialize(&the_list);
+    let mut input_request = tonic::Request::new(InputUploadBatch {
+        input_ciphertexts: vec![InputToUpload {
+            input_payload: serialized,
+            signatures: Vec::new(),
+            user_address: test_random_user_address(),
+            contract_address: test_random_contract_address(),
+        }],
+    });
+    input_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let resp = client.upload_inputs(input_request).await?;
+    let resp = resp.get_ref();
+    assert_eq!(resp.upload_responses.len(), 1);
+    let first_resp = &resp.upload_responses[0];
+    assert_eq!(first_resp.input_handles.len(), 2);
+
     for _ in 0..=(num_samples - 1) as u32 {
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.0.pks);
-        let the_list = builder
-            .push(100_u64) // Balance source
-            .push(10_u64) // Transfer amount
-            .build_with_proof_packed(&keys.0.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
-            .unwrap();
-
-        let serialized = safe_serialize(&the_list);
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: vec![InputToUpload {
-                input_payload: serialized,
-                signatures: Vec::new(),
-                user_address: test_random_user_address(),
-                contract_address: test_random_contract_address(),
-            }],
-        });
-        input_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.upload_inputs(input_request).await?;
-        let resp = resp.get_ref();
-        assert_eq!(resp.upload_responses.len(), 1);
-        let first_resp = &resp.upload_responses[0];
-        assert_eq!(first_resp.input_handles.len(), 2);
-
         let handle_bals = first_resp.input_handles[0].handle.clone();
         let bals = AsyncComputationInput {
             input: Some(Input::InputHandle(handle_bals.clone())),
@@ -570,15 +852,30 @@ async fn schedule_dependent_erc20_no_cmux(
         "authorization",
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
-    let _resp = client.async_compute(compute_request).await?;
+    let _resp = client.clone().async_compute(compute_request).await.unwrap();
+    let app_ref = &app;
+    bencher
+        .to_async(FuturesExecutor)
+        .iter_custom(|iters| async move {
+            let db_url = app_ref.db_url().to_string();
+            let now = SystemTime::now();
+            let _ = tokio::task::spawn_blocking(move || {
+                Runtime::new()
+                    .unwrap()
+                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                println!(
+                    "Execution time: {} -- {}",
+                    now.elapsed().unwrap().as_millis(),
+                    TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
+                );
+            })
+            .await;
+            std::time::Duration::from_micros(
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+            )
+        });
 
-    bencher.to_async(FuturesExecutor).iter(|| async {
-        let now = SystemTime::now();
-        wait_until_all_ciphertexts_computed(&app).await.unwrap();
-        println!("Execution time: {}", now.elapsed().unwrap().as_millis());
-    });
-
-    let params = keys.1.computation_parameters();
+    let params = keys.cks.computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,

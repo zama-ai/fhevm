@@ -96,7 +96,7 @@ impl FhevmExecutor for FhevmExecutorService {
             #[cfg(not(feature = "gpu"))]
             let lsks = sks.clone();
             #[cfg(feature = "gpu")]
-            let lsks = csks.clone();
+            let lsks = csks[0].clone();
             set_server_key(lsks.clone());
             if Self::decompress_compressed_ciphertexts(
                 &req.compressed_ciphertexts,

@@ -8,6 +8,9 @@ use opentelemetry::trace::Span;
 use opentelemetry::KeyValue;
 use sqlx::{query, Postgres};
 
+#[cfg(feature = "gpu")]
+use tfhe::core_crypto::gpu::get_number_of_gpus;
+
 /// Returns tenant id upon valid authorization request
 pub async fn check_if_api_key_is_valid<T>(
     req: &tonic::Request<T>,
@@ -62,7 +65,7 @@ pub struct FetchTenantKeyResult {
     pub acl_contract_address: String,
     pub server_key: tfhe::ServerKey,
     #[cfg(feature = "gpu")]
-    pub gpu_server_key: tfhe::CudaServerKey,
+    pub gpu_server_key: Vec<tfhe::CudaServerKey>,
     pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
 }
 
@@ -141,12 +144,18 @@ where
                 .expect("We can't deserialize our own validated pks key");
             let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&key.public_params)
                 .expect("We can't deserialize our own validated public params");
+            let num_gpus = get_number_of_gpus() as u64;
             res.push(TfheTenantKeys {
                 tenant_id: key.tenant_id,
                 pks,
                 sks: csks.clone().decompress(),
                 csks: csks.clone(),
-                gpu_sks: csks.decompress_to_gpu(),
+                #[cfg(feature = "latency")]
+                gpu_sks: vec![csks.decompress_to_gpu()],
+                #[cfg(not(feature = "latency"))]
+                gpu_sks: (0..num_gpus)
+                    .map(|i| csks.decompress_to_specific_gpu(tfhe::GpuIndex::new(i as u32)))
+                    .collect::<Vec<_>>(),
                 public_params: Arc::new(public_params),
                 chain_id: key.chain_id,
                 acl_contract_address: key.acl_contract_address,

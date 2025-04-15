@@ -10,6 +10,8 @@ use coprocessor::server::coprocessor::{
     fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputeRequest,
     InputToUpload, InputUploadBatch,
 };
+#[cfg(feature = "bench")]
+use coprocessor::tfhe_worker::TIMING;
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
 };
@@ -18,6 +20,7 @@ use std::str::FromStr;
 use std::time::SystemTime;
 use tokio::runtime::Runtime;
 use tonic::metadata::MetadataValue;
+use utils::EnvConfig;
 
 fn test_random_user_address() -> String {
     let _private_key = "bd2400c676871534a682ca1c5e4cd647ec9c3e122f188c6e3f54e6900d586c7b";
@@ -30,13 +33,15 @@ fn test_random_contract_address() -> String {
 }
 
 fn main() {
+    let ecfg = EnvConfig::new();
     let mut c = Criterion::default().sample_size(10).configure_from_args();
     let bench_name = "synthetic";
+    let bench_optimization_target = if cfg!(feature = "latency") {"opt_latency"} else {"opt_throughput"};
 
     let mut group = c.benchmark_group(bench_name);
-    for num_elems in [10, 50, 200, 500] {
-        group.throughput(Throughput::Elements(num_elems));
-        let bench_id = format!("{bench_name}::throughput::counter::FHEUint64::{num_elems}_elems");
+    if ecfg.benchmark_type == "LATENCY" || ecfg.benchmark_type == "ALL" {
+        let num_elems = 1;
+        let bench_id = format!("{bench_name}::latency::counter::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             let _ = Runtime::new().unwrap().block_on(counter_increment(
                 b,
@@ -45,9 +50,8 @@ fn main() {
             ));
         });
 
-        group.throughput(Throughput::Elements(num_elems));
         let bench_id =
-            format!("{bench_name}::throughput::tree_reduction::FHEUint64::{num_elems}_elems");
+            format!("{bench_name}::latency::tree_reduction::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             let _ = Runtime::new().unwrap().block_on(tree_reduction(
                 b,
@@ -55,6 +59,39 @@ fn main() {
                 bench_id.clone(),
             ));
         });
+    }
+
+    if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
+        for num_elems in [
+            10,
+            50,
+            200,
+            500,
+            #[cfg(feature = "gpu")]
+            2000,
+        ] {
+            group.throughput(Throughput::Elements(num_elems));
+            let bench_id =
+                format!("{bench_name}::throughput::counter::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
+                let _ = Runtime::new().unwrap().block_on(counter_increment(
+                    b,
+                    num_elems as usize,
+                    bench_id.clone(),
+                ));
+            });
+
+            group.throughput(Throughput::Elements(num_elems));
+            let bench_id =
+                format!("{bench_name}::throughput::tree_reduction::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
+                let _ = Runtime::new().unwrap().block_on(tree_reduction(
+                    b,
+                    num_elems as usize,
+                    bench_id.clone(),
+                ));
+            });
+        }
     }
     group.finish();
 
@@ -97,10 +134,10 @@ async fn counter_increment(
         })?;
     let keys = &keys[0];
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.0.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
     let the_list = builder
         .push(42_u64) // Initial counter value
-        .build_with_proof_packed(&keys.0.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
     let serialized = safe_serialize(&the_list);
     let mut input_request = tonic::Request::new(InputUploadBatch {
@@ -154,14 +191,29 @@ async fn counter_increment(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await?;
+    let app_ref = &app;
+    bencher
+        .to_async(FuturesExecutor)
+        .iter_custom(|iters| async move {
+            let db_url = app_ref.db_url().to_string();
+            let now = SystemTime::now();
+            let _ = tokio::task::spawn_blocking(move || {
+                Runtime::new()
+                    .unwrap()
+                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                println!(
+                    "Execution time: {} -- {}",
+                    now.elapsed().unwrap().as_millis(),
+                    TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
+                );
+            })
+            .await;
+            std::time::Duration::from_micros(
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+            )
+        });
 
-    bencher.to_async(FuturesExecutor).iter(|| async {
-        let now = SystemTime::now();
-        wait_until_all_ciphertexts_computed(&app).await.unwrap();
-        println!("Execution time: {}", now.elapsed().unwrap().as_millis());
-    });
-
-    let params = keys.1.computation_parameters();
+    let params = keys.cks.computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,
@@ -213,35 +265,34 @@ async fn tree_reduction(
 
     let num_levels = (num_samples as f64).log2().ceil() as usize;
     let mut num_comps_at_level = 2f64.powi((num_levels - 1) as i32) as usize;
-    let target = num_comps_at_level * 2;
     let mut level_inputs = vec![];
     let mut level_outputs = vec![];
 
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let the_list = builder
+        .push(1_u64) // Initial value
+        .push(1_u64) // Initial value
+        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .unwrap();
+    let serialized = safe_serialize(&the_list);
+    let mut input_request = tonic::Request::new(InputUploadBatch {
+        input_ciphertexts: vec![InputToUpload {
+            input_payload: serialized,
+            signatures: Vec::new(),
+            user_address: test_random_user_address(),
+            contract_address: test_random_contract_address(),
+        }],
+    });
+    input_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let resp = client.upload_inputs(input_request).await?;
+    let resp = resp.get_ref();
+    assert_eq!(resp.upload_responses.len(), 1);
+    let first_resp = &resp.upload_responses[0];
+    assert_eq!(first_resp.input_handles.len(), 2);
     for _ in 0..num_comps_at_level {
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.0.pks);
-        let the_list = builder
-            .push(1_u64) // Initial value
-            .push(1_u64) // Initial value
-            .build_with_proof_packed(&keys.0.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
-            .unwrap();
-        let serialized = safe_serialize(&the_list);
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: vec![InputToUpload {
-                input_payload: serialized,
-                signatures: Vec::new(),
-                user_address: test_random_user_address(),
-                contract_address: test_random_contract_address(),
-            }],
-        });
-        input_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.upload_inputs(input_request).await?;
-        let resp = resp.get_ref();
-        assert_eq!(resp.upload_responses.len(), 1);
-        let first_resp = &resp.upload_responses[0];
-        assert_eq!(first_resp.input_handles.len(), 2);
         let lhs_handle = first_resp.input_handles[0].handle.clone();
         let rhs_handle = first_resp.input_handles[1].handle.clone();
         level_inputs.push(AsyncComputationInput {
@@ -280,14 +331,29 @@ async fn tree_reduction(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await?;
+    let app_ref = &app;
+    bencher
+        .to_async(FuturesExecutor)
+        .iter_custom(|iters| async move {
+            let db_url = app_ref.db_url().to_string();
+            let now = SystemTime::now();
+            let _ = tokio::task::spawn_blocking(move || {
+                Runtime::new()
+                    .unwrap()
+                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                println!(
+                    "Execution time: {} -- {}",
+                    now.elapsed().unwrap().as_millis(),
+                    TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
+                );
+            })
+            .await;
+            std::time::Duration::from_micros(
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+            )
+        });
 
-    bencher.to_async(FuturesExecutor).iter(|| async {
-        let now = SystemTime::now();
-        wait_until_all_ciphertexts_computed(&app).await.unwrap();
-        println!("Execution time: {}", now.elapsed().unwrap().as_millis());
-    });
-
-    let params = keys.1.computation_parameters();
+    let params = keys.cks.computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,
