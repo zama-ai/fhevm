@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Box, Skeleton, Stack } from '@chakra-ui/react'
 import {
   DappUpdatedSubscription,
@@ -14,7 +15,8 @@ type OwnProps = {
 }
 
 export function DappHeader({ dapp, dappUpdated }: OwnProps) {
-  // TODO: handle error
+  const [validationError, setValidationError] = useState<string | null>(null)
+
   const { updateDapp, error } = useDappUpdate(dapp?.id || '')
   if (!dapp) {
     return <Skeleton height="5" my="5" width="30rem" />
@@ -26,8 +28,14 @@ export function DappHeader({ dapp, dappUpdated }: OwnProps) {
       <Box mb="5">
         <InplaceInput
           title={data.name}
-          onChange={() => {}}
+          error={error?.message ?? validationError ?? null}
+          placeholder="Dapp name"
           onUpdate={({ value }) => {
+            if (value.trim().length < 1) {
+              setValidationError('Dapp name cannot be empty')
+              return
+            }
+            setValidationError(null)
             updateDapp({ name: value })
           }}
         />
