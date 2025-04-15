@@ -10,19 +10,18 @@ use crate::blockchain::public_decrypt_handler::DecryptionRequestData;
 use crate::core::errors::EventProcessingError;
 use crate::core::event::UserDecryptRequest;
 use alloy::primitives::{Address, Bytes, FixedBytes, Uint, U256};
-use alloy::signers::SignerSync;
 use rusqlite::{Connection, Result};
 use serde::Serialize;
 use tracing::{debug, error, info};
 
+use alloy::signers::SignerSync;
+use alloy::{dyn_abi::DynSolValue, hex, signers::local::PrivateKeySigner};
 use alloy::{
     sol,
     sol_types::SolCall,
     sol_types::{eip712_domain, SolStruct},
 };
 use std::str::FromStr;
-
-use alloy::{dyn_abi::DynSolValue, hex, signers::local::PrivateKeySigner};
 
 sol! {
     #[allow(missing_docs)]
@@ -40,7 +39,6 @@ impl ComputeCalldata {
     pub fn callback_req(
         req: &DecryptionRequestData,
         public_decryption_response: PublicDecryptionResponse,
-        _signature_number: u8,
     ) -> Result<Bytes, EventProcessingError> {
         let mut calldata = Vec::new();
 
@@ -51,32 +49,19 @@ impl ComputeCalldata {
 
         calldata.extend_from_slice(&public_decryption_response.decryptedResult);
 
-        // Add signatures array length (32 bytes)
-        let sig_count = public_decryption_response.signatures.len();
-        let sig_length_bytes = U256::from(sig_count).to_be_bytes::<32>();
-        calldata.extend_from_slice(&sig_length_bytes);
-
-        // Add offset to signatures data (32 bytes)
-        let mut offset_bytes = [0u8; 32];
-        offset_bytes[31] = 32u8; // offset is always 32 for the first element
-        calldata.extend_from_slice(&offset_bytes);
+        let signatures_values = &public_decryption_response
+            .signatures
+            .iter()
+            .map(|sig| DynSolValue::Bytes(sig.to_vec()))
+            .collect::<Vec<_>>();
+        let array_value = DynSolValue::Array(signatures_values.to_vec());
+        let encoded_signatures = array_value.abi_encode();
+        calldata.extend_from_slice(&encoded_signatures[32..]); // Skip the first 32 bytes (offset part) of the encoded signatures
 
         println!(
             "public_decryption_response {:?}",
             &public_decryption_response.signatures
         );
-        // For each signature:
-        for signature in &public_decryption_response.signatures {
-            // Add length of signature (32 bytes)
-            let sig_size = signature.len(); // typically 65 (0x41)
-            let sig_size_bytes = U256::from(sig_size).to_be_bytes::<32>();
-            calldata.extend_from_slice(&sig_size_bytes);
-            calldata.extend_from_slice(signature);
-            let padding_length = (32 - (signature.len() % 32)) % 32;
-            if padding_length > 0 {
-                calldata.extend_from_slice(&vec![0u8; padding_length]);
-            }
-        }
 
         Ok(Bytes::from(calldata))
     }

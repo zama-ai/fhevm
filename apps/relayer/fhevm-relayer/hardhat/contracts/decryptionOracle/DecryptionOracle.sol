@@ -25,7 +25,7 @@ contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
     event DecryptionRequest(
         uint256 indexed counter,
         uint256 requestID,
-        uint256[] cts,
+        bytes32[] cts,
         address contractCaller,
         bytes4 callbackSelector
     );
@@ -71,7 +71,7 @@ contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
      */
     function requestDecryption(
         uint256 requestID,
-        uint256[] calldata ctsHandles,
+        bytes32[] calldata ctsHandles,
         bytes4 callbackSelector
     ) external virtual {
         DecryptionOracleStorage storage $ = _getDecryptionOracleStorage();

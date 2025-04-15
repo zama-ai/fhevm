@@ -41,7 +41,7 @@ if (networkName === 'hardhat' || networkName === 'localCoprocessorL1') {
 }
 
 const argEvents =
-  '(uint256 indexed counter, uint256 requestID, uint256[] cts, address contractCaller, bytes4 callbackSelector)';
+  '(uint256 indexed counter, uint256 requestID, bytes32[] cts, address contractCaller, bytes4 callbackSelector)';
 const ifaceEventDecryption = new ethers.Interface(['event DecryptionRequest' + argEvents]);
 
 let decryptionOracle: DecryptionOracle;
@@ -82,6 +82,9 @@ export const awaitAllDecryptionResults = async (): Promise<void> => {
   if ((networkName === 'hardhat' || networkName === 'localCoprocessorL1') && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
     // evm_snapshot is not supported in coverage mode
     await provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
+  }
+  else {
+    await new Promise((resolve) => setTimeout(resolve, 20000));
   }
 };
 

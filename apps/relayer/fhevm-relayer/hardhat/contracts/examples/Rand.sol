@@ -4,11 +4,12 @@ pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
 
+import "../lib/FHEVMConfig.sol";
+
 /// @notice Contract for generating random encrypted numbers
 contract Rand {
     /// @notice Encrypted unsigned integers of various sizes
     ebool public valueb;
-    euint4 public value4;
     euint8 public value8;
     euint16 public value16;
     euint32 public value32;
@@ -29,16 +30,6 @@ contract Rand {
     function generateBool() public {
         valueb = TFHE.randEbool();
         TFHE.allowThis(valueb);
-    }
-
-    function generate4() public {
-        value4 = TFHE.randEuint4();
-        TFHE.allowThis(value4);
-    }
-
-    function generate4UpperBound(uint8 upperBound) public {
-        value4 = TFHE.randEuint4(upperBound);
-        TFHE.allowThis(value4);
     }
 
     function generate8() public {

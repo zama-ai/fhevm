@@ -17,7 +17,7 @@ use crate::{
 use std::str::FromStr;
 
 use alloy::{
-    primitives::{keccak256, Address, FixedBytes, U256},
+    primitives::{Address, FixedBytes, U256},
     rpc::types::TransactionReceipt,
 };
 
@@ -96,6 +96,14 @@ impl PublicDecryptGatewayHandler {
             event.request_id,
             handles
         );
+
+        info!("Wait a few sec to make sure allow contract is fulfilled on Gateway");
+        info!(
+            "At each call the contract address is changing so, restarting the test does not help"
+        );
+        info!("If you see this message, it means ACL check on relayer is not yet implemented");
+        info!("However, if the ACL check IS IMPLEMENTED, please REMOVE the sleep");
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
         let self_clone = self.clone();
         let event_clone = event.clone();
@@ -279,7 +287,28 @@ impl PublicDecryptGatewayHandler {
         &self,
         receipt: &TransactionReceipt,
     ) -> Result<U256, EventProcessingError> {
-        let target_topic = keccak256("PublicDecryptionRequest(uint256,uint256[])");
+        let target_topic = DecyptionManager::PublicDecryptionRequest::SIGNATURE_HASH;
+
+        info!(
+            "Looking for topic: {}",
+            DecyptionManager::PublicDecryptionRequest::SIGNATURE
+        );
+
+        debug!(
+            "Receipt details for public decryption:\n\
+             Hash: {:?}\n\
+             Status: {}\n\
+             Gas used: {:?}\n\
+             Number of logs: {}\n\
+             Block number: {:?}",
+            receipt.transaction_hash,
+            receipt.status(),
+            receipt.gas_used,
+            receipt.inner.logs().len(),
+            receipt.block_number
+        );
+
+        info!("Looking for topic: 0x{}", hex::encode(target_topic));
 
         for log in receipt.inner.logs().iter() {
             if let Some(first_topic) = log.topics().first() {

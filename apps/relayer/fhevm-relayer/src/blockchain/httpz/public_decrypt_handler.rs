@@ -1,9 +1,6 @@
 use crate::{
     blockchain::ethereum::{
-        bindings::{
-            DecryptionOracle,
-            DecyptionManager::{self, PublicDecryptionResponse},
-        },
+        bindings::{DecryptionOracle, DecyptionManager::PublicDecryptionResponse},
         ComputeCalldata,
     },
     core::{
@@ -72,6 +69,7 @@ impl EthereumHostL1Handler {
     /// - `callback_selector`: Function selector for the callback
     /// - `contract_caller`: [`Address`] of the contract that initiated the request
     async fn handle_public_decrypt_event_log(&self, event: RelayerEvent, eth_event_log: Log) {
+        info!("Handling public decrypt event log");
         let next_event: RelayerEvent = match DecryptionOracle::DecryptionRequest::decode_log_data(
             eth_event_log.data(),
             true,
@@ -239,13 +237,13 @@ impl EthereumHostL1Handler {
         };
         self.tx_helper
             .send_transaction_simple("decryption_response", req.contract_caller, || {
-                ComputeCalldata::callback_req(req, public_decrypt_response.clone(), 4)
+                ComputeCalldata::callback_req(req, public_decrypt_response.clone())
             })
             .await
     }
 
     fn handle_decrypt_response_sent(&self) {
-        info!("Transaction to fhevm has been done");
+        info!("Transaction to host chain has been done");
     }
 }
 
@@ -258,12 +256,12 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
             }) => {
                 if let Some(topic0) = eth_event_log.topic0() {
                     if FixedBytes::<32>::from_slice(topic0.as_slice())
-                        != DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH
+                        != DecryptionOracle::DecryptionRequest::SIGNATURE_HASH
                     {
                         debug!(
                             "Ignore this event: expected event: {:?}, received {} ",
                             eth_event_log.topic0(),
-                            DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH
+                            DecryptionOracle::DecryptionRequest::SIGNATURE_HASH
                         );
                     } else {
                         self.handle_public_decrypt_event_log(event, eth_event_log)

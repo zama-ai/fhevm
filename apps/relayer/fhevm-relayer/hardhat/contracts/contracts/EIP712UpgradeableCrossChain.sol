@@ -9,7 +9,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 
 /**
  * @dev This is an extension of the OpenZeppelin EIP712Upgradeable implementation, adding two variables in storage:
- * _verifyingContractSource and _chainIDSource. This allows a contract on a target chain to verify EIP712 signatures 
+ * _verifyingContractSource and _chainIDSource. This allows a contract on a target chain to verify EIP712 signatures
  * which were targeting another source verifyingContract potentially deployed on another source chain.
  *
  * @dev https://eips.ethereum.org/EIPS/eip-712[EIP-712] is a standard for hashing and signing of typed structured data.
@@ -43,16 +43,15 @@ abstract contract EIP712UpgradeableCrossChain is Initializable, IERC5267 {
         bytes32 _hashedName;
         /// @custom:oz-renamed-from _HASHED_VERSION
         bytes32 _hashedVersion;
-
         string _name;
         string _version;
-
         address _verifyingContractSource;
         uint64 _chainIDSource;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.EIP712UpgradeableCrossChain")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant EIP712UpgradeableCrossChainLocation = 0xe910845fd818f61127c84f3586776436a37dead33625056c65162537e3373600;
+    bytes32 private constant EIP712UpgradeableCrossChainLocation =
+        0xe910845fd818f61127c84f3586776436a37dead33625056c65162537e3373600;
 
     function _getEIP712Storage() private pure returns (EIP712Storage storage $) {
         assembly {
@@ -72,11 +71,21 @@ abstract contract EIP712UpgradeableCrossChain is Initializable, IERC5267 {
      * NOTE: These parameters cannot be changed except through a xref:learn::upgrading-smart-contracts.adoc[smart
      * contract upgrade].
      */
-    function __EIP712_init(string memory name, string memory version, address verifyingContractSource, uint64 chainIDSource) internal onlyInitializing {
+    function __EIP712_init(
+        string memory name,
+        string memory version,
+        address verifyingContractSource,
+        uint64 chainIDSource
+    ) internal onlyInitializing {
         __EIP712_init_unchained(name, version, verifyingContractSource, chainIDSource);
     }
 
-    function __EIP712_init_unchained(string memory name, string memory version, address verifyingContractSource, uint64 chainIDSource) internal onlyInitializing {
+    function __EIP712_init_unchained(
+        string memory name,
+        string memory version,
+        address verifyingContractSource,
+        uint64 chainIDSource
+    ) internal onlyInitializing {
         EIP712Storage storage $ = _getEIP712Storage();
         $._verifyingContractSource = verifyingContractSource;
         $._chainIDSource = chainIDSource;
@@ -97,7 +106,16 @@ abstract contract EIP712UpgradeableCrossChain is Initializable, IERC5267 {
 
     function _buildDomainSeparator() private view returns (bytes32) {
         EIP712Storage storage $ = _getEIP712Storage();
-        return keccak256(abi.encode(TYPE_HASH, _EIP712NameHash(), _EIP712VersionHash(), $._chainIDSource, $._verifyingContractSource));
+        return
+            keccak256(
+                abi.encode(
+                    TYPE_HASH,
+                    _EIP712NameHash(),
+                    _EIP712VersionHash(),
+                    $._chainIDSource,
+                    $._verifyingContractSource
+                )
+            );
     }
 
     /**

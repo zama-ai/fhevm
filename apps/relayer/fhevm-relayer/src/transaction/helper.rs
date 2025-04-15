@@ -90,7 +90,7 @@ impl TransactionHelper {
 
         info!(
             operation = operation_name,
-            calldata = %format!("0x{}...", hex::encode(&calldata[..std::cmp::min(20, calldata.len())])),
+            calldata = %format!("0x{}...", hex::encode(&calldata[..std::cmp::min(500, calldata.len())])),
             "Submitting transaction without waiting"
         );
 

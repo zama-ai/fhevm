@@ -385,7 +385,7 @@ impl UserDecryptGatewayHandler {
             for ct_handle in &ct_handles {
                 match ciphertext_manager
                     .clone()
-                    .checkCiphertextMaterial(*ct_handle)
+                    .checkCiphertextMaterial((*ct_handle).into())
                     .call()
                     .await
                 {

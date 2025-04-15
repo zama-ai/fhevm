@@ -376,9 +376,13 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
 
         let mut ct_handle_contract_pairs = Vec::new();
         for json_data in &value.ctHandleContractPairs {
-            // Always parse ctHandle as hex
-            let ct_handle = U256::from_str_radix(&json_data.ctHandle, 16)
-                .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
+            let ct_handle = if json_data.ctHandle.starts_with("0x") {
+                // Remove the 0x prefix before parsing
+                U256::from_str_radix(&json_data.ctHandle[2..], 16)
+            } else {
+                U256::from_str_radix(&json_data.ctHandle, 16)
+            }
+            .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
 
             let contract_address = Address::from_str(&json_data.contractAddress)
                 .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
