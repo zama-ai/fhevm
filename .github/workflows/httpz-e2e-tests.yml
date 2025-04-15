@@ -16,7 +16,7 @@ on:
       coprocessor_version:
         description: "Coprocessor Image Version"
         required: false
-        default: "5a6a813"
+        default: "cc1710f"
         type: string
       db_migration_version:
         description: "Coprocessor DB Migration Image Version"
@@ -36,12 +36,12 @@ on:
       relayer_version:
         description: "Relayer Image Version"
         required: false
-        default: "c7f38fd"
+        default: "dc02dc0"
         type: string
       tests_version:
         description: "E2E Tests Image Version"
         required: false
-        default: "c7f38fd"
+        default: "dc02dc0"
         type: string
   pull_request:
     paths:
@@ -98,12 +98,12 @@ jobs:
         run: |
           ./httpz-cli test user-decryption
 
-      - name: Public Decryption test euint64
+      - name: Public Decryption test (euint64)
         working-directory: httpz
         run: |
           ./httpz-cli test public-decryption
 
-      - name: Public Decryption test ebytes256
+      - name: Public Decryption test (ebytes256)
         working-directory: httpz
         run: |
           ./httpz-cli test public-decryption-ebytes256
