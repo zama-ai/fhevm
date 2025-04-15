@@ -26,3 +26,6 @@ services:
 
   relayer:
     image: ghcr.io/zama-zws/console/relayer:${DOCKER_TAG:-latest}
+
+  relayer-migrate:
+    image: ghcr.io/zama-zws/console/relayer-migrate:${DOCKER_TAG:-latest}

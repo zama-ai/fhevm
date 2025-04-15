@@ -27,26 +27,26 @@ export class HttpzController {
     private readonly inputProofUC: InputProof,
   ) {}
 
-  @Get('/helthcheck')
-  helthcheck() {
+  @Get('/healthcheck')
+  healthcheck() {
     return { response: 'ok' }
   }
 
-  @Get('/keyurl')
+  @Get('/v1/keyurl')
   async getKeyUrl() {
-    this.logger.log('GET /keyurl')
+    this.logger.log('GET /v1/keyurl')
     const { fhe_key_info, crs } = await this.getKeyUrlUC.execute().toPromise()
     return { response: { fhe_key_info, crs } }
   }
 
-  @Post('/input-proof')
+  @Post('/v1/input-proof')
   @UseGuards(ApiKeyGuard)
   @UsePipes(new ZodValidationPipe(inputProofSchema))
   async postInputProof(
     @CurrentApiKey() apiKey: ApiKey,
     @Body() input: InputProofRequest,
   ) {
-    this.logger.log('POST /input-proof')
+    this.logger.log('POST /v1/input-proof')
     const response = await this.inputProofUC
       .execute(input, { apiKey })
       .toPromise()

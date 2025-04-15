@@ -13,7 +13,6 @@ on:
     type: [created]
   pull_request:
     types: [labeled]
-
 permissions:
   contents: read
   packages: write
@@ -21,17 +20,18 @@ permissions:
 jobs:
   build-and-push-docker:
     if: |
-      github.event_name != 'pull_request' || 
+      github.event_name != 'pull_request' ||
       (github.event.action == 'labeled' && github.event.label.name == 'docker')
     strategy:
       matrix:
-        service_name: 
+        service_name:
           - {name: "back", context: "."}
           - {name: "email", context: "."}
           - {name: "orchestrator", context: "."}
           - {name: "web3", context: "."}
           - {name: "front", context: "."}
           - {name: "relayer", context: "./apps/relayer"}
+          - {name: "relayer-migrate", context: "./apps/relayer"}
       fail-fast: false
     runs-on: ubuntu-latest
     permissions:

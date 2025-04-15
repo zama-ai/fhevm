@@ -1,0 +1,13 @@
+# Names to target built images
+services:
+  back-migrate:
+    image: ghcr.io/zama-zws/console/back:${DOCKER_TAG:-latest}
+
+  orchestrator-migrate:
+    image: ghcr.io/zama-zws/console/orchestrator:${DOCKER_TAG:-latest}
+
+  web3-migrate:
+    image: ghcr.io/zama-zws/console/web3:${DOCKER_TAG:-latest}
+
+  relayer-migrate:
+    image: ghcr.io/zama-zws/console/relayer-migrate:${DOCKER_TAG:-latest}

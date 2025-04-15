@@ -1,5 +1,5 @@
-use alloy::primitives::Address;
 use alloy::signers::Signer;
+use alloy::{primitives::Address, signers::local::PrivateKeySigner};
 use clap::Parser;
 use config::{Config, Environment, File}; // ConfigError
 use dotenvy::from_path;
@@ -71,8 +71,11 @@ pub struct AWSKMSSignerConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type")]
 pub enum SignerConfig {
+    #[serde(rename = "AWSKMS")]
     AWSKMS(AWSKMSSignerConfig),
+    #[serde(rename = "LOCAL")]
     Local(LocalSignerConfig),
 }
 
@@ -156,6 +159,7 @@ impl RelayerConfiguration {
     }
 }
 
+// TODO: function to convert config to signer -> tx service
 // NOTE: we should probably catch each request in a redis-db for easier debugging
 // NOTE: we should also keep a request-id to properly track the flow
 // TODO: Define spec for SNS/SQS messages
@@ -271,15 +275,72 @@ async fn main() {
     // Transaction services
     let mut tx_services = HashMap::new();
 
-    match settings.gateway_chain.chain_config.signer_config {
-        SignerConfig::Local(signer_config) => {
-            let gateway_tx_service = match TransactionService::new(
-                &settings.gateway_chain.chain_config.http_url,
-                &signer_config.private_key_env,
-                settings.gateway_chain.chain_config.chain_id,
-            )
-            .await
-            {
+    let signer: Arc<dyn Signer + Send + Sync> =
+        match settings.gateway_chain.chain_config.signer_config {
+            SignerConfig::Local(signer_config) => {
+                let mut signer: PrivateKeySigner = std::env::var(&signer_config.private_key_env)
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                signer.set_chain_id(Some(settings.gateway_chain.chain_config.chain_id));
+                Arc::new(signer)
+            }
+            SignerConfig::AWSKMS(signer_config) => {
+                let signer = alloy::signers::aws::AwsSigner::new(
+                    kms_client.clone(),
+                    signer_config.key_id,
+                    Some(settings.gateway_chain.chain_config.chain_id),
+                )
+                .await
+                .unwrap();
+                Arc::new(signer)
+            }
+        };
+    let gateway_tx_service = match TransactionService::new(
+        &settings.gateway_chain.chain_config.http_url,
+        signer,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            let err_msg = format!(
+                "Couldn't initialize gateway transaction service: {:?}",
+                error
+            );
+            error!(err_msg);
+            panic!("{}", err_msg);
+        }
+    };
+
+    tx_services.insert(
+        settings.gateway_chain.chain_config.chain_id,
+        gateway_tx_service,
+    );
+
+    for host_chain in settings.host_chains.clone() {
+        let signer: Arc<dyn Signer + Send + Sync> = match host_chain.chain_config.signer_config {
+            SignerConfig::Local(signer_config) => {
+                let mut signer: PrivateKeySigner = std::env::var(&signer_config.private_key_env)
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                signer.set_chain_id(Some(host_chain.chain_config.chain_id));
+                Arc::new(signer)
+            }
+            SignerConfig::AWSKMS(signer_config) => {
+                let signer = alloy::signers::aws::AwsSigner::new(
+                    kms_client.clone(),
+                    signer_config.key_id,
+                    Some(host_chain.chain_config.chain_id),
+                )
+                .await
+                .unwrap();
+                Arc::new(signer)
+            }
+        };
+        let tx_service =
+            match TransactionService::new(&host_chain.chain_config.http_url, signer).await {
                 Ok(value) => value,
                 Err(error) => {
                     let err_msg = format!(
@@ -290,53 +351,7 @@ async fn main() {
                     panic!("{}", err_msg);
                 }
             };
-            tx_services.insert(
-                settings.gateway_chain.chain_config.chain_id,
-                gateway_tx_service,
-            );
-        }
-        SignerConfig::AWSKMS(signer_config) => {
-            let _signer = alloy::signers::aws::AwsSigner::new(
-                kms_client,
-                signer_config.key_id,
-                Some(settings.gateway_chain.chain_config.chain_id),
-            )
-            .await
-            .unwrap();
-            // TODO: add support for arbitrary signers in fhevm-relayer
-            let error_message = "AWS KMS isn't properly supported in fhevm-relayer yet!";
-            error!(error_message);
-            panic!("{}", error_message);
-        }
-    }
-
-    for host_chain in settings.host_chains.clone() {
-        match host_chain.chain_config.signer_config {
-            SignerConfig::Local(signer_config) => {
-                let tx_service = match TransactionService::new(
-                    &host_chain.chain_config.http_url,
-                    &signer_config.private_key_env,
-                    host_chain.chain_config.chain_id,
-                )
-                .await
-                {
-                    Ok(value) => value,
-                    Err(error) => {
-                        let err_msg = format!(
-                            "Couldn't initialize gateway transaction service: {:?}",
-                            error
-                        );
-                        error!(err_msg);
-                        panic!("{}", err_msg);
-                    }
-                };
-                tx_services.insert(host_chain.chain_config.chain_id, tx_service);
-            }
-            _ => {
-                error!("Not supported signer");
-                panic!("Unsupported signer");
-            }
-        }
+        tx_services.insert(host_chain.chain_config.chain_id, tx_service);
     }
 
     // Event handlers
@@ -345,6 +360,8 @@ async fn main() {
             settings.queues.console_queue.to_owned(),
             settings.queues.transaction_queue.to_owned(),
             Arc::clone(&orchestrator),
+            settings.gateway_chain.zkpok_manager,
+            settings.gateway_chain.decryption_manager,
         )
         .await,
     );
@@ -365,22 +382,23 @@ async fn main() {
     // Relayer handler
     orchestrator.register_handler(BlockchainEvent::event_id(), Arc::clone(&zws_handler));
     orchestrator.register_handler(
-        SQSRelayerAuthorizationResponse::event_id(),
+        OracleAuthorizationResponse::event_id(),
         Arc::clone(&zws_handler),
     );
     orchestrator.register_handler(HTTPZGatewayEvent::event_id(), Arc::clone(&zws_handler));
+    orchestrator.register_handler(TransactionResponse::event_id(), Arc::clone(&zws_handler));
     orchestrator.register_handler(
-        SQSRelayerTransactionResponse::event_id(),
+        HTTPInputRegistrationRequest::event_id(),
         Arc::clone(&zws_handler),
     );
     orchestrator.register_handler(
-        SQSRelayerInputRegistrationRequest::event_id(),
+        PrivateDecryptionRequest::event_id(),
         Arc::clone(&zws_handler),
     );
 
     // Transaction handler
     orchestrator.register_handler(
-        SQSRelayerTransactionRequest::event_id(),
+        TransactionRequest::event_id(),
         Arc::clone(&tx_manager_handler),
     );
 
@@ -392,7 +410,7 @@ async fn main() {
         let console_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> =
             Arc::new(ZWSConsoleMockHandler::new(settings.queues.relayer_queue.to_owned()).await);
         orchestrator.register_handler(
-            SQSRelayerAuthorizationRequest::event_id(),
+            OracleAuthorizationRequest::event_id(),
             Arc::clone(&console_handler),
         );
 

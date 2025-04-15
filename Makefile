@@ -62,13 +62,19 @@ httpz-test-input:
 
 # Console + Docker
 console-build:
-	docker compose -f ./docker-compose.02.console.build.yaml -f ./docker-compose.04.console.ghcr.yaml build
+	docker compose -f ./docker-compose.02.console.build.yaml -f ./docker-compose.04.console.ghcr.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml build
 
 console-up:
 	bash scripts/console-up.sh
 
 console-down:
 	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.run.yaml down --volumes --remove-orphans
+
+console-infra-up:
+	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml up -d --wait
+
+console-infra-down:
+	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml down --volumes --remove-orphans
 
 # Relayer
 relayer-run:
@@ -79,3 +85,4 @@ relayer-build:
 
 relayer-run-debug:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer -- --config-file debug.toml
+

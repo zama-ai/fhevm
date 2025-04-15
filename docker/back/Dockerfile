@@ -7,7 +7,11 @@ RUN corepack enable
 # --- Builder stage ---
 FROM base AS builder
 WORKDIR /wrkspc
-COPY . .
+COPY package.json package.json
+COPY pnpm-workspace.yaml pnpm-workspace.yaml
+COPY pnpm-lock.yaml pnpm-lock.yaml
+COPY ./packages packages
+COPY ./apps/back apps/back
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm --filter "./packages/**" build
 RUN pnpx prisma generate --schema apps/back/prisma/schema.prisma
@@ -22,16 +26,13 @@ WORKDIR /prod-wrkspc
 COPY --from=builder /prod/back ./
 EXPOSE 3000
 
-# RUN addgroup -g 10002 zwsgrp && \
-#     adduser -D -H -u 10001 -G zwsgrp zwsusr && \
-#     apk add --no-cache openssl wget
-# RUN chown -R zwsusr:zwsgrp /prod/back
-# USER zwsusr:zwsgrp
+RUN addgroup -g 10002 zwsgrp && \
+    adduser -D -u 10001 -G zwsgrp zwsusr
+RUN chown -R zwsusr:zwsgrp /prod-wrkspc
+USER zwsusr:zwsgrp
 
 # TODO: update endpoint if healthcheck is implemented
-# 3000 port returns 404 and EXPOSE=8000 port is not the right port
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD pgrep -f "dist/src/main" > /dev/null || exit 1
-    # CMD wget -qO- http://localhost:3000/healthcheck || exit 1
 
 CMD ["pnpm", "start:prod"]

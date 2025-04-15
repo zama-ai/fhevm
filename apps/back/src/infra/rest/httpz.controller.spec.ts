@@ -34,8 +34,8 @@ describe('HttpzController', () => {
     expect(controller).toBeDefined()
   })
 
-  describe('GET /keyurl', () => {
-    let getKeyUrl: Mocked<GetKeyUrl>
+  describe('GET /v1/keyurl', () => {
+    let getKeyUrl: MockProxy<GetKeyUrl>
     beforeEach(() => {
       getKeyUrl = unitRef.get(GetKeyUrl) as unknown as Mocked<GetKeyUrl>
       getKeyUrl.execute.mockReturnValue(
@@ -77,8 +77,8 @@ describe('HttpzController', () => {
     })
   })
 
-  describe(`POST /input-proof`, () => {
-    let inputProof: Mocked<InputProof>
+  describe(`POST /v1/input-proof`, () => {
+    let inputProof: MockProxy<InputProof>
     let handles: string[]
     let signatures: string[]
     let apiKey: ApiKey

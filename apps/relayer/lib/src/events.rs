@@ -10,6 +10,8 @@ use diesel::query_builder::QueryId;
 use diesel::serialize::ToSql;
 use diesel::sql_types::SqlType;
 use diesel::{Insertable, Queryable};
+use fhevm_relayer::core::event::{CtHandleContractPair, RequestValidity};
+use fhevm_relayer::http::userdecrypt_http_listener::UserDecryptResponsePayloadJson;
 use fhevm_relayer::orchestrator::traits::Event;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -31,6 +33,7 @@ use uuid::Uuid;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum ZwsRelayerEvent {
+    // Blockchain
     /// Host is usually a public decryption request made on the Oracle contract
     #[serde(rename = "relayer:blockchain:host-event")]
     BlockchainEvent(BlockchainEvent),
@@ -40,33 +43,52 @@ pub enum ZwsRelayerEvent {
     HTTPZGatewayEvent(HTTPZGatewayEvent),
     /// Just a debug message to check communication issues
     #[serde(rename = "relayer:sqs:debug")]
-    SQSRelayerDebugMessage(SQSRelayerDebugMessage),
+    DebugMessage(DebugMessage),
+
+    // Console
+    // Input Registration
     /// Input registration request, should come from the console back
-    /// but for debugging purposes the HTTP listener can also handle them
+    /// but for debugging purposes the builtin HTTP listener can also handle them
     #[serde(rename = "relayer:input-registration:input-registration-request")]
-    SQSRelayerInputRegistrationRequest(SQSRelayerInputRegistrationRequest),
+    HTTPInputRegistrationRequest(HTTPInputRegistrationRequest),
     /// Input registration response to answer a user
     #[serde(rename = "relayer:input-registration:input-registration-response")]
-    SQSRelayerInputRegistrationResponse(SQSRelayerInputRegistrationResponse),
+    HTTPInputRegistrationResponse(HTTPInputRegistrationResponse),
+    // Private Decryption
+    /// Private decryption request from the HTTP endpoint or the Console
+    #[serde(rename = "relayer:http-private-decryption:operation-request")]
+    HTTPPrivateDecryptionRequest(PrivateDecryptionRequest),
+    /// Private decryption response
+    #[serde(rename = "relayer:http-private-decryption:operation-response")]
+    HTTPPrivateDecryptionResponse(PrivateDecryptionResponse),
+    // Public Decryption
+    // TODO: implement
+    #[serde(rename = "relayer:http-public-decryption:operation-request")]
+    HTTPPublicDecryptionRequest(PrivateDecryptionRequest),
+    /// Private decryption response
+    #[serde(rename = "relayer:http-public-decryption:operation-response")]
+    HTTPPublicDecryptionResponse(PrivateDecryptionResponse),
+    // TODO: implement
+    #[serde(rename = "relayer:oracle-public-decryption:operation-request")]
+    OraclePublicDecryptionRequest(PrivateDecryptionRequest),
+    /// Private decryption response
+    #[serde(rename = "relayer:oracle-public-decryption:operation-response")]
+    OraclePublicDecryptionResponse(PrivateDecryptionResponse),
     /// Authorization request made from the relayer to the console to check
     /// that a given contract is whitelisted
     #[serde(rename = "relayer:public-decryption:authorization-request")]
-    SQSRelayerAuthorizationRequest(SQSRelayerAuthorizationRequest),
+    OracleAuthorizationRequest(OracleAuthorizationRequest),
     /// Authorization response from the console w.r.t. a given contract
     #[serde(rename = "relayer:public-decryption:authorization-response")]
-    SQSRelayerAuthorizationResponse(SQSRelayerAuthorizationResponse),
-    /// Private decryption request from the HTTP endpoint or the Console
-    #[serde(rename = "relayer:private-decryption:operation-request")]
-    SQSRelayerPrivateDecryptionRequest(SQSRelayerPrivateDecryptionRequest),
-    /// Private decryption response
-    #[serde(rename = "relayer:private-decryption:operation-response")]
-    SQSRelayerPrivateDecryptionResponse(SQSRelayerPrivateDecryptionResponse),
+    OracleAuthorizationResponse(OracleAuthorizationResponse),
+
+    // TX-Manager
     /// Transaction request
     #[serde(rename = "relayer:transaction:tx-request")]
-    SQSRelayerTransactionRequest(SQSRelayerTransactionRequest),
+    TransactionRequest(TransactionRequest),
     /// Transaction response, i.e. receipt and response
     #[serde(rename = "relayer:transaction:tx-response")]
-    SQSRelayerTransactionResponse(Box<SQSRelayerTransactionResponse>),
+    TransactionResponse(Box<TransactionResponse>),
 }
 
 // TODO: clean this with a macro
@@ -75,15 +97,19 @@ impl Event for ZwsRelayerEvent {
         match self {
             Self::BlockchainEvent(value) => value.event_name(),
             Self::HTTPZGatewayEvent(value) => value.event_name(),
-            Self::SQSRelayerDebugMessage(value) => value.event_name(),
-            Self::SQSRelayerAuthorizationRequest(value) => value.event_name(),
-            Self::SQSRelayerAuthorizationResponse(value) => value.event_name(),
-            Self::SQSRelayerTransactionRequest(value) => value.event_name(),
-            Self::SQSRelayerTransactionResponse(value) => value.event_name(),
-            Self::SQSRelayerPrivateDecryptionRequest(value) => value.event_name(),
-            Self::SQSRelayerPrivateDecryptionResponse(value) => value.event_name(),
-            Self::SQSRelayerInputRegistrationRequest(value) => value.event_name(),
-            Self::SQSRelayerInputRegistrationResponse(value) => value.event_name(),
+            Self::DebugMessage(value) => value.event_name(),
+            Self::OracleAuthorizationRequest(value) => value.event_name(),
+            Self::OracleAuthorizationResponse(value) => value.event_name(),
+            Self::TransactionRequest(value) => value.event_name(),
+            Self::TransactionResponse(value) => value.event_name(),
+            Self::HTTPPrivateDecryptionRequest(value) => value.event_name(),
+            Self::HTTPPrivateDecryptionResponse(value) => value.event_name(),
+            Self::HTTPPublicDecryptionRequest(value) => value.event_name(),
+            Self::HTTPPublicDecryptionResponse(value) => value.event_name(),
+            Self::OraclePublicDecryptionRequest(value) => value.event_name(),
+            Self::OraclePublicDecryptionResponse(value) => value.event_name(),
+            Self::HTTPInputRegistrationRequest(value) => value.event_name(),
+            Self::HTTPInputRegistrationResponse(value) => value.event_name(),
         }
     }
 
@@ -91,15 +117,19 @@ impl Event for ZwsRelayerEvent {
         match self {
             Self::BlockchainEvent(value) => value.event_id(),
             Self::HTTPZGatewayEvent(value) => value.event_id(),
-            Self::SQSRelayerDebugMessage(value) => value.event_id(),
-            Self::SQSRelayerAuthorizationRequest(value) => value.event_id(),
-            Self::SQSRelayerAuthorizationResponse(value) => value.event_id(),
-            Self::SQSRelayerTransactionRequest(value) => value.event_id(),
-            Self::SQSRelayerTransactionResponse(value) => value.event_id(),
-            Self::SQSRelayerPrivateDecryptionRequest(value) => value.event_id(),
-            Self::SQSRelayerPrivateDecryptionResponse(value) => value.event_id(),
-            Self::SQSRelayerInputRegistrationRequest(value) => value.event_id(),
-            Self::SQSRelayerInputRegistrationResponse(value) => value.event_id(),
+            Self::DebugMessage(value) => value.event_id(),
+            Self::OracleAuthorizationRequest(value) => value.event_id(),
+            Self::OracleAuthorizationResponse(value) => value.event_id(),
+            Self::TransactionRequest(value) => value.event_id(),
+            Self::TransactionResponse(value) => value.event_id(),
+            Self::HTTPPrivateDecryptionRequest(value) => value.event_id(),
+            Self::HTTPPrivateDecryptionResponse(value) => value.event_id(),
+            Self::HTTPPublicDecryptionRequest(value) => value.event_id(),
+            Self::HTTPPublicDecryptionResponse(value) => value.event_id(),
+            Self::OraclePublicDecryptionRequest(value) => value.event_id(),
+            Self::OraclePublicDecryptionResponse(value) => value.event_id(),
+            Self::HTTPInputRegistrationRequest(value) => value.event_id(),
+            Self::HTTPInputRegistrationResponse(value) => value.event_id(),
         }
     }
 
@@ -107,15 +137,19 @@ impl Event for ZwsRelayerEvent {
         match self {
             Self::BlockchainEvent(value) => value.request_id(),
             Self::HTTPZGatewayEvent(value) => value.request_id(),
-            Self::SQSRelayerDebugMessage(value) => value.request_id(),
-            Self::SQSRelayerAuthorizationRequest(value) => value.request_id(),
-            Self::SQSRelayerAuthorizationResponse(value) => value.request_id(),
-            Self::SQSRelayerTransactionRequest(value) => value.request_id(),
-            Self::SQSRelayerTransactionResponse(value) => value.request_id(),
-            Self::SQSRelayerPrivateDecryptionRequest(value) => value.request_id(),
-            Self::SQSRelayerPrivateDecryptionResponse(value) => value.request_id(),
-            Self::SQSRelayerInputRegistrationRequest(value) => value.request_id(),
-            Self::SQSRelayerInputRegistrationResponse(value) => value.request_id(),
+            Self::DebugMessage(value) => value.request_id(),
+            Self::OracleAuthorizationRequest(value) => value.request_id(),
+            Self::OracleAuthorizationResponse(value) => value.request_id(),
+            Self::TransactionRequest(value) => value.request_id(),
+            Self::TransactionResponse(value) => value.request_id(),
+            Self::HTTPPrivateDecryptionRequest(value) => value.request_id(),
+            Self::HTTPPrivateDecryptionResponse(value) => value.request_id(),
+            Self::HTTPPublicDecryptionRequest(value) => value.request_id(),
+            Self::HTTPPublicDecryptionResponse(value) => value.request_id(),
+            Self::OraclePublicDecryptionRequest(value) => value.request_id(),
+            Self::OraclePublicDecryptionResponse(value) => value.request_id(),
+            Self::HTTPInputRegistrationRequest(value) => value.request_id(),
+            Self::HTTPInputRegistrationResponse(value) => value.request_id(),
         }
     }
 }
@@ -374,9 +408,11 @@ pub fn fetch_gateway_response(
 pub fn fetch_gateway_request_chain_id(
     conn: &mut PgConnection,
     on_chain_req_id: Vec<u8>,
+    op_type: GatewayOperation,
 ) -> Result<Vec<GatewayRequestRow>, diesel::result::Error> {
     gateway_requests::dsl::gateway_requests
         .filter(gateway_requests::dsl::on_chain_request_id.eq(on_chain_req_id))
+        .filter(gateway_requests::dsl::op.eq(op_type))
         .limit(1)
         .select(GatewayRequestRow::as_select())
         .load(conn)
@@ -416,15 +452,14 @@ pub struct HTTPZGatewayEvent {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SQSRelayerDebugMessage {
+pub struct DebugMessage {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
     pub message: String,
 }
 
-// TODO:
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SQSRelayerInputRegistrationRequest {
+pub struct HTTPInputRegistrationRequest {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
     #[serde(rename = "contractChainId")]
@@ -437,9 +472,8 @@ pub struct SQSRelayerInputRegistrationRequest {
     pub ciphetext_with_zk_proof: Bytes,
 }
 
-// TODO:
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SQSRelayerInputRegistrationResponse {
+pub struct HTTPInputRegistrationResponse {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
     #[serde(rename = "handles")]
@@ -449,7 +483,39 @@ pub struct SQSRelayerInputRegistrationResponse {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SQSRelayerAuthorizationRequest {
+pub struct HTTPPrivateDecryptionRequest {
+    #[serde(rename = "requestId")]
+    pub request_id: Uuid,
+    #[serde(rename = "contractsChainId")]
+    pub contracts_chain_id: u64,
+    #[serde(rename = "ctHandleContractPairs")]
+    pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
+    #[serde(rename = "requestValidity")]
+    pub request_validity: RequestValidity,
+    #[serde(rename = "contractsAddress")]
+    pub contract_addresses: Vec<Address>,
+    #[serde(rename = "userAddress")]
+    pub user_address: Address,
+    #[serde(rename = "signature")]
+    pub signature: Bytes,
+    #[serde(rename = "publicKey")]
+    pub public_key: Bytes,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HTTPPrivateDecryptionResponse {
+    #[serde(rename = "requestId")]
+    pub request_id: Uuid,
+    #[serde(rename = "gatewayRequestId")]
+    pub gateway_request_id: u64,
+    #[serde(rename = "decryptedValue")]
+    pub decrypted_value: Bytes,
+    #[serde(rename = "signatures")]
+    pub signatures: Vec<Bytes>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OracleAuthorizationRequest {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
     #[serde(rename = "callerAddress")]
@@ -457,14 +523,14 @@ pub struct SQSRelayerAuthorizationRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SQSRelayerAuthorizationResponse {
+pub struct OracleAuthorizationResponse {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
     pub authorized: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SQSRelayerTransactionRequest {
+pub struct TransactionRequest {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
     pub address: Address,
@@ -474,7 +540,7 @@ pub struct SQSRelayerTransactionRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SQSRelayerTransactionResponse {
+pub struct TransactionResponse {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
     /// Transaction receipt, holds the logs, the gas used, ...
@@ -482,24 +548,45 @@ pub struct SQSRelayerTransactionResponse {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SQSRelayerPrivateDecryptionRequest {
+pub struct PrivateDecryptionRequest {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
-    #[serde(rename = "ctHandles")]
-    pub ct_handles: Vec<Bytes>,
+    #[serde(rename = "ctHandleContractPairs")]
+    pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
+    #[serde(rename = "requestValidity")]
+    pub request_validity: RequestValidity,
+    #[serde(rename = "contractChainId")]
+    pub contracts_chain_id: u64,
+    #[serde(rename = "contractAddresses")]
+    pub contract_addresses: Vec<Address>,
+    #[serde(rename = "userAddress")]
+    pub user_address: Address,
+    #[serde(rename = "signature")]
+    pub signature: Bytes,
     #[serde(rename = "publicKey")]
-    pub pub_key: Bytes,
-    #[serde(rename = "chainId")]
-    pub chain_id: u64,
+    pub public_key: Bytes,
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<fhevm_relayer::core::event::UserDecryptRequest> for PrivateDecryptionRequest {
+    fn into(self) -> fhevm_relayer::core::event::UserDecryptRequest {
+        fhevm_relayer::core::event::UserDecryptRequest {
+            ct_handle_contract_pairs: self.ct_handle_contract_pairs,
+            request_validity: self.request_validity,
+            contracts_chain_id: self.contracts_chain_id,
+            contract_addresses: self.contract_addresses,
+            user_address: self.user_address,
+            signature: self.signature,
+            public_key: self.public_key,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SQSRelayerPrivateDecryptionResponse {
+pub struct PrivateDecryptionResponse {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
-    #[serde(rename = "ctValues")]
-    pub ct_values: Vec<Bytes>,
-    pub signatures: Vec<Bytes>,
+    pub responses: Vec<UserDecryptResponsePayloadJson>,
 }
 
 macro_rules! impl_event {
@@ -531,23 +618,29 @@ macro_rules! impl_event {
 // TODO: Maybe add a check to make sure that there is no value conflict
 impl_event!(BlockchainEvent, 1);
 impl_event!(HTTPZGatewayEvent, 2);
-impl_event!(SQSRelayerDebugMessage, 3);
-impl_event!(SQSRelayerAuthorizationRequest, 4);
-impl_event!(SQSRelayerAuthorizationResponse, 5);
-impl_event!(SQSRelayerTransactionRequest, 6);
-impl_event!(SQSRelayerTransactionResponse, 7);
-impl_event!(SQSRelayerPrivateDecryptionRequest, 8);
-impl_event!(SQSRelayerPrivateDecryptionResponse, 9);
-impl_event!(SQSRelayerInputRegistrationRequest, 10);
-impl_event!(SQSRelayerInputRegistrationResponse, 11);
+impl_event!(DebugMessage, 3);
+
+impl_event!(TransactionRequest, 4);
+impl_event!(TransactionResponse, 5);
+
+impl_event!(OracleAuthorizationRequest, 6);
+impl_event!(OracleAuthorizationResponse, 7);
+
+impl_event!(HTTPInputRegistrationRequest, 8);
+impl_event!(HTTPInputRegistrationResponse, 9);
+
+impl_event!(PrivateDecryptionRequest, 10);
+impl_event!(PrivateDecryptionResponse, 11);
 
 // TODO: Make more generic and accept any message that is Serializable
-pub async fn send_message_to_sqs_queue(
+pub async fn send_message_to_sqs_queue<T>(
     check_queue_exists: bool,
     sqs_client: &aws_sdk_sqs::Client,
     queue_url: &String,
-    message: ZwsRelayerEvent,
+    message: T,
 ) -> std::result::Result<aws_sdk_sqs::operation::send_message::SendMessageOutput, std::string::String>
+where
+    T: serde::Serialize,
 {
     if check_queue_exists {
         // TODO: implement

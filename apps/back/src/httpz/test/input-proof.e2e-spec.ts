@@ -99,7 +99,7 @@ describe('input proof', () => {
       test('then the server responde successfully', async () => {
         const promise = new Promise<Response>((resolve, reject) => {
           request(manager.httpServer)
-            .post('/input-proof')
+            .post('/v1/input-proof')
             .send({
               contractChainId,
               contractAddress: address,

@@ -8,7 +8,8 @@ ws_url = "ws://layer1-node:8545"
 http_url = "http://layer1-node:8545"
 # ws_url = "ws://host.docker.internal:8545"
 # http_url = "http://host.docker.internal:8545"
-[host_chains.chain_config.signer_config.Local]
+[host_chains.chain_config.signer_config]
+type = "LOCAL"
 private_key_env = "HTTPZ_PRIVATE_KEY"
 
 [gateway_chain]
@@ -22,7 +23,8 @@ ws_url = "ws://layer2-node:8546"
 http_url = "http://layer2-node:8546"
 # ws_url = "ws://host.docker.internal:8546"
 # http_url = "http://host.docker.internal:8546"
-[gateway_chain.chain_config.signer_config.Local]
+[gateway_chain.chain_config.signer_config]
+type = "LOCAL"
 private_key_env = "GATEWAY_PRIVATE_KEY"
 
 [queues]

@@ -1,7 +1,7 @@
 name: 01-sca-trivy-repo
 
 # description: |
-#     This workflows uses Trivy to scan for vulnerabilities, leaked secrets and misconfigurations in the repository. 
+#     This workflows uses Trivy to scan for vulnerabilities, leaked secrets and misconfigurations in the repository.
 #     Trivy generates 3 reports (HTML, SARIF and JSON), publish them as artifacts, at the same time send activity to stdout.
 #     Finally, you have the option of uploading SARIF report to Github Security Hub. This works only with Github Enterprise/private repos or public repos.
 
@@ -16,14 +16,17 @@ on:
 #       - main
   workflow_dispatch:
     inputs:
-        import_sarif_into_github:
-            description: "Import SARIF Trivy report into GitHub Security Hub"
-            type: choice
-            required: true
-            default: "do-not-import-it"
-            options: 
-            - "import-it"
-            - "do-not-import-it"
+      import_sarif_into_github:
+        description: "Import SARIF Trivy report into GitHub Security Hub"
+        type: choice
+        required: true
+        default: "do-not-import-it"
+        options:
+          - "import-it"
+          - "do-not-import-it"
+permissions:
+  contents: read
+  security-events: write
 
 jobs:
   prepare:
@@ -55,7 +58,7 @@ jobs:
   run-trivy:
     runs-on: ubuntu-latest
     needs: [prepare]
-    steps: 
+    steps:
       - name: Checkout parent Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683    # v4.2.2
         with:
