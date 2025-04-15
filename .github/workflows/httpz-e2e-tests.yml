@@ -112,8 +112,7 @@ jobs:
         working-directory: httpz
         continue-on-error: true
         run: |
-          ./httpz-cli test erc20 || true
-          echo "IMPORTANT: DO NOT consider this test - ERC20 test needs to be fixed in CI"
+          ./httpz-cli test erc20
 
       - name: Show logs on test failure
         working-directory: httpz
