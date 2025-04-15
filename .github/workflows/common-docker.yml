@@ -254,9 +254,14 @@ jobs:
       - name: Export image name
         id: export-image
         run: |
-          {
-            echo "image=ghcr.io/zama-ai/${{inputs.image-name}}:${{ needs.determine-tag.outputs.docker_tag }}"
-            echo "image=ghcr.io/zama-ai/${{inputs.image-name}}:${{ needs.determine-tag.outputs.docker_tag }}-${{ matrix.docker-target }}"
-            echo "image=ghcr.io/zama-ai/${{inputs.image-name}}:latest"
-            echo "image=ghcr.io/zama-ai/${{inputs.image-name}}:latest-${{ matrix.docker-target }}"
-          } >> "${GITHUB_OUTPUT}"
+          if [ "${{ matrix.docker-target }}" = "prod" ]; then
+            {
+              echo "image=ghcr.io/zama-ai/${{inputs.image-name}}:${{ needs.determine-tag.outputs.docker_tag }}"
+              echo "image=ghcr.io/zama-ai/${{inputs.image-name}}:latest"
+            } >> "${GITHUB_OUTPUT}"
+          else
+            {
+              echo "image=ghcr.io/zama-ai/${{inputs.image-name}}:${{ needs.determine-tag.outputs.docker_tag }}-${{ matrix.docker-target }}"
+              echo "image=ghcr.io/zama-ai/${{inputs.image-name}}:latest-${{ matrix.docker-target }}"
+            } >> "${GITHUB_OUTPUT}"
+          fi
