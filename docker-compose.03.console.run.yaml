@@ -1,39 +1,45 @@
 # Run commands for the console services
 name: console
 services:
+
   back:
-    image: zws_local/console/back:alpine-v1
+    image: zws_local/console/back:${DOCKER_TAG:-latest}
     container_name: console-back
     depends_on:
+      local_redis:
+        condition: service_healthy
       local_aws:
         condition: service_healthy
       back-migrate:
         condition: service_completed_successfully
+    # These vars will be populated from httpz containers
     environment:
       - CRS_URLS=${CRS_URLS}
       - KEY_URLS=${KEY_URLS}
     env_file:
       - ./apps/back/.env.compose
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3005"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+    # This returns 404 error because it's not implemented yet
+    # healthcheck:
+    #   test: ["CMD", "wget", "-qO-", "http://localhost:3005"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 3
     ports:
       - "3005:3005"
     networks:
       - console-net
 
   email:
-    image: zws_local/console/email:alpine-v1
+    image: zws_local/console/email:${DOCKER_TAG:-latest}
     container_name: console-email
     env_file:
       - ./apps/email/.env.compose
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8002"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+    # This returns 404 error because it's not implemented yet
+    # healthcheck:
+    #   test: ["CMD", "wget", "-qO-", "http://localhost:8002"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 3
     networks:
       - console-net
     depends_on:
@@ -41,7 +47,7 @@ services:
         condition: service_healthy
 
   front:
-    image: zws_local/console/front:alpine-v1
+    image: zws_local/console/front:${DOCKER_TAG:-latest}
     container_name: console-front
     env_file:
       - ./apps/front/.env.compose
@@ -57,7 +63,7 @@ services:
         condition: service_started
 
   orchestrator:
-    image: zws_local/console/orchestrator:alpine-v1
+    image: zws_local/console/orchestrator:${DOCKER_TAG:-latest}
     container_name: console-orchestrator
     depends_on:
       local_aws:
@@ -66,16 +72,17 @@ services:
         condition: service_completed_successfully
     env_file:
       - ./apps/orchestrator/.env.compose
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8003"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+    # This returns 404 error because it's not implemented yet
+    # healthcheck:
+    #   test: ["CMD", "wget", "-qO-", "http://localhost:8003"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 3
     networks:
       - console-net
 
   web3:
-    image: zws_local/console/web3:alpine-v1
+    image: zws_local/console/web3:${DOCKER_TAG:-latest}
     container_name: console-web3
     depends_on:
       local_aws:
@@ -84,11 +91,12 @@ services:
         condition: service_completed_successfully
     env_file:
       - ./apps/web3/.env.compose
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8004"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+    # This returns 404 error because it's not implemented yet
+    # healthcheck:
+    #   test: ["CMD", "wget", "-qO-", "http://localhost:8004"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 3
     networks:
       - console-net
 
@@ -126,8 +134,7 @@ services:
 networks:
   console-net:
     name: console-net
-    # external: true
+    external: true
   zama_default:
     name: zama_default
     external: true
-

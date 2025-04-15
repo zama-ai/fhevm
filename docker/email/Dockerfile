@@ -27,7 +27,7 @@ COPY --from=builder /prod/email ./
 EXPOSE 3300
 
 RUN addgroup -g 10002 zwsgrp && \
-    adduser -D -H -u 10001 -G zwsgrp zwsusr
+    adduser -D -u 10001 -G zwsgrp zwsusr
 RUN chown -R zwsusr:zwsgrp /prod-wrkspc
 USER zwsusr:zwsgrp
 
