@@ -14,7 +14,7 @@ export function ListApiKeys({ dappId }: ListApiKeysProps) {
 
   return (
     <Box maxW="2xl">
-      <Table.Root size="sm" interactive variant="outline" rounded="md">
+      <Table.Root size="sm" variant="outline" rounded="md">
         {apiKeys?.dapp.apiKeys.length === 0 ? (
           <EmptyState.Root>
             <EmptyState.Content>
