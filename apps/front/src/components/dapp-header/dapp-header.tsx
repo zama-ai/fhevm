@@ -6,6 +6,7 @@ import {
 
 import { InplaceInput } from '@/components/inplace-input/inplace-input'
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
+import { useDappUpdate } from '@/hooks/use-dapp-update'
 
 type OwnProps = {
   dapp?: GetDappDetailsQuery['dapp']
@@ -13,6 +14,8 @@ type OwnProps = {
 }
 
 export function DappHeader({ dapp, dappUpdated }: OwnProps) {
+  // TODO: handle error
+  const { updateDapp, error } = useDappUpdate(dapp?.id || '')
   if (!dapp) {
     return <Skeleton height="5" my="5" width="30rem" />
   }
@@ -24,7 +27,9 @@ export function DappHeader({ dapp, dappUpdated }: OwnProps) {
         <InplaceInput
           title={data.name}
           onChange={() => {}}
-          onUpdate={() => {}}
+          onUpdate={({ value }) => {
+            updateDapp({ name: value })
+          }}
         />
       </Box>
       <DappStatus status={data.status} ml="2" size="xs" />

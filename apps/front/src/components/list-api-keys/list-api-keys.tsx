@@ -1,8 +1,8 @@
 import { Box, EmptyState, Table } from '@chakra-ui/react'
-import { useApiKeys } from './use-api-keys'
 import { KeyRound } from 'lucide-react'
+import { useApiKeys } from '@/hooks/use-api-keys'
+import { useDeleteApiKey } from '@/hooks/use-delete-api-key'
 import { ApiKeyItem, SkeletonApiKeyItem } from './api-key-item'
-import { useDeleteApiKey } from './use-delete-api-key'
 
 export type ListApiKeysProps = {
   dappId: string

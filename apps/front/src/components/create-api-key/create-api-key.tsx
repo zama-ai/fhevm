@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiKeyForm } from './api-key-form'
-import { useCreateApiKey } from './use-create-api-key'
+import { useCreateApiKey } from '@/hooks/use-create-api-key'
 import { ApiKeyCreatedDialog } from './api-key-created-dialog'
 
 type OwnProps = {
