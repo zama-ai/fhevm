@@ -4,7 +4,7 @@ authors = ["Zama"]
 publish = true
 edition = "2021"
 license = "BSD-3-Clause-Clear"
-version = "0.11.0-rc5"
+version = "0.11.0-rc7"
 
 # TODO: use root Cargo.toml features, remove duplicates and shrink to bare minimum features
 [dependencies]
