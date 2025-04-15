@@ -4,6 +4,7 @@
   "description": "Oracle Solidity smart contract for public decryption",
   "main": "index.js",
   "scripts": {
+    "compile": "hardhat compile",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
