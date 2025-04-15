@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - "erc20"
+          - "dex"
           - "synthetics"
           - "all"
       batch_size:
@@ -17,6 +18,15 @@ on:
         required: true
         type: string
         default: "5000"
+      scheduling_policy:
+        description: "Scheduling policy"
+        required: true
+        type: choice
+        options:
+          - "MAX_PARALLELISM"
+          - "MAX_LOCALITY"
+          - "LOOP"
+          - "FINE_GRAIN"
 
 env:
   CARGO_TERM_COLOR: always
@@ -137,7 +147,7 @@ jobs:
 
       - name: Run benchmarks on CPU
         run: |
-          BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" make "benchmark_${{ inputs.benchmarks }}_cpu"
+          BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" FHEVM_DF_SCHEDULE="${{ inputs.scheduling_policy }}" make "benchmark_${{ inputs.benchmarks }}_cpu"
         working-directory: coprocessor/fhevm-engine/coprocessor
 
       - name: Parse results
@@ -151,7 +161,7 @@ jobs:
           --commit-date "${{ env.COMMIT_DATE }}" \
           --bench-date "${{ env.BENCH_DATE }}" \
           --walk-subdirs \
-          --name-suffix "operation_batch_size_${{ inputs.batch_size }}"
+          --name-suffix "operation_batch_size_${{ inputs.batch_size }}-schedule_${{ inputs.scheduling_policy }}"
 
       - name: Upload parsed results artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

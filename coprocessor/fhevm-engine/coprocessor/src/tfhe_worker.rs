@@ -18,6 +18,11 @@ use tracing::{debug, error, info};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
+#[cfg(feature = "bench")]
+lazy_static! {
+    pub static ref TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+}
+
 lazy_static! {
     static ref WORKER_ERRORS_COUNTER: IntCounter =
         register_int_counter!("coprocessor_worker_errors", "worker errors encountered").unwrap();
@@ -77,6 +82,9 @@ async fn tfhe_worker_cycle(
         .connect(&db_url)
         .await?;
 
+    #[cfg(feature = "bench")]
+    populate_cache_with_tenant_keys(vec![1i32], &pool, &tenant_key_cache).await?;
+
     let mut listener = PgListener::connect_with(&pool).await.unwrap();
     listener.listen("work_available").await?;
 
@@ -105,65 +113,26 @@ async fn tfhe_worker_cycle(
         s.end();
         // This query locks our work items so other worker doesn't select them.
         let mut s = tracer.start_with_context("query_work_items", &loop_ctx);
+        let now = std::time::SystemTime::now();
         let the_work = query!(
             "
-            WITH RECURSIVE dependent_computations(tenant_id, output_handle, dependencies, fhe_operation, is_scalar, produced_handles) AS (
-                SELECT c.tenant_id, c.output_handle, c.dependencies, c.fhe_operation, c.is_scalar, ARRAY[ROW(c.tenant_id, c.output_handle)]
-                FROM computations c
-                WHERE is_completed = false
-                AND is_error = false
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM unnest(c.dependencies) WITH ORDINALITY AS elems(v, dep_index)
-                    WHERE (c.tenant_id, elems.v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )
-                    -- don't select scalar operands
-                    AND (
-                        NOT c.is_scalar
-                        OR c.is_scalar AND NOT elems.dep_index = 2
-                    )
-                    -- ignore fhe random, trivial encrypt operations, all inputs are scalars
-                    AND NOT c.fhe_operation = ANY(ARRAY[24, 26, 27])
-                )
-              UNION ALL
-                SELECT c.tenant_id, c.output_handle, c.dependencies, c.fhe_operation, c.is_scalar, dc.produced_handles || ROW(c.tenant_id, c.output_handle)
-                FROM dependent_computations dc, computations c
-                WHERE is_completed = false
-                AND is_error = false
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM unnest(c.dependencies) WITH ORDINALITY AS elems(v, dep_index)
-                    WHERE (c.tenant_id, elems.v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )
-                    AND NOT ROW(c.tenant_id, elems.v) = ANY(dc.produced_handles)
-                    -- don't select scalar operands
-                    AND (
-                        NOT c.is_scalar
-                        OR c.is_scalar AND NOT elems.dep_index = 2
-                    )
-                    -- ignore fhe random, trivial encrypt operations, all inputs are scalars
-                    AND NOT c.fhe_operation = ANY(ARRAY[24, 26, 27])
-                )
-                AND dc.output_handle = ANY(c.dependencies)
-                AND dc.tenant_id = c.tenant_id
-                AND NOT ROW(c.tenant_id, c.output_handle) = ANY(dc.produced_handles)
-            ) SEARCH DEPTH FIRST BY output_handle SET computation_order,
-           limited_computations AS (
-              SELECT tenant_id, output_handle
-              FROM dependent_computations
-              GROUP BY tenant_id, output_handle
-              ORDER BY min(computation_order)
-              LIMIT $1
-            )
             SELECT tenant_id, output_handle, dependencies, fhe_operation, is_scalar
             FROM computations
-            WHERE (tenant_id, output_handle) IN (
-              SELECT tenant_id, output_handle FROM limited_computations
-            )
+            WHERE is_completed = false
+            AND is_error = false
+            ORDER BY created_at
+            LIMIT $1
             FOR UPDATE SKIP LOCKED
         ",
             args.work_items_batch_size as i32
         )
         .fetch_all(trx.as_mut())
         .await?;
+        println!(
+            "Query work time for block of {}: {}",
+            the_work.len(),
+            now.elapsed().unwrap().as_millis()
+        );
         s.set_attribute(KeyValue::new("count", the_work.len() as i64));
         s.end();
         immedially_poll_more_work = !the_work.is_empty();
@@ -503,5 +472,18 @@ async fn tfhe_worker_cycle(
         trx.commit().await?;
 
         let _guard = loop_ctx.attach();
+
+        #[cfg(feature = "bench")]
+        {
+            let prev_cycle_time = TIMING.load(std::sync::atomic::Ordering::SeqCst);
+            TIMING.store(
+                now.elapsed().unwrap().as_micros() as u64 + prev_cycle_time,
+                std::sync::atomic::Ordering::SeqCst,
+            );
+        }
+        println!(
+            "Full worker cycle work time for block: {}",
+            now.elapsed().unwrap().as_millis()
+        );
     }
 }
