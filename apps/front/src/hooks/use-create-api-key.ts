@@ -12,22 +12,14 @@ export function useCreateApiKey(dappId: string) {
   })
 
   const handleCreateApiKey = useCallback(
-    async (variables: { name: string; description?: string }) => {
-      try {
-        // const response = await createApiKey({
-        await createApiKey({
-          variables: {
-            ...variables,
-            dappId,
-          },
-        })
-        // return response.data
-      } catch (error) {
-        // Handle or rethrow the error if needed
-        console.error(`Failed to create API key: ${error}`)
-        // throw error
-      }
-    },
+    (variables: { name: string; description?: string }) =>
+      createApiKey({
+        variables: {
+          ...variables,
+          dappId,
+        },
+      }),
+
     [dappId, createApiKey],
   )
 
