@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common'
 import { ClsModule } from 'nestjs-cls'
 import { PrismaService } from './prisma.service.js'
 import { InvitationRepository } from '#invitations/domain/repositories/invitation.repository.js'
-import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
+import { DAPP_REPOSITORY } from '#dapps/domain/repositories/dapp.repository.js'
 import { UserRepository } from '#users/domain/repositories/user.repository.js'
 import { TeamRepository } from '#users/domain/repositories/team.repository.js'
 import { PrismaInvitationRepository } from './repositories/prisma-invitation.repository.js'
@@ -50,7 +50,7 @@ import { PrismaUOW } from './prisma.uow.js'
       useClass: PrismaInvitationRepository,
     },
     {
-      provide: DAppRepository,
+      provide: DAPP_REPOSITORY,
       useClass: PrismaDAppRepository,
     },
     {
@@ -62,7 +62,7 @@ import { PrismaUOW } from './prisma.uow.js'
     UserRepository,
     TeamRepository,
     InvitationRepository,
-    DAppRepository,
+    DAPP_REPOSITORY,
     UNIT_OF_WORK,
   ],
 })

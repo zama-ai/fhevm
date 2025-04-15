@@ -23,9 +23,11 @@
     "noUncheckedSideEffectImports": true,
 
     "paths": {
-      "@/*": ["./src/*"],
+      "@/*": ["./src/*", "./test/*"],
       "~generated/*": ["./src/__generated__/*"]
-    }
+    },
+
+    "types": ["@testing-library/jest-dom/vitest"]
   },
   "include": ["src"]
 }

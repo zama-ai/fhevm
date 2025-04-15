@@ -16,18 +16,21 @@ import {
 } from '#dapps/domain/repositories/dapp.repository.js'
 
 import { PrismaService } from '../prisma.service.js'
-import { DAppId } from '#dapps/domain/entities/value-objects.js'
+import {
+  ApiKeyId,
+  DAppId,
+  Token,
+} from '#dapps/domain/entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
+import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import { Computation } from '#dapps/domain/utilities/computation.js'
 import { StatsType } from '#prisma/client/index.js'
 
 @Injectable()
-export class PrismaDAppRepository extends DAppRepository {
+export class PrismaDAppRepository implements DAppRepository {
   logger = new Logger(PrismaDAppRepository.name)
-  constructor(private readonly db: PrismaService) {
-    super()
-  }
+  constructor(private readonly db: PrismaService) {}
 
   create = (data: DApp): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
@@ -289,5 +292,114 @@ export class PrismaDAppRepository extends DAppRepository {
           reject(unknownError(String(err)))
         })
     })
+  }
+
+  /* Api Keys */
+  createApiKey = (apiKey: ApiKey): Task<ApiKey, AppError> => {
+    this.logger.verbose(`creating API key for dApp ${apiKey.dappId.value}`)
+    return this.findById(apiKey.dappId)
+      .chain(() => {
+        return new Task<unknown, AppError>((resolve, reject) => {
+          this.logger.debug(
+            `creating ${apiKey.id.value} for dApp ${apiKey.dappId.value}`,
+          )
+
+          this.db.apiKey
+            .create({
+              data: {
+                id: apiKey.id.value,
+                token: apiKey.token.value,
+                dappId: apiKey.dappId.value,
+                name: apiKey.name,
+                description: apiKey.description,
+              },
+            })
+            .then(resolve)
+            .catch(err => {
+              this.logger.warn(`failed to create api key: ${err}`)
+              reject(unknownError(String(err)))
+            })
+        })
+      })
+      .chain(props => ApiKey.parse(props).async())
+  }
+
+  findAllApiKeys = (id: DAppId): Task<ApiKey[], AppError> => {
+    this.logger.verbose(`finding all api keys for ${id.value}`)
+    return new Task<unknown[], AppError>((resolve, reject) =>
+      this.db.apiKey
+        .findMany({ where: { dappId: id.value, deletedAt: null } })
+        .then(resolve)
+        .catch(err => {
+          this.logger.warn(
+            `failed to run findAllApiKeys for ${id.value}: ${err}`,
+          )
+          reject(unknownError(String(err)))
+        }),
+    ).chain(props => every(props.map(ApiKey.parse)).async())
+  }
+
+  findApiKey = (id: ApiKeyId): Task<ApiKey, AppError> => {
+    this.logger.verbose(`finding api key ${id.value}`)
+    return new Task<unknown, AppError>((resolve, reject) =>
+      this.db.apiKey
+        .findUnique({ where: { id: id.value, deletedAt: null } })
+        .then(data =>
+          data ? resolve(data) : reject(notFoundError('API key not found')),
+        )
+        .catch(err => {
+          this.logger.warn(`failed to run findApiKey for ${id.value}: ${err}`)
+          reject(unknownError(String(err)))
+        }),
+    ).chain(props => ApiKey.parse(props).async())
+  }
+
+  findApiKeyByToken = (token: Token): Task<ApiKey, AppError> => {
+    this.logger.verbose(`finding api key by token ${token.value}`)
+    return new Task<unknown, AppError>((resolve, reject) =>
+      this.db.apiKey
+        .findFirst({ where: { token: token.value, deletedAt: null } })
+        .then(data =>
+          data ? resolve(data) : reject(notFoundError('API key not found')),
+        )
+        .catch(err => {
+          this.logger.warn(
+            `failed to run findApiKeyByToken for ${token.value}: ${err}`,
+          )
+          reject(unknownError(String(err)))
+        }),
+    ).chain(props => ApiKey.parse(props).async())
+  }
+
+  updateApiKey = (apiKey: ApiKey): Task<ApiKey, AppError> => {
+    this.logger.verbose(`updating api key ${apiKey.id.value}`)
+    return new Task<unknown, AppError>((resolve, reject) => {
+      this.db.apiKey
+        .update({
+          where: { id: apiKey.id.value },
+          data: {
+            name: apiKey.name,
+            description: apiKey.description,
+          },
+        })
+        .then(resolve)
+        .catch(err => {
+          this.logger.warn(`failed to update api key: ${err}`)
+          reject(unknownError(String(err)))
+        })
+    }).chain(props => ApiKey.parse(props).async())
+  }
+
+  deleteApiKey = (id: ApiKeyId): Task<void, AppError> => {
+    this.logger.verbose(`deleting api key ${id.value}`)
+    return new Task<unknown, AppError>((resolve, reject) =>
+      this.db.apiKey
+        .update({ where: { id: id.value }, data: { deletedAt: new Date() } })
+        .then(resolve)
+        .catch(err => {
+          this.logger.warn(`failed to run deleteApiKey for ${id.value}: ${err}`)
+          reject(unknownError(String(err)))
+        }),
+    ).map(() => void 0)
   }
 }

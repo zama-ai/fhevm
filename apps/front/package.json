@@ -22,6 +22,7 @@
     "@emotion/react": "^11.13.5",
     "@fontsource-variable/archivo": "^5.1.0",
     "@fontsource-variable/inter": "^5.1.0",
+    "css-mediaquery": "^0.1.2",
     "date-fns": "^4.1.0",
     "formik": "^2.4.6",
     "graphql": "^16.9.0",
@@ -36,9 +37,11 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
+    "@faker-js/faker": "^9.3.0",
     "@graphql-codegen/cli": "^5.0.3",
     "@graphql-codegen/client-preset": "^4.5.1",
     "@graphql-typed-document-node/core": "^3.2.0",
+    "@storybook/addon-actions": "^8.6.12",
     "@storybook/addon-essentials": "^8.4.7",
     "@storybook/addon-interactions": "^8.4.7",
     "@storybook/addon-themes": "^8.4.7",
@@ -46,14 +49,22 @@
     "@storybook/react": "^8.4.7",
     "@storybook/react-vite": "^8.4.7",
     "@storybook/test": "^8.4.7",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/css-mediaquery": "^0.1.4",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
     "@vitejs/plugin-react-swc": "^3.7.1",
     "eslint": "catalog:",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.14",
     "eslint-plugin-storybook": "^0.11.2",
     "globals": "^15.11.0",
+    "jsdom": "^26.0.0",
+    "msw": "^2.7.3",
+    "msw-storybook-addon": "^2.0.4",
     "storybook": "^8.4.7",
     "storybook-addon-remix-react-router": "^4.0.1",
     "typescript": "catalog:",
@@ -65,6 +76,11 @@
   "eslintConfig": {
     "extends": [
       "plugin:storybook/recommended"
+    ]
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
     ]
   }
 }

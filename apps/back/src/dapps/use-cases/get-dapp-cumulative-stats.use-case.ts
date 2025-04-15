@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { AppError, Task, UseCase } from 'utils'
 import { DAppId } from '../domain/entities/value-objects.js'
 import {
+  DAPP_REPOSITORY,
   DAppRepository,
   type CumulativeStats,
 } from '../domain/repositories/dapp.repository.js'
@@ -16,7 +17,9 @@ export class GetDappCumulativeStatsUseCase
 {
   private readonly logger = new Logger(GetDappCumulativeStatsUseCase.name)
 
-  constructor(private readonly dappRepository: DAppRepository) {}
+  constructor(
+    @Inject(DAPP_REPOSITORY) private readonly dappRepository: DAppRepository,
+  ) {}
 
   execute(input: Input): Task<CumulativeStats, AppError> {
     this.logger.debug(`Calculating cumulative stats for dappId=${input.dappId}`)

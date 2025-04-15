@@ -1,9 +1,12 @@
 import { DApp, DAppProps } from '../entities/dapp.js'
 import type { AppError } from 'utils'
 import { Task } from 'utils'
-import { DAppId } from '../entities/value-objects.js'
+import { ApiKeyId, DAppId, Token } from '../entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '../entities/dapp-stat.js'
+import { ApiKey } from '../entities/api-key.js'
+
+export const DAPP_REPOSITORY = 'DAPP_REPOSITORY'
 
 export type CumulativeStats = Record<DAppStat['name'], number> & {
   total: number
@@ -17,30 +20,24 @@ export type DailyStats = {
   encryption: number
 }[]
 
-export abstract class DAppRepository {
-  abstract create(data: DApp): Task<DApp, AppError>
-  abstract update(
-    id: DAppId,
-    data: Partial<Omit<DAppProps, 'id'>>,
-  ): Task<DApp, AppError>
+export interface DAppRepository {
+  create(data: DApp): Task<DApp, AppError>
+  update(id: DAppId, data: Partial<Omit<DAppProps, 'id'>>): Task<DApp, AppError>
+  delete(id: DAppId): Task<void, AppError>
+  findById(id: DAppId): Task<DApp, AppError>
+  findByAddress(chainId: string | number, address: string): Task<DApp, AppError>
+  findOneByIdAndUserId(id: DAppId, userId: UserId): Task<DApp, AppError>
+  findAllByTeamId(teamId: string): Task<DApp[], AppError>
 
-  abstract delete(id: DAppId): Task<void, AppError>
-  abstract findById(id: DAppId): Task<DApp, AppError>
-  abstract findByAddress(
-    chainId: string | number,
-    address: string,
-  ): Task<DApp, AppError>
-  abstract findOneByIdAndUserId(
-    id: DAppId,
-    userId: UserId,
-  ): Task<DApp, AppError>
-  abstract findAllByTeamId(teamId: string): Task<DApp[], AppError>
+  createStat(id: DAppId, props: DAppStatProps): Task<DAppStat, AppError>
+  findAllStats(id: DAppId): Task<DAppStat[], AppError>
+  findCumulativeStats(id: DAppId): Task<CumulativeStats, AppError>
+  findDailyStats(id: DAppId): Task<DailyStats, AppError>
 
-  abstract createStat(
-    id: DAppId,
-    props: DAppStatProps,
-  ): Task<DAppStat, AppError>
-  abstract findAllStats(id: DAppId): Task<DAppStat[], AppError>
-  abstract findCumulativeStats(id: DAppId): Task<CumulativeStats, AppError>
-  abstract findDailyStats(id: DAppId): Task<DailyStats, AppError>
+  createApiKey(apiKey: ApiKey): Task<ApiKey, AppError>
+  findAllApiKeys(id: DAppId): Task<ApiKey[], AppError>
+  findApiKey(id: ApiKeyId): Task<ApiKey, AppError>
+  findApiKeyByToken(token: Token): Task<ApiKey, AppError>
+  updateApiKey(apiKey: ApiKey): Task<ApiKey, AppError>
+  deleteApiKey(id: ApiKeyId): Task<void, AppError>
 }

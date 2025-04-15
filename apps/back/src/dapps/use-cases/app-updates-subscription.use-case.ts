@@ -1,5 +1,8 @@
 import { AppError, Task, unauthorizedError, UseCase } from 'utils'
-import { DAppRepository } from '../domain/repositories/dapp.repository.js'
+import {
+  DAPP_REPOSITORY,
+  DAppRepository,
+} from '../domain/repositories/dapp.repository.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { User } from '#users/domain/entities/user.js'
 import {
@@ -20,11 +23,12 @@ type Output = AsyncIterableIterator<SubscriptionDappUpdatedPayload>
 export class AppUpdatesSubscription implements UseCase<Input, Output> {
   logger = new Logger(AppUpdatesSubscription.name)
   constructor(
-    private readonly dappRepository: DAppRepository,
+    @Inject(DAPP_REPOSITORY) private readonly dappRepository: DAppRepository,
     @Inject(SUBSCRIPTION_SERVICE)
     private readonly subscriptions: SubscriptionService,
   ) {}
   execute({ dappId, user }: Input): Task<Output, AppError> {
+    this.logger.verbose(`subscribing to dapp updates for dappId=${dappId}`)
     return this.dappRepository
       .findOneByIdAndUserId(DAppId.from(dappId), user.id)
       .tap(dapp => {

@@ -18,6 +18,12 @@ body:graphql {
       name: $name
     }) {
       token
+      user {
+        teams {
+          id
+          name
+        }
+      }
     }
   }
 }

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { type UserProps } from '#users/domain/entities/user.js'
+import { User } from '#users/domain/entities/user.js'
 import {
   type AppError,
   type UseCase,
@@ -16,20 +16,20 @@ interface Input {
     name: string
     id: string
   }
-  user: UserProps
+  user: User
 }
 
 @Injectable()
-export class UpdateUser implements UseCase<Input, UserProps> {
+export class UpdateUser implements UseCase<Input, User> {
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     private readonly userRepository: UserRepository,
   ) {}
 
-  execute({ newUser, user }: Input): Task<UserProps, AppError> {
+  execute({ newUser, user }: Input): Task<User, AppError> {
     return this.uow.exec(
       this.userRepository
-        .findById(UserId.from(user.id))
+        .findById(user.id)
         .chain(user => {
           if (user && user.id === UserId.from(newUser.id)) {
             return Task.of(user)
@@ -38,14 +38,14 @@ export class UpdateUser implements UseCase<Input, UserProps> {
           }
         })
         .chain(() => {
-          const { id, ...userProps } = user
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id, ...userProps } = user.toJSON()
           const { name } = newUser
-          return this.userRepository.update(UserId.from(id), {
+          return this.userRepository.update(user.id, {
             ...userProps,
             name,
           })
-        })
-        .map(user => user.toJSON()),
+        }),
     )
   }
 }

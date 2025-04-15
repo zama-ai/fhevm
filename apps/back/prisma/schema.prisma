@@ -74,6 +74,7 @@ model Dapp {
   createdAt DateTime   @default(now())
   deletedAt DateTime?
   DappStats DappStat[]
+  ApiKey    ApiKey[]
 }
 
 model DappStat {
@@ -87,4 +88,15 @@ model DappStat {
   year        Int
   dapp        Dapp      @relation(fields: [dappId], references: [id], onDelete: Cascade)
   externalRef String    @unique
+}
+
+model ApiKey {
+  id          String    @id
+  token       String
+  name        String
+  description String?
+  dappId      String
+  dapp        Dapp      @relation(fields: [dappId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
 }

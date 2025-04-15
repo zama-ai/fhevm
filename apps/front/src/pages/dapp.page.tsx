@@ -9,6 +9,8 @@ import {
 } from '@/__generated__/graphql.js'
 
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
+import { CreateApiKey } from '@/components/create-api-key/create-api-key'
+import { ListApiKeys } from '@/components/list-api-keys/list-api-keys'
 
 import { DappActivity } from '@/components/dapp-activity/dapp-activity'
 
@@ -152,7 +154,7 @@ export function DappPage() {
     <Box>
       {data ? (
         <Stack direction="row" align="center" alignItems="flex-start">
-          <Heading mb="5">
+          <Heading size="xl" mb="5">
             {liveData ? liveData.dappUpdated.name : data.dapp.name}
           </Heading>
           <DappStatus
@@ -169,6 +171,12 @@ export function DappPage() {
           cumulativeDappStats={data.dapp.stats.cumulative}
           byDayDappStats={data.dapp.stats.byDay}
         />
+      )}
+      {dappId && (
+        <>
+          <CreateApiKey key="create-api-key" dappId={dappId} />
+          <ListApiKeys key="list-api-keys" dappId={dappId} />
+        </>
       )}
     </Box>
   )

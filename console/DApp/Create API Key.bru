@@ -1,0 +1,37 @@
+meta {
+  name: Create API Key
+  type: graphql
+  seq: 4
+}
+
+post {
+  url: http://localhost:3000/graphql
+  body: graphql
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+}
+
+body:graphql {
+  mutation createApiKey($dappId: String!, $name: String!, $description: String) {
+    createApiKey(input: {
+      dappId: $dappId
+      name: $name
+      description: $description
+    }){
+      id
+      dappId
+      name
+      description
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "dappId": "{{dappId}}",
+    "name": "Test API Key"
+  }
+}

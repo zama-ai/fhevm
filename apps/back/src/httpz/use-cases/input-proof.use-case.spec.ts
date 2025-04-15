@@ -1,44 +1,44 @@
-import { Test, TestingModule } from '@nestjs/testing'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { InputProof } from './input-proof.use-case.js'
 import { PRODUCER, PUBSUB } from '#constants.js'
 import { AppError, IPubSub, PubSub, Task } from 'utils'
-import { mock, MockProxy } from 'vitest-mock-extended'
 import { faker } from '@faker-js/faker'
 import { IProducer } from '#shared/services/producer.js'
 import { back } from 'messages'
+import { TestBed } from '@suites/unit'
+import { Mocked } from '@suites/doubles.vitest'
+import { ApiKeyAllowsRequest } from '#dapps/use-cases/api-key-allows-request.use-case.js'
 
 describe('InputProof', () => {
-  let module: TestingModule
+  // let module: UnitReference
   let useCase: InputProof
 
-  let producer: MockProxy<IProducer>
+  let producer: Mocked<IProducer>
   let pubsub: IPubSub<back.BackEvent>
+  let apiKeyAllowsRequest: Mocked<ApiKeyAllowsRequest>
   let contractChainId
   let contractAddress
   let userAddress
   let ciphertextWithZkpok
-  let task: Task<void, AppError>
+  let task: Task<
+    {
+      handles: string[]
+      signatures: string[]
+    },
+    AppError
+  >
 
   beforeEach(async () => {
-    module = await Test.createTestingModule({
-      providers: [
-        InputProof,
-        {
-          provide: PUBSUB,
-          useValue: new PubSub(),
-        },
-        {
-          provide: PRODUCER,
-          useValue: mock(),
-        },
-      ],
-    }).compile()
+    pubsub = new PubSub()
+    const { unit, unitRef } = await TestBed.solitary(InputProof)
+      .mock(PUBSUB)
+      .final(pubsub)
+      .compile()
 
-    useCase = module.get(InputProof)
+    useCase = unit
 
-    producer = module.get(PRODUCER)
-    pubsub = module.get(PUBSUB)
+    producer = unitRef.get(PRODUCER) as unknown as Mocked<IProducer>
+
     contractChainId = faker.string.numeric(5)
     contractAddress = faker.string.hexadecimal({ length: 40 })
     userAddress = faker.string.hexadecimal({ length: 40 })
@@ -46,13 +46,21 @@ describe('InputProof', () => {
       length: { min: 40, max: 100 },
     })
 
+    apiKeyAllowsRequest = unitRef.get(
+      ApiKeyAllowsRequest,
+    ) as unknown as Mocked<ApiKeyAllowsRequest>
+    apiKeyAllowsRequest.execute.mockReturnValue(Task.of(void 0))
+
     producer.publish.mockReturnValue(Task.of(void 0))
-    task = useCase.execute({
-      contractChainId,
-      contractAddress,
-      userAddress,
-      ciphertextWithZkpok,
-    })
+    task = useCase.execute(
+      {
+        contractChainId,
+        contractAddress,
+        userAddress,
+        ciphertextWithZkpok,
+      },
+      {},
+    )
   })
 
   test('should be defined', () => {
@@ -72,7 +80,11 @@ describe('InputProof', () => {
       await pubsub
         .publish(
           back.httpzInputProofCompleted(
-            { requestId, success: true },
+            {
+              requestId,
+              handles: [faker.string.hexadecimal({ length: 40 })],
+              signatures: [faker.string.hexadecimal({ length: 40 })],
+            },
             { correlationId: faker.string.uuid() },
           ),
         )

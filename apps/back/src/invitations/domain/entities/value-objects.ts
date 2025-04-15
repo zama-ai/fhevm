@@ -16,7 +16,7 @@ export class InvitationId extends ValueObject(
 
 export class Token extends ValueObject('Token', z.string().uuid()) {
   static random() {
-    return InvitationId.from(randomUUID())
+    return Token.from(randomUUID())
   }
 }
 

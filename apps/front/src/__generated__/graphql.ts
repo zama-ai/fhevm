@@ -16,6 +16,37 @@ export type Scalars = {
   Float: { input: number; output: number; }
 };
 
+export type ApiKey = {
+  __typename?: 'ApiKey';
+  /** unix timestamp ms */
+  createdAt: Scalars['Float']['output'];
+  /** DApp ID */
+  dappId: Scalars['ID']['output'];
+  /** API key description */
+  description?: Maybe<Scalars['String']['output']>;
+  /** API key ID */
+  id: Scalars['ID']['output'];
+  /** API key name */
+  name: Scalars['String']['output'];
+};
+
+export type CreateApiKey = {
+  __typename?: 'CreateApiKey';
+  /** API Key details */
+  apiKey: ApiKey;
+  /** API Key token to use for authentication */
+  token: Scalars['String']['output'];
+};
+
+export type CreateApiKeyInput = {
+  /** DApp ID */
+  dappId: Scalars['String']['input'];
+  /** API key description */
+  description?: InputMaybe<Scalars['String']['input']>;
+  /** API key name */
+  name: Scalars['String']['input'];
+};
+
 export type CreateDappInput = {
   /** Your smart contract address, it should start with 0x and have 42 characters */
   address?: InputMaybe<Scalars['String']['input']>;
@@ -78,6 +109,8 @@ export type DailyDappStats = {
 export type Dapp = {
   __typename?: 'Dapp';
   address?: Maybe<Scalars['String']['output']>;
+  apiKeys: Array<ApiKey>;
+  /** unix timestamp ms */
   createdAt: Scalars['Float']['output'];
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
@@ -112,6 +145,11 @@ export enum DappStatus {
   Live = 'LIVE'
 }
 
+export type DeleteApiKeyInput = {
+  /** API key ID */
+  id: Scalars['ID']['input'];
+};
+
 export type DeployDAppInput = {
   dappId: Scalars['String']['input'];
 };
@@ -135,13 +173,21 @@ export type LoginInput = {
 
 export type Mutation = {
   __typename?: 'Mutation';
+  createApiKey: CreateApiKey;
   createDapp: Dapp;
   createInvitation: Invitation;
+  deleteApiKey: Scalars['ID']['output'];
   deployDapp: Dapp;
   login: Auth;
   signup: Auth;
+  updateApiKey: ApiKey;
   updateDapp: Dapp;
   updateUser: User;
+};
+
+
+export type MutationCreateApiKeyArgs = {
+  input: CreateApiKeyInput;
 };
 
 
@@ -152,6 +198,11 @@ export type MutationCreateDappArgs = {
 
 export type MutationCreateInvitationArgs = {
   input: CreateInvitationInput;
+};
+
+
+export type MutationDeleteApiKeyArgs = {
+  input: DeleteApiKeyInput;
 };
 
 
@@ -170,6 +221,11 @@ export type MutationSignupArgs = {
 };
 
 
+export type MutationUpdateApiKeyArgs = {
+  input: UpdateApiKeyInput;
+};
+
+
 export type MutationUpdateDappArgs = {
   input: UpdateDappInput;
 };
@@ -181,10 +237,16 @@ export type MutationUpdateUserArgs = {
 
 export type Query = {
   __typename?: 'Query';
+  apiKey: ApiKey;
   dapp: Dapp;
   invitation: Invitation;
   me: User;
   validateAddress: ValidateAddress;
+};
+
+
+export type QueryApiKeyArgs = {
+  input: QueryApiKeyInput;
 };
 
 
@@ -200,6 +262,11 @@ export type QueryInvitationArgs = {
 
 export type QueryValidateAddressArgs = {
   input: ValidateAddressInput;
+};
+
+export type QueryApiKeyInput = {
+  /** API key ID */
+  id: Scalars['ID']['input'];
 };
 
 export type QueryDappInput = {
@@ -235,6 +302,15 @@ export type Team = {
   dapps: Array<Dapp>;
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
+};
+
+export type UpdateApiKeyInput = {
+  /** API key description */
+  description?: InputMaybe<Scalars['String']['input']>;
+  /** API key ID */
+  id: Scalars['ID']['input'];
+  /** API key name */
+  name?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UpdateDappInput = {
@@ -275,6 +351,29 @@ export type Auth = {
   token: Scalars['String']['output'];
   user: User;
 };
+
+export type CreateApiKeyMutationVariables = Exact<{
+  dappId: Scalars['String']['input'];
+  name: Scalars['String']['input'];
+  description?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type CreateApiKeyMutation = { __typename?: 'Mutation', createApiKey: { __typename?: 'CreateApiKey', token: string, apiKey: { __typename?: 'ApiKey', id: string, dappId: string, name: string, description?: string | null } } };
+
+export type ListApiKeysQueryVariables = Exact<{
+  dappId: Scalars['ID']['input'];
+}>;
+
+
+export type ListApiKeysQuery = { __typename?: 'Query', dapp: { __typename?: 'Dapp', apiKeys: Array<{ __typename?: 'ApiKey', id: string, name: string, description?: string | null, createdAt: number }> } };
+
+export type DeleteApiKeyMutationVariables = Exact<{
+  apiKeyId: Scalars['ID']['input'];
+}>;
+
+
+export type DeleteApiKeyMutation = { __typename?: 'Mutation', deleteApiKey: string };
 
 export type ValidateAddressQueryVariables = Exact<{
   chainId: Scalars['String']['input'];
@@ -350,6 +449,9 @@ export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 export type MeQuery = { __typename?: 'Query', me: { __typename?: 'User', id: string, email: string, name: string, teams: Array<{ __typename?: 'Team', id: string, name: string, dapps: Array<{ __typename?: 'Dapp', id: string, name: string, status: DappStatus, createdAt: number }> }> } };
 
 
+export const CreateApiKeyDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreateApiKey"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"dappId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"description"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createApiKey"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"dappId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"dappId"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"description"},"value":{"kind":"Variable","name":{"kind":"Name","value":"description"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"token"}},{"kind":"Field","name":{"kind":"Name","value":"apiKey"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"dappId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}}]}}]}}]} as unknown as DocumentNode<CreateApiKeyMutation, CreateApiKeyMutationVariables>;
+export const ListApiKeysDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"ListApiKeys"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"dappId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dapp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"dappId"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"apiKeys"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]}}]} as unknown as DocumentNode<ListApiKeysQuery, ListApiKeysQueryVariables>;
+export const DeleteApiKeyDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteApiKey"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"apiKeyId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteApiKey"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"apiKeyId"}}}]}}]}]}}]} as unknown as DocumentNode<DeleteApiKeyMutation, DeleteApiKeyMutationVariables>;
 export const ValidateAddressDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"ValidateAddress"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"chainId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"address"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"validateAddress"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"chainId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"chainId"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"address"},"value":{"kind":"Variable","name":{"kind":"Name","value":"address"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"check"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<ValidateAddressQuery, ValidateAddressQueryVariables>;
 export const CreateDappDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreateDapp"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"teamId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"address"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createDapp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"teamId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"teamId"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"address"},"value":{"kind":"Variable","name":{"kind":"Name","value":"address"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"address"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}}]}}]} as unknown as DocumentNode<CreateDappMutation, CreateDappMutationVariables>;
 export const GetDappDetailsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetDappDetails"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"dappId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dapp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"dappId"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"rawStats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"timestamp"}},{"kind":"Field","name":{"kind":"Name","value":"externalRef"}}]}},{"kind":"Field","name":{"kind":"Name","value":"stats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"cumulative"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"FheAdd"}},{"kind":"Field","name":{"kind":"Name","value":"FheSub"}},{"kind":"Field","name":{"kind":"Name","value":"FheMul"}},{"kind":"Field","name":{"kind":"Name","value":"FheDiv"}},{"kind":"Field","name":{"kind":"Name","value":"FheRem"}},{"kind":"Field","name":{"kind":"Name","value":"FheBitAnd"}},{"kind":"Field","name":{"kind":"Name","value":"FheBitOr"}},{"kind":"Field","name":{"kind":"Name","value":"FheBitXor"}},{"kind":"Field","name":{"kind":"Name","value":"FheShl"}},{"kind":"Field","name":{"kind":"Name","value":"FheShr"}},{"kind":"Field","name":{"kind":"Name","value":"FheRotl"}},{"kind":"Field","name":{"kind":"Name","value":"FheRotr"}},{"kind":"Field","name":{"kind":"Name","value":"FheEq"}},{"kind":"Field","name":{"kind":"Name","value":"FheEqBytes"}},{"kind":"Field","name":{"kind":"Name","value":"FheNe"}},{"kind":"Field","name":{"kind":"Name","value":"FheNeBytes"}},{"kind":"Field","name":{"kind":"Name","value":"FheGe"}},{"kind":"Field","name":{"kind":"Name","value":"FheGt"}},{"kind":"Field","name":{"kind":"Name","value":"FheLe"}},{"kind":"Field","name":{"kind":"Name","value":"FheLt"}},{"kind":"Field","name":{"kind":"Name","value":"FheMin"}},{"kind":"Field","name":{"kind":"Name","value":"FheMax"}},{"kind":"Field","name":{"kind":"Name","value":"FheNeg"}},{"kind":"Field","name":{"kind":"Name","value":"FheNot"}},{"kind":"Field","name":{"kind":"Name","value":"VerifyCiphertext"}},{"kind":"Field","name":{"kind":"Name","value":"Cast"}},{"kind":"Field","name":{"kind":"Name","value":"TrivialEncrypt"}},{"kind":"Field","name":{"kind":"Name","value":"TrivialEncryptBytes"}},{"kind":"Field","name":{"kind":"Name","value":"FheIfThenElse"}},{"kind":"Field","name":{"kind":"Name","value":"FheRand"}},{"kind":"Field","name":{"kind":"Name","value":"FheRandBounded"}}]}},{"kind":"Field","name":{"kind":"Name","value":"byDay"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"day"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"computation"}},{"kind":"Field","name":{"kind":"Name","value":"encryption"}}]}}]}}]}}]}}]} as unknown as DocumentNode<GetDappDetailsQuery, GetDappDetailsQueryVariables>;

@@ -60,7 +60,7 @@ export class SQSProducer implements EventProducer {
             )
             return reject(unknownError(String(err)))
           })
-      }).tapErr(err => {
+      }).tapError(err => {
         this.logger.warn(
           `❌ failed to publish ${message.type}: ${err._tag}/${err.message}`,
         )

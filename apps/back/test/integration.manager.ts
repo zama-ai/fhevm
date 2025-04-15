@@ -9,6 +9,7 @@ import {
 } from '@aws-sdk/client-sqs'
 import { expect } from 'vitest'
 import { Type } from '@nestjs/common'
+import { HttpzManager } from './httpz.manager.js'
 
 export type { GraphQlResponse } from './setup.manager.js'
 export type { User } from './auth.manager.js'
@@ -18,6 +19,13 @@ export class IntegrationManager {
   readonly setup = new SetupManager()
   readonly auth = new AuthManager(this.setup)
   readonly dapp = new DappManager(this.setup, this.auth)
+  readonly httpz = new HttpzManager(this.setup)
+
+  get<TInput = any, TResult = TInput>(
+    typeOrToken: Type<TInput> | string | symbol,
+  ): TResult {
+    return this.setup.get<TInput, TResult>(typeOrToken)
+  }
 
   get<TInput = any, TResult = TInput>(
     typeOrToken: Type<TInput> | string | symbol,

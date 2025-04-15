@@ -25,7 +25,9 @@ export const Field = React.forwardRef<HTMLDivElement, FieldProps>(
           <ChakraField.HelperText>{helperText}</ChakraField.HelperText>
         )}
         {errorText && (
-          <ChakraField.ErrorText>{errorText}</ChakraField.ErrorText>
+          <ChakraField.ErrorText role="alert">
+            {errorText}
+          </ChakraField.ErrorText>
         )}
       </ChakraField.Root>
     )

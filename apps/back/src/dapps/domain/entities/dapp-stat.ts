@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import { DAppId, DAppStatId } from './value-objects.js'
 import { AppError, Entity, fail, ok, Result, validationError } from 'utils'
+import { fromZodError } from 'utils/dist/src/app-error.js'
 import { operationEnum } from 'messages'
-
 
 const schema = z.object({
   id: DAppStatId.schema,
@@ -16,24 +16,24 @@ const schema = z.object({
   externalRef: z.string(),
 })
 
-
 export type DAppStatProps = z.infer<typeof schema>
 
 export class DAppStat
   extends Entity<DAppStatProps>
   implements
-  Readonly<
-    Omit<DAppStatProps, 'id' | 'dappId'> & {
-      id: DAppStatId
-      dappId: DAppId
-    }
-  > {
+    Readonly<
+      Omit<DAppStatProps, 'id' | 'dappId'> & {
+        id: DAppStatId
+        dappId: DAppId
+      }
+    >
+{
   static parse(data: unknown): Result<DAppStat, AppError> {
     if (!data) return fail(validationError('data is undefined'))
     const check = schema.safeParse(data)
     return check.success
       ? ok(new DAppStat(check.data))
-      : fail(validationError(check.error.message))
+      : fail(fromZodError(check.error))
   }
 
   get id() {

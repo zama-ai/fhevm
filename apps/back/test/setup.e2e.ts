@@ -50,6 +50,12 @@ async function startPostgres(maxWorkers: number) {
     new Array(maxWorkers).fill(0).map(() => startPostresInstance(databaseUrl)),
   )
 
+  // NOTE: I need to run the prisma client to generate the prisma client
+  // Sometimes, it doesn't get the last generated client.
+  execSync('pnpx prisma generate', {
+    env: { DATABASE_URL: urls[0], PATH: process.env.PATH },
+  })
+
   return urls
 }
 

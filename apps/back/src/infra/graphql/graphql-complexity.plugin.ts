@@ -5,6 +5,7 @@ import { Plugin } from '@nestjs/apollo'
 import {
   ApolloServerPlugin,
   BaseContext,
+  GraphQLRequestContext,
   GraphQLRequestListener,
 } from '@apollo/server'
 import { GraphQLError } from 'graphql'
@@ -32,9 +33,17 @@ export class ComplexityPlugin implements ApolloServerPlugin {
     this.maxComplexity = config.get<number>('common.graphqlMaxComplexity') ?? 0
   }
 
-  async requestDidStart(): Promise<GraphQLRequestListener<BaseContext>> {
+  async requestDidStart(
+    requestContext: GraphQLRequestContext<BaseContext>,
+  ): Promise<GraphQLRequestListener<BaseContext>> {
     const { schema } = this.gqlSchemaHost
     const { logger, maxComplexity } = this
+    const isIntrospectionQuery = requestContext.request.query
+      ?.trimStart()
+      .startsWith('query IntrospectionQuery')
+    this.logger.verbose(
+      `requestDidStart: isIntrospectionQuery? ${isIntrospectionQuery}`,
+    )
     return {
       async didResolveOperation({ request, document }) {
         const complexity = getComplexity({
@@ -47,13 +56,13 @@ export class ComplexityPlugin implements ApolloServerPlugin {
             simpleEstimator({ defaultComplexity: 1 }),
           ],
         })
-        if (complexity > maxComplexity) {
+        if (complexity > maxComplexity && !isIntrospectionQuery) {
           logger.warn(
             `query too complex: ${complexity} / max: ${maxComplexity}`,
           )
           throw new GraphQLError(`query is too complex: ${complexity}`)
         }
-        logger.debug(`query complexity: ${complexity}`)
+        logger.verbose(`query complexity: ${complexity}`)
       },
     }
   }

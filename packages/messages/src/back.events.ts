@@ -1,7 +1,12 @@
 import { z } from 'zod'
-import { chainId, meta, metaFactory, requestId, web3Address, operationEnum } from './shared.js'
-
-
+import {
+  chainId,
+  meta,
+  metaFactory,
+  requestId,
+  web3Address,
+  operationEnum,
+} from './shared.js'
 
 type EventTypes =
   | 'dapp:created'

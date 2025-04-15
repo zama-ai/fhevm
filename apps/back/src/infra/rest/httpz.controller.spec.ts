@@ -1,36 +1,33 @@
 import { beforeEach, describe, expect, test } from 'vitest'
 import { HttpzController } from './httpz.controller.js'
-import { Test, TestingModule } from '@nestjs/testing'
-import { GetKeyUrl } from '#httpz/use-cases/get-key-url.use-case.js'
+import { TestBed, UnitReference } from '@suites/unit'
+import type { Mocked } from '@suites/doubles.vitest'
+// import { Test, TestingModule } from '@nestjs/testing'
 import { Task } from 'utils'
 import {
   CRS,
   FHEPublicKey,
 } from '#httpz/domain/entities/value-objects/index.js'
 import { faker } from '@faker-js/faker'
-import { mock, MockProxy } from 'vitest-mock-extended'
-import { InputProof } from '#httpz/use-cases/input-proof.use-case.js'
+import { GetKeyUrl, InputProof } from '#httpz/use-cases/index.js'
+// import { ApiKeyAllowsRequest, GetApiKey } from '#dapps/use-cases/index.js'
+import { ApiKey } from '#dapps/domain/entities/api-key.js'
+import {
+  ApiKeyId,
+  DAppId,
+  Token,
+} from '#dapps/domain/entities/value-objects.js'
 
 describe('HttpzController', () => {
-  let module: TestingModule
+  // let module: TestingModule
+  let unitRef: UnitReference
   let controller: HttpzController
 
   beforeEach(async () => {
-    module = await Test.createTestingModule({
-      controllers: [HttpzController],
-      providers: [
-        {
-          provide: GetKeyUrl,
-          useValue: mock(),
-        },
-        {
-          provide: InputProof,
-          useValue: mock(),
-        },
-      ],
-    }).compile()
-
-    controller = module.get(HttpzController)
+    const { unit, unitRef: _unitRef } =
+      await TestBed.solitary(HttpzController).compile()
+    controller = unit
+    unitRef = _unitRef
   })
 
   test('should be defined', () => {
@@ -40,7 +37,7 @@ describe('HttpzController', () => {
   describe('GET /v1/keyurl', () => {
     let getKeyUrl: MockProxy<GetKeyUrl>
     beforeEach(() => {
-      getKeyUrl = module.get(GetKeyUrl)
+      getKeyUrl = unitRef.get(GetKeyUrl) as unknown as Mocked<GetKeyUrl>
       getKeyUrl.execute.mockReturnValue(
         Task.of({
           fhe_key_info: [
@@ -84,16 +81,23 @@ describe('HttpzController', () => {
     let inputProof: MockProxy<InputProof>
     let handles: string[]
     let signatures: string[]
+    let apiKey: ApiKey
 
     beforeEach(() => {
       handles = [faker.string.hexadecimal({ length: 40, prefix: '' })]
       signatures = [faker.string.hexadecimal({ length: 40 })]
-      inputProof = module.get(InputProof)
+      inputProof = unitRef.get(InputProof) as unknown as Mocked<InputProof>
       inputProof.execute.mockReturnValue(Task.of({ handles, signatures }))
+      apiKey = ApiKey.parse({
+        id: ApiKeyId.random().value,
+        token: Token.random().value,
+        dappId: DAppId.random().value,
+        name: faker.string.alphanumeric(10),
+      }).unwrap()
     })
 
     test('should return a success response', async () => {
-      await controller.postInputProof({
+      await controller.postInputProof(apiKey, {
         contractChainId: faker.string.hexadecimal({ length: 3 }),
         contractAddress: faker.string.hexadecimal({ length: 40 }),
         userAddress: faker.string.hexadecimal({ length: 40 }),
@@ -103,7 +107,7 @@ describe('HttpzController', () => {
     })
 
     test('should return the handles and the signatures', async () => {
-      const response = await controller.postInputProof({
+      const response = await controller.postInputProof(apiKey, {
         contractChainId: faker.string.hexadecimal({ length: 3 }),
         contractAddress: faker.string.hexadecimal({ length: 40 }),
         userAddress: faker.string.hexadecimal({ length: 40 }),

@@ -1,5 +1,6 @@
 import { TeamType } from '#users/infra/types/team.type.js'
 import { Field, ID, ObjectType, registerEnumType } from '@nestjs/graphql'
+import { ApiKeyType } from './api-key.type.js'
 import { DappStatsType } from './stat.type.js'
 
 export enum DappStatus {
@@ -73,7 +74,7 @@ export class DappType {
   @Field(() => TeamType, { nullable: false })
   team: TeamType
 
-  @Field({ nullable: false })
+  @Field({ nullable: false, description: 'unix timestamp ms' })
   createdAt: number
 
   @Field(() => DappStatsType, {
@@ -87,6 +88,9 @@ export class DappType {
     description: 'DApp usage statistics',
   })
   rawStats: RawStatsType[]
+
+  @Field(() => [ApiKeyType])
+  apiKeys: ApiKeyType[]
 }
 
 @ObjectType('ValidateAddress')

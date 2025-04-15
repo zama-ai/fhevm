@@ -8,6 +8,31 @@ type Team {
   dapps: [Dapp!]!
 }
 
+type ApiKey {
+  """API key ID"""
+  id: ID!
+
+  """DApp ID"""
+  dappId: ID!
+
+  """API key name"""
+  name: String!
+
+  """API key description"""
+  description: String
+
+  """unix timestamp ms"""
+  createdAt: Float!
+}
+
+type CreateApiKey {
+  """API Key token to use for authentication"""
+  token: String!
+
+  """API Key details"""
+  apiKey: ApiKey!
+}
+
 type CumulativeDappStats {
   total: Int!
   FheAdd: Int!
@@ -73,6 +98,8 @@ type Dapp {
   address: String
   teamId: String! @deprecated(reason: "Do not use this, it shall go away when I find a way to make it disappear")
   team: Team!
+
+  """unix timestamp ms"""
   createdAt: Float!
 
   """DApp usage aggregated statistics"""
@@ -80,6 +107,7 @@ type Dapp {
 
   """DApp usage statistics"""
   rawStats: [RawStats!]!
+  apiKeys: [ApiKey!]!
 }
 
 enum DappStatus {
@@ -127,6 +155,7 @@ type Query {
   invitation(token: String!): Invitation!
   dapp(input: QueryDappInput!): Dapp!
   validateAddress(input: ValidateAddressInput!): ValidateAddress!
+  apiKey(input: QueryApiKeyInput!): ApiKey!
 }
 
 input QueryDappInput {
@@ -139,6 +168,11 @@ input ValidateAddressInput {
   address: String!
 }
 
+input QueryApiKeyInput {
+  """API key ID"""
+  id: ID!
+}
+
 type Mutation {
   login(input: LoginInput!): auth!
   signup(input: SignupInput!): auth!
@@ -147,6 +181,9 @@ type Mutation {
   createDapp(input: CreateDappInput!): Dapp!
   updateDapp(input: UpdateDappInput!): Dapp!
   deployDapp(input: DeployDAppInput!): Dapp!
+  createApiKey(input: CreateApiKeyInput!): CreateApiKey!
+  updateApiKey(input: UpdateApiKeyInput!): ApiKey!
+  deleteApiKey(input: DeleteApiKeyInput!): ID!
 }
 
 input LoginInput {
@@ -196,6 +233,33 @@ input UpdateDappInput {
 
 input DeployDAppInput {
   dappId: String!
+}
+
+input CreateApiKeyInput {
+  """DApp ID"""
+  dappId: String!
+
+  """API key name"""
+  name: String!
+
+  """API key description"""
+  description: String
+}
+
+input UpdateApiKeyInput {
+  """API key ID"""
+  id: ID!
+
+  """API key name"""
+  name: String
+
+  """API key description"""
+  description: String
+}
+
+input DeleteApiKeyInput {
+  """API key ID"""
+  id: ID!
 }
 
 type Subscription {

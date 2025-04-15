@@ -1,6 +1,6 @@
 import { IntegrationManager } from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
-import { back } from 'messages'
+import { back, operationName } from 'messages'
 import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
 import {
   afterAll,
@@ -144,7 +144,10 @@ describe('get-dapp-cumulative-stats', () => {
       }
 
       // Create some test stats using a factory
-      const createFakeStatsMessages = (address: string, name: string) => ({
+      const createFakeStatsMessages = (
+        address: string,
+        name: operationName,
+      ) => ({
         payload: {
           requestId: faker.string.uuid(),
           chainId: LOCAL_FHEVM_CHAIN_ID,

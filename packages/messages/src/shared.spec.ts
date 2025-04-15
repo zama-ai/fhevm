@@ -92,7 +92,7 @@ describe('chainId', () => {
   test('should reject a generic string', () => {
     expect(
       chainId.safeParse(
-        faker.string.alphanumeric({ exclude: '0123456789', length: 5 }),
+        faker.string.alphanumeric({ length: 5, exclude: '0123456789' }),
       ).success,
     ).toBe(false)
   })

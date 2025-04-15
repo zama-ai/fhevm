@@ -287,13 +287,15 @@ export class Task<A, E> {
     })
   }
 
-  tapErr(fn: (err: E) => void): Task<A, E> {
-    return new Task((resolve, reject) => {
-      this.computation(resolve, error => {
+  tapError(fn: (error: E) => void): Task<A, E> {
+    this.computation(
+      () => {},
+      error => {
         fn(error)
-        reject(error)
-      })
-    })
+      },
+    )
+
+    return this
   }
 }
 

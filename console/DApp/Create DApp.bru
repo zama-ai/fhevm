@@ -1,0 +1,32 @@
+meta {
+  name: Create DApp
+  type: graphql
+  seq: 1
+}
+
+post {
+  url: http://localhost:3000/graphql
+  body: graphql
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+}
+
+body:graphql {
+  mutation createDapp($teamId: String!, $address: String!) {
+    createDapp(input: { name: "Test DApp", teamId: $teamId, address: $address }) {
+      id
+      name
+    }
+  }
+  
+}
+
+body:graphql:vars {
+  {
+    "teamId": "{{teamId}}",
+    "address": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1"
+  }
+}

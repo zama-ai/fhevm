@@ -1,25 +1,27 @@
-import { Test, TestingModule } from '@nestjs/testing'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { GetKeyUrl } from './get-key-url.use-case.js'
-import { KeyUrlService } from '#httpz/domain/service/key-url.service.js'
+import {
+  KEY_URL_SERVICE,
+  KeyUrlService,
+} from '#httpz/domain/service/key-url.service.js'
 import {
   CRS,
   FHEPublicKey,
 } from '#httpz/domain/entities/value-objects/index.js'
 import { Task } from 'utils'
 import { faker } from '@faker-js/faker'
-import { mock, MockProxy } from 'vitest-mock-extended'
+import { TestBed, UnitReference } from '@suites/unit'
+import { Mocked } from '@suites/doubles.vitest'
 
 describe('GetKeyUrl', () => {
-  let module: TestingModule
+  let module: UnitReference
   let useCase: GetKeyUrl
 
   beforeEach(async () => {
-    module = await Test.createTestingModule({
-      providers: [GetKeyUrl, { provide: KeyUrlService, useValue: mock() }],
-    }).compile()
+    const { unit, unitRef } = await TestBed.solitary(GetKeyUrl).compile()
 
-    useCase = module.get<GetKeyUrl>(GetKeyUrl)
+    useCase = unit
+    module = unitRef
   })
 
   test('should be defined', () => {
@@ -27,11 +29,11 @@ describe('GetKeyUrl', () => {
   })
 
   describe('execute', () => {
-    let keyUrlService: MockProxy<KeyUrlService>
+    let keyUrlService: Mocked<KeyUrlService>
     beforeEach(() => {
-      keyUrlService = module.get<KeyUrlService>(
-        KeyUrlService,
-      ) as MockProxy<KeyUrlService>
+      keyUrlService = module.get(
+        KEY_URL_SERVICE,
+      ) as unknown as Mocked<KeyUrlService>
       keyUrlService.getFHEPublicKey.mockReturnValue(
         Task.of([
           FHEPublicKey.parse({

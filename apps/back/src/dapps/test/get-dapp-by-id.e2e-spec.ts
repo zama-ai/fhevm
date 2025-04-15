@@ -187,7 +187,7 @@ describe('get-dapp-by-id', () => {
 
       // TODO: move to the GraphQL endpoint when implemented
       await manager.prismaClient.dapp.update({
-        data: { updatedAt: new Date() },
+        data: { deletedAt: new Date() },
         where: { id: dappId },
       })
     })
@@ -204,7 +204,7 @@ describe('get-dapp-by-id', () => {
 
       test(`then a 'Not Found' error is returned`, () => {
         if (!result.success) {
-          expect(result.errors[0].message).toMatch('Not Found')
+          expect(result.errors[0].message).toMatch('DApp not found')
         } else {
           expect(result.success, 'it should fail').toBe(true)
         }

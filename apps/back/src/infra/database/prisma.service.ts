@@ -50,4 +50,8 @@ export class PrismaService implements OnModuleInit {
   get dappStat() {
     return this.client.dappStat
   }
+
+  get apiKey() {
+    return this.client.apiKey
+  }
 }

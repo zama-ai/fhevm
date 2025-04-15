@@ -29,10 +29,57 @@ describe('input proof', () => {
   })
 
   describe('given a user has a valid API key', () => {
-    // NOTE: We don't have API Keys implemented yet
+    let apiKey: string
+    let dappId: string
+    let address: string
+
+    beforeEach(async () => {
+      address = faker.string.hexadecimal({ length: 40 })
+
+      const signup = await manager.auth.signup(
+        {
+          name: faker.internet.username(),
+          password: faker.internet.password(),
+        },
+        {
+          createInvitation: true,
+        },
+      )
+      let token = ''
+      let teamId = ''
+      if (signup.success) {
+        token = signup.data.token
+        teamId = signup.data.user.teams[0].id
+      } else {
+        console.log(`failed to signup: ${JSON.stringify(signup)}`)
+        expect(signup.success).toBe(true)
+      }
+      const createDapp = await manager.dapp.createDApp({
+        token,
+        teamId,
+        name: faker.string.alphanumeric(10),
+        address,
+      })
+      if (createDapp.success) {
+        dappId = createDapp.data.id
+      } else {
+        console.log(`failed to create dapp: ${JSON.stringify(createDapp)}`)
+        expect(createDapp.success).toBe(true)
+      }
+      const createApiKey = await manager.httpz.createApiKey({
+        token,
+        dappId,
+      })
+      if (createApiKey.success) {
+        apiKey = createApiKey.data.token
+      } else {
+        console.log(`failed to create api key: ${JSON.stringify(createApiKey)}`)
+        expect(createApiKey.success).toBe(true)
+      }
+    })
+
     describe('when they request for an input proof', () => {
       let contractChainId: string
-      let contractAddress: string
       let userAddress: string
       let ciphertextWithZkpok: string
       let handles: string[]
@@ -40,7 +87,6 @@ describe('input proof', () => {
 
       beforeEach(() => {
         contractChainId = faker.string.numeric(5)
-        contractAddress = faker.string.hexadecimal({ length: 40 })
         userAddress = faker.string.hexadecimal({ length: 40 })
         ciphertextWithZkpok = faker.string.hexadecimal({
           length: { min: 40, max: 100 },
@@ -56,15 +102,16 @@ describe('input proof', () => {
             .post('/v1/input-proof')
             .send({
               contractChainId,
-              contractAddress,
+              contractAddress: address,
               userAddress,
               ciphertextWithZkpok,
             })
             .set('Content-Type', 'application/json')
             .set('Accept', 'application/json')
+            .set('x-api-key', apiKey)
             .end((err, res) => {
               if (err) {
-                console.error(`err: ${err}`)
+                console.error(`failed to send /input-proof request: ${err}`)
                 return reject(err)
               }
               return resolve(res)

@@ -59,12 +59,12 @@ export const chainId = z.union(
       .refine(v => parseInt(v, 10) > 0),
     z.number().int().positive(),
   ],
-  { message: 'Invalid Chain Id' },
+  { message: 'Chain ID should be a string, an integer or a hex string' },
 )
 
 export const web3Address = z
   .string()
-  .regex(/^0x[\da-f]{40}$/i, 'Invalid Address')
+  .regex(/^0x[\da-f]{40}$/i, 'Address should be an hex string of length 42')
 
 export const requestId = z.string().uuid()
 export function generateRequestId() {
@@ -87,7 +87,7 @@ export function metaFactory<
       meta: Meta
     } = Extract<Events, { type: `${Prefix}:${Key}` }>,
   >(key: Key) {
-    return function(payload: Event['payload'], meta: Event['meta']) {
+    return function (payload: Event['payload'], meta: Event['meta']) {
       return {
         type: `${prefix}:${key}`,
         payload,
