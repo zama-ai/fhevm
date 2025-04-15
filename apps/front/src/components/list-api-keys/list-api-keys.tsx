@@ -44,16 +44,19 @@ export function ListApiKeys({ dappId }: ListApiKeysProps) {
                 </>
               )}
 
-              {apiKeys?.dapp.apiKeys.map(item => (
-                <ApiKeyItem
-                  key={item.id}
-                  id={item.id}
-                  name={item.name}
-                  description={item.description ?? null}
-                  createdAt={item.createdAt}
-                  onDelete={deleteApiKey}
-                />
-              ))}
+              {apiKeys &&
+                [...apiKeys.dapp.apiKeys]
+                  .sort((a, b) => b.createdAt - a.createdAt)
+                  .map(item => (
+                    <ApiKeyItem
+                      key={item.id}
+                      id={item.id}
+                      name={item.name}
+                      description={item.description ?? null}
+                      createdAt={item.createdAt}
+                      onDelete={deleteApiKey}
+                    />
+                  ))}
             </Table.Body>
           </>
         )}
