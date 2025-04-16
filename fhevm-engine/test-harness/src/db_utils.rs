@@ -135,12 +135,9 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
     let cks = tokio::fs::read(cks).await.expect("can't read cks key");
     let public_params = tokio::fs::read(pp).await.expect("can't read public params");
 
-    let sns_sk_oid = upload_large_object(pool, "../fhevm-keys/sns_sk").await?;
-    let sns_pk_oid = upload_large_object(pool, "../fhevm-keys/sns_pk").await?;
-
     sqlx::query!(
         "
-            INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key, sns_sk, sns_pk)
+            INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
             VALUES (
                 'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
                 12345,
@@ -149,18 +146,14 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
                 $2,
                 $3,
                 $4,
-                $5,
-                $6,
-                $7
+                $5
             )
         ",
         ACL_CONTRACT_ADDR.to_string(),
         &pks,
         &sks,
         &public_params,
-        &cks,
-        sns_sk_oid,
-        sns_pk_oid,
+        &cks
     )
     .execute(pool)
     .await?;
