@@ -1,6 +1,6 @@
-# If sentences
+# Dealing with branches and conditions
 
-This document explains how to handle loops when working with Fully Homomorphic Encryption (FHE), specifically when a loop break is based on an encrypted condition.
+This document explains how to handle branches, loops or conditions when working with Fully Homomorphic Encryption (FHE), specifically when the condition / index is encrypted.
 
 ## Breaking a loop
 

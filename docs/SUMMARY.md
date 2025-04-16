@@ -38,7 +38,7 @@
   - [Decryption](smart_contracts/decryption/decrypt.md)
   - [Decryption in depth](smart_contracts/decryption/decrypt_details.md)
   - [Re-encryption](smart_contracts/decryption/reencryption.md)
-- [If sentences](smart_contracts/loop.md)
+- [Dealing with branches and conditions](smart_contracts/loop.md)
 - [Branching in FHE](smart_contracts/conditions.md)
 - [AsEbool, asEuintXX, asEaddress and asEbytesXX operations](smart_contracts/asEXXoperators.md)
 - [Generate random numbers](smart_contracts/random.md)
