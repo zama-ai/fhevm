@@ -1,33 +1,20 @@
 use crate::keyset::fetch_keyset;
+use crate::squash_noise::SquashNoiseCiphertext;
 use crate::HandleItem;
 use crate::KeySet;
 use crate::{Config, DBConfig, ExecutionError};
 use fhevm_engine_common::utils::compact_hex;
-use serde::Serialize;
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::PgListener;
 use sqlx::{Acquire, PgPool, Postgres, Transaction};
 use std::time::Duration;
-use tfhe::integer::IntegerCiphertext;
-use tfhe::named::Named;
 use tfhe::set_server_key;
-use tfhe::Versionize;
 use tokio::select;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
-
-pub const SAFE_SER_CT_128_LIMIT: u64 = 1024 * 1024 * 66;
-
-pub fn safe_serialize<T: Serialize + Named + Versionize>(
-    object: &T,
-) -> Result<Vec<u8>, ExecutionError> {
-    let mut out = vec![];
-    tfhe::safe_serialization::safe_serialize(object, &mut out, SAFE_SER_CT_128_LIMIT)?;
-    Ok(out)
-}
 
 const RETRY_DB_CONN_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -237,35 +224,31 @@ fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), Executio
 
     for task in tasks.iter_mut() {
         let ct = decompress_ct(&task.handle, &task.ct64_compressed)?;
-        let raw_ct = ct.to_ciphertext64();
+
         let handle = compact_hex(&task.handle);
+        info!(target: "sns",  { handle }, "Converting ciphertext");
+        match ct.squash_noise_and_serialize() {
+            Ok(squashed_noise_serialized) => {
+                info!(target: "sns", { handle }, "Ciphertext converted, length: {}", squashed_noise_serialized.len());
 
-        let blocks = raw_ct.blocks().len();
-        info!(target: "sns",  { handle, blocks }, "Converting ciphertext");
+                // Optional: Decrypt and log for debugging
+                #[cfg(feature = "test_decrypt_128")]
+                {
+                    if let Some(client_key) = &keys.client_key {
+                        let ct = ct
+                            .decrypt_squash_noise(client_key, &squashed_noise_serialized)
+                            .expect("Failed to decrypt");
 
-        let ciphertext128 = keys.sns_key.to_large_ciphertext(&raw_ct)?;
+                        info!(target: "sns", { handle }, "Decrypted plaintext: {:?}", ct);
+                    }
+                }
 
-        info!(target: "sns",  { handle }, "Ciphertext converted, blocks: {}", ciphertext128.len());
-
-        // Optional: Decrypt and log for debugging
-        #[cfg(feature = "test_decrypt_128")]
-        {
-            if let Some(sns_secret_key) = &keys.sns_secret_key {
-                let decrypted = sns_secret_key.decrypt_128(&ciphertext128);
-                info!(target: "sns", { handle, decrypted }, "Decrypted plaintext");
-            }
-        }
-
-        match safe_serialize(&ciphertext128) {
-            Ok(ct128) => {
-                info!(target: "sns", { handle }, "ct128 serialized, bytes_len: {}", ct128.len());
-                task.ct128_uncompressed = Some(ct128);
+                task.ct128_uncompressed = Some(squashed_noise_serialized);
             }
             Err(err) => {
-                error!(target: "sns", { handle }, "Failed to serialize ct128: {err} ,
-                    size_limit: {}",  SAFE_SER_CT_128_LIMIT );
+                error!(target: "sns", { handle }, "Failed to convert ct: {err}");
             }
-        }
+        };
     }
 
     Ok(())
