@@ -47,7 +47,7 @@ export function generateSolidityOverloadTestFiles(operators: Operator[], fheType
     generateOverloadsForTFHEUnaryOperators(fheType, operators, signatures),
   );
 
-  // TODO Add tests for conversion from plaintext and einput to all supported types (e.g., einput --> ebool, bytes memory --> ebytes64, uint32 --> euint32)
+  // TODO Add tests for conversion from plaintext and externalEXXX to all supported types (e.g., externalEXXX --> ebool, bytes memory --> ebytes64, uint32 --> euint32)
   return signatures;
 }
 
@@ -586,7 +586,7 @@ function signatureContractEncryptedSignature(s: OverloadSignature): string {
 function castExpressionToType(argExpr: string, outputType: FunctionType): string {
   switch (outputType.type) {
     case ArgumentType.Euint:
-      return `HTTPZ.asEuint${outputType.bits}(${argExpr}, inputProof)`;
+      return `HTTPZ.fromExternal(${argExpr}, inputProof)`;
     case ArgumentType.Uint:
       return argExpr;
     case ArgumentType.Ebool:
@@ -611,11 +611,11 @@ function castExpressionToType(argExpr: string, outputType: FunctionType): string
 function functionTypeToCalldataType(t: FunctionType): string {
   switch (t.type) {
     case ArgumentType.Euint:
-      return `einput`;
+      return `externalEuint${t.bits}`;
     case ArgumentType.Uint:
       return getUint(t.bits);
     case ArgumentType.Ebool:
-      return `einput`;
+      return `externalEbool`;
     // case ArgumentType.Ebytes:
     //  return `einput`;
   }

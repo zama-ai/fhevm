@@ -3,6 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "../decryptionOracle/DecryptionOracle.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 
 contract DecryptionOracleUpgradedExample is DecryptionOracle {
     /// @notice Name of the contract

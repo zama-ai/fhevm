@@ -60,7 +60,7 @@ task('task:deployDecryptionOracle').setAction(async function (taskArguments: Tas
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplem = await ethers.getContractFactory('DecryptionOracle', deployer);
+  const newImplem = await ethers.getContractFactory('decryptionOracle/DecryptionOracle.sol:DecryptionOracle', deployer);
   const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.decryptionoracle'));
   const proxyAddress = parsedEnv.DECRYPTION_ORACLE_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);

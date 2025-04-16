@@ -19,7 +19,9 @@ describe('Upgrades', function () {
     this.executorFactoryUpgraded = await ethers.getContractFactory('HTTPZExecutorUpgradedExample');
     this.paymentFactory = await ethers.getContractFactory('FHEGasLimit');
     this.paymentFactoryUpgraded = await ethers.getContractFactory('FHEGasLimitUpgradedExample');
-    this.decryptionOracleFactory = await ethers.getContractFactory('DecryptionOracle');
+    this.decryptionOracleFactory = await ethers.getContractFactory(
+      'decryptionOracle/DecryptionOracle.sol:DecryptionOracle',
+    );
     this.decryptionOracleFactoryUpgraded = await ethers.getContractFactory('DecryptionOracleUpgradedExample');
   });
 

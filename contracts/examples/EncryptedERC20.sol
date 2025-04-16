@@ -72,8 +72,12 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param encryptedAmount The encrypted amount to transfer
     /// @param inputProof The proof for the encrypted input
     /// @return bool indicating success of the transfer
-    function transfer(address to, einput encryptedAmount, bytes calldata inputProof) public virtual returns (bool) {
-        transfer(to, HTTPZ.asEuint64(encryptedAmount, inputProof));
+    function transfer(
+        address to,
+        externalEuint64 encryptedAmount,
+        bytes calldata inputProof
+    ) public virtual returns (bool) {
+        transfer(to, HTTPZ.fromExternal(encryptedAmount, inputProof));
         return true;
     }
 
@@ -101,8 +105,12 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param encryptedAmount The encrypted amount to approve
     /// @param inputProof The proof for the encrypted input
     /// @return bool indicating success of the approval
-    function approve(address spender, einput encryptedAmount, bytes calldata inputProof) public virtual returns (bool) {
-        approve(spender, HTTPZ.asEuint64(encryptedAmount, inputProof));
+    function approve(
+        address spender,
+        externalEuint64 encryptedAmount,
+        bytes calldata inputProof
+    ) public virtual returns (bool) {
+        approve(spender, HTTPZ.fromExternal(encryptedAmount, inputProof));
         return true;
     }
 
@@ -135,10 +143,10 @@ contract EncryptedERC20 is Ownable2Step {
     function transferFrom(
         address from,
         address to,
-        einput encryptedAmount,
+        externalEuint64 encryptedAmount,
         bytes calldata inputProof
     ) public virtual returns (bool) {
-        transferFrom(from, to, HTTPZ.asEuint64(encryptedAmount, inputProof));
+        transferFrom(from, to, HTTPZ.fromExternal(encryptedAmount, inputProof));
         return true;
     }
 

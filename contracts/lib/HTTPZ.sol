@@ -15,7 +15,29 @@ type eaddress is bytes32;
 type ebytes64 is bytes32;
 type ebytes128 is bytes32;
 type ebytes256 is bytes32;
-type einput is bytes32;
+type externalEbool is bytes32;
+type externalEuint8 is bytes32;
+type externalEuint16 is bytes32;
+type externalEuint32 is bytes32;
+type externalEuint64 is bytes32;
+type externalEuint128 is bytes32;
+type externalEuint256 is bytes32;
+type externalEaddress is bytes32;
+type externalEbytes64 is bytes32;
+type externalEbytes128 is bytes32;
+type externalEbytes256 is bytes32;
+
+interface IKMSVerifier {
+    function verifyDecryptionEIP712KMSSignatures(
+        bytes32[] memory handlesList,
+        bytes memory decryptedResult,
+        bytes[] memory signatures
+    ) external returns (bool);
+}
+
+interface IDecryptionOracle {
+    function requestDecryption(uint256 requestID, bytes32[] calldata ctsHandles, bytes4 callbackSelector) external;
+}
 
 /**
  * @title   HTTPZ
@@ -32,12 +54,27 @@ library HTTPZ {
     /// @notice Returned if the input's length is greater than 256 bytes.
     error InputLengthAbove256Bytes(uint256 inputLength);
 
+    error HandlesAlreadySavedForRequestID();
+    error NoHandleFoundForRequestID();
+    error InvalidKMSSignatures();
+    error UnsupportedHandleType();
+
+    event DecryptionFulfilled(uint256 indexed requestID);
+
     /**
      * @notice            Sets the coprocessor addresses.
      * @param httpzConfig HTTPZ config struct that contains contract addresses.
      */
     function setCoprocessor(HTTPZConfigStruct memory httpzConfig) internal {
         Impl.setCoprocessor(httpzConfig);
+    }
+
+    /**
+     * @notice                  Sets the decryption oracle address.
+     * @param decryptionOracle  The decryption oracle address.
+     */
+    function setDecryptionOracle(address decryptionOracle) internal {
+        Impl.setDecryptionOracle(decryptionOracle);
     }
 
     /**
@@ -8439,8 +8476,8 @@ library HTTPZ {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted ebool integer.
      */
-    function asEbool(einput inputHandle, bytes memory inputProof) internal returns (ebool) {
-        return ebool.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Bool));
+    function fromExternal(externalEbool inputHandle, bytes memory inputProof) internal returns (ebool) {
+        return ebool.wrap(Impl.verify(externalEbool.unwrap(inputHandle), inputProof, FheType.Bool));
     }
 
     /**
@@ -8453,8 +8490,8 @@ library HTTPZ {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint8 integer.
      */
-    function asEuint8(einput inputHandle, bytes memory inputProof) internal returns (euint8) {
-        return euint8.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint8));
+    function fromExternal(externalEuint8 inputHandle, bytes memory inputProof) internal returns (euint8) {
+        return euint8.wrap(Impl.verify(externalEuint8.unwrap(inputHandle), inputProof, FheType.Uint8));
     }
 
     /**
@@ -8467,8 +8504,8 @@ library HTTPZ {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint16 integer.
      */
-    function asEuint16(einput inputHandle, bytes memory inputProof) internal returns (euint16) {
-        return euint16.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint16));
+    function fromExternal(externalEuint16 inputHandle, bytes memory inputProof) internal returns (euint16) {
+        return euint16.wrap(Impl.verify(externalEuint16.unwrap(inputHandle), inputProof, FheType.Uint16));
     }
 
     /**
@@ -8481,8 +8518,8 @@ library HTTPZ {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint32 integer.
      */
-    function asEuint32(einput inputHandle, bytes memory inputProof) internal returns (euint32) {
-        return euint32.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint32));
+    function fromExternal(externalEuint32 inputHandle, bytes memory inputProof) internal returns (euint32) {
+        return euint32.wrap(Impl.verify(externalEuint32.unwrap(inputHandle), inputProof, FheType.Uint32));
     }
 
     /**
@@ -8495,8 +8532,8 @@ library HTTPZ {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint64 integer.
      */
-    function asEuint64(einput inputHandle, bytes memory inputProof) internal returns (euint64) {
-        return euint64.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint64));
+    function fromExternal(externalEuint64 inputHandle, bytes memory inputProof) internal returns (euint64) {
+        return euint64.wrap(Impl.verify(externalEuint64.unwrap(inputHandle), inputProof, FheType.Uint64));
     }
 
     /**
@@ -8509,8 +8546,8 @@ library HTTPZ {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint128 integer.
      */
-    function asEuint128(einput inputHandle, bytes memory inputProof) internal returns (euint128) {
-        return euint128.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint128));
+    function fromExternal(externalEuint128 inputHandle, bytes memory inputProof) internal returns (euint128) {
+        return euint128.wrap(Impl.verify(externalEuint128.unwrap(inputHandle), inputProof, FheType.Uint128));
     }
 
     /**
@@ -8523,8 +8560,8 @@ library HTTPZ {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted eaddress integer.
      */
-    function asEaddress(einput inputHandle, bytes memory inputProof) internal returns (eaddress) {
-        return eaddress.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint160));
+    function fromExternal(externalEaddress inputHandle, bytes memory inputProof) internal returns (eaddress) {
+        return eaddress.wrap(Impl.verify(externalEaddress.unwrap(inputHandle), inputProof, FheType.Uint160));
     }
 
     /**
@@ -8537,8 +8574,8 @@ library HTTPZ {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint256 integer.
      */
-    function asEuint256(einput inputHandle, bytes memory inputProof) internal returns (euint256) {
-        return euint256.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint256));
+    function fromExternal(externalEuint256 inputHandle, bytes memory inputProof) internal returns (euint256) {
+        return euint256.wrap(Impl.verify(externalEuint256.unwrap(inputHandle), inputProof, FheType.Uint256));
     }
 
     /**
@@ -8551,8 +8588,8 @@ library HTTPZ {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted ebytes64 integer.
      */
-    function asEbytes64(einput inputHandle, bytes memory inputProof) internal returns (ebytes64) {
-        return ebytes64.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint512));
+    function fromExternal(externalEbytes64 inputHandle, bytes memory inputProof) internal returns (ebytes64) {
+        return ebytes64.wrap(Impl.verify(externalEbytes64.unwrap(inputHandle), inputProof, FheType.Uint512));
     }
 
     /**
@@ -8565,8 +8602,8 @@ library HTTPZ {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted ebytes128 integer.
      */
-    function asEbytes128(einput inputHandle, bytes memory inputProof) internal returns (ebytes128) {
-        return ebytes128.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint1024));
+    function fromExternal(externalEbytes128 inputHandle, bytes memory inputProof) internal returns (ebytes128) {
+        return ebytes128.wrap(Impl.verify(externalEbytes128.unwrap(inputHandle), inputProof, FheType.Uint1024));
     }
 
     /**
@@ -8579,8 +8616,8 @@ library HTTPZ {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted ebytes256 integer.
      */
-    function asEbytes256(einput inputHandle, bytes memory inputProof) internal returns (ebytes256) {
-        return ebytes256.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, FheType.Uint2048));
+    function fromExternal(externalEbytes256 inputHandle, bytes memory inputProof) internal returns (ebytes256) {
+        return ebytes256.wrap(Impl.verify(externalEbytes256.unwrap(inputHandle), inputProof, FheType.Uint2048));
     }
 
     /**
@@ -8827,6 +8864,21 @@ library HTTPZ {
     }
 
     /**
+     * @dev Makes the value publicly decryptable.
+     */
+    function makePubliclyDecryptable(ebool value) internal returns (ebool) {
+        Impl.makePubliclyDecryptable(ebool.unwrap(value));
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the the value is publicly decryptable.
+     */
+    function isPubliclyDecryptable(ebool value) internal view returns (bool) {
+        return Impl.isPubliclyDecryptable(ebool.unwrap(value));
+    }
+
+    /**
      * @dev Returns whether the account is allowed to use the value.
      */
     function isAllowed(euint8 value, address account) internal view returns (bool) {
@@ -8862,6 +8914,21 @@ library HTTPZ {
     function allowTransient(euint8 value, address account) internal returns (euint8) {
         Impl.allowTransient(euint8.unwrap(value), account);
         return value;
+    }
+
+    /**
+     * @dev Makes the value publicly decryptable.
+     */
+    function makePubliclyDecryptable(euint8 value) internal returns (euint8) {
+        Impl.makePubliclyDecryptable(euint8.unwrap(value));
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the the value is publicly decryptable.
+     */
+    function isPubliclyDecryptable(euint8 value) internal view returns (bool) {
+        return Impl.isPubliclyDecryptable(euint8.unwrap(value));
     }
 
     /**
@@ -8903,6 +8970,21 @@ library HTTPZ {
     }
 
     /**
+     * @dev Makes the value publicly decryptable.
+     */
+    function makePubliclyDecryptable(euint16 value) internal returns (euint16) {
+        Impl.makePubliclyDecryptable(euint16.unwrap(value));
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the the value is publicly decryptable.
+     */
+    function isPubliclyDecryptable(euint16 value) internal view returns (bool) {
+        return Impl.isPubliclyDecryptable(euint16.unwrap(value));
+    }
+
+    /**
      * @dev Returns whether the account is allowed to use the value.
      */
     function isAllowed(euint32 value, address account) internal view returns (bool) {
@@ -8938,6 +9020,21 @@ library HTTPZ {
     function allowTransient(euint32 value, address account) internal returns (euint32) {
         Impl.allowTransient(euint32.unwrap(value), account);
         return value;
+    }
+
+    /**
+     * @dev Makes the value publicly decryptable.
+     */
+    function makePubliclyDecryptable(euint32 value) internal returns (euint32) {
+        Impl.makePubliclyDecryptable(euint32.unwrap(value));
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the the value is publicly decryptable.
+     */
+    function isPubliclyDecryptable(euint32 value) internal view returns (bool) {
+        return Impl.isPubliclyDecryptable(euint32.unwrap(value));
     }
 
     /**
@@ -8979,6 +9076,21 @@ library HTTPZ {
     }
 
     /**
+     * @dev Makes the value publicly decryptable.
+     */
+    function makePubliclyDecryptable(euint64 value) internal returns (euint64) {
+        Impl.makePubliclyDecryptable(euint64.unwrap(value));
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the the value is publicly decryptable.
+     */
+    function isPubliclyDecryptable(euint64 value) internal view returns (bool) {
+        return Impl.isPubliclyDecryptable(euint64.unwrap(value));
+    }
+
+    /**
      * @dev Returns whether the account is allowed to use the value.
      */
     function isAllowed(euint128 value, address account) internal view returns (bool) {
@@ -9014,6 +9126,21 @@ library HTTPZ {
     function allowTransient(euint128 value, address account) internal returns (euint128) {
         Impl.allowTransient(euint128.unwrap(value), account);
         return value;
+    }
+
+    /**
+     * @dev Makes the value publicly decryptable.
+     */
+    function makePubliclyDecryptable(euint128 value) internal returns (euint128) {
+        Impl.makePubliclyDecryptable(euint128.unwrap(value));
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the the value is publicly decryptable.
+     */
+    function isPubliclyDecryptable(euint128 value) internal view returns (bool) {
+        return Impl.isPubliclyDecryptable(euint128.unwrap(value));
     }
 
     /**
@@ -9055,6 +9182,21 @@ library HTTPZ {
     }
 
     /**
+     * @dev Makes the value publicly decryptable.
+     */
+    function makePubliclyDecryptable(eaddress value) internal returns (eaddress) {
+        Impl.makePubliclyDecryptable(eaddress.unwrap(value));
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the the value is publicly decryptable.
+     */
+    function isPubliclyDecryptable(eaddress value) internal view returns (bool) {
+        return Impl.isPubliclyDecryptable(eaddress.unwrap(value));
+    }
+
+    /**
      * @dev Returns whether the account is allowed to use the value.
      */
     function isAllowed(euint256 value, address account) internal view returns (bool) {
@@ -9090,6 +9232,21 @@ library HTTPZ {
     function allowTransient(euint256 value, address account) internal returns (euint256) {
         Impl.allowTransient(euint256.unwrap(value), account);
         return value;
+    }
+
+    /**
+     * @dev Makes the value publicly decryptable.
+     */
+    function makePubliclyDecryptable(euint256 value) internal returns (euint256) {
+        Impl.makePubliclyDecryptable(euint256.unwrap(value));
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the the value is publicly decryptable.
+     */
+    function isPubliclyDecryptable(euint256 value) internal view returns (bool) {
+        return Impl.isPubliclyDecryptable(euint256.unwrap(value));
     }
 
     /**
@@ -9131,6 +9288,21 @@ library HTTPZ {
     }
 
     /**
+     * @dev Makes the value publicly decryptable.
+     */
+    function makePubliclyDecryptable(ebytes64 value) internal returns (ebytes64) {
+        Impl.makePubliclyDecryptable(ebytes64.unwrap(value));
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the the value is publicly decryptable.
+     */
+    function isPubliclyDecryptable(ebytes64 value) internal view returns (bool) {
+        return Impl.isPubliclyDecryptable(ebytes64.unwrap(value));
+    }
+
+    /**
      * @dev Returns whether the account is allowed to use the value.
      */
     function isAllowed(ebytes128 value, address account) internal view returns (bool) {
@@ -9169,6 +9341,21 @@ library HTTPZ {
     }
 
     /**
+     * @dev Makes the value publicly decryptable.
+     */
+    function makePubliclyDecryptable(ebytes128 value) internal returns (ebytes128) {
+        Impl.makePubliclyDecryptable(ebytes128.unwrap(value));
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the the value is publicly decryptable.
+     */
+    function isPubliclyDecryptable(ebytes128 value) internal view returns (bool) {
+        return Impl.isPubliclyDecryptable(ebytes128.unwrap(value));
+    }
+
+    /**
      * @dev Returns whether the account is allowed to use the value.
      */
     function isAllowed(ebytes256 value, address account) internal view returns (bool) {
@@ -9204,5 +9391,143 @@ library HTTPZ {
     function allowTransient(ebytes256 value, address account) internal returns (ebytes256) {
         Impl.allowTransient(ebytes256.unwrap(value), account);
         return value;
+    }
+
+    /**
+     * @dev Makes the value publicly decryptable.
+     */
+    function makePubliclyDecryptable(ebytes256 value) internal returns (ebytes256) {
+        Impl.makePubliclyDecryptable(ebytes256.unwrap(value));
+        return value;
+    }
+
+    /**
+     * @dev Returns whether the the value is publicly decryptable.
+     */
+    function isPubliclyDecryptable(ebytes256 value) internal view returns (bool) {
+        return Impl.isPubliclyDecryptable(ebytes256.unwrap(value));
+    }
+
+    function saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
+        DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
+        if ($.requestedHandles[requestID].length != 0) {
+            revert HandlesAlreadySavedForRequestID();
+        }
+        $.requestedHandles[requestID] = handlesList;
+    }
+
+    function loadRequestedHandles(uint256 requestID) internal view returns (bytes32[] memory) {
+        DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
+        if ($.requestedHandles[requestID].length == 0) {
+            revert NoHandleFoundForRequestID();
+        }
+        return $.requestedHandles[requestID];
+    }
+
+    function requestDecryption(
+        bytes32[] memory ctsHandles,
+        bytes4 callbackSelector
+    ) internal returns (uint256 requestID) {
+        DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
+        requestID = $.counterRequest;
+        HTTPZConfigStruct storage $$ = Impl.getHTTPZConfig();
+        IACL($$.ACLAddress).allowForDecryption(ctsHandles);
+        IDecryptionOracle($.DecryptionOracleAddress).requestDecryption(requestID, ctsHandles, callbackSelector);
+        saveRequestedHandles(requestID, ctsHandles);
+        $.counterRequest++;
+    }
+
+    /// @dev this function should be called inside the callback function the dApp contract to verify the signatures
+    function verifySignatures(bytes32[] memory handlesList, bytes[] memory signatures) internal returns (bool) {
+        uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
+        uint256 length = getSignedDataLength(handlesList);
+        bytes memory decryptedResult = new bytes(length);
+        assembly {
+            calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
+        }
+        HTTPZConfigStruct storage $ = Impl.getHTTPZConfig();
+        return
+            IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
+                handlesList,
+                decryptedResult,
+                signatures
+            );
+    }
+
+    function getSignedDataLength(bytes32[] memory handlesList) private pure returns (uint256) {
+        uint256 handlesListlen = handlesList.length;
+        uint256 signedDataLength;
+        for (uint256 i = 0; i < handlesListlen; i++) {
+            FheType typeCt = FheType(uint8(handlesList[i][30]));
+            if (uint8(typeCt) < 9) {
+                signedDataLength += 32;
+            } else if (typeCt == FheType.Uint512) {
+                //ebytes64
+                signedDataLength += 128;
+            } else if (typeCt == FheType.Uint1024) {
+                //ebytes128
+                signedDataLength += 192;
+            } else if (typeCt == FheType.Uint2048) {
+                //ebytes256
+                signedDataLength += 320;
+            } else {
+                revert UnsupportedHandleType();
+            }
+        }
+        signedDataLength += 32; // add offset of signatures
+        return signedDataLength;
+    }
+
+    function checkSignatures(uint256 requestID, bytes[] memory signatures) internal {
+        bytes32[] memory handlesList = loadRequestedHandles(requestID);
+        bool isVerified = verifySignatures(handlesList, signatures);
+        if (!isVerified) {
+            revert InvalidKMSSignatures();
+        }
+        emit DecryptionFulfilled(requestID);
+    }
+
+    function toBytes32(ebool value) internal pure returns (bytes32 ct) {
+        ct = ebool.unwrap(value);
+    }
+
+    function toBytes32(euint8 value) internal pure returns (bytes32 ct) {
+        ct = euint8.unwrap(value);
+    }
+
+    function toBytes32(euint16 value) internal pure returns (bytes32 ct) {
+        ct = euint16.unwrap(value);
+    }
+
+    function toBytes32(euint32 value) internal pure returns (bytes32 ct) {
+        ct = euint32.unwrap(value);
+    }
+
+    function toBytes32(euint64 value) internal pure returns (bytes32 ct) {
+        ct = euint64.unwrap(value);
+    }
+
+    function toBytes32(euint128 value) internal pure returns (bytes32 ct) {
+        ct = euint128.unwrap(value);
+    }
+
+    function toBytes32(eaddress value) internal pure returns (bytes32 ct) {
+        ct = eaddress.unwrap(value);
+    }
+
+    function toBytes32(euint256 value) internal pure returns (bytes32 ct) {
+        ct = euint256.unwrap(value);
+    }
+
+    function toBytes32(ebytes64 value) internal pure returns (bytes32 ct) {
+        ct = ebytes64.unwrap(value);
+    }
+
+    function toBytes32(ebytes128 value) internal pure returns (bytes32 ct) {
+        ct = ebytes128.unwrap(value);
+    }
+
+    function toBytes32(ebytes256 value) internal pure returns (bytes32 ct) {
+        ct = ebytes256.unwrap(value);
     }
 }

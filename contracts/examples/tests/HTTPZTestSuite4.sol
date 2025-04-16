@@ -20,632 +20,632 @@ contract HTTPZTestSuite4 {
         HTTPZ.setCoprocessor(HTTPZConfig.defaultConfig());
     }
 
-    function and_euint64_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function and_euint64_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint64 result = HTTPZ.and(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint64 = result;
     }
-    function or_euint64_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function or_euint64_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint64 result = HTTPZ.or(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint64 = result;
     }
-    function xor_euint64_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function xor_euint64_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint64 result = HTTPZ.xor(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint64 = result;
     }
-    function eq_euint64_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function eq_euint64_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.eq(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ne_euint64_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function ne_euint64_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ne(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ge_euint64_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function ge_euint64_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ge(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function gt_euint64_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function gt_euint64_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.gt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function le_euint64_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function le_euint64_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.le(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function lt_euint64_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function lt_euint64_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.lt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function min_euint64_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function min_euint64_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint64 result = HTTPZ.min(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint64 = result;
     }
-    function max_euint64_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function max_euint64_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint64 result = HTTPZ.max(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint64 = result;
     }
-    function add_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function add_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.add(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function sub_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function sub_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.sub(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function mul_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function mul_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.mul(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function and_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function and_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.and(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function or_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function or_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.or(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function xor_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function xor_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.xor(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function eq_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function eq_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.eq(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ne_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function ne_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ne(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ge_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function ge_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ge(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function gt_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function gt_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.gt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function le_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function le_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.le(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function lt_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function lt_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.lt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function min_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function min_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.min(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function max_euint64_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function max_euint64_euint128(externalEuint64 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.max(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function and_euint64_euint256(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint256 bProc = HTTPZ.asEuint256(b, inputProof);
+    function and_euint64_euint256(externalEuint64 a, externalEuint256 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint256 bProc = HTTPZ.fromExternal(b, inputProof);
         euint256 result = HTTPZ.and(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint256 = result;
     }
-    function or_euint64_euint256(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint256 bProc = HTTPZ.asEuint256(b, inputProof);
+    function or_euint64_euint256(externalEuint64 a, externalEuint256 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint256 bProc = HTTPZ.fromExternal(b, inputProof);
         euint256 result = HTTPZ.or(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint256 = result;
     }
-    function xor_euint64_euint256(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint256 bProc = HTTPZ.asEuint256(b, inputProof);
+    function xor_euint64_euint256(externalEuint64 a, externalEuint256 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint256 bProc = HTTPZ.fromExternal(b, inputProof);
         euint256 result = HTTPZ.xor(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint256 = result;
     }
-    function eq_euint64_euint256(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint256 bProc = HTTPZ.asEuint256(b, inputProof);
+    function eq_euint64_euint256(externalEuint64 a, externalEuint256 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint256 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.eq(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ne_euint64_euint256(einput a, einput b, bytes calldata inputProof) public {
-        euint64 aProc = HTTPZ.asEuint64(a, inputProof);
-        euint256 bProc = HTTPZ.asEuint256(b, inputProof);
+    function ne_euint64_euint256(externalEuint64 a, externalEuint256 b, bytes calldata inputProof) public {
+        euint64 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint256 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ne(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function add_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function add_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.add(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function sub_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function sub_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.sub(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function mul_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function mul_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.mul(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function and_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function and_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.and(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function or_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function or_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.or(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function xor_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function xor_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.xor(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function eq_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function eq_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.eq(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ne_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function ne_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ne(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ge_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function ge_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ge(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function gt_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function gt_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.gt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function le_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function le_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.le(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function lt_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function lt_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.lt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function min_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function min_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.min(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function max_euint128_euint8(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint8 bProc = HTTPZ.asEuint8(b, inputProof);
+    function max_euint128_euint8(externalEuint128 a, externalEuint8 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint8 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.max(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function add_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function add_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.add(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function sub_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function sub_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.sub(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function mul_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function mul_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.mul(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function and_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function and_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.and(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function or_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function or_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.or(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function xor_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function xor_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.xor(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function eq_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function eq_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.eq(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ne_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function ne_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ne(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ge_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function ge_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ge(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function gt_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function gt_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.gt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function le_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function le_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.le(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function lt_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function lt_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.lt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function min_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function min_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.min(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function max_euint128_euint16(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint16 bProc = HTTPZ.asEuint16(b, inputProof);
+    function max_euint128_euint16(externalEuint128 a, externalEuint16 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint16 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.max(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function add_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function add_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.add(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function sub_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function sub_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.sub(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function mul_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function mul_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.mul(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function and_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function and_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.and(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function or_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function or_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.or(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function xor_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function xor_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.xor(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function eq_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function eq_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.eq(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ne_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function ne_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ne(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ge_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function ge_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ge(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function gt_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function gt_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.gt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function le_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function le_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.le(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function lt_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function lt_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.lt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function min_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function min_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.min(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function max_euint128_euint32(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint32 bProc = HTTPZ.asEuint32(b, inputProof);
+    function max_euint128_euint32(externalEuint128 a, externalEuint32 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint32 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.max(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function add_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function add_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.add(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function sub_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function sub_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.sub(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function mul_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function mul_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.mul(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function and_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function and_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.and(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function or_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function or_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.or(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function xor_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function xor_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.xor(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function eq_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function eq_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.eq(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ne_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function ne_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ne(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function ge_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function ge_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ge(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function gt_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function gt_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.gt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function le_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function le_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.le(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function lt_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function lt_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.lt(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
-    function min_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function min_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.min(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function max_euint128_euint64(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint64 bProc = HTTPZ.asEuint64(b, inputProof);
+    function max_euint128_euint64(externalEuint128 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint64 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.max(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function add_euint128_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function add_euint128_euint128(externalEuint128 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.add(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function sub_euint128_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function sub_euint128_euint128(externalEuint128 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.sub(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function mul_euint128_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function mul_euint128_euint128(externalEuint128 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.mul(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;
     }
-    function and_euint128_euint128(einput a, einput b, bytes calldata inputProof) public {
-        euint128 aProc = HTTPZ.asEuint128(a, inputProof);
-        euint128 bProc = HTTPZ.asEuint128(b, inputProof);
+    function and_euint128_euint128(externalEuint128 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint128 aProc = HTTPZ.fromExternal(a, inputProof);
+        euint128 bProc = HTTPZ.fromExternal(b, inputProof);
         euint128 result = HTTPZ.and(aProc, bProc);
         HTTPZ.allowThis(result);
         resEuint128 = result;

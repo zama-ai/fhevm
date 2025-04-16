@@ -65,17 +65,27 @@ contract TFHEManualTestSuite {
         resEbool = result;
     }
 
-    function eqEbytes256(einput inp1, bytes calldata inputProof1, einput inp2, bytes calldata inputProof2) external {
-        ebytes256 input1 = HTTPZ.asEbytes256(inp1, inputProof1);
-        ebytes256 input2 = HTTPZ.asEbytes256(inp2, inputProof2);
+    function eqEbytes256(
+        externalEbytes256 inp1,
+        bytes calldata inputProof1,
+        externalEbytes256 inp2,
+        bytes calldata inputProof2
+    ) external {
+        ebytes256 input1 = HTTPZ.fromExternal(inp1, inputProof1);
+        ebytes256 input2 = HTTPZ.fromExternal(inp2, inputProof2);
         ebool result = HTTPZ.eq(input1, input2);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
 
-    function neEbytes256(einput inp1, bytes calldata inputProof1, einput inp2, bytes calldata inputProof2) external {
-        ebytes256 input1 = HTTPZ.asEbytes256(inp1, inputProof1);
-        ebytes256 input2 = HTTPZ.asEbytes256(inp2, inputProof2);
+    function neEbytes256(
+        externalEbytes256 inp1,
+        bytes calldata inputProof1,
+        externalEbytes256 inp2,
+        bytes calldata inputProof2
+    ) external {
+        ebytes256 input1 = HTTPZ.fromExternal(inp1, inputProof1);
+        ebytes256 input2 = HTTPZ.fromExternal(inp2, inputProof2);
         ebool result = HTTPZ.ne(input1, input2);
         HTTPZ.allowThis(result);
         resEbool = result;
@@ -245,63 +255,73 @@ contract TFHEManualTestSuite {
         resEbytes256 = result;
     }
 
-    function test_select(einput control, einput ifTrue, einput ifFalse, bytes calldata inputProof) public {
-        ebool controlProc = HTTPZ.asEbool(control, inputProof);
-        euint32 ifTrueProc = HTTPZ.asEuint32(ifTrue, inputProof);
-        euint32 ifFalseProc = HTTPZ.asEuint32(ifFalse, inputProof);
+    function test_select(
+        externalEbool control,
+        externalEuint32 ifTrue,
+        externalEuint32 ifFalse,
+        bytes calldata inputProof
+    ) public {
+        ebool controlProc = HTTPZ.fromExternal(control, inputProof);
+        euint32 ifTrueProc = HTTPZ.fromExternal(ifTrue, inputProof);
+        euint32 ifFalseProc = HTTPZ.fromExternal(ifFalse, inputProof);
         euint32 result = HTTPZ.select(controlProc, ifTrueProc, ifFalseProc);
         HTTPZ.allowThis(result);
         resEuint32 = result;
     }
 
-    function test_select_eaddress(einput control, einput ifTrue, einput ifFalse, bytes calldata inputProof) public {
-        ebool controlProc = HTTPZ.asEbool(control, inputProof);
-        eaddress ifTrueProc = HTTPZ.asEaddress(ifTrue, inputProof);
-        eaddress ifFalseProc = HTTPZ.asEaddress(ifFalse, inputProof);
+    function test_select_eaddress(
+        externalEbool control,
+        externalEaddress ifTrue,
+        externalEaddress ifFalse,
+        bytes calldata inputProof
+    ) public {
+        ebool controlProc = HTTPZ.fromExternal(control, inputProof);
+        eaddress ifTrueProc = HTTPZ.fromExternal(ifTrue, inputProof);
+        eaddress ifFalseProc = HTTPZ.fromExternal(ifFalse, inputProof);
         eaddress result = HTTPZ.select(controlProc, ifTrueProc, ifFalseProc);
         HTTPZ.allowThis(result);
         resAdd = result;
     }
 
-    function test_eq_eaddress_eaddress(einput a, einput b, bytes calldata inputProof) public {
-        eaddress aProc = HTTPZ.asEaddress(a, inputProof);
-        eaddress bProc = HTTPZ.asEaddress(b, inputProof);
+    function test_eq_eaddress_eaddress(externalEaddress a, externalEaddress b, bytes calldata inputProof) public {
+        eaddress aProc = HTTPZ.fromExternal(a, inputProof);
+        eaddress bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.eq(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
 
-    function test_ne_eaddress_eaddress(einput a, einput b, bytes calldata inputProof) public {
-        eaddress aProc = HTTPZ.asEaddress(a, inputProof);
-        eaddress bProc = HTTPZ.asEaddress(b, inputProof);
+    function test_ne_eaddress_eaddress(externalEaddress a, externalEaddress b, bytes calldata inputProof) public {
+        eaddress aProc = HTTPZ.fromExternal(a, inputProof);
+        eaddress bProc = HTTPZ.fromExternal(b, inputProof);
         ebool result = HTTPZ.ne(aProc, bProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
 
-    function test_eq_eaddress_address(einput a, address b, bytes calldata inputProof) public {
-        eaddress aProc = HTTPZ.asEaddress(a, inputProof);
+    function test_eq_eaddress_address(externalEaddress a, address b, bytes calldata inputProof) public {
+        eaddress aProc = HTTPZ.fromExternal(a, inputProof);
         ebool result = HTTPZ.eq(aProc, b);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
 
-    function test_eq_address_eaddress(einput a, address b, bytes calldata inputProof) public {
-        eaddress aProc = HTTPZ.asEaddress(a, inputProof);
+    function test_eq_address_eaddress(externalEaddress a, address b, bytes calldata inputProof) public {
+        eaddress aProc = HTTPZ.fromExternal(a, inputProof);
         ebool result = HTTPZ.eq(b, aProc);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
 
-    function test_ne_eaddress_address(einput a, address b, bytes calldata inputProof) public {
-        eaddress aProc = HTTPZ.asEaddress(a, inputProof);
+    function test_ne_eaddress_address(externalEaddress a, address b, bytes calldata inputProof) public {
+        eaddress aProc = HTTPZ.fromExternal(a, inputProof);
         ebool result = HTTPZ.ne(aProc, b);
         HTTPZ.allowThis(result);
         resEbool = result;
     }
 
-    function test_ne_address_eaddress(einput a, address b, bytes calldata inputProof) public {
-        eaddress aProc = HTTPZ.asEaddress(a, inputProof);
+    function test_ne_address_eaddress(externalEaddress a, address b, bytes calldata inputProof) public {
+        eaddress aProc = HTTPZ.fromExternal(a, inputProof);
         ebool result = HTTPZ.ne(b, aProc);
         HTTPZ.allowThis(result);
         resEbool = result;

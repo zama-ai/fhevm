@@ -3,11 +3,12 @@
 pragma solidity ^0.8.24;
 
 import "../lib/HTTPZ.sol";
-import "../decryptionOracleLib/DecryptionOracleCaller.sol";
 import "../addresses/DecryptionOracleAddress.sol";
+import "../lib/HTTPZConfig.sol";
 
 /// @notice Contract for testing asynchronous decryption using the Gateway
-contract TestAsyncDecrypt is DecryptionOracleCaller {
+contract TestAsyncDecrypt {
+    using HTTPZ for *;
     /// @dev Encrypted state variables
     ebool xBool;
     euint8 xUint8;
@@ -38,13 +39,13 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     bytes public yBytes128;
     bytes public yBytes256;
 
-    /// @dev Tracks the latest decryption request ID
-    uint256 public latestRequestID;
+    /// @dev private mapping that can be used to link a requestID to an array of uint256
+    mapping(uint256 => uint256[]) private paramsUint256;
 
     /// @notice Constructor to initialize the contract and set up encrypted values
     constructor() {
         HTTPZ.setCoprocessor(HTTPZConfig.defaultConfig());
-        setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
+        HTTPZ.setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
 
         /// @dev Initialize encrypted variables with sample values
         xBool = HTTPZ.asEbool(true);
@@ -75,8 +76,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @notice Function to request decryption of a boolean value with an infinite loop in the callback
     function requestBoolInfinite() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(xBool);
-        requestDecryption(cts, this.callbackBoolInfinite.selector);
+        cts[0] = HTTPZ.toBytes32(xBool);
+        HTTPZ.requestDecryption(cts, this.callbackBoolInfinite.selector);
     }
 
     /// @notice Callback function for the infinite loop decryption request (WARNING: This function will never complete)
@@ -84,7 +85,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         uint256 requestID,
         bool decryptedInput,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (bool) {
+    ) public returns (bool) {
+        HTTPZ.checkSignatures(requestID, signatures);
         uint256 i = 0;
         while (true) {
             i++;
@@ -96,8 +98,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @notice Request decryption of a boolean value
     function requestBool() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(xBool);
-        requestDecryption(cts, this.callbackBool.selector);
+        cts[0] = HTTPZ.toBytes32(xBool);
+        HTTPZ.requestDecryption(cts, this.callbackBool.selector);
     }
 
     /// @notice Attempt to request decryption of a fake boolean value (should revert)
@@ -105,15 +107,12 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000000;
         /// @dev This should revert because the previous ebool is not honestly obtained
-        requestDecryption(cts, this.callbackBool.selector);
+        HTTPZ.requestDecryption(cts, this.callbackBool.selector);
     }
 
     /// @notice Callback function for boolean decryption
-    function callbackBool(
-        uint256 requestID,
-        bool decryptedInput,
-        bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (bool) {
+    function callbackBool(uint256 requestID, bool decryptedInput, bytes[] memory signatures) public returns (bool) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yBool = decryptedInput;
         return yBool;
     }
@@ -121,11 +120,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @notice Callback function for 4-bit unsigned integer decryption
     /// @param decryptedInput The decrypted 4-bit unsigned integer
     /// @return The decrypted value
-    function callbackUint4(
-        uint256 requestID,
-        uint8 decryptedInput,
-        bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (uint8) {
+    function callbackUint4(uint256 requestID, uint8 decryptedInput, bytes[] memory signatures) public returns (uint8) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yUint4 = decryptedInput;
         return decryptedInput;
     }
@@ -133,8 +129,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @notice Request decryption of an 8-bit unsigned integer
     function requestUint8() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(xUint8);
-        requestDecryption(cts, this.callbackUint8.selector);
+        cts[0] = HTTPZ.toBytes32(xUint8);
+        HTTPZ.requestDecryption(cts, this.callbackUint8.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 8-bit unsigned integer (should revert)
@@ -142,17 +138,14 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000200;
         /// @dev This should revert because the previous handle is not honestly obtained
-        requestDecryption(cts, this.callbackUint8.selector);
+        HTTPZ.requestDecryption(cts, this.callbackUint8.selector);
     }
 
     /// @notice Callback function for 8-bit unsigned integer decryption
     /// @param decryptedInput The decrypted 8-bit unsigned integer
     /// @return The decrypted value
-    function callbackUint8(
-        uint256 requestID,
-        uint8 decryptedInput,
-        bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (uint8) {
+    function callbackUint8(uint256 requestID, uint8 decryptedInput, bytes[] memory signatures) public returns (uint8) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yUint8 = decryptedInput;
         return decryptedInput;
     }
@@ -160,8 +153,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @notice Request decryption of a 16-bit unsigned integer
     function requestUint16() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(xUint16);
-        requestDecryption(cts, this.callbackUint16.selector);
+        cts[0] = HTTPZ.toBytes32(xUint16);
+        HTTPZ.requestDecryption(cts, this.callbackUint16.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 16-bit unsigned integer (should revert)
@@ -169,7 +162,7 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000300;
         /// @dev This should revert because the previous handle is not honestly obtained
-        requestDecryption(cts, this.callbackUint16.selector);
+        HTTPZ.requestDecryption(cts, this.callbackUint16.selector);
     }
 
     /// @notice Callback function for 16-bit unsigned integer decryption
@@ -179,7 +172,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         uint256 requestID,
         uint16 decryptedInput,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (uint16) {
+    ) public returns (uint16) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yUint16 = decryptedInput;
         return decryptedInput;
     }
@@ -189,8 +183,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @param input2 Second additional input
     function requestUint32(uint32 input1, uint32 input2) public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(xUint32);
-        uint256 requestID = requestDecryption(cts, this.callbackUint32.selector);
+        cts[0] = HTTPZ.toBytes32(xUint32);
+        uint256 requestID = HTTPZ.requestDecryption(cts, this.callbackUint32.selector);
         addParamsUint256(requestID, input1);
         addParamsUint256(requestID, input2);
     }
@@ -200,7 +194,7 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000400;
         /// @dev This should revert because the previous handle is not honestly obtained
-        requestDecryption(cts, this.callbackUint32.selector);
+        HTTPZ.requestDecryption(cts, this.callbackUint32.selector);
     }
 
     /// @notice Callback function for 32-bit unsigned integer decryption
@@ -211,7 +205,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         uint256 requestID,
         uint32 decryptedInput,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (uint32) {
+    ) public returns (uint32) {
+        HTTPZ.checkSignatures(requestID, signatures);
         uint256[] memory params = getParamsUint256(requestID);
         unchecked {
             uint32 result = uint32(uint256(params[0])) + uint32(uint256(params[1])) + decryptedInput;
@@ -223,8 +218,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @notice Request decryption of a 64-bit unsigned integer
     function requestUint64() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(xUint64);
-        requestDecryption(cts, this.callbackUint64.selector);
+        cts[0] = HTTPZ.toBytes32(xUint64);
+        HTTPZ.requestDecryption(cts, this.callbackUint64.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 64-bit unsigned integer (should revert)
@@ -232,17 +227,17 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000500;
         /// @dev This should revert because the previous handle is not honestly obtained
-        requestDecryption(cts, this.callbackUint64.selector);
+        HTTPZ.requestDecryption(cts, this.callbackUint64.selector);
     }
 
     /// @notice Request decryption of a non-trivial 64-bit unsigned integer
     /// @param inputHandle The input handle for the encrypted value
     /// @param inputProof The input proof for the encrypted value
-    function requestUint64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        euint64 inputNonTrivial = HTTPZ.asEuint64(inputHandle, inputProof);
+    function requestUint64NonTrivial(externalEuint64 inputHandle, bytes calldata inputProof) public {
+        euint64 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(inputNonTrivial);
-        requestDecryption(cts, this.callbackUint64.selector);
+        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
+        HTTPZ.requestDecryption(cts, this.callbackUint64.selector);
     }
 
     /// @notice Callback function for 64-bit unsigned integer decryption
@@ -252,97 +247,102 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         uint256 requestID,
         uint64 decryptedInput,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (uint64) {
+    ) public returns (uint64) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yUint64 = decryptedInput;
         return decryptedInput;
     }
 
     function requestUint128() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(xUint128);
-        requestDecryption(cts, this.callbackUint128.selector);
+        cts[0] = HTTPZ.toBytes32(xUint128);
+        HTTPZ.requestDecryption(cts, this.callbackUint128.selector);
     }
 
-    function requestUint128NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        euint128 inputNonTrivial = HTTPZ.asEuint128(inputHandle, inputProof);
+    function requestUint128NonTrivial(externalEuint128 inputHandle, bytes calldata inputProof) public {
+        euint128 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(inputNonTrivial);
-        requestDecryption(cts, this.callbackUint128.selector);
+        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
+        HTTPZ.requestDecryption(cts, this.callbackUint128.selector);
     }
 
     function callbackUint128(
         uint256 requestID,
         uint128 decryptedInput,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (uint128) {
+    ) public returns (uint128) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yUint128 = decryptedInput;
         return decryptedInput;
     }
 
     function requestUint256() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(xUint256);
-        requestDecryption(cts, this.callbackUint256.selector);
+        cts[0] = HTTPZ.toBytes32(xUint256);
+        HTTPZ.requestDecryption(cts, this.callbackUint256.selector);
     }
 
-    function requestUint256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        euint256 inputNonTrivial = HTTPZ.asEuint256(inputHandle, inputProof);
+    function requestUint256NonTrivial(externalEuint256 inputHandle, bytes calldata inputProof) public {
+        euint256 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(inputNonTrivial);
-        requestDecryption(cts, this.callbackUint256.selector);
+        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
+        HTTPZ.requestDecryption(cts, this.callbackUint256.selector);
     }
 
     function callbackUint256(
         uint256 requestID,
         uint256 decryptedInput,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (uint256) {
+    ) public returns (uint256) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yUint256 = decryptedInput;
         return decryptedInput;
     }
 
-    function requestEbytes64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        ebytes64 inputNonTrivial = HTTPZ.asEbytes64(inputHandle, inputProof);
+    function requestEbytes64NonTrivial(externalEbytes64 inputHandle, bytes calldata inputProof) public {
+        ebytes64 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(inputNonTrivial);
-        requestDecryption(cts, this.callbackBytes64.selector);
+        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
+        HTTPZ.requestDecryption(cts, this.callbackBytes64.selector);
     }
 
     function requestEbytes64Trivial(bytes calldata value) public {
         ebytes64 inputTrivial = HTTPZ.asEbytes64(HTTPZ.padToBytes64(value));
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(inputTrivial);
-        requestDecryption(cts, this.callbackBytes64.selector);
+        cts[0] = HTTPZ.toBytes32(inputTrivial);
+        HTTPZ.requestDecryption(cts, this.callbackBytes64.selector);
     }
 
     function callbackBytes64(
         uint256 requestID,
         bytes calldata decryptedInput,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (bytes memory) {
+    ) public returns (bytes memory) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yBytes64 = decryptedInput;
         return decryptedInput;
     }
 
-    function requestEbytes128NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        ebytes128 inputNonTrivial = HTTPZ.asEbytes128(inputHandle, inputProof);
+    function requestEbytes128NonTrivial(externalEbytes128 inputHandle, bytes calldata inputProof) public {
+        ebytes128 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(inputNonTrivial);
-        requestDecryption(cts, this.callbackBytes128.selector);
+        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
+        HTTPZ.requestDecryption(cts, this.callbackBytes128.selector);
     }
 
     function requestEbytes128Trivial(bytes calldata value) public {
         ebytes128 inputTrivial = HTTPZ.asEbytes128(HTTPZ.padToBytes128(value));
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(inputTrivial);
-        requestDecryption(cts, this.callbackBytes128.selector);
+        cts[0] = HTTPZ.toBytes32(inputTrivial);
+        HTTPZ.requestDecryption(cts, this.callbackBytes128.selector);
     }
 
     function callbackBytes128(
         uint256 requestID,
         bytes calldata decryptedInput,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (bytes memory) {
+    ) public returns (bytes memory) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yBytes128 = decryptedInput;
         return decryptedInput;
     }
@@ -350,15 +350,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     function requestEbytes256Trivial(bytes calldata value) public {
         ebytes256 inputTrivial = HTTPZ.asEbytes256(HTTPZ.padToBytes256(value));
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(inputTrivial);
-        requestDecryption(cts, this.callbackBytes256.selector);
+        cts[0] = HTTPZ.toBytes32(inputTrivial);
+        HTTPZ.requestDecryption(cts, this.callbackBytes256.selector);
     }
 
-    function requestEbytes256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
-        ebytes256 inputNonTrivial = HTTPZ.asEbytes256(inputHandle, inputProof);
+    function requestEbytes256NonTrivial(externalEbytes256 inputHandle, bytes calldata inputProof) public {
+        ebytes256 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(inputNonTrivial);
-        requestDecryption(cts, this.callbackBytes256.selector);
+        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
+        HTTPZ.requestDecryption(cts, this.callbackBytes256.selector);
     }
 
     /// @notice Callback function for 256-bit encrypted bytes decryption
@@ -368,7 +368,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         uint256 requestID,
         bytes calldata decryptedInput,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (bytes memory) {
+    ) public returns (bytes memory) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yBytes256 = decryptedInput;
         return decryptedInput;
     }
@@ -376,16 +377,16 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @notice Request decryption of an encrypted address
     function requestAddress() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = toBytes32(xAddress);
-        requestDecryption(cts, this.callbackAddress.selector);
+        cts[0] = HTTPZ.toBytes32(xAddress);
+        HTTPZ.requestDecryption(cts, this.callbackAddress.selector);
     }
 
     /// @notice Request decryption of multiple encrypted addresses
     function requestSeveralAddresses() public {
         bytes32[] memory cts = new bytes32[](2);
-        cts[0] = toBytes32(xAddress);
-        cts[1] = toBytes32(xAddress2);
-        requestDecryption(cts, this.callbackAddresses.selector);
+        cts[0] = HTTPZ.toBytes32(xAddress);
+        cts[1] = HTTPZ.toBytes32(xAddress2);
+        HTTPZ.requestDecryption(cts, this.callbackAddresses.selector);
     }
 
     /// @notice Callback function for multiple address decryption
@@ -397,7 +398,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         address decryptedInput1,
         address decryptedInput2,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (address) {
+    ) public returns (address) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yAddress = decryptedInput1;
         yAddress2 = decryptedInput2;
         return decryptedInput1;
@@ -408,7 +410,7 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000700;
         /// @dev This should revert because the previous handle is not honestly obtained
-        requestDecryption(cts, this.callbackAddress.selector);
+        HTTPZ.requestDecryption(cts, this.callbackAddress.selector);
     }
 
     /// @notice Callback function for address decryption
@@ -418,7 +420,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         uint256 requestID,
         address decryptedInput,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) returns (address) {
+    ) public returns (address) {
+        HTTPZ.checkSignatures(requestID, signatures);
         yAddress = decryptedInput;
         return decryptedInput;
     }
@@ -427,15 +430,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @dev Demonstrates how to include encrypted bytes256 in a mixed decryption request
     /// @param inputHandle The encrypted input handle for the bytes256
     /// @param inputProof The proof for the encrypted bytes256
-    function requestMixedBytes256(einput inputHandle, bytes calldata inputProof) public {
-        ebytes256 xBytes256 = HTTPZ.asEbytes256(inputHandle, inputProof);
+    function requestMixedBytes256(externalEbytes256 inputHandle, bytes calldata inputProof) public {
+        ebytes256 xBytes256 = HTTPZ.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](4);
-        cts[0] = toBytes32(xBool);
-        cts[1] = toBytes32(xAddress);
-        cts[2] = toBytes32(xBytes256);
+        cts[0] = HTTPZ.toBytes32(xBool);
+        cts[1] = HTTPZ.toBytes32(xAddress);
+        cts[2] = HTTPZ.toBytes32(xBytes256);
         ebytes64 input64Bytes = HTTPZ.asEbytes64(HTTPZ.padToBytes64(hex"aaff42"));
-        cts[3] = toBytes32(input64Bytes);
-        requestDecryption(cts, this.callbackMixedBytes256.selector);
+        cts[3] = HTTPZ.toBytes32(input64Bytes);
+        HTTPZ.requestDecryption(cts, this.callbackMixedBytes256.selector);
     }
 
     /// @notice Callback function for mixed data type decryption including 256-bit encrypted bytes
@@ -450,10 +453,22 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         bytes memory bytesRes,
         bytes memory bytesRes2,
         bytes[] memory signatures
-    ) public checkSignatures(requestID, signatures) {
+    ) public {
+        HTTPZ.checkSignatures(requestID, signatures);
         yBool = decBool;
         yAddress = decAddress;
         yBytes256 = bytesRes;
         yBytes64 = bytesRes2;
+    }
+
+    /// @dev internal setter to link a decryption requestID to a uint256 value
+    /// @dev if used multiple times with same requestID, it will map the requestID to the list of all added inputs
+    function addParamsUint256(uint256 requestID, uint256 value) internal {
+        paramsUint256[requestID].push(value);
+    }
+
+    /// @dev internal getter to recover all uint256 values linked to a specific requestID
+    function getParamsUint256(uint256 requestID) internal view returns (uint256[] memory) {
+        return paramsUint256[requestID];
     }
 }
