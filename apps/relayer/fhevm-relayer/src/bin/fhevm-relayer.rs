@@ -206,6 +206,8 @@ async fn main() -> eyre::Result<()> {
             tx_service_rollup.clone(),
             tx_config.clone(),
             settings.contracts.clone(),
+            rollup_settings.http_url.clone(),
+            settings.transaction.clone().ciphertext_check_retry.clone(),
         ));
 
     let user_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =

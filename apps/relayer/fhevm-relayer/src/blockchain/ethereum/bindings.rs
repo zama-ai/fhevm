@@ -21,15 +21,6 @@ sol!(
     "./artifacts/contract-abis/TFHEExecutor.json"
 );
 
-// Ciphertext Manager (Rollup)
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    CiphertextManager,
-    "./artifacts/contract-abis/CiphertextManager.json"
-);
-
 // Decryption Manager (Rollup)
 sol!(
     #[allow(missing_docs)]

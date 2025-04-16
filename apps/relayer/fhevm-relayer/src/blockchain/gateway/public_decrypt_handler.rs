@@ -1,6 +1,6 @@
 use crate::{
     blockchain::ethereum::{bindings::DecyptionManager, ComputeCalldata},
-    config::settings::ContractConfig,
+    config::settings::{ContractConfig, RetrySettings},
     core::{
         errors::EventProcessingError,
         event::{
@@ -14,18 +14,20 @@ use crate::{
     },
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
 };
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use alloy::{
     primitives::{Address, FixedBytes, U256},
+    providers::ProviderBuilder,
     rpc::types::TransactionReceipt,
 };
 
 use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
+use reqwest::Url;
 use std::sync::Arc;
 use tokio::task;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 struct PublicDecryptionRequestProcessor {
@@ -47,6 +49,8 @@ pub struct PublicDecryptGatewayHandler {
     public_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
+    gateway_http_url: String,
+    retry_config: RetrySettings,
 }
 
 impl PublicDecryptGatewayHandler {
@@ -55,12 +59,16 @@ impl PublicDecryptGatewayHandler {
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,
+        gateway_http_url: String,
+        retry_config: RetrySettings,
     ) -> Self {
         Self {
             dispatcher,
             tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
             public_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
+            gateway_http_url,
+            retry_config,
         }
     }
 
@@ -97,13 +105,82 @@ impl PublicDecryptGatewayHandler {
             handles
         );
 
-        info!("Wait a few sec to make sure allow contract is fulfilled on Gateway");
-        info!(
-            "At each call the contract address is changing so, restarting the test does not help"
-        );
-        info!("If you see this message, it means ACL check on relayer is not yet implemented");
-        info!("However, if the ACL check IS IMPLEMENTED, please REMOVE the sleep");
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        let url = match Url::parse(&self.gateway_http_url) {
+            Ok(url) => url,
+            Err(e) => {
+                let error = EventProcessingError::HandlerError(format!("Invalid URL: {}", e));
+                self.handle_failed_request(event, error).await;
+                return;
+            }
+        };
+
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .on_http(url);
+
+        let decryption_manager_address =
+            match Address::from_str(&self.contracts.decryption_manager_address) {
+                Ok(addr) => addr,
+                Err(_) => {
+                    let error = EventProcessingError::ConfigError(
+                        crate::config::settings::AppConfigError::InvalidAddress(
+                            "contracts.decryption_manager_address".to_owned(),
+                        ),
+                    );
+                    self.handle_failed_request(event, error).await;
+                    return;
+                }
+            };
+
+        let decryption_manager =
+            DecyptionManager::new(decryption_manager_address, provider.clone());
+
+        let max_retries = self.retry_config.max_attempts;
+        let retry_interval = Duration::from_secs(self.retry_config.base_delay_secs);
+
+        let mut retries = 0;
+        let mut should_retry = true;
+
+        while should_retry && retries < max_retries {
+            should_retry = false;
+
+            match decryption_manager
+                .clone()
+                .checkPublicDecryptionReady(handles.clone())
+                .call()
+                .await
+            {
+                Ok(_) => {
+                    info!("Function call succeeded for handles: {:?}", handles);
+                }
+                Err(err) => {
+                    info!("Gateway not ready for handles: {:?}, retrying... ", handles);
+                    debug!("Gateway not ready yet: {:?} error info: {}", handles, err);
+                    should_retry = true;
+                }
+            }
+
+            if should_retry {
+                retries += 1;
+                if retries < max_retries {
+                    info!(
+                        "Retrying public decryption readiness check (attempt {}/{})",
+                        retries, max_retries
+                    );
+                    tokio::time::sleep(retry_interval).await;
+                } else {
+                    warn!("Max retries reached for public decryption readiness check");
+
+                    // Return an error instead of proceeding with the transaction
+                    let error = EventProcessingError::HandlerError(format!(
+                        "Gateway not ready after {} retries",
+                        max_retries
+                    ));
+                    self.handle_failed_request(event, error).await;
+                    return;
+                }
+            }
+        }
 
         let self_clone = self.clone();
         let event_clone = event.clone();
