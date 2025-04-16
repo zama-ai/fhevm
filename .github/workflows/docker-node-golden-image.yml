@@ -1,0 +1,67 @@
+name: "Docker - HTTPZ Node Golden Image"
+
+on:
+  pull_request:
+    paths:
+      - docker/base/Dockerfile
+      - ../.github/workflows/docker-node-golden-image.yml
+  push:
+    branches:
+      - main
+    paths:
+      - docker/base/Dockerfile
+      - ../.github/workflows/docker-node-golden-image.yml
+  release:
+    types:
+      - published
+
+concurrency:
+  group: node-golden-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  docker-node-golden:
+    uses: zama-ai/httpz-templates/.github/workflows/docker_common.yml@58ddd70781d1456d7fe937efef501a7bc5ca2d8d # main
+    secrets:
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    with:
+      working-directory: "."
+      push_image: true
+      image-name: "httpz-node-golden-image"
+      docker-file: "docker/base/Dockerfile"
+      arm-build: true
+
+  ## FIXME: This does not manage both platforms
+  # docker-tag-golden-image:
+  #   name: Tag Golden Image
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: "read"
+  #     id-token: "write"
+  #     packages: "write" 
+  #   steps:
+  #     - name: Set Image Name
+  #       run: echo "IMAGE_NAME=${{ needs.docker-node-golden.outputs.image_name }}" >> "$GITHUB_ENV"
+  #     - name: Login to Docker Registry
+  #       uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+  #       with:
+  #         registry: ghcr.io
+  #         username: ${{ github.actor }}
+  #         password: ${{ secrets.GITHUB_TOKEN }}
+  #     - name: Tag Golden Image
+  #       run: |
+  #         export GOLDEN_IMAGE_VERSION="23.10.0-alpine3.20"
+  #         docker pull "${IMAGE_NAME}"
+  #         docker tag "${IMAGE_NAME}" ghcr.io/zama-ai/httpz-node-golden-image:"${GOLDEN_IMAGE_VERSION}"
+  #         docker tag "${IMAGE_NAME}" ghcr.io/zama-ai/httpz-node-golden-image:latest
+  #         docker push ghcr.io/zama-ai/httpz-node-golden-image:"${GOLDEN_IMAGE_VERSION}"
+  #         docker push ghcr.io/zama-ai/httpz-node-golden-image:latest
+  #         echo "## Node Golden Docker Image Published ✅" >> "$GITHUB_STEP_SUMMARY"
+  #         echo "**Image Name:** \`ghcr.io/zama-ai/httpz-node-golden-image:${GOLDEN_IMAGE_VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+  #   needs:
+  #     - docker-node-golden

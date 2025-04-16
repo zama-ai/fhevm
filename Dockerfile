@@ -1,23 +1,27 @@
-FROM node:22-slim
+FROM ghcr.io/zama-ai/httpz-node-golden-image:latest
 
-# Install dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends kubernetes-client && \
-    rm -rf /var/lib/apt/lists/*
-
-# Set the working directory
 WORKDIR /app
 
-# Copy only necessary files for npm ci
-COPY package.json ./
-COPY package-lock.json ./ 
+RUN chown -R httpz:httpz /home/httpz && \
+    chown -R httpz:httpz /app
+
+# Copy only necessary files
+COPY --chown=httpz:httpz package.json ./
+COPY --chown=httpz:httpz package-lock.json ./
 
 # Install dependencies
 RUN npm ci && \
     npm prune
 
 # Copy the application files
-COPY ./*.sh ./hardhat.config.ts ./tsconfig.json ./
-COPY ./contracts ./contracts/
-COPY ./addresses ./addresses/
-COPY ./tasks ./tasks/
+COPY --chown=httpz:httpz ./hardhat.config.ts ./tsconfig.json ./
+COPY --chown=httpz:httpz ./contracts ./contracts/
+COPY --chown=httpz:httpz ./addresses ./addresses/
+COPY --chown=httpz:httpz ./tasks ./tasks/
+
+# Pre-download Solidity compiler
+RUN npx hardhat compile --force
+
+USER httpz:httpz
+
+ENTRYPOINT ["/bin/bash", "-c"]
