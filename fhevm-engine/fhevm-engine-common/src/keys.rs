@@ -29,7 +29,7 @@ pub const TFHE_PARAMS: tfhe::shortint::ClassicPBSParameters =
     tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
 #[cfg(feature = "gpu")]
 pub const TFHE_PARAMS: tfhe::shortint::parameters::MultiBitPBSParameters =
-    tfhe::shortint::parameters::PARAM_GPU_MULTI_BIT_MESSAGE_2_CARRY_2_GROUP_3_KS_PBS;
+    tfhe::shortint::parameters::PARAM_GPU_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS;
 
 pub const MAX_BITS_TO_PROVE: usize = 2048;
 
