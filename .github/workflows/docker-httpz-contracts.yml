@@ -1,0 +1,42 @@
+name: "Docker - HTTPZ Host Contracts"
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/docker-httpz-contracts.yml
+      - contracts/**
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/docker-httpz-contracts.yml
+      - contracts/**
+  release:
+    types:
+      - published
+
+concurrency:
+  group: docker-httpz-contracts-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  docker-httpz-contracts:
+  # TODO: this should be replaced with once it's public zama-ai/httpz-templates/.github/workflows/docker_common.yml
+    uses: ./.github/workflows/docker_common.yml
+    secrets:
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    with:
+      working-directory: "."
+      push_image: true
+      image-name: "httpz-backend/contracts/sc-bundle"
+      # image-dev-name: "httpz-backend/contracts/sc-bundle-dev"
+      # generate-dev-image: true
+      docker-file: "contracts/operations/docker/ci.dockerfile"
+      # docker-file-dev: "contracts/operations/docker/dev.dockerfile"
+      # image-dev-description: "HTTPZ Host Contracts dev image"
+      arm-build: true

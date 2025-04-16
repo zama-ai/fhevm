@@ -1,0 +1,39 @@
+name: "Docker - HTTPZ DB migration"
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/docker-httpz-db-migration.yml
+      - fhevm-engine/fhevm-db/**
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/docker-httpz-db-migration.yml
+      - fhevm-engine/fhevm-db/**
+  release:
+    types:
+      - published
+
+concurrency:
+  group: httpz-db-migration-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  docker-httpz-db-migration:
+    # TODO: this should be replaced with once it's public zama-ai/httpz-templates/.github/workflows/docker_common.yml
+    uses: ./.github/workflows/docker_common.yml
+    secrets:
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    with:
+      working-directory: "."
+      push_image: true
+      image-name: "httpz-backend/db-migration"
+      generate-dev-image: false
+      docker-file: "fhevm-engine/fhevm-db/Dockerfile"
+      arm-build: true

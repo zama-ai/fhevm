@@ -139,7 +139,8 @@ jobs:
           pull: false
           provenance: false
           sbom: false
-          tags: ghcr.io/zama-ai/${{ inputs.image-name }}:${{env.DOCKER_TAG_IMAGE }},ghcr.io/zama-ai/${{ inputs.image-name }}:latest
+          tags:
+            ghcr.io/zama-ai/${{ inputs.image-name }}:${{env.DOCKER_TAG_IMAGE }},ghcr.io/zama-ai/${{ inputs.image-name }}:latest
           cache-from: ${{ inputs.cache-from }}
           cache-to: ${{ inputs.cache-to }}
 
@@ -151,8 +152,8 @@ jobs:
           annotations: |
             org.opencontainers.image.description="${{ inputs.image-dev-description }}"
           labels: |
-            zama.fhevm.version=${{ env.DOCKER_TAG_IMAGE }}
-            zama.fhevm.description="${{ inputs.image-dev-description }}"
+            httpz.version=${{ env.DOCKER_TAG_IMAGE }}
+            httpz.description="${{ inputs.image-dev-description }}"
           images: ghcr.io/zama-ai/${{ inputs.image-dev-name }}:${{ env.DOCKER_TAG_IMAGE }}
         env:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: index
@@ -171,7 +172,9 @@ jobs:
           pull: false
           provenance: false
           sbom: false
-          tags: ghcr.io/zama-ai/${{ inputs.image-dev-name }}:${{env.DOCKER_TAG_IMAGE}},ghcr.io/zama-ai/${{ inputs.image-dev-name }}:latest
+          tags:
+            ghcr.io/zama-ai/${{ inputs.image-dev-name }}:${{env.DOCKER_TAG_IMAGE}},ghcr.io/zama-ai/${{
+            inputs.image-dev-name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: ${{ steps.meta.outputs.labels }}
@@ -180,3 +183,8 @@ jobs:
       - name: Export image name
         id: export-image
         run: echo "image=ghcr.io/zama-ai/${{inputs.image-name}}:${{env.DOCKER_TAG_IMAGE}}" >> "${GITHUB_OUTPUT}"
+
+      - name: Add image name to job summary
+        run: |
+          echo "## Docker Image Published ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Image Name:** \`${{ steps.export-image.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
