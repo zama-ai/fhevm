@@ -2,4 +2,4 @@
 
 pragma solidity ^0.8.24;
 
-address constant zkpokManagerAddress = 0x91fB933C34CBDF3dee675e9AA6b8C14069DbC7EA;
+address constant zkpokManagerAddress = 0x87A5b1152AA51728258dbc1AA54B6a83DCd1d3dd;

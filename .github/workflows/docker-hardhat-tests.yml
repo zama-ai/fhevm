@@ -31,5 +31,5 @@ jobs:
 
       - name: Run hardhat tests in container
         run: |
-          docker run --rm -v "$(pwd)/.env.test:/app/.env" -v "$(pwd)/test:/app/test" \
+          docker run --rm -v "$(pwd)/.env.example:/app/.env" -v "$(pwd)/test:/app/test" \
             "${{ inputs.image-name }}" npx hardhat test
