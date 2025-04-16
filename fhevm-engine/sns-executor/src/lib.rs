@@ -1,26 +1,25 @@
 mod aws_upload;
 mod executor;
 mod keyset;
-mod switch_and_squash;
+mod squash_noise;
 
 #[cfg(test)]
 mod tests;
 
 use fhevm_engine_common::types::FhevmError;
 use serde::{Deserialize, Serialize};
-use switch_and_squash::{SnsClientKey, SwitchAndSquashKey};
 use thiserror::Error;
 use tokio::sync::mpsc::{self, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
+pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct KeySet {
-    pub sns_key: SwitchAndSquashKey,
-    pub sns_secret_key: Option<SnsClientKey>,
     pub server_key: tfhe::ServerKey,
+    pub client_key: Option<tfhe::ClientKey>,
 }
 
 #[derive(Clone)]
@@ -90,6 +89,12 @@ pub enum ExecutionError {
 
     #[error("Upload timeout")]
     UploadTimeout,
+
+    #[error("Squashed noise error: {0}")]
+    SquashedNoiseError(#[from] tfhe::Error),
+
+    #[error("Deserialization error: {0}")]
+    DeserializationError(String),
 }
 
 /// Runs the SnS worker loop

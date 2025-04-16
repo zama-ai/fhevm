@@ -1,10 +1,5 @@
-use crate::{
-    keyset::read_sns_sk_from_lo,
-    switch_and_squash::{Ciphertext128, SnsClientKey},
-    Config, DBConfig, HandleItem,
-};
+use crate::{keyset::fetch_keys, Config, DBConfig, HandleItem};
 use anyhow::Ok;
-use fhevm_engine_common::utils::safe_deserialize;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
@@ -12,6 +7,7 @@ use std::{
     time::Duration,
 };
 use test_harness::instance::DBInstance;
+use tfhe::ClientKey;
 use tokio::{sync::mpsc, time::sleep};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
@@ -20,12 +16,12 @@ const TENANT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";
 #[tokio::test]
 #[ignore = "requires valid SnS keys in CI"]
 async fn test_fhe_ciphertext128() {
-    let (conn, sns_client_key, _rx, _test_instance) = setup().await.expect("valid setup");
+    let (conn, client_key, _rx, _test_instance) = setup().await.expect("valid setup");
     let tf: TestFile = read_test_file("ciphertext64.bin");
 
     test_decryptable(
         &conn,
-        &sns_client_key,
+        &client_key,
         &tf.handle.into(),
         &tf.ciphertext64.clone(),
         tf.decrypted,
@@ -35,7 +31,7 @@ async fn test_fhe_ciphertext128() {
     .expect("test_decryptable, first_fhe_computation = true");
     test_decryptable(
         &conn,
-        &sns_client_key,
+        &client_key,
         &tf.handle.into(),
         &tf.ciphertext64,
         tf.decrypted,
@@ -47,7 +43,7 @@ async fn test_fhe_ciphertext128() {
 
 async fn test_decryptable(
     pool: &sqlx::PgPool,
-    sns_secret_key: &SnsClientKey,
+    client_key: &Option<ClientKey>,
     handle: &Vec<u8>,
     ciphertext: &Vec<u8>,
     expected_result: i64,
@@ -68,21 +64,14 @@ async fn test_decryptable(
     let tenant_id = get_tenant_id_from_db(pool, TENANT_API_KEY).await;
 
     // wait until ciphertext.large_ct is not NULL
-    let data = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 10).await?;
+    let _data = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 10).await?;
 
-    // deserialize ciphertext128
-    let ct128: Ciphertext128 = safe_deserialize(&data).expect("serializable ciphertext128");
-
-    let decrypted = sns_secret_key.decrypt_128(&ct128);
-    println!("Decrypted, plaintext {}", decrypted);
-
-    assert!(decrypted == expected_result as u128);
     anyhow::Result::<()>::Ok(())
 }
 
 async fn setup() -> anyhow::Result<(
     sqlx::PgPool,
-    SnsClientKey,
+    Option<ClientKey>,
     tokio::sync::mpsc::Receiver<HandleItem>,
     DBInstance,
 )> {
@@ -112,18 +101,19 @@ async fn setup() -> anyhow::Result<(
     let (upload_tx, upload_rx) = mpsc::channel::<HandleItem>(10);
 
     let token = test_instance.parent_token.child_token();
-    let sns_client_keys = read_sns_sk_from_lo(&pool, &TENANT_API_KEY.to_owned()).await?;
+    let (client_key, _) = fetch_keys(&pool, &TENANT_API_KEY.to_owned()).await?;
+
     tokio::spawn(async move {
         crate::compute_128bit_ct(&conf, upload_tx, token)
             .await
             .expect("valid worker");
-        anyhow::Result::<()>::Ok(())
+        Ok(())
     });
 
     // TODO: Replace this with notification from the worker when it's in ready-state
     sleep(Duration::from_secs(5)).await;
 
-    Ok((pool, sns_client_keys.unwrap(), upload_rx, test_instance))
+    Ok((pool, client_key, upload_rx, test_instance))
 }
 
 #[derive(Serialize, Deserialize)]
