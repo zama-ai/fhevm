@@ -23,7 +23,7 @@ services:
   
   host-sc-deploy:
     container_name: httpz-host-sc-deploy
-    image: ghcr.io/zama-ai/fhevm-smart-contracts-dev:${HOST_VERSION}
+    image: ghcr.io/zama-ai/httpz-backend/contracts/sc-bundle:${HOST_VERSION}
     env_file:
       - ../env/staging/.env.host.local
     command:
