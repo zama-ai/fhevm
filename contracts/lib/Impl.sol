@@ -393,7 +393,7 @@ library Impl {
     }
 
     /**
-     * @dev Returns the HTTPZ config.
+     * @dev Returns the DecryptionRequestsStruct storage struct.
      */
     function getDecryptionRequests() internal pure returns (DecryptionRequestsStruct storage $) {
         assembly {
@@ -422,9 +422,6 @@ library Impl {
         $.DecryptionOracleAddress = decryptionOracle;
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function add(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -436,9 +433,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheAdd(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function sub(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -450,9 +444,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheSub(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function mul(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -464,27 +455,18 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheMul(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function div(bytes32 lhs, bytes32 rhs) internal returns (bytes32 result) {
         bytes1 scalarByte = 0x01;
         HTTPZConfigStruct storage $ = getHTTPZConfig();
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheDiv(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function rem(bytes32 lhs, bytes32 rhs) internal returns (bytes32 result) {
         bytes1 scalarByte = 0x01;
         HTTPZConfigStruct storage $ = getHTTPZConfig();
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRem(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function and(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -496,9 +478,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheBitAnd(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function or(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -510,9 +489,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheBitOr(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function xor(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -524,9 +500,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheBitXor(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function shl(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -538,9 +511,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheShl(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function shr(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -552,9 +522,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheShr(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function rotl(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -566,9 +533,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRotl(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function rotr(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -580,9 +544,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRotr(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function eq(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -594,9 +555,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheEq(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function ne(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -608,9 +566,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheNe(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function ge(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -622,9 +577,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheGe(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function gt(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -636,9 +588,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheGt(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function le(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -650,9 +599,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheLe(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function lt(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -664,9 +610,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheLt(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function min(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -678,9 +621,6 @@ library Impl {
         result = IHTTPZExecutor($.HTTPZExecutorAddress).fheMin(lhs, rhs, scalarByte);
     }
 
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function max(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
         bytes1 scalarByte;
         if (scalar) {

@@ -27,6 +27,10 @@ type externalEbytes64 is bytes32;
 type externalEbytes128 is bytes32;
 type externalEbytes256 is bytes32;
 
+/**
+ * @title IKMSVerifier
+ * @notice This interface contains the only function required from KMSVerifier.
+ */
 interface IKMSVerifier {
     function verifyDecryptionEIP712KMSSignatures(
         bytes32[] memory handlesList,
@@ -35,6 +39,10 @@ interface IKMSVerifier {
     ) external returns (bool);
 }
 
+/**
+ * @title IDecryptionOracle
+ * @notice This interface contains the only function required from DecryptionOracle.
+ */
 interface IDecryptionOracle {
     function requestDecryption(uint256 requestID, bytes32[] calldata ctsHandles, bytes4 callbackSelector) external;
 }
@@ -54,11 +62,19 @@ library HTTPZ {
     /// @notice Returned if the input's length is greater than 256 bytes.
     error InputLengthAbove256Bytes(uint256 inputLength);
 
+    /// @notice Returned if some handles were already saved for corresponding ID.
     error HandlesAlreadySavedForRequestID();
+
+    /// @notice Returned if there was not handle found for the requested ID.
     error NoHandleFoundForRequestID();
+
+    /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
+
+    /// @notice Returned if the requested handle to be decrypted is not of a supported type.
     error UnsupportedHandleType();
 
+    /// @notice This event is emitted when requested decryption has been fulfilled.
     event DecryptionFulfilled(uint256 indexed requestID);
 
     /**
@@ -9408,14 +9424,9 @@ library HTTPZ {
         return Impl.isPubliclyDecryptable(ebytes256.unwrap(value));
     }
 
-    function saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
-        DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
-        if ($.requestedHandles[requestID].length != 0) {
-            revert HandlesAlreadySavedForRequestID();
-        }
-        $.requestedHandles[requestID] = handlesList;
-    }
-
+    /**
+     * @dev Recovers the stored array of handles corresponding to requestID.
+     */
     function loadRequestedHandles(uint256 requestID) internal view returns (bytes32[] memory) {
         DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
         if ($.requestedHandles[requestID].length == 0) {
@@ -9424,6 +9435,10 @@ library HTTPZ {
         return $.requestedHandles[requestID];
     }
 
+    /**
+     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles.
+     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
+     */
     function requestDecryption(
         bytes32[] memory ctsHandles,
         bytes4 callbackSelector
@@ -9437,8 +9452,36 @@ library HTTPZ {
         $.counterRequest++;
     }
 
-    /// @dev this function should be called inside the callback function the dApp contract to verify the signatures
-    function verifySignatures(bytes32[] memory handlesList, bytes[] memory signatures) internal returns (bool) {
+    /**
+     * @dev     MUST be called inside the callback function the dApp contract to verify the signatures,
+     * @dev     otherwise fake decryption results could be submitted.
+     * @notice  Warning: MUST be called directly in the callback function called by the relayer.
+     */
+    function checkSignatures(uint256 requestID, bytes[] memory signatures) internal {
+        bytes32[] memory handlesList = loadRequestedHandles(requestID);
+        bool isVerified = verifySignatures(handlesList, signatures);
+        if (!isVerified) {
+            revert InvalidKMSSignatures();
+        }
+        emit DecryptionFulfilled(requestID);
+    }
+
+    /**
+     * @dev Private low-level function used to link in storage an array of handles to its associated requestID.
+     */
+    function saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
+        DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
+        if ($.requestedHandles[requestID].length != 0) {
+            revert HandlesAlreadySavedForRequestID();
+        }
+        $.requestedHandles[requestID] = handlesList;
+    }
+
+    /**
+     * @dev Private low-level function used to extract the decryptedResult bytes array and verify the KMS signatures.
+     * @notice  Warning: MUST be called directly in the callback function called by the relayer.
+     */
+    function verifySignatures(bytes32[] memory handlesList, bytes[] memory signatures) private returns (bool) {
         uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
         uint256 length = getSignedDataLength(handlesList);
         bytes memory decryptedResult = new bytes(length);
@@ -9454,6 +9497,9 @@ library HTTPZ {
             );
     }
 
+    /**
+     * @dev Private low-level function used to compute the length of the decryptedResult bytes array.
+     */
     function getSignedDataLength(bytes32[] memory handlesList) private pure returns (uint256) {
         uint256 handlesListlen = handlesList.length;
         uint256 signedDataLength;
@@ -9478,55 +9524,79 @@ library HTTPZ {
         return signedDataLength;
     }
 
-    function checkSignatures(uint256 requestID, bytes[] memory signatures) internal {
-        bytes32[] memory handlesList = loadRequestedHandles(requestID);
-        bool isVerified = verifySignatures(handlesList, signatures);
-        if (!isVerified) {
-            revert InvalidKMSSignatures();
-        }
-        emit DecryptionFulfilled(requestID);
-    }
-
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(ebool value) internal pure returns (bytes32 ct) {
         ct = ebool.unwrap(value);
     }
 
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(euint8 value) internal pure returns (bytes32 ct) {
         ct = euint8.unwrap(value);
     }
 
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(euint16 value) internal pure returns (bytes32 ct) {
         ct = euint16.unwrap(value);
     }
 
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(euint32 value) internal pure returns (bytes32 ct) {
         ct = euint32.unwrap(value);
     }
 
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(euint64 value) internal pure returns (bytes32 ct) {
         ct = euint64.unwrap(value);
     }
 
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(euint128 value) internal pure returns (bytes32 ct) {
         ct = euint128.unwrap(value);
     }
 
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(eaddress value) internal pure returns (bytes32 ct) {
         ct = eaddress.unwrap(value);
     }
 
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(euint256 value) internal pure returns (bytes32 ct) {
         ct = euint256.unwrap(value);
     }
 
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(ebytes64 value) internal pure returns (bytes32 ct) {
         ct = ebytes64.unwrap(value);
     }
 
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(ebytes128 value) internal pure returns (bytes32 ct) {
         ct = ebytes128.unwrap(value);
     }
 
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(ebytes256 value) internal pure returns (bytes32 ct) {
         ct = ebytes256.unwrap(value);
     }

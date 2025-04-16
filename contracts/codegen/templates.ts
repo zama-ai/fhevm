@@ -145,9 +145,6 @@ function handleSolidityBinaryOperatorForImpl(op: Operator): string {
       : `bytes1 scalarByte = ${scalarByte};`;
   return (
     `
-    /**
-     * @dev Returns the HTTPZ config.
-     */
     function ${op.name}(bytes32 lhs, bytes32 rhs${scalarArg}) internal returns (bytes32 result) {
         ${scalarSection}
         HTTPZConfigStruct storage $ = getHTTPZConfig();
@@ -198,7 +195,7 @@ library Impl {
   }
 
   /**
-   * @dev Returns the HTTPZ config.
+   * @dev Returns the DecryptionRequestsStruct storage struct.
    */
   function getDecryptionRequests() internal pure returns (DecryptionRequestsStruct storage $) {
       assembly {
@@ -472,6 +469,10 @@ function generateInputVerifierInterface(): string {
 
 function generateKMSVerifierInterface(): string {
   return `
+  /** 
+   * @title IKMSVerifier 
+   * @notice This interface contains the only function required from KMSVerifier. 
+   */
   interface IKMSVerifier {
     function verifyDecryptionEIP712KMSSignatures(
         bytes32[] memory handlesList,
@@ -484,6 +485,10 @@ function generateKMSVerifierInterface(): string {
 
 function generateDecryptionOracleInterface(): string {
   return `
+  /** 
+   * @title IDecryptionOracle 
+   * @notice This interface contains the only function required from DecryptionOracle. 
+   */
   interface IDecryptionOracle {
     function requestDecryption(uint256 requestID, bytes32[] calldata ctsHandles, bytes4 callbackSelector) external;
   }
@@ -521,11 +526,19 @@ export function generateSolidityHTTPZLib(operators: Operator[], fheTypes: FheTyp
     /// @notice Returned if the input's length is greater than 256 bytes.
     error InputLengthAbove256Bytes(uint256 inputLength);
 
+    /// @notice Returned if some handles were already saved for corresponding ID.
     error HandlesAlreadySavedForRequestID();
+
+    /// @notice Returned if there was not handle found for the requested ID.
     error NoHandleFoundForRequestID();
+
+    /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
+
+    /// @notice Returned if the requested handle to be decrypted is not of a supported type.
     error UnsupportedHandleType();
 
+    /// @notice This event is emitted when requested decryption has been fulfilled.
     event DecryptionFulfilled(uint256 indexed requestID);
 
     /**
@@ -1173,14 +1186,9 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
 
   res.push(
     `
-    function saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
-      DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
-      if ($.requestedHandles[requestID].length != 0) {
-          revert HandlesAlreadySavedForRequestID();
-      }
-      $.requestedHandles[requestID] = handlesList;
-    }
-
+    /**
+     * @dev Recovers the stored array of handles corresponding to requestID.
+     */
     function loadRequestedHandles(uint256 requestID) internal view returns (bytes32[] memory) {
       DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
       if ($.requestedHandles[requestID].length == 0) {
@@ -1189,6 +1197,10 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
       return $.requestedHandles[requestID];
     }
 
+    /**
+     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles.
+     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
+     */
     function requestDecryption(
         bytes32[] memory ctsHandles,
         bytes4 callbackSelector
@@ -1202,23 +1214,54 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
       $.counterRequest++;
     }
 
-    /// @dev this function should be called inside the callback function the dApp contract to verify the signatures
-    function verifySignatures(bytes32[] memory handlesList, bytes[] memory signatures) internal returns (bool) {
-        uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
-        uint256 length = getSignedDataLength(handlesList);
-        bytes memory decryptedResult = new bytes(length);
-        assembly {
-            calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
+    /**
+     * @dev     MUST be called inside the callback function the dApp contract to verify the signatures, 
+     * @dev     otherwise fake decryption results could be submitted.
+     * @notice  Warning: MUST be called directly in the callback function called by the relayer.
+     */
+    function checkSignatures(uint256 requestID, bytes[] memory signatures) internal {
+        bytes32[] memory handlesList = loadRequestedHandles(requestID);
+        bool isVerified = verifySignatures(handlesList, signatures);
+        if (!isVerified) {
+            revert InvalidKMSSignatures();
         }
-        HTTPZConfigStruct storage $ = Impl.getHTTPZConfig();
-        return
-            IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
-                handlesList,
-                decryptedResult,
-                signatures
-            );
+        emit DecryptionFulfilled(requestID);
     }
 
+    /**
+     * @dev Private low-level function used to link in storage an array of handles to its associated requestID.
+     */
+    function saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
+      DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
+      if ($.requestedHandles[requestID].length != 0) {
+          revert HandlesAlreadySavedForRequestID();
+      }
+      $.requestedHandles[requestID] = handlesList;
+    }
+
+    /**
+     * @dev Private low-level function used to extract the decryptedResult bytes array and verify the KMS signatures.
+     * @notice  Warning: MUST be called directly in the callback function called by the relayer.
+     */
+    function verifySignatures(bytes32[] memory handlesList, bytes[] memory signatures) private returns (bool) {
+      uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
+      uint256 length = getSignedDataLength(handlesList);
+      bytes memory decryptedResult = new bytes(length);
+      assembly {
+          calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
+      }
+      HTTPZConfigStruct storage $ = Impl.getHTTPZConfig();
+      return
+          IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
+              handlesList,
+              decryptedResult,
+              signatures
+          );
+    }
+
+    /**
+     * @dev Private low-level function used to compute the length of the decryptedResult bytes array.
+     */
     function getSignedDataLength(bytes32[] memory handlesList) private pure returns (uint256) {
         uint256 handlesListlen = handlesList.length;
         uint256 signedDataLength;
@@ -1242,20 +1285,14 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
         signedDataLength += 32; // add offset of signatures
         return signedDataLength;
     }
-
-    function checkSignatures(uint256 requestID, bytes[] memory signatures) internal {
-        bytes32[] memory handlesList = loadRequestedHandles(requestID);
-        bool isVerified = verifySignatures(handlesList, signatures);
-        if (!isVerified) {
-            revert InvalidKMSSignatures();
-        }
-        emit DecryptionFulfilled(requestID);
-    }
   `,
   );
 
   fheTypes.forEach((fheType: AdjustedFheType) =>
     res.push(`
+    /**
+     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     */
     function toBytes32(e${fheType.type.toLowerCase()} value) internal pure returns (bytes32 ct) {
       ct = e${fheType.type.toLowerCase()}.unwrap(value);
     }
