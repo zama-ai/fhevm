@@ -40,6 +40,12 @@ image_name = "Ubuntu Server 22.04 LTS R535 CUDA 12.2"
 flavor_name = "n3-H100-SXM5x8"
 user = "ubuntu"
 
+[backend.hyperstack.multi-h100-sxm5_fallback]
+environment_name = "us-1"
+image_name = "Ubuntu Server 22.04 LTS R535 CUDA 12.2"
+flavor_name = "n3-H100-SXM5x8"
+user = "ubuntu"
+
 [backend.aws.bench]
 region = "eu-west-1"
 image_id = "ami-0b8fd02b263ebdcf4"

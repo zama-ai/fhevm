@@ -16,6 +16,7 @@ on:
           - "multi-h100 (n3-H100x8)"
           - "multi-h100-nvlink (n3-H100x8-NVLink)"
           - "multi-h100-sxm5 (n3-H100x8-SXM5)"
+          - "multi-h100-sxm5_fallback (n3-H100x8-SXM5)"
       benchmarks:
         description: "Benchmark set"
         required: true
