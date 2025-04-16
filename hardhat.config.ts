@@ -8,6 +8,7 @@ import "./tasks/accounts";
 import "./tasks/addNetworks";
 import "./tasks/deploy";
 import "./tasks/faucet";
+import "./tasks/getters";
 import "./tasks/upgradeProxy";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
