@@ -32,7 +32,8 @@
 
 **fheVM Backend** provides the execution service for FHE computations.
 
-It includes:
+It includes a **Coprocessor** service [fhEVM-coprocessor](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-coprocessor). The Coprocessor
+itself consists of multiple microservices, e.g. for FHE compute, input verify, transaction sending, listenting to events, etc.
 
 - An **Executor** service for [fheVM-native](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-native)
 - A **Coprocessor** service for [fheVM-coprocessor](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-coprocessor)
@@ -44,7 +45,6 @@ _Learn more about fheVM-backend features in the [documentation](https://docs.zam
 
 - **[Getting started](#getting-started)**
   - [Generating keys](#generating-keys)
-  - [Executor](#executor)
   - [Coprocessor](#coprocessor)
 - **[Resources](#resources)**
   - [Documentation](#documentation)
@@ -68,42 +68,6 @@ $ cargo run generate-keys
 ```
 
 The keys are stored by default in `fhevm-engine/fhevm-keys`.
-
-### Executor
-
-#### Installation
-
-```
-$ cd fhevm-engine/executor
-$ cargo install --path .
-```
-
-#### Configuration
-
-Once installed, the executor can be started with the following configuration options:
-
-```
-$ executor --help
-Usage: executor [OPTIONS] --fhe-keys-directory <FHE_KEYS_DIRECTORY>
-
-Options:
-      --tokio-threads <TOKIO_THREADS>
-          [default: 4]
-      --fhe-compute-threads <FHE_COMPUTE_THREADS>
-          [default: 32]
-      --policy-fhe-compute-threads <POLICY_FHE_COMPUTE_THREADS>
-          [default: 32]
-      --server-addr <SERVER_ADDR>
-          [default: 127.0.0.1:50051]
-      --fhe-keys-directory <FHE_KEYS_DIRECTORY>
-          directory for fhe keys, target directory expected to contain files named: sks (server evaluation key), pks (compact public key), pp (public key params)
-  -h, --help
-          Print help
-  -V, --version
-          Print version
-```
-
-More details on configuration can be found in the [documentation](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-native/configuration).
 
 ### Coprocessor
 

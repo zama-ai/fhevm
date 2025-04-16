@@ -1,11 +1,15 @@
 # Integration
 
+**Note**: The coprocessor has moved to an event-based architecture and, therefore, it no longer requires integration into geth. We leave
+this integration guide for future reference only or if geth integration is needed in certain circumstances.
+
 This document is a guide listing detailed steps to integrate `fhevm-backend` into [go-ethereum](https://github.com/ethereum/go-ethereum) or any other implementations that follow the same architecture. We use `geth` and `go-ethereum` interchangeably from now on.
 
 {% hint style="info" %}
 This document is based on go-ethereum v1.14.3
 {% endhint %}
 
+<!-- markdown-link-check-disable-next-line -->
 The Go library that we integrate into geth is [fhevm-go-coproc](../../../../fhevm-engine/fhevm-go-coproc/README.md).
 
 <!-- markdown-link-check-disable-next-line -->
