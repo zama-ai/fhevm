@@ -1,6 +1,10 @@
 use crate::utils::safe_deserialize_key;
-use sqlx::Row;
+use sqlx::{
+    postgres::{types::Oid, PgRow},
+    PgPool, Row,
+};
 use std::sync::Arc;
+use tracing::info;
 
 pub struct TfheTenantKeys {
     pub tenant_id: i32,
@@ -201,4 +205,89 @@ where
     };
 
     Ok(res)
+}
+
+const CHUNK_SIZE: i32 = 8192 * 4;
+pub async fn read_keys_from_large_object(
+    pool: &PgPool,
+    tenant_api_key: &String,
+    keys_column_name: &str,
+    capacity: usize,
+) -> anyhow::Result<Vec<u8>> {
+    let query = format!(
+        "SELECT {} FROM tenants WHERE tenant_api_key = $1::uuid",
+        keys_column_name
+    );
+
+    // Read the Oid of the large object
+    let row: PgRow = sqlx::query(&query)
+        .bind(tenant_api_key)
+        .fetch_one(pool)
+        .await?;
+
+    let oid: Oid = row.try_get(0)?;
+    info!("Retrieved oid: {:?}, column: {}", oid, keys_column_name);
+
+    read_large_object_by_chunks(pool, oid, CHUNK_SIZE, capacity).await
+}
+
+/// Read a large object by Oid from the database in chunks
+pub async fn read_large_object_by_chunks(
+    pool: &PgPool,
+    large_object_oid: Oid,
+    chunk_size: i32,
+    capacity: usize,
+) -> anyhow::Result<Vec<u8>> {
+    const INV_READ: i32 = 262144;
+    // DB transaction must be kept open until the large object is being read
+    let mut tx: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
+
+    let row = sqlx::query("SELECT lo_open($1, $2)")
+        .bind(large_object_oid)
+        .bind(INV_READ)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    let fd: i32 = row.try_get(0)?;
+    info!(
+        "Large Object oid: {:?}, fd: {}, chunk size: {}",
+        large_object_oid, fd, chunk_size
+    );
+
+    let mut bytes = Vec::with_capacity(capacity);
+
+    loop {
+        let chunk = sqlx::query("SELECT loread($1, $2)")
+            .bind(fd)
+            .bind(chunk_size)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+        match chunk {
+            Some(row) => {
+                let data: Vec<u8> = row.try_get(0)?;
+                if data.is_empty() {
+                    // No more data to read
+                    break;
+                }
+                bytes.extend_from_slice(&data);
+            }
+            _ => {
+                break;
+            }
+        }
+    }
+
+    info!(
+        "End of large object ({:?}) reached, result length: {}",
+        large_object_oid,
+        bytes.len()
+    );
+
+    let _ = sqlx::query("SELECT lo_close($1)")
+        .bind(fd)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    Ok(bytes)
 }
