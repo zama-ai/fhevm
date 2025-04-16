@@ -1,4 +1,3 @@
-# Run hardhat tests in docker container
 name: "Hardhat tests in docker container"
 
 on:
@@ -14,7 +13,7 @@ concurrency:
 
 jobs:
   docker-test:
-    name: "Hardhat tests in docker container"
+    name: Hardhat tests in docker container
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project
