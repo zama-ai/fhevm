@@ -2,7 +2,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://private-user-images.githubusercontent.com/1384478/421481269-6173e401-7c1b-4911-9731-ca2eb436e85f.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDIzNzM0NjcsIm5iZiI6MTc0MjM3MzE2NywicGF0aCI6Ii8xMzg0NDc4LzQyMTQ4MTI2OS02MTczZTQwMS03YzFiLTQ5MTEtOTczMS1jYTJlYjQzNmU4NWYucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI1MDMxOSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTAzMTlUMDgzMjQ3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9Y2QxMzBhMGJlY2UyMTAwYTg4NTFkOGM5MWRkZGJlYmZiMDgyNzNiYjQ5OTM4MWI5MzA5NGU0ZmI4NWFhNWZlNSZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.YViSBhLRoakk-dPU_lPcV3xDGvPUYqmzqo5eOyJsEWs">
   <source media="(prefers-color-scheme: light)" srcset="https://private-user-images.githubusercontent.com/1384478/421481269-6173e401-7c1b-4911-9731-ca2eb436e85f.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDIzNzM0NjcsIm5iZiI6MTc0MjM3MzE2NywicGF0aCI6Ii8xMzg0NDc4LzQyMTQ4MTI2OS02MTczZTQwMS03YzFiLTQ5MTEtOTczMS1jYTJlYjQzNmU4NWYucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI1MDMxOSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTAzMTlUMDgzMjQ3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9Y2QxMzBhMGJlY2UyMTAwYTg4NTFkOGM5MWRkZGJlYmZiMDgyNzNiYjQ5OTM4MWI5MzA5NGU0ZmI4NWFhNWZlNSZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.YViSBhLRoakk-dPU_lPcV3xDGvPUYqmzqo5eOyJsEWs">
-  <img width=600 alt="Zama HTTPZ">
+  <img width=600 alt="Zama fheVM">
 </picture>
 </p>
 
@@ -11,13 +11,13 @@
 <hr/>
 
 <p align="center">
-<a href="https://github.com/zama-ai/httpz-solidity/blob/main/fhevm-whitepaper.pdf"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/fhevm-backend"> 📒 Documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a> | <a href="https://github.com/zama-ai/awesome-zama"> 📚 FHE resources by Zama</a>
+<a href="https://github.com/zama-ai/fhevm-solidity/blob/main/fhevm-whitepaper.pdf"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/fhevm-backend"> 📒 Documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a> | <a href="https://github.com/zama-ai/awesome-zama"> 📚 FHE resources by Zama</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/zama-ai/httpz-solidity/releases">
+  <a href="https://github.com/zama-ai/fhevm-solidity/releases">
     <img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square"></a>
-  <a href="https://github.com/zama-ai/httpz-solidity/blob/main/LICENSE">
+  <a href="https://github.com/zama-ai/fhevm-solidity/blob/main/LICENSE">
     <!-- markdown-link-check-disable-next-line -->
     <img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square"></a>
   <a href="https://github.com/zama-ai/bounty-program">
@@ -28,16 +28,16 @@
 
 ## About
 
-### What is HTTPZ Backend
+### What is fheVM Backend
 
-**HTTPZ Backend** provides the execution service for FHE computations.
+**fheVM Backend** provides the execution service for FHE computations.
 
 It includes:
 
-- An **Executor** service for [fhEVM-native](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-native)
-- A **Coprocessor** service for [fhEVM-coprocessor](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-coprocessor)
+- An **Executor** service for [fheVM-native](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-native)
+- A **Coprocessor** service for [fheVM-coprocessor](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-coprocessor)
 
-_Learn more about fhEVM-backend features in the [documentation](https://docs.zama.ai/fhevm-backend)._
+_Learn more about fheVM-backend features in the [documentation](https://docs.zama.ai/fhevm-backend)._
 <br></br>
 
 ## Table of Contents
@@ -48,8 +48,8 @@ _Learn more about fhEVM-backend features in the [documentation](https://docs.zam
   - [Coprocessor](#coprocessor)
 - **[Resources](#resources)**
   - [Documentation](#documentation)
-  - [fhEVM Demo](#fhevm-demo)
-- **[Working with fhEVM-backend](#working-with-fhevm-backend)**
+  - [fheVM Demo](#fhevm-demo)
+- **[Working with fheVM-backend](#working-with-fhevm-backend)**
   - [Citations](#citations)
   - [Contributing](#contributing)
   - [License](#license)
@@ -317,18 +317,18 @@ More details on configuration can be found in the [documentation](https://docs.z
 
 Full, comprehensive documentation is available here: [https://docs.zama.ai/fhevm-backend](https://docs.zama.ai/fhevm-backend).
 
-### fhEVM Demo
+### fheVM Demo
 
-A complete demo showcasing an integrated fhEVM blockchain and KMS (Key Management System) is available here: [https://github.com/zama-ai/httpz-devops/](https://github.com/zama-ai/httpz-devops/).
+A complete demo showcasing an integrated fheVM blockchain and KMS (Key Management System) is available here: [https://github.com/zama-ai/fhevm-devops/](https://github.com/zama-ai/fhevm-devops/).
 
-## Working with fhEVM-backend
+## Working with fheVM-backend
 
 ### Citations
 
-To cite fhEVM or the whitepaper in academic papers, please use the following entries:
+To cite fheVM or the whitepaper in academic papers, please use the following entries:
 
 ```text
-@Misc{fhEVM,
+@Misc{fheVM,
 title={{Private smart contracts on the EVM using homomorphic encryption}},
 author={Zama},
 year={2023},
@@ -337,7 +337,7 @@ note={\url{https://github.com/zama-ai/fhevm}},
 ```
 
 ```text
-@techreport{fhEVM,
+@techreport{fheVM,
 author = "Morten Dahl, Clément Danjou, Daniel Demmler, Tore Frederiksen, Petar Ivanov,
 Marc Joye, Dragos Rotaru, Nigel Smart, Louis Tremblay Thibault
 ",
@@ -349,9 +349,9 @@ year = "2023"
 
 ### Contributing
 
-There are two ways to contribute to the Zama fhEVM:
+There are two ways to contribute to the Zama fheVM:
 
-- [Open issues](https://github.com/zama-ai/httpz-backend/issues/new/choose) to report bugs and typos, or to suggest new ideas
+- [Open issues](https://github.com/zama-ai/fhevm-backend/issues/new/choose) to report bugs and typos, or to suggest new ideas
 - Request to become an official contributor by emailing hello@zama.ai.
 
 Becoming an approved contributor involves signing our Contributor License Agreement (CLA)). Only approved contributors can send pull requests, so please make sure to get in touch before you do!
@@ -389,8 +389,8 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 <a target="_blank" href="https://community.zama.ai">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/httpz-solidity/assets/157474013/e249e1a8-d724-478c-afa8-e4fe01c1a0fd">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/httpz-solidity/assets/157474013/a72200cc-d93e-44c7-81a8-557901d8798d">
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/fhevm-solidity/assets/157474013/e249e1a8-d724-478c-afa8-e4fe01c1a0fd">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/fhevm-solidity/assets/157474013/a72200cc-d93e-44c7-81a8-557901d8798d">
   <img alt="Support">
 </picture>
 </a>
