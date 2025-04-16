@@ -1,7 +1,7 @@
-include .env.test
+include .env.example
 
 LOCAL_NETWORK_NAME=localHTTPZGateway
-ENV_TEST_PATH=.env.test
+ENV_PATH=.env.example
 FORGE_DAPP_OUT=artifacts
 
 prettier:
@@ -16,26 +16,26 @@ clean:
 # Define it as a phony target to avoid conflicts with the test directory
 .PHONY: test
 test:
-	DOTENV_CONFIG_PATH=$(ENV_TEST_PATH) npx hardhat test
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test
 
 get-accounts:
-	npx hardhat get-accounts --num-accounts 20
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts --num-accounts 20
 
 start-local-node:
-	npx hardhat node --port 8546
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat node --port 8546
 
 deploy-contracts-local:
-	cp $(ENV_TEST_PATH) .env
+	cp $(ENV_PATH) .env
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:faucetToPrivate --private-key $(DEPLOYER_PRIVATE_KEY)
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:deployAllGatewayContracts
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:addNetworksToHttpz --use-internal-httpz-address true
 
 docker-compose-build:
-	cp .env.example.deployment .env
+	cp .env.example .env
 	docker compose -vvv build
 
 docker-compose-up:
-	cp .env.example.deployment .env
+	cp .env.example .env
 	docker compose -vvv up -d
 
 docker-compose-down:

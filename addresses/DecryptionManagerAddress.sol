@@ -2,4 +2,4 @@
 
 pragma solidity ^0.8.24;
 
-address constant decryptionManagerAddress = 0x52EE5bBD1CB7FC47819C2b190DFE444Cb1b0C559;
+address constant decryptionManagerAddress = 0xf3627F73C8ae1d0bDc2Af62812284303A525EEEf;
