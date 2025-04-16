@@ -2,4 +2,4 @@
 
 pragma solidity ^0.8.24;
 
-address constant keyManagerAddress = 0x0FAF5E745F163C1D99F528565De78b46D4922c4C;
+address constant keyManagerAddress = 0xDE409109E0fCCAaE7B87De518F61d617A3fda094;

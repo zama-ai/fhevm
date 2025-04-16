@@ -2,4 +2,4 @@
 
 pragma solidity ^0.8.24;
 
-address constant ciphertextManagerAddress = 0x0Cd5E87581904Dc6d305CCdFB6e72B8F77882c34;
+address constant ciphertextManagerAddress = 0xD582Ec82a1758322907DF80dA8A754e12A5acB95;
