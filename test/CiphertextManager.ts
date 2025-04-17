@@ -119,7 +119,7 @@ describe("CiphertextManager", function () {
 
     it("Should revert because the coprocessor transaction sender has already added the ciphertext handle", async function () {
       // Add the ciphertext with the first coprocessor transaction sender
-      ciphertextManager
+      await ciphertextManager
         .connect(coprocessorTxSenders[0])
         .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
