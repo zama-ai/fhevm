@@ -13,6 +13,8 @@ import "./interfaces/IHTTPZ.sol";
 import "./interfaces/IACLManager.sol";
 import "./interfaces/ICiphertextManager.sol";
 import "./shared/HttpzChecks.sol";
+import "./shared/FheType.sol";
+import "./libraries/FHETypeBitSizes.sol";
 
 /// @title DecryptionManager contract
 /// @dev See {IDecryptionManager}.
@@ -101,6 +103,9 @@ contract DecryptionManager is
 
     /// @notice The maximum number of contracts that can request for user decryption at once.
     uint8 internal constant _MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
+
+    /// @notice The maximum number of bits that can be decrypted in a single public/user decryption request.
+    uint256 internal constant _MAX_DECRYPTION_REQUEST_BITS = 2048;
 
     /// @notice The definition of the PublicDecryptVerification structure typed data.
     string public constant EIP712_PUBLIC_DECRYPT_TYPE =
@@ -207,12 +212,13 @@ contract DecryptionManager is
 
     /// @dev See {IDecryptionManager-publicDecryptionRequest}.
     function publicDecryptionRequest(bytes32[] calldata ctHandles) public virtual {
-        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
-
-        /// @dev Check that the handles are allowed for public decryption.
-        for (uint256 i = 0; i < ctHandles.length; i++) {
-            _ACL_MANAGER.checkPublicDecryptAllowed(ctHandles[i]);
+        /// @dev Check that the list of handles is not empty
+        if (ctHandles.length == 0) {
+            revert EmptyCtHandles();
         }
+
+        /// @dev Check the handles' conformance
+        _checkCtHandlesConformancePublic(ctHandles);
 
         /// @dev Fetch the SNS ciphertexts from the CiphertextManager contract
         /// @dev This call is reverted if any of the ciphertexts are not found in the contract, but
@@ -226,6 +232,7 @@ contract DecryptionManager is
         /// @dev See https://github.com/zama-ai/httpz-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
         $._publicDecryptionCounter++;
         uint256 publicDecryptionId = $._publicDecryptionCounter;
 
@@ -285,12 +292,12 @@ contract DecryptionManager is
         bytes calldata publicKey,
         bytes calldata signature
     ) external virtual {
-        /// @dev Check the given number of contractAddresses does not exceed the maximum allowed.
+        /// @dev Check the number of contractAddresses does not exceed the maximum allowed.
         if (contractAddresses.length > _MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
             revert ContractAddressesMaxLengthExceeded(_MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
         }
 
-        /// @dev Check the given durationDays does not exceed the maximum allowed.
+        /// @dev Check the durationDays does not exceed the maximum allowed.
         if (requestValidity.durationDays > _MAX_USER_DECRYPT_DURATION_DAYS) {
             revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
         }
@@ -300,28 +307,12 @@ contract DecryptionManager is
             revert UserAddressInContractAddresses(userAddress, contractAddresses);
         }
 
-        /// @dev Extract the ctHandles from the given ctHandleContractPairs and check that both the
-        /// @dev user and the contract accounts have access to them.
-        /// @dev We do not deduplicate handles if the same handle appears multiple times
-        /// @dev for different contracts, it remains in the list as is. This ensures that
-        /// @dev the CiphertextManager retrieval below returns all corresponding materials.
-        bytes32[] memory ctHandles = new bytes32[](ctHandleContractPairs.length);
-        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            bytes32 ctHandle = ctHandleContractPairs[i].ctHandle;
-            address contractAddress = ctHandleContractPairs[i].contractAddress;
-
-            /// @dev Check that the user account has access to the handles.
-            _ACL_MANAGER.checkAccountAllowed(userAddress, ctHandle);
-
-            /// @dev Check that the contract account has access to the handles.
-            _ACL_MANAGER.checkAccountAllowed(contractAddress, ctHandle);
-
-            /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
-            if (!_containsContractAddress(contractAddresses, contractAddress)) {
-                revert ContractNotInContractAddresses(contractAddress, contractAddresses);
-            }
-            ctHandles[i] = ctHandle;
-        }
+        /// @dev - Extract the handles and check their conformance
+        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
+            ctHandleContractPairs,
+            contractAddresses,
+            userAddress
+        );
 
         /// @dev Initialize the UserDecryptRequestVerification structure for the signature validation.
         UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
@@ -369,12 +360,12 @@ contract DecryptionManager is
         bytes calldata publicKey,
         bytes calldata signature
     ) external virtual {
-        /// @dev Check the given number of contractAddresses does not exceed the maximum allowed.
+        /// @dev Check the number of contractAddresses does not exceed the maximum allowed.
         if (contractAddresses.length > _MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
             revert ContractAddressesMaxLengthExceeded(_MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
         }
 
-        /// @dev Check the given durationDays does not exceed the maximum allowed.
+        /// @dev Check the durationDays does not exceed the maximum allowed.
         if (requestValidity.durationDays > _MAX_USER_DECRYPT_DURATION_DAYS) {
             revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
         }
@@ -384,30 +375,14 @@ contract DecryptionManager is
             revert DelegatorAddressInContractAddresses(delegationAccounts.delegatorAddress, contractAddresses);
         }
 
-        /// @dev Extract the ctHandles from the given ctHandleContractPairs and check that both the
-        /// @dev delegated and the contract accounts have access to them.
-        /// @dev We do not deduplicate handles if the same handle appears multiple times
-        /// @dev for different contracts, it remains in the list as is. This ensures that
-        /// @dev the CiphertextManager retrieval below returns all corresponding materials.
-        bytes32[] memory ctHandles = new bytes32[](ctHandleContractPairs.length);
-        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            bytes32 ctHandle = ctHandleContractPairs[i].ctHandle;
-            address contractAddress = ctHandleContractPairs[i].contractAddress;
+        /// @dev - Extract the handles and check their conformance
+        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
+            ctHandleContractPairs,
+            contractAddresses,
+            delegationAccounts.delegatorAddress
+        );
 
-            /// @dev Check that the delegator account has access to the handles.
-            _ACL_MANAGER.checkAccountAllowed(delegationAccounts.delegatorAddress, ctHandle);
-
-            /// @dev Check that the contract account has access to the handles.
-            _ACL_MANAGER.checkAccountAllowed(contractAddress, ctHandle);
-
-            /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
-            if (!_containsContractAddress(contractAddresses, contractAddress)) {
-                revert ContractNotInContractAddresses(contractAddress, contractAddresses);
-            }
-            ctHandles[i] = ctHandle;
-        }
-
-        /// @dev Check that the delegated address has been granted access to the given contractAddresses
+        /// @dev Check that the delegated address has been granted access to the contract addresses
         /// @dev by the delegator.
         _ACL_MANAGER.checkAccountDelegated(contractsChainId, delegationAccounts, contractAddresses);
 
@@ -753,7 +728,93 @@ contract DecryptionManager is
         return verifiedSignaturesCount >= consensusThreshold;
     }
 
+    /// @notice Check the handles' conformance for public decryption requests.
+    /// @dev Checks include:
+    /// @dev - Total bit size for each handle
+    /// @dev - FHE type validity for each handle
+    /// @dev - Handles are allowed for public decryption
+    /// @param ctHandles The list of ciphertext handles
+    function _checkCtHandlesConformancePublic(bytes32[] memory ctHandles) internal view {
+        uint256 totalBitSize = 0;
+        for (uint256 i = 0; i < ctHandles.length; i++) {
+            bytes32 ctHandle = ctHandles[i];
+
+            /// @dev Extract the FHE type from the ciphertext handle
+            FheType fheType = HandleOps.extractFheType(ctHandle);
+
+            /// @dev Add the bit size of the FHE type to the total bit size
+            /// @dev This reverts if the FHE type is invalid or not supported.
+            totalBitSize += FHETypeBitSizes.getBitSize(fheType);
+
+            /// @dev Check that the handles are allowed for public decryption.
+            _ACL_MANAGER.checkPublicDecryptAllowed(ctHandle);
+        }
+
+        /// @dev Revert if the total bit size exceeds the maximum allowed.
+        if (totalBitSize > _MAX_DECRYPTION_REQUEST_BITS) {
+            revert MaxDecryptionRequestBitSizeExceeded(_MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
+        }
+    }
+
+    /// @notice Extracts the handles and check their conformance for user decryption requests.
+    /// @dev Checks include:
+    /// @dev - Total bit size for each handle
+    /// @dev - FHE type validity for each handle
+    /// @dev - Contract addresses have access to the handles
+    /// @dev - Allowed address has access to the handles
+    /// @dev - Contract address inclusion in the list of allowed contract addresses
+    /// @param ctHandleContractPairs The list of ciphertext handles and contract addresses
+    /// @param contractAddresses The list of allowed contract addresses
+    /// @param allowedAddress The address that is allowed to access the handles
+    /// @return ctHandles The list of ciphertext handles
+    function _extractCtHandlesCheckConformanceUser(
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        address[] memory contractAddresses,
+        address allowedAddress
+    ) internal view returns (bytes32[] memory ctHandles) {
+        /// @dev Check that the list of ctHandleContractPair is not empty
+        if (ctHandleContractPairs.length == 0) {
+            revert EmptyCtHandleContractPairs();
+        }
+
+        ctHandles = new bytes32[](ctHandleContractPairs.length);
+
+        uint256 totalBitSize = 0;
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            bytes32 ctHandle = ctHandleContractPairs[i].ctHandle;
+            address contractAddress = ctHandleContractPairs[i].contractAddress;
+
+            /// @dev Extract the FHE type from the ciphertext handle
+            FheType fheType = HandleOps.extractFheType(ctHandle);
+
+            /// @dev Add the bit size of the FHE type to the total bit size
+            /// @dev This reverts if the FHE type is invalid or not supported
+            totalBitSize += FHETypeBitSizes.getBitSize(fheType);
+
+            /// @dev Check that the allowed account has access to the handles.
+            _ACL_MANAGER.checkAccountAllowed(allowedAddress, ctHandle);
+
+            /// @dev Check that the contract account has access to the handles.
+            _ACL_MANAGER.checkAccountAllowed(contractAddress, ctHandle);
+
+            /// @dev Check the contract is included in the list of allowed contract addresses.
+            if (!_containsContractAddress(contractAddresses, contractAddress)) {
+                revert ContractNotInContractAddresses(contractAddress, contractAddresses);
+            }
+
+            ctHandles[i] = ctHandle;
+        }
+
+        /// @dev Revert if the total bit size exceeds the maximum allowed.
+        if (totalBitSize > _MAX_DECRYPTION_REQUEST_BITS) {
+            revert MaxDecryptionRequestBitSizeExceeded(_MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
+        }
+    }
+
     /// @notice Checks if a given contractAddress is included in the contractAddresses list.
+    /// @param contractAddresses The list of contract addresses
+    /// @param contractAddress The contract address to check
+    /// @return Whether the contract address is included in the list
     function _containsContractAddress(
         address[] memory contractAddresses,
         address contractAddress
@@ -767,6 +828,7 @@ contract DecryptionManager is
     }
 
     /// @notice Checks that all SNS ciphertext materials have the same keyId.
+    /// @param snsCtMaterials The list of SNS ciphertext materials to check
     function _checkCtMaterialKeyIds(SnsCiphertextMaterial[] memory snsCtMaterials) internal pure {
         if (snsCtMaterials.length <= 1) return;
 

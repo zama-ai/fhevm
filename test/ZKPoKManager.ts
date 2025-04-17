@@ -1,31 +1,39 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import { HDNodeWallet } from "ethers";
 import hre from "hardhat";
 
 import { HTTPZ, ZKPoKManager } from "../typechain-types";
 import {
   EIP712,
-  createAndFundRandomUser,
+  createBytes32,
   createCtHandles,
   createEIP712ResponseZKPoK,
+  createRandomAddress,
+  createRandomWallet,
   getSignaturesZKPoK,
   loadTestVariablesFixture,
 } from "./utils";
 
 describe("ZKPoKManager", function () {
-  const contractAddress = hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678");
-  const userAddress = hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12");
-  const ciphertextWithZKProof = hre.ethers.randomBytes(32);
+  // Define 3 ciphertext handles
   const ctHandles = createCtHandles(3);
+
+  // Define input values
+  const contractAddress = createRandomAddress();
+  const userAddress = createRandomAddress();
+  const ciphertextWithZKProof = createBytes32();
 
   // Expected ZK proof id (after first request)
   const zkProofId = 1;
-  const fakeCtHandles = createCtHandles(3);
 
-  // Fake values
+  // Define 3 new valid ctHandles
+  const newCtHandles = createCtHandles(3);
+
+  // Define fake values
   const fakeChainId = 123;
+  const fakeTxSender = createRandomWallet();
+  const fakeSigner = createRandomWallet();
 
   describe("Verify proof request", async function () {
     let httpz: HTTPZ;
@@ -66,8 +74,6 @@ describe("ZKPoKManager", function () {
     let zkpokManager: ZKPoKManager;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
-    let fakeTxSender: HDNodeWallet;
-    let fakeSigner: HDNodeWallet;
     let contractChainId: number;
     let zkpokManagerAddress: string;
     let eip712Message: EIP712;
@@ -82,9 +88,6 @@ describe("ZKPoKManager", function () {
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       contractChainId = fixture.chainIds[0];
-
-      fakeTxSender = await createAndFundRandomUser();
-      fakeSigner = await createAndFundRandomUser();
 
       zkpokManagerAddress = await zkpokManager.getAddress();
 
@@ -178,11 +181,11 @@ describe("ZKPoKManager", function () {
 
     it("Should verify a proof with 2 valid and 1 malicious signatures", async function () {
       // Create a malicious EIP712 message: the ctHandles are different from the expected ones
-      // but the signature is valid (the fake handles will be given to the response call )
+      // but the signature is valid (the new handles will be given to the response call )
       const fakeEip712Message = createEIP712ResponseZKPoK(
         hre.network.config.chainId!,
         zkpokManagerAddress,
-        fakeCtHandles,
+        newCtHandles,
         userAddress,
         contractAddress,
         contractChainId,
@@ -194,7 +197,7 @@ describe("ZKPoKManager", function () {
       // Trigger a malicious proof verification response with:
       // - the first coprocessor transaction sender (expected)
       // - a fake signature (unexpected)
-      await zkpokManager.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, fakeCtHandles, fakeSignature);
+      await zkpokManager.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, newCtHandles, fakeSignature);
 
       // Trigger a first valid proof verification response with:
       // - the second coprocessor transaction sender
@@ -275,7 +278,6 @@ describe("ZKPoKManager", function () {
     let zkpokManager: ZKPoKManager;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
-    let fakeTxSender: HDNodeWallet;
     let contractChainId: number;
     let zkpokManagerAddress: string;
 
@@ -286,8 +288,6 @@ describe("ZKPoKManager", function () {
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       contractChainId = fixture.chainIds[0];
-
-      fakeTxSender = await createAndFundRandomUser();
 
       zkpokManagerAddress = await zkpokManager.getAddress();
 

@@ -5,7 +5,7 @@ import fs from "fs";
 import hre from "hardhat";
 
 import { getRequiredEnvVar } from "../../tasks/utils/loadVariables";
-import { createAndFundRandomUser, fund } from "./wallets";
+import { fund } from "./wallets";
 
 export function loadChainIds() {
   const nNetwork = parseInt(getRequiredEnvVar("NUM_NETWORKS"));
@@ -32,12 +32,10 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
   // Get signers
   // - the owner owns the contracts and can initialize the protocol, update FHE params
   // - the pauser can pause the protocol
-  // - the user has no particular rights and is mostly used to check roles are properly set
   const owner = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY"), hre.ethers.provider);
   await fund(owner.address);
   const pauser = await hre.ethers.getSigner(getRequiredEnvVar("PAUSER_ADDRESS"));
   await checkIsHardhatSigner(pauser);
-  const user = await createAndFundRandomUser();
 
   // Load the KMS transaction senders
   const kmsTxSenders = [];
@@ -71,7 +69,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
     coprocessorSigners.push(coprocessorSigner);
   }
 
-  return { owner, pauser, user, kmsTxSenders, kmsSigners, coprocessorTxSenders, coprocessorSigners };
+  return { owner, pauser, kmsTxSenders, kmsSigners, coprocessorTxSenders, coprocessorSigners };
 }
 
 // Loads the addresses of the deployed contracts, and the values required for the tests.

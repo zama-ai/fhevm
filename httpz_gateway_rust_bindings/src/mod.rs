@@ -13,6 +13,7 @@ pub mod r#eip712upgradeable;
 pub mod r#erc1967utils;
 pub mod r#emptyuupsproxy;
 pub mod r#errors;
+pub mod r#fhetypebitsizes;
 pub mod r#httpz;
 pub mod r#handleops;
 pub mod r#httpzchecks;
