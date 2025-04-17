@@ -3,7 +3,8 @@ scDeploy:
   image:
     name: ghcr.io/zama-ai/fhevm-smart-contracts
     tag: v0.7.0-rc2
-  configmapName: "layer1-sc-addresses"
+  configmap:
+    name: "layer1-sc-addresses"
   env:
     - name: MNEMONIC
       value: "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"

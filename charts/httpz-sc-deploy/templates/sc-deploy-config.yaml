@@ -22,6 +22,9 @@ data:
       else
         echo "skipping: configmap ${configmap_name} already exists" 2>&1
       fi
+      {{- range $annotationKey, $annotationValue := $.Values.scDeploy.configmap.annotations }}
+      kubectl annotate --overwrite configmap "${configmap_name}" {{ $annotationKey }}={{ $annotationValue | quote }}
+      {{- end }}
     }
     add_key_to_configmap() {
       configmap_name="${1}"
@@ -57,9 +60,8 @@ data:
         echo "error: you must supply an annotation value" 1>&2
         exit 1
       fi
-      kubectl annotate --overwrite configmap "${configmap_name}" "${key}='${value}'"
     }
-    CONFIGMAP_NAME="{{ .Values.scDeploy.configmapName }}"
+    CONFIGMAP_NAME="{{ .Values.scDeploy.configmap.name }}"
 
     echo "creating kubernetes configmap for smart contract configuration outputs"
     create_configmap "${CONFIGMAP_NAME}"

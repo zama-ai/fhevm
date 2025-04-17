@@ -3,7 +3,9 @@ scDeploy:
   image:
     name: ghcr.io/zama-ai/gateway-l2/sc-bundle
     tag: b479cf8
-  configmapName: "layer2-sc-addresses"
+  configmap:
+    name: "layer2-sc-addresses"
+    annotations:
   env:
     - name: MNEMONIC
       value: "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
