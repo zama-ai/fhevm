@@ -1,10 +1,12 @@
 use alloy::{hex::encode, primitives::Address, providers::Provider, transports::http::reqwest};
 use aws_config::BehaviorVersion;
-use aws_sdk_s3::{config::Region, Client as S3Client};
+use aws_sdk_s3::{Client as S3Client, config::Region};
 use dashmap::DashMap;
-use once_cell::sync::Lazy;
 use sha3::{Digest, Keccak256};
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -14,7 +16,7 @@ use crate::{
 };
 
 // Global cache for coprocessor S3 bucket URLs
-static S3_BUCKET_CACHE: Lazy<DashMap<Address, String>> = Lazy::new(DashMap::new);
+static S3_BUCKET_CACHE: LazyLock<DashMap<Address, String>> = LazyLock::new(DashMap::new);
 
 /// Logs the current state of the S3 bucket cache
 fn log_cache_state() {
@@ -73,7 +75,7 @@ pub async fn call_httpz_to_get_s3_url<P: Provider + Clone>(
     };
 
     // Extract S3 bucket URL from the coprocessor
-    let s3_bucket_url = coprocessor._0.s3BucketUrl.to_string();
+    let s3_bucket_url = coprocessor.s3BucketUrl.to_string();
 
     if s3_bucket_url.is_empty() {
         warn!(
@@ -593,7 +595,9 @@ pub async fn prefetch_coprocessor_buckets<P: Provider + Clone>(
                 );
             }
         } else {
-            warn!("All S3 URL retrievals failed and no fallback configuration available. No URLs available.");
+            warn!(
+                "All S3 URL retrievals failed and no fallback configuration available. No URLs available."
+            );
         }
     }
 

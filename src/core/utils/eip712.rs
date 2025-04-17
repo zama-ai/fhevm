@@ -1,9 +1,9 @@
 use crate::error::Result;
+use alloy::primitives::B256;
 use alloy::{
     primitives::{Address, U256},
     sol_types::Eip712Domain,
 };
-use alloy_primitives::B256;
 use kms_grpc::kms::v1::{Eip712DomainMsg, ReencryptionRequest};
 use tracing::warn;
 

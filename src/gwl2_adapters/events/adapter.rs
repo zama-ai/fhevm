@@ -1,15 +1,15 @@
+use alloy::rpc::types::eth::Log as EthLog;
 use alloy::{
     network::Ethereum,
     primitives::Address,
     providers::{Provider, ProviderBuilder},
     transports::ws::WsConnect,
 };
-use alloy_rpc_types_eth::Log as EthLog;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
@@ -365,7 +365,7 @@ impl EventsAdapter {
 
     /// Helper function to handle event stream results
     async fn handle_event<T: std::fmt::Debug>(
-        result: Option<Result<(T, EthLog), alloy_sol_types::Error>>,
+        result: Option<Result<(T, EthLog), alloy::sol_types::Error>>,
         event_tx: mpsc::Sender<KmsCoreEvent>,
         event_constructor: fn(T) -> KmsCoreEvent,
         event_name: String,

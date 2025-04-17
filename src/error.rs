@@ -1,5 +1,4 @@
-use alloy_sol_types::Error as SolError;
-use alloy_transport::RpcError;
+use alloy::{sol_types::Error as SolError, transports::RpcError};
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 

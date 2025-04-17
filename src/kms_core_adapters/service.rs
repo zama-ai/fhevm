@@ -3,12 +3,12 @@ use kms_grpc::{
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
-use tonic::{transport::Channel, Code, Request, Response, Status};
+use tonic::{Code, Request, Response, Status, transport::Channel};
 use tracing::{error, info, warn};
 
 use crate::core::config::Config;

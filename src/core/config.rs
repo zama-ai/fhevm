@@ -216,9 +216,13 @@ impl Config {
             let has_non_ascii = !config.decryption_manager_domain_name.is_ascii();
 
             if has_control_chars {
-                warn!("  Decryption Manager Domain Name contains control characters, may cause EIP-712 encoding issues");
+                warn!(
+                    "  Decryption Manager Domain Name contains control characters, may cause EIP-712 encoding issues"
+                );
             } else if has_non_ascii {
-                warn!("  Decryption Manager Domain Name contains non-ASCII characters, may cause EIP-712 compatibility issues");
+                warn!(
+                    "  Decryption Manager Domain Name contains non-ASCII characters, may cause EIP-712 compatibility issues"
+                );
             } else {
                 info!("  Decryption Manager Domain Name EIP-712 compatibility check: OK");
             }
@@ -232,9 +236,13 @@ impl Config {
             let has_non_ascii = !config.httpz_domain_name.is_ascii();
 
             if has_control_chars {
-                warn!("  HTTPZ Domain Name contains control characters, may cause EIP-712 encoding issues");
+                warn!(
+                    "  HTTPZ Domain Name contains control characters, may cause EIP-712 encoding issues"
+                );
             } else if has_non_ascii {
-                warn!("  HTTPZ Domain Name contains non-ASCII characters, may cause EIP-712 compatibility issues");
+                warn!(
+                    "  HTTPZ Domain Name contains non-ASCII characters, may cause EIP-712 compatibility issues"
+                );
             } else {
                 info!("  HTTPZ Domain Name EIP-712 compatibility check: OK");
             }
@@ -347,9 +355,13 @@ impl Config {
             let has_non_ascii = !config.decryption_manager_domain_name.is_ascii();
 
             if has_control_chars {
-                warn!("  Decryption Manager Domain Name contains control characters, may cause EIP-712 encoding issues");
+                warn!(
+                    "  Decryption Manager Domain Name contains control characters, may cause EIP-712 encoding issues"
+                );
             } else if has_non_ascii {
-                warn!("  Decryption Manager Domain Name contains non-ASCII characters, may cause EIP-712 compatibility issues");
+                warn!(
+                    "  Decryption Manager Domain Name contains non-ASCII characters, may cause EIP-712 compatibility issues"
+                );
             } else {
                 info!("  Decryption Manager Domain Name EIP-712 compatibility check: OK");
             }
@@ -363,9 +375,13 @@ impl Config {
             let has_non_ascii = !config.httpz_domain_name.is_ascii();
 
             if has_control_chars {
-                warn!("  HTTPZ Domain Name contains control characters, may cause EIP-712 encoding issues");
+                warn!(
+                    "  HTTPZ Domain Name contains control characters, may cause EIP-712 encoding issues"
+                );
             } else if has_non_ascii {
-                warn!("  HTTPZ Domain Name contains non-ASCII characters, may cause EIP-712 compatibility issues");
+                warn!(
+                    "  HTTPZ Domain Name contains non-ASCII characters, may cause EIP-712 compatibility issues"
+                );
             } else {
                 info!("  HTTPZ Domain Name EIP-712 compatibility check: OK");
             }
@@ -479,17 +495,19 @@ mod tests {
     }
 
     fn cleanup_env_vars() {
-        env::remove_var("KMS_CONNECTOR_GWL2_URL");
-        env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINT");
-        env::remove_var("KMS_CONNECTOR_MNEMONIC");
-        env::remove_var("KMS_CONNECTOR_CHAIN_ID");
-        env::remove_var("KMS_CONNECTOR_DECRYPTION_MANAGER_ADDRESS");
-        env::remove_var("KMS_CONNECTOR_HTTPZ_ADDRESS");
-        env::remove_var("KMS_CONNECTOR_CHANNEL_SIZE");
-        env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
-        env::remove_var("KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS");
-        env::remove_var("KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS");
-        env::remove_var("KMS_CONNECTOR_RETRY_INTERVAL_SECS");
+        unsafe {
+            env::remove_var("KMS_CONNECTOR_GWL2_URL");
+            env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINT");
+            env::remove_var("KMS_CONNECTOR_MNEMONIC");
+            env::remove_var("KMS_CONNECTOR_CHAIN_ID");
+            env::remove_var("KMS_CONNECTOR_DECRYPTION_MANAGER_ADDRESS");
+            env::remove_var("KMS_CONNECTOR_HTTPZ_ADDRESS");
+            env::remove_var("KMS_CONNECTOR_CHANNEL_SIZE");
+            env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
+            env::remove_var("KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS");
+            env::remove_var("KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS");
+            env::remove_var("KMS_CONNECTOR_RETRY_INTERVAL_SECS");
+        }
     }
 
     #[test]
@@ -643,23 +661,25 @@ mod tests {
         cleanup_env_vars();
 
         // Set environment variables
-        env::set_var("KMS_CONNECTOR_GWL2_URL", "ws://localhost:9545");
-        env::set_var("KMS_CONNECTOR_KMS_CORE_ENDPOINT", "http://localhost:50053");
-        env::set_var("KMS_CONNECTOR_MNEMONIC", get_test_mnemonic());
-        env::set_var("KMS_CONNECTOR_CHAIN_ID", "31888");
-        env::set_var(
-            "KMS_CONNECTOR_DECRYPTION_MANAGER_ADDRESS",
-            "0x5fbdb2315678afecb367f032d93f642f64180aa3",
-        );
-        env::set_var(
-            "KMS_CONNECTOR_HTTPZ_ADDRESS",
-            "0x0000000000000000000000000000000000000001",
-        );
-        env::set_var("KMS_CONNECTOR_CHANNEL_SIZE", "2000");
-        env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
-        env::set_var("KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS", "600");
-        env::set_var("KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS", "600");
-        env::set_var("KMS_CONNECTOR_RETRY_INTERVAL_SECS", "10");
+        unsafe {
+            env::set_var("KMS_CONNECTOR_GWL2_URL", "ws://localhost:9545");
+            env::set_var("KMS_CONNECTOR_KMS_CORE_ENDPOINT", "http://localhost:50053");
+            env::set_var("KMS_CONNECTOR_MNEMONIC", get_test_mnemonic());
+            env::set_var("KMS_CONNECTOR_CHAIN_ID", "31888");
+            env::set_var(
+                "KMS_CONNECTOR_DECRYPTION_MANAGER_ADDRESS",
+                "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+            );
+            env::set_var(
+                "KMS_CONNECTOR_HTTPZ_ADDRESS",
+                "0x0000000000000000000000000000000000000001",
+            );
+            env::set_var("KMS_CONNECTOR_CHANNEL_SIZE", "2000");
+            env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
+            env::set_var("KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS", "600");
+            env::set_var("KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS", "600");
+            env::set_var("KMS_CONNECTOR_RETRY_INTERVAL_SECS", "10");
+        }
 
         // Load config from environment
         let config = Config::from_env_and_file::<&str>(None).unwrap();
@@ -720,8 +740,10 @@ mod tests {
         config.to_file(temp_file.path()).unwrap();
 
         // Set an environment variable to override the file
-        env::set_var("KMS_CONNECTOR_CHAIN_ID", "77737");
-        env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-override");
+        unsafe {
+            env::set_var("KMS_CONNECTOR_CHAIN_ID", "77737");
+            env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-override");
+        }
 
         // Load config from both sources
         let loaded_config = Config::from_env_and_file(Some(temp_file.path())).unwrap();
