@@ -1,7 +1,7 @@
 // TODO: Remove this file when gateway-l2 is public
 // by direct import httpz_gateway_rust_bindings
 
-use alloy_sol_types::sol;
+use alloy::sol;
 
 sol! {
     #[allow(clippy::too_many_arguments)]

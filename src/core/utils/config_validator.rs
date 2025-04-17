@@ -2,8 +2,8 @@ use tracing::{info, warn};
 
 use crate::{
     core::config::{
-        default_decryption_manager_domain_name, default_decryption_manager_domain_version,
-        default_httpz_domain_name, default_httpz_domain_version, Config,
+        Config, default_decryption_manager_domain_name, default_decryption_manager_domain_version,
+        default_httpz_domain_name, default_httpz_domain_version,
     },
     error::Result,
 };

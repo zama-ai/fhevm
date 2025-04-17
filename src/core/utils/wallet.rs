@@ -1,7 +1,7 @@
 use alloy::hex::decode;
-use alloy_primitives::{Address, Bytes, ChainId, B256, U256};
-use alloy_signer::{Signer, SignerSync};
-use alloy_signer_local::{coins_bip39::English, MnemonicBuilder, PrivateKeySigner};
+use alloy::primitives::{Address, B256, Bytes, ChainId, U256};
+use alloy::signers::local::{MnemonicBuilder, PrivateKeySigner, coins_bip39::English};
+use alloy::signers::{Signer, SignerSync};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use tfhe::safe_serialization::safe_deserialize;
@@ -11,7 +11,7 @@ use tracing::{debug, info};
 // Private signing key module to avoid Result type conflicts
 mod private_sig_key {
     use alloy::signers::k256;
-    use serde::{de::Visitor, Deserialize, Serialize};
+    use serde::{Deserialize, Serialize, de::Visitor};
     use tfhe::named::Named;
     use tfhe_versionable::{Versionize, VersionsDispatch};
 
@@ -111,16 +111,16 @@ mod private_sig_key {
 use private_sig_key::PrivateSigKey;
 
 // Import AWS KMS signer
-use alloy_signer_aws::AwsSigner;
+use alloy::signers::aws::AwsSigner;
 use aws_config::BehaviorVersion;
 use aws_sdk_kms::Client as KmsClient;
 
 #[derive(Debug, Error)]
 pub enum WalletError {
     #[error("Signer error: {0}")]
-    SignerError(#[from] alloy_signer::Error),
+    SignerError(#[from] alloy::signers::Error),
     #[error("Local signer error: {0}")]
-    LocalSignerError(#[from] alloy_signer_local::LocalSignerError),
+    LocalSignerError(#[from] alloy::signers::local::LocalSignerError),
     #[error("Failed to load wallet: {0}")]
     LoadError(String),
     #[error("Failed to load signing key: {0}")]

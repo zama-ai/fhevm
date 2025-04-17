@@ -1,5 +1,4 @@
-use alloy::providers::Provider;
-use alloy_provider::{ProviderBuilder, WsConnect};
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use clap::Parser;
 use kms_connector::{
     core::{
@@ -14,13 +13,13 @@ use kms_connector::{
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::{
-    signal::unix::{signal, SignalKind},
+    signal::unix::{SignalKind, signal},
     sync::broadcast,
     task::JoinHandle,
     time::sleep,
 };
 use tracing::{error, info};
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 const DEFAULT_CHANNEL_SIZE: usize = 1000;

@@ -129,7 +129,7 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
             "Eip712Domain constructed: name={} version={} chain_id={} verifying_contract={} salt=None",
             domain_msg.name,
             domain_msg.version,
-            alloy_primitives::U256::from_be_slice(&domain_msg.chain_id).to_string(),
+            alloy::primitives::U256::from_be_slice(&domain_msg.chain_id).to_string(),
             domain_msg.verifying_contract,
         );
 
@@ -265,20 +265,36 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
                 // Log a more concise version of the request with hex representations
                 info!(
                     "ReencryptionRequest constructed with: request_id={}, client_address={}, key_id={}, typed_ciphertexts.len={}, domain.chain_id={}",
-                    request.get_ref().request_id.as_ref().map(|id| id.request_id.to_string()).unwrap_or_else(|| "unknown".to_string()),
+                    request
+                        .get_ref()
+                        .request_id
+                        .as_ref()
+                        .map(|id| id.request_id.to_string())
+                        .unwrap_or_else(|| "unknown".to_string()),
                     request.get_ref().client_address,
-                    request.get_ref().key_id.as_ref().map(|id| id.request_id.to_string()).unwrap_or_else(|| "unknown".to_string()),
+                    request
+                        .get_ref()
+                        .key_id
+                        .as_ref()
+                        .map(|id| id.request_id.to_string())
+                        .unwrap_or_else(|| "unknown".to_string()),
                     request.get_ref().typed_ciphertexts.len(),
-                    request.get_ref().domain.as_ref().map(|x| {
-                        let chain_id_bytes = &x.chain_id;
-                        if !chain_id_bytes.is_empty() {
-                            // Parse bytes back to U256 and display as decimal
-                            let chain_id_u256 = alloy_primitives::U256::from_be_slice(chain_id_bytes);
-                            chain_id_u256.to_string()
-                        } else {
-                            "unknown".to_string()
-                        }
-                    }).unwrap_or_else(|| "unknown".to_string())
+                    request
+                        .get_ref()
+                        .domain
+                        .as_ref()
+                        .map(|x| {
+                            let chain_id_bytes = &x.chain_id;
+                            if !chain_id_bytes.is_empty() {
+                                // Parse bytes back to U256 and display as decimal
+                                let chain_id_u256 =
+                                    alloy::primitives::U256::from_be_slice(chain_id_bytes);
+                                chain_id_u256.to_string()
+                            } else {
+                                "unknown".to_string()
+                            }
+                        })
+                        .unwrap_or_else(|| "unknown".to_string())
                 );
 
                 // TODO: revert to DEBUG
