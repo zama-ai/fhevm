@@ -26,17 +26,17 @@ on:
       host_version:
         description: "Host Image Version"
         required: false
-        default: "cd89550"
+        default: "f41e08a"
         type: string
       gateway_version:
         description: "Gateway Image Version"
         required: false
-        default: "23f2268"
+        default: "v0.1.0-rc10"
         type: string
       relayer_version:
         description: "Relayer Image Version"
         required: false
-        default: "b056f72"
+        default: "3e7d97d"
         type: string
       tests_version:
         description: "E2E Tests Image Version"
