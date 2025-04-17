@@ -7,10 +7,10 @@ metadata:
     app: coprocessor-db-migration
     app.kubernetes.io/name: {{ .Release.Name }}-db-migration
   namespace: {{ .Release.Namespace }}
+  {{- with .Values.dbMigration.annotations }}
   annotations:
-    "helm.sh/hook": "pre-install, pre-upgrade"
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-needs": "{{ .Release.Name }}-config-setup-{{ .Release.Revision }}"
+  {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   backoffLimit: 3
   template:
