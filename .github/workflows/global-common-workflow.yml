@@ -60,7 +60,30 @@ jobs:
             - './**'
           docs:
             - 'docs/**'
+          helm-chart:
+            - 'charts/**'
+            - '.github/workflows/helm-test.yml'
+            - '.github/workflows/helm-lint.yml'
 
+  ############################################################################
+  # Helm chart pipeline
+  # Triggered by:
+  # - Changes to charts/**'
+  ############################################################################
+  test-helm-chart:
+    needs: check-changes
+    if: needs.check-changes.outputs.changes-helm-chart == 'true'
+    uses: ./.github/workflows/helm-test.yml
+
+  lint-helm-chart:
+    needs: check-changes
+    if: needs.check-changes.outputs.changes-helm-chart == 'true'
+    uses: ./.github/workflows/helm-lint.yml
+
+  release-helm-chart:
+    needs: check-changes
+    if: github.ref == 'refs/heads/main' && needs.check-changes.outputs.changes-helm-chart == 'true'
+    uses: ./.github/workflows/helm-release.yml
 
   ############################################################################
   # KMS Local Docs Link Check

@@ -1,0 +1,93 @@
+# Configuration for the KMS peers
+# This is used to define the number of peers and their IDs
+kmsPeers:
+  # Defines either the peer ID when count=1 or the start ID of a set of peers when count>1
+  id: 1
+  # The number of peers managed by the StatefulSets
+  count: 1
+
+# Configuration for the KMS connector
+# This is used to define the connector configuration
+kmsConnector:
+  # Add the following to enable the connector:
+  enabled: true
+  # Override the name of the connector:
+  nameOverride:
+  # Override the image of the connector:
+  image:
+    name: ghcr.io/zama-ai/kms-connector
+    # Override the tag of the connector:
+    tag: latest
+  kmsCore:
+    name: kms-threshold-staging
+    clientPort: 50100
+    # Optional endpoint if variable above are not set
+    endpoint: http://kms-threshold-staging:50100
+  # Define all the environment variable needed for the connector:
+  env:
+    - name: PROBE
+      value: "true"
+    - name: KMS_CONNECTOR_GWL2_URL
+      value: "ws://layer2-node:8546"
+    - name: KMS_CONNECTOR_MNEMONIC
+      value: "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
+    - name: KMS_CONNECTOR_CHAIN_ID
+      value: "54321"
+    - name: KMS_CONNECTOR_DECRYPTION_MANAGER_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: kms-sc-deploy-kms-sc-addresses
+          key: DECRYPTION_MANAGER_CONTRACT_ADDRESS
+    - name: KMS_CONNECTOR_HTTPZ_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: kms-sc-deploy-kms-sc-addresses
+          key: HTTPZ_CONTRACT_ADDRESS
+    - name: KMS_CONNECTOR_CHANNEL_SIZE
+      value: "1000"
+    - name: KMS_CONNECTOR_SERVICE_NAME
+      value: "kms-connector"
+    - name: KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS
+      value: "300"
+    - name: KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS
+      value: "300"
+    - name: KMS_CONNECTOR_RETRY_INTERVAL_SECS
+      value: "5"
+    - name: KMS_CONNECTOR_S3_CONFIG__REGION
+      value: "us-east-1"
+    - name: KMS_CONNECTOR_S3_CONFIG__BUCKET
+      value: "my-ciphertext-bucket"
+    - name: KMS_CONNECTOR_S3_CONFIG__ENDPOINT
+      value: "http://localhost:9876"
+    - name: KMS_CONNECTOR_VERIFY_COPROCESSORS
+      value: "true"
+    - name: KMS_CONNECTOR_PRIVATE_KEY
+      value: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+  # Define the storage for the connector:
+  storage:
+    storageClassName: gp3
+    capacity: 5Gi
+  # Define the node selector for the connector:
+  nodeSelector:
+  # Define the affinity for the connector:
+  affinity:
+  # Define the tolerations for the connector:
+  tolerations:
+
+
+runMode: dev
+
+rustLog: info
+
+podSecurityContext:
+  # To set when the image will support non root user
+  #  runAsUser: 1000
+  #  runAsGroup: 1000
+  #  fsGroup: 1000
+  #  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+  privileged: false
