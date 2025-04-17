@@ -16,8 +16,8 @@ declare global {
 }
 
 window.env = {
-  VITE_BACK_HTTP_URL: 'http://localhost:3000',
-  VITE_BACK_WS_URL: 'ws://localhost:3000',
+  VITE_BACK_HTTP_URL: 'http://mocked',
+  VITE_BACK_WS_URL: 'ws://mocked',
 }
 
 export const server = setupServer(...handlers)

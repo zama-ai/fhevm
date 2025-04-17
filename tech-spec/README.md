@@ -13,4 +13,4 @@ A counterpart for the Coprocessor + HTTPZ protocol can be found at [https://gith
 - [User decryption](user_decryption.md)
 - [Metrics](metrics.md)
 - [Architecture](architecture.md)
-- [Get a local Development Environment](get_local_dev_env.md)
+- [Get a local Development Environment](local_env.md)
