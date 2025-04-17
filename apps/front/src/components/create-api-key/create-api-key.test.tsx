@@ -32,7 +32,8 @@ describe('CreateApiKey', () => {
 
         await user.type(
           within(form).getByTestId('api-key-name'),
-          faker.lorem.words({ min: 3, max: 10 }),
+          // NOTE: Api key name should be shorter then 50 characters
+          faker.lorem.words({ min: 3, max: 10 }).slice(0, 50),
         )
         await user.click(within(form).getByRole('button'))
       })
