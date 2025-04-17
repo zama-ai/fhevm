@@ -6,7 +6,7 @@ use tracing::info;
 
 use crate::{ExecutionError, KeySet};
 
-const SKS_KEY_WITH_NOISE_SQUASHING_SIZE: usize = 1_100 * 1_000_000; // 1.1 GB
+const SKS_KEY_WITH_NOISE_SQUASHING_SIZE: usize = 1_150 * 1_000_000; // ~1.1 GB
 
 /// Retrieve the keyset from the database
 pub(crate) async fn fetch_keyset(

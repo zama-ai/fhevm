@@ -1,4 +1,5 @@
 use alloy::primitives::U256;
+use fhevm_engine_common::tenant_keys::write_large_object_in_chunks;
 use rand::distr::Alphanumeric;
 use rand::Rng;
 use sqlx::postgres::types::Oid;
@@ -11,33 +12,22 @@ use tracing::info;
 
 pub const ACL_CONTRACT_ADDR: &str = "0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2";
 
-pub async fn upload_large_object(pool: &PgPool, file_path: &str) -> Result<Oid, sqlx::Error> {
-    // Read file asynchronously
+/// Uploads a file to the database as a large object and returns its Oid
+pub async fn import_file_into_db(pool: &PgPool, file_path: &str) -> Result<Oid, sqlx::Error> {
     let mut file = fs::File::open(file_path)
         .await
         .expect("Failed to open file");
+
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)
         .await
         .expect("Failed to read file");
 
-    // Start a transaction
-    let mut tx = pool.begin().await?;
+    let oid = write_large_object_in_chunks(pool, &buffer, 16 * 1024)
+        .await
+        .expect("Writing a large object should succeed");
 
-    // Create a new large object
-    let oid: Oid = sqlx::query_scalar("SELECT lo_create(0)")
-        .fetch_one(&mut *tx)
-        .await?;
-
-    // Write to the large object
-    sqlx::query("SELECT lo_put($1, 0, $2)")
-        .bind(oid)
-        .bind(&buffer)
-        .execute(&mut *tx)
-        .await?;
-
-    // Commit transaction
-    tx.commit().await?;
+    info!("Uploaded large object with Oid: {:?}", oid);
 
     Ok(oid)
 }
@@ -115,12 +105,13 @@ pub async fn wait_for_ciphertext(
 }
 
 pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
-    let (sks, cks, pks, pp) = if !cfg!(feature = "gpu") {
+    let (sks, cks, pks, pp, sns_pk) = if !cfg!(feature = "gpu") {
         (
             "../fhevm-keys/sks",
             "../fhevm-keys/cks",
             "../fhevm-keys/pks",
             "../fhevm-keys/pp",
+            "../fhevm-keys/sns_pk",
         )
     } else {
         (
@@ -128,6 +119,7 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
             "../fhevm-keys/gpu-cks",
             "../fhevm-keys/gpu-pks",
             "../fhevm-keys/gpu-pp",
+            "../fhevm-keys/sns_pk",
         )
     };
     let sks = tokio::fs::read(sks).await.expect("can't read sks key");
@@ -135,9 +127,12 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
     let cks = tokio::fs::read(cks).await.expect("can't read cks key");
     let public_params = tokio::fs::read(pp).await.expect("can't read public params");
 
+    let sns_pk_oid = import_file_into_db(pool, sns_pk).await?;
+    info!("Uploaded sns_pk with Oid: {:?}", sns_pk_oid);
+
     sqlx::query!(
         "
-            INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
+            INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key, sns_pk)
             VALUES (
                 'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
                 12345,
@@ -146,14 +141,16 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
                 $2,
                 $3,
                 $4,
-                $5
+                $5,
+                $6
             )
         ",
         ACL_CONTRACT_ADDR.to_string(),
         &pks,
         &sks,
         &public_params,
-        &cks
+        &cks,
+        sns_pk_oid
     )
     .execute(pool)
     .await?;

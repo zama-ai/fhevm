@@ -1,4 +1,4 @@
-use crate::{keyset::fetch_keys, Config, DBConfig, HandleItem};
+use crate::{keyset::fetch_keys, squash_noise::safe_deserialize, Config, DBConfig, HandleItem};
 use anyhow::Ok;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 use test_harness::instance::DBInstance;
-use tfhe::ClientKey;
+use tfhe::{prelude::FheDecrypt, ClientKey, SquashedNoiseFheUint};
 use tokio::{sync::mpsc, time::sleep};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
@@ -64,7 +64,16 @@ async fn test_decryptable(
     let tenant_id = get_tenant_id_from_db(pool, TENANT_API_KEY).await;
 
     // wait until ciphertext.large_ct is not NULL
-    let _data = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 10).await?;
+    let data = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 10).await?;
+    let v: SquashedNoiseFheUint = safe_deserialize(&data).unwrap();
+    let clear: u128 = v.decrypt(client_key.as_ref().unwrap());
+
+    println!("Decrypted value: {clear}");
+
+    assert!(
+        clear == expected_result as u128,
+        "Decrypted value does not match expected value",
+    );
 
     anyhow::Result::<()>::Ok(())
 }

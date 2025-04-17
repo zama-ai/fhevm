@@ -6938,6 +6938,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
+ "fhevm-engine-common",
  "hex",
  "rand 0.9.0",
  "serde_json",

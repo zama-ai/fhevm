@@ -207,7 +207,7 @@ where
     Ok(res)
 }
 
-const CHUNK_SIZE: i32 = 8192 * 4;
+const CHUNK_SIZE: i32 = 64 * 1024; // 64KiB
 pub async fn read_keys_from_large_object(
     pool: &PgPool,
     tenant_api_key: &String,
@@ -228,11 +228,11 @@ pub async fn read_keys_from_large_object(
     let oid: Oid = row.try_get(0)?;
     info!("Retrieved oid: {:?}, column: {}", oid, keys_column_name);
 
-    read_large_object_by_chunks(pool, oid, CHUNK_SIZE, capacity).await
+    read_large_object_in_chunks(pool, oid, CHUNK_SIZE, capacity).await
 }
 
 /// Read a large object by Oid from the database in chunks
-pub async fn read_large_object_by_chunks(
+pub async fn read_large_object_in_chunks(
     pool: &PgPool,
     large_object_oid: Oid,
     chunk_size: i32,
@@ -290,4 +290,60 @@ pub async fn read_large_object_by_chunks(
         .await?;
 
     Ok(bytes)
+}
+
+/// Write a large object to the database in chunks
+pub async fn write_large_object_in_chunks(
+    pool: &PgPool,
+    data: &[u8],
+    chunk_size: usize,
+) -> anyhow::Result<Oid> {
+    const INV_WRITE: i32 = 131072;
+
+    let mut tx: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
+
+    // Create new LO
+    let row = sqlx::query("SELECT lo_create(0)")
+        .fetch_one(&mut *tx)
+        .await?;
+    let oid: Oid = row.try_get(0)?;
+
+    info!("Created large object with Oid: {:?}", oid);
+
+    // Open LO for writing
+    let row = sqlx::query("SELECT lo_open($1, $2)")
+        .bind(oid)
+        .bind(INV_WRITE)
+        .fetch_one(&mut *tx)
+        .await?;
+    let fd: i32 = row.try_get(0)?;
+
+    info!(
+        "Large Object oid: {:?}, fd: {}, chunk size: {}",
+        oid, fd, chunk_size
+    );
+
+    // Write chunks
+    for chunk in data.chunks(chunk_size) {
+        sqlx::query("SELECT lowrite($1, $2)")
+            .bind(fd)
+            .bind(chunk)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    info!(
+        "End of large object ({:?}) reached, result length: {}",
+        oid,
+        data.len()
+    );
+
+    // Close LO
+    let _ = sqlx::query("SELECT lo_close($1)")
+        .bind(fd)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(oid)
 }

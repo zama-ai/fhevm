@@ -18,5 +18,8 @@ serde_json = "1.0"
 testcontainers = "0.23"
 anyhow = "1.0"
 
+# local dependencies
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+
 [features]
 gpu = []
