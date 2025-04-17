@@ -205,7 +205,7 @@ contract DecryptionManager is
 
     /// @notice Initializes the contract.
     /// @dev Contract name and version for EIP712 signature validation are defined here
-    function initialize() public reinitializer(2) {
+    function initialize() public virtual reinitializer(2) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
     }

@@ -64,7 +64,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
     /**
      * @notice  Initializes the contract.
      */
-    function initialize() public reinitializer(2) {
+    function initialize() public virtual reinitializer(2) {
         __Ownable_init(owner());
     }
 

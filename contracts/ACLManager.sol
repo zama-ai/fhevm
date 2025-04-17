@@ -72,7 +72,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     }
 
     /// @notice Initializes the contract.
-    function initialize() public reinitializer(2) {
+    function initialize() public virtual reinitializer(2) {
         __Ownable_init(owner());
     }
 
