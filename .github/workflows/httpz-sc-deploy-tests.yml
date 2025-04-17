@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   docker-compose-tests:
@@ -17,14 +17,18 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+    - name: Login to Docker Registry
+      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GHCR_READ_TOKEN }}
 
     - name: Create .env file
       run: |
         cp contracts/.env.example contracts/.env
-
     - name: Build and start Docker services
       run: |
         cd contracts
@@ -66,3 +70,4 @@ jobs:
 permissions:
   contents: read
   checks: write
+  packages: read

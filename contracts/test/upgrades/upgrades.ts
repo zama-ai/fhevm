@@ -31,7 +31,9 @@ describe('Upgrades', function () {
       initializer: 'initialize',
       kind: 'uups',
     });
-    const acl = await upgrades.upgradeProxy(emptyUUPS, this.aclFactory);
+    const acl = await upgrades.upgradeProxy(emptyUUPS, this.aclFactory, {
+      call: { fn: 'reinitialize' },
+    });
     await acl.waitForDeployment();
     const ownerBef = await acl.owner();
     expect(await acl.getVersion()).to.equal('ACL v0.1.0');
@@ -52,7 +54,9 @@ describe('Upgrades', function () {
       initializer: 'initialize',
       kind: 'uups',
     });
-    const kms = await upgrades.upgradeProxy(emptyUUPS, this.kmsFactory);
+    const kms = await upgrades.upgradeProxy(emptyUUPS, this.kmsFactory, {
+      unsafeAllow: ['missing-initializer'],
+    });
     await kms.waitForDeployment();
     expect(await kms.getVersion()).to.equal('KMSVerifier v0.1.0');
     const kms2 = await upgrades.upgradeProxy(kms, this.kmsFactoryUpgraded);
@@ -65,7 +69,9 @@ describe('Upgrades', function () {
       initializer: 'initialize',
       kind: 'uups',
     });
-    const executor = await upgrades.upgradeProxy(emptyUUPS, this.executorFactory);
+    const executor = await upgrades.upgradeProxy(emptyUUPS, this.executorFactory, {
+      call: { fn: 'reinitialize' },
+    });
     await executor.waitForDeployment();
     expect(await executor.getVersion()).to.equal('HTTPZExecutor v0.1.0');
     const executor2 = await upgrades.upgradeProxy(executor, this.executorFactoryUpgraded);
@@ -78,7 +84,9 @@ describe('Upgrades', function () {
       initializer: 'initialize',
       kind: 'uups',
     });
-    const payment = await upgrades.upgradeProxy(emptyUUPS, this.paymentFactory);
+    const payment = await upgrades.upgradeProxy(emptyUUPS, this.paymentFactory, {
+      call: { fn: 'reinitialize' },
+    });
     await payment.waitForDeployment();
     expect(await payment.getVersion()).to.equal('FHEGasLimit v0.1.0');
     const payment2 = await upgrades.upgradeProxy(payment, this.paymentFactoryUpgraded);
@@ -91,7 +99,9 @@ describe('Upgrades', function () {
       initializer: 'initialize',
       kind: 'uups',
     });
-    const decryptionOracle = await upgrades.upgradeProxy(emptyUUPS, this.decryptionOracleFactory);
+    const decryptionOracle = await upgrades.upgradeProxy(emptyUUPS, this.decryptionOracleFactory, {
+      call: { fn: 'reinitialize' },
+    });
     await decryptionOracle.waitForDeployment();
     expect(await decryptionOracle.getVersion()).to.equal('DecryptionOracle v0.1.0');
     const decryptionOracle2 = await upgrades.upgradeProxy(decryptionOracle, this.decryptionOracleFactoryUpgraded);

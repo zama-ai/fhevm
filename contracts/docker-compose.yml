@@ -1,4 +1,4 @@
-name: httpz-layer1
+name: httpz-host
 
 services:
   anvil-node:
@@ -27,18 +27,12 @@ services:
     container_name: httpz-sc-deploy
     build:
       context: ../
-      dockerfile: contracts/operations/docker/ci.dockerfile
-      tags:
-        - "httpz-smart-contracts:0.7.0-local"
+      dockerfile: contracts/operations/docker/Dockerfile
     env_file:
       - ./.env
     environment:
       - HARDHAT_NETWORK=${HARDHAT_NETWORK:-staging}
       - CHAIN_ID_GATEWAY=54321
     command:
-      - /bin/bash
-      - -c
-      - |
-        # Uncomment this line to debug
-        # tail -f /dev/null
-        cd /app/ && npx hardhat task:deployAllHostContracts
+      # - tail -f /dev/null
+      - npx hardhat task:deployAllHostContracts

@@ -3,6 +3,7 @@ name: "Docker - HTTPZ Coprocessor"
 on:
   pull_request:
     paths:
+      - .github/workflows/docker_common.yml
       - .github/workflows/docker-httpz-coprocessor.yml
       - fhevm-engine/**
       - proto/**
@@ -10,6 +11,7 @@ on:
     branches:
       - main
     paths:
+      - .github/workflows/docker_common.yml
       - .github/workflows/docker-httpz-coprocessor.yml
       - fhevm-engine/**
       - proto/**

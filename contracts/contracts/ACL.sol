@@ -97,6 +97,14 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
+     * @notice  Re-initializes the contract.
+     */
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitialize() public virtual reinitializer(2) {
+        __Ownable_init(owner());
+    }
+
+    /**
      * @notice              Allows the use of `handle` for the address `account`.
      * @dev                 The caller must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
      * @param handle        Handle.

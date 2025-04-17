@@ -1,4 +1,3 @@
-import { HardhatEthersHelpers } from '@nomicfoundation/hardhat-ethers/types';
 import { HardhatUpgrades } from '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
 import fs from 'fs';

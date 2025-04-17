@@ -59,6 +59,14 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
+     * @notice  Re-initializes the contract.
+     */
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitialize() public virtual reinitializer(2) {
+        __Ownable_init(owner());
+    }
+
+    /**
      * @notice              Computes the gas required for FheAdd.
      * @param resultType    Result type.
      * @param scalarByte    Scalar byte.
