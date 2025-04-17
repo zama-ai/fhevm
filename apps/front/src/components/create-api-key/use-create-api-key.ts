@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { CreateApiKeyMutation } from '@/__generated__/graphql'
 import { gql, useMutation } from '@apollo/client'
 
@@ -10,8 +11,29 @@ export function useCreateApiKey() {
     refetchQueries: ['ListApiKeys'],
   })
 
+  const handleCreateApiKey = useCallback(
+    async (variables: {
+      dappId: string
+      name: string
+      description?: string
+    }) => {
+      try {
+        // const response = await createApiKey({
+        await createApiKey({
+          variables,
+        })
+        // return response.data
+      } catch (error) {
+        // Handle or rethrow the error if needed
+        console.error(`Failed to create API key: ${error}`)
+        // throw error
+      }
+    },
+    [createApiKey],
+  )
+
   return {
-    createApiKey,
+    createApiKey: handleCreateApiKey,
     loading,
     errorMessage: error?.message,
     token: data?.createApiKey.token,
