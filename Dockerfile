@@ -1,4 +1,4 @@
-FROM ghcr.io/zama-ai/httpz-node-golden-image:latest
+FROM ghcr.io/zama-ai/httpz-node-golden-image:v23.10.0-alpine3.20
 
 WORKDIR /app
 
