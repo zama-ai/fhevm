@@ -58,7 +58,7 @@ describe('fhe stats', () => {
         })
         const messages = await manager.getQueueMessages('web3')
         // TODO: the publisher send the message twice
-        // expect(messages.length).toBe(1)
+        expect(messages.length).toBe(1)
 
         expect(web3.isWeb3Event(messages[0]?.event)).toBe(true)
         expect((messages[0]?.event as web3.Web3Event).type).toBe(
@@ -107,7 +107,7 @@ describe('fhe stats', () => {
       })
       const messages = await manager.getQueueMessages('back')
       // TODO: the publisher send the message twice
-      // expect(messages.length).toBe(1)
+      expect(messages.length).toBe(1)
       if (!back.isBackEvent(messages[0]?.event)) {
         console.log(`event: ${JSON.stringify(messages[0]?.event)}`)
         console.log(

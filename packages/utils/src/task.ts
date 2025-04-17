@@ -31,6 +31,12 @@ export class Task<A, E> {
     return new Task((_, reject) => reject(error))
   }
 
+  static fromPromise<A, E>(promise: Promise<A>): Task<A, E> {
+    return new Task((resolve, reject) => {
+      promise.then(resolve).catch(reject)
+    })
+  }
+
   /**
    * Transforms the value of the Task using the given function.
    *
@@ -133,9 +139,7 @@ export class Task<A, E> {
    * @returns A Promise that resolves with the value of type `A` or rejects with the error of type `E`.
    */
   toPromise() {
-    return new Promise<A>((resolve, reject) => {
-      this.fork(resolve, reject)
-    })
+    return new Promise<A>(this.computation)
   }
 
   /**

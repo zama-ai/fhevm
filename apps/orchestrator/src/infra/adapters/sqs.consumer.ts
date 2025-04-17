@@ -29,7 +29,7 @@ export class SQSConsumer {
           relayer.isRelayerEvent(data)
         ) {
           this.logger.debug(
-            `📬 publishing event ${data.type} on the internal queue`,
+            `📬 [${data.payload.requestId}] publishing event ${data.type} on the internal queue`,
           )
           await this.pubsub.publish(data).toPromise()
         } else {
