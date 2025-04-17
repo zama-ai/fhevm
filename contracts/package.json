@@ -17,7 +17,7 @@
     "test:inband": "hardhat test",
     "test": "HARDHAT_PARALLEL=1 hardhat test --parallel",
     "test:mock": "hardhat test --network hardhat",
-    "coverage:mock": "hardhat coverage",
+    "coverage:mock": "SOLIDITY_COVERAGE=true hardhat coverage",
     "codegen": "npx ts-node codegen/main.ts && npm run prettier"
   },
   "author": "",

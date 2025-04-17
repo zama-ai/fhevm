@@ -161,7 +161,7 @@ async function processAllPastFHEVMExecutorEvents() {
   const provider = ethers.provider;
   const latestBlockNumber = await provider.getBlockNumber();
 
-  if (hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+  if (process.env.SOLIDITY_COVERAGE !== 'true') {
     // evm_snapshot is not supported in coverage mode
     [lastBlockSnapshot, lastCounterRand] = await provider.send('get_lastBlockSnapshot');
     if (lastBlockSnapshot < firstBlockListening) {
@@ -197,7 +197,7 @@ async function processAllPastFHEVMExecutorEvents() {
     .filter((event) => event !== null);
 
   firstBlockListening = latestBlockNumber + 1;
-  if (hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+  if (process.env.SOLIDITY_COVERAGE !== 'true') {
     // evm_snapshot is not supported in coverage mode
     await provider.send('set_lastBlockSnapshot', [firstBlockListening]);
   }

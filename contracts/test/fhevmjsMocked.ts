@@ -294,7 +294,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       const encryptedArray = new Uint8Array(encrypted);
       const hash = new Keccak(256).update(Buffer.from(encryptedArray)).digest();
 
-      const chainId = process.env.SOLIDITY_COVERAGE_RUNNING === 'true' ? 31337 : hre.network.config.chainId;
+      const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
       if (chainId === undefined) {
         throw new Error('Chain ID is not defined');
       }
@@ -405,7 +405,7 @@ async function coprocSign(
 ): Promise<string> {
   const zkpokManAdd = process.env.ZKPOK_MANAGER_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;
-  const hostChainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : hre.network.config.chainId;
+  const hostChainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
 
   const domain = {
     name: 'ZKPoKManager',

@@ -29,7 +29,7 @@ describe('EncryptedERC20', function () {
     // Byte 21 was set to 0xff.
     expect(balanceHandleAlice.slice(44, 46)).to.eq('ff');
     // Bytes 22-29 must be the chainId
-    const chainId = process.env.SOLIDITY_COVERAGE ? 31337 : hre.network.config.chainId;
+    const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
     assert(chainId, 'Host chainId not set');
     expect(balanceHandleAlice.slice(46, 62)).to.eq(chainId.toString(16).padStart(16, '0'));
     // Byte30: type is euint64 (so position 5 in the FheType enum)

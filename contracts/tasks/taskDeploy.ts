@@ -441,7 +441,10 @@ task('task:addInputSigners')
   });
 
 task('task:deployAllHostContracts').setAction(async function (_, hre) {
-  await hre.run('clean');
+  if (process.env.SOLIDITY_COVERAGE !== 'true') {
+    await hre.run('clean');
+  }
+
   await hre.run('compile:specific', { contract: 'contracts/emptyProxy' });
   await hre.run('task:deployEmptyUUPSProxies');
 
