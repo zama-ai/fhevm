@@ -19,11 +19,12 @@ type FheEventProps = z.infer<typeof schema>
 export class FheEvent
   extends Entity<FheEventProps>
   implements
-  Readonly<
-    Omit<FheEventProps, 'chainId' | 'id' | 'callerAddress'> & {
-      id: FheEventId
-    }
-  > {
+    Readonly<
+      Omit<FheEventProps, 'chainId' | 'id' | 'callerAddress'> & {
+        id: FheEventId
+      }
+    >
+{
   static parse(data: unknown): Result<FheEvent, AppError> {
     const check = schema.safeParse(data)
     return check.success

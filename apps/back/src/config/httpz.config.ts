@@ -21,23 +21,20 @@ const localHttpzConfig: HttpzConfig = {
     {
       fhe_public_key: {
         data_id: 'fhe-public-key-data-id',
-        urls:
-          (process.env.KEY_URLS || '')
-            .split(',')
-            .map(url => url.trim())
-            .filter(url => url.length > 0),
+        urls: (process.env.KEY_URLS || '')
+          .split(',')
+          .map(url => url.trim())
+          .filter(url => url.length > 0),
       },
     },
   ],
   crs: {
     '2048': {
       data_id: 'crs-data-id',
-      urls:
-        (process.env.CRS_URLS || '')
-          .split(',')
-          .map(url => url.trim())
-          .filter(url => url.length > 0)
-      ,
+      urls: (process.env.CRS_URLS || '')
+        .split(',')
+        .map(url => url.trim())
+        .filter(url => url.length > 0),
     },
   },
 }

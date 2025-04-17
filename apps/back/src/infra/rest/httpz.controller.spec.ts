@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, test } from 'vitest'
 import { HttpzController } from './httpz.controller.js'
 import { TestBed, UnitReference } from '@suites/unit'
 import type { Mocked } from '@suites/doubles.vitest'
-// import { Test, TestingModule } from '@nestjs/testing'
 import { Task } from 'utils'
 import {
   CRS,
@@ -10,7 +9,6 @@ import {
 } from '#httpz/domain/entities/value-objects/index.js'
 import { faker } from '@faker-js/faker'
 import { GetKeyUrl, InputProof } from '#httpz/use-cases/index.js'
-// import { ApiKeyAllowsRequest, GetApiKey } from '#dapps/use-cases/index.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import {
   ApiKeyId,
@@ -35,7 +33,7 @@ describe('HttpzController', () => {
   })
 
   describe('GET /v1/keyurl', () => {
-    let getKeyUrl: MockProxy<GetKeyUrl>
+    let getKeyUrl: Mocked<GetKeyUrl>
     beforeEach(() => {
       getKeyUrl = unitRef.get(GetKeyUrl) as unknown as Mocked<GetKeyUrl>
       getKeyUrl.execute.mockReturnValue(
@@ -78,7 +76,7 @@ describe('HttpzController', () => {
   })
 
   describe(`POST /v1/input-proof`, () => {
-    let inputProof: MockProxy<InputProof>
+    let inputProof: Mocked<InputProof>
     let handles: string[]
     let signatures: string[]
     let apiKey: ApiKey
@@ -93,6 +91,7 @@ describe('HttpzController', () => {
         token: Token.random().value,
         dappId: DAppId.random().value,
         name: faker.string.alphanumeric(10),
+        createdAt: faker.date.past(),
       }).unwrap()
     })
 

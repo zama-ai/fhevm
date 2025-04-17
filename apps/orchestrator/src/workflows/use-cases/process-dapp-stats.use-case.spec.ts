@@ -3,7 +3,7 @@ import { ProcessDAppStats } from './process-dapp-stats.use-case.js'
 import { Test, TestingModule } from '@nestjs/testing'
 import { EVENT_PRODUCER, PUBSUB } from '#constants.js'
 import { AppError, PubSub, Task } from 'utils'
-import { back, web3 } from 'messages'
+import { back, operationNames, web3 } from 'messages'
 import { EventProducer } from '#workflows/interfaces/event.producer.js'
 import { CalledWithMock, mockFn } from 'vitest-mock-extended'
 import { faker } from '@faker-js/faker'
@@ -11,8 +11,8 @@ import { faker } from '@faker-js/faker'
 describe(ProcessDAppStats, () => {
   let moduleRef: TestingModule
   let publish: CalledWithMock<
-    Task<void, AppError>,
-    [back.BackEvent | web3.Web3Event]
+    ReturnType<EventProducer['publish']>,
+    Parameters<EventProducer['publish']>
   >
 
   beforeEach(async () => {
@@ -105,7 +105,7 @@ describe(ProcessDAppStats, () => {
           events: [
             {
               id: faker.string.alphanumeric(10),
-              name: faker.string.alphanumeric(10),
+              name: faker.helpers.arrayElement(operationNames),
               timestamp: faker.date.past().toISOString(),
             },
           ],
@@ -161,7 +161,7 @@ describe(ProcessDAppStats, () => {
           address: faker.string.hexadecimal({ length: 40 }),
           events: [
             {
-              name: faker.string.alphanumeric(10),
+              name: faker.helpers.arrayElement(operationNames),
               timestamp: faker.date.past().toISOString(),
               externalRef: faker.string.alphanumeric(10),
             },

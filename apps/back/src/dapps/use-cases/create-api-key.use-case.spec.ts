@@ -77,6 +77,7 @@ describe('CreateApiKey', () => {
               dappId: dappId.value,
               name,
               description,
+              createdAt: faker.date.past(),
             }).unwrap(),
           ),
         )
@@ -133,6 +134,7 @@ describe('CreateApiKey', () => {
               dappId: dappId.value,
               name,
               description,
+              createdAt: faker.date.past(),
             }).unwrap(),
           ),
         )

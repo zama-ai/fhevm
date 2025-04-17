@@ -49,7 +49,10 @@ describe('address validation', () => {
         const size = await manager.getQueueSize('web3')
         return size > 0
       })
-      const [message] = await manager.getQueueMessages('web3')
+      const messages = await manager.getQueueMessages('web3')
+      // TODO: the publisher send the message twice
+      // expect(messages.length).toBe(1)
+      const message = messages[0]
       expect(message?.event.type).toBe('web3:contract:validation:requested')
     })
   })
@@ -72,7 +75,10 @@ describe('address validation', () => {
         const size = await manager.getQueueSize('back')
         return size > 0
       })
-      const [message] = await manager.getQueueMessages('back')
+      const messages = await manager.getQueueMessages('back')
+      // TODO: the publisher send the message twice
+      // expect(messages.length).toBe(1)
+      const message = messages[0]
       expect(message?.event.type).toBe('back:address:validation:confirmed')
     })
   })

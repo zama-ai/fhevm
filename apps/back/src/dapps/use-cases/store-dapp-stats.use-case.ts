@@ -26,7 +26,7 @@ type Input = {
   chainId: string | number
   address: string
   events: {
-    name: operationName,
+    name: operationName
     timestamp: string
     externalRef: string
   }[]
@@ -56,20 +56,20 @@ export class StoreDAppStats implements UseCase<Input, Output> {
     // need to restrict the event type
     return event.type === 'back:dapp:stats-available'
       ? this.execute(event.payload)
-        .tap(stats => {
-          stats.forEach(stat => {
-            this.logger.debug(`stat created ${JSON.stringify(stat.toJSON())}`)
+          .tap(stats => {
+            stats.forEach(stat => {
+              this.logger.debug(`stat created ${JSON.stringify(stat.toJSON())}`)
+            })
           })
-        })
-        .map<void>(() => void 0)
-        .orChain(err =>
-          isNotFoundError(err)
-            ? Task.of<void, AppError>(void 0)
-            : Task.reject<void, AppError>(err),
-        )
-        .orChain(err =>
-          isDuplicatedError(err) ? Task.of(void 0) : Task.reject(err),
-        )
+          .map<void>(() => void 0)
+          .orChain(err =>
+            isNotFoundError(err)
+              ? Task.of<void, AppError>(void 0)
+              : Task.reject<void, AppError>(err),
+          )
+          .orChain(err =>
+            isDuplicatedError(err) ? Task.of(void 0) : Task.reject(err),
+          )
       : Task.of(void 0)
   }
 

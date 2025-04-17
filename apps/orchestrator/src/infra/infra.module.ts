@@ -50,11 +50,8 @@ import { CronModule } from './cron/cron.module.js'
     SQSConsumer,
     {
       provide: EVENT_PRODUCER,
-      inject: [/*PUBSUB,*/ ConfigService],
-      useFactory: (
-        // pubsub: IPubSub<back.BackEvent | web3.Web3Event>,
-        config: ConfigService,
-      ) => new SQSProducer(/*pubsub, */ config),
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => new SQSProducer(config),
     },
     {
       provide: uc.ProcessAppDeployment,

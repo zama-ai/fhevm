@@ -12,6 +12,7 @@ describe('ApiKey', () => {
         dappId: DAppId.random().value,
         name: faker.string.alphanumeric(10),
         description: faker.lorem.sentence(),
+        createdAt: faker.date.past(),
       }
 
       const result = ApiKey.parse(params)

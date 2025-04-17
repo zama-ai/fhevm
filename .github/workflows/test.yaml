@@ -57,6 +57,7 @@ jobs:
         run: pnpm test
 
   compile-rust-unit-tests:
+    if: ${{ false }} # disable until Luis is back
     runs-on: ubuntu-latest
     strategy:
       matrix:

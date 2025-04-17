@@ -278,6 +278,7 @@ describe('PrismaDappRepository', () => {
             token: token.value,
             dappId: dappId.value,
             name: faker.string.alphanumeric(10),
+            createdAt: faker.date.past(),
           }).unwrap()
           const { success, value } = await executeTask(
             repo.createApiKey(apiKey),
@@ -317,6 +318,7 @@ describe('PrismaDappRepository', () => {
             token: token.value,
             dappId: dappId.value,
             name: faker.string.alphanumeric(10),
+            createdAt: faker.date.past(),
           }).unwrap()
           const { success, error } = await executeTask(
             repo.createApiKey(apiKey),
@@ -354,12 +356,14 @@ describe('PrismaDappRepository', () => {
               token: Token.random().value,
               dappId: dappId.value,
               name: faker.string.alphanumeric(10),
+              createdAt: faker.date.past(),
             }).unwrap(),
             ApiKey.parse({
               id: ApiKeyId.random().value,
               token: Token.random().value,
               dappId: dappId.value,
               name: faker.string.alphanumeric(10),
+              createdAt: faker.date.past(),
             }).unwrap(),
           ]
           prisma.apiKey.findMany.mockResolvedValue(

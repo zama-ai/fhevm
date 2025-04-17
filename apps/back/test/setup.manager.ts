@@ -12,7 +12,6 @@ import { execSync } from 'child_process'
 import commonConfig from '#config/common.config.js'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { JsPromise } from '#prisma/client/runtime/library.js'
-import httpzConfig from '#config/httpz.config.js'
 import type { Type } from '@nestjs/common'
 export type GraphQlResponse<T> =
   | {
@@ -91,6 +90,7 @@ export class SetupManager {
     // Start services
     await Promise.all([this.startAws(), this.startPostgres()])
 
+    // TODO: move to @suites
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -113,7 +113,30 @@ export class SetupManager {
             dbConfig,
             jwtConfig,
             registerAs('redis', () => this.redisConnection),
-            httpzConfig,
+            // NOTE: I should inject the env variables and use the current configuration,
+            // but right now it fails.
+            registerAs('httpz', () => ({
+              fhe_key_info: [
+                {
+                  fhe_public_key: {
+                    data_id: 'fhe-public-key-data-id',
+                    urls: [
+                      'http://0.0.0.0:9000/kms-public/PUB/PublicKey/' +
+                        process.env.KEY_GEN_ID,
+                    ],
+                  },
+                },
+              ],
+              crs: {
+                '2048': {
+                  data_id: 'crs-data-id',
+                  urls: [
+                    'http://0.0.0.0:9000/kms-public/PUB/CRS/' +
+                      process.env.CRS_GEN_ID,
+                  ],
+                },
+              },
+            })),
           ],
         }),
       )
