@@ -92,16 +92,16 @@ jobs:
   test-connector:
     needs: check-changes
     if: needs.check-changes.outputs.changes-connector == 'true' || needs.check-changes.outputs.changes-ci == 'true'
-    uses: ./.github/workflows/common-testing.yml
+    uses: ./.github/workflows/common-testing-big-instance.yml
     with:
       working-directory: './'
       package-name: 'kms-connector'
       app-cache-dir: 'kms-connector'
     secrets:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-      # SLAB_ACTION_TOKEN: ${{ secrets.SLAB_ACTION_TOKEN }}
-      # SLAB_BASE_URL: ${{ secrets.SLAB_BASE_URL }}
-      # JOB_SECRET: ${{ secrets.JOB_SECRET }}
+      SLAB_ACTION_TOKEN: ${{ secrets.SLAB_ACTION_TOKEN }}
+      SLAB_BASE_URL: ${{ secrets.SLAB_BASE_URL }}
+      JOB_SECRET: ${{ secrets.JOB_SECRET }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
 
@@ -114,7 +114,7 @@ jobs:
     if: >-
       (startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/main') ||
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'docker'))
-    uses: ./.github/workflows/common-docker.yml
+    uses: ./.github/workflows/common-docker-big-instance.yml
     with:
       working-directory: "./kms-connector"
       push_image: true
@@ -122,8 +122,8 @@ jobs:
       app-cache-dir: 'kms-connector'
     secrets:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-      # SLAB_ACTION_TOKEN: ${{ secrets.SLAB_ACTION_TOKEN }}
-      # SLAB_BASE_URL: ${{ secrets.SLAB_BASE_URL }}
-      # JOB_SECRET: ${{ secrets.JOB_SECRET }}
+      SLAB_ACTION_TOKEN: ${{ secrets.SLAB_ACTION_TOKEN }}
+      SLAB_BASE_URL: ${{ secrets.SLAB_BASE_URL }}
+      JOB_SECRET: ${{ secrets.JOB_SECRET }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}

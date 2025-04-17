@@ -13,7 +13,7 @@ on:
 
 jobs:
   docker-connector:
-    uses: ./.github/workflows/common-docker.yml
+    uses: ./.github/workflows/common-docker-big-instance.yml
     permissions:
       contents: 'read'
       id-token: 'write'
@@ -26,5 +26,8 @@ jobs:
       app-cache-dir: 'kms-connector'
     secrets:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      SLAB_ACTION_TOKEN: ${{ secrets.SLAB_ACTION_TOKEN }}
+      SLAB_BASE_URL: ${{ secrets.SLAB_BASE_URL }}
+      JOB_SECRET: ${{ secrets.JOB_SECRET }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}

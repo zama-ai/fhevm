@@ -38,7 +38,7 @@ on:
         default: 'large_ubuntu_16_arm'
       docker-file:
         type: string
-        default: 'ci.dockerfile'
+        default: 'Dockerfile'
         required: false
       cache-from:
         type: string
