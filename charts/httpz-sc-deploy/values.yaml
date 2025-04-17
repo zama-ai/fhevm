@@ -1,5 +1,5 @@
 scDeploy:
-  enabled: false
+  enabled: true
   image:
     name: ghcr.io/zama-ai/gateway-l2/sc-bundle
     tag: b479cf8
@@ -13,6 +13,10 @@ scDeploy:
       value: "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
     - name: RPC_URL
       value: "http://layer2-node:8546"
+  persistence:
+    enabled: false
+    # storageClassName: "gp3"
+    storageCapacity: 1Gi
   resources:
     requests:
       cpu: 100m
