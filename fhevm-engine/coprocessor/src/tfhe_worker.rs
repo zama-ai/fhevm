@@ -450,7 +450,7 @@ async fn tfhe_worker_cycle(
                         let _ = query!(
                             "
                             UPDATE computations
-                            SET is_completed = true
+                            SET is_completed = true, completed_at = CURRENT_TIMESTAMP
                             WHERE tenant_id = $1
                             AND output_handle = $2
                         ",

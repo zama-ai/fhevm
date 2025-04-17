@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                            UPDATE computations\n                            SET is_completed = true, completed_at = CURRENT_TIMESTAMP\n                            WHERE tenant_id = $1\n                            AND output_handle = $2\n                        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2cea04436b3f4ec42f02a12479d07e93204a774266f75fdf6b3a5ce5727f1118"
+}
