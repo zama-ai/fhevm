@@ -209,6 +209,12 @@ describe("ACLManager", function () {
         .withArgs(fakeTxSender.address);
     });
 
+    it("Should revert because the contracts list is empty", async function () {
+      await expect(
+        aclManager.connect(coprocessorTxSenders[0]).delegateAccount(hostChainId, delegationAccounts, []),
+      ).revertedWithCustomError(aclManager, "EmptyContractAddresses");
+    });
+
     it("Should revert because the contracts list exceeds the maximum length", async function () {
       // Define an invalid large list of contract addresses
       const largeContractAddresses = createRandomAddresses(15);
@@ -230,6 +236,13 @@ describe("ACLManager", function () {
       await expect(aclManager.checkAccountDelegated(fakeHostChainId, delegationAccounts, allowedContracts))
         .revertedWithCustomError(aclManager, "AccountNotDelegated")
         .withArgs(fakeHostChainId, toValues(delegationAccounts), allowedContracts[0]);
+    });
+
+    it("Should revert because the contract addresses list is empty", async function () {
+      await expect(aclManager.checkAccountDelegated(hostChainId, delegationAccounts, [])).revertedWithCustomError(
+        aclManager,
+        "EmptyContractAddresses",
+      );
     });
 
     it("Should revert because the delegation has been made with a different delegator address", async function () {

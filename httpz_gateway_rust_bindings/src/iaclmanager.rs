@@ -13,6 +13,7 @@ interface IACLManager {
     error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
     error CoprocessorAlreadyAllowed(address coprocessor, bytes32 ctHandle);
     error CoprocessorAlreadyDelegated(address coprocessor, uint256 chainId, DelegationAccounts delegationAccounts, address[] contractAddresses);
+    error EmptyContractAddresses();
     error PublicDecryptNotAllowed(bytes32 ctHandle);
 
     event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
@@ -350,6 +351,11 @@ interface IACLManager {
         "internalType": "address[]"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "EmptyContractAddresses",
+    "inputs": []
   },
   {
     "type": "error",
@@ -1073,6 +1079,70 @@ error CoprocessorAlreadyDelegated(address coprocessor, uint256 chainId, Delegati
                         alloy::sol_types::sol_data::Address,
                     > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
                 )
+            }
+        }
+    };
+    /**Custom error with signature `EmptyContractAddresses()` and selector `0x57cfa217`.
+```solidity
+error EmptyContractAddresses();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EmptyContractAddresses {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EmptyContractAddresses> for UnderlyingRustTuple<'_> {
+            fn from(value: EmptyContractAddresses) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptyContractAddresses {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {}
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EmptyContractAddresses {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EmptyContractAddresses()";
+            const SELECTOR: [u8; 4] = [87u8, 207u8, 162u8, 23u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
             }
         }
     };
@@ -2682,6 +2752,8 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
         #[allow(missing_docs)]
         CoprocessorAlreadyDelegated(CoprocessorAlreadyDelegated),
         #[allow(missing_docs)]
+        EmptyContractAddresses(EmptyContractAddresses),
+        #[allow(missing_docs)]
         PublicDecryptNotAllowed(PublicDecryptNotAllowed),
     }
     #[automatically_derived]
@@ -2697,6 +2769,7 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
             [31u8, 229u8, 212u8, 88u8],
             [67u8, 49u8, 168u8, 93u8],
             [71u8, 99u8, 204u8, 226u8],
+            [87u8, 207u8, 162u8, 23u8],
             [192u8, 164u8, 16u8, 21u8],
             [224u8, 181u8, 143u8, 206u8],
         ];
@@ -2704,8 +2777,8 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IACLManagerErrors {
         const NAME: &'static str = "IACLManagerErrors";
-        const MIN_DATA_LENGTH: usize = 32usize;
-        const COUNT: usize = 6usize;
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const COUNT: usize = 7usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -2723,6 +2796,9 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                 }
                 Self::CoprocessorAlreadyDelegated(_) => {
                     <CoprocessorAlreadyDelegated as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::EmptyContractAddresses(_) => {
+                    <EmptyContractAddresses as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::PublicDecryptNotAllowed(_) => {
                     <PublicDecryptNotAllowed as alloy_sol_types::SolError>::SELECTOR
@@ -2801,6 +2877,19 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                     CoprocessorAlreadyAllowed
                 },
                 {
+                    fn EmptyContractAddresses(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IACLManagerErrors> {
+                        <EmptyContractAddresses as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IACLManagerErrors::EmptyContractAddresses)
+                    }
+                    EmptyContractAddresses
+                },
+                {
                     fn AccountNotDelegated(
                         data: &[u8],
                         validate: bool,
@@ -2865,6 +2954,11 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                         inner,
                     )
                 }
+                Self::EmptyContractAddresses(inner) => {
+                    <EmptyContractAddresses as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::PublicDecryptNotAllowed(inner) => {
                     <PublicDecryptNotAllowed as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -2901,6 +2995,12 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                 }
                 Self::CoprocessorAlreadyDelegated(inner) => {
                     <CoprocessorAlreadyDelegated as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::EmptyContractAddresses(inner) => {
+                    <EmptyContractAddresses as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
