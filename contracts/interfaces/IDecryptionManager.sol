@@ -51,6 +51,17 @@ interface IDecryptionManager {
     /// @param signatures The signatures of all the KMS Connectors that responded
     event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] reencryptedShares, bytes[] signatures);
 
+    /// @notice Error indicating that the input list of handles is empty.
+    error EmptyCtHandles();
+
+    /// @notice Error indicating that the input list of ctHandleContractPairs is empty.
+    error EmptyCtHandleContractPairs();
+
+    /// @notice Error indicating that the total bit size of the decryption request exceeds the maximum allowed.
+    /// @param maxBitSize The maximum allowed bit size
+    /// @param totalBitSize The total bit size of the decryption request
+    error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
+
     /// @notice Error indicating that the KMS Connector has already signed its public decryption response
     /// @param publicDecryptionId The public decryption request's unique ID associated with the response
     /// @param signer The address of the KMS Connector signer that has already signed

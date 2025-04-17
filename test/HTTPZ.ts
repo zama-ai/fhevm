@@ -3,9 +3,12 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import hre, { ethers } from "hardhat";
 
-import { UINT64_MAX, loadTestVariablesFixture, toValues } from "./utils/";
+import { UINT64_MAX, createRandomWallet, loadTestVariablesFixture, toValues } from "./utils/";
 
 describe("HTTPZ", function () {
+  // Define fake values
+  const fakeOwner = createRandomWallet();
+
   async function getInputsForDeployFixture() {
     const signers = await hre.ethers.getSigners();
     const [owner, pauser, user] = signers.splice(0, 3);
@@ -250,22 +253,23 @@ describe("HTTPZ", function () {
 
   describe("Pauser", function () {
     it("Should revert because of access controls", async function () {
-      const { httpz, user } = await loadFixture(loadTestVariablesFixture);
+      const { httpz } = await loadFixture(loadTestVariablesFixture);
 
       // Check that someone else than the owner cannot update the pauser
-      await expect(httpz.connect(user).updatePauser(user.address))
+      await expect(httpz.connect(fakeOwner).updatePauser(fakeOwner.address))
         .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
     });
 
     it("Should update the pauser", async function () {
-      const { httpz, owner, user } = await loadFixture(loadTestVariablesFixture);
+      const { httpz, owner } = await loadFixture(loadTestVariablesFixture);
 
+      const newPauser = createRandomWallet();
       // Update the pauser
-      const tx = await httpz.connect(owner).updatePauser(user.address);
+      const tx = await httpz.connect(owner).updatePauser(newPauser.address);
 
       // Check the event
-      await expect(tx).to.emit(httpz, "UpdatePauser").withArgs(user.address);
+      await expect(tx).to.emit(httpz, "UpdatePauser").withArgs(newPauser.address);
     });
 
     it("Should revert because the pauser is the null address", async function () {
@@ -281,12 +285,12 @@ describe("HTTPZ", function () {
 
   describe("KMS threshold", function () {
     it("Should revert because of access controls", async function () {
-      const { httpz, user } = await loadFixture(loadTestVariablesFixture);
+      const { httpz } = await loadFixture(loadTestVariablesFixture);
 
       // Check that someone else than the owner cannot update the KMS threshold
-      await expect(httpz.connect(user).updateKmsThreshold(1))
+      await expect(httpz.connect(fakeOwner).updateKmsThreshold(1))
         .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
     });
 
     it("Should update the KMS threshold", async function () {

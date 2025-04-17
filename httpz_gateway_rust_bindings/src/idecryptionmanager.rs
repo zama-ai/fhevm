@@ -26,8 +26,11 @@ interface IDecryptionManager {
     error ContractNotInContractAddresses(address contractAddress, address[] contractAddresses);
     error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
     error DifferentKeyIdsNotAllowed(uint256 keyId);
+    error EmptyCtHandleContractPairs();
+    error EmptyCtHandles();
     error InvalidUserSignature(bytes signature);
     error KmsSignerAlreadyResponded(uint256 publicDecryptionId, address signer);
+    error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
     error PublicDecryptionNotDone(uint256 publicDecryptionId);
     error UserAddressInContractAddresses(address userAddress, address[] contractAddresses);
@@ -585,6 +588,16 @@ interface IDecryptionManager {
   },
   {
     "type": "error",
+    "name": "EmptyCtHandleContractPairs",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyCtHandles",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidUserSignature",
     "inputs": [
       {
@@ -607,6 +620,22 @@ interface IDecryptionManager {
         "name": "signer",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MaxDecryptionRequestBitSizeExceeded",
+    "inputs": [
+      {
+        "name": "maxBitSize",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "totalBitSize",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },
@@ -1987,6 +2016,136 @@ error DifferentKeyIdsNotAllowed(uint256 keyId);
             }
         }
     };
+    /**Custom error with signature `EmptyCtHandleContractPairs()` and selector `0xa6a6cb21`.
+```solidity
+error EmptyCtHandleContractPairs();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EmptyCtHandleContractPairs {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EmptyCtHandleContractPairs>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: EmptyCtHandleContractPairs) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for EmptyCtHandleContractPairs {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {}
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EmptyCtHandleContractPairs {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EmptyCtHandleContractPairs()";
+            const SELECTOR: [u8; 4] = [166u8, 166u8, 203u8, 33u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+        }
+    };
+    /**Custom error with signature `EmptyCtHandles()` and selector `0x2de75438`.
+```solidity
+error EmptyCtHandles();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EmptyCtHandles {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EmptyCtHandles> for UnderlyingRustTuple<'_> {
+            fn from(value: EmptyCtHandles) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptyCtHandles {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {}
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EmptyCtHandles {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EmptyCtHandles()";
+            const SELECTOR: [u8; 4] = [45u8, 231u8, 84u8, 56u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+        }
+    };
     /**Custom error with signature `InvalidUserSignature(bytes)` and selector `0x2a873d27`.
 ```solidity
 error InvalidUserSignature(bytes signature);
@@ -2141,6 +2300,93 @@ error KmsSignerAlreadyResponded(uint256 publicDecryptionId, address signer);
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.signer,
                     ),
+                )
+            }
+        }
+    };
+    /**Custom error with signature `MaxDecryptionRequestBitSizeExceeded(uint256,uint256)` and selector `0xe7f4895d`.
+```solidity
+error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct MaxDecryptionRequestBitSizeExceeded {
+        #[allow(missing_docs)]
+        pub maxBitSize: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub totalBitSize: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<MaxDecryptionRequestBitSizeExceeded>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: MaxDecryptionRequestBitSizeExceeded) -> Self {
+                (value.maxBitSize, value.totalBitSize)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for MaxDecryptionRequestBitSizeExceeded {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    maxBitSize: tuple.0,
+                    totalBitSize: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for MaxDecryptionRequestBitSizeExceeded {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "MaxDecryptionRequestBitSizeExceeded(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [231u8, 244u8, 137u8, 93u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.maxBitSize),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.totalBitSize),
                 )
             }
         }
@@ -5048,9 +5294,15 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
         #[allow(missing_docs)]
         DifferentKeyIdsNotAllowed(DifferentKeyIdsNotAllowed),
         #[allow(missing_docs)]
+        EmptyCtHandleContractPairs(EmptyCtHandleContractPairs),
+        #[allow(missing_docs)]
+        EmptyCtHandles(EmptyCtHandles),
+        #[allow(missing_docs)]
         InvalidUserSignature(InvalidUserSignature),
         #[allow(missing_docs)]
         KmsSignerAlreadyResponded(KmsSignerAlreadyResponded),
+        #[allow(missing_docs)]
+        MaxDecryptionRequestBitSizeExceeded(MaxDecryptionRequestBitSizeExceeded),
         #[allow(missing_docs)]
         MaxDurationDaysExceeded(MaxDurationDaysExceeded),
         #[allow(missing_docs)]
@@ -5071,21 +5323,24 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [8u8, 112u8, 67u8, 187u8],
             [42u8, 135u8, 61u8, 39u8],
+            [45u8, 231u8, 84u8, 56u8],
             [50u8, 149u8, 24u8, 99u8],
             [112u8, 92u8, 59u8, 169u8],
             [161u8, 113u8, 76u8, 119u8],
             [164u8, 195u8, 3u8, 145u8],
+            [166u8, 166u8, 203u8, 33u8],
             [195u8, 68u8, 106u8, 199u8],
             [197u8, 171u8, 70u8, 126u8],
             [220u8, 77u8, 120u8, 177u8],
+            [231u8, 244u8, 137u8, 93u8],
             [249u8, 11u8, 199u8, 245u8],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IDecryptionManagerErrors {
         const NAME: &'static str = "IDecryptionManagerErrors";
-        const MIN_DATA_LENGTH: usize = 32usize;
-        const COUNT: usize = 10usize;
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const COUNT: usize = 13usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5101,11 +5356,20 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                 Self::DifferentKeyIdsNotAllowed(_) => {
                     <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::EmptyCtHandleContractPairs(_) => {
+                    <EmptyCtHandleContractPairs as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::EmptyCtHandles(_) => {
+                    <EmptyCtHandles as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::InvalidUserSignature(_) => {
                     <InvalidUserSignature as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::KmsSignerAlreadyResponded(_) => {
                     <KmsSignerAlreadyResponded as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::MaxDecryptionRequestBitSizeExceeded(_) => {
+                    <MaxDecryptionRequestBitSizeExceeded as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::MaxDurationDaysExceeded(_) => {
                     <MaxDurationDaysExceeded as alloy_sol_types::SolError>::SELECTOR
@@ -5167,6 +5431,19 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                     InvalidUserSignature
                 },
                 {
+                    fn EmptyCtHandles(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionManagerErrors> {
+                        <EmptyCtHandles as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionManagerErrors::EmptyCtHandles)
+                    }
+                    EmptyCtHandles
+                },
+                {
                     fn MaxDurationDaysExceeded(
                         data: &[u8],
                         validate: bool,
@@ -5221,6 +5498,19 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                     ContractNotInContractAddresses
                 },
                 {
+                    fn EmptyCtHandleContractPairs(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionManagerErrors> {
+                        <EmptyCtHandleContractPairs as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionManagerErrors::EmptyCtHandleContractPairs)
+                    }
+                    EmptyCtHandleContractPairs
+                },
+                {
                     fn DelegatorAddressInContractAddresses(
                         data: &[u8],
                         validate: bool,
@@ -5264,6 +5554,21 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                             )
                     }
                     UserAddressInContractAddresses
+                },
+                {
+                    fn MaxDecryptionRequestBitSizeExceeded(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionManagerErrors> {
+                        <MaxDecryptionRequestBitSizeExceeded as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                IDecryptionManagerErrors::MaxDecryptionRequestBitSizeExceeded,
+                            )
+                    }
+                    MaxDecryptionRequestBitSizeExceeded
                 },
                 {
                     fn DifferentKeyIdsNotAllowed(
@@ -5312,6 +5617,16 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                         inner,
                     )
                 }
+                Self::EmptyCtHandleContractPairs(inner) => {
+                    <EmptyCtHandleContractPairs as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::EmptyCtHandles(inner) => {
+                    <EmptyCtHandles as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::InvalidUserSignature(inner) => {
                     <InvalidUserSignature as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -5319,6 +5634,11 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                 }
                 Self::KmsSignerAlreadyResponded(inner) => {
                     <KmsSignerAlreadyResponded as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::MaxDecryptionRequestBitSizeExceeded(inner) => {
+                    <MaxDecryptionRequestBitSizeExceeded as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -5371,6 +5691,18 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                         out,
                     )
                 }
+                Self::EmptyCtHandleContractPairs(inner) => {
+                    <EmptyCtHandleContractPairs as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::EmptyCtHandles(inner) => {
+                    <EmptyCtHandles as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::InvalidUserSignature(inner) => {
                     <InvalidUserSignature as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -5379,6 +5711,12 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                 }
                 Self::KmsSignerAlreadyResponded(inner) => {
                     <KmsSignerAlreadyResponded as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::MaxDecryptionRequestBitSizeExceeded(inner) => {
+                    <MaxDecryptionRequestBitSizeExceeded as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

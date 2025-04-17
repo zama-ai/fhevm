@@ -3,10 +3,12 @@ import { expect } from "chai";
 import { EventLog } from "ethers";
 import hre from "hardhat";
 
-import { loadTestVariablesFixture } from "./utils/contracts";
+import { createRandomWallet, loadTestVariablesFixture } from "./utils";
 
 describe("KeyManager", function () {
   const fakeFheParamsName = "FAKE_FHE_PARAMS_NAME";
+
+  const fakeOwner = createRandomWallet();
 
   // Run a preprocessing keygen
   async function prepareKeyManagerPreKeygenFixture() {
@@ -122,28 +124,28 @@ describe("KeyManager", function () {
     });
 
     it("Should revert because of access controls", async function () {
-      const { httpz, keyManager, user, fheParamsName } = await loadFixture(loadTestVariablesFixture);
+      const { httpz, keyManager, fheParamsName } = await loadFixture(loadTestVariablesFixture);
 
       // Check that someone else than the owner cannot trigger a preprocessing keygen request
-      await expect(keyManager.connect(user).preprocessKeygenRequest(fheParamsName))
+      await expect(keyManager.connect(fakeOwner).preprocessKeygenRequest(fheParamsName))
         .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
 
       // Check that someone else than a KMS transaction sender cannot trigger a preprocessing
       // keygen response
-      await expect(keyManager.connect(user).preprocessKeygenResponse(0, 0))
+      await expect(keyManager.connect(fakeOwner).preprocessKeygenResponse(0, 0))
         .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
 
       // Check that someone else than the owner cannot trigger a keygen request
-      await expect(keyManager.connect(user).keygenRequest(0))
+      await expect(keyManager.connect(fakeOwner).keygenRequest(0))
         .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a keygen response
-      await expect(keyManager.connect(user).keygenResponse(0, 0))
+      await expect(keyManager.connect(fakeOwner).keygenResponse(0, 0))
         .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
     });
 
     it("Should handle a preprocessed keygen", async function () {
@@ -275,17 +277,17 @@ describe("KeyManager", function () {
     });
 
     it("Should revert because of access controls", async function () {
-      const { httpz, keyManager, user, fheParamsName } = await loadFixture(loadTestVariablesFixture);
+      const { httpz, keyManager, fheParamsName } = await loadFixture(loadTestVariablesFixture);
 
       // Check that someone else than the owner cannot trigger a CRS generation request
-      await expect(keyManager.connect(user).crsgenRequest(fheParamsName))
+      await expect(keyManager.connect(fakeOwner).crsgenRequest(fheParamsName))
         .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a CRS generation response
-      await expect(keyManager.connect(user).crsgenResponse(0, 0))
+      await expect(keyManager.connect(fakeOwner).crsgenResponse(0, 0))
         .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
     });
 
     it("Should handle a CRS generation", async function () {
@@ -353,27 +355,27 @@ describe("KeyManager", function () {
     });
 
     it("Should revert because of access controls", async function () {
-      const { httpz, keyManager, user, fheParamsName } = await loadFixture(loadTestVariablesFixture);
+      const { httpz, keyManager, fheParamsName } = await loadFixture(loadTestVariablesFixture);
 
       // Check that someone else than the owner cannot trigger a preprocessing KSK generation request
-      await expect(keyManager.connect(user).preprocessKskgenRequest(fheParamsName))
+      await expect(keyManager.connect(fakeOwner).preprocessKskgenRequest(fheParamsName))
         .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a preprocessing KSK generation response
-      await expect(keyManager.connect(user).preprocessKskgenResponse(0, 0))
+      await expect(keyManager.connect(fakeOwner).preprocessKskgenResponse(0, 0))
         .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
 
       // Check that someone else than the owner cannot trigger a KSK generation request
-      await expect(keyManager.connect(user).kskgenRequest(0, 0, 0))
+      await expect(keyManager.connect(fakeOwner).kskgenRequest(0, 0, 0))
         .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a KSK generation response
-      await expect(keyManager.connect(user).kskgenResponse(0, 0))
+      await expect(keyManager.connect(fakeOwner).kskgenResponse(0, 0))
         .to.be.revertedWithCustomError(httpz, "NotKmsTxSender")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
     });
 
     it("Should handle a preprocessed KSK generation", async function () {
@@ -511,17 +513,17 @@ describe("KeyManager", function () {
 
   describe("Key activation", async function () {
     it("Should revert because of access controls", async function () {
-      const { httpz, keyManager, user } = await loadFixture(loadTestVariablesFixture);
+      const { httpz, keyManager } = await loadFixture(loadTestVariablesFixture);
 
       // Check that someone else than the owner cannot trigger a key activation request
-      await expect(keyManager.connect(user).activateKeyRequest(0))
+      await expect(keyManager.connect(fakeOwner).activateKeyRequest(0))
         .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
 
       // Check that someone else than a coprocessor transaction sender cannot trigger a key activation response
-      await expect(keyManager.connect(user).activateKeyResponse(0))
+      await expect(keyManager.connect(fakeOwner).activateKeyResponse(0))
         .to.be.revertedWithCustomError(httpz, "NotCoprocessorTxSender")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
     });
 
     it("Should handle a first key activation (no KSK generation)", async function () {
@@ -602,21 +604,21 @@ describe("KeyManager", function () {
 
   describe("FHE parameters", async function () {
     it("Should revert because of access controls", async function () {
-      const { keyManager, user } = await loadFixture(loadTestVariablesFixture);
+      const { keyManager } = await loadFixture(loadTestVariablesFixture);
 
       // Get dummy FHE params
       const fheParamsName = "TEST";
       const fheParamsDigest = hre.ethers.randomBytes(32);
 
       // Check that only the owner can set the FHE params
-      await expect(keyManager.connect(user).addFheParams(fheParamsName, fheParamsDigest))
+      await expect(keyManager.connect(fakeOwner).addFheParams(fheParamsName, fheParamsDigest))
         .to.be.revertedWithCustomError(keyManager, "OwnableUnauthorizedAccount")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
 
       // Check that only the owner can update the FHE params
-      await expect(keyManager.connect(user).updateFheParams(fheParamsName, fheParamsDigest))
+      await expect(keyManager.connect(fakeOwner).updateFheParams(fheParamsName, fheParamsDigest))
         .to.be.revertedWithCustomError(keyManager, "OwnableUnauthorizedAccount")
-        .withArgs(user.address);
+        .withArgs(fakeOwner.address);
     });
 
     it("Should add fheParams", async function () {

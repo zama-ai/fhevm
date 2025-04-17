@@ -1,14 +1,13 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import { HDNodeWallet } from "ethers";
 
 import { CiphertextManager, HTTPZ } from "../typechain-types";
 import {
-  createAndFundRandomUser,
   createBytes32,
-  createCtHandleWithChainId,
-  createCtHandlesWithChainId,
+  createCtHandle,
+  createCtHandles,
+  createRandomWallet,
   loadChainIds,
   loadTestVariablesFixture,
 } from "./utils";
@@ -18,26 +17,26 @@ describe("CiphertextManager", function () {
   const hostChainIds = loadChainIds();
   const hostChainId = hostChainIds[0];
 
-  // Create a ctHandle with the host chain ID
-  const ctHandle = createCtHandleWithChainId(hostChainId);
+  // Create a ctHandle with the host chain ID (it will be added by default)
+  const ctHandle = createCtHandle(hostChainId);
+
+  // Define new valid ctHandles (they won't be added by default)
+  const newCtHandles = createCtHandles(3, hostChainId);
+  const newCtHandle = newCtHandles[0];
 
   // Define input values
   const keyId = 0;
   const ciphertextDigest = createBytes32();
   const snsCiphertextDigest = createBytes32();
 
-  // Define new valid ctHandles
-  const newCtHandles = createCtHandlesWithChainId(3, hostChainId);
-  const newCtHandle = newCtHandles[0];
-
   // Define fake values
   const fakeHostChainId = 123;
-  const ctHandleFakeChainId = createCtHandleWithChainId(fakeHostChainId);
+  const ctHandleFakeChainId = createCtHandle(fakeHostChainId);
+  const fakeTxSender = createRandomWallet();
 
   let httpz: HTTPZ;
   let ciphertextManager: CiphertextManager;
   let coprocessorTxSenders: HardhatEthersSigner[];
-  let fakeTxSender: HDNodeWallet;
 
   async function prepareFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -64,8 +63,6 @@ describe("CiphertextManager", function () {
     httpz = fixture.httpz;
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     ciphertextManager = fixture.ciphertextManager;
-
-    fakeTxSender = await createAndFundRandomUser();
   });
 
   describe("Add ciphertext material", async function () {
