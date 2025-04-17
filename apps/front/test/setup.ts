@@ -5,6 +5,21 @@ import { setupServer } from 'msw/node'
 import { handlers } from './handlers'
 import { createMatchMedia } from './matchMedia'
 
+// Declare global types
+declare global {
+  interface Window {
+    env: {
+      VITE_BACK_HTTP_URL: string
+      VITE_BACK_WS_URL: string
+    }
+  }
+}
+
+window.env = {
+  VITE_BACK_HTTP_URL: 'http://localhost:3000',
+  VITE_BACK_WS_URL: 'ws://localhost:3000',
+}
+
 export const server = setupServer(...handlers)
 
 beforeAll(() => {
