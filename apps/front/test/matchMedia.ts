@@ -1,7 +1,7 @@
 // https://www.anthonygonzales.dev/blog/how-to-solve-match-media-is-not-a-function.html
 import mediaQuery from 'css-mediaquery'
 
-export function createMatchMedia(width) {
+export function createMatchMedia(width: string | number) {
   window.matchMedia = query => ({
     matches: mediaQuery.match(query, {
       width,
