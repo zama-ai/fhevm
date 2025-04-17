@@ -15,7 +15,7 @@ clean:
 
 # Define it as a phony target to avoid conflicts with the test directory
 .PHONY: test
-test:
+test: clean
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test
 
 get-accounts:
