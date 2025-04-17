@@ -138,11 +138,15 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
     ) public virtual override onlyCoprocessorTxSender {
-        ACLManagerStorage storage $ = _getACLManagerStorage();
-
+        if (contractAddresses.length == 0) {
+            revert EmptyContractAddresses();
+        }
         if (contractAddresses.length > _MAX_CONTRACT_ADDRESSES) {
             revert ContractsMaxLengthExceeded(_MAX_CONTRACT_ADDRESSES, contractAddresses.length);
         }
+
+        ACLManagerStorage storage $ = _getACLManagerStorage();
+
         /// @dev The delegateAccountHash is the hash of all input arguments.
         /// @dev This hash is used to track the delegation consensus over the whole contractAddresses list,
         /// @dev and assumes that the Coprocessors will delegate the same list of contracts and keep the same order.
@@ -201,6 +205,10 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
     ) public view virtual {
+        if (contractAddresses.length == 0) {
+            revert EmptyContractAddresses();
+        }
+
         ACLManagerStorage storage $ = _getACLManagerStorage();
         for (uint256 i = 0; i < contractAddresses.length; i++) {
             if (

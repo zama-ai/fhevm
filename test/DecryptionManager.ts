@@ -1772,12 +1772,19 @@ describe("DecryptionManager", function () {
       });
 
       it("Should revert because the delegator is not allowed for user decryption on a ctHandle", async function () {
+        // Delegate the fake delegation accounts for the contract addresses
+        for (const txSender of coprocessorTxSenders) {
+          await aclManager
+            .connect(txSender)
+            .delegateAccount(hostChainId, fakeDelegatorDelegationAccounts, contractAddresses);
+        }
+
         await expect(
           decryptionManager.checkDelegatedUserDecryptionReady(
             hostChainId,
             fakeDelegatorDelegationAccounts,
             ctHandleContractPairs,
-            [],
+            contractAddresses,
           ),
         )
           .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")

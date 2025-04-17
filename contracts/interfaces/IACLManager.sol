@@ -43,6 +43,9 @@ interface IACLManager {
     /// @notice Error indicating that the ciphertext handle is not allowed for public decryption.
     error PublicDecryptNotAllowed(bytes32 ctHandle);
 
+    /// @notice Error indicating that the contract addresses list is empty.
+    error EmptyContractAddresses();
+
     /// @notice Error indicating that the number of delegation contracts requested exceeds the maximum allowed.
     error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
 
