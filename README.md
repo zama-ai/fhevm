@@ -479,7 +479,7 @@ See [CHANGELOG.md](./changelog.md) for current implementation status.
 
 ### Prerequisites
 
-- Rust 1.85+
+- Rust 1.86+
 - Access to Arbitrum L2 node
 - KMS Core instance
 

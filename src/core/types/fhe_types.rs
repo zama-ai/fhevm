@@ -4,24 +4,25 @@ use alloy::{
 };
 use alloy_dyn_abi::DynSolValue;
 use alloy_primitives::{Bytes, Uint};
-use kms_grpc::kms::v1::{FheType, TypedPlaintext};
+use kms_grpc::kms::v1::TypedPlaintext;
+use tfhe::FheTypes;
 use tracing::{error, info};
 
 /// Get string representation of FHE type
 pub fn fhe_type_to_string(fhe_type: i32) -> &'static str {
     match fhe_type {
-        t if t == FheType::Ebool as i32 => "EBOOL",
-        t if t == FheType::Euint4 as i32 => "EUINT4",
-        t if t == FheType::Euint8 as i32 => "EUINT8",
-        t if t == FheType::Euint16 as i32 => "EUINT16",
-        t if t == FheType::Euint32 as i32 => "EUINT32",
-        t if t == FheType::Euint64 as i32 => "EUINT64",
-        t if t == FheType::Euint128 as i32 => "EUINT128",
-        t if t == FheType::Euint160 as i32 => "EUINT160",
-        t if t == FheType::Euint256 as i32 => "EUINT256",
-        t if t == FheType::Euint512 as i32 => "EUINT512",
-        t if t == FheType::Euint1024 as i32 => "EUINT1024",
-        t if t == FheType::Euint2048 as i32 => "EUINT2048",
+        t if t == FheTypes::Bool as i32 => "EBOOL",
+        t if t == FheTypes::Uint4 as i32 => "EUINT4",
+        t if t == FheTypes::Uint8 as i32 => "EUINT8",
+        t if t == FheTypes::Uint16 as i32 => "EUINT16",
+        t if t == FheTypes::Uint32 as i32 => "EUINT32",
+        t if t == FheTypes::Uint64 as i32 => "EUINT64",
+        t if t == FheTypes::Uint128 as i32 => "EUINT128",
+        t if t == FheTypes::Uint160 as i32 => "EUINT160",
+        t if t == FheTypes::Uint256 as i32 => "EUINT256",
+        t if t == FheTypes::Uint512 as i32 => "EUINT512",
+        t if t == FheTypes::Uint1024 as i32 => "EUINT1024",
+        t if t == FheTypes::Uint2048 as i32 => "EUINT2048",
         _ => "UNKNOWN",
     }
 }
@@ -38,27 +39,27 @@ pub fn extract_fhe_type_from_handle(bytes: &[u8]) -> i32 {
 
         if type_byte >= 12 {
             error!("Unknown FHE type byte: {}, must be less than 12", type_byte);
-            return FheType::Ebool as i32;
+            return FheTypes::Bool as i32;
         }
 
         match type_byte {
-            0 => FheType::Ebool as i32,
-            1 => FheType::Euint4 as i32,
-            2 => FheType::Euint8 as i32,
-            3 => FheType::Euint16 as i32,
-            4 => FheType::Euint32 as i32,
-            5 => FheType::Euint64 as i32,
-            6 => FheType::Euint128 as i32,
-            7 => FheType::Euint160 as i32,
-            8 => FheType::Euint256 as i32,
-            9 => FheType::Euint512 as i32,
-            10 => FheType::Euint1024 as i32,
-            11 => FheType::Euint2048 as i32,
+            0 => FheTypes::Bool as i32,
+            1 => FheTypes::Uint4 as i32,
+            2 => FheTypes::Uint8 as i32,
+            3 => FheTypes::Uint16 as i32,
+            4 => FheTypes::Uint32 as i32,
+            5 => FheTypes::Uint64 as i32,
+            6 => FheTypes::Uint128 as i32,
+            7 => FheTypes::Uint160 as i32,
+            8 => FheTypes::Uint256 as i32,
+            9 => FheTypes::Uint512 as i32,
+            10 => FheTypes::Uint1024 as i32,
+            11 => FheTypes::Uint2048 as i32,
             _ => unreachable!(), // We checked type_byte < 12 above
         }
     } else {
         error!("Handle too short: {} bytes, expected 32 bytes", bytes.len());
-        FheType::Ebool as i32
+        FheTypes::Bool as i32
     }
 }
 
@@ -103,81 +104,83 @@ pub fn abi_encode_plaintexts(ptxts: &[TypedPlaintext]) -> Bytes {
     results.push(DynSolValue::Uint(U256::from(42), 256)); // requestID placeholder
 
     for clear_text in ptxts.iter() {
-        match clear_text.fhe_type() {
-            FheType::Euint512 => {
-                if clear_text.bytes.len() != 64 {
-                    error!(
-                        "Invalid length for Euint512: expected 64, got {}",
-                        clear_text.bytes.len()
-                    );
-                    results.push(DynSolValue::Bytes(vec![0u8; 64]));
-                } else {
-                    let arr: [u8; 64] = match clear_text.bytes.as_slice().try_into() {
-                        Ok(arr) => arr,
-                        Err(e) => {
-                            error!("Failed to convert bytes to array for Euint512: {}", e);
-                            [0u8; 64]
-                        }
-                    };
-                    let value = Uint::<512, 8>::from_le_bytes(arr);
-                    let bytes: [u8; 64] = value.to_be_bytes();
-                    results.push(DynSolValue::Bytes(bytes.to_vec()));
+        if let Ok(fhe_type) = clear_text.fhe_type() {
+            match fhe_type {
+                FheTypes::Uint512 => {
+                    if clear_text.bytes.len() != 64 {
+                        error!(
+                            "Invalid length for Euint512: expected 64, got {}",
+                            clear_text.bytes.len()
+                        );
+                        results.push(DynSolValue::Bytes(vec![0u8; 64]));
+                    } else {
+                        let arr: [u8; 64] = match clear_text.bytes.as_slice().try_into() {
+                            Ok(arr) => arr,
+                            Err(e) => {
+                                error!("Failed to convert bytes to array for Euint512: {}", e);
+                                [0u8; 64]
+                            }
+                        };
+                        let value = Uint::<512, 8>::from_le_bytes(arr);
+                        let bytes: [u8; 64] = value.to_be_bytes();
+                        results.push(DynSolValue::Bytes(bytes.to_vec()));
+                    }
                 }
-            }
-            FheType::Euint1024 => {
-                if clear_text.bytes.len() != 128 {
-                    error!(
-                        "Invalid length for Euint1024: expected 128, got {}",
-                        clear_text.bytes.len()
-                    );
-                    results.push(DynSolValue::Bytes(vec![0u8; 128]));
-                } else {
-                    let arr: [u8; 128] = match clear_text.bytes.as_slice().try_into() {
-                        Ok(arr) => arr,
-                        Err(e) => {
-                            error!("Failed to convert bytes to array for Euint1024: {}", e);
-                            [0u8; 128]
-                        }
-                    };
-                    let value = Uint::<1024, 16>::from_le_bytes(arr);
-                    let bytes: [u8; 128] = value.to_be_bytes();
-                    results.push(DynSolValue::Bytes(bytes.to_vec()));
+                FheTypes::Uint1024 => {
+                    if clear_text.bytes.len() != 128 {
+                        error!(
+                            "Invalid length for Euint1024: expected 128, got {}",
+                            clear_text.bytes.len()
+                        );
+                        results.push(DynSolValue::Bytes(vec![0u8; 128]));
+                    } else {
+                        let arr: [u8; 128] = match clear_text.bytes.as_slice().try_into() {
+                            Ok(arr) => arr,
+                            Err(e) => {
+                                error!("Failed to convert bytes to array for Euint1024: {}", e);
+                                [0u8; 128]
+                            }
+                        };
+                        let value = Uint::<1024, 16>::from_le_bytes(arr);
+                        let bytes: [u8; 128] = value.to_be_bytes();
+                        results.push(DynSolValue::Bytes(bytes.to_vec()));
+                    }
                 }
-            }
-            FheType::Euint2048 => {
-                if clear_text.bytes.len() != 256 {
-                    error!(
-                        "Invalid length for Euint2048: expected 256, got {}",
-                        clear_text.bytes.len()
-                    );
-                    results.push(DynSolValue::Bytes(vec![0u8; 256]));
-                } else {
-                    let arr: [u8; 256] = match clear_text.bytes.as_slice().try_into() {
-                        Ok(arr) => arr,
-                        Err(e) => {
-                            error!("Failed to convert bytes to array for Euint2048: {}", e);
-                            [0u8; 256]
-                        }
-                    };
-                    let value = Uint::<2048, 32>::from_le_bytes(arr);
-                    let bytes: [u8; 256] = value.to_be_bytes();
-                    results.push(DynSolValue::Bytes(bytes.to_vec()));
+                FheTypes::Uint2048 => {
+                    if clear_text.bytes.len() != 256 {
+                        error!(
+                            "Invalid length for Euint2048: expected 256, got {}",
+                            clear_text.bytes.len()
+                        );
+                        results.push(DynSolValue::Bytes(vec![0u8; 256]));
+                    } else {
+                        let arr: [u8; 256] = match clear_text.bytes.as_slice().try_into() {
+                            Ok(arr) => arr,
+                            Err(e) => {
+                                error!("Failed to convert bytes to array for Euint2048: {}", e);
+                                [0u8; 256]
+                            }
+                        };
+                        let value = Uint::<2048, 32>::from_le_bytes(arr);
+                        let bytes: [u8; 256] = value.to_be_bytes();
+                        results.push(DynSolValue::Bytes(bytes.to_vec()));
+                    }
                 }
-            }
-            _ => {
-                // For other types, convert to U256
-                if clear_text.bytes.len() > 32 {
-                    error!(
-                        "Byte length too large for U256: got {}, max is 32",
-                        clear_text.bytes.len()
-                    );
-                    results.push(DynSolValue::Uint(U256::from(0), 256));
-                } else {
-                    // Pad the bytes to 32 bytes for U256 (assuming little-endian input)
-                    let mut padded = [0u8; 32];
-                    padded[..clear_text.bytes.len()].copy_from_slice(&clear_text.bytes);
-                    let value = U256::from_le_bytes(padded);
-                    results.push(DynSolValue::Uint(value, 256));
+                _ => {
+                    // For other types, convert to U256
+                    if clear_text.bytes.len() > 32 {
+                        error!(
+                            "Byte length too large for U256: got {}, max is 32",
+                            clear_text.bytes.len()
+                        );
+                        results.push(DynSolValue::Uint(U256::from(0), 256));
+                    } else {
+                        // Pad the bytes to 32 bytes for U256 (assuming little-endian input)
+                        let mut padded = [0u8; 32];
+                        padded[..clear_text.bytes.len()].copy_from_slice(&clear_text.bytes);
+                        let value = U256::from_le_bytes(padded);
+                        results.push(DynSolValue::Uint(value, 256));
+                    }
                 }
             }
         }
