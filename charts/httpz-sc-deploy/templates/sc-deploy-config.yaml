@@ -57,7 +57,7 @@ data:
         echo "error: you must supply an annotation value" 1>&2
         exit 1
       fi
-      kubectl annotate configmap "${configmap_name}" "${key}='${value}'"
+      kubectl annotate --overwrite configmap "${configmap_name}" "${key}='${value}'"
     }
     CONFIGMAP_NAME="{{ .Values.scDeploy.configmapName }}"
 
