@@ -1,4 +1,3 @@
-
 # console
 
 A user-friendly web app to manage your FHE dApps
@@ -19,8 +18,8 @@ A user-friendly web app to manage your FHE dApps
 ## installation
 
 ```bash
-# build & run your local environment
-docker compose up
+# build & run local aws services and databases
+docker compose -f docker-compose.01.infra.yaml up
 
 # set up environment
 cp apps/front/.env.template apps/front/.env
@@ -46,6 +45,7 @@ pnpm --filter back start
 pnpm --filter orchestrator start
 pnpm --filter web3 start
 ```
+
 ### run fhevm contracts with events using hardhat
 
 An alternative to running the full stack is to use hardhat.
@@ -55,3 +55,7 @@ To do so one can do the following:
 1. `make hardhat-run` in a first terminal, that will launch the hardhat node
 2. `make hardhat-listen` in a second terminal will deploy the contracts and launch the event listener
 3. `make hardhat-test` in a third terminal will then launch some tests that will trigger events
+
+## run local env into containers
+
+There are more complicated and fun ways to have a local env, check [tech-specs/local_env](tech-specs/local_env.md)

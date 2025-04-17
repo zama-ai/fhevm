@@ -51,11 +51,13 @@ services:
     container_name: console-front
     env_file:
       - ./apps/front/.env.compose
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8001"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+#    healthcheck:
+#      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
+#      interval: 30s
+#      timeout: 5s
+#      retries: 3
+    ports:
+      - "8001:8080"
     networks:
       - console-net
     depends_on:

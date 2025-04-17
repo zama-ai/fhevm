@@ -12,12 +12,12 @@ import { setContext } from '@apollo/client/link/context'
 import { onError } from '@apollo/client/link/error'
 
 const httpLink = new HttpLink({
-  uri: import.meta.env.VITE_BACK_HTTP_URL,
+  uri: window.env.VITE_BACK_HTTP_URL,
 })
 
 const wsLink = new GraphQLWsLink(
   createClient({
-    url: import.meta.env.VITE_BACK_WS_URL,
+    url: window.env.VITE_BACK_WS_URL,
     connectionParams: () => {
       const token = localStorage.getItem('token')
       if (!token) return {}
