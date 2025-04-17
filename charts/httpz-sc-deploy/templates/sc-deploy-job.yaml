@@ -1,19 +1,20 @@
-{{- if .Values.scDeploy.enabled -}}
-{{- if .Values.scDeploy.persistence.enabled -}}
+{{- if .Values.scDeploy.enabled }}
+{{- $volumeName := default .Release.Name .Values.scDeploy.persistence.volumeClaim.name }}
+{{- if .Values.scDeploy.persistence.volumeClaim.create }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ .Release.Name }}
+  name: {{ $volumeName }}
   labels:
     app: httpz-sc-deploy
-    app.kubernetes.io/name: {{ .Release.Name }}-deploy
+    app.kubernetes.io/name: {{ $volumeName }}
 spec:
-  storageClassName: {{ .Values.scDeploy.persistence.storageClassName }}
+  storageClassName: {{ .Values.scDeploy.persistence.volumeClaim.storageClassName }}
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: {{ .Values.scDeploy.persistence.storageCapacity }}
+      storage: {{ .Values.scDeploy.persistence.volumeClaim.storageCapacity }}
 ---
 {{- end }}
 apiVersion: batch/v1
@@ -27,13 +28,15 @@ spec:
   template:
     spec:
       serviceAccountName: {{ .Release.Name }}-config-writer
+      securityContext:
+        {{- toYaml .Values.scDeploy.securityContext | nindent 8 }}
       containers:
       - name: deploy
         image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}
         command: ["/app/deploy-contracts.sh"]
         {{- if .Values.scDeploy.env }}
         env:
-          {{- toYaml .Values.scDeploy.env | nindent 10 }}
+          {{ toYaml .Values.scDeploy.env | nindent 10 }}
         {{- end }}
         volumeMounts:
           - mountPath: /app/deploy-contracts.sh
@@ -58,11 +61,12 @@ spec:
       {{- if .Values.scDeploy.persistence.enabled }}
       - name: openzeppelin-persistence
         persistentVolumeClaim:
-          claimName: {{ .Release.Name }}
+          claimName: {{ $volumeName }}
       {{- end }}
       restartPolicy: Never
       imagePullSecrets:
         - name: registry-credentials
+
 ---
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
