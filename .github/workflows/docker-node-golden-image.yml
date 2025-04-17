@@ -43,7 +43,7 @@ jobs:
   #   permissions:
   #     contents: "read"
   #     id-token: "write"
-  #     packages: "write" 
+  #     packages: "write"
   #   steps:
   #     - name: Set Image Name
   #       run: echo "IMAGE_NAME=${{ needs.docker-node-golden.outputs.image_name }}" >> "$GITHUB_ENV"

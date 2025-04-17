@@ -79,7 +79,7 @@ contract HTTPZ is IHTTPZ, Ownable2StepUpgradeable, UUPSUpgradeable {
         uint256 initialKmsThreshold,
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors
-    ) public reinitializer(2) {
+    ) public virtual reinitializer(2) {
         __Ownable_init(owner());
 
         HTTPZStorage storage $ = _getHTTPZStorage();

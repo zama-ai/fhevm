@@ -112,7 +112,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     }
 
     /// @notice Initializes the contract.
-    function initialize(string memory fheParamsName, bytes32 fheParamsDigest) public reinitializer(2) {
+    function initialize(string memory fheParamsName, bytes32 fheParamsDigest) public virtual reinitializer(2) {
         __Ownable_init(owner());
 
         KeyManagerStorage storage $ = _getKeyManagerStorage();
