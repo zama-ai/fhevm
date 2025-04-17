@@ -55,7 +55,10 @@ describe('input proof', () => {
         const size = await manager.getQueueSize('relayer')
         return size > 0
       })
-      const [message] = await manager.getQueueMessages('relayer')
+      const messages = await manager.getQueueMessages('relayer')
+      // TODO: the publisher send the message twice
+      // expect(messages.length).toBe(1)
+      const message = messages[0]
       expect(message?.event).toEqual(
         expect.objectContaining({
           type: 'relayer:input-registration:input-registration-request',
@@ -86,7 +89,10 @@ describe('input proof', () => {
         const size = await manager.getQueueSize('back')
         return size > 0
       })
-      const [message] = await manager.getQueueMessages('back')
+      const messages = await manager.getQueueMessages('back')
+      // TODO: the publisher send the message twice
+      // expect(messages.length).toBe(1)
+      const message = messages[0]
       expect(message?.event).toEqual(
         expect.objectContaining({
           type: 'back:httpz:input-proof:completed',
