@@ -15,7 +15,7 @@ export function useApiKeys(dappId: string) {
   return {
     apiKeys: data,
     loading,
-    error: error,
+    errorMessage: error?.message,
   }
 }
 

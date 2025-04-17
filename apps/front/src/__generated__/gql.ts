@@ -14,9 +14,9 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
-    "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n": typeof types.ListApiKeysDocument,
     "\n  mutation CreateApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      token\n      apiKey {\n        id\n        dappId\n        name\n        description\n      }\n    }\n  }\n": typeof types.CreateApiKeyDocument,
     "\n  mutation UpdateDapp(\n    $dappId: ID!\n    $name: String\n    $address: String\n  ) {\n    updateDapp(input: { id: $dappId, name: $name, address: $address }) {\n      id\n      name\n      status\n      address\n      team {\n        id\n        name\n      }\n    }\n  }\n": typeof types.UpdateDappDocument,
+    "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n": typeof types.ListApiKeysDocument,
     "\n  mutation DeleteApiKey($apiKeyId: ID!) {\n    deleteApiKey(input: {\n      id: $apiKeyId\n    })\n  }\n": typeof types.DeleteApiKeyDocument,
     "\n  query ValidateAddress($chainId: String!, $address: String!) {\n    validateAddress(input: { chainId: $chainId, address: $address }) {\n      check\n      message\n    }\n  }\n": typeof types.ValidateAddressDocument,
     "\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": typeof types.CreateDappDocument,
@@ -25,14 +25,13 @@ type Documents = {
     "\n  query Preferences {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n": typeof types.PreferencesDocument,
     "\n  mutation ChangeUserName($id: ID!, $name: String!) {\n    updateUser(input: { id: $id, name: $name }) {\n      id\n      name\n    }\n  }\n": typeof types.ChangeUserNameDocument,
     "\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n": typeof types.SignInDocument,
-    "\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n": typeof types.InvitationTokenDocument,
     "\n  mutation SignUp(\n    $name: String!\n    $password: String!\n    $invitationToken: String!\n  ) {\n    signup(\n      input: {\n        name: $name\n        password: $password\n        invitationToken: $invitationToken\n      }\n    ) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n": typeof types.SignUpDocument,
     "\n  query Me {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n        dapps {\n          id\n          name\n          status\n          createdAt\n        }\n      }\n    }\n  }\n": typeof types.MeDocument,
 };
 const documents: Documents = {
-    "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n": types.ListApiKeysDocument,
     "\n  mutation CreateApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      token\n      apiKey {\n        id\n        dappId\n        name\n        description\n      }\n    }\n  }\n": types.CreateApiKeyDocument,
     "\n  mutation UpdateDapp(\n    $dappId: ID!\n    $name: String\n    $address: String\n  ) {\n    updateDapp(input: { id: $dappId, name: $name, address: $address }) {\n      id\n      name\n      status\n      address\n      team {\n        id\n        name\n      }\n    }\n  }\n": types.UpdateDappDocument,
+    "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n": types.ListApiKeysDocument,
     "\n  mutation DeleteApiKey($apiKeyId: ID!) {\n    deleteApiKey(input: {\n      id: $apiKeyId\n    })\n  }\n": types.DeleteApiKeyDocument,
     "\n  query ValidateAddress($chainId: String!, $address: String!) {\n    validateAddress(input: { chainId: $chainId, address: $address }) {\n      check\n      message\n    }\n  }\n": types.ValidateAddressDocument,
     "\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": types.CreateDappDocument,
@@ -41,7 +40,6 @@ const documents: Documents = {
     "\n  query Preferences {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n": types.PreferencesDocument,
     "\n  mutation ChangeUserName($id: ID!, $name: String!) {\n    updateUser(input: { id: $id, name: $name }) {\n      id\n      name\n    }\n  }\n": types.ChangeUserNameDocument,
     "\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n": types.SignInDocument,
-    "\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n": types.InvitationTokenDocument,
     "\n  mutation SignUp(\n    $name: String!\n    $password: String!\n    $invitationToken: String!\n  ) {\n    signup(\n      input: {\n        name: $name\n        password: $password\n        invitationToken: $invitationToken\n      }\n    ) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n": types.SignUpDocument,
     "\n  query Me {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n        dapps {\n          id\n          name\n          status\n          createdAt\n        }\n      }\n    }\n  }\n": types.MeDocument,
 };
@@ -63,15 +61,15 @@ export function graphql(source: string): unknown;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n"): (typeof documents)["\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
 export function graphql(source: "\n  mutation CreateApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      token\n      apiKey {\n        id\n        dappId\n        name\n        description\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation CreateApiKey(\n    $dappId: String!\n    $name: String!\n    $description: String\n  ) {\n    createApiKey(\n      input: { dappId: $dappId, name: $name, description: $description }\n    ) {\n      token\n      apiKey {\n        id\n        dappId\n        name\n        description\n      }\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation UpdateDapp(\n    $dappId: ID!\n    $name: String\n    $address: String\n  ) {\n    updateDapp(input: { id: $dappId, name: $name, address: $address }) {\n      id\n      name\n      status\n      address\n      team {\n        id\n        name\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation UpdateDapp(\n    $dappId: ID!\n    $name: String\n    $address: String\n  ) {\n    updateDapp(input: { id: $dappId, name: $name, address: $address }) {\n      id\n      name\n      status\n      address\n      team {\n        id\n        name\n      }\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n"): (typeof documents)["\n  query ListApiKeys($dappId: ID!) {\n    dapp(input: {\n      id: $dappId\n    }) {\n      apiKeys {\n        id\n        name\n        description\n        createdAt\n      }\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -104,10 +102,6 @@ export function graphql(source: "\n  mutation ChangeUserName($id: ID!, $name: St
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n"): (typeof documents)["\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

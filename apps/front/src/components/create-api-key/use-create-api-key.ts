@@ -1,8 +1,7 @@
 import { CreateApiKeyMutation } from '@/__generated__/graphql'
 import { gql, useMutation } from '@apollo/client'
-import { useCallback } from 'react'
 
-export function useCreateApiKey(dappId: string) {
+export function useCreateApiKey() {
   const [createApiKey, { data, loading, error }] = useMutation<
     CreateApiKeyMutation,
     { dappId: string; name: string; description?: string }
@@ -11,22 +10,10 @@ export function useCreateApiKey(dappId: string) {
     refetchQueries: ['ListApiKeys'],
   })
 
-  const handleCreateApiKey = useCallback(
-    (variables: { name: string; description?: string }) =>
-      createApiKey({
-        variables: {
-          ...variables,
-          dappId,
-        },
-      }),
-
-    [dappId, createApiKey],
-  )
-
   return {
-    createApiKey: handleCreateApiKey,
+    createApiKey,
     loading,
-    error,
+    errorMessage: error?.message,
     token: data?.createApiKey.token,
     apiKeyId: data?.createApiKey.apiKey.id,
   }

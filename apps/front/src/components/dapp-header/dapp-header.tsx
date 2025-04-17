@@ -7,7 +7,7 @@ import {
 
 import { InplaceInput } from '@/components/inplace-input/inplace-input'
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
-import { useDappUpdate } from '@/hooks/use-dapp-update'
+import { useDappUpdate } from '@/components/dapp-header/use-dapp-update'
 
 type OwnProps = {
   dapp?: GetDappDetailsQuery['dapp']
@@ -17,7 +17,7 @@ type OwnProps = {
 export function DappHeader({ dapp, dappUpdated }: OwnProps) {
   const [validationError, setValidationError] = useState<string | null>(null)
 
-  const { updateDapp, error } = useDappUpdate(dapp?.id || '')
+  const { updateDapp, errorMessage } = useDappUpdate()
   if (!dapp) {
     return <Skeleton height="5" my="5" width="30rem" />
   }
@@ -28,7 +28,7 @@ export function DappHeader({ dapp, dappUpdated }: OwnProps) {
       <Box mb="5">
         <InplaceInput
           title={data.name}
-          error={error?.message ?? validationError ?? null}
+          error={errorMessage ?? validationError ?? null}
           placeholder="Dapp name"
           onUpdate={({ value }) => {
             if (value.trim().length < 1) {
@@ -36,7 +36,7 @@ export function DappHeader({ dapp, dappUpdated }: OwnProps) {
               return
             }
             setValidationError(null)
-            updateDapp({ name: value })
+            updateDapp({ variables: { name: value, dappId: data.id } })
           }}
         />
       </Box>

@@ -1,7 +1,7 @@
 import { Box, EmptyState, Table } from '@chakra-ui/react'
 import { Code, KeyRound, Skull } from 'lucide-react'
-import { useApiKeys } from '@/hooks/use-api-keys'
-import { useDeleteApiKey } from '@/hooks/use-delete-api-key'
+import { useApiKeys } from '@/components/list-api-keys/use-api-keys'
+import { useDeleteApiKey } from '@/components/list-api-keys/use-delete-api-key'
 import { ApiKeyItem, SkeletonApiKeyItem } from './api-key-item'
 
 export type ListApiKeysProps = {
@@ -9,13 +9,13 @@ export type ListApiKeysProps = {
 }
 
 export function ListApiKeys({ dappId }: ListApiKeysProps) {
-  const { apiKeys, loading, error } = useApiKeys(dappId)
+  const { apiKeys, loading, errorMessage } = useApiKeys(dappId)
   const { deleteApiKey } = useDeleteApiKey()
 
   return (
     <Box maxW="2xl">
       <Table.Root size="sm" variant="outline" rounded="md">
-        {error && (
+        {errorMessage && (
           <EmptyState.Root>
             <EmptyState.Content>
               <EmptyState.Indicator>
@@ -25,7 +25,7 @@ export function ListApiKeys({ dappId }: ListApiKeysProps) {
               <EmptyState.Description>
                 There was an error while trying to fetch the API keys. Please
                 contact support
-                <Code>{error.message}</Code>
+                <Code>{errorMessage}</Code>
               </EmptyState.Description>
             </EmptyState.Content>
           </EmptyState.Root>

@@ -11,7 +11,7 @@ import { useCallback } from 'react'
  * @param apiKeyId
  */
 export function useDeleteApiKey() {
-  const [deleteApiKey] = useMutation<
+  const [deleteApiKey, { loading, error }] = useMutation<
     DeleteApiKeyMutation,
     DeleteApiKeyMutationVariables
   >(DELETE_API_KEY, {
@@ -33,6 +33,8 @@ export function useDeleteApiKey() {
 
   return {
     deleteApiKey: handleDeleteApiKey,
+    loading,
+    errorMessage: error?.message,
   }
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiKeyForm } from './api-key-form'
-import { useCreateApiKey } from '@/hooks/use-create-api-key'
+import { useCreateApiKey } from '@/components/create-api-key/use-create-api-key'
 import { ApiKeyCreatedDialog } from './api-key-created-dialog'
 
 type OwnProps = {
@@ -8,7 +8,7 @@ type OwnProps = {
 }
 
 export function CreateApiKey({ dappId }: OwnProps) {
-  const { createApiKey, error, token } = useCreateApiKey(dappId)
+  const { createApiKey, errorMessage, token } = useCreateApiKey()
   const [showModal, setShowModal] = useState(false)
   const closeModal = useCallback(() => {
     setShowModal(false)
@@ -23,7 +23,13 @@ export function CreateApiKey({ dappId }: OwnProps) {
     <>
       {showModal && <ApiKeyCreatedDialog token={token!} onClose={closeModal} />}
       {/** https://react.dev/learn/preserving-and-resetting-state#option-2-resetting-state-with-a-key */}
-      <ApiKeyForm error={error?.message} onCreate={createApiKey} key={token} />
+      <ApiKeyForm
+        error={errorMessage}
+        onCreate={details =>
+          createApiKey({ variables: { dappId, ...details } })
+        }
+        key={token}
+      />
     </>
   )
 }
