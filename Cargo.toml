@@ -36,7 +36,7 @@ prost = "0.13"
 prost-types = "0.13"
 sha2 = "=0.10.8"
 sha3 = "0.10.8"
-tonic = { version = "0.12.3", features = ["transport","tls","tls-roots"] }
+tonic = { version = "0.13.0", features = ["transport","tls-ring","tls-native-roots"] }
 tokio = { version = "1.43.0", features = ["full"] }
 clap = { version = "4.5.30", features = ["derive"] }
 toml = "0.8.20"
@@ -55,7 +55,7 @@ bip39 = "2.1.0"
 config = { version = "0.15.8", features = ["toml"] }
 rand = "=0.8.5"
 tfhe-versionable = "=0.5.0"
-tfhe = "=1.0"
+tfhe = "=1.1.2"
 dashmap = "6.1.0"
 once_cell = "1.21.1"
 regex = "1.11.1"
@@ -72,7 +72,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 kms-grpc = { path = "kms-core/core/grpc", default-features = true, features = ["insecure"] }
 
 [dev-dependencies]
-tempfile = "=3.16.0"
+tempfile = "=3.19.1"
 serial_test = "3.2.0"
 
 [[bin]]
