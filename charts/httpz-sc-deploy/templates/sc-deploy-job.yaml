@@ -1,4 +1,21 @@
 {{- if .Values.scDeploy.enabled -}}
+{{- if .Values.scDeploy.persistence.enabled -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: httpz-sc-deploy
+    app.kubernetes.io/name: {{ .Release.Name }}-deploy
+spec:
+  storageClassName: {{ .Values.scDeploy.persistence.storageClassName }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.scDeploy.persistence.storageCapacity }}
+---
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -22,6 +39,10 @@ spec:
           - mountPath: /app/deploy-contracts.sh
             subPath: deploy-contracts.sh
             name: config
+          {{- if .Values.scDeploy.persistence.enabled }}
+          - mountPath: /app/.openzeppelin
+            name: openzeppelin-persistence
+          {{- end }}
         resources:
           requests:
             cpu: {{ .Values.scDeploy.resources.requests.cpu | default "100m" }}
@@ -34,6 +55,11 @@ spec:
         configMap:
           name: {{ .Release.Name }}-config
           defaultMode: 0755
+      {{- if .Values.scDeploy.persistence.enabled }}
+      - name: openzeppelin-persistence
+        persistentVolumeClaim:
+          claimName: {{ .Release.Name }}
+      {{- end }}
       restartPolicy: Never
       imagePullSecrets:
         - name: registry-credentials
@@ -67,4 +93,4 @@ kind: ServiceAccount
 metadata:
   name: {{ .Release.Name }}-config-writer
   namespace: {{ .Release.Namespace }}
-{{ end }}
+{{- end }}
