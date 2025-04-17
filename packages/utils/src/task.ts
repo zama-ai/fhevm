@@ -31,6 +31,15 @@ export class Task<A, E> {
     return new Task((_, reject) => reject(error))
   }
 
+  /**
+   * Creates a Task from a Promise.
+   *
+   * @template A - The type of the resolved value.
+   * @template E - The type of the error.
+   * @param fn - A function that returns a Promise of type `A`.
+   * @returns A Task that resolves with the value of the Promise
+   * or rejects with the error of the Promise.
+   */
   static fromPromise<A, E>(promise: Promise<A>): Task<A, E> {
     return new Task((resolve, reject) => {
       promise.then(resolve).catch(reject)
