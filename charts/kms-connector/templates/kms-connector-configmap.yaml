@@ -1,0 +1,35 @@
+{{- if .Values.kmsConnector.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: kms-connector
+    app.kubernetes.io/name: {{ include "kmsConnectorName" . }}
+  name: {{ include "kmsConnectorName" . }}-config
+data:
+  config.toml: |
+    # Service name for tracing (optional, default: "kms-connector")
+    #service_name = "kms-connector"
+
+    # mnemonic for anvil
+    # this one is for testing purpose
+    #mnemonic = "test test test test test test test test test test test junk"
+
+    # KMS Core GRPC endpoint required, overriden by env vars
+    #kms_core_endpoint =
+
+    # GateWay L2 WebSocket RPC URL endpoint (required)
+    #gwl2_url =
+
+    # Chain ID (required)
+    #chain_id =
+
+    # Decryption manager contract address, required, overriden by env vars
+    #decryption_manager_address = "0x..."
+
+    # HTTPZ contract address, required, overriden by env vars
+    #httpz_address = "0x..."
+
+    # Size of the event processing channel (optional)
+    #channel_size =
+{{- end -}}
