@@ -1,6 +1,6 @@
 name: kms-connector
 description: A helm chart to distribute and deploy the Zama KMS connector
-version: 0.1.0
+version: 0.1.1
 apiVersion: v2
 keywords:
   - kms-connector
