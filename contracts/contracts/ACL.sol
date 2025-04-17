@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import {httpzExecutorAdd} from "../addresses/HTTPZExecutorAddress.sol";
+import {fhevmExecutorAdd} from "../addresses/FHEVMExecutorAddress.sol";
 
 /**
  * @title  ACL
@@ -63,7 +63,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @param contractAddresses  Contract addresses.
     event RevokedDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
 
-    /// @custom:storage-location erc7201:httpz.storage.ACL
+    /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {
         mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
@@ -82,14 +82,14 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @notice HTTPZExecutor address.
-    address private constant httpzExecutorAddress = httpzExecutorAdd;
+    /// @notice FHEVMExecutor address.
+    address private constant fhevmExecutorAddress = fhevmExecutorAdd;
 
     /// @notice maximum length of contractAddresses array during delegation.
     uint256 private constant MAX_NUM_CONTRACT_ADDRESSES = 10;
 
-    /// keccak256(abi.encode(uint256(keccak256("httpz.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ACLStorageLocation = 0xcaeeb749b0b652d94927794ec4f309146afb8975e723911d557314d9d3b87200;
+    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -149,7 +149,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param account       Address of the account.
      */
     function allowTransient(bytes32 handle, address account) public virtual {
-        if (msg.sender != httpzExecutorAddress) {
+        if (msg.sender != fhevmExecutorAddress) {
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
             }
@@ -255,11 +255,11 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice                     Getter function for the HTTPZExecutor contract address.
-     * @return httpzExecutorAddress Address of the HTTPZExecutor.
+     * @notice                     Getter function for the FHEVMExecutor contract address.
+     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
      */
-    function getHTTPZExecutorAddress() public view virtual returns (address) {
-        return httpzExecutorAddress;
+    function getFHEVMExecutorAddress() public view virtual returns (address) {
+        return fhevmExecutorAddress;
     }
 
     /**
@@ -296,7 +296,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     /**
      * @dev This function removes the transient allowances, which could be useful for integration with
-     *      Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
+     *      Account Abstraction when bundling several UserOps calling the FHEVMExecutor Coprocessor.
      */
     function cleanTransientStorage() external virtual {
         assembly {

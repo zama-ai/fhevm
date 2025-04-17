@@ -33,7 +33,7 @@ By default the listener propagate TFHE operation events to the database.
 You can change the database url using --database-url, it defaults to a local test database url.
 If you want to disable TFHE operation events propagation, you can provide an empty database-url.
 
-## Events in HTTPZ
+## Events in FHEVM
 
 ### Blockchain Events
 
@@ -75,7 +75,7 @@ sequenceDiagram
 
     loop Block Execution - Symbolic Operations
         Note over BC App Node: Solidity traces a Symbolic Sequence
-        Note over BC App Node: HTTPZExecutor contract
+        Note over BC App Node: FHEVMExecutor contract
         Note over BC App Node: ACL contract
     end
 

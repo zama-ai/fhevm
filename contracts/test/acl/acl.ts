@@ -15,18 +15,18 @@ describe('ACL', function () {
     const acl = await aclFactory.deploy();
     await acl.waitForDeployment();
     this.acl = acl;
-    this.httpzAddress = await acl.getHTTPZExecutorAddress();
+    this.fhevmAddress = await acl.getFHEVMExecutorAddress();
 
     const amountToDistribute = BigInt(100 * 1e24);
-    await ethers.provider.send('hardhat_impersonateAccount', [this.httpzAddress]);
-    await ethers.provider.send('hardhat_setBalance', [this.httpzAddress, '0x' + amountToDistribute.toString(16)]);
-    this.httpzExecutor = await ethers.getSigner(this.httpzAddress);
+    await ethers.provider.send('hardhat_impersonateAccount', [this.fhevmAddress]);
+    await ethers.provider.send('hardhat_setBalance', [this.fhevmAddress, '0x' + amountToDistribute.toString(16)]);
+    this.fhevmExecutor = await ethers.getSigner(this.fhevmAddress);
   });
 
   it('allowTransient() is not persistent', async function () {
     const randomHandle = '0x7345544800000000000000000000000000000000000000000000000000000000';
     const randomAccount = this.signers.bob.address;
-    await this.acl.connect(this.httpzExecutor).allowTransient(randomHandle, randomAccount);
+    await this.acl.connect(this.fhevmExecutor).allowTransient(randomHandle, randomAccount);
 
     /// @dev The isAllowed returns false since it is transient.
     expect(await this.acl.isAllowed(randomHandle, randomAccount)).to.be.eq(false);

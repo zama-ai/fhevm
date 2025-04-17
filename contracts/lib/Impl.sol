@@ -4,12 +4,12 @@ pragma solidity ^0.8.24;
 import {FheType} from "../contracts/FheType.sol";
 
 /**
- * @title   HTTPZConfigStruct
+ * @title   FHEVMConfigStruct
  * @notice  This struct contains all addresses of core contracts, which are needed in a typical dApp.
  */
-struct HTTPZConfigStruct {
+struct FHEVMConfigStruct {
     address ACLAddress;
-    address HTTPZExecutorAddress;
+    address FHEVMExecutorAddress;
     address KMSVerifierAddress;
     address InputVerifierAddress;
 }
@@ -27,10 +27,10 @@ struct DecryptionRequestsStruct {
 }
 
 /**
- * @title   IHTTPZExecutor
+ * @title   IFHEVMExecutor
  * @notice  This interface contains all functions to conduct FHE operations.
  */
-interface IHTTPZExecutor {
+interface IFHEVMExecutor {
     /**
      * @notice              Computes fheAdd operation.
      * @param lhs           LHS.
@@ -332,7 +332,7 @@ interface IACL {
 
     /**
      * @dev This function removes the transient allowances, which could be useful for integration with
-     *      Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
+     *      Account Abstraction when bundling several UserOps calling the FHEVMExecutor Coprocessor.
      */
     function cleanTransientStorage() external;
 
@@ -366,7 +366,7 @@ interface IACL {
 interface IInputVerifier {
     /**
      * @dev This function removes the transient allowances, which could be useful for integration with
-     *      Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
+     *      Account Abstraction when bundling several UserOps calling the FHEVMExecutor Coprocessor.
      */
     function cleanTransientStorage() external;
 }
@@ -376,19 +376,19 @@ interface IInputVerifier {
  * @notice  This library is the core implementation for computing FHE operations (e.g. add, sub, xor).
  */
 library Impl {
-    /// keccak256(abi.encode(uint256(keccak256("httpz.storage.HTTPZConfig")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant HTTPZConfigLocation = 0x15b1d18ad3df4183245a6a11b17d9fa31dc4c35ffbf591bdfd0f9704a799c300;
+    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant FHEVMConfigLocation = 0xed8d60e34876f751cc8b014c560745351147d9de11b9347c854e881b128ea600;
 
-    /// keccak256(abi.encode(uint256(keccak256("httpz.storage.DecryptionRequests")) - 1)) & ~bytes32(uint256(0xff))
+    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.DecryptionRequests")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant DecryptionRequestsStorageLocation =
-        0x0d40f54bbbf981ce8e61c8b8c658e64f9c1e04dd71b0eeaf2f5f65de10b78e00;
+        0x5ea69329017273582817d320489fbd94f775580e90c092699ca6f3d12fdf7d00;
 
     /**
-     * @dev Returns the HTTPZ config.
+     * @dev Returns the FHEVM config.
      */
-    function getHTTPZConfig() internal pure returns (HTTPZConfigStruct storage $) {
+    function getFHEVMConfig() internal pure returns (FHEVMConfigStruct storage $) {
         assembly {
-            $.slot := HTTPZConfigLocation
+            $.slot := FHEVMConfigLocation
         }
     }
 
@@ -403,14 +403,14 @@ library Impl {
 
     /**
      * @notice            Sets the coprocessor addresses.
-     * @param httpzConfig HTTPZ config struct that contains contract addresses.
+     * @param fhevmConfig FHEVM config struct that contains contract addresses.
      */
-    function setCoprocessor(HTTPZConfigStruct memory httpzConfig) internal {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        $.ACLAddress = httpzConfig.ACLAddress;
-        $.HTTPZExecutorAddress = httpzConfig.HTTPZExecutorAddress;
-        $.KMSVerifierAddress = httpzConfig.KMSVerifierAddress;
-        $.InputVerifierAddress = httpzConfig.InputVerifierAddress;
+    function setCoprocessor(FHEVMConfigStruct memory fhevmConfig) internal {
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        $.ACLAddress = fhevmConfig.ACLAddress;
+        $.FHEVMExecutorAddress = fhevmConfig.FHEVMExecutorAddress;
+        $.KMSVerifierAddress = fhevmConfig.KMSVerifierAddress;
+        $.InputVerifierAddress = fhevmConfig.InputVerifierAddress;
     }
 
     /**
@@ -429,8 +429,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheAdd(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheAdd(lhs, rhs, scalarByte);
     }
 
     function sub(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -440,8 +440,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheSub(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheSub(lhs, rhs, scalarByte);
     }
 
     function mul(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -451,20 +451,20 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheMul(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheMul(lhs, rhs, scalarByte);
     }
 
     function div(bytes32 lhs, bytes32 rhs) internal returns (bytes32 result) {
         bytes1 scalarByte = 0x01;
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheDiv(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheDiv(lhs, rhs, scalarByte);
     }
 
     function rem(bytes32 lhs, bytes32 rhs) internal returns (bytes32 result) {
         bytes1 scalarByte = 0x01;
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRem(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheRem(lhs, rhs, scalarByte);
     }
 
     function and(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -474,8 +474,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheBitAnd(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheBitAnd(lhs, rhs, scalarByte);
     }
 
     function or(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -485,8 +485,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheBitOr(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheBitOr(lhs, rhs, scalarByte);
     }
 
     function xor(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -496,8 +496,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheBitXor(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheBitXor(lhs, rhs, scalarByte);
     }
 
     function shl(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -507,8 +507,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheShl(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheShl(lhs, rhs, scalarByte);
     }
 
     function shr(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -518,8 +518,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheShr(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheShr(lhs, rhs, scalarByte);
     }
 
     function rotl(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -529,8 +529,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRotl(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheRotl(lhs, rhs, scalarByte);
     }
 
     function rotr(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -540,8 +540,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRotr(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheRotr(lhs, rhs, scalarByte);
     }
 
     function eq(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -551,8 +551,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheEq(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheEq(lhs, rhs, scalarByte);
     }
 
     function ne(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -562,8 +562,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheNe(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheNe(lhs, rhs, scalarByte);
     }
 
     function ge(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -573,8 +573,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheGe(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheGe(lhs, rhs, scalarByte);
     }
 
     function gt(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -584,8 +584,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheGt(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheGt(lhs, rhs, scalarByte);
     }
 
     function le(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -595,8 +595,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheLe(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheLe(lhs, rhs, scalarByte);
     }
 
     function lt(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -606,8 +606,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheLt(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheLt(lhs, rhs, scalarByte);
     }
 
     function min(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -617,8 +617,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheMin(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheMin(lhs, rhs, scalarByte);
     }
 
     function max(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
@@ -628,18 +628,18 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheMax(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheMax(lhs, rhs, scalarByte);
     }
 
     function neg(bytes32 ct) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheNeg(ct);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheNeg(ct);
     }
 
     function not(bytes32 ct) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheNot(ct);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheNot(ct);
     }
 
     /**
@@ -647,20 +647,20 @@ library Impl {
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheIfThenElse(control, ifTrue, ifFalse);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
     /**
-     * @notice              Verifies the ciphertext (HTTPZExecutor) and allows transient (ACL).
+     * @notice              Verifies the ciphertext (FHEVMExecutor) and allows transient (ACL).
      * @param inputHandle   Input handle.
      * @param inputProof    Input proof.
      * @param toType        Input type.
      * @return result       Result.
      */
     function verify(bytes32 inputHandle, bytes memory inputProof, FheType toType) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
         IACL($.ACLAddress).allowTransient(result, msg.sender);
     }
 
@@ -671,8 +671,8 @@ library Impl {
      * @return result     Result value of the target type.
      */
     function cast(bytes32 ciphertext, FheType toType) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).cast(ciphertext, toType);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).cast(ciphertext, toType);
     }
 
     /**
@@ -682,8 +682,8 @@ library Impl {
      * @return result   Result value of the target type.
      */
     function trivialEncrypt(uint256 value, FheType toType) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).trivialEncrypt(value, toType);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -693,8 +693,8 @@ library Impl {
      * @return result   Result value of the target type.
      */
     function trivialEncrypt(bytes memory value, FheType toType) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).trivialEncrypt(value, toType);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -711,8 +711,8 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheEq(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheEq(lhs, rhs, scalarByte);
     }
 
     /**
@@ -729,18 +729,18 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheNe(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheNe(lhs, rhs, scalarByte);
     }
 
     function rand(FheType randType) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRand(randType);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheRand(randType);
     }
 
     function randBounded(uint256 upperBound, FheType randType) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRandBounded(upperBound, randType);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheRandBounded(upperBound, randType);
     }
 
     /**
@@ -752,7 +752,7 @@ library Impl {
      * @param account       Address of the account.
      */
     function allowTransient(bytes32 handle, address account) internal {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         IACL($.ACLAddress).allowTransient(handle, account);
     }
 
@@ -763,7 +763,7 @@ library Impl {
      * @param account       Address of the account.
      */
     function allow(bytes32 handle, address account) internal {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         IACL($.ACLAddress).allow(handle, account);
     }
 
@@ -774,7 +774,7 @@ library Impl {
      * @param handle        Handle.
      */
     function makePubliclyDecryptable(bytes32 handle) internal {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         bytes32[] memory handleArray = new bytes32[](1);
         handleArray[0] = handle;
         IACL($.ACLAddress).allowForDecryption(handleArray);
@@ -782,19 +782,19 @@ library Impl {
 
     /**
      * @dev This function removes the transient allowances in the ACL, which could be useful for integration
-     *      with Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
+     *      with Account Abstraction when bundling several UserOps calling the FHEVMExecutor Coprocessor.
      */
     function cleanTransientStorageACL() internal {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         IACL($.ACLAddress).cleanTransientStorage();
     }
 
     /**
      * @dev This function removes the transient proofs in the InputVerifier, which could be useful for integration
-     *      with Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
+     *      with Account Abstraction when bundling several UserOps calling the FHEVMExecutor Coprocessor.
      */
     function cleanTransientStorageInputVerifier() internal {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         IInputVerifier($.InputVerifierAddress).cleanTransientStorage();
     }
 
@@ -806,7 +806,7 @@ library Impl {
      * @return isAllowed    Whether the account can access the handle.
      */
     function isAllowed(bytes32 handle, address account) internal view returns (bool) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         return IACL($.ACLAddress).isAllowed(handle, account);
     }
 
@@ -816,7 +816,7 @@ library Impl {
      * @return isAllowed    Whether the handle can be publicly decrypted.
      */
     function isPubliclyDecryptable(bytes32 handle) internal view returns (bool) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         return IACL($.ACLAddress).isAllowedForDecryption(handle);
     }
 }

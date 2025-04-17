@@ -2,13 +2,12 @@
 
 pragma solidity ^0.8.24;
 
-import "../lib/HTTPZ.sol";
+import "../lib/FHE.sol";
 import "../addresses/DecryptionOracleAddress.sol";
-import "../lib/HTTPZConfig.sol";
+import "../lib/FHEVMConfig.sol";
 
 /// @notice Contract for testing asynchronous decryption using the Gateway
 contract TestAsyncDecrypt {
-    using HTTPZ for *;
     /// @dev Encrypted state variables
     ebool xBool;
     euint8 xUint8;
@@ -44,40 +43,40 @@ contract TestAsyncDecrypt {
 
     /// @notice Constructor to initialize the contract and set up encrypted values
     constructor() {
-        HTTPZ.setCoprocessor(HTTPZConfig.defaultConfig());
-        HTTPZ.setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
+        FHE.setCoprocessor(FHEVMConfig.defaultConfig());
+        FHE.setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
 
         /// @dev Initialize encrypted variables with sample values
-        xBool = HTTPZ.asEbool(true);
-        HTTPZ.allowThis(xBool);
+        xBool = FHE.asEbool(true);
+        FHE.allowThis(xBool);
 
-        xUint8 = HTTPZ.asEuint8(42);
-        HTTPZ.allowThis(xUint8);
-        xUint16 = HTTPZ.asEuint16(16);
-        HTTPZ.allowThis(xUint16);
-        xUint32 = HTTPZ.asEuint32(32);
-        HTTPZ.allowThis(xUint32);
-        xUint64 = HTTPZ.asEuint64(18446744073709551600);
-        HTTPZ.allowThis(xUint64);
-        xUint64_2 = HTTPZ.asEuint64(76575465786);
-        HTTPZ.allowThis(xUint64_2);
-        xUint64_3 = HTTPZ.asEuint64(6400);
-        HTTPZ.allowThis(xUint64_3);
-        xUint128 = HTTPZ.asEuint128(1267650600228229401496703205443);
-        HTTPZ.allowThis(xUint128);
-        xUint256 = HTTPZ.asEuint256(27606985387162255149739023449108101809804435888681546220650096895197251);
-        HTTPZ.allowThis(xUint256);
-        xAddress = HTTPZ.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
-        HTTPZ.allowThis(xAddress);
-        xAddress2 = HTTPZ.asEaddress(0xf48b8840387ba3809DAE990c930F3b4766A86ca3);
-        HTTPZ.allowThis(xAddress2);
+        xUint8 = FHE.asEuint8(42);
+        FHE.allowThis(xUint8);
+        xUint16 = FHE.asEuint16(16);
+        FHE.allowThis(xUint16);
+        xUint32 = FHE.asEuint32(32);
+        FHE.allowThis(xUint32);
+        xUint64 = FHE.asEuint64(18446744073709551600);
+        FHE.allowThis(xUint64);
+        xUint64_2 = FHE.asEuint64(76575465786);
+        FHE.allowThis(xUint64_2);
+        xUint64_3 = FHE.asEuint64(6400);
+        FHE.allowThis(xUint64_3);
+        xUint128 = FHE.asEuint128(1267650600228229401496703205443);
+        FHE.allowThis(xUint128);
+        xUint256 = FHE.asEuint256(27606985387162255149739023449108101809804435888681546220650096895197251);
+        FHE.allowThis(xUint256);
+        xAddress = FHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
+        FHE.allowThis(xAddress);
+        xAddress2 = FHE.asEaddress(0xf48b8840387ba3809DAE990c930F3b4766A86ca3);
+        FHE.allowThis(xAddress2);
     }
 
     /// @notice Function to request decryption of a boolean value with an infinite loop in the callback
     function requestBoolInfinite() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(xBool);
-        HTTPZ.requestDecryption(cts, this.callbackBoolInfinite.selector);
+        cts[0] = FHE.toBytes32(xBool);
+        FHE.requestDecryption(cts, this.callbackBoolInfinite.selector);
     }
 
     /// @notice Callback function for the infinite loop decryption request (WARNING: This function will never complete)
@@ -86,7 +85,7 @@ contract TestAsyncDecrypt {
         bool decryptedInput,
         bytes[] memory signatures
     ) public returns (bool) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         uint256 i = 0;
         while (true) {
             i++;
@@ -98,8 +97,8 @@ contract TestAsyncDecrypt {
     /// @notice Request decryption of a boolean value
     function requestBool() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(xBool);
-        HTTPZ.requestDecryption(cts, this.callbackBool.selector);
+        cts[0] = FHE.toBytes32(xBool);
+        FHE.requestDecryption(cts, this.callbackBool.selector);
     }
 
     /// @notice Attempt to request decryption of a fake boolean value (should revert)
@@ -107,12 +106,12 @@ contract TestAsyncDecrypt {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000000;
         /// @dev This should revert because the previous ebool is not honestly obtained
-        HTTPZ.requestDecryption(cts, this.callbackBool.selector);
+        FHE.requestDecryption(cts, this.callbackBool.selector);
     }
 
     /// @notice Callback function for boolean decryption
     function callbackBool(uint256 requestID, bool decryptedInput, bytes[] memory signatures) public returns (bool) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yBool = decryptedInput;
         return yBool;
     }
@@ -121,7 +120,7 @@ contract TestAsyncDecrypt {
     /// @param decryptedInput The decrypted 4-bit unsigned integer
     /// @return The decrypted value
     function callbackUint4(uint256 requestID, uint8 decryptedInput, bytes[] memory signatures) public returns (uint8) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yUint4 = decryptedInput;
         return decryptedInput;
     }
@@ -129,8 +128,8 @@ contract TestAsyncDecrypt {
     /// @notice Request decryption of an 8-bit unsigned integer
     function requestUint8() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(xUint8);
-        HTTPZ.requestDecryption(cts, this.callbackUint8.selector);
+        cts[0] = FHE.toBytes32(xUint8);
+        FHE.requestDecryption(cts, this.callbackUint8.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 8-bit unsigned integer (should revert)
@@ -138,14 +137,14 @@ contract TestAsyncDecrypt {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000200;
         /// @dev This should revert because the previous handle is not honestly obtained
-        HTTPZ.requestDecryption(cts, this.callbackUint8.selector);
+        FHE.requestDecryption(cts, this.callbackUint8.selector);
     }
 
     /// @notice Callback function for 8-bit unsigned integer decryption
     /// @param decryptedInput The decrypted 8-bit unsigned integer
     /// @return The decrypted value
     function callbackUint8(uint256 requestID, uint8 decryptedInput, bytes[] memory signatures) public returns (uint8) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yUint8 = decryptedInput;
         return decryptedInput;
     }
@@ -153,8 +152,8 @@ contract TestAsyncDecrypt {
     /// @notice Request decryption of a 16-bit unsigned integer
     function requestUint16() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(xUint16);
-        HTTPZ.requestDecryption(cts, this.callbackUint16.selector);
+        cts[0] = FHE.toBytes32(xUint16);
+        FHE.requestDecryption(cts, this.callbackUint16.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 16-bit unsigned integer (should revert)
@@ -162,7 +161,7 @@ contract TestAsyncDecrypt {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000300;
         /// @dev This should revert because the previous handle is not honestly obtained
-        HTTPZ.requestDecryption(cts, this.callbackUint16.selector);
+        FHE.requestDecryption(cts, this.callbackUint16.selector);
     }
 
     /// @notice Callback function for 16-bit unsigned integer decryption
@@ -173,7 +172,7 @@ contract TestAsyncDecrypt {
         uint16 decryptedInput,
         bytes[] memory signatures
     ) public returns (uint16) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yUint16 = decryptedInput;
         return decryptedInput;
     }
@@ -183,8 +182,8 @@ contract TestAsyncDecrypt {
     /// @param input2 Second additional input
     function requestUint32(uint32 input1, uint32 input2) public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(xUint32);
-        uint256 requestID = HTTPZ.requestDecryption(cts, this.callbackUint32.selector);
+        cts[0] = FHE.toBytes32(xUint32);
+        uint256 requestID = FHE.requestDecryption(cts, this.callbackUint32.selector);
         addParamsUint256(requestID, input1);
         addParamsUint256(requestID, input2);
     }
@@ -194,7 +193,7 @@ contract TestAsyncDecrypt {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000400;
         /// @dev This should revert because the previous handle is not honestly obtained
-        HTTPZ.requestDecryption(cts, this.callbackUint32.selector);
+        FHE.requestDecryption(cts, this.callbackUint32.selector);
     }
 
     /// @notice Callback function for 32-bit unsigned integer decryption
@@ -206,7 +205,7 @@ contract TestAsyncDecrypt {
         uint32 decryptedInput,
         bytes[] memory signatures
     ) public returns (uint32) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         uint256[] memory params = getParamsUint256(requestID);
         unchecked {
             uint32 result = uint32(uint256(params[0])) + uint32(uint256(params[1])) + decryptedInput;
@@ -218,8 +217,8 @@ contract TestAsyncDecrypt {
     /// @notice Request decryption of a 64-bit unsigned integer
     function requestUint64() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(xUint64);
-        HTTPZ.requestDecryption(cts, this.callbackUint64.selector);
+        cts[0] = FHE.toBytes32(xUint64);
+        FHE.requestDecryption(cts, this.callbackUint64.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 64-bit unsigned integer (should revert)
@@ -227,17 +226,17 @@ contract TestAsyncDecrypt {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000500;
         /// @dev This should revert because the previous handle is not honestly obtained
-        HTTPZ.requestDecryption(cts, this.callbackUint64.selector);
+        FHE.requestDecryption(cts, this.callbackUint64.selector);
     }
 
     /// @notice Request decryption of a non-trivial 64-bit unsigned integer
     /// @param inputHandle The input handle for the encrypted value
     /// @param inputProof The input proof for the encrypted value
     function requestUint64NonTrivial(externalEuint64 inputHandle, bytes calldata inputProof) public {
-        euint64 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
+        euint64 inputNonTrivial = FHE.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
-        HTTPZ.requestDecryption(cts, this.callbackUint64.selector);
+        cts[0] = FHE.toBytes32(inputNonTrivial);
+        FHE.requestDecryption(cts, this.callbackUint64.selector);
     }
 
     /// @notice Callback function for 64-bit unsigned integer decryption
@@ -248,22 +247,22 @@ contract TestAsyncDecrypt {
         uint64 decryptedInput,
         bytes[] memory signatures
     ) public returns (uint64) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yUint64 = decryptedInput;
         return decryptedInput;
     }
 
     function requestUint128() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(xUint128);
-        HTTPZ.requestDecryption(cts, this.callbackUint128.selector);
+        cts[0] = FHE.toBytes32(xUint128);
+        FHE.requestDecryption(cts, this.callbackUint128.selector);
     }
 
     function requestUint128NonTrivial(externalEuint128 inputHandle, bytes calldata inputProof) public {
-        euint128 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
+        euint128 inputNonTrivial = FHE.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
-        HTTPZ.requestDecryption(cts, this.callbackUint128.selector);
+        cts[0] = FHE.toBytes32(inputNonTrivial);
+        FHE.requestDecryption(cts, this.callbackUint128.selector);
     }
 
     function callbackUint128(
@@ -271,22 +270,22 @@ contract TestAsyncDecrypt {
         uint128 decryptedInput,
         bytes[] memory signatures
     ) public returns (uint128) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yUint128 = decryptedInput;
         return decryptedInput;
     }
 
     function requestUint256() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(xUint256);
-        HTTPZ.requestDecryption(cts, this.callbackUint256.selector);
+        cts[0] = FHE.toBytes32(xUint256);
+        FHE.requestDecryption(cts, this.callbackUint256.selector);
     }
 
     function requestUint256NonTrivial(externalEuint256 inputHandle, bytes calldata inputProof) public {
-        euint256 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
+        euint256 inputNonTrivial = FHE.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
-        HTTPZ.requestDecryption(cts, this.callbackUint256.selector);
+        cts[0] = FHE.toBytes32(inputNonTrivial);
+        FHE.requestDecryption(cts, this.callbackUint256.selector);
     }
 
     function callbackUint256(
@@ -294,23 +293,23 @@ contract TestAsyncDecrypt {
         uint256 decryptedInput,
         bytes[] memory signatures
     ) public returns (uint256) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yUint256 = decryptedInput;
         return decryptedInput;
     }
 
     function requestEbytes64NonTrivial(externalEbytes64 inputHandle, bytes calldata inputProof) public {
-        ebytes64 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
+        ebytes64 inputNonTrivial = FHE.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
-        HTTPZ.requestDecryption(cts, this.callbackBytes64.selector);
+        cts[0] = FHE.toBytes32(inputNonTrivial);
+        FHE.requestDecryption(cts, this.callbackBytes64.selector);
     }
 
     function requestEbytes64Trivial(bytes calldata value) public {
-        ebytes64 inputTrivial = HTTPZ.asEbytes64(HTTPZ.padToBytes64(value));
+        ebytes64 inputTrivial = FHE.asEbytes64(FHE.padToBytes64(value));
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(inputTrivial);
-        HTTPZ.requestDecryption(cts, this.callbackBytes64.selector);
+        cts[0] = FHE.toBytes32(inputTrivial);
+        FHE.requestDecryption(cts, this.callbackBytes64.selector);
     }
 
     function callbackBytes64(
@@ -318,23 +317,23 @@ contract TestAsyncDecrypt {
         bytes calldata decryptedInput,
         bytes[] memory signatures
     ) public returns (bytes memory) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yBytes64 = decryptedInput;
         return decryptedInput;
     }
 
     function requestEbytes128NonTrivial(externalEbytes128 inputHandle, bytes calldata inputProof) public {
-        ebytes128 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
+        ebytes128 inputNonTrivial = FHE.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
-        HTTPZ.requestDecryption(cts, this.callbackBytes128.selector);
+        cts[0] = FHE.toBytes32(inputNonTrivial);
+        FHE.requestDecryption(cts, this.callbackBytes128.selector);
     }
 
     function requestEbytes128Trivial(bytes calldata value) public {
-        ebytes128 inputTrivial = HTTPZ.asEbytes128(HTTPZ.padToBytes128(value));
+        ebytes128 inputTrivial = FHE.asEbytes128(FHE.padToBytes128(value));
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(inputTrivial);
-        HTTPZ.requestDecryption(cts, this.callbackBytes128.selector);
+        cts[0] = FHE.toBytes32(inputTrivial);
+        FHE.requestDecryption(cts, this.callbackBytes128.selector);
     }
 
     function callbackBytes128(
@@ -342,23 +341,23 @@ contract TestAsyncDecrypt {
         bytes calldata decryptedInput,
         bytes[] memory signatures
     ) public returns (bytes memory) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yBytes128 = decryptedInput;
         return decryptedInput;
     }
 
     function requestEbytes256Trivial(bytes calldata value) public {
-        ebytes256 inputTrivial = HTTPZ.asEbytes256(HTTPZ.padToBytes256(value));
+        ebytes256 inputTrivial = FHE.asEbytes256(FHE.padToBytes256(value));
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(inputTrivial);
-        HTTPZ.requestDecryption(cts, this.callbackBytes256.selector);
+        cts[0] = FHE.toBytes32(inputTrivial);
+        FHE.requestDecryption(cts, this.callbackBytes256.selector);
     }
 
     function requestEbytes256NonTrivial(externalEbytes256 inputHandle, bytes calldata inputProof) public {
-        ebytes256 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
+        ebytes256 inputNonTrivial = FHE.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
-        HTTPZ.requestDecryption(cts, this.callbackBytes256.selector);
+        cts[0] = FHE.toBytes32(inputNonTrivial);
+        FHE.requestDecryption(cts, this.callbackBytes256.selector);
     }
 
     /// @notice Callback function for 256-bit encrypted bytes decryption
@@ -369,7 +368,7 @@ contract TestAsyncDecrypt {
         bytes calldata decryptedInput,
         bytes[] memory signatures
     ) public returns (bytes memory) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yBytes256 = decryptedInput;
         return decryptedInput;
     }
@@ -377,16 +376,16 @@ contract TestAsyncDecrypt {
     /// @notice Request decryption of an encrypted address
     function requestAddress() public {
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(xAddress);
-        HTTPZ.requestDecryption(cts, this.callbackAddress.selector);
+        cts[0] = FHE.toBytes32(xAddress);
+        FHE.requestDecryption(cts, this.callbackAddress.selector);
     }
 
     /// @notice Request decryption of multiple encrypted addresses
     function requestSeveralAddresses() public {
         bytes32[] memory cts = new bytes32[](2);
-        cts[0] = HTTPZ.toBytes32(xAddress);
-        cts[1] = HTTPZ.toBytes32(xAddress2);
-        HTTPZ.requestDecryption(cts, this.callbackAddresses.selector);
+        cts[0] = FHE.toBytes32(xAddress);
+        cts[1] = FHE.toBytes32(xAddress2);
+        FHE.requestDecryption(cts, this.callbackAddresses.selector);
     }
 
     /// @notice Callback function for multiple address decryption
@@ -399,7 +398,7 @@ contract TestAsyncDecrypt {
         address decryptedInput2,
         bytes[] memory signatures
     ) public returns (address) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yAddress = decryptedInput1;
         yAddress2 = decryptedInput2;
         return decryptedInput1;
@@ -410,7 +409,7 @@ contract TestAsyncDecrypt {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000700;
         /// @dev This should revert because the previous handle is not honestly obtained
-        HTTPZ.requestDecryption(cts, this.callbackAddress.selector);
+        FHE.requestDecryption(cts, this.callbackAddress.selector);
     }
 
     /// @notice Callback function for address decryption
@@ -421,7 +420,7 @@ contract TestAsyncDecrypt {
         address decryptedInput,
         bytes[] memory signatures
     ) public returns (address) {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yAddress = decryptedInput;
         return decryptedInput;
     }
@@ -431,14 +430,14 @@ contract TestAsyncDecrypt {
     /// @param inputHandle The encrypted input handle for the bytes256
     /// @param inputProof The proof for the encrypted bytes256
     function requestMixedBytes256(externalEbytes256 inputHandle, bytes calldata inputProof) public {
-        ebytes256 xBytes256 = HTTPZ.fromExternal(inputHandle, inputProof);
+        ebytes256 xBytes256 = FHE.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](4);
-        cts[0] = HTTPZ.toBytes32(xBool);
-        cts[1] = HTTPZ.toBytes32(xAddress);
-        cts[2] = HTTPZ.toBytes32(xBytes256);
-        ebytes64 input64Bytes = HTTPZ.asEbytes64(HTTPZ.padToBytes64(hex"aaff42"));
-        cts[3] = HTTPZ.toBytes32(input64Bytes);
-        HTTPZ.requestDecryption(cts, this.callbackMixedBytes256.selector);
+        cts[0] = FHE.toBytes32(xBool);
+        cts[1] = FHE.toBytes32(xAddress);
+        cts[2] = FHE.toBytes32(xBytes256);
+        ebytes64 input64Bytes = FHE.asEbytes64(FHE.padToBytes64(hex"aaff42"));
+        cts[3] = FHE.toBytes32(input64Bytes);
+        FHE.requestDecryption(cts, this.callbackMixedBytes256.selector);
     }
 
     /// @notice Callback function for mixed data type decryption including 256-bit encrypted bytes
@@ -454,7 +453,7 @@ contract TestAsyncDecrypt {
         bytes memory bytesRes2,
         bytes[] memory signatures
     ) public {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yBool = decBool;
         yAddress = decAddress;
         yBytes256 = bytesRes;

@@ -18,7 +18,7 @@ Therefore, we employ zero-knowledge proofs of knowledge (ZKPoK) of input FHE cip
 - the user knows the plaintext value
 - the input ciphertext can only be used in a particular smart contract
 
-The ZKPoK is verified by the KMS which delivers a signature (KMS_S) to the user. When the input byte array is passed to an `HTTPZ.asEuintXX()` function to convert from a ciphertext to a handle that can be used in smart contracts for FHE operations, the KMS_S is verified.
+The ZKPoK is verified by the KMS which delivers a signature (KMS_S) to the user. When the input byte array is passed to an `FHE.fromExternal()` function to convert from a ciphertext to a handle that can be used in smart contracts for FHE operations, the KMS_S is verified.
 
 ## Compact Input Lists
 
@@ -31,16 +31,16 @@ We define the `einput` type that refers to a particular ciphertext in the list. 
 
 pragma solidity ^0.8.24;
 
-import "fhevm/lib/HTTPZ.sol";
+import "fhevm/lib/FHE.sol";
 
 contract Adder {
   euint32 result;
 
-  function add(einput inputA, einput inputB, bytes calldata inputProof) public {
-    euint32 a = HTTPZ.asEuint32(inputA, inputProof);
-    euint32 b = HTTPZ.asEuint32(inputB, inputProof);
-    result = HTTPZ.add(a, b);
-    HTTPZ.allow(result, address(this));
+  function add(externalEuint32 inputA, externalEuint32 inputB, bytes calldata inputProof) public {
+    euint32 a = FHE.fromExternal(inputA, inputProof);
+    euint32 b = FHE.fromExternal(inputB, inputProof);
+    result = FHE.add(a, b);
+    FHE.allow(result, address(this));
   }
 }
 ```

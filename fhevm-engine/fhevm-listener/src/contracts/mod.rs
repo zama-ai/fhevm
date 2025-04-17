@@ -16,5 +16,5 @@ sol!(
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     TfheContract,
-    "../../contracts/artifacts/contracts/HTTPZExecutor.sol/HTTPZExecutor.json"
+    "../../contracts/artifacts/contracts/FHEVMExecutor.sol/FHEVMExecutor.json"
 );

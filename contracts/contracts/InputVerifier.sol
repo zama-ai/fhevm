@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {HTTPZExecutor} from "./HTTPZExecutor.sol";
+import {FHEVMExecutor} from "./FHEVMExecutor.sol";
 
 // Importing OpenZeppelin contracts for cryptographic signature verification and access control.
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -13,7 +13,7 @@ import {EIP712UpgradeableCrossChain} from "./EIP712UpgradeableCrossChain.sol";
 /**
  * @title    InputVerifier.
  * @notice   This contract allows signature verification of user encrypted inputs.
- *           This contract is called by the HTTPZExecutor inside verifyCiphertext function
+ *           This contract is called by the FHEVMExecutor inside verifyCiphertext function
  * @dev      The contract uses EIP712UpgradeableCrossChain for cryptographic operations.
  */
 contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain {
@@ -110,16 +110,16 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @custom:storage-location erc7201:httpz.storage.InputVerifier
+    /// @custom:storage-location erc7201:fhevm.storage.InputVerifier
     struct InputVerifierStorage {
         mapping(address => bool) isSigner; /// @notice Mapping to keep track of addresses that are signers
         address[] signers; /// @notice Array to keep track of all signers
         uint256 threshold; /// @notice The threshold for the number of signers required for a signature to be valid
     }
 
-    /// keccak256(abi.encode(uint256(keccak256("httpz.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
+    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant InputVerifierStorageLocation =
-        0x0f3182ad724e9de82dc79a31e3b0e792f87a844d042e92fa257979351135e300;
+        0x3f7d7a96c8c7024e92d37afccfc9b87773a33b9bc22e23134b683e74a50ace00;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -175,7 +175,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
      * @return result       Result.
      */
     function verifyCiphertext(
-        HTTPZExecutor.ContextUserInputs memory context,
+        FHEVMExecutor.ContextUserInputs memory context,
         bytes32 inputHandle,
         bytes memory inputProof
     ) public virtual returns (bytes32) {

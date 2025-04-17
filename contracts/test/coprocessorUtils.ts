@@ -10,7 +10,7 @@ import operatorsPrices from '../codegen/operatorsPrices.json';
 import { ALL_FHE_TYPES } from '../codegen/types';
 
 const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('addresses/.env.exec'));
-const coprocAddress = parsedEnvCoprocessor.HTTPZ_EXECUTOR_CONTRACT_ADDRESS;
+const coprocAddress = parsedEnvCoprocessor.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
 
 let firstBlockListening = 0;
 let lastBlockSnapshot = 0;
@@ -120,7 +120,7 @@ function bitwiseNotUintBits(value: BigInt, numBits: number) {
 
 export const awaitCoprocessor = async (): Promise<void> => {
   chainId = (await ethers.provider.getNetwork()).chainId;
-  await processAllPastHTTPZExecutorEvents();
+  await processAllPastFHEVMExecutorEvents();
 };
 
 const abi = [
@@ -157,7 +157,7 @@ const abi = [
   'event FheRandBounded(address indexed caller, uint256 upperBound, uint8 randType, bytes16 seed, bytes32 result)',
 ];
 
-async function processAllPastHTTPZExecutorEvents() {
+async function processAllPastFHEVMExecutorEvents() {
   const provider = ethers.provider;
   const latestBlockNumber = await provider.getBlockNumber();
 

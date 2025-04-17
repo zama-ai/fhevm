@@ -30,9 +30,9 @@ task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: Tas
     address: aclAddress,
   });
 
-  const httpzExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setHTTPZExecutorAddress', {
-    address: httpzExecutorAddress,
+  const fhevmExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setFHEVMExecutorAddress', {
+    address: fhevmExecutorAddress,
   });
 
   const kmsVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
@@ -84,18 +84,18 @@ task('task:deployACL').setAction(async function (taskArguments: TaskArguments, {
   console.log('ACL code set successfully at address:', proxyAddress);
 });
 
-task('task:deployHTTPZExecutor').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+task('task:deployFHEVMExecutor').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplem = await ethers.getContractFactory('./contracts/HTTPZExecutor.sol:HTTPZExecutor', deployer);
+  const newImplem = await ethers.getContractFactory('./contracts/FHEVMExecutor.sol:FHEVMExecutor', deployer);
   const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.exec'));
-  const proxyAddress = parsedEnv.HTTPZ_EXECUTOR_CONTRACT_ADDRESS;
+  const proxyAddress = parsedEnv.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: { fn: 'reinitialize' },
   });
-  console.log('HTTPZExecutor code set successfully at address:', proxyAddress);
+  console.log('FHEVMExecutor code set successfully at address:', proxyAddress);
 });
 
 task('task:deployKMSVerifier')
@@ -284,32 +284,32 @@ address constant aclAdd = ${taskArguments.address};\n`;
     }
   });
 
-task('task:setHTTPZExecutorAddress')
+task('task:setFHEVMExecutorAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const envFilePath = path.join(__dirname, '../addresses/.env.exec');
-    const content = `HTTPZ_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    const content = `FHEVM_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.log(`HTTPZExecutor address ${taskArguments.address} written successfully!`);
+      console.log(`FHEVMExecutor address ${taskArguments.address} written successfully!`);
     } catch (err) {
-      console.error('Failed to write HTTPZExecutor address:', err);
+      console.error('Failed to write FHEVMExecutor address:', err);
     }
 
     const solidityTemplateCoprocessor = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
 pragma solidity ^0.8.24;
 
-address constant httpzExecutorAdd = ${taskArguments.address};\n`;
+address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./addresses/HTTPZExecutorAddress.sol', solidityTemplateCoprocessor, {
+      fs.writeFileSync('./addresses/FHEVMExecutorAddress.sol', solidityTemplateCoprocessor, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.log('./addresses/HTTPZExecutorAddress.sol file generated successfully!');
+      console.log('./addresses/FHEVMExecutorAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./addresses/HTTPZExecutorAddress.sol', error);
+      console.error('Failed to write ./addresses/FHEVMExecutorAddress.sol', error);
     }
   });
 
@@ -452,7 +452,7 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
   await hre.run('compile:specific', { contract: 'decryptionOracle' });
 
   await hre.run('task:deployACL');
-  await hre.run('task:deployHTTPZExecutor');
+  await hre.run('task:deployFHEVMExecutor');
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:deployInputVerifier');
   await hre.run('task:deployFHEGasLimit');

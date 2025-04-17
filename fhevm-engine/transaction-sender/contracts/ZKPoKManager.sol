@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.28;
 
-/// @dev This contract is a mock of the ZKPoKManager contract from the HTTPZ Gateway.
+/// @dev This contract is a mock of the ZKPoKManager contract from the Gateway.
 /// source: github.com/zama-ai/gateway-l2/blob/main/contracts/ZKPoKManager.sol
 contract ZKPoKManager {
     event VerifyProofResponseCalled(uint256, bytes32[], bytes);

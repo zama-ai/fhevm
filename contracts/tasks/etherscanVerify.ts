@@ -16,16 +16,16 @@ task('task:verifyACL').setAction(async function (taskArguments, { upgrades, run 
   });
 });
 
-task('task:verifyHTTPZExecutor').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvHTTPZExecutor = dotenv.parse(fs.readFileSync('addresses/.env.exec'));
-  const proxyHTTPZExecutorAddress = parsedEnvHTTPZExecutor.HTTPZ_EXECUTOR_CONTRACT_ADDRESS;
-  const implementationHTTPZExecutorAddress = await upgrades.erc1967.getImplementationAddress(proxyHTTPZExecutorAddress);
+task('task:verifyFHEVMExecutor').setAction(async function (taskArguments, { upgrades, run }) {
+  const parsedEnvFHEVMExecutor = dotenv.parse(fs.readFileSync('addresses/.env.exec'));
+  const proxyFHEVMExecutorAddress = parsedEnvFHEVMExecutor.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
+  const implementationFHEVMExecutorAddress = await upgrades.erc1967.getImplementationAddress(proxyFHEVMExecutorAddress);
   await run('verify:verify', {
-    address: implementationHTTPZExecutorAddress,
+    address: implementationFHEVMExecutorAddress,
     constructorArguments: [],
   });
   await run('verify:verify', {
-    address: proxyHTTPZExecutorAddress,
+    address: proxyFHEVMExecutorAddress,
     constructorArguments: [],
   });
 });

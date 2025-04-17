@@ -1,10 +1,10 @@
 {
-  "name": "@httpz/core-contracts",
+  "name": "@fhevm/core-contracts",
   "version": "0.7.0-6",
-  "description": "HTTPZ backend contracts",
+  "description": "fhevm backend contracts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zama-ai/httpz-backend.git"
+    "url": "git+https://github.com/zama-ai/fhevm-backend.git"
   },
   "main": "index.js",
   "scripts": {

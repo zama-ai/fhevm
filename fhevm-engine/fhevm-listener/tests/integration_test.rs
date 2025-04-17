@@ -21,18 +21,18 @@ use fhevm_listener::database::tfhe_event_propagate::{Database, ToType};
 sol!(
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    HTTPZExecutorTest,
-    "artifacts/HTTPZExecutorTest.sol/HTTPZExecutorTest.json"
+    FHEVMExecutorTest,
+    "artifacts/FHEVMExecutorTest.sol/FHEVMExecutorTest.json"
 );
 
-use crate::HTTPZExecutorTest::HTTPZExecutorTestInstance;
+use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
 
 const NB_EVENTS_PER_WALLET: i64 = 400;
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
     url: &String,
-    tfhe_contract: HTTPZExecutorTestInstance<(), P, N>,
+    tfhe_contract: FHEVMExecutorTestInstance<(), P, N>,
 ) where
     P: Clone + alloy_provider::Provider<N> + 'static,
     N: Clone
@@ -126,7 +126,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         .wallet(wallets[0].clone())
         .on_ws(WsConnect::new(url.clone()))
         .await?;
-    let tfhe_contract = HTTPZExecutorTest::deploy(provider.clone()).await?;
+    let tfhe_contract = FHEVMExecutorTest::deploy(provider.clone()).await?;
     let args = Args {
         url: url.clone(),
         ignore_tfhe_events: false,

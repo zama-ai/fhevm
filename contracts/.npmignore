@@ -3,7 +3,7 @@
 !/artifacts/contracts/FHEGasLimit.sol/FHEGasLimit.json
 !/artifacts/contracts/InputVerifier.sol/InputVerifier.json
 !/artifacts/contracts/KMSVerifier.sol/KMSVerifier.json
-!/artifacts/contracts/HTTPZExecutor.sol/HTTPZExecutor.json
+!/artifacts/contracts/FHEVMExecutor.sol/FHEVMExecutor.json
 !contracts/**
 !package.json
 !LICENSE

@@ -2,9 +2,9 @@
 
 pragma solidity ^0.8.24;
 
-import "../lib/HTTPZ.sol";
+import "../lib/FHE.sol";
 
-import "../lib/HTTPZConfig.sol";
+import "../lib/FHEVMConfig.sol";
 
 /// @notice Contract for testing makePubliclyDecryptable and isPubliclyDecryptable functions
 contract MakePubliclyDecryptable {
@@ -15,39 +15,39 @@ contract MakePubliclyDecryptable {
 
     /// @notice Constructor to set FHE configuration
     constructor() {
-        HTTPZ.setCoprocessor(HTTPZConfig.defaultConfig());
+        FHE.setCoprocessor(FHEVMConfig.defaultConfig());
     }
 
     /// @notice make an ebool publicly decryptable
     function makePubliclyDecryptableBool() public {
-        valueb = HTTPZ.asEbool(true);
-        HTTPZ.makePubliclyDecryptable(valueb);
+        valueb = FHE.asEbool(true);
+        FHE.makePubliclyDecryptable(valueb);
     }
 
     /// @notice check if an ebool is publicly decryptable
     function isPubliclyDecryptableBool() public view returns (bool) {
-        return HTTPZ.isPubliclyDecryptable(valueb);
+        return FHE.isPubliclyDecryptable(valueb);
     }
 
     /// @notice make an euint8 publicly decryptable
     function makePubliclyDecryptableUint8() public {
-        value8 = HTTPZ.asEuint8(37);
-        HTTPZ.makePubliclyDecryptable(value8);
+        value8 = FHE.asEuint8(37);
+        FHE.makePubliclyDecryptable(value8);
     }
 
     /// @notice check if an euint8 is publicly decryptable
     function isPubliclyDecryptableUint8() public view returns (bool) {
-        return HTTPZ.isPubliclyDecryptable(value8);
+        return FHE.isPubliclyDecryptable(value8);
     }
 
     /// @notice make an ebytes256 publicly decryptable
     function makePubliclyDecryptableBytes256() public {
-        value2048 = HTTPZ.asEbytes256(HTTPZ.padToBytes256(hex"d179e0"));
-        HTTPZ.makePubliclyDecryptable(value2048);
+        value2048 = FHE.asEbytes256(FHE.padToBytes256(hex"d179e0"));
+        FHE.makePubliclyDecryptable(value2048);
     }
 
     /// @notice check if an ebytes256 is publicly decryptable
     function isPubliclyDecryptableBytes256() public view returns (bool) {
-        return HTTPZ.isPubliclyDecryptable(value2048);
+        return FHE.isPubliclyDecryptable(value2048);
     }
 }

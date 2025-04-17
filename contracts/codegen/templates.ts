@@ -147,8 +147,8 @@ function handleSolidityBinaryOperatorForImpl(op: Operator): string {
     `
     function ${op.name}(bytes32 lhs, bytes32 rhs${scalarArg}) internal returns (bytes32 result) {
         ${scalarSection}
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).${op.fheLibName}(lhs, rhs, scalarByte);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).${op.fheLibName}(lhs, rhs, scalarByte);
     }` + '\n'
   );
 }
@@ -179,18 +179,18 @@ ${generateInputVerifierInterface()}
  * @notice  This library is the core implementation for computing FHE operations (e.g. add, sub, xor).
  */
 library Impl {
-  /// keccak256(abi.encode(uint256(keccak256("httpz.storage.HTTPZConfig")) - 1)) & ~bytes32(uint256(0xff))
-  bytes32 private constant HTTPZConfigLocation = 0x15b1d18ad3df4183245a6a11b17d9fa31dc4c35ffbf591bdfd0f9704a799c300;
+  /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
+  bytes32 private constant FHEVMConfigLocation = 0xed8d60e34876f751cc8b014c560745351147d9de11b9347c854e881b128ea600;
 
-  /// keccak256(abi.encode(uint256(keccak256("httpz.storage.DecryptionRequests")) - 1)) & ~bytes32(uint256(0xff))
-  bytes32 private constant DecryptionRequestsStorageLocation = 0x0d40f54bbbf981ce8e61c8b8c658e64f9c1e04dd71b0eeaf2f5f65de10b78e00;
+  /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.DecryptionRequests")) - 1)) & ~bytes32(uint256(0xff))
+  bytes32 private constant DecryptionRequestsStorageLocation = 0x5ea69329017273582817d320489fbd94f775580e90c092699ca6f3d12fdf7d00;
 
   /**
-   * @dev Returns the HTTPZ config.
+   * @dev Returns the FHEVM config.
    */
-  function getHTTPZConfig() internal pure returns (HTTPZConfigStruct storage $) {
+  function getFHEVMConfig() internal pure returns (FHEVMConfigStruct storage $) {
       assembly {
-          $.slot := HTTPZConfigLocation
+          $.slot := FHEVMConfigLocation
       }
   }
 
@@ -205,14 +205,14 @@ library Impl {
 
   /**
    * @notice            Sets the coprocessor addresses.
-   * @param httpzConfig HTTPZ config struct that contains contract addresses.
+   * @param fhevmConfig FHEVM config struct that contains contract addresses.
   */
-  function setCoprocessor(HTTPZConfigStruct memory httpzConfig) internal {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
-      $.ACLAddress = httpzConfig.ACLAddress;
-      $.HTTPZExecutorAddress = httpzConfig.HTTPZExecutorAddress;
-      $.KMSVerifierAddress = httpzConfig.KMSVerifierAddress;
-      $.InputVerifierAddress = httpzConfig.InputVerifierAddress;
+  function setCoprocessor(FHEVMConfigStruct memory fhevmConfig) internal {
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
+      $.ACLAddress = fhevmConfig.ACLAddress;
+      $.FHEVMExecutorAddress = fhevmConfig.FHEVMExecutorAddress;
+      $.KMSVerifierAddress = fhevmConfig.KMSVerifierAddress;
+      $.InputVerifierAddress = fhevmConfig.InputVerifierAddress;
   }
 
   /**
@@ -248,12 +248,12 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
 
   res.push(`
     /**
-     * @title   HTTPZConfigStruct
+     * @title   FHEVMConfigStruct
      * @notice  This struct contains all addresses of core contracts, which are needed in a typical dApp.
      */
-    struct HTTPZConfigStruct {
+    struct FHEVMConfigStruct {
         address ACLAddress;
-        address HTTPZExecutorAddress;
+        address FHEVMExecutorAddress;
         address KMSVerifierAddress;
         address InputVerifierAddress;
     }
@@ -271,10 +271,10 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
     }
 
     /**
-    * @title   IHTTPZExecutor
+    * @title   IFHEVMExecutor
     * @notice  This interface contains all functions to conduct FHE operations.
     */
-    interface IHTTPZExecutor {`);
+    interface IFHEVMExecutor {`);
   operators.forEach((op) => {
     const tail = 'external returns (bytes32 result);';
     let functionArguments: string;
@@ -421,7 +421,7 @@ function generateACLInterface(): string {
 
     /**
      * @dev This function removes the transient allowances, which could be useful for integration with
-     *      Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
+     *      Account Abstraction when bundling several UserOps calling the FHEVMExecutor Coprocessor.
      */
     function cleanTransientStorage() external;
 
@@ -460,7 +460,7 @@ function generateInputVerifierInterface(): string {
 
   /**
    * @dev This function removes the transient allowances, which could be useful for integration with
-   *      Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
+   *      Account Abstraction when bundling several UserOps calling the FHEVMExecutor Coprocessor.
    */
   function cleanTransientStorage() external;
   }
@@ -495,7 +495,7 @@ function generateDecryptionOracleInterface(): string {
   `;
 }
 
-export function generateSolidityHTTPZLib(operators: Operator[], fheTypes: FheType[]): string {
+export function generateSolidityFHELib(operators: Operator[], fheTypes: FheType[]): string {
   const res: string[] = [];
 
   res.push(`// SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -511,11 +511,11 @@ export function generateSolidityHTTPZLib(operators: Operator[], fheTypes: FheTyp
   ${generateDecryptionOracleInterface()}
 
   /**
-   * @title   HTTPZ
+   * @title   FHE
    * @notice  This library is the interaction point for all smart contract developers
-   *          that interact with the HTTPZ protocol.
+   *          that interact with the FHEVM protocol.
    */
-  library HTTPZ {
+  library FHE {
 
     /// @notice Returned if the input's length is greater than 64 bytes.
     error InputLengthAbove64Bytes(uint256 inputLength);
@@ -543,10 +543,10 @@ export function generateSolidityHTTPZLib(operators: Operator[], fheTypes: FheTyp
 
     /**
      * @notice            Sets the coprocessor addresses.
-     * @param httpzConfig HTTPZ config struct that contains contract addresses.
+     * @param fhevmConfig FHEVM config struct that contains contract addresses.
     */
-    function setCoprocessor(HTTPZConfigStruct memory httpzConfig) internal {
-        Impl.setCoprocessor(httpzConfig);
+    function setCoprocessor(FHEVMConfigStruct memory fhevmConfig) internal {
+        Impl.setCoprocessor(fhevmConfig);
     }
 
     /**
@@ -1084,8 +1084,8 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
 function handleUnaryOperatorForImpl(op: Operator): string {
   return `
     function ${op.name}(bytes32 ct) internal returns (bytes32 result) {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
-      result = IHTTPZExecutor($.HTTPZExecutorAddress).${op.fheLibName}(ct);
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
+      result = IFHEVMExecutor($.FHEVMExecutorAddress).${op.fheLibName}(ct);
     }
   `;
 }
@@ -1105,7 +1105,7 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
      * @dev This function cleans the transient storage for the ACL (accounts) and the InputVerifier
      *      (input proofs).
      *      This could be useful for integration with Account Abstraction when bundling several 
-     *      UserOps calling the HTTPZExecutor.
+     *      UserOps calling the FHEVMExecutor.
      */
     function cleanTransientStorage() internal {
       Impl.cleanTransientStorageACL();
@@ -1207,7 +1207,7 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
     ) internal returns (uint256 requestID) {
       DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
       requestID = $.counterRequest;
-      HTTPZConfigStruct storage $$ = Impl.getHTTPZConfig();
+      FHEVMConfigStruct storage $$ = Impl.getFHEVMConfig();
       IACL($$.ACLAddress).allowForDecryption(ctsHandles);
       IDecryptionOracle($.DecryptionOracleAddress).requestDecryption(requestID, ctsHandles, callbackSelector);
       saveRequestedHandles(requestID, ctsHandles);
@@ -1250,7 +1250,7 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
       assembly {
           calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
       }
-      HTTPZConfigStruct storage $ = Impl.getHTTPZConfig();
+      FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
       return
           IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
               handlesList,
@@ -1342,12 +1342,12 @@ function generateCustomMethodsForImpl(): string {
     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
     */
     function select(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).fheIfThenElse(control, ifTrue, ifFalse);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
     /**
-     * @notice              Verifies the ciphertext (HTTPZExecutor) and allows transient (ACL).
+     * @notice              Verifies the ciphertext (FHEVMExecutor) and allows transient (ACL).
      * @param inputHandle   Input handle.
      * @param inputProof    Input proof.
      * @param toType        Input type.
@@ -1358,8 +1358,8 @@ function generateCustomMethodsForImpl(): string {
         bytes memory inputProof,
         FheType toType
     ) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
         IACL($.ACLAddress).allowTransient(result, msg.sender);
     }
 
@@ -1373,8 +1373,8 @@ function generateCustomMethodsForImpl(): string {
         bytes32 ciphertext,
         FheType toType
     ) internal returns (bytes32 result) {
-        HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).cast(ciphertext, toType);
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).cast(ciphertext, toType);
     }
 
     /**
@@ -1387,8 +1387,8 @@ function generateCustomMethodsForImpl(): string {
         uint256 value,
         FheType toType
     ) internal returns (bytes32 result) {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).trivialEncrypt(value, toType);
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -1401,8 +1401,8 @@ function generateCustomMethodsForImpl(): string {
       bytes memory value,
       FheType toType
     ) internal returns (bytes32 result) {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
-        result = IHTTPZExecutor($.HTTPZExecutorAddress).trivialEncrypt(value, toType);
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = IFHEVMExecutor($.FHEVMExecutorAddress).trivialEncrypt(value, toType);
     }
 
     /**
@@ -1419,8 +1419,8 @@ function generateCustomMethodsForImpl(): string {
       } else {
           scalarByte = 0x00;
       }
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
-      result = IHTTPZExecutor($.HTTPZExecutorAddress).fheEq(lhs, rhs, scalarByte);
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
+      result = IFHEVMExecutor($.FHEVMExecutorAddress).fheEq(lhs, rhs, scalarByte);
   }
 
   /**
@@ -1437,18 +1437,18 @@ function generateCustomMethodsForImpl(): string {
       } else {
           scalarByte = 0x00;
       }
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
-      result = IHTTPZExecutor($.HTTPZExecutorAddress).fheNe(lhs, rhs, scalarByte);
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
+      result = IFHEVMExecutor($.FHEVMExecutorAddress).fheNe(lhs, rhs, scalarByte);
   }
 
     function rand(FheType randType) internal returns(bytes32 result) {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
-      result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRand(randType);
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
+      result = IFHEVMExecutor($.FHEVMExecutorAddress).fheRand(randType);
     }
 
     function randBounded(uint256 upperBound, FheType randType) internal returns(bytes32 result) {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
-      result = IHTTPZExecutor($.HTTPZExecutorAddress).fheRandBounded(upperBound, randType);
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
+      result = IFHEVMExecutor($.FHEVMExecutorAddress).fheRandBounded(upperBound, randType);
     }
 
     /**
@@ -1460,7 +1460,7 @@ function generateCustomMethodsForImpl(): string {
      * @param account       Address of the account.
      */
     function allowTransient(bytes32 handle, address account) internal {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       IACL($.ACLAddress).allowTransient(handle, account);
     }
 
@@ -1472,7 +1472,7 @@ function generateCustomMethodsForImpl(): string {
      * @param account       Address of the account.
      */
     function allow(bytes32 handle, address account) internal {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       IACL($.ACLAddress).allow(handle, account);
     }
 
@@ -1483,7 +1483,7 @@ function generateCustomMethodsForImpl(): string {
      * @param handle        Handle.
      */
     function makePubliclyDecryptable(bytes32 handle) internal {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       bytes32[] memory handleArray = new bytes32[](1);
       handleArray[0] = handle;
       IACL($.ACLAddress).allowForDecryption(handleArray);
@@ -1491,20 +1491,20 @@ function generateCustomMethodsForImpl(): string {
 
     /**
      * @dev This function removes the transient allowances in the ACL, which could be useful for integration
-     *      with Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
+     *      with Account Abstraction when bundling several UserOps calling the FHEVMExecutor Coprocessor.
      */
     function cleanTransientStorageACL() internal {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       IACL($.ACLAddress).cleanTransientStorage();
     }
 
 
     /**
      * @dev This function removes the transient proofs in the InputVerifier, which could be useful for integration 
-     *      with Account Abstraction when bundling several UserOps calling the HTTPZExecutor Coprocessor.
+     *      with Account Abstraction when bundling several UserOps calling the FHEVMExecutor Coprocessor.
      */
     function cleanTransientStorageInputVerifier() internal {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       IInputVerifier($.InputVerifierAddress).cleanTransientStorage();
     }
 
@@ -1517,7 +1517,7 @@ function generateCustomMethodsForImpl(): string {
      * @return isAllowed    Whether the account can access the handle.
      */
     function isAllowed(bytes32 handle, address account) internal view returns (bool) {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       return IACL($.ACLAddress).isAllowed(handle, account);
     }
 
@@ -1527,7 +1527,7 @@ function generateCustomMethodsForImpl(): string {
      * @return isAllowed    Whether the handle can be publicly decrypted.
      */
     function isPubliclyDecryptable(bytes32 handle) internal view returns (bool) {
-      HTTPZConfigStruct storage $ = getHTTPZConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       return IACL($.ACLAddress).isAllowedForDecryption(handle);
     }
     `;

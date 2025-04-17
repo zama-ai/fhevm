@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import {httpzExecutorAdd} from "../addresses/HTTPZExecutorAddress.sol";
+import {fhevmExecutorAdd} from "../addresses/FHEVMExecutorAddress.sol";
 
 import {FheType} from "./FheType.sol";
 
@@ -13,8 +13,8 @@ import {FheType} from "./FheType.sol";
  * @notice This contract manages the amount of gas to be paid for FHE operations.
  */
 contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
-    /// @notice Returned if the sender is not the HTTPZExecutor.
-    error CallerMustBeHTTPZExecutorContract();
+    /// @notice Returned if the sender is not the FHEVMExecutor.
+    error CallerMustBeFHEVMExecutorContract();
 
     /// @notice Returned if the block limit is higher than limit for FHE operation.
     error FHEGasBlockLimitExceeded();
@@ -37,21 +37,21 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @notice HTTPZExecutor address.
-    address private constant httpzExecutorAddress = httpzExecutorAdd;
+    /// @notice FHEVMExecutor address.
+    address private constant fhevmExecutorAddress = fhevmExecutorAdd;
 
     /// @notice Gas block limit for FHEGas operation.
     uint256 private constant FHE_GAS_BLOCKLIMIT = 10_000_000;
 
-    /// @custom:storage-location erc7201:httpz.storage.FHEGasLimit
+    /// @custom:storage-location erc7201:fhevm.storage.FHEGasLimit
     struct FHEGasLimitStorage {
         uint256 lastBlock;
         uint256 currentBlockConsumption;
     }
 
-    /// keccak256(abi.encode(uint256(keccak256("httpz.storage.FHEGasLimit")) - 1)) & ~bytes32(uint256(0xff))
+    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEGasLimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEGasLimitStorageLocation =
-        0x17cabe3f71c2cdebfa03ba613a35f892b2ea48b8aebad7e046dd440ad1c34c00;
+        0xb5c80b3bbe0bcbcea690f6dbe62b32a45bd1ad263b78db2f25ef8414efe9bc00;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -72,7 +72,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheAdd(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -112,7 +112,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheSub(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -152,7 +152,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheMul(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -192,7 +192,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheDiv(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
         if (resultType == FheType.Uint8) {
@@ -217,7 +217,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheRem(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
         if (resultType == FheType.Uint8) {
@@ -242,7 +242,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheBitAnd(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
@@ -290,7 +290,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheBitOr(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
@@ -338,7 +338,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheBitXor(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
@@ -386,7 +386,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheShl(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -430,7 +430,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheShr(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -474,7 +474,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheRotl(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -518,7 +518,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheRotr(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -562,7 +562,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheEq(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
@@ -626,7 +626,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheNe(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
@@ -690,7 +690,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheGe(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -730,7 +730,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheGt(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -770,7 +770,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheLe(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -810,7 +810,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheLt(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -850,7 +850,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheMin(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -890,7 +890,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      */
     function payForFheMax(FheType resultType, bytes1 scalarByte) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -929,7 +929,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param resultType    Result type.
      */
     function payForFheNeg(FheType resultType) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (resultType == FheType.Uint8) {
             _updateFunding(95000);
@@ -954,7 +954,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param resultType    Result type.
      */
     function payForFheNot(FheType resultType) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (resultType == FheType.Bool) {
             _updateFunding(30000);
@@ -981,7 +981,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param resultType    Result type.
      */
     function payForCast(FheType resultType) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (resultType == FheType.Bool) {
             _updateFunding(200);
@@ -1008,7 +1008,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param resultType    Result type.
      */
     function payForTrivialEncrypt(FheType resultType) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (resultType == FheType.Bool) {
             _updateFunding(100);
@@ -1043,7 +1043,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param resultType    Result type.
      */
     function payForIfThenElse(FheType resultType) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (resultType == FheType.Bool) {
             _updateFunding(43000);
@@ -1078,7 +1078,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param resultType    Result type.
      */
     function payForFheRand(FheType resultType) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (resultType == FheType.Bool) {
             _updateFunding(100000);
@@ -1111,7 +1111,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param resultType    Result type.
      */
     function payForFheRandBounded(FheType resultType) external virtual {
-        if (msg.sender != httpzExecutorAddress) revert CallerMustBeHTTPZExecutorContract();
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         _checkIfNewBlock();
         if (resultType == FheType.Uint8) {
             _updateFunding(100000);
@@ -1132,11 +1132,11 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice                     Getter function for the HTTPZExecutor contract address.
-     * @return httpzExecutorAddress Address of the HTTPZExecutor.
+     * @notice                     Getter function for the FHEVMExecutor contract address.
+     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
      */
-    function getHTTPZExecutorAddress() public view virtual returns (address) {
-        return httpzExecutorAddress;
+    function getFHEVMExecutorAddress() public view virtual returns (address) {
+        return fhevmExecutorAddress;
     }
 
     /**

@@ -2,9 +2,9 @@
 
 pragma solidity ^0.8.24;
 
-import "../lib/HTTPZ.sol";
+import "../lib/FHE.sol";
 import "../addresses/DecryptionOracleAddress.sol";
-import "../lib/HTTPZConfig.sol";
+import "../lib/FHEVMConfig.sol";
 
 contract TestInput {
     ebool xBool;
@@ -17,19 +17,19 @@ contract TestInput {
     address public yAddress;
 
     constructor() {
-        HTTPZ.setCoprocessor(HTTPZConfig.defaultConfig());
-        HTTPZ.setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
+        FHE.setCoprocessor(FHEVMConfig.defaultConfig());
+        FHE.setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
     }
 
     function requestUint64NonTrivial(externalEuint64 inputHandle, bytes calldata inputProof) public {
-        euint64 inputNonTrivial = HTTPZ.fromExternal(inputHandle, inputProof);
+        euint64 inputNonTrivial = FHE.fromExternal(inputHandle, inputProof);
         bytes32[] memory cts = new bytes32[](1);
-        cts[0] = HTTPZ.toBytes32(inputNonTrivial);
-        HTTPZ.requestDecryption(cts, this.callbackUint64.selector);
+        cts[0] = FHE.toBytes32(inputNonTrivial);
+        FHE.requestDecryption(cts, this.callbackUint64.selector);
     }
 
     function callbackUint64(uint256 requestID, uint64 decryptedInput, bytes[] memory signatures) public {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yUint64 = decryptedInput;
     }
 
@@ -39,14 +39,14 @@ contract TestInput {
         externalEaddress inputHandleAddress,
         bytes calldata inputProof
     ) public {
-        ebool encBool = HTTPZ.fromExternal(inputHandleBool, inputProof);
-        euint8 encUint8 = HTTPZ.fromExternal(inputHandleUint8, inputProof);
-        eaddress encAddress = HTTPZ.fromExternal(inputHandleAddress, inputProof);
+        ebool encBool = FHE.fromExternal(inputHandleBool, inputProof);
+        euint8 encUint8 = FHE.fromExternal(inputHandleUint8, inputProof);
+        eaddress encAddress = FHE.fromExternal(inputHandleAddress, inputProof);
         bytes32[] memory cts = new bytes32[](3);
-        cts[0] = HTTPZ.toBytes32(encBool);
-        cts[1] = HTTPZ.toBytes32(encUint8);
-        cts[2] = HTTPZ.toBytes32(encAddress);
-        HTTPZ.requestDecryption(cts, this.callbackMixed.selector);
+        cts[0] = FHE.toBytes32(encBool);
+        cts[1] = FHE.toBytes32(encUint8);
+        cts[2] = FHE.toBytes32(encAddress);
+        FHE.requestDecryption(cts, this.callbackMixed.selector);
     }
 
     function callbackMixed(
@@ -56,7 +56,7 @@ contract TestInput {
         address decryptedAddress,
         bytes[] memory signatures
     ) public {
-        HTTPZ.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures);
         yBool = decryptedBool;
         yUint8 = decryptedUint8;
         yAddress = decryptedAddress;
