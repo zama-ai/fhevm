@@ -52,7 +52,7 @@ jobs:
       - name: Push Charts to GHCR
         if: ${{ always() }}
         env:
-          OCI_REGISTRY: "oci://ghcr.io/helm-charts"
+          OCI_REGISTRY: "oci://ghcr.io/${{ github.repository }}/helm-charts"
         run: |
           for pkg in .cr-release-packages/*; do
             if [ -z "${pkg:-}" ]; then
