@@ -4,7 +4,7 @@ import { Wallet } from "ethers";
 import fs from "fs";
 import { ethers, upgrades } from "hardhat";
 
-import { createAndFundRandomUser } from "../utils";
+import { createAndFundRandomWallet } from "../utils";
 
 describe("Upgrades", function () {
   before(async function () {
@@ -127,7 +127,7 @@ describe("Upgrades", function () {
     await httpz2.waitForDeployment();
     expect(await httpz2.getVersion()).to.equal("HTTPZ v0.2.0");
     expect(await httpz2.getAddress()).to.equal(origHTTPZAdd);
-    const newSigner = await createAndFundRandomUser();
+    const newSigner = await createAndFundRandomWallet();
     await httpz2.transferOwnership(newSigner);
     await httpz2.connect(newSigner).acceptOwnership();
     const newHttpzFactoryUpgraded2 = await ethers.getContractFactory("HTTPZUpgradedExample2", deployer);

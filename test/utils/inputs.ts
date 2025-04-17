@@ -13,20 +13,15 @@ export function createBytes32(): string {
   return createByteInput(32);
 }
 
-// Create a ctHandle (bytes32)
-export function createCtHandle(): string {
-  return createBytes32();
-}
-
-// Create a list of ctHandles (bytes32[])
-export function createCtHandles(length: number): string[] {
-  return Array.from({ length }, () => createCtHandle());
-}
-
-// Create a ctHandle (bytes32) with a given chainId (uint64)
-export function createCtHandleWithChainId(chainId: number): string {
+// Create a ctHandle (bytes32) with a given chainId (uint64) and fheType (uint8)
+// A ctHandle has the following format:
+// [21 first random bytes from hashing] | index_21 | chainID_22...29 | fheType_30 | version_31
+export function createCtHandle(chainId: number = 0, fheType: number = 0): string {
   if (chainId < 0 || chainId > UINT64_MAX) {
     throw new Error("chainId must be a valid uint64");
+  }
+  if (fheType < 0 || fheType > 255) {
+    throw new Error("fheType must be a valid uint8");
   }
 
   const ctHandle = hre.ethers.randomBytes(32);
@@ -39,10 +34,13 @@ export function createCtHandleWithChainId(chainId: number): string {
     ctHandle[22 + i] = chainIdBytes[i];
   }
 
+  // Replace byte 30 with the fheType (single byte)
+  ctHandle[30] = fheType;
+
   return hre.ethers.hexlify(ctHandle);
 }
 
 // Create a list of ctHandles (bytes32[])
-export function createCtHandlesWithChainId(length: number, chainId: number): string[] {
-  return Array.from({ length }, () => createCtHandleWithChainId(chainId));
+export function createCtHandles(length: number, chainId: number = 0, fheType: number = 0): string[] {
+  return Array.from({ length }, () => createCtHandle(chainId, fheType));
 }

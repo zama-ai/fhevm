@@ -87,7 +87,7 @@ export function createEIP712ResponsePublicDecrypt(
   chainId: number,
   verifyingContract: string,
   ctHandles: string[],
-  decryptedResult: Uint8Array,
+  decryptedResult: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
@@ -139,7 +139,7 @@ export async function getSignaturesPublicDecrypt(
 export function createEIP712RequestUserDecrypt(
   chainId: number,
   verifyingContract: string,
-  publicKey: Uint8Array,
+  publicKey: string,
   contractAddresses: string[],
   contractsChainId: number,
   startTimestamp: string,
@@ -201,7 +201,7 @@ export async function getSignaturesUserDecryptRequest(
 export function createEIP712RequestDelegatedUserDecrypt(
   chainId: number,
   verifyingContract: string,
-  publicKey: Uint8Array,
+  publicKey: string,
   contractAddresses: string[],
   delegatorAddress: string,
   contractsChainId: number,
@@ -266,9 +266,9 @@ export async function getSignaturesDelegatedUserDecryptRequest(
 export function createEIP712ResponseUserDecrypt(
   chainId: number,
   verifyingContract: string,
-  publicKey: Uint8Array,
+  publicKey: string,
   ctHandles: string[],
-  reencryptedShare: Uint8Array,
+  reencryptedShare: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
