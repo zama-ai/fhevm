@@ -27,10 +27,7 @@ services:
     env_file:
       - ../env/staging/.env.gateway.local
     command:
-      - /bin/bash
-      - -c
-      - |
-        npx hardhat task:deployAllGatewayContracts
+      - npx hardhat task:deployAllGatewayContracts
     depends_on:
       gateway-node:
         condition: service_started
@@ -41,10 +38,7 @@ services:
     env_file:
       - ../env/staging/.env.gateway.local
     command:
-      - /bin/bash
-      - -c
-      - |
-        npx hardhat task:addNetworksToHttpz
+      - npx hardhat task:addNetworksToHttpz
     depends_on:
       gateway-node:
         condition: service_started

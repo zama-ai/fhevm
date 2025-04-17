@@ -27,8 +27,6 @@ services:
     env_file:
       - ../env/staging/.env.host.local
     command:
-      - /bin/bash
-      - -c
       - npx hardhat task:deployAllHostContracts
     depends_on:
       host-node:
