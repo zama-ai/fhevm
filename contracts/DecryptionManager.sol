@@ -488,10 +488,10 @@ contract DecryptionManager is
         /// @dev Check that the user and contracts accounts have access to the handles and that the
         /// @dev ciphertext materials represented by them have been added.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            _ACL_MANAGER.checkAccountAllowed(userAddress, ctHandleContractPairs[i].ctHandle);
+            _ACL_MANAGER.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, userAddress);
             _ACL_MANAGER.checkAccountAllowed(
-                ctHandleContractPairs[i].contractAddress,
-                ctHandleContractPairs[i].ctHandle
+                ctHandleContractPairs[i].ctHandle,
+                ctHandleContractPairs[i].contractAddress
             );
             _CIPHERTEXT_MANAGER.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
         }
@@ -511,10 +511,10 @@ contract DecryptionManager is
         /// @dev Check that the delegator and contract accounts have access to the handles and that the
         /// @dev ciphertext materials represented by them have been added.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            _ACL_MANAGER.checkAccountAllowed(delegationAccounts.delegatorAddress, ctHandleContractPairs[i].ctHandle);
+            _ACL_MANAGER.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, delegationAccounts.delegatorAddress);
             _ACL_MANAGER.checkAccountAllowed(
-                ctHandleContractPairs[i].contractAddress,
-                ctHandleContractPairs[i].ctHandle
+                ctHandleContractPairs[i].ctHandle,
+                ctHandleContractPairs[i].contractAddress
             );
             _CIPHERTEXT_MANAGER.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
         }
@@ -792,10 +792,10 @@ contract DecryptionManager is
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
             /// @dev Check that the allowed account has access to the handles.
-            _ACL_MANAGER.checkAccountAllowed(allowedAddress, ctHandle);
+            _ACL_MANAGER.checkAccountAllowed(ctHandle, allowedAddress);
 
             /// @dev Check that the contract account has access to the handles.
-            _ACL_MANAGER.checkAccountAllowed(contractAddress, ctHandle);
+            _ACL_MANAGER.checkAccountAllowed(ctHandle, contractAddress);
 
             /// @dev Check the contract is included in the list of allowed contract addresses.
             if (!_containsContractAddress(contractAddresses, contractAddress)) {

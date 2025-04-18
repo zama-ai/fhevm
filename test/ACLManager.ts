@@ -89,19 +89,19 @@ describe("ACLManager", function () {
     });
 
     it("Should check account is allowed to use the ciphertext", async function () {
-      await aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(accountAddress, ctHandle);
+      await aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(ctHandle, accountAddress);
     });
 
     it("Should revert because the account is not allowed to use the ciphertext", async function () {
-      await expect(aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(newAccountAddress, ctHandle))
+      await expect(aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(ctHandle, newAccountAddress))
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-        .withArgs(newAccountAddress, ctHandle);
+        .withArgs(ctHandle, newAccountAddress);
     });
 
     it("Should revert because the handle has not been allowed to be used by anyone", async function () {
-      await expect(aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(accountAddress, newCtHandle))
+      await expect(aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(newCtHandle, accountAddress))
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-        .withArgs(accountAddress, newCtHandle);
+        .withArgs(newCtHandle, accountAddress);
     });
   });
 

@@ -871,7 +871,7 @@ describe("DecryptionManager", function () {
         ),
       )
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-        .withArgs(fakeUserAddress, ctHandleContractPairs[0].ctHandle);
+        .withArgs(ctHandleContractPairs[0].ctHandle, fakeUserAddress);
     });
 
     it("Should revert because a contract is not allowed for user decryption on a ctHandle", async function () {
@@ -887,7 +887,7 @@ describe("DecryptionManager", function () {
         ),
       )
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-        .withArgs(fakeContractAddress, fakeContractAddressCtHandleContractPairs[0].ctHandle);
+        .withArgs(fakeContractAddressCtHandleContractPairs[0].ctHandle, fakeContractAddress);
     });
 
     it("Should revert because ciphertext material has not been added", async function () {
@@ -1154,13 +1154,13 @@ describe("DecryptionManager", function () {
       it("Should revert because the user is not allowed for user decryption on a ctHandle", async function () {
         await expect(decryptionManager.checkUserDecryptionReady(fakeUserAddress, ctHandleContractPairs))
           .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-          .withArgs(fakeUserAddress, ctHandleContractPairs[0].ctHandle);
+          .withArgs(ctHandleContractPairs[0].ctHandle, fakeUserAddress);
       });
 
       it("Should revert because a contract is not allowed for user decryption on a ctHandle", async function () {
         await expect(decryptionManager.checkUserDecryptionReady(user.address, fakeContractAddressCtHandleContractPairs))
           .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-          .withArgs(fakeContractAddress, fakeContractAddressCtHandleContractPairs[0].ctHandle);
+          .withArgs(fakeContractAddressCtHandleContractPairs[0].ctHandle, fakeContractAddress);
       });
 
       it("Should revert because ciphertext material has not been added", async function () {
@@ -1546,7 +1546,7 @@ describe("DecryptionManager", function () {
         ),
       )
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-        .withArgs(fakeDelegatorAddress, ctHandles[0]);
+        .withArgs(ctHandles[0], fakeDelegatorAddress);
     });
 
     it("Should revert because a contract is not allowed for user decryption on a ctHandle", async function () {
@@ -1562,7 +1562,7 @@ describe("DecryptionManager", function () {
         ),
       )
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-        .withArgs(fakeContractAddress, ctHandles[0]);
+        .withArgs(ctHandles[0], fakeContractAddress);
     });
 
     it("Should revert because ciphertext material has not been added", async function () {
@@ -1788,7 +1788,7 @@ describe("DecryptionManager", function () {
           ),
         )
           .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-          .withArgs(fakeDelegatorAddress, ctHandles[0]);
+          .withArgs(ctHandles[0], fakeDelegatorAddress);
       });
 
       it("Should revert because a contract is not allowed for user decryption on a ctHandle", async function () {
@@ -1801,7 +1801,7 @@ describe("DecryptionManager", function () {
           ),
         )
           .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-          .withArgs(fakeContractAddress, fakeContractAddressCtHandleContractPairs[0].ctHandle);
+          .withArgs(fakeContractAddressCtHandleContractPairs[0].ctHandle, fakeContractAddress);
       });
 
       it("Should revert because the delegated address has not been delegated for a contract", async function () {
