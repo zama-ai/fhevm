@@ -16,6 +16,9 @@ config:
       name: coprocessor-db-url
       key: coprocessor-db-url
       value: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
+  annotations:
+#    "helm.sh/hook": "pre-install"
+#    "helm.sh/hook-weight": "-1"
   resources:
     requests:
       cpu: 100m
@@ -26,6 +29,10 @@ config:
 
 dbMigration:
   enabled: true
+  annotations:
+#    "helm.sh/hook": "pre-install, pre-upgrade"
+#    "helm.sh/hook-weight": "0"
+#    "helm.sh/hook-needs": "config-setup"
   image:
     name: ghcr.io/zama-ai/fhevm-db-migration
     tag: v0.7.0-rc2

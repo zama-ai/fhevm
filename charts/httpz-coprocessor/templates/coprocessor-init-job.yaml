@@ -7,9 +7,10 @@ metadata:
     app.kubernetes.io/name: {{ .Release.Name }}-init-job
   name: {{ .Release.Name }}-config-setup-{{ .Release.Revision }}
   namespace: {{ .Release.Namespace }}
+  {{- with .Values.config.annotations }}
   annotations:
-    "helm.sh/hook": "pre-install"
-    "helm.sh/hook-weight": "-1"
+  {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   template:
     metadata:
