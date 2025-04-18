@@ -8,7 +8,7 @@ interface IACLManager {
         address delegatedAddress;
     }
 
-    error AccountNotAllowedToUseCiphertext(address accountAddress, bytes32 ctHandle);
+    error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress);
     error AccountNotDelegated(uint256 chainId, DelegationAccounts delegationAccounts, address contractAddress);
     error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
     error CoprocessorAlreadyAllowed(address coprocessor, bytes32 ctHandle);
@@ -22,7 +22,7 @@ interface IACLManager {
 
     function allowAccount(bytes32 ctHandle, address accountAddress) external;
     function allowPublicDecrypt(bytes32 ctHandle) external;
-    function checkAccountAllowed(address accountAddress, bytes32 ctHandle) external view;
+    function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view;
     function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external view;
     function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
     function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external;
@@ -68,14 +68,14 @@ interface IACLManager {
     "name": "checkAccountAllowed",
     "inputs": [
       {
-        "name": "accountAddress",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "ctHandle",
         "type": "bytes32",
         "internalType": "bytes32"
+      },
+      {
+        "name": "accountAddress",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -238,14 +238,14 @@ interface IACLManager {
     "name": "AccountNotAllowedToUseCiphertext",
     "inputs": [
       {
-        "name": "accountAddress",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "ctHandle",
         "type": "bytes32",
         "internalType": "bytes32"
+      },
+      {
+        "name": "accountAddress",
+        "type": "address",
+        "internalType": "address"
       }
     ]
   },
@@ -618,17 +618,17 @@ struct DelegationAccounts { address delegatorAddress; address delegatedAddress; 
             }
         }
     };
-    /**Custom error with signature `AccountNotAllowedToUseCiphertext(address,bytes32)` and selector `0xe0b58fce`.
+    /**Custom error with signature `AccountNotAllowedToUseCiphertext(bytes32,address)` and selector `0x160a2b4b`.
 ```solidity
-error AccountNotAllowedToUseCiphertext(address accountAddress, bytes32 ctHandle);
+error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AccountNotAllowedToUseCiphertext {
         #[allow(missing_docs)]
-        pub accountAddress: alloy::sol_types::private::Address,
-        #[allow(missing_docs)]
         pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub accountAddress: alloy::sol_types::private::Address,
     }
     #[allow(
         non_camel_case_types,
@@ -640,13 +640,13 @@ error AccountNotAllowedToUseCiphertext(address accountAddress, bytes32 ctHandle)
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Address,
             alloy::sol_types::sol_data::FixedBytes<32>,
+            alloy::sol_types::sol_data::Address,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::Address,
             alloy::sol_types::private::FixedBytes<32>,
+            alloy::sol_types::private::Address,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -664,7 +664,7 @@ error AccountNotAllowedToUseCiphertext(address accountAddress, bytes32 ctHandle)
         impl ::core::convert::From<AccountNotAllowedToUseCiphertext>
         for UnderlyingRustTuple<'_> {
             fn from(value: AccountNotAllowedToUseCiphertext) -> Self {
-                (value.accountAddress, value.ctHandle)
+                (value.ctHandle, value.accountAddress)
             }
         }
         #[automatically_derived]
@@ -673,8 +673,8 @@ error AccountNotAllowedToUseCiphertext(address accountAddress, bytes32 ctHandle)
         for AccountNotAllowedToUseCiphertext {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    accountAddress: tuple.0,
-                    ctHandle: tuple.1,
+                    ctHandle: tuple.0,
+                    accountAddress: tuple.1,
                 }
             }
         }
@@ -684,8 +684,8 @@ error AccountNotAllowedToUseCiphertext(address accountAddress, bytes32 ctHandle)
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "AccountNotAllowedToUseCiphertext(address,bytes32)";
-            const SELECTOR: [u8; 4] = [224u8, 181u8, 143u8, 206u8];
+            const SIGNATURE: &'static str = "AccountNotAllowedToUseCiphertext(bytes32,address)";
+            const SELECTOR: [u8; 4] = [22u8, 10u8, 43u8, 75u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -695,12 +695,12 @@ error AccountNotAllowedToUseCiphertext(address accountAddress, bytes32 ctHandle)
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.accountAddress,
-                    ),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.accountAddress,
+                    ),
                 )
             }
         }
@@ -1915,19 +1915,19 @@ function allowPublicDecrypt(bytes32 ctHandle) external;
             }
         }
     };
-    /**Function with signature `checkAccountAllowed(address,bytes32)` and selector `0xab4b5d37`.
+    /**Function with signature `checkAccountAllowed(bytes32,address)` and selector `0x3bce498d`.
 ```solidity
-function checkAccountAllowed(address accountAddress, bytes32 ctHandle) external view;
+function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkAccountAllowedCall {
         #[allow(missing_docs)]
-        pub accountAddress: alloy::sol_types::private::Address,
-        #[allow(missing_docs)]
         pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub accountAddress: alloy::sol_types::private::Address,
     }
-    ///Container type for the return parameters of the [`checkAccountAllowed(address,bytes32)`](checkAccountAllowedCall) function.
+    ///Container type for the return parameters of the [`checkAccountAllowed(bytes32,address)`](checkAccountAllowedCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkAccountAllowedReturn {}
@@ -1942,13 +1942,13 @@ function checkAccountAllowed(address accountAddress, bytes32 ctHandle) external 
         {
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Address,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::Address,
                 alloy::sol_types::private::FixedBytes<32>,
+                alloy::sol_types::private::Address,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
@@ -1966,7 +1966,7 @@ function checkAccountAllowed(address accountAddress, bytes32 ctHandle) external 
             impl ::core::convert::From<checkAccountAllowedCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: checkAccountAllowedCall) -> Self {
-                    (value.accountAddress, value.ctHandle)
+                    (value.ctHandle, value.accountAddress)
                 }
             }
             #[automatically_derived]
@@ -1975,8 +1975,8 @@ function checkAccountAllowed(address accountAddress, bytes32 ctHandle) external 
             for checkAccountAllowedCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        accountAddress: tuple.0,
-                        ctHandle: tuple.1,
+                        ctHandle: tuple.0,
+                        accountAddress: tuple.1,
                     }
                 }
             }
@@ -2017,8 +2017,8 @@ function checkAccountAllowed(address accountAddress, bytes32 ctHandle) external 
         #[automatically_derived]
         impl alloy_sol_types::SolCall for checkAccountAllowedCall {
             type Parameters<'a> = (
-                alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Address,
             );
             type Token<'a> = <Self::Parameters<
                 'a,
@@ -2028,8 +2028,8 @@ function checkAccountAllowed(address accountAddress, bytes32 ctHandle) external 
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkAccountAllowed(address,bytes32)";
-            const SELECTOR: [u8; 4] = [171u8, 75u8, 93u8, 55u8];
+            const SIGNATURE: &'static str = "checkAccountAllowed(bytes32,address)";
+            const SELECTOR: [u8; 4] = [59u8, 206u8, 73u8, 141u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2039,12 +2039,12 @@ function checkAccountAllowed(address accountAddress, bytes32 ctHandle) external 
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.accountAddress,
-                    ),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.accountAddress,
+                    ),
                 )
             }
             #[inline]
@@ -2520,8 +2520,8 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [25u8, 63u8, 63u8, 44u8],
             [29u8, 122u8, 133u8, 134u8],
+            [59u8, 206u8, 73u8, 141u8],
             [81u8, 196u8, 29u8, 14u8],
-            [171u8, 75u8, 93u8, 55u8],
             [230u8, 56u8, 80u8, 138u8],
             [244u8, 197u8, 244u8, 147u8],
         ];
@@ -2600,19 +2600,6 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                     allowPublicDecrypt
                 },
                 {
-                    fn checkAccountDelegated(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IACLManagerCalls> {
-                        <checkAccountDelegatedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IACLManagerCalls::checkAccountDelegated)
-                    }
-                    checkAccountDelegated
-                },
-                {
                     fn checkAccountAllowed(
                         data: &[u8],
                         validate: bool,
@@ -2624,6 +2611,19 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                             .map(IACLManagerCalls::checkAccountAllowed)
                     }
                     checkAccountAllowed
+                },
+                {
+                    fn checkAccountDelegated(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IACLManagerCalls> {
+                        <checkAccountDelegatedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IACLManagerCalls::checkAccountDelegated)
+                    }
+                    checkAccountDelegated
                 },
                 {
                     fn allowAccount(
@@ -2766,12 +2766,12 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [17u8, 108u8, 174u8, 163u8],
+            [22u8, 10u8, 43u8, 75u8],
             [31u8, 229u8, 212u8, 88u8],
             [67u8, 49u8, 168u8, 93u8],
             [71u8, 99u8, 204u8, 226u8],
             [87u8, 207u8, 162u8, 23u8],
             [192u8, 164u8, 16u8, 21u8],
-            [224u8, 181u8, 143u8, 206u8],
         ];
     }
     #[automatically_derived]
@@ -2838,6 +2838,19 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                     ContractsMaxLengthExceeded
                 },
                 {
+                    fn AccountNotAllowedToUseCiphertext(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IACLManagerErrors> {
+                        <AccountNotAllowedToUseCiphertext as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IACLManagerErrors::AccountNotAllowedToUseCiphertext)
+                    }
+                    AccountNotAllowedToUseCiphertext
+                },
+                {
                     fn CoprocessorAlreadyDelegated(
                         data: &[u8],
                         validate: bool,
@@ -2901,19 +2914,6 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                             .map(IACLManagerErrors::AccountNotDelegated)
                     }
                     AccountNotDelegated
-                },
-                {
-                    fn AccountNotAllowedToUseCiphertext(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IACLManagerErrors> {
-                        <AccountNotAllowedToUseCiphertext as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IACLManagerErrors::AccountNotAllowedToUseCiphertext)
-                    }
-                    AccountNotAllowedToUseCiphertext
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -3402,13 +3402,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`checkAccountAllowed`] function.
         pub fn checkAccountAllowed(
             &self,
-            accountAddress: alloy::sol_types::private::Address,
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
+            accountAddress: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<T, &P, checkAccountAllowedCall, N> {
             self.call_builder(
                 &checkAccountAllowedCall {
-                    accountAddress,
                     ctHandle,
+                    accountAddress,
                 },
             )
         }

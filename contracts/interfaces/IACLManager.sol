@@ -38,7 +38,7 @@ interface IACLManager {
     );
 
     /// @notice Error indicating that the account address is not allowed to use the ciphertext handle.
-    error AccountNotAllowedToUseCiphertext(address accountAddress, bytes32 ctHandle);
+    error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress);
 
     /// @notice Error indicating that the ciphertext handle is not allowed for public decryption.
     error PublicDecryptNotAllowed(bytes32 ctHandle);
@@ -79,9 +79,9 @@ interface IACLManager {
     function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
 
     /// @notice Checks that the account is allowed to use the ciphertext handle.
-    /// @param accountAddress The address of the account.
     /// @param ctHandle The ciphertext handle.
-    function checkAccountAllowed(address accountAddress, bytes32 ctHandle) external view;
+    /// @param accountAddress The address of the account.
+    function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view;
 
     /// @notice Checks that the delegator has delegated access to the delegate and contracts addresses.
     /// @param chainId The contracts' host chainId.

@@ -190,12 +190,12 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable, Ht
     }
 
     /// @dev See {IACLManager-checkAccountAllowed}.
-    function checkAccountAllowed(address accountAddress, bytes32 ctHandle) public view virtual {
+    function checkAccountAllowed(bytes32 ctHandle, address accountAddress) public view virtual {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
         /// @dev Check that the account address is allowed to use this ciphertext.
         if (!$.allowedAccounts[ctHandle][accountAddress]) {
-            revert AccountNotAllowedToUseCiphertext(accountAddress, ctHandle);
+            revert AccountNotAllowedToUseCiphertext(ctHandle, accountAddress);
         }
     }
 
