@@ -5,7 +5,7 @@ import { PrivateLayout } from './layouts/private.layout.js'
 // utility pages
 import { DefaultPage } from './pages/default.page.js'
 import { ErrorPage } from './pages/error.page.js'
-import { UnauthorizedErrorPage } from './pages/unauthorized.error.page.js'
+import { PrivateErrorPage } from './pages/private.error.page.js'
 
 // public pages
 import { SigninPage } from './pages/signin.page.js'
@@ -42,7 +42,7 @@ const router = createBrowserRouter([
   },
   {
     element: <PrivateLayout />,
-    errorElement: <UnauthorizedErrorPage />,
+    errorElement: <PrivateErrorPage />,
     children: [
       {
         path: '/dashboard/',
