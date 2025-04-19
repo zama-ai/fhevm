@@ -1,4 +1,4 @@
-import type { FhevmInstance } from '@httpz/sdk';
+import type { FhevmInstance } from '@fhevm/sdk';
 
 import { EncryptedERC20, Rand } from '../types';
 import type { Signers } from './signers';

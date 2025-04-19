@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "../httpzTemp/addresses/ACLAddress.sol";
-import "../httpzTemp/addresses/InputVerifierAddress.sol";
-import "../httpzTemp/addresses/KMSVerifierAddress.sol";
-import "../httpzTemp/addresses/TFHEExecutorAddress.sol";
+import "../fhevmTemp/addresses/ACLAddress.sol";
+import "../fhevmTemp/addresses/InputVerifierAddress.sol";
+import "../fhevmTemp/addresses/KMSVerifierAddress.sol";
+import "../fhevmTemp/addresses/FHEVMExecutorAddress.sol";
 
-import {HTTPZConfigStruct} from "../lib/Impl.sol";
+import {FHEVMConfigStruct} from "../lib/Impl.sol";
 
 /**
  * @title   FHEVMConfig
- * @notice  This library returns all addresses for the ACL, TFHEExecutor, InputVerifier,
+ * @notice  This library returns all addresses for the ACL, FHEVMExecutor, InputVerifier,
  *          and KMSVerifier contracts.
  */
 library FHEVMConfig {
@@ -18,11 +18,11 @@ library FHEVMConfig {
      * @notice This function returns a struct containing all contract addresses.
      * @dev    It returns an immutable struct.
      */
-    function defaultConfig() internal pure returns (HTTPZConfigStruct memory) {
+    function defaultConfig() internal pure returns (FHEVMConfigStruct memory) {
         return
-            HTTPZConfigStruct({
+            FHEVMConfigStruct({
                 ACLAddress: aclAdd,
-                TFHEExecutorAddress: tfheExecutorAdd,
+                FHEVMExecutorAddress: fhevmExecutorAdd,
                 KMSVerifierAddress: kmsVerifierAdd,
                 InputVerifierAddress: inputVerifierAdd
             });

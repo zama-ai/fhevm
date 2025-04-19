@@ -1,7 +1,9 @@
-import { expect } from 'chai';
+import { assert, expect } from 'chai';
+import hre from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
+import { userDecryptSingleHandle } from '../utils';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
 describe('EncryptedERC20', function () {
@@ -17,41 +19,52 @@ describe('EncryptedERC20', function () {
     this.instances = await createInstances(this.signers);
   });
 
-  it.skip('should mint the contract', async function () {
+  it('should mint the contract', async function () {
     const transaction = await this.erc20.mint(1000);
     await transaction.wait();
 
     // Reencrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
+
+    // Balance handle is deterministic so we can verify the last bytes of the handle
+    // Byte 21 was set to 0xff.
+    expect(balanceHandleAlice.slice(44, 46)).to.eq('ff');
+    // Bytes 22-29 must be the chainId
+    const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
+    assert(chainId, 'Host chainId not set');
+    expect(balanceHandleAlice.slice(46, 62)).to.eq(chainId.toString(16).padStart(16, '0'));
+    // Byte30: type is euint64 (so position 5 in the FheType enum)
+    expect(balanceHandleAlice.slice(62, 64)).to.eq('05');
+    // Byte31: handle version is 0
+    expect(balanceHandleAlice.slice(64, 66)).to.eq('00');
+
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKeyAlice, this.contractAddress);
-    const signatureAlice = await this.signers.alice.signTypedData(
-      eip712.domain,
-      { Reencrypt: eip712.types.Reencrypt },
-      eip712.message,
-    );
-    const balanceAlice = await this.instances.alice.reencrypt(
+
+    const balanceAlice = await userDecryptSingleHandle(
       balanceHandleAlice,
+      this.contractAddress,
+      this.instances.alice,
+      this.signers.alice,
       privateKeyAlice,
       publicKeyAlice,
-      signatureAlice.replace('0x', ''),
-      this.contractAddress,
-      this.signers.alice.address,
     );
-    expect(balanceAlice).to.equal(1000);
+
+    expect(balanceAlice).to.equal(1000n);
 
     const totalSupply = await this.erc20.totalSupply();
-    expect(totalSupply).to.equal(1000);
+    expect(totalSupply).to.equal(1000n);
   });
 
-  it.skip('should transfer tokens between two users', async function () {
+  it('should transfer tokens between two users', async function () {
     const transaction = await this.erc20.mint(10000);
     const t1 = await transaction.wait();
     expect(t1?.status).to.eq(1);
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
+
     const encryptedTransferAmount = await input.encrypt();
+
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedTransferAmount.handles[0],
@@ -63,19 +76,13 @@ describe('EncryptedERC20', function () {
     // Reencrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKeyAlice, this.contractAddress);
-    const signatureAlice = await this.signers.alice.signTypedData(
-      eip712.domain,
-      { Reencrypt: eip712.types.Reencrypt },
-      eip712.message,
-    );
-    const balanceAlice = await this.instances.alice.reencrypt(
+    const balanceAlice = await userDecryptSingleHandle(
       balanceHandleAlice,
+      this.contractAddress,
+      this.instances.alice,
+      this.signers.alice,
       privateKeyAlice,
       publicKeyAlice,
-      signatureAlice.replace('0x', ''),
-      this.contractAddress,
-      this.signers.alice.address,
     );
 
     expect(balanceAlice).to.equal(10000 - 1337);
@@ -84,55 +91,34 @@ describe('EncryptedERC20', function () {
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
 
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const eip712Bob = this.instances.bob.createEIP712(publicKeyBob, this.contractAddress);
-    const signatureBob = await this.signers.bob.signTypedData(
-      eip712Bob.domain,
-      { Reencrypt: eip712Bob.types.Reencrypt },
-      eip712Bob.message,
-    );
-    const balanceBob = await this.instances.bob.reencrypt(
+    const balanceBob = await userDecryptSingleHandle(
       balanceHandleBob,
+      this.contractAddress,
+      this.instances.bob,
+      this.signers.bob,
       privateKeyBob,
       publicKeyBob,
-      signatureBob.replace('0x', ''),
-      this.contractAddress,
-      this.signers.bob.address,
     );
 
     expect(balanceBob).to.equal(1337);
 
     // on the other hand, Bob should be unable to read Alice's balance
-    await expect(
-      this.instances.bob.reencrypt(
+    try {
+      await userDecryptSingleHandle(
         balanceHandleAlice,
+        this.contractAddress,
+        this.instances.bob,
+        this.signers.bob,
         privateKeyBob,
         publicKeyBob,
-        signatureBob.replace('0x', ''),
-        this.contractAddress,
-        this.signers.bob.address,
-      ),
-    ).to.be.rejectedWith('User is not authorized to reencrypt this handle!');
-
-    // and should be impossible to call reencrypt if contractAddress === userAddress
-    const eip712b = this.instances.alice.createEIP712(publicKeyAlice, this.signers.alice.address);
-    const signatureAliceb = await this.signers.alice.signTypedData(
-      eip712b.domain,
-      { Reencrypt: eip712b.types.Reencrypt },
-      eip712b.message,
-    );
-    await expect(
-      this.instances.alice.reencrypt(
-        balanceHandleAlice,
-        privateKeyAlice,
-        publicKeyAlice,
-        signatureAliceb.replace('0x', ''),
-        this.signers.alice.address,
-        this.signers.alice.address,
-      ),
-    ).to.be.rejectedWith('userAddress should not be equal to contractAddress when requesting reencryption!');
+      );
+      expect.fail('Expected an error to be thrown - Bob should not be able to reencrypt Alice balance');
+    } catch (error) {
+      expect(error.message).to.equal('User is not authorized to reencrypt this handle!');
+    }
   });
 
-  it.skip('should not transfer tokens between two users', async function () {
+  it('should not transfer tokens between two users', async function () {
     const transaction = await this.erc20.mint(1000);
     await transaction.wait();
 
@@ -148,46 +134,35 @@ describe('EncryptedERC20', function () {
 
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKeyAlice, this.contractAddress);
-    const signatureAlice = await this.signers.alice.signTypedData(
-      eip712.domain,
-      { Reencrypt: eip712.types.Reencrypt },
-      eip712.message,
-    );
-    const balanceAlice = await this.instances.alice.reencrypt(
+
+    const balanceAlice = await userDecryptSingleHandle(
       balanceHandleAlice,
+      this.contractAddress,
+      this.instances.alice,
+      this.signers.alice,
       privateKeyAlice,
       publicKeyAlice,
-      signatureAlice.replace('0x', ''),
-      this.contractAddress,
-      this.signers.alice.address,
     );
 
-    expect(balanceAlice).to.equal(1000);
+    expect(balanceAlice).to.equal(1000n);
 
     // Reencrypt Bob's balance
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
 
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const eip712Bob = this.instances.bob.createEIP712(publicKeyBob, this.contractAddress);
-    const signatureBob = await this.signers.bob.signTypedData(
-      eip712Bob.domain,
-      { Reencrypt: eip712Bob.types.Reencrypt },
-      eip712Bob.message,
-    );
-    const balanceBob = await this.instances.bob.reencrypt(
+    const balanceBob = await userDecryptSingleHandle(
       balanceHandleBob,
+      this.contractAddress,
+      this.instances.bob,
+      this.signers.bob,
       privateKeyBob,
       publicKeyBob,
-      signatureBob.replace('0x', ''),
-      this.contractAddress,
-      this.signers.bob.address,
     );
 
     expect(balanceBob).to.equal(0);
   });
 
-  it.skip('should be able to transferFrom only if allowance is sufficient', async function () {
+  it('should be able to transferFrom only if allowance is sufficient', async function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
@@ -216,38 +191,26 @@ describe('EncryptedERC20', function () {
     // Decrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKeyAlice, this.contractAddress);
-    const signatureAlice = await this.signers.alice.signTypedData(
-      eip712.domain,
-      { Reencrypt: eip712.types.Reencrypt },
-      eip712.message,
-    );
-    const balanceAlice = await this.instances.alice.reencrypt(
+    const balanceAlice = await userDecryptSingleHandle(
       balanceHandleAlice,
+      this.contractAddress,
+      this.instances.alice,
+      this.signers.alice,
       privateKeyAlice,
       publicKeyAlice,
-      signatureAlice.replace('0x', ''),
-      this.contractAddress,
-      this.signers.alice.address,
     );
     expect(balanceAlice).to.equal(10000); // check that transfer did not happen, as expected
 
     // Decrypt Bob's balance
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const eip712Bob = this.instances.bob.createEIP712(publicKeyBob, this.contractAddress);
-    const signatureBob = await this.signers.bob.signTypedData(
-      eip712Bob.domain,
-      { Reencrypt: eip712Bob.types.Reencrypt },
-      eip712Bob.message,
-    );
-    const balanceBob = await this.instances.bob.reencrypt(
+    const balanceBob = await userDecryptSingleHandle(
       balanceHandleBob,
+      this.contractAddress,
+      this.instances.bob,
+      this.signers.bob,
       privateKeyBob,
       publicKeyBob,
-      signatureBob.replace('0x', ''),
-      this.contractAddress,
-      this.signers.bob.address,
     );
     expect(balanceBob).to.equal(0); // check that transfer did not happen, as expected
 
@@ -264,25 +227,25 @@ describe('EncryptedERC20', function () {
 
     // Decrypt Alice's balance
     const balanceHandleAlice2 = await this.erc20.balanceOf(this.signers.alice);
-    const balanceAlice2 = await this.instances.alice.reencrypt(
+    const balanceAlice2 = await userDecryptSingleHandle(
       balanceHandleAlice2,
+      this.contractAddress,
+      this.instances.alice,
+      this.signers.alice,
       privateKeyAlice,
       publicKeyAlice,
-      signatureAlice.replace('0x', ''),
-      this.contractAddress,
-      this.signers.alice.address,
     );
     expect(balanceAlice2).to.equal(10000 - 1337); // check that transfer did happen this time
 
     // Decrypt Bob's balance
     const balanceHandleBob2 = await this.erc20.balanceOf(this.signers.bob);
-    const balanceBob2 = await this.instances.bob.reencrypt(
+    const balanceBob2 = await userDecryptSingleHandle(
       balanceHandleBob2,
+      this.contractAddress,
+      this.instances.bob,
+      this.signers.bob,
       privateKeyBob,
       publicKeyBob,
-      signatureBob.replace('0x', ''),
-      this.contractAddress,
-      this.signers.bob.address,
     );
     expect(balanceBob2).to.equal(1337); // check that transfer did happen this time
   });

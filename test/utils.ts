@@ -1,6 +1,7 @@
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { toBufferBE } from 'bigint-buffer';
 import { ContractMethodArgs, Typed } from 'ethers';
+import { Signer } from 'ethers';
 import { ethers, network } from 'hardhat';
 
 import type { Counter } from '../types';
@@ -121,4 +122,47 @@ export const bigIntToBytes128 = (value: bigint) => {
 
 export const bigIntToBytes256 = (value: bigint) => {
   return new Uint8Array(toBufferBE(value, 256));
+};
+
+export const userDecryptSingleHandle = async (
+  handle: string,
+  contractAddress: string,
+  instance: any,
+  signer: Signer,
+  privateKey: string,
+  publicKey: string,
+): Promise<bigint> => {
+  const ctHandleContractPairs = [
+    {
+      ctHandle: handle,
+      contractAddress: contractAddress,
+    },
+  ];
+  const startTimeStamp = Math.floor(Date.now() / 1000).toString();
+  const durationDays = '10'; // String for consistency
+  const contractAddresses = [contractAddress];
+
+  // Use the new createEIP712 function
+  const eip712 = instance.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+
+  // Update the signing to match the new primaryType
+  const signature = await signer.signTypedData(
+    eip712.domain,
+    { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
+    eip712.message,
+  );
+
+  const decryptedValue = (
+    await instance.userDecrypt(
+      ctHandleContractPairs,
+      privateKey,
+      publicKey,
+      signature.replace('0x', ''),
+      contractAddresses,
+      signer.address,
+      startTimeStamp,
+      durationDays,
+    )
+  )[0];
+  return decryptedValue;
 };

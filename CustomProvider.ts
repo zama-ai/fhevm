@@ -27,8 +27,8 @@ class CustomProvider extends ProviderWrapper {
       this.lastBlockSnapshot = parseInt(blockNumberHex);
       this.lastBlockSnapshotForDecrypt = parseInt(blockNumberHex);
       const coprocAdd = dotenv.parse(
-        fs.readFileSync(require.resolve('./httpzTemp/addresses/.env.exec')),
-      ).TFHE_EXECUTOR_CONTRACT_ADDRESS;
+        fs.readFileSync(require.resolve('./fhevmTemp/addresses/.env.exec')),
+      ).FHEVM_EXECUTOR_CONTRACT_ADDRESS;
       this.lastCounterRand = await this._wrappedProvider.request({
         method: 'eth_getStorageAt',
         params: [coprocAdd, '0xa436a06f0efce5ea38c956a21e24202a59b3b746d48a23fb52b4a5bc33fe3e00', 'latest'],

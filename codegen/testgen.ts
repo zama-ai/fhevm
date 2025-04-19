@@ -47,7 +47,7 @@ export function generateSolidityOverloadTestFiles(operators: Operator[], fheType
     generateOverloadsForTFHEUnaryOperators(fheType, operators, signatures),
   );
 
-  // TODO Add tests for conversion from plaintext and einput to all supported types (e.g., einput --> ebool, bytes memory --> ebytes64, uint32 --> euint32)
+  // TODO Add tests for conversion from plaintext and externalEXXX to all supported types (e.g., externalEXXX --> ebool, bytes memory --> ebytes64, uint32 --> euint32)
   return signatures;
 }
 
@@ -244,9 +244,9 @@ export function splitOverloadsToShards(overloads: OverloadSignature[]): Overload
 }
 
 /**
- * Generates the first part of the test code for TFHE operations.
+ * Generates the first part of the test code for FHEVM operations.
  *
- * This function dynamically creates TypeScript code for testing TFHE operations
+ * This function dynamically creates TypeScript code for testing FHEVM operations
  * based on the provided shards and index split. It imports necessary modules,
  * defines deployment functions for each shard, and sets up the test suite
  * with the appropriate contracts and instances.
@@ -266,17 +266,17 @@ function generateIntroTestCode(shards: OverloadShard[], idxSplit: number): strin
   `);
   shards.forEach((os) => {
     intro.push(`
-  import type { HTTPZTestSuite${os.shardNumber} } from '../../types/contracts/tests/HTTPZTestSuite${os.shardNumber}';
+  import type { FHEVMTestSuite${os.shardNumber} } from '../../types/contracts/tests/FHEVMTestSuite${os.shardNumber}';
   `);
   });
 
   shards.forEach((os) => {
     intro.push(`
-async function deployHTTPZTestFixture${os.shardNumber}(): Promise<HTTPZTestSuite${os.shardNumber}> {
+async function deployFHEVMTestFixture${os.shardNumber}(): Promise<FHEVMTestSuite${os.shardNumber}> {
   const signers = await getSigners();
   const admin = signers.alice;
 
-  const contractFactory = await ethers.getContractFactory('HTTPZTestSuite${os.shardNumber}');
+  const contractFactory = await ethers.getContractFactory('FHEVMTestSuite${os.shardNumber}');
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
@@ -286,7 +286,7 @@ async function deployHTTPZTestFixture${os.shardNumber}(): Promise<HTTPZTestSuite
   });
 
   intro.push(`
-    describe('HTTPZ operations ${idxSplit}', function () {
+    describe('FHEVM operations ${idxSplit}', function () {
         before(async function () {
             await initSigners(1);
             this.signers = await getSigners();
@@ -295,7 +295,7 @@ async function deployHTTPZTestFixture${os.shardNumber}(): Promise<HTTPZTestSuite
 
   shards.forEach((os) => {
     intro.push(`
-            const contract${os.shardNumber} = await deployHTTPZTestFixture${os.shardNumber}();
+            const contract${os.shardNumber} = await deployFHEVMTestFixture${os.shardNumber}();
             this.contract${os.shardNumber}Address = await contract${os.shardNumber}.getAddress();
             this.contract${os.shardNumber} = contract${os.shardNumber};
     `);
@@ -420,7 +420,7 @@ function ensureNumberAcceptableInBitRange(bits: number, input: number | bigint) 
 /**
  * Generates Solidity unit test contracts for a given OverloadShard.
  *
- * This function creates a Solidity contract named `HTTPZTestSuite` followed by the shard number.
+ * This function creates a Solidity contract named `FHEVMTestSuite` followed by the shard number.
  * The contract includes several public variables of different encrypted types (ebool, euint8, euint16, euint32, euint64, euint128, euint256)
  * and a constructor that sets the FHEVM configuration using the default configuration from `FHEVMConfig`.
  * It also calls the `generateLibCallTest` function to add additional test logic to the contract.
@@ -435,10 +435,10 @@ export function generateSolidityUnitTestContracts(os: OverloadShard): string {
         // SPDX-License-Identifier: BSD-3-Clause-Clear
         pragma solidity ^0.8.24;
 
-        import "../../lib/HTTPZ.sol";
+        import "../../lib/FHE.sol";
         import "../FHEVMConfig.sol";
 
-        contract HTTPZTestSuite${os.shardNumber} {
+        contract FHEVMTestSuite${os.shardNumber} {
           ebool public resEbool;
           euint8 public resEuint8;
           euint16 public resEuint16;
@@ -451,7 +451,7 @@ export function generateSolidityUnitTestContracts(os: OverloadShard): string {
           ebytes256 public resEbytes256;
 
           constructor() {
-            HTTPZ.setCoprocessor(FHEVMConfig.defaultConfig());
+            FHE.setCoprocessor(FHEVMConfig.defaultConfig());
           }
 
     `);
@@ -473,7 +473,7 @@ export function generateSolidityUnitTestContracts(os: OverloadShard): string {
  *
  * This function iterates over the overloads in the provided overload shard and generates
  * a Solidity function for each overload. The generated function includes the necessary
- * argument processing, type casting, and the appropriate HTTPZ library call. The result
+ * argument processing, type casting, and the appropriate FHE library call. The result
  * of the library call is then allowed and assigned to the corresponding state variable.
  */
 function generateLibCallTest(os: OverloadShard, res: string[]) {
@@ -504,10 +504,10 @@ function generateLibCallTest(os: OverloadShard, res: string[]) {
       res.push(`${functionTypeToEncryptedType(o.returnType)} result = ${o.unaryOperator}aProc;`);
       res.push('\n');
     } else {
-      res.push(`${functionTypeToEncryptedType(o.returnType)} result = HTTPZ.${o.name}(${tfheArgs});`);
+      res.push(`${functionTypeToEncryptedType(o.returnType)} result = FHE.${o.name}(${tfheArgs});`);
       res.push('\n');
     }
-    res.push('HTTPZ.allowThis(result);');
+    res.push('FHE.allowThis(result);');
     res.push(`${stateVar[functionTypeToEncryptedType(o.returnType) as keyof typeof stateVar]} = result;
         }
     `);
@@ -586,13 +586,13 @@ function signatureContractEncryptedSignature(s: OverloadSignature): string {
 function castExpressionToType(argExpr: string, outputType: FunctionType): string {
   switch (outputType.type) {
     case ArgumentType.Euint:
-      return `HTTPZ.asEuint${outputType.bits}(${argExpr}, inputProof)`;
+      return `FHE.fromExternal(${argExpr}, inputProof)`;
     case ArgumentType.Uint:
       return argExpr;
     case ArgumentType.Ebool:
-      return `HTTPZ.asEbool(${argExpr})`;
+      return `FHE.asEbool(${argExpr})`;
     // case ArgumentType.Ebytes:
-    //  return `HTTPZ.asEbytes${outputType.bits / 8}(${argExpr})`;
+    //  return `FHE.asEbytes${outputType.bits / 8}(${argExpr})`;
   }
 }
 
@@ -611,11 +611,11 @@ function castExpressionToType(argExpr: string, outputType: FunctionType): string
 function functionTypeToCalldataType(t: FunctionType): string {
   switch (t.type) {
     case ArgumentType.Euint:
-      return `einput`;
+      return `externalEuint${t.bits}`;
     case ArgumentType.Uint:
       return getUint(t.bits);
     case ArgumentType.Ebool:
-      return `einput`;
+      return `externalEbool`;
     // case ArgumentType.Ebytes:
     //  return `einput`;
   }

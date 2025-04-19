@@ -9,17 +9,20 @@ import path from 'path';
 import { getRequiredEnvVar } from './utils/loadVariables';
 
 task('task:deployAllHostContracts').setAction(async function (_, hre) {
-  await hre.run('clean');
+  if (process.env.SOLIDITY_COVERAGE !== 'true') {
+    await hre.run('clean');
+  }
   await hre.run('compile:specific', { contract: 'examples/' });
-  await hre.run('compile:specific', { contract: 'httpzTemp/contracts/emptyProxy' });
+  await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxy' });
   await hre.run('task:deployEmptyUUPSProxies');
   // It needs to recompile to account for the change in addresses.
-  await hre.run('compile:specific', { contract: 'httpzTemp/contracts/' });
+  await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/' });
   await hre.run('task:deployACL');
-  await hre.run('task:deployTFHEExecutor');
+  await hre.run('task:deployFHEVMExecutor');
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:deployInputVerifier');
   await hre.run('task:deployFHEGasLimit');
+  await hre.run('task:deployDecryptionOracle');
   console.info('Contract deployment done!');
 });
 async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
@@ -46,9 +49,9 @@ task('task:deployEmptyUUPSProxies').setAction(async function (
     address: aclAddress,
   });
 
-  const tfheExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setTFHEExecutorAddress', {
-    address: tfheExecutorAddress,
+  const fhevmExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setFHEVMExecutorAddress', {
+    address: fhevmExecutorAddress,
   });
 
   const kmsVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
@@ -65,6 +68,11 @@ task('task:deployEmptyUUPSProxies').setAction(async function (
   await run('task:setFHEGasLimitAddress', {
     address: fheGasLimitAddress,
   });
+
+  const decryptionOracleAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setDecryptionOracleAddress', {
+    address: decryptionOracleAddress,
+  });
 });
 
 task('task:deployDecryptionOracle').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
@@ -72,11 +80,11 @@ task('task:deployDecryptionOracle').setAction(async function (_taskArguments: Ta
 
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory(
-    'httpzTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
     deployer,
   );
   const newImplem = await ethers.getContractFactory('DecryptionOracle', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('httpzTemp/addresses/.env.decryptionoracle'));
+  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.decryptionoracle'));
   const proxyAddress = parsedEnv.DECRYPTION_ORACLE_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem);
@@ -87,46 +95,42 @@ task('task:deployACL').setAction(async function (_taskArguments: TaskArguments, 
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory(
-    'httpzTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
     deployer,
   );
   const newImplem = await ethers.getContractFactory('ACL', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('httpzTemp/addresses/.env.acl'));
+  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.acl'));
   const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem);
   console.info('ACL code set successfully at address:', proxyAddress);
 });
 
-task('task:deployTFHEExecutor').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
+task('task:deployFHEVMExecutor').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory(
-    'httpzTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
     deployer,
   );
   let newImplem;
-  if (process.env.HARDHAT_TFHEEXECUTOR_EVENTS !== '1') {
-    newImplem = await ethers.getContractFactory('httpzTemp/contracts/TFHEExecutor.sol:TFHEExecutor', deployer);
-  } else {
-    newImplem = await ethers.getContractFactory('httpzTemp/contracts/TFHEExecutor.sol:TFHEExecutor', deployer);
-  }
-  const parsedEnv = dotenv.parse(fs.readFileSync('httpzTemp/addresses/.env.exec'));
-  const proxyAddress = parsedEnv.TFHE_EXECUTOR_CONTRACT_ADDRESS;
+  newImplem = await ethers.getContractFactory('fhevmTemp/contracts/FHEVMExecutor.sol:FHEVMExecutor', deployer);
+  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.exec'));
+  const proxyAddress = parsedEnv.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem);
-  console.info('TFHEExecutor code set successfully at address:', proxyAddress);
+  console.info('FHEVMExecutor code set successfully at address:', proxyAddress);
 });
 
 task('task:deployKMSVerifier').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory(
-    'httpzTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
     deployer,
   );
-  const newImplem = await ethers.getContractFactory('httpzTemp/contracts/KMSVerifier.sol:KMSVerifier', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('httpzTemp/addresses/.env.kmsverifier'));
+  const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/KMSVerifier.sol:KMSVerifier', deployer);
+  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.kmsverifier'));
   const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
 
@@ -158,11 +162,11 @@ task('task:deployInputVerifier')
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory(
-      'httpzTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+      'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
       deployer,
     );
-    const newImplem = await ethers.getContractFactory('httpzTemp/contracts/InputVerifier.sol:InputVerifier', deployer);
-    const parsedEnv = dotenv.parse(fs.readFileSync('httpzTemp/addresses/.env.inputverifier'));
+    const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/InputVerifier.sol:InputVerifier', deployer);
+    const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.inputverifier'));
 
     const proxyAddress = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
@@ -192,11 +196,11 @@ task('task:deployFHEGasLimit').setAction(async function (_taskArguments: TaskArg
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory(
-    'httpzTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
     deployer,
   );
   const newImplem = await ethers.getContractFactory('FHEGasLimit', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('httpzTemp/addresses/.env.fhegaslimit'));
+  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.fhegaslimit'));
   const proxyAddress = parsedEnv.FHE_GASLIMIT_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem);
@@ -206,7 +210,7 @@ task('task:deployFHEGasLimit').setAction(async function (_taskArguments: TaskArg
 task('task:setACLAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../httpzTemp/addresses/.env.acl');
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.acl');
     const content = `ACL_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
@@ -222,49 +226,49 @@ pragma solidity ^0.8.24;
 address constant aclAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./httpzTemp/addresses/ACLAddress.sol', solidityTemplate, {
+      fs.writeFileSync('./fhevmTemp/addresses/ACLAddress.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.info('./httpzTemp/addresses/ACLAddress.sol file generated successfully!');
+      console.info('./fhevmTemp/addresses/ACLAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./httpzTemp/addresses/ACLAddress.sol', error);
+      console.error('Failed to write ./fhevmTemp/addresses/ACLAddress.sol', error);
     }
   });
 
-task('task:setTFHEExecutorAddress')
+task('task:setFHEVMExecutorAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../httpzTemp/addresses/.env.exec');
-    const content = `TFHE_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.exec');
+    const content = `FHEVM_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.info(`TFHEExecutor address ${taskArguments.address} written successfully!`);
+      console.info(`FHEVMExecutor address ${taskArguments.address} written successfully!`);
     } catch (err) {
-      console.error('Failed to write TFHEExecutor address:', err);
+      console.error('Failed to write FHEVMExecutor address:', err);
     }
 
     const solidityTemplateCoprocessor = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
 pragma solidity ^0.8.24;
 
-address constant tfheExecutorAdd = ${taskArguments.address};\n`;
+address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./httpzTemp/addresses/TFHEExecutorAddress.sol', solidityTemplateCoprocessor, {
+      fs.writeFileSync('./fhevmTemp/addresses/FHEVMExecutorAddress.sol', solidityTemplateCoprocessor, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.info('./httpzTemp/addresses/TFHEExecutorAddress.sol file generated successfully!');
+      console.info('./fhevmTemp/addresses/FHEVMExecutorAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./httpzTemp/addresses/TFHEExecutorAddress.sol', error);
+      console.error('Failed to write ./fhevmTemp/addresses/FHEVMExecutorAddress.sol', error);
     }
   });
 
 task('task:setKMSVerifierAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../httpzTemp/addresses/.env.kmsverifier');
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.kmsverifier');
     const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
@@ -280,31 +284,25 @@ pragma solidity ^0.8.24;
 address constant kmsVerifierAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./httpzTemp/addresses/KMSVerifierAddress.sol', solidityTemplate, {
+      fs.writeFileSync('./fhevmTemp/addresses/KMSVerifierAddress.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.info('./httpzTemp/addresses/KMSVerifierAddress.sol file generated successfully!');
+      console.info('./fhevmTemp/addresses/KMSVerifierAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./httpzTemp/addresses/KMSVerifierAddress.sol', error);
+      console.error('Failed to write ./fhevmTemp/addresses/KMSVerifierAddress.sol', error);
     }
   });
 
 task('task:setInputVerifierAddress')
   .addParam('address', 'The address of the contract')
-  .addOptionalParam(
-    'useAddress',
-    'Use addresses instead of private key env variable for coprocessor',
-    false,
-    types.boolean,
-  )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     // this script also computes the coprocessor address from its private key
-    const envFilePath = path.join(__dirname, '../httpzTemp/addresses/.env.inputverifier');
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.inputverifier');
     const content = `INPUT_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.info(`InputVerifier address ${taskArguments.address} written successfully!`);
+      console.log(`InputVerifier address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write InputVerifier address:', err);
     }
@@ -316,53 +314,20 @@ pragma solidity ^0.8.24;
 address constant inputVerifierAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./httpzTemp/addresses/InputVerifierAddress.sol', solidityTemplate, {
+      fs.writeFileSync('./fhevmTemp/addresses/InputVerifierAddress.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.info('./httpzTemp/addresses/InputVerifierAddress.sol file generated successfully!');
+      console.log('./fhevmTemp/addresses/InputVerifierAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./httpzTemp/addresses/InputVerifierAddress.sol', error);
-    }
-
-    if (process.env.IS_COPROCESSOR) {
-      let coprocAddress;
-      if (!taskArguments.useAddress) {
-        coprocAddress = new ethers.Wallet(process.env.PRIVATE_KEY_COPROCESSOR_ACCOUNT!).address;
-      } else {
-        coprocAddress = process.env.ADDRESS_COPROCESSOR_ACCOUNT;
-      }
-      const envFilePath2 = path.join(__dirname, '../httpzTemp/addresses/.env.coprocessor');
-      const content2 = `COPROCESSOR_ADDRESS=${coprocAddress}\n`;
-      try {
-        fs.writeFileSync(envFilePath2, content2, { flag: 'w' });
-        console.info(`Coprocessor address ${coprocAddress} written successfully!`);
-      } catch (err) {
-        console.error('Failed to write InputVerifier address:', err);
-      }
-
-      const solidityTemplate2 = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
-address constant coprocessorAdd = ${coprocAddress};\n`;
-
-      try {
-        fs.writeFileSync('./httpzTemp/addresses/CoprocessorAddress.sol', solidityTemplate2, {
-          encoding: 'utf8',
-          flag: 'w',
-        });
-        console.info('./httpzTemp/addresses/CoprocessorAddress.sol file generated successfully!');
-      } catch (error) {
-        console.error('Failed to write ./httpzTemp/addresses/CoprocessorAddress.sol', error);
-      }
+      console.error('Failed to write ./fhevmTemp/addresses/InputVerifierAddress.sol', error);
     }
   });
 
 task('task:setFHEGasLimitAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../httpzTemp/addresses/.env.fhegaslimit');
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.fhegaslimit');
     const content = `FHE_GASLIMIT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
@@ -378,12 +343,42 @@ pragma solidity ^0.8.24;
 address constant fheGasLimitAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./httpzTemp/addresses/FHEGasLimitAddress.sol', solidityTemplate, {
+      fs.writeFileSync('./fhevmTemp/addresses/FHEGasLimitAddress.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.info('./httpzTemp/addresses/FHEGasLimitAddress.sol file generated successfully!');
+      console.info('./fhevmTemp/addresses/FHEGasLimitAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./httpzTemp/addresses/FHEGasLimitAddress.sol', error);
+      console.error('Failed to write ./fhevmTemp/addresses/FHEGasLimitAddress.sol', error);
+    }
+  });
+
+task('task:setDecryptionOracleAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.decryptionoracle');
+    const content = `DECRYPTION_ORACLE_ADDRESS=${taskArguments.address}`;
+    try {
+      fs.writeFileSync(envFilePath, content, { flag: 'w' });
+      console.log('decryptionOracleAddress written to ./fhevmTemp/addresses/.env.decryptionoracle successfully!');
+    } catch (err) {
+      console.error('Failed to write to ./fhevmTemp/addresses/.env.decryptionoracle:', err);
+    }
+
+    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity ^0.8.24;
+
+address constant DECRYPTION_ORACLE_ADDRESS = ${taskArguments.address};
+`;
+
+    try {
+      fs.writeFileSync('./fhevmTemp/addresses/DecryptionOracleAddress.sol', solidityTemplate, {
+        encoding: 'utf8',
+        flag: 'w',
+      });
+      console.log('./fhevmTemp/addresses/DecryptionOracleAddress.sol file has been generated successfully.');
+    } catch (error) {
+      console.error('Failed to write ./fhevmTemp/addresses/DecryptionOracleAddress.sol', error);
     }
   });

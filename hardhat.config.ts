@@ -47,16 +47,19 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 });
 
 task('test', async (_taskArgs, hre, runSuper) => {
-  if (!fs.existsSync('node_modules/@httpz/core-contracts/addresses')) {
-    fs.mkdirSync('node_modules/@httpz/core-contracts/addresses');
+  if (!fs.existsSync('node_modules/@fhevm/core-contracts/addresses')) {
+    fs.mkdirSync('node_modules/@fhevm/core-contracts/addresses');
   }
 
-  const sourceDir = path.resolve(__dirname, 'node_modules/@httpz/core-contracts/contracts');
-  const destinationDir = path.resolve(__dirname, 'httpzTemp/contracts');
+  const sourceDir = path.resolve(__dirname, 'node_modules/@fhevm/core-contracts/contracts');
+  const destinationDir = path.resolve(__dirname, 'fhevmTemp/contracts');
   fs.copySync(sourceDir, destinationDir, { dereference: true });
-  const sourceDir2 = path.resolve(__dirname, 'node_modules/@httpz/core-contracts/addresses');
-  const destinationDir2 = path.resolve(__dirname, 'httpzTemp/addresses');
+  const sourceDir2 = path.resolve(__dirname, 'node_modules/@fhevm/core-contracts/addresses');
+  const destinationDir2 = path.resolve(__dirname, 'fhevmTemp/addresses');
   fs.copySync(sourceDir2, destinationDir2, { dereference: true });
+  const sourceDir3 = path.resolve(__dirname, 'node_modules/@zama-fhe/oracle-solidity/contracts');
+  const destinationDir3 = path.resolve(__dirname, 'fhevmTemp/contracts');
+  fs.copySync(sourceDir3, destinationDir3, { dereference: true });
 
   // Run modified test task
   if (hre.network.name === 'hardhat') {
@@ -124,7 +127,7 @@ const config: HardhatUserConfig = {
   paths: {
     artifacts: './artifacts',
     cache: './cache',
-    sources: './contracts',
+    sources: './lib',
     tests: './test',
   },
   solidity: {
