@@ -2,7 +2,6 @@ import dotenv from 'dotenv';
 import { log2 } from 'extra-bigint';
 import * as fs from 'fs';
 import { ethers } from 'hardhat';
-import hre from 'hardhat';
 import { Database } from 'sqlite3';
 
 import { FheType } from '../codegen/common';

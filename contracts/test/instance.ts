@@ -1,11 +1,11 @@
-import dotenv from 'dotenv';
 import {
   clientKeyDecryptor,
   createEIP712,
   createInstance as createFhevmInstance,
   generateKeypair,
   getCiphertextCallParams,
-} from 'fhevmjs';
+} from '@fhevm/sdk';
+import dotenv from 'dotenv';
 import { readFileSync } from 'fs';
 import * as fs from 'fs';
 import { ethers, ethers as hethers, network } from 'hardhat';
@@ -13,7 +13,7 @@ import { homedir } from 'os';
 import path from 'path';
 
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
-import { createEncryptedInputMocked, reencryptRequestMocked } from './fhevmjsMocked';
+import { createEncryptedInputMocked, userDecryptRequestMocked } from './fhevmjsMocked';
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
 
@@ -21,16 +21,37 @@ const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
 
 let clientKey: Uint8Array | undefined;
 
+const abiKmsVerifier = ['function getKmsSigners() view returns (address[])'];
+
 const kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
 const aclAdd = dotenv.parse(fs.readFileSync('addresses/.env.acl')).ACL_CONTRACT_ADDRESS;
+const gatewayChainID = +process.env.CHAIN_ID_GATEWAY!;
+const hostChainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : Number(network.config.chainId);
+const verifyingContract = process.env.DECRYPTION_MANAGER_ADDRESS!;
+
+const getKMSSigners = async (): Promise<string[]> => {
+  const kmsContract = new ethers.Contract(kmsAdd, abiKmsVerifier, ethers.provider);
+  const signers: string[] = await kmsContract.getKmsSigners();
+  return signers;
+};
 
 const createInstanceMocked = async () => {
+  const kmsSigners = await getKMSSigners();
+
   const instance = {
-    reencrypt: reencryptRequestMocked,
+    userDecrypt: userDecryptRequestMocked(
+      kmsSigners,
+      gatewayChainID,
+      hostChainId,
+      verifyingContract,
+      aclAdd,
+      'http://localhost:3000',
+      ethers.provider,
+    ),
     createEncryptedInput: createEncryptedInputMocked,
     getPublicKey: () => '0xFFAA44433',
     generateKeypair: generateKeypair,
-    createEIP712: createEIP712(network.config.chainId),
+    createEIP712: createEIP712(gatewayChainID, verifyingContract, network.config.chainId),
   };
   return instance;
 };
@@ -55,12 +76,14 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 };
 
 export const createInstance = async () => {
-  const relayerUrl = dotenv.parse(fs.readFileSync('.env')).RELAYER_URL || 'http://localhost:3000';
+  const relayerUrl = 'http://localhost:3000';
   const instance = await createFhevmInstance({
+    verifyingContractAddress: verifyingContract,
     kmsContractAddress: kmsAdd,
     aclContractAddress: aclAdd,
-    networkUrl: network.config.url,
+    network: network.config.url,
     relayerUrl: relayerUrl,
+    gatewayChainId: gatewayChainID || '54321',
   });
   return instance;
 };
