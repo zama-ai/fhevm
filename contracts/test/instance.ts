@@ -26,7 +26,7 @@ const abiKmsVerifier = ['function getKmsSigners() view returns (address[])'];
 const kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
 const aclAdd = dotenv.parse(fs.readFileSync('addresses/.env.acl')).ACL_CONTRACT_ADDRESS;
 const gatewayChainID = +process.env.CHAIN_ID_GATEWAY!;
-const hostChainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : Number(network.config.chainId);
+const hostChainId = Number(network.config.chainId);
 const verifyingContract = process.env.DECRYPTION_MANAGER_ADDRESS!;
 
 const getKMSSigners = async (): Promise<string[]> => {

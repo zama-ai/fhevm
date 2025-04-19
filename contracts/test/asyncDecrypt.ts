@@ -92,7 +92,7 @@ export const awaitAllDecryptionResults = async (): Promise<void> => {
     parsedEnv.DECRYPTION_ORACLE_ADDRESS,
   );
   const provider = ethers.provider;
-  if (networkName === 'hardhat' && process.env.SOLIDITY_COVERAGE !== true) {
+  if (networkName === 'hardhat' && process.env.SOLIDITY_COVERAGE !== 'true') {
     // evm_snapshot is not supported in coverage mode
     lastBlockSnapshotForDecrypt = await provider.send('get_lastBlockSnapshotForDecrypt');
     if (lastBlockSnapshotForDecrypt < firstBlockListening) {
@@ -101,7 +101,7 @@ export const awaitAllDecryptionResults = async (): Promise<void> => {
   }
   await fulfillAllPastRequestsIds(networkName === 'hardhat');
   firstBlockListening = (await ethers.provider.getBlockNumber()) + 1;
-  if (networkName === 'hardhat' && process.env.SOLIDITY_COVERAGE !== true) {
+  if (networkName === 'hardhat' && process.env.SOLIDITY_COVERAGE !== 'true') {
     // evm_snapshot is not supported in coverage mode
     await provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
   }
