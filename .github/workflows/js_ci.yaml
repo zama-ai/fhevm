@@ -1,0 +1,73 @@
+name: JS CI
+
+on:
+  pull_request:
+    paths:
+      - 'apps/back/**'
+      - 'apps/email/**'
+      - 'apps/front/**'
+      - 'apps/web3/**'
+      - 'apps/orchestrator/**'
+      - 'packages/**'
+      - '.github/workflows/js_ci.yaml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/back/**'
+      - 'apps/email/**'
+      - 'apps/front/**'
+      - 'apps/web3/**'
+      - 'apps/orchestrator/**'
+      - 'packages/**'
+      - '.github/workflows/js_ci.yaml'
+permissions:
+  contents: read
+
+jobs:
+  npm-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22]
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5434:5432
+      redis:
+        image: redis
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    steps:
+      - name: Checkout Console repository
+        uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "pnpm"
+      - name: Install dependencies
+        run: pnpm install
+      - name: Build packages
+        run: |
+          pnpm --filter messages build
+          pnpm --filter utils build
+      - name: Generate Prisma code
+        run: pnpm prisma:generate
+      - name: Test
+        run: pnpm test
