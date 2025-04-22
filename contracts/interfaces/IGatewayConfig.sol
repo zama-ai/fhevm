@@ -6,11 +6,11 @@ import "../shared/Structs.sol";
 /**
  * @title Interface for the GatewayConfig contract
  * @notice The GatewayConfig contract is responsible for being a point of truth for all contracts and
- * components from the HTTPZ Gateway.
+ * components from the Fhevm Gateway.
  * @dev The GatewayConfig contract contains:
- * - the list of KMS nodes used exclusively by this HTTPZ Gateway
- * - the list of coprocessors used exclusively by this HTTPZ Gateway
- * - the list of networks using this HTTPZ Gateway
+ * - the list of KMS nodes used exclusively by this Fhevm Gateway
+ * - the list of coprocessors used exclusively by this Fhevm Gateway
+ * - the list of networks using this Fhevm Gateway
  *
  * The GatewayConfig contract has an owner and a pauser.
  * The owner can call some restricted functions, such as adding or removing KMS nodes, coprocessors

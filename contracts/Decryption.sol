@@ -224,7 +224,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/httpz-gateway/issues/104.
+        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
@@ -328,7 +328,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/httpz-gateway/issues/104.
+        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
@@ -404,7 +404,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/httpz-gateway/issues/104.
+        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
