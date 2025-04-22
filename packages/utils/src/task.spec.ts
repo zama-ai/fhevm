@@ -353,4 +353,21 @@ describe('Task', () => {
       ).resolves.toBe('fastest')
     })
   })
+
+  describe('toPromise', () => {
+    test('should return a promise', () => {
+      const task = Task.of(faker.animal.cat())
+      expect(task.toPromise()).toBeInstanceOf(Promise)
+    })
+
+    test('should resolve the value', async () => {
+      const cat = faker.animal.cat()
+      const task = new Task(resolve => {
+        resolve(cat)
+      })
+
+      const resolved = await task.toPromise()
+      expect(resolved).toBe(cat)
+    })
+  })
 })

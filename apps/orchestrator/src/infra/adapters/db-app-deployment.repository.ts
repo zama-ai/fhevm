@@ -11,26 +11,21 @@ export class DbAppDeploymentRepository implements AppDeploymentRepository {
   findByRequestId = (
     requestId: string,
   ): Task<Option<AppDeployment>, AppError> => {
-    return new Task((resolve, reject) => {
-      this.logger.debug(`requested requestId=${requestId}`)
+    return Task.fromPromise(
       this.db.snapshot
-        .findFirst({
-          where: { id: requestId },
-        })
+        .findFirst({ where: { id: requestId } })
         .then(data =>
-          resolve(
-            data
-              ? some(new AppDeployment({ requestId }, data.content))
-              : none(),
-          ),
+          data ? some(new AppDeployment({ requestId }, data.content)) : none(),
         )
-        .catch((err: unknown) => reject(unknownError(String(err))))
-    })
+        .catch((err: unknown) => {
+          this.logger.warn(`Failed to find app deployment ${requestId}: ${err}`)
+          throw unknownError(String(err))
+        }),
+    )
   }
 
   upsert = (requestId: string, status: string): Task<void, AppError> => {
-    return new Task((resolve, reject) => {
-      this.logger.debug(`upserting app deployment=${requestId}`)
+    return Task.fromPromise(
       this.db.snapshot
         .upsert({
           create: {
@@ -42,23 +37,28 @@ export class DbAppDeploymentRepository implements AppDeploymentRepository {
           },
           where: { id: requestId },
         })
-        .then(() => resolve(void 0))
+        .then(() => void 0)
         .catch((err: unknown) => {
           this.logger.warn(
             `Failed to upsert app deployment ${requestId}: ${err}`,
           )
-          reject(unknownError(String(err)))
-        })
-    })
+          throw unknownError(String(err))
+        }),
+    )
   }
 
   delete = (requestId: string): Task<void, AppError> => {
-    return new Task((resolve, reject) => {
-      this.logger.debug(`deleting app deployment=${requestId}`)
+    this.logger.debug(`deleting app deployment=${requestId}`)
+    return Task.fromPromise(
       this.db.snapshot
         .delete({ where: { id: requestId } })
-        .then(() => resolve(void 0))
-        .catch((err: unknown) => reject(unknownError(String(err))))
-    })
+        .then(() => void 0)
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `Failed to delete app deployment ${requestId}: ${err}`,
+          )
+          throw unknownError(String(err))
+        }),
+    )
   }
 }

@@ -36,35 +36,38 @@ export class SQSProducer implements EventProducer {
     message: back.BackEvent | web3.Web3Event,
   ): Task<void, AppError> => {
     this.logger.verbose(`handling ${message.type}`)
+    const { requestId } = message.payload
 
-    return this.getQueueFromEvent(message).asyncChain(queueUrl => {
-      this.logger.verbose(`queueUrl: ${queueUrl}`)
-      return new Task<void, AppError>((resolve, reject) => {
-        this.logger.debug(`🚀 publishing: ${message.type} on ${queueUrl}`)
-        this.client
-          .send(
-            new SendMessageCommand({
-              QueueUrl: queueUrl,
-              MessageBody: JSON.stringify(message),
+    return this.getQueueFromEvent(message)
+      .asyncChain(queueUrl => {
+        this.logger.verbose(`queueUrl: ${queueUrl}`)
+
+        return Task.fromPromise<void, AppError>(
+          this.client
+            .send(
+              new SendMessageCommand({
+                QueueUrl: queueUrl,
+                MessageBody: JSON.stringify(message),
+              }),
+            )
+            .then(result => {
+              this.logger.verbose(
+                `✅ [${requestId}] PublishCommand status code: ${result.$metadata?.httpStatusCode}`,
+              )
+              return void 0
+            })
+            .catch(err => {
+              this.logger.warn(
+                `❌ [${requestId}] failed to publish message to queue ${queueUrl}: ${JSON.stringify(err)}`,
+              )
+              throw unknownError(String(err))
             }),
-          )
-          .then(result => {
-            this.logger.verbose(
-              `✅ PublishCommand status code: ${result.$metadata?.httpStatusCode}`,
-            )
-            resolve(void 0)
-          })
-          .catch(err => {
-            this.logger.warn(
-              `❌ failed to publish message to queue ${queueUrl}: ${JSON.stringify(err)}`,
-            )
-            return reject(unknownError(String(err)))
-          })
-      }).tapError(err => {
-        this.logger.warn(
-          `❌ failed to publish ${message.type}: ${err._tag}/${err.message}`,
         )
       })
-    })
+      .tapError(err => {
+        this.logger.warn(
+          `❌ [${requestId}] failed to publish ${message.type}: ${err._tag}/${err.message}`,
+        )
+      })
   }
 }
