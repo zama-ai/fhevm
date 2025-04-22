@@ -1,8 +1,8 @@
 scDeploy:
   enabled: true
   image:
-    name: ghcr.io/zama-ai/gateway-l2/sc-bundle
-    tag: b479cf8
+    name: ghcr.io/zama-ai/httpz-gateway/sc-bundle
+    tag: v0.1.0-rc11
   configmap:
     name: "layer2-sc-addresses"
     annotations:
@@ -16,9 +16,12 @@ scDeploy:
     - name: RPC_URL
       value: "http://layer2-node:8546"
   persistence:
-    enabled: false
-    # storageClassName: "gp3"
-    storageCapacity: 1Gi
+    enabled: true
+    volumeClaim:
+      name: ""
+      create: true
+      storageClassName: ""
+      storageCapacity: 1Gi
   resources:
     requests:
       cpu: 100m
@@ -26,3 +29,7 @@ scDeploy:
     limits:
       cpu: 500m
       memory: 512Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10001
