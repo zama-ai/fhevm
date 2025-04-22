@@ -52,9 +52,9 @@ jobs:
           fi
 
           ## Check Network Registration
-          timeout 300s bash -c 'while docker ps --filter "name=add-httpz-networks" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
-          docker compose logs add-httpz-networks > network_registration_logs.txt
-          EXIT_CODE_NETWORK=$(docker inspect --format='{{.State.ExitCode}}' add-httpz-networks)
+          timeout 300s bash -c 'while docker ps --filter "name=add-gateway-config-networks" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
+          docker compose logs add-gateway-config-networks > network_registration_logs.txt
+          EXIT_CODE_NETWORK=$(docker inspect --format='{{.State.ExitCode}}' add-gateway-config-networks)
           # display logs for debugging
           # cat network_registration_logs.txt
           if [ "$EXIT_CODE_NETWORK" -ne 0 ]; then

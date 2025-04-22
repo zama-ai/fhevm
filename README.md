@@ -14,7 +14,7 @@ Check if deployment is successful and debug if needed:
 
 ```sh
 docker logs deploy-gateway-contracts
-docker logs add-httpz-networks
+docker logs add-gateway-config-networks
 ```
 
 To cleanup your environment
