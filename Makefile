@@ -16,7 +16,7 @@ clean:
 # Define it as a phony target to avoid conflicts with the test directory
 .PHONY: test
 test: clean
-	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test $(if $(GREP),--grep '$(GREP)',)
 
 get-accounts:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts --num-accounts 20
