@@ -1,6 +1,6 @@
 include .env.example
 
-LOCAL_NETWORK_NAME=localHTTPZGateway
+LOCAL_NETWORK_NAME=localGateway
 ENV_PATH=.env.example
 FORGE_DAPP_OUT=artifacts
 
@@ -34,7 +34,7 @@ docker-compose-build:
 	cp .env.example .env
 	docker compose -vvv build
 
-docker-compose-up:
+docker-compose-up: docker-compose-down
 	cp .env.example .env
 	docker compose -vvv up -d
 

@@ -8,7 +8,7 @@ build
 cache
 coverage
 dist
-httpz_gateway_rust_bindings/target
+rust_bindings/target
 node_modules
 types
 

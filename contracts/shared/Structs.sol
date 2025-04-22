@@ -33,8 +33,8 @@ struct Coprocessor {
 struct Network {
     /// @notice Chain ID of the network (unique identifier)
     uint256 chainId;
-    /// @notice Address where the HTTPZ library contract is deployed
-    address httpzExecutor;
+    /// @notice Address where the Fhevm library contract is deployed
+    address fhevmExecutor;
     /// @notice Address where the ACL contract is deployed
     address aclAddress;
     /// @notice Name of the network

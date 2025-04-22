@@ -5,7 +5,7 @@ task("task:faucetToPrivate")
   .setAction(async function (taskArgs, hre) {
     const receiverAddress = new hre.ethers.Wallet(taskArgs.privateKey).address;
 
-    if (hre.network.name === "hardhat" || hre.network.name === "localHTTPZGateway") {
+    if (hre.network.name === "hardhat" || hre.network.name === "localGateway") {
       const bal = "0x1000000000000000000000000000000000000000";
       await hre.network.provider.send("hardhat_setBalance", [receiverAddress, bal]);
     } else {

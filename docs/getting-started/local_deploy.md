@@ -4,7 +4,7 @@ Here is an example of how to deploy contracts locally (on a local network) using
 
 ## Deploy contracts
 
-0/ Prerequisites: First, git clone `httpz-gateway` repo, install dependencies with
+0/ Prerequisites: First, git clone `fhevm-gateway` repo, install dependencies with
 
 ```bash
 npm install
@@ -41,7 +41,7 @@ make start-local-node
 make deploy-contracts-local
 ```
 
-This will run the script [`./deploy-gateway-contracts.sh`](../deploy-gateway-contracts.sh) on the `localHTTPZGateway`
+This will run the script [`./deploy-gateway-contracts.sh`](../deploy-gateway-contracts.sh) on the `localGateway`
 network.
 
 # Testing staging deployment

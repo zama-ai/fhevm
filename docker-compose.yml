@@ -1,4 +1,4 @@
-name: httpz-gateway
+name: fhevm-gateway
 
 services:
   anvil-node:
@@ -40,8 +40,8 @@ services:
       anvil-node:
         condition: service_started
 
-  add-gateway-config-networks:
-    container_name: add-gateway-config-networks
+  add-host-networks:
+    container_name: add-host-networks
     build:
       context: .
       dockerfile: Dockerfile

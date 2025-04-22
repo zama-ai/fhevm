@@ -23,7 +23,7 @@ task("task:addNetworksToGatewayConfig")
     for (let idx = 0; idx < numNetworks; idx++) {
       hostNetworks.push({
         chainId: getRequiredEnvVar(`NETWORK_CHAIN_ID_${idx}`),
-        httpzExecutor: getRequiredEnvVar(`NETWORK_HTTPZ_EXECUTOR_${idx}`),
+        fhevmExecutor: getRequiredEnvVar(`NETWORK_FHEVM_EXECUTOR_${idx}`),
         aclAddress: getRequiredEnvVar(`NETWORK_ACL_ADDRESS_${idx}`),
         name: getRequiredEnvVar(`NETWORK_NAME_${idx}`),
         website: getRequiredEnvVar(`NETWORK_WEBSITE_${idx}`),

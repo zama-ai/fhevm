@@ -110,7 +110,7 @@ interface IDecryption {
     /// @notice Error indicating that the key IDs in a given SNS ciphertext materials list are not the same
     /// @param keyId The key ID that is different
     /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-    /// @dev See https://github.com/zama-ai/httpz-gateway/issues/104.
+    /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
     error DifferentKeyIdsNotAllowed(uint256 keyId);
 
     /// @notice Error indicating that the public decryption is not done
