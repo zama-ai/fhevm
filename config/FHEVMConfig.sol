@@ -12,7 +12,7 @@ import {FHEVMConfigStruct} from "../lib/Impl.sol";
  *          which are deployed & maintained by Zama.
  */
 library FHEVMConfig {
-    function getSepoliaConfig() internal pure returns (HTTPZConfigStruct memory) {
+    function getSepoliaConfig() internal pure returns (FHEVMConfigStruct memory) {
         return
             FHEVMConfigStruct({
                 ACLAddress: 0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5,
@@ -22,14 +22,14 @@ library FHEVMConfig {
             });
     }
 
-    function getEthereumConfig() internal pure returns (HTTPZConfigStruct memory) {
+    function getEthereumConfig() internal pure returns (FHEVMConfigStruct memory) {
         /// TODO
     }
 }
 
 /**
  * @title   SepoliaFHEVMConfig.
- * @dev     This contract can be inherited by a contract wishing to use the HTTPZ contracts provided by Zama
+ * @dev     This contract can be inherited by a contract wishing to use the FHEVM contracts provided by Zama
  *          on the Sepolia network (chainId = 11155111).
  *          Other providers may offer similar contracts deployed at different addresses.
  *          If you wish to use them, you should rely on the instructions from these providers.
@@ -42,7 +42,7 @@ contract SepoliaFHEVMConfig {
 
 /**
  * @title   EthereumFHEVMConfig.
- * @dev     This contract can be inherited by a contract wishing to use the HTTPZ contracts provided by Zama
+ * @dev     This contract can be inherited by a contract wishing to use the FHEVM contracts provided by Zama
  *          on the Ethereum (mainnet) network (chainId = 1).
  *          Other providers may offer similar contracts deployed at different addresses.
  *          If you wish to use them, you should rely on the instructions from these providers.
