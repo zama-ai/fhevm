@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /**
  * @title Interface for the KmsManagement contract
  * @notice The KmsManagement contract is responsible for managing the public materials such as FHE keys,
- * CRS (Common Reference String) and KSKs (Key Switching Keys) used by the HTTPZ Gateway.
+ * CRS (Common Reference String) and KSKs (Key Switching Keys) used by the Fhevm Gateway.
  * @dev The KmsManagement contract contains:
  * - the cryptographic parameters to consider when generating public materials (FHE keys, CRS, KSKs)
  * - the generated public materials (FHE keys, CRS, KSKs) IDs
@@ -219,7 +219,7 @@ interface IKmsManagement {
     function updateFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external;
 
     // TODO: May not be needed if contracts are made pausable
-    // https://github.com/zama-ai/httpz-gateway/issues/51
+    // https://github.com/zama-ai/fhevm-gateway/issues/51
     /// @notice Check if a given key ID is the current one
     /// @dev The current key is the latest generated key that has been activated
     /// @param keyId The key ID to check

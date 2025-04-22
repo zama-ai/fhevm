@@ -330,7 +330,7 @@ describe("GatewayConfig", function () {
 
       const newNetwork = {
         chainId: newChainId,
-        httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
+        fhevmExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
         aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
         name: "Network",
         website: "https://network.com",
@@ -347,7 +347,7 @@ describe("GatewayConfig", function () {
 
       const fakeNetwork = {
         chainId: 0,
-        httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
+        fhevmExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
         aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
         name: "Network",
         website: "https://network.com",
@@ -368,7 +368,7 @@ describe("GatewayConfig", function () {
 
       const fakeNetwork = {
         chainId: chainIdTooLarge,
-        httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
+        fhevmExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
         aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
         name: "Network",
         website: "https://network.com",
@@ -388,7 +388,7 @@ describe("GatewayConfig", function () {
 
       const fakeNetwork = {
         chainId: alreadyAddedChainId,
-        httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
+        fhevmExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
         aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
         name: "Network",
         website: "https://network.com",

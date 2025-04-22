@@ -10,5 +10,5 @@ printf "> make check-selectors\n\n"
 make check-selectors
 
 # Lints the crate's code.
-printf "> cd httpz_gateway_rust_bindings && cargo clippy -- -D warnings && cd ..\n\n"
-cd httpz_gateway_rust_bindings && cargo clippy -- -D warnings && cd ..
+printf "> cd rust_bindings && cargo clippy -- -D warnings && cd ..\n\n"
+cd rust_bindings && cargo clippy -- -D warnings && cd ..

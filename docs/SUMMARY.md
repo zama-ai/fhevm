@@ -1,6 +1,6 @@
 # Table of contents
 
-- [Welcome to HTTPZ Gateway](README.md)
+- [Welcome to Fhevm Gateway](README.md)
 
 ## Getting Started
 

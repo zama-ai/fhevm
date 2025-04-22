@@ -18,7 +18,7 @@ const NUM_ACCOUNTS = 20;
 
 const chainIds = {
   hardhat: 31337,
-  localHTTPZGateway: 123456,
+  localGateway: 123456,
   staging: 54321,
   zwsDev: 412346,
 };
@@ -62,13 +62,13 @@ const config: HardhatUserConfig = {
       },
       chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.hardhat,
     },
-    localHTTPZGateway: {
+    localGateway: {
       accounts: {
         count: NUM_ACCOUNTS,
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.localHTTPZGateway,
+      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.localGateway,
       url: `http://127.0.0.1:8546`,
     },
     staging: {

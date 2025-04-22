@@ -12,7 +12,7 @@ from enum import Enum
 from pathlib import Path
 
 GW_ROOT_DIR = Path(os.path.dirname(__file__)).parent
-GW_CRATE_DIR = GW_ROOT_DIR.joinpath("httpz_gateway_rust_bindings")
+GW_CRATE_DIR = GW_ROOT_DIR.joinpath("rust_bindings")
 GW_CONTRACTS_DIR = GW_ROOT_DIR.joinpath("contracts")
 
 ALLOWED_FORGE_VERSIONS = ["1.0.0-v1.0.0", "1.0.0-stable"]

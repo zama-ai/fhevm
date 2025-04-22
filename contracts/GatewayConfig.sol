@@ -10,7 +10,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
  * @title GatewayConfig contract
  * @dev See {IGatewayConfig}.
  * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and networks.
- * @dev See https://github.com/zama-ai/httpz-gateway/issues/98 for more details.
+ * @dev See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
 contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeable {
     /// @notice The maximum chain ID.

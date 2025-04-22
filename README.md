@@ -1,6 +1,6 @@
-# HTTPZ-Gateway
+# Fhevm-Gateway
 
-Solidity Smart Contracts for the HTTPZ Gateway
+Solidity Smart Contracts for the Fhevm Gateway
 
 ## Smart Contracts deployment
 
@@ -14,7 +14,7 @@ Check if deployment is successful and debug if needed:
 
 ```sh
 docker logs deploy-gateway-contracts
-docker logs add-gateway-config-networks
+docker logs add-host-networks
 ```
 
 To cleanup your environment
