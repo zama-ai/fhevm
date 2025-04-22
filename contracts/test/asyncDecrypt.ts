@@ -210,14 +210,14 @@ async function computeDecryptSignatures(handlesList: string[], decryptedResult: 
 }
 
 async function kmsSign(handlesList: string[], decryptedResult: string, kmsSigner: Wallet) {
-  const decManAdd = process.env.DECRYPTION_ADDRESS;
+  const decAdd = process.env.DECRYPTION_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;
 
   const domain = {
     name: 'Decryption',
     version: '1',
     chainId: chainId,
-    verifyingContract: decManAdd,
+    verifyingContract: decAdd,
   };
 
   const types = {
