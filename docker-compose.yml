@@ -40,8 +40,8 @@ services:
       anvil-node:
         condition: service_started
 
-  add-httpz-networks:
-    container_name: add-httpz-networks
+  add-gateway-config-networks:
+    container_name: add-gateway-config-networks
     build:
       context: .
       dockerfile: Dockerfile
@@ -52,7 +52,7 @@ services:
       - CHAIN_ID_GATEWAY=54321
       - RPC_URL=http://anvil-node:8546
     command:
-      - npx hardhat task:addNetworksToHttpz
+      - npx hardhat task:addNetworksToGatewayConfig
     depends_on:
       anvil-node:
         condition: service_started

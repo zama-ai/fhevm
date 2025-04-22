@@ -26,51 +26,51 @@ task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgra
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
-  console.log("Deploying an EmptyUUPS proxy contract for ACLManager...");
-  const aclManagerAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  console.log("Deploying an EmptyUUPS proxy contract for MultichainAcl...");
+  const multichainAclAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run("task:setContractAddress", {
-    name: "AclManager",
-    address: aclManagerAddress,
+    name: "MultichainAcl",
+    address: multichainAclAddress,
   });
 
-  console.log("Deploying an EmptyUUPS proxy contract for CiphertextManager...");
-  const ciphertextManagerAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  console.log("Deploying an EmptyUUPS proxy contract for CiphertextCommits...");
+  const ciphertextCommitsAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run("task:setContractAddress", {
-    name: "CiphertextManager",
-    address: ciphertextManagerAddress,
+    name: "CiphertextCommits",
+    address: ciphertextCommitsAddress,
   });
 
-  console.log("Deploying an EmptyUUPS proxy contract for DecryptionManager...");
-  const decryptionManagerAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  console.log("Deploying an EmptyUUPS proxy contract for Decryption...");
+  const decryptionAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run("task:setContractAddress", {
-    name: "DecryptionManager",
-    address: decryptionManagerAddress,
+    name: "Decryption",
+    address: decryptionAddress,
   });
 
-  console.log("Deploying an EmptyUUPS proxy contract for HTTPZ...");
-  const httpzAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  console.log("Deploying an EmptyUUPS proxy contract for GatewayConfig...");
+  const gatewayConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run("task:setContractAddress", {
-    name: "Httpz",
-    address: httpzAddress,
+    name: "GatewayConfig",
+    address: gatewayConfigAddress,
   });
 
-  console.log("Deploying an EmptyUUPS proxy contract for KeyManager...");
-  const keyManagerAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  console.log("Deploying an EmptyUUPS proxy contract for KmsManagement...");
+  const kmsManagementAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run("task:setContractAddress", {
-    name: "KeyManager",
-    address: keyManagerAddress,
+    name: "KmsManagement",
+    address: kmsManagementAddress,
   });
 
-  console.log("Deploying an EmptyUUPS proxy contract for ZKPoKManager...");
-  const zkpokManagerAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  console.log("Deploying an EmptyUUPS proxy contract for InputVerification...");
+  const inputVerificationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run("task:setContractAddress", {
-    name: "ZkpokManager",
-    address: zkpokManagerAddress,
+    name: "InputVerification",
+    address: inputVerificationAddress,
   });
 });
 
-// Deploy the HTTPZ contract
-task("task:deployHttpz").setAction(async function (_, { ethers, upgrades }) {
+// Deploy the GatewayConfig contract
+task("task:deployGatewayConfig").setAction(async function (_, { ethers, upgrades }) {
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
@@ -108,12 +108,12 @@ task("task:deployHttpz").setAction(async function (_, { ethers, upgrades }) {
     });
   }
 
-  // Upgrade proxy to HTTPZ
+  // Upgrade proxy to GatewayConfig
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("HTTPZ", deployer);
+  const newImplem = await ethers.getContractFactory("GatewayConfig", deployer);
 
-  const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
-  const proxyAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
+  const parsedEnvGatewayConfig = dotenv.parse(fs.readFileSync("addresses/.env.gateway_config"));
+  const proxyAddress = parsedEnvGatewayConfig.GATEWAY_CONFIG_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
@@ -122,7 +122,7 @@ task("task:deployHttpz").setAction(async function (_, { ethers, upgrades }) {
     },
   });
 
-  console.log("HTTPZ contract deployed to:", proxyAddress);
+  console.log("GatewayConfig contract deployed to:", proxyAddress);
   console.log("Pauser address:", pauserAddress, "\n");
   console.log("Protocol metadata:", protocolMetadata);
   console.log("KMS threshold:", kmsThreshold, "\n");
@@ -130,94 +130,94 @@ task("task:deployHttpz").setAction(async function (_, { ethers, upgrades }) {
   console.log("Coprocessors:", coprocessors, "\n");
 });
 
-// Deploy the ZKPoKManager contract
-task("task:deployZkpokManager").setAction(async function (_, { ethers, upgrades }) {
+// Deploy the InputVerification contract
+task("task:deployInputVerification").setAction(async function (_, { ethers, upgrades }) {
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
-  // Upgrade proxy to ZKPoKManager
+  // Upgrade proxy to InputVerification
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("ZKPoKManager", deployer);
+  const newImplem = await ethers.getContractFactory("InputVerification", deployer);
 
-  const parsedEnvZkpokManager = dotenv.parse(fs.readFileSync("addresses/.env.zkpok_manager"));
-  const proxyAddress = parsedEnvZkpokManager.ZKPOK_MANAGER_ADDRESS;
+  const parsedEnvInputVerification = dotenv.parse(fs.readFileSync("addresses/.env.input_verification"));
+  const proxyAddress = parsedEnvInputVerification.INPUT_VERIFICATION_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
 
-  console.log(`ZKPoKManager code set successfully at address: ${proxyAddress}\n`);
+  console.log(`InputVerification code set successfully at address: ${proxyAddress}\n`);
 });
 
-// Deploy the KeyManager contract
-task("task:deployKeyManager").setAction(async function (_, { ethers, upgrades }) {
+// Deploy the KmsManagement contract
+task("task:deployKmsManagement").setAction(async function (_, { ethers, upgrades }) {
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
   const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
   const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
 
-  // Upgrade proxy to KeyManager
+  // Upgrade proxy to KmsManagement
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("KeyManager", deployer);
+  const newImplem = await ethers.getContractFactory("KmsManagement", deployer);
 
-  const parsedEnvKeyManager = dotenv.parse(fs.readFileSync("addresses/.env.key_manager"));
-  const proxyAddress = parsedEnvKeyManager.KEY_MANAGER_ADDRESS;
+  const parsedEnvKmsManagement = dotenv.parse(fs.readFileSync("addresses/.env.kms_management"));
+  const proxyAddress = parsedEnvKmsManagement.KMS_MANAGEMENT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: { fn: "initialize", args: [fheParamsName, fheParamsDigest] },
   });
 
-  console.log(`KeyManager code set successfully at address: ${proxyAddress}\n`);
+  console.log(`KmsManagement code set successfully at address: ${proxyAddress}\n`);
 });
 
-// Deploy the CiphertextManager contract
-task("task:deployCiphertextManager").setAction(async function (_, { ethers, upgrades }) {
+// Deploy the CiphertextCommits contract
+task("task:deployCiphertextCommits").setAction(async function (_, { ethers, upgrades }) {
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
-  // Upgrade proxy to CiphertextManager
+  // Upgrade proxy to CiphertextCommits
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("CiphertextManager", deployer);
+  const newImplem = await ethers.getContractFactory("CiphertextCommits", deployer);
 
-  const parsedEnvCiphertextManager = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_manager"));
-  const proxyAddress = parsedEnvCiphertextManager.CIPHERTEXT_MANAGER_ADDRESS;
+  const parsedEnvCiphertextCommits = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_commits"));
+  const proxyAddress = parsedEnvCiphertextCommits.CIPHERTEXT_COMMITS_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
 
-  console.log(`CiphertextManager code set successfully at address: ${proxyAddress}\n`);
+  console.log(`CiphertextCommits code set successfully at address: ${proxyAddress}\n`);
 });
 
-// Deploy the ACLManager contract
-task("task:deployAclManager").setAction(async function (_, { ethers, upgrades }) {
+// Deploy the MultichainAcl contract
+task("task:deployMultichainAcl").setAction(async function (_, { ethers, upgrades }) {
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
-  // Upgrade proxy to ACLManager
+  // Upgrade proxy to MultichainAcl
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("ACLManager", deployer);
+  const newImplem = await ethers.getContractFactory("MultichainAcl", deployer);
 
-  const parsedEnvAclManager = dotenv.parse(fs.readFileSync("addresses/.env.acl_manager"));
-  const proxyAddress = parsedEnvAclManager.ACL_MANAGER_ADDRESS;
+  const parsedEnvMultichainAcl = dotenv.parse(fs.readFileSync("addresses/.env.multichain_acl"));
+  const proxyAddress = parsedEnvMultichainAcl.MULTICHAIN_ACL_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
 
-  console.log(`ACLManager code set successfully at address: ${proxyAddress}\n`);
+  console.log(`MultichainAcl code set successfully at address: ${proxyAddress}\n`);
 });
 
-// Deploy the DecryptionManager contract
-task("task:deployDecryptionManager").setAction(async function (_, { ethers, upgrades }) {
+// Deploy the Decryption contract
+task("task:deployDecryption").setAction(async function (_, { ethers, upgrades }) {
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
-  // Upgrade proxy to DecryptionManager
+  // Upgrade proxy to Decryption
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("DecryptionManager", deployer);
+  const newImplem = await ethers.getContractFactory("Decryption", deployer);
 
-  const parsedEnvDecryptionManager = dotenv.parse(fs.readFileSync("addresses/.env.decryption_manager"));
-  const proxyAddress = parsedEnvDecryptionManager.DECRYPTION_MANAGER_ADDRESS;
+  const parsedEnvDecryption = dotenv.parse(fs.readFileSync("addresses/.env.decryption"));
+  const proxyAddress = parsedEnvDecryption.DECRYPTION_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
 
-  console.log(`DecryptionManager code set successfully at address: ${proxyAddress}\n`);
+  console.log(`Decryption code set successfully at address: ${proxyAddress}\n`);
 });
 
 // Deploy all the contracts
@@ -231,23 +231,23 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   // used.
   await hre.run("compile:specific", { contract: "contracts" });
 
-  console.log("Deploy HTTPZ contract:");
-  await hre.run("task:deployHttpz");
+  console.log("Deploy GatewayConfig contract:");
+  await hre.run("task:deployGatewayConfig");
 
-  console.log("Deploy ZKPoKManager contract:");
-  await hre.run("task:deployZkpokManager");
+  console.log("Deploy InputVerification contract:");
+  await hre.run("task:deployInputVerification");
 
-  console.log("Deploy KeyManager contract:");
-  await hre.run("task:deployKeyManager");
+  console.log("Deploy KmsManagement contract:");
+  await hre.run("task:deployKmsManagement");
 
-  console.log("Deploy CiphertextManager contract:");
-  await hre.run("task:deployCiphertextManager");
+  console.log("Deploy CiphertextCommits contract:");
+  await hre.run("task:deployCiphertextCommits");
 
-  console.log("Deploy ACLManager contract:");
-  await hre.run("task:deployAclManager");
+  console.log("Deploy MultichainAcl contract:");
+  await hre.run("task:deployMultichainAcl");
 
-  console.log("Deploy DecryptionManager contract:");
-  await hre.run("task:deployDecryptionManager");
+  console.log("Deploy Decryption contract:");
+  await hre.run("task:deployDecryption");
 
   console.log("Contract deployment done!");
 });

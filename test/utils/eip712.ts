@@ -52,7 +52,7 @@ export function createEIP712ResponseZKPoK(
     },
     primaryType: "CiphertextVerification",
     domain: {
-      name: "ZKPoKManager",
+      name: "InputVerification",
       version: "1",
       chainId,
       verifyingContract,
@@ -107,7 +107,7 @@ export function createEIP712ResponsePublicDecrypt(
     },
     primaryType: "PublicDecryptVerification",
     domain: {
-      name: "DecryptionManager",
+      name: "Decryption",
       version: "1",
       chainId,
       verifyingContract,
@@ -166,7 +166,7 @@ export function createEIP712RequestUserDecrypt(
     },
     primaryType: "UserDecryptRequestVerification",
     domain: {
-      name: "DecryptionManager",
+      name: "Decryption",
       version: "1",
       chainId,
       verifyingContract,
@@ -230,7 +230,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
     },
     primaryType: "DelegatedUserDecryptRequestVerification",
     domain: {
-      name: "DecryptionManager",
+      name: "Decryption",
       version: "1",
       chainId,
       verifyingContract,
@@ -289,7 +289,7 @@ export function createEIP712ResponseUserDecrypt(
     },
     primaryType: "UserDecryptResponseVerification",
     domain: {
-      name: "DecryptionManager",
+      name: "Decryption",
       version: "1",
       chainId,
       verifyingContract,

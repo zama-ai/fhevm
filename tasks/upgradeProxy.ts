@@ -54,14 +54,14 @@ async function upgradeCurrentToNew(
   }
 }
 
-task("task:upgradeACLManager")
+task("task:upgradeMultichainAcl")
   .addParam(
     "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/ACLManager.sol:ACLManager",
+    "The currently deployed implementation solidity contract path and name, eg: contracts/MultichainAcl.sol:MultichainAcl",
   )
   .addParam(
     "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/examples/ACLManagerUpgradedExample.sol:ACLManagerUpgradedExample",
+    "The new implementation solidity contract path and name, eg: contracts/examples/MultichainAclUpgradedExample.sol:MultichainAclUpgradedExample",
   )
   .addOptionalParam(
     "verifyContract",
@@ -70,8 +70,8 @@ task("task:upgradeACLManager")
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.acl_manager"));
-    const proxyAddress = parsedEnv.ACL_MANAGER_ADDRESS;
+    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.multichain_acl"));
+    const proxyAddress = parsedEnv.MULTICHAIN_ACL_ADDRESS;
     await upgradeCurrentToNew(
       proxyAddress,
       taskArguments.currentImplementation,
@@ -83,14 +83,14 @@ task("task:upgradeACLManager")
     );
   });
 
-task("task:upgradeCiphertextManager")
+task("task:upgradeCiphertextCommits")
   .addParam(
     "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/CiphertextManager.sol:CiphertextManager",
+    "The currently deployed implementation solidity contract path and name, eg: contracts/CiphertextCommits.sol:CiphertextCommits",
   )
   .addParam(
     "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/examples/CiphertextManagerUpgradedExample.sol:CiphertextManagerUpgradedExample",
+    "The new implementation solidity contract path and name, eg: contracts/examples/CiphertextCommitsUpgradedExample.sol:CiphertextCommitsUpgradedExample",
   )
   .addOptionalParam(
     "verifyContract",
@@ -99,8 +99,8 @@ task("task:upgradeCiphertextManager")
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_manager"));
-    const proxyAddress = parsedEnv.CIPHERTEXT_MANAGER_ADDRESS;
+    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_commits"));
+    const proxyAddress = parsedEnv.CIPHERTEXT_COMMITS_ADDRESS;
     await upgradeCurrentToNew(
       proxyAddress,
       taskArguments.currentImplementation,
@@ -112,14 +112,14 @@ task("task:upgradeCiphertextManager")
     );
   });
 
-task("task:upgradeDecryptionManager")
+task("task:upgradeDecryption")
   .addParam(
     "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/DecryptionManager.sol:DecryptionManager",
+    "The currently deployed implementation solidity contract path and name, eg: contracts/Decryption.sol:Decryption",
   )
   .addParam(
     "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/examples/DecryptionManagerUpgradedExample.sol:DecryptionManagerUpgradedExample",
+    "The new implementation solidity contract path and name, eg: contracts/examples/DecryptionUpgradedExample.sol:DecryptionUpgradedExample",
   )
   .addOptionalParam(
     "verifyContract",
@@ -128,8 +128,8 @@ task("task:upgradeDecryptionManager")
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.decryption_manager"));
-    const proxyAddress = parsedEnv.DECRYPTION_MANAGER_ADDRESS;
+    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.decryption"));
+    const proxyAddress = parsedEnv.DECRYPTION_ADDRESS;
     await upgradeCurrentToNew(
       proxyAddress,
       taskArguments.currentImplementation,
@@ -141,14 +141,14 @@ task("task:upgradeDecryptionManager")
     );
   });
 
-task("task:upgradeHTTPZ")
+task("task:upgradeGatewayConfig")
   .addParam(
     "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/HTTPZ.sol:HTTPZ",
+    "The currently deployed implementation solidity contract path and name, eg: contracts/GatewayConfig.sol:GatewayConfig",
   )
   .addParam(
     "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/examples/HTTPZUpgradedExample.sol:HTTPZUpgradedExample",
+    "The new implementation solidity contract path and name, eg: contracts/examples/GatewayConfigUpgradedExample.sol:GatewayConfigUpgradedExample",
   )
   .addOptionalParam(
     "verifyContract",
@@ -157,8 +157,8 @@ task("task:upgradeHTTPZ")
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
-    const proxyAddress = parsedEnv.HTTPZ_ADDRESS;
+    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.gateway_config"));
+    const proxyAddress = parsedEnv.GATEWAY_CONFIG_ADDRESS;
     await upgradeCurrentToNew(
       proxyAddress,
       taskArguments.currentImplementation,
@@ -170,14 +170,14 @@ task("task:upgradeHTTPZ")
     );
   });
 
-task("task:upgradeKeyManager")
+task("task:upgradeKmsManagement")
   .addParam(
     "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/KeyManager.sol:KeyManager",
+    "The currently deployed implementation solidity contract path and name, eg: contracts/KmsManagement.sol:KmsManagement",
   )
   .addParam(
     "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/examples/KeyManagerUpgradedExample.sol:KeyManagerUpgradedExample",
+    "The new implementation solidity contract path and name, eg: contracts/examples/KmsManagementUpgradedExample.sol:KmsManagementUpgradedExample",
   )
   .addOptionalParam(
     "verifyContract",
@@ -186,8 +186,8 @@ task("task:upgradeKeyManager")
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.key_manager"));
-    const proxyAddress = parsedEnv.KEY_MANAGER_ADDRESS;
+    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.kms_management"));
+    const proxyAddress = parsedEnv.KMS_MANAGEMENT_ADDRESS;
     await upgradeCurrentToNew(
       proxyAddress,
       taskArguments.currentImplementation,
@@ -199,14 +199,14 @@ task("task:upgradeKeyManager")
     );
   });
 
-task("task:upgradeZKPoKManager")
+task("task:upgradeInputVerification")
   .addParam(
     "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/ZKPoKManager.sol:ZKPoKManager",
+    "The currently deployed implementation solidity contract path and name, eg: contracts/InputVerification.sol:InputVerification",
   )
   .addParam(
     "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/examples/ZKPoKManagerUpgradedExample.sol:ZKPoKManagerUpgradedExample",
+    "The new implementation solidity contract path and name, eg: contracts/examples/InputVerificationUpgradedExample.sol:InputVerificationUpgradedExample",
   )
   .addOptionalParam(
     "verifyContract",
@@ -215,8 +215,8 @@ task("task:upgradeZKPoKManager")
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.zkpok_manager"));
-    const proxyAddress = parsedEnv.ZKPOK_MANAGER_ADDRESS;
+    const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.input_verification"));
+    const proxyAddress = parsedEnv.INPUT_VERIFICATION_ADDRESS;
     await upgradeCurrentToNew(
       proxyAddress,
       taskArguments.currentImplementation,
