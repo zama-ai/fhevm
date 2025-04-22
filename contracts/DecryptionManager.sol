@@ -297,10 +297,8 @@ contract DecryptionManager is
             revert ContractAddressesMaxLengthExceeded(_MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
         }
 
-        /// @dev Check the durationDays does not exceed the maximum allowed.
-        if (requestValidity.durationDays > _MAX_USER_DECRYPT_DURATION_DAYS) {
-            revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
-        }
+        /// @dev Check the user decryption request is valid.
+        _checkUserDecryptionRequestValidity(requestValidity);
 
         /// @dev Check the user address is not included in the contract addresses.
         if (_containsContractAddress(contractAddresses, userAddress)) {
@@ -365,10 +363,8 @@ contract DecryptionManager is
             revert ContractAddressesMaxLengthExceeded(_MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
         }
 
-        /// @dev Check the durationDays does not exceed the maximum allowed.
-        if (requestValidity.durationDays > _MAX_USER_DECRYPT_DURATION_DAYS) {
-            revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
-        }
+        /// @dev Check the user decryption request is valid.
+        _checkUserDecryptionRequestValidity(requestValidity);
 
         /// @dev Check the delegator address is not included in the contract addresses.
         if (_containsContractAddress(contractAddresses, delegationAccounts.delegatorAddress)) {
@@ -808,6 +804,32 @@ contract DecryptionManager is
         /// @dev Revert if the total bit size exceeds the maximum allowed.
         if (totalBitSize > _MAX_DECRYPTION_REQUEST_BITS) {
             revert MaxDecryptionRequestBitSizeExceeded(_MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
+        }
+    }
+
+    /// @notice Checks if a user decryption request's start timestamp and duration days are valid.
+    /// @param requestValidity The RequestValidity structure
+    function _checkUserDecryptionRequestValidity(RequestValidity memory requestValidity) internal view {
+        /// @dev Check the durationDays is not null.
+        if (requestValidity.durationDays == 0) {
+            revert InvalidNullDurationDays();
+        }
+        /// @dev Check the durationDays does not exceed the maximum allowed.
+        if (requestValidity.durationDays > _MAX_USER_DECRYPT_DURATION_DAYS) {
+            revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
+        }
+
+        /// @dev Check the start timestamp is not set in the future. This is to prevent a user
+        /// @dev from bypassing the durationDays limit of 365 days by setting a start timestamp
+        /// @dev far in the future.
+        if (requestValidity.startTimestamp > block.timestamp) {
+            revert StartTimestampInFuture(block.timestamp, requestValidity.startTimestamp);
+        }
+
+        /// @dev Check the user decryption request has not expired. A user decryption request is valid
+        /// @dev from startTimestamp for a number of days equal to durationDays.
+        if (requestValidity.startTimestamp + requestValidity.durationDays * 1 days < block.timestamp) {
+            revert UserDecryptionRequestExpired(block.timestamp, requestValidity);
         }
     }
 

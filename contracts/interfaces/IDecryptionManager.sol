@@ -74,10 +74,23 @@ interface IDecryptionManager {
     /// @notice Error indicating that the number of contract addresses exceeds the maximum allowed.
     error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
 
-    /// @notice Error indicating that the user decryption request has exceeded the maximum durationDays
+    /// @notice Error indicating that the durationDays of a user decryption request is 0.
+    error InvalidNullDurationDays();
+
+    /// @notice Error indicating that the durationDays of a user decryption request exceeds the maximum allowed.
     /// @param maxValue The maximum durationDays allowed
     /// @param actualValue The actual durationDays requested
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
+
+    /// @notice Error indicating that the start timestamp of a user decryption request has been set in the future.
+    /// @param currentTimestamp The block timestamp at which the user decryption request was made
+    /// @param startTimestamp The start timestamp of the user decryption request
+    error StartTimestampInFuture(uint256 currentTimestamp, uint256 startTimestamp);
+
+    /// @notice Error indicating that the user decryption request has expired
+    /// @param currentTimestamp The block timestamp at which the user decryption request was made
+    /// @param requestValidity The validity period of the user decryption request
+    error UserDecryptionRequestExpired(uint256 currentTimestamp, RequestValidity requestValidity);
 
     /// @notice Error indicating that the user address is included in the contract addresses list
     /// @param userAddress The user address that is included in the list

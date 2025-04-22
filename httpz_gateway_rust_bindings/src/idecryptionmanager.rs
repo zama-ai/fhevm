@@ -28,13 +28,16 @@ interface IDecryptionManager {
     error DifferentKeyIdsNotAllowed(uint256 keyId);
     error EmptyCtHandleContractPairs();
     error EmptyCtHandles();
+    error InvalidNullDurationDays();
     error InvalidUserSignature(bytes signature);
     error KmsSignerAlreadyResponded(uint256 publicDecryptionId, address signer);
     error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
     error PublicDecryptionNotDone(uint256 publicDecryptionId);
+    error StartTimestampInFuture(uint256 currentTimestamp, uint256 startTimestamp);
     error UserAddressInContractAddresses(address userAddress, address[] contractAddresses);
     error UserDecryptionNotDone(uint256 userDecryptionId);
+    error UserDecryptionRequestExpired(uint256 currentTimestamp, RequestValidity requestValidity);
 
     event PublicDecryptionRequest(uint256 indexed publicDecryptionId, SnsCiphertextMaterial[] snsCtMaterials);
     event PublicDecryptionResponse(uint256 indexed publicDecryptionId, bytes decryptedResult, bytes[] signatures);
@@ -598,6 +601,11 @@ interface IDecryptionManager {
   },
   {
     "type": "error",
+    "name": "InvalidNullDurationDays",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidUserSignature",
     "inputs": [
       {
@@ -668,6 +676,22 @@ interface IDecryptionManager {
   },
   {
     "type": "error",
+    "name": "StartTimestampInFuture",
+    "inputs": [
+      {
+        "name": "currentTimestamp",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "startTimestamp",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "UserAddressInContractAddresses",
     "inputs": [
       {
@@ -690,6 +714,34 @@ interface IDecryptionManager {
         "name": "userDecryptionId",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UserDecryptionRequestExpired",
+    "inputs": [
+      {
+        "name": "currentTimestamp",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "requestValidity",
+        "type": "tuple",
+        "internalType": "struct IDecryptionManager.RequestValidity",
+        "components": [
+          {
+            "name": "startTimestamp",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "durationDays",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
       }
     ]
   }
@@ -2146,6 +2198,70 @@ error EmptyCtHandles();
             }
         }
     };
+    /**Custom error with signature `InvalidNullDurationDays()` and selector `0xde2859c1`.
+```solidity
+error InvalidNullDurationDays();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidNullDurationDays {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidNullDurationDays> for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidNullDurationDays) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidNullDurationDays {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {}
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidNullDurationDays {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidNullDurationDays()";
+            const SELECTOR: [u8; 4] = [222u8, 40u8, 89u8, 193u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+        }
+    };
     /**Custom error with signature `InvalidUserSignature(bytes)` and selector `0x2a873d27`.
 ```solidity
 error InvalidUserSignature(bytes signature);
@@ -2551,6 +2667,91 @@ error PublicDecryptionNotDone(uint256 publicDecryptionId);
             }
         }
     };
+    /**Custom error with signature `StartTimestampInFuture(uint256,uint256)` and selector `0xf24c0887`.
+```solidity
+error StartTimestampInFuture(uint256 currentTimestamp, uint256 startTimestamp);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct StartTimestampInFuture {
+        #[allow(missing_docs)]
+        pub currentTimestamp: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub startTimestamp: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<StartTimestampInFuture> for UnderlyingRustTuple<'_> {
+            fn from(value: StartTimestampInFuture) -> Self {
+                (value.currentTimestamp, value.startTimestamp)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for StartTimestampInFuture {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    currentTimestamp: tuple.0,
+                    startTimestamp: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for StartTimestampInFuture {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "StartTimestampInFuture(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [242u8, 76u8, 8u8, 135u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.currentTimestamp),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.startTimestamp),
+                )
+            }
+        }
+    };
     /**Custom error with signature `UserAddressInContractAddresses(address,address[])` and selector `0xdc4d78b1`.
 ```solidity
 error UserAddressInContractAddresses(address userAddress, address[] contractAddresses);
@@ -2709,6 +2910,93 @@ error UserDecryptionNotDone(uint256 userDecryptionId);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.userDecryptionId),
+                )
+            }
+        }
+    };
+    /**Custom error with signature `UserDecryptionRequestExpired(uint256,(uint256,uint256))` and selector `0x30348040`.
+```solidity
+error UserDecryptionRequestExpired(uint256 currentTimestamp, RequestValidity requestValidity);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct UserDecryptionRequestExpired {
+        #[allow(missing_docs)]
+        pub currentTimestamp: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub requestValidity: <RequestValidity as alloy::sol_types::SolType>::RustType,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            RequestValidity,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            <RequestValidity as alloy::sol_types::SolType>::RustType,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UserDecryptionRequestExpired>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: UserDecryptionRequestExpired) -> Self {
+                (value.currentTimestamp, value.requestValidity)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for UserDecryptionRequestExpired {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    currentTimestamp: tuple.0,
+                    requestValidity: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for UserDecryptionRequestExpired {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "UserDecryptionRequestExpired(uint256,(uint256,uint256))";
+            const SELECTOR: [u8; 4] = [48u8, 52u8, 128u8, 64u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.currentTimestamp),
+                    <RequestValidity as alloy_sol_types::SolType>::tokenize(
+                        &self.requestValidity,
+                    ),
                 )
             }
         }
@@ -5298,6 +5586,8 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
         #[allow(missing_docs)]
         EmptyCtHandles(EmptyCtHandles),
         #[allow(missing_docs)]
+        InvalidNullDurationDays(InvalidNullDurationDays),
+        #[allow(missing_docs)]
         InvalidUserSignature(InvalidUserSignature),
         #[allow(missing_docs)]
         KmsSignerAlreadyResponded(KmsSignerAlreadyResponded),
@@ -5308,9 +5598,13 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
         #[allow(missing_docs)]
         PublicDecryptionNotDone(PublicDecryptionNotDone),
         #[allow(missing_docs)]
+        StartTimestampInFuture(StartTimestampInFuture),
+        #[allow(missing_docs)]
         UserAddressInContractAddresses(UserAddressInContractAddresses),
         #[allow(missing_docs)]
         UserDecryptionNotDone(UserDecryptionNotDone),
+        #[allow(missing_docs)]
+        UserDecryptionRequestExpired(UserDecryptionRequestExpired),
     }
     #[automatically_derived]
     impl IDecryptionManagerErrors {
@@ -5324,6 +5618,7 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
             [8u8, 112u8, 67u8, 187u8],
             [42u8, 135u8, 61u8, 39u8],
             [45u8, 231u8, 84u8, 56u8],
+            [48u8, 52u8, 128u8, 64u8],
             [50u8, 149u8, 24u8, 99u8],
             [112u8, 92u8, 59u8, 169u8],
             [161u8, 113u8, 76u8, 119u8],
@@ -5332,7 +5627,9 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
             [195u8, 68u8, 106u8, 199u8],
             [197u8, 171u8, 70u8, 126u8],
             [220u8, 77u8, 120u8, 177u8],
+            [222u8, 40u8, 89u8, 193u8],
             [231u8, 244u8, 137u8, 93u8],
+            [242u8, 76u8, 8u8, 135u8],
             [249u8, 11u8, 199u8, 245u8],
         ];
     }
@@ -5340,7 +5637,7 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
     impl alloy_sol_types::SolInterface for IDecryptionManagerErrors {
         const NAME: &'static str = "IDecryptionManagerErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 13usize;
+        const COUNT: usize = 16usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5362,6 +5659,9 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                 Self::EmptyCtHandles(_) => {
                     <EmptyCtHandles as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::InvalidNullDurationDays(_) => {
+                    <InvalidNullDurationDays as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::InvalidUserSignature(_) => {
                     <InvalidUserSignature as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -5377,11 +5677,17 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                 Self::PublicDecryptionNotDone(_) => {
                     <PublicDecryptionNotDone as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::StartTimestampInFuture(_) => {
+                    <StartTimestampInFuture as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::UserAddressInContractAddresses(_) => {
                     <UserAddressInContractAddresses as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::UserDecryptionNotDone(_) => {
                     <UserDecryptionNotDone as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::UserDecryptionRequestExpired(_) => {
+                    <UserDecryptionRequestExpired as alloy_sol_types::SolError>::SELECTOR
                 }
             }
         }
@@ -5442,6 +5748,19 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                             .map(IDecryptionManagerErrors::EmptyCtHandles)
                     }
                     EmptyCtHandles
+                },
+                {
+                    fn UserDecryptionRequestExpired(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionManagerErrors> {
+                        <UserDecryptionRequestExpired as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionManagerErrors::UserDecryptionRequestExpired)
+                    }
+                    UserDecryptionRequestExpired
                 },
                 {
                     fn MaxDurationDaysExceeded(
@@ -5556,6 +5875,19 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                     UserAddressInContractAddresses
                 },
                 {
+                    fn InvalidNullDurationDays(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionManagerErrors> {
+                        <InvalidNullDurationDays as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionManagerErrors::InvalidNullDurationDays)
+                    }
+                    InvalidNullDurationDays
+                },
+                {
                     fn MaxDecryptionRequestBitSizeExceeded(
                         data: &[u8],
                         validate: bool,
@@ -5569,6 +5901,19 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                             )
                     }
                     MaxDecryptionRequestBitSizeExceeded
+                },
+                {
+                    fn StartTimestampInFuture(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionManagerErrors> {
+                        <StartTimestampInFuture as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionManagerErrors::StartTimestampInFuture)
+                    }
+                    StartTimestampInFuture
                 },
                 {
                     fn DifferentKeyIdsNotAllowed(
@@ -5627,6 +5972,11 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                         inner,
                     )
                 }
+                Self::InvalidNullDurationDays(inner) => {
+                    <InvalidNullDurationDays as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::InvalidUserSignature(inner) => {
                     <InvalidUserSignature as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -5652,6 +6002,11 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                         inner,
                     )
                 }
+                Self::StartTimestampInFuture(inner) => {
+                    <StartTimestampInFuture as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::UserAddressInContractAddresses(inner) => {
                     <UserAddressInContractAddresses as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -5659,6 +6014,11 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                 }
                 Self::UserDecryptionNotDone(inner) => {
                     <UserDecryptionNotDone as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::UserDecryptionRequestExpired(inner) => {
+                    <UserDecryptionRequestExpired as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -5703,6 +6063,12 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                         out,
                     )
                 }
+                Self::InvalidNullDurationDays(inner) => {
+                    <InvalidNullDurationDays as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::InvalidUserSignature(inner) => {
                     <InvalidUserSignature as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -5733,6 +6099,12 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                         out,
                     )
                 }
+                Self::StartTimestampInFuture(inner) => {
+                    <StartTimestampInFuture as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::UserAddressInContractAddresses(inner) => {
                     <UserAddressInContractAddresses as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -5741,6 +6113,12 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                 }
                 Self::UserDecryptionNotDone(inner) => {
                     <UserDecryptionNotDone as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::UserDecryptionRequestExpired(inner) => {
+                    <UserDecryptionRequestExpired as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
