@@ -35,9 +35,16 @@ export class ProcessAddressValidation
   execute = (event: AddressValidationEvents): Task<void, AppError> => {
     return Task.of<AddressValidation, AppError>(new AddressValidation())
       .map(addressValidation => addressValidation.send(event))
-      .chain(messages =>
-        Task.all(messages.map(message => this.producer.publish(message))),
-      )
+      .chain(messages => {
+        return Task.all(
+          messages.map(message => {
+            this.logger.verbose(
+              `[${message.payload.requestId}] calling producer.publish(${message.type})`,
+            )
+            return this.producer.publish(message)
+          }),
+        )
+      })
       .map(() => void 0)
   }
 }

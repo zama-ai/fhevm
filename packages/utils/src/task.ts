@@ -32,6 +32,21 @@ export class Task<A, E> {
   }
 
   /**
+   * Creates a Task from a Promise.
+   *
+   * @template A - The type of the resolved value.
+   * @template E - The type of the error.
+   * @param fn - A function that returns a Promise of type `A`.
+   * @returns A Task that resolves with the value of the Promise
+   * or rejects with the error of the Promise.
+   */
+  static fromPromise<A, E>(promise: Promise<A>): Task<A, E> {
+    return new Task((resolve, reject) => {
+      promise.then(resolve).catch(reject)
+    })
+  }
+
+  /**
    * Transforms the value of the Task using the given function.
    *
    * @template B - The type of the transformed value.
@@ -133,9 +148,7 @@ export class Task<A, E> {
    * @returns A Promise that resolves with the value of type `A` or rejects with the error of type `E`.
    */
   toPromise() {
-    return new Promise<A>((resolve, reject) => {
-      this.fork(resolve, reject)
-    })
+    return new Promise<A>(this.computation)
   }
 
   /**
