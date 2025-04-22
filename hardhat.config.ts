@@ -46,9 +46,9 @@ task("compile:specific", "Compiles only the specified contract")
 task("test", async (_taskArgs, hre, runSuper) => {
   await hre.run("task:faucetToPrivate", { privateKey: process.env.DEPLOYER_PRIVATE_KEY });
   await hre.run("task:deployAllGatewayContracts");
-  // Contrary to deployment, here we consider the HTTPZ address from the `addresses/` directory
+  // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory
   // for local testing
-  await hre.run("task:addNetworksToHttpz", { useInternalHttpzAddress: true });
+  await hre.run("task:addNetworksToGatewayConfig", { useInternalGatewayConfigAddress: true });
   await runSuper();
 });
 

@@ -28,7 +28,7 @@ deploy-contracts-local:
 	cp $(ENV_PATH) .env
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:faucetToPrivate --private-key $(DEPLOYER_PRIVATE_KEY)
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:deployAllGatewayContracts
-	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:addNetworksToHttpz --use-internal-httpz-address true
+	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:addNetworksToGatewayConfig --use-internal-gateway-config-address true
 
 docker-compose-build:
 	cp .env.example .env
