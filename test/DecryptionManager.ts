@@ -45,6 +45,12 @@ const MAX_USER_DECRYPT_DURATION_DAYS = 365;
 const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 const MAX_DECRYPTION_REQUEST_BITS = 2048;
 
+// Get the current date in seconds. This is needed because Solidity works with seconds, not milliseconds
+// See https://docs.soliditylang.org/en/develop/units-and-global-variables.html#time-units
+function getDateInSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
 // Create a new key, rotate it and activate it. It returns the new key ID.
 async function createAndRotateKey(
   sourceKeyId: BigNumberish,
@@ -545,9 +551,11 @@ describe("DecryptionManager", function () {
     const contractAddresses = [contractAddress];
     const reencryptedShare = createBytes32();
     const publicKey = createBytes32();
+    const startTimestamp = getDateInSeconds();
+    const durationDays = 120;
     const requestValidity: IDecryptionManager.RequestValidityStruct = {
-      durationDays: 120,
-      startTimestamp: Date.now(),
+      startTimestamp,
+      durationDays,
     };
 
     // Define the ctHandleContractPairs (the handles have been added and allowed by default)
@@ -618,6 +626,7 @@ describe("DecryptionManager", function () {
         eip712ResponseMessage,
         userSignature,
         kmsSignatures,
+        requestValidity,
       };
     }
 
@@ -719,19 +728,40 @@ describe("DecryptionManager", function () {
         .withArgs(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, largeContractAddresses.length);
     });
 
-    it("Should revert because durationDays exceeds maximum allowed", async function () {
-      // Create a fake input data with a durationDays that exceeds the maximum allowed
-      const durationDays = MAX_USER_DECRYPT_DURATION_DAYS + 1;
-      const fakeRequestValidity: IDecryptionManager.RequestValidityStruct = {
-        durationDays,
-        startTimestamp: Date.now(),
+    it("Should revert because durationDays is null", async function () {
+      // Create an invalid validity request with a durationDays that is 0
+      const invalidRequestValidity: IDecryptionManager.RequestValidityStruct = {
+        startTimestamp,
+        durationDays: 0,
       };
 
-      // Check that the request fails because the durationDays exceeds the maximum allowed
       await expect(
         decryptionManager.userDecryptionRequest(
           ctHandleContractPairs,
-          fakeRequestValidity,
+          invalidRequestValidity,
+          hostChainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        ),
+      )
+        .to.be.revertedWithCustomError(decryptionManager, "InvalidNullDurationDays")
+        .withArgs();
+    });
+
+    it("Should revert because durationDays exceeds maximum allowed", async function () {
+      // Create an invalid validity request with a durationDays that exceeds the maximum allowed
+      const largeDurationDays = MAX_USER_DECRYPT_DURATION_DAYS + 1;
+      const invalidRequestValidity: IDecryptionManager.RequestValidityStruct = {
+        startTimestamp,
+        durationDays: largeDurationDays,
+      };
+
+      await expect(
+        decryptionManager.userDecryptionRequest(
+          ctHandleContractPairs,
+          invalidRequestValidity,
           hostChainId,
           contractAddresses,
           user.address,
@@ -740,7 +770,53 @@ describe("DecryptionManager", function () {
         ),
       )
         .to.be.revertedWithCustomError(decryptionManager, "MaxDurationDaysExceeded")
-        .withArgs(MAX_USER_DECRYPT_DURATION_DAYS, durationDays);
+        .withArgs(MAX_USER_DECRYPT_DURATION_DAYS, largeDurationDays);
+    });
+
+    it("Should revert because the start timestamp is in the future", async function () {
+      // Create an invalid validity request with a start timestamp in the future by delaying it by 100 seconds
+      const futureRequestValidity: IDecryptionManager.RequestValidityStruct = {
+        startTimestamp: startTimestamp + 100,
+        durationDays,
+      };
+
+      // We do not check the actual values in the error message as the block.timestamp will change
+      // between the request and the error emission
+      await expect(
+        decryptionManager.userDecryptionRequest(
+          ctHandleContractPairs,
+          futureRequestValidity,
+          hostChainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        ),
+      ).to.be.revertedWithCustomError(decryptionManager, "StartTimestampInFuture");
+    });
+
+    it("Should revert because the user decryption request has expired", async function () {
+      // Create a expired validity request.
+      // Note that we currently allow a past start timestamp. Here, we set it 10 days in the past,
+      // but we allow the request for 1 day only
+      const expiredRequestValidity: IDecryptionManager.RequestValidityStruct = {
+        startTimestamp: startTimestamp - 10 * 24 * 60 * 60,
+        durationDays: 1,
+      };
+
+      // We do not check the actual values in the error message as the block.timestamp will change
+      // between the request and the error emission
+      await expect(
+        decryptionManager.userDecryptionRequest(
+          ctHandleContractPairs,
+          expiredRequestValidity,
+          hostChainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        ),
+      ).to.be.revertedWithCustomError(decryptionManager, "UserDecryptionRequestExpired");
     });
 
     it("Should revert because handle represents an invalid FHE type", async function () {
@@ -1205,9 +1281,11 @@ describe("DecryptionManager", function () {
     const contractAddresses = [contractAddress];
     const reencryptedShare = createBytes32();
     const publicKey = createBytes32();
+    const startTimestamp = getDateInSeconds();
+    const durationDays = 120;
     const requestValidity: IDecryptionManager.RequestValidityStruct = {
-      durationDays: 120,
-      startTimestamp: Date.now(),
+      startTimestamp,
+      durationDays,
     };
 
     // Define the ctHandleContractPairs (the handles have been added and allowed by default)
@@ -1290,6 +1368,7 @@ describe("DecryptionManager", function () {
         eip712ResponseMessage,
         delegatedSignature,
         kmsSignatures,
+        requestValidity,
       };
     }
 
@@ -1394,19 +1473,40 @@ describe("DecryptionManager", function () {
         .withArgs(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, largeContractAddresses.length);
     });
 
-    it("Should revert because durationDays exceeds maximum allowed", async function () {
-      // Create a fake input data with a durationDays that exceeds the maximum allowed
-      const durationDays = MAX_USER_DECRYPT_DURATION_DAYS + 1;
-      const fakeRequestValidity: IDecryptionManager.RequestValidityStruct = {
-        durationDays,
-        startTimestamp: Date.now(),
+    it("Should revert because durationDays is null", async function () {
+      // Create an invalid validity request with a durationDays that is 0
+      const invalidRequestValidity: IDecryptionManager.RequestValidityStruct = {
+        startTimestamp,
+        durationDays: 0,
       };
 
-      // Check that the request fails because the durationDays exceeds the maximum allowed
       await expect(
         decryptionManager.delegatedUserDecryptionRequest(
           ctHandleContractPairs,
-          fakeRequestValidity,
+          invalidRequestValidity,
+          delegationAccounts,
+          hostChainId,
+          contractAddresses,
+          publicKey,
+          delegatedSignature,
+        ),
+      )
+        .to.be.revertedWithCustomError(decryptionManager, "InvalidNullDurationDays")
+        .withArgs();
+    });
+
+    it("Should revert because durationDays exceeds maximum allowed", async function () {
+      // Create an invalid validity request with a durationDays that exceeds the maximum allowed
+      const largeDurationDays = MAX_USER_DECRYPT_DURATION_DAYS + 1;
+      const invalidRequestValidity: IDecryptionManager.RequestValidityStruct = {
+        startTimestamp,
+        durationDays: largeDurationDays,
+      };
+
+      await expect(
+        decryptionManager.delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          invalidRequestValidity,
           delegationAccounts,
           hostChainId,
           contractAddresses,
@@ -1415,7 +1515,53 @@ describe("DecryptionManager", function () {
         ),
       )
         .to.be.revertedWithCustomError(decryptionManager, "MaxDurationDaysExceeded")
-        .withArgs(MAX_USER_DECRYPT_DURATION_DAYS, durationDays);
+        .withArgs(MAX_USER_DECRYPT_DURATION_DAYS, largeDurationDays);
+    });
+
+    it("Should revert because the start timestamp is in the future", async function () {
+      // Create an invalid validity request with a start timestamp in the future by delaying it by 100 seconds
+      const futureRequestValidity: IDecryptionManager.RequestValidityStruct = {
+        startTimestamp: startTimestamp + 100,
+        durationDays,
+      };
+
+      // We do not check the actual values in the error message as the block.timestamp will change
+      // between the request and the error emission
+      await expect(
+        decryptionManager.delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          futureRequestValidity,
+          delegationAccounts,
+          hostChainId,
+          contractAddresses,
+          publicKey,
+          delegatedSignature,
+        ),
+      ).to.be.revertedWithCustomError(decryptionManager, "StartTimestampInFuture");
+    });
+
+    it("Should revert because the delegated user decryption request has expired", async function () {
+      // Create a expired validity request.
+      // Note that we currently allow a past start timestamp. Here, we set it 10 days in the past,
+      // but we allow the request for 1 day only
+      const expiredRequestValidity: IDecryptionManager.RequestValidityStruct = {
+        startTimestamp: startTimestamp - 10 * 24 * 60 * 60,
+        durationDays: 1,
+      };
+
+      // We do not check the actual values in the error message as the block.timestamp will change
+      // between the request and the error emission
+      await expect(
+        decryptionManager.delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          expiredRequestValidity,
+          delegationAccounts,
+          hostChainId,
+          contractAddresses,
+          publicKey,
+          delegatedSignature,
+        ),
+      ).to.be.revertedWithCustomError(decryptionManager, "UserDecryptionRequestExpired");
     });
 
     it("Should revert because handle represents an invalid FHE type", async function () {
