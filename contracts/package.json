@@ -1,6 +1,6 @@
 {
   "name": "@fhevm/core-contracts",
-  "version": "0.7.0-7",
+  "version": "0.7.0-8",
   "description": "fhevm backend contracts",
   "repository": {
     "type": "git",
@@ -36,7 +36,7 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "extra-bigint": "^1.2.0",
-    "@fhevm/sdk": "^0.7.0-20",
+    "@fhevm/sdk": "^0.7.0-21",
     "hardhat": "2.22.18",
     "hardhat-deploy": "^0.14.0",
     "hardhat-ignore-warnings": "^0.2.11",

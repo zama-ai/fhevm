@@ -165,10 +165,10 @@ export const userDecryptRequestMocked =
 
     // Signature checking:
     const domain = {
-      name: 'DecryptionManager',
+      name: 'Decryption',
       version: '1',
       chainId: process.env.CHAIN_ID_GATEWAY,
-      verifyingContract: process.env.DECRYPTION_MANAGER_ADDRESS,
+      verifyingContract: process.env.DECRYPTION_ADDRESS,
     };
     const types = {
       UserDecryptRequestVerification: [
@@ -463,15 +463,15 @@ async function coprocSign(
   contractAddress: string,
   signer: Wallet,
 ): Promise<string> {
-  const zkpokManAdd = process.env.ZKPOK_MANAGER_ADDRESS;
+  const inputVerificationAdd = process.env.INPUT_VERIFICATION_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;
   const hostChainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
 
   const domain = {
-    name: 'ZKPoKManager',
+    name: 'InputVerification',
     version: '1',
     chainId: chainId,
-    verifyingContract: zkpokManAdd,
+    verifyingContract: inputVerificationAdd,
   };
 
   const types = {

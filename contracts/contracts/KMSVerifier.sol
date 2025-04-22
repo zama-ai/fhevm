@@ -66,7 +66,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     string private constant CONTRACT_NAME = "KMSVerifier";
 
     /// @notice Name of the source contract for which original EIP712 was destinated.
-    string private constant CONTRACT_NAME_SOURCE = "DecryptionManager";
+    string private constant CONTRACT_NAME_SOURCE = "Decryption";
 
     /// @notice Major version of the contract.
     uint256 private constant MAJOR_VERSION = 0;
@@ -95,7 +95,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
 
     /**
      * @notice  Re-initializes the contract.
-     * @param verifyingContractSource The DecryptionManager contract address from the Gateway chain.
+     * @param verifyingContractSource The Decryption contract address from the Gateway chain.
      * @param chainIDSource The chain id of the Gateway chain.
      * @param initialSigners The list of initial KMS signers, should be non-empty and contain unique addresses, otherwise initialization will fail.
      * @param initialThreshold Initial threshold, should be non-null and less or equal to the initialSigners length.

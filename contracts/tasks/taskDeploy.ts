@@ -113,7 +113,7 @@ task('task:deployKMSVerifier')
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier'));
     const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-    const verifyingContractSource = process.env.DECRYPTION_MANAGER_ADDRESS!;
+    const verifyingContractSource = process.env.DECRYPTION_ADDRESS!;
     const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
     const initialThreshold = +process.env.KMS_THRESHOLD!;
     let initialSigners: string[] = [];
@@ -150,7 +150,7 @@ task('task:deployInputVerifier')
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier'));
     const proxyAddress = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-    const verifyingContractSource = process.env.ZKPOK_MANAGER_ADDRESS!;
+    const verifyingContractSource = process.env.INPUT_VERIFICATION_ADDRESS!;
     const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
 
     let initialSigners: string[] = [];

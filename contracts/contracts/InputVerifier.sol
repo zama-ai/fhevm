@@ -86,11 +86,11 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     }
 
     /// @notice The definition of the CiphertextVerification structure typed data.
-    string private constant EIP712_ZKPOK_TYPE =
+    string private constant EIP712_INPUT_VERIFICATION_TYPE =
         "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
 
-    /// @notice The hash of the EIP712ZKPoK structure typed data definition used for signature validation.
-    bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
+    /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
+    bytes32 private constant EIP712_INPUT_VERIFICATION_TYPE_HASH = keccak256(bytes(EIP712_INPUT_VERIFICATION_TYPE));
 
     /// @notice Handle version.
     uint8 public constant HANDLE_VERSION = 0;
@@ -99,7 +99,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     string private constant CONTRACT_NAME = "InputVerifier";
 
     /// @notice Name of the source contract for which original EIP712 was destinated.
-    string private constant CONTRACT_NAME_SOURCE = "ZKPoKManager";
+    string private constant CONTRACT_NAME_SOURCE = "InputVerification";
 
     /// @notice Major version of the contract.
     uint256 private constant MAJOR_VERSION = 0;
@@ -367,15 +367,17 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
         return (isProofCached, key);
     }
 
-    /// @notice Computes the hash of a given EIP712ZKPoK structured data
-    /// @param ctVerification The EIP712ZKPoK structure
-    /// @return The hash of the EIP712ZKPoK structure
-    function _hashEIP712ZKPoK(CiphertextVerification memory ctVerification) internal view virtual returns (bytes32) {
+    /// @notice Computes the hash of a given CiphertextVerification structured data
+    /// @param ctVerification The CiphertextVerification structure
+    /// @return The hash of the CiphertextVerification structure
+    function _hashEIP712InputVerification(
+        CiphertextVerification memory ctVerification
+    ) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
                     abi.encode(
-                        EIP712_ZKPOK_TYPE_HASH,
+                        EIP712_INPUT_VERIFICATION_TYPE_HASH,
                         keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
@@ -386,7 +388,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     }
 
     function _verifyEIP712(CiphertextVerification memory ctVerif, bytes[] memory signatures) internal virtual {
-        bytes32 digest = _hashEIP712ZKPoK(ctVerif);
+        bytes32 digest = _hashEIP712InputVerification(ctVerif);
         if (!_verifySignaturesDigest(digest, signatures)) revert SignaturesVerificationFailed();
     }
 
