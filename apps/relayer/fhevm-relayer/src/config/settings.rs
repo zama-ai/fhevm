@@ -1,6 +1,6 @@
 use alloy::primitives::map::HashMap;
 use config::{Config, ConfigError, Environment, File};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 
 /// Network configuration for blockchain connections.
@@ -144,13 +144,13 @@ pub struct InputProof {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct KeyUrl {
     pub fhe_public_key: KeyData,
     pub crs: KeyData,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct KeyData {
     pub data_id: String,
     pub url: String,

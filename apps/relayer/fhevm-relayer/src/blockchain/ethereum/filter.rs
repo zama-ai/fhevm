@@ -1,6 +1,8 @@
 use alloy::primitives::Address;
 use alloy::rpc::types::{BlockNumberOrTag, Filter};
+use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContractAndTopicsFilter {
     contract_addresses: Vec<Address>,
     _topics: Vec<String>,

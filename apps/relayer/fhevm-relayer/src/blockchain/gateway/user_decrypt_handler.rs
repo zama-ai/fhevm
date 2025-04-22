@@ -549,7 +549,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
         duration_days: U256::from(10),
     };
 
-    let contracts_chain_id = U256::from(rollup_settings.chain_id);
+    let contracts_chain_id = rollup_settings.chain_id;
     let user_address = manager.sender_address();
 
     let public_key = Bytes::from(vec![1, 2, 3, 4, 5]);

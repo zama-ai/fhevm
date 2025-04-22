@@ -8,6 +8,7 @@ use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::{primitives::U256, rpc::types::Log};
 use std::fmt::Display;
+use std::num::ParseIntError;
 use std::str::FromStr;
 use tracing::info;
 use uuid::Uuid;
@@ -329,25 +330,25 @@ pub struct PublicDecryptRequest {
     pub ct_handles: Vec<[u8; 32]>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UserDecryptRequest {
     pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
     pub request_validity: RequestValidity,
-    pub contracts_chain_id: U256,
+    pub contracts_chain_id: u64,
     pub contract_addresses: Vec<Address>,
     pub user_address: Address,
     pub signature: Bytes,
     pub public_key: Bytes,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
 #[allow(non_snake_case)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CtHandleContractPair {
     pub ct_handle: U256,
     pub contract_address: Address,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[allow(non_snake_case)]
 pub struct RequestValidity {
     pub start_timestamp: U256,
@@ -412,18 +413,8 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             duration_days,
         };
 
-        // Parse contract chain ID - first as u64, then as string
-        let contracts_chain_id = match value.contractsChainId.to_string().parse::<u64>() {
-            Ok(id) => U256::from(id),
-            Err(_) => {
-                // Try as hex or decimal string
-                if value.contractsChainId.to_string().starts_with("0x") {
-                    U256::from_str(&value.contractsChainId.to_string())?
-                } else {
-                    U256::from_str_radix(&value.contractsChainId.to_string(), 10)?
-                }
-            }
-        };
+        // Parse contract chain ID
+        let contracts_chain_id = parse_chain_id(&value.contractsChainId)?;
 
         let contract_addresses = &value
             .contractAddresses
@@ -495,7 +486,7 @@ impl InputProofEventData {
 
 #[derive(Clone, Debug)]
 pub struct InputProofRequest {
-    pub contract_chain_id: U256,
+    pub contract_chain_id: u64,
     pub contract_address: Address,
     pub user_address: Address,
     pub ciphetext_with_zk_proof: Bytes,
@@ -503,7 +494,7 @@ pub struct InputProofRequest {
 
 impl InputProofRequest {
     pub fn new(
-        contract_chain_id: U256,
+        contract_chain_id: u64,
         contract_address: Address,
         user_address: Address,
         ciphetext_with_zk_proof: Bytes,
@@ -562,23 +553,20 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
     }
 }
 
-fn parse_chain_id(
-    chain_id: &str,
-) -> Result<alloy::primitives::Uint<256, 4>, alloy::primitives::ruint::ParseError> {
-    let contract_chain_id = if chain_id == "1e240" {
+fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
+    if chain_id == "1e240" {
         info!("Special case detected: contractChainId is 1e240, using hardcoded value 123456");
-        U256::from(123456u64)
+        Ok(123456u64)
     } else if chain_id == "3039" {
         info!("Special case detected: contractChainId is 3039, using hardcoded value 12345");
-        U256::from(12345u64)
-    } else if chain_id.starts_with("0x") {
+        Ok(12345u64)
+    } else if let Some(stripped) = chain_id.strip_prefix("0x") {
         // Parse as hex if it starts with 0x
-        U256::from_str(chain_id)?
+        u64::from_str_radix(stripped, 16)
     } else {
         // Parse as decimal otherwise
-        U256::from_str_radix(chain_id, 10)?
-    };
-    Ok(contract_chain_id)
+        chain_id.parse::<u64>()
+    }
 }
 
 impl TryFrom<InputProofResponse> for InputProofResponseJson {
@@ -627,10 +615,7 @@ mod tests {
 
         let request = InputProofRequest::try_from(json)?;
 
-        assert_eq!(
-            request.contract_chain_id,
-            U256::from_str_radix(CHAIN_ID, 16)?
-        );
+        assert_eq!(request.contract_chain_id, CHAIN_ID.parse::<u64>()?);
         assert_eq!(
             request.contract_address,
             Address::from_str(CONTRACT_ADDRESS)?

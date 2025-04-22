@@ -100,7 +100,7 @@ impl ComputeCalldata {
         let call = DecyptionManager::userDecryptionRequestCall::new((
             ct_handle_contract_pairs,
             validity,
-            user_decrypt_request.contracts_chain_id,
+            U256::from(user_decrypt_request.contracts_chain_id),
             user_decrypt_request.contract_addresses,
             user_decrypt_request.user_address,
             user_decrypt_request.public_key,
@@ -126,26 +126,18 @@ impl ComputeCalldata {
     /// * `user_address` - Address of the user
     /// * `ciphertext_with_zkproof` - Combined ciphertext and ZK proof data
     pub fn verify_proof_req(
-        contract_chain_id: U256,
+        contract_chain_id: u64,
         contract_address: Address,
         user_address: Address,
         ciphertext_with_zkproof: Bytes,
     ) -> Result<Bytes, EventProcessingError> {
-        let calldata = ZKPoKManager::verifyProofRequestCall::new((
-            contract_chain_id,
-            contract_address,
-            user_address,
-            ciphertext_with_zkproof.clone(),
-        ))
-        .abi_encode();
-
-        info!(
-            "UserDecryptionRequest for user_address {} and contract_address: {}: 0x{}",
-            contract_chain_id,
-            contract_address,
-            hex::encode(&calldata)
-        );
-
+        let request_call = ZKPoKManager::verifyProofRequestCall {
+            contractChainId: U256::from(contract_chain_id),
+            contractAddress: contract_address,
+            userAddress: user_address,
+            ciphertextWithZKProof: ciphertext_with_zkproof,
+        };
+        let calldata = request_call.abi_encode();
         Ok(Bytes::from(calldata))
     }
 

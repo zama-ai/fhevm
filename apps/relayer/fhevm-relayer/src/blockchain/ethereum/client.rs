@@ -5,11 +5,12 @@ use alloy::{
     pubsub::PubSubFrontend,
     rpc::types::{BlockNumberOrTag, Log as RpcLog},
 };
+use serde::{Deserialize, Serialize};
 
 use std::sync::Arc;
 use tracing::{info, instrument};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChainName {
     Httpz,
     Gateway,

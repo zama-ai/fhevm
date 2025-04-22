@@ -237,7 +237,7 @@ impl ArbitrumGatewayL2InputHandler {
     /// * `Err(`[`EventProcessingError`]`)` - If the transaction fails
     async fn process_input_request(
         &self,
-        contract_chain_id: U256,
+        contract_chain_id: u64,
         contract_address: Address,
         user_address: Address,
         zkpok: Bytes,

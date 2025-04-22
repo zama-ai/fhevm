@@ -309,6 +309,7 @@ impl TransactionManager {
         })?;
 
         if code.is_empty() {
+            error!("No code at target address: {:?} !", target);
             return Err(TransactionError::InvalidAddress(format!(
                 "No code at target address: {:#x}",
                 target

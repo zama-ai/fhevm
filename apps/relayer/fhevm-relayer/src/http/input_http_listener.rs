@@ -22,7 +22,7 @@ pub struct InputProofRequestJson {
 }
 
 impl InputProofRequestJson {
-    fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         // Add other validations here.
         if self.ciphertextWithZkpok.is_empty() {
             Err("ZKPoK cannot be empty.".to_string())

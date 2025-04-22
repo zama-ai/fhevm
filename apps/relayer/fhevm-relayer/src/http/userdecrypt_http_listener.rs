@@ -41,7 +41,7 @@ pub struct RequestValidityJson {
 }
 
 impl UserDecryptRequestJson {
-    fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         // Add other validations here.
         Ok(())
     }
@@ -53,7 +53,7 @@ pub struct UserDecryptResponseJson {
     pub response: Vec<UserDecryptResponsePayloadJson>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct UserDecryptResponsePayloadJson {
     pub payload: Bytes,
     pub signature: Bytes,
