@@ -154,8 +154,8 @@ task('task:deployInputVerifier')
     const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
 
     let initialSigners: string[] = [];
-    const numSigners = +process.env.NUM_KMS_NODES!;
-    for (let idx = 0; idx < numSigners; idx++) {
+    const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
+    for (let idx = 0; idx < +numSigners; idx++) {
       if (!taskArguments.useAddress) {
         const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_COPROCESSOR_ACCOUNT_${idx}`);
         const inputSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
