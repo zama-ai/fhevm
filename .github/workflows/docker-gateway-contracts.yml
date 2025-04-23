@@ -27,7 +27,7 @@ jobs:
     with:
       working-directory: "."
       push_image: true
-      image-name: "fhevm-gateway/sc-bundle"
+      image-name: "fhevm-gateway/contracts"
       docker-file: "Dockerfile"
       arm-build: true
 
