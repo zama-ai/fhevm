@@ -1,4 +1,4 @@
-name: "Docker - HTTPZ Gateway Contracts"
+name: "Docker - fhevm Gateway Contracts"
 
 on:
   pull_request:
@@ -15,8 +15,8 @@ concurrency:
 
 jobs:
   docker-sc-bundle:
-    name: Docker - HTTPZ Gateway Contracts
-    uses: zama-ai/httpz-templates/.github/workflows/docker_common.yml@58ddd70781d1456d7fe937efef501a7bc5ca2d8d # main
+    name: Docker - fhevm Gateway Contracts
+    uses: zama-ai/fhevm-templates/.github/workflows/docker_common.yml@58ddd70781d1456d7fe937efef501a7bc5ca2d8d # main
     secrets:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
@@ -27,7 +27,7 @@ jobs:
     with:
       working-directory: "."
       push_image: true
-      image-name: "httpz-gateway/sc-bundle"
+      image-name: "fhevm-gateway/sc-bundle"
       docker-file: "Dockerfile"
       arm-build: true
 

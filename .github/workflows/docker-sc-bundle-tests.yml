@@ -1,9 +1,9 @@
-name: HTTPZ Gateway Contracts Deployment
+name: fhevm Gateway Contracts Deployment
 
 on:
   pull_request:
     paths-ignore:
-      - "httpz_gateway_rust_bindings/**"
+      - "rust_bindings/**"
       - "docs/**"
 
 concurrency:
@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  httpz-gateway-sc-deploy:
-    name: HTTPZ Gateway Contracts Deployment
+  fhevm-gateway-sc-deploy:
+    name: fhevm Gateway Contracts Deployment
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -43,7 +43,7 @@ jobs:
           if [ "$EXIT_CODE_SC" -ne 0 ]; then
             echo "Deployment failed with exit code $EXIT_CODE_SC"
             exit 1
-          ######### TODO: This doesn't include revert error codes, to be implemented with https://github.com/zama-ai/httpz-gateway/issues/275
+          ######### TODO: This doesn't include revert error codes, to be implemented with https://github.com/zama-ai/fhevm-gateway/issues/275
           elif ! grep -q "Contract deployment done!" deployment_logs.txt; then
             echo "Deployment did not complete successfully - 'Contract deployment done!' message not found in logs"
             exit 1
@@ -60,7 +60,7 @@ jobs:
           if [ "$EXIT_CODE_NETWORK" -ne 0 ]; then
             echo "Network registration failed with exit code $EXIT_CODE_NETWORK"
             exit 1
-          ######### TODO: This doesn't include revert error codes, to be implemented with https://github.com/zama-ai/httpz-gateway/issues/275
+          ######### TODO: This doesn't include revert error codes, to be implemented with https://github.com/zama-ai/fhevm-gateway/issues/275
           elif ! grep -q "Networks registration done!" network_registration_logs.txt; then
             echo "Network registration did not complete successfully - 'Networks registration done!' message not found in logs"
             exit 1
