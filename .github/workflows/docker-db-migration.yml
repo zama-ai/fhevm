@@ -3,13 +3,13 @@ name: "Docker - fhevm DB migration"
 on:
   pull_request:
     paths:
-      - .github/workflows/docker-fhevm-db-migration.yml
+      - .github/workflows/docker-db-migration.yml
       - fhevm-engine/fhevm-db/**
   push:
     branches:
       - main
     paths:
-      - .github/workflows/docker-fhevm-db-migration.yml
+      - .github/workflows/docker-db-migration.yml
       - fhevm-engine/fhevm-db/**
   release:
     types:

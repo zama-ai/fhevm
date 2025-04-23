@@ -3,14 +3,14 @@ name: "Docker - fhevm Coprocessor"
 on:
   pull_request:
     paths:
-      - .github/workflows/docker-fhevm-coprocessor.yml
+      - .github/workflows/docker-coprocessor.yml
       - fhevm-engine/**
       - proto/**
   push:
     branches:
       - main
     paths:
-      - .github/workflows/docker-fhevm-coprocessor.yml
+      - .github/workflows/docker-coprocessor.yml
       - fhevm-engine/**
       - proto/**
   release:
