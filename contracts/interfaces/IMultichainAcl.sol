@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "./IDecryption.sol";
+import "../shared/Structs.sol";
+
 /**
  * @title IMultichainAcl.
  * @notice Interface of the MultichainAcl contract which aggregates all ACLs from all host chains.

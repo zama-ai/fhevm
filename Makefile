@@ -47,6 +47,12 @@ check-bindings:
 update-bindings:
 	python3 scripts/bindings_update.py update
 
+check-mocks:
+	node scripts/mock_contracts_cli.js check
+
+update-mocks:
+	node scripts/mock_contracts_cli.js update
+
 # Here, we purposely use a logical OR (||) instead of an if statement with a negation to avoid having 
 # discrepancies between running locally and in the CI. This is because some shell environments 
 # handle exit statuses of pipelines differently.
@@ -61,4 +67,4 @@ update-selectors:
 	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 > ./docs/contract_selectors.txt
 
 # Conform to pre-commit checks
-conformance: prettier update-bindings update-selectors
+conformance: prettier update-bindings update-mocks update-selectors

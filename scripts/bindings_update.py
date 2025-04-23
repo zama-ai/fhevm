@@ -14,6 +14,7 @@ from pathlib import Path
 GW_ROOT_DIR = Path(os.path.dirname(__file__)).parent
 GW_CRATE_DIR = GW_ROOT_DIR.joinpath("rust_bindings")
 GW_CONTRACTS_DIR = GW_ROOT_DIR.joinpath("contracts")
+GW_MOCKS_DIR = GW_CONTRACTS_DIR.joinpath("mocks")
 
 ALLOWED_FORGE_VERSIONS = ["1.0.0-v1.0.0", "1.0.0-stable"]
 
@@ -116,12 +117,12 @@ class BindingsUpdater:
         log_info(
             "Checking that the Gateway contracts' bindings are up-to-date..."
         )
-        
+
         # We need to include the --no-metadata flag to avoid updating many of the contracts' bytecode
         # when only updating one of them (since interfaces are included in many contracts)
         return_code = subprocess.call(
             f"forge bind --root {GW_ROOT_DIR} --module --skip-cargo-toml "
-            f"--hh -b {GW_CRATE_DIR}/src  -o {self.tempdir} --skip Example "
+            f"--hh -b {GW_CRATE_DIR}/src  -o {self.tempdir} --skip Example --skip {GW_MOCKS_DIR}/* "
             f"--no-metadata",
             shell=True,
             stdout=subprocess.DEVNULL,
@@ -145,7 +146,7 @@ class BindingsUpdater:
         # when only updating one of them (since interfaces are included in many contracts)
         subprocess.run(
             f"forge bind --root {GW_ROOT_DIR} --hh -b {GW_CRATE_DIR}/src "
-            f"--module --overwrite -o {self.tempdir} --skip Example "
+            f"--module --overwrite -o {self.tempdir} --skip Example --skip {GW_MOCKS_DIR}/* "
             "--no-metadata",
             shell=True,
             check=True,
