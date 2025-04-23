@@ -1,27 +1,28 @@
-FROM ghcr.io/zama-ai/httpz-node-golden-image:v23.10.0-alpine3.20
+FROM ghcr.io/zama-ai/fhevm-node:latest
 
 WORKDIR /app
 
-RUN chown -R httpz:httpz /home/httpz && \
-    chown -R httpz:httpz /app
+RUN chown -R fhevm:fhevm /home/fhevm && \
+    chown -R fhevm:fhevm /app
 
 # Copy only necessary files
-COPY --chown=httpz:httpz package.json ./
-COPY --chown=httpz:httpz package-lock.json ./
+COPY --chown=fhevm:fhevm package.json ./
+COPY --chown=fhevm:fhevm package-lock.json ./
 
 # Install dependencies
 RUN npm ci && \
     npm prune
 
 # Copy the application files
-COPY --chown=httpz:httpz ./hardhat.config.ts ./tsconfig.json ./
-COPY --chown=httpz:httpz ./contracts ./contracts/
-COPY --chown=httpz:httpz ./addresses ./addresses/
-COPY --chown=httpz:httpz ./tasks ./tasks/
+COPY --chown=fhevm:fhevm ./hardhat.config.ts ./tsconfig.json ./
+COPY --chown=fhevm:fhevm ./contracts ./contracts/
+COPY --chown=fhevm:fhevm ./addresses ./addresses/
+COPY --chown=fhevm:fhevm ./tasks ./tasks/
 
-# Pre-download Solidity compiler
-RUN npx hardhat compile --force
+# Pre-compile proxy contracts
+RUN npx hardhat clean && \
+    npx hardhat compile:specific --contract contracts/emptyProxy
 
-USER httpz:httpz
+USER fhevm:fhevm
 
 ENTRYPOINT ["/bin/bash", "-c"]
