@@ -27,22 +27,22 @@ kmsConnector:
   env:
     - name: PROBE
       value: "true"
-    - name: KMS_CONNECTOR_GWL2_URL
-      value: "ws://layer2-node:8546"
+    - name: KMS_CONNECTOR_GATEWAY_URL
+      value: "ws://gateway-node:8546"
     - name: KMS_CONNECTOR_MNEMONIC
       value: "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
     - name: KMS_CONNECTOR_CHAIN_ID
       value: "54321"
-    - name: KMS_CONNECTOR_DECRYPTION_MANAGER_ADDRESS
+    - name: KMS_CONNECTOR_DECRYPTION_ADDRESS
       valueFrom:
         configMapKeyRef:
           name: kms-sc-deploy-kms-sc-addresses
-          key: DECRYPTION_MANAGER_CONTRACT_ADDRESS
-    - name: KMS_CONNECTOR_HTTPZ_ADDRESS
+          key: DECRYPTION_CONTRACT_ADDRESS
+    - name: KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS
       valueFrom:
         configMapKeyRef:
           name: kms-sc-deploy-kms-sc-addresses
-          key: HTTPZ_CONTRACT_ADDRESS
+          key: GATEWAY_CONFIG_CONTRACT_ADDRESS
     - name: KMS_CONNECTOR_CHANNEL_SIZE
       value: "1000"
     - name: KMS_CONNECTOR_SERVICE_NAME

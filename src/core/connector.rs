@@ -10,7 +10,7 @@ const DEFAULT_CHANNEL_SIZE: usize = 1000;
 use crate::{
     core::{config::Config, decryption::handler::DecryptionHandler, utils::config_validator},
     error::Result,
-    gwl2_adapters::{
+    gw_adapters::{
         decryption::DecryptionAdapter,
         events::{EventsAdapter, KmsCoreEvent},
     },
@@ -19,7 +19,7 @@ use crate::{
 
 use super::{event_processor::processors::EventProcessor, utils::wallet::KmsWallet};
 
-/// Core KMS connector that handles all interactions with L2
+/// Core KMS connector that handles all interactions with the Gateway
 pub struct KmsCoreConnector<P: Provider + Clone> {
     events: EventsAdapter,
     event_processor: EventProcessor<P>,
@@ -40,14 +40,14 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> KmsCoreConnector<P> {
         let (event_tx, event_rx) =
             mpsc::channel(config.channel_size.unwrap_or(DEFAULT_CHANNEL_SIZE));
 
-        let decryption_manager = Address::from_str(&config.decryption_manager_address)
-            .expect("Invalid decryption manager address");
-        let httpz = Address::from_str(&config.httpz_address).expect("Invalid HTTPZ address");
-
-        let rpc_url = config.gwl2_url.clone();
-        let events = EventsAdapter::new(rpc_url, decryption_manager, httpz, event_tx);
         let decryption =
-            DecryptionAdapter::new(decryption_manager, provider.clone(), wallet.clone());
+            Address::from_str(&config.decryption_address).expect("Invalid Decryption address");
+        let gateway_config = Address::from_str(&config.gateway_config_address)
+            .expect("Invalid GatewayConfig address");
+
+        let rpc_url = config.gateway_url.clone();
+        let events = EventsAdapter::new(rpc_url, decryption, gateway_config, event_tx);
+        let decryption = DecryptionAdapter::new(decryption, provider.clone(), wallet.clone());
 
         let decryption_handler =
             DecryptionHandler::new(decryption.clone(), kms_client.clone(), config.clone());
@@ -103,7 +103,9 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> KmsCoreConnector<P> {
         }
 
         // Process events
-        self.event_processor.process_l2_events(event_rx).await?;
+        self.event_processor
+            .process_gateway_events(event_rx)
+            .await?;
 
         Ok(())
     }

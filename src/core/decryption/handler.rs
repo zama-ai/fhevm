@@ -21,7 +21,7 @@ use crate::{
         utils::eip712::{alloy_to_protobuf_domain, verify_reencryption_eip712},
     },
     error::Result,
-    gwl2_adapters::decryption::DecryptionAdapter,
+    gw_adapters::decryption::DecryptionAdapter,
     kms_core_adapters::service::{KmsService, KmsServiceImpl},
 };
 
@@ -92,16 +92,8 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
         };
 
         // Create EIP-712 domain using alloy primitives
-        let domain_name = self
-            .kms_client
-            .config()
-            .decryption_manager_domain_name
-            .clone();
-        let domain_version = self
-            .kms_client
-            .config()
-            .decryption_manager_domain_version
-            .clone();
+        let domain_name = self.kms_client.config().decryption_domain_name.clone();
+        let domain_version = self.kms_client.config().decryption_domain_version.clone();
         let domain = Eip712Domain {
             name: Some(Cow::Owned(domain_name)),
             version: Some(Cow::Owned(domain_version)),
@@ -109,13 +101,10 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
             verifying_contract: Some(
                 self.kms_client
                     .config()
-                    .decryption_manager_address
+                    .decryption_address
                     .parse()
                     .map_err(|e| {
-                        crate::error::Error::Config(format!(
-                            "Invalid decryption manager address: {}",
-                            e
-                        ))
+                        crate::error::Error::Config(format!("Invalid Decryption address: {}", e))
                     })?,
             ),
             salt: None, // TODO: verify policy on this
@@ -181,7 +170,7 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
                         )
                     })?;
 
-                    // Send response back to L2
+                    // Send response back to the Gateway
                     info!(
                         "Sending public decryption response for request {} with {} plaintexts",
                         request_id,
@@ -337,7 +326,7 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
                         );
                     }
 
-                    // Send response back to L2
+                    // Send response back to the Gateway
                     info!("Sending userDecryptionResponse for request {}", request_id);
                     self.decryption
                         .send_user_decryption_response(

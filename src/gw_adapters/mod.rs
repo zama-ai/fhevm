@@ -1,3 +1,3 @@
 pub mod decryption;
 pub mod events;
-pub mod httpz;
+pub mod gateway_config;

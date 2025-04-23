@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 use crate::{
     core::config::S3Config,
     error::{Error, Result},
-    gwl2_contracts::HTTPZ,
+    gw_contracts::GatewayConfig,
 };
 
 // Global cache for coprocessor S3 bucket URLs
@@ -32,10 +32,10 @@ fn log_cache_state() {
     }
 }
 
-/// Retrieves the S3 bucket URL for a coprocessor from the HTTPZ contract
-pub async fn call_httpz_to_get_s3_url<P: Provider + Clone>(
+/// Retrieves the S3 bucket URL for a coprocessor from the GatewayConfig contract
+pub async fn call_gateway_config_to_get_s3_url<P: Provider + Clone>(
     coprocessor_address: Address,
-    httpz_address: Address,
+    gateway_config_address: Address,
     provider: Arc<P>,
 ) -> Option<String> {
     info!(
@@ -53,21 +53,21 @@ pub async fn call_httpz_to_get_s3_url<P: Provider + Clone>(
         return Some(url.value().clone());
     }
 
-    // If no cached URL found, query the HTTPZ contract for the first available coprocessor
+    // If no cached URL found, query the GatewayConfig contract for the first available coprocessor
     info!(
-        "CACHE MISS: Querying HTTPZ contract for coprocessor {:?} S3 bucket URL",
+        "CACHE MISS: Querying GatewayConfig contract for coprocessor {:?} S3 bucket URL",
         coprocessor_address
     );
 
-    // Create HTTPZ contract instance
-    let contract = HTTPZ::new(httpz_address, provider);
+    // Create GatewayConfig contract instance
+    let contract = GatewayConfig::new(gateway_config_address, provider);
 
     // Call getCoprocessor method
     let coprocessor = match contract.getCoprocessor(coprocessor_address).call().await {
         Ok(result) => result,
         Err(e) => {
             warn!(
-                "HTTPZ contract call failed for coprocessor {:?}: {}",
+                "GatewayConfig contract call failed for coprocessor {:?}: {}",
                 coprocessor_address, e
             );
             return None;
@@ -504,7 +504,7 @@ async fn direct_http_retrieval(url: &str) -> Result<Vec<u8>> {
 /// Prefetches and caches S3 bucket URLs to return a list of coprocessor s3 urls
 pub async fn prefetch_coprocessor_buckets<P: Provider + Clone>(
     coprocessor_addresses: Vec<Address>,
-    httpz_address: Address,
+    gateway_config_address: Address,
     provider: Arc<P>,
     fallback_config: Option<&S3Config>,
 ) -> Vec<String> {
@@ -552,7 +552,9 @@ pub async fn prefetch_coprocessor_buckets<P: Provider + Clone>(
             address
         );
 
-        match call_httpz_to_get_s3_url(*address, httpz_address, provider.clone()).await {
+        match call_gateway_config_to_get_s3_url(*address, gateway_config_address, provider.clone())
+            .await
+        {
             Some(s3_url) => {
                 info!(
                     "Successfully fetched S3 bucket URL for coprocessor {:?}: {}",
@@ -694,12 +696,12 @@ mod tests {
     #[test]
     fn test_process_s3_bucket_url_custom_endpoint_with_region_path() {
         // Test URL with custom endpoint and region in path segment
-        let url = "http://minio.httpz-utils.svc.cluster.local:9000/s3/us-east-1/ct128".to_string();
+        let url = "http://minio.fhevm-utils.svc.cluster.local:9000/s3/us-east-1/ct128".to_string();
         let result = process_s3_bucket_url(url);
         assert!(result.is_some());
         let (region, endpoint, bucket) = result.unwrap();
         assert_eq!(region, "us-east-1");
-        assert_eq!(endpoint, "http://minio.httpz-utils.svc.cluster.local:9000");
+        assert_eq!(endpoint, "http://minio.fhevm-utils.svc.cluster.local:9000");
         assert_eq!(bucket, "ct128");
     }
 

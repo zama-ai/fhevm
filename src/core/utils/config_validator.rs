@@ -2,8 +2,8 @@ use tracing::{info, warn};
 
 use crate::{
     core::config::{
-        Config, default_decryption_manager_domain_name, default_decryption_manager_domain_version,
-        default_httpz_domain_name, default_httpz_domain_version,
+        Config, default_decryption_domain_name, default_decryption_domain_version,
+        default_gateway_config_domain_name, default_gateway_config_domain_version,
     },
     error::Result,
 };
@@ -20,9 +20,9 @@ pub fn validate_config(config: &Config) -> Result<()> {
     }
 
     // Validate other critical configuration
-    if config.gwl2_url.is_empty() {
+    if config.gateway_url.is_empty() {
         return Err(crate::error::Error::Config(
-            "Gateway L2 URL is not configured".to_string(),
+            "Gateway URL is not configured".to_string(),
         ));
     }
 
@@ -32,44 +32,44 @@ pub fn validate_config(config: &Config) -> Result<()> {
         ));
     }
 
-    if config.decryption_manager_address.is_empty() {
+    if config.decryption_address.is_empty() {
         return Err(crate::error::Error::Config(
-            "Decryption manager address is not configured".to_string(),
+            "Decryption address is not configured".to_string(),
         ));
     }
 
-    if config.httpz_address.is_empty() {
+    if config.gateway_config_address.is_empty() {
         return Err(crate::error::Error::Config(
-            "HTTPZ address is not configured".to_string(),
+            "GatewayConfig address is not configured".to_string(),
         ));
     }
 
     // Validate domain name is not empty
-    if config.decryption_manager_domain_name.is_empty() {
+    if config.decryption_domain_name.is_empty() {
         warn!(
-            "Decryption manager domain name is empty, will use default '{}' at runtime",
-            default_decryption_manager_domain_name()
+            "Decryption domain name is empty, will use default '{}' at runtime",
+            default_decryption_domain_name()
         );
     }
 
-    if config.decryption_manager_domain_version.is_empty() {
+    if config.decryption_domain_version.is_empty() {
         warn!(
-            "Decryption manager domain version is empty, will use default '{}' at runtime",
-            default_decryption_manager_domain_version()
+            "Decryption domain version is empty, will use default '{}' at runtime",
+            default_decryption_domain_version()
         );
     }
 
-    if config.httpz_domain_name.is_empty() {
+    if config.gateway_config_domain_name.is_empty() {
         warn!(
-            "HTTPZ domain name is empty, will use default '{}' at runtime",
-            default_httpz_domain_name()
+            "GatewayConfig domain name is empty, will use default '{}' at runtime",
+            default_gateway_config_domain_name()
         );
     }
 
-    if config.httpz_domain_version.is_empty() {
+    if config.gateway_config_domain_version.is_empty() {
         warn!(
-            "HTTPZ domain version is empty, will use default '{}' at runtime",
-            default_httpz_domain_version()
+            "GatewayConfig domain version is empty, will use default '{}' at runtime",
+            default_gateway_config_domain_version()
         );
     }
 
