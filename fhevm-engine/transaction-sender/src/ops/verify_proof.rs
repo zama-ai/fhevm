@@ -15,7 +15,7 @@ use std::convert::TryInto;
 use std::time::Duration;
 use tokio::task::JoinSet;
 use tracing::{debug, error, info};
-use ZKPoKManager::ZKPoKManagerErrors;
+use InputVerification::InputVerificationErrors;
 
 sol! {
     struct CiphertextVerification {
@@ -28,13 +28,13 @@ sol! {
 
 sol!(
     #[sol(rpc)]
-    ZKPoKManager,
-    "artifacts/ZKPoKManager.sol/ZKPoKManager.json"
+    InputVerification,
+    "artifacts/InputVerification.sol/InputVerification.json"
 );
 
 #[derive(Clone)]
 pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> {
-    zkpok_manager_address: Address,
+    input_verification_address: Address,
     provider: NonceManagedProvider<P>,
     signer: PrivateKeySigner,
     conf: crate::ConfigSettings,
@@ -45,7 +45,7 @@ pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> 
 
 impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOperation<P> {
     pub(crate) async fn new(
-        zkpok_manager_address: Address,
+        input_verification_address: Address,
         provider: NonceManagedProvider<P>,
         signer: PrivateKeySigner,
         conf: crate::ConfigSettings,
@@ -54,7 +54,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
     ) -> anyhow::Result<Self> {
         let gw_chain_id = provider.get_chain_id().await?;
         Ok(Self {
-            zkpok_manager_address,
+            input_verification_address,
             provider,
             signer,
             conf,
@@ -117,9 +117,9 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
             Ok(txn) => txn,
             Err(e) => {
                 error!(target: VERIFY_PROOFS_TARGET, "Transaction {:?} sending failed with error: {}", txn_req, e);
-                if let Some(ZKPoKManagerErrors::CoprocessorSignerAlreadyResponded(_)) = e
+                if let Some(InputVerificationErrors::CoprocessorSignerAlreadyResponded(_)) = e
                     .as_error_resp()
-                    .and_then(|payload| payload.as_decoded_error::<ZKPoKManagerErrors>(true))
+                    .and_then(|payload| payload.as_decoded_error::<InputVerificationErrors>(true))
                 {
                     info!(target: VERIFY_PROOFS_TARGET, "Coprocessor has already responded, removing proof");
                     self.remove_proof_by_id(txn_request.0).await?;
@@ -177,7 +177,8 @@ where
     }
 
     async fn execute(&self) -> anyhow::Result<bool> {
-        let zkpok_manager = ZKPoKManager::new(self.zkpok_manager_address, self.provider.inner());
+        let input_verification =
+            InputVerification::new(self.input_verification_address, self.provider.inner());
         if self.conf.verify_proof_remove_after_max_retries {
             self.remove_proofs_by_retry_count(self.conf.verify_proof_resp_max_retries)
                 .await?;
@@ -216,10 +217,10 @@ where
                         })
                         .collect();
                     let domain = alloy::sol_types::eip712_domain! {
-                        name: "ZKPoKManager",
+                        name: "InputVerification",
                         version: "1",
                         chain_id: self.gw_chain_id,
-                        verifying_contract: self.zkpok_manager_address,
+                        verifying_contract: self.input_verification_address,
                     };
                     let signing_hash = CiphertextVerification {
                         ctHandles: handles.clone(),
@@ -239,7 +240,7 @@ where
                     if let Some(gas) = self.gas {
                         (
                             row.zk_proof_id,
-                            zkpok_manager
+                            input_verification
                                 .verifyProofResponse(
                                     U256::from(row.zk_proof_id),
                                     handles,
@@ -251,7 +252,7 @@ where
                     } else {
                         (
                             row.zk_proof_id,
-                            zkpok_manager
+                            input_verification
                                 .verifyProofResponse(
                                     U256::from(row.zk_proof_id),
                                     handles,
@@ -266,7 +267,7 @@ where
                     if let Some(gas) = self.gas {
                         (
                             row.zk_proof_id,
-                            zkpok_manager
+                            input_verification
                                 .rejectProofResponse(U256::from(row.zk_proof_id))
                                 .into_transaction_request()
                                 .with_gas_limit(gas),
@@ -274,7 +275,7 @@ where
                     } else {
                         (
                             row.zk_proof_id,
-                            zkpok_manager
+                            input_verification
                                 .rejectProofResponse(U256::from(row.zk_proof_id))
                                 .into_transaction_request(),
                         )

@@ -18,13 +18,13 @@ use transaction_sender::{
 #[command(version, about, long_about = None)]
 struct Conf {
     #[arg(short, long)]
-    zkpok_manager_address: Address,
+    input_verification_address: Address,
 
     #[arg(short, long)]
-    ciphertext_manager_address: Address,
+    ciphertext_commits_address: Address,
 
     #[arg(short, long)]
-    acl_manager_address: Address,
+    multichain_acl_address: Address,
 
     #[arg(short, long)]
     gateway_url: Url,
@@ -44,10 +44,10 @@ struct Conf {
     #[arg(long, default_value = "verify_proof_responses")]
     verify_proof_resp_database_channel: String,
 
-    #[arg(short, long, default_value = "add_ciphertexts")]
+    #[arg(long, default_value = "add_ciphertexts")]
     add_ciphertexts_database_channel: String,
 
-    #[arg(short, long, default_value = "event_allowed_handle")]
+    #[arg(long, default_value = "event_allowed_handle")]
     allow_handle_database_channel: String,
 
     #[arg(long, default_value = "128")]
@@ -117,9 +117,9 @@ async fn main() -> anyhow::Result<()> {
         Some(wallet.default_signer().address()),
     );
     let sender = TransactionSender::new(
-        conf.zkpok_manager_address,
-        conf.ciphertext_manager_address,
-        conf.acl_manager_address,
+        conf.input_verification_address,
+        conf.ciphertext_commits_address,
+        conf.multichain_acl_address,
         signer,
         provider,
         cancel_token.clone(),

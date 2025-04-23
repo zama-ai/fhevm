@@ -15,17 +15,17 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
     cancel_token: CancellationToken,
     conf: ConfigSettings,
     operations: Vec<Arc<dyn ops::TransactionOperation<P>>>,
-    zkpok_manager_address: Address,
-    ciphertext_manager_address: Address,
+    input_verification_address: Address,
+    ciphertext_commits_address: Address,
     db_pool: Pool<Postgres>,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        zkpok_manager_address: Address,
-        ciphertext_manager_address: Address,
-        acl_manager_address: Address,
+        input_verification_address: Address,
+        ciphertext_commits_address: Address,
+        multichain_acl_address: Address,
         signer: PrivateKeySigner,
         provider: NonceManagedProvider<P>,
         cancel_token: CancellationToken,
@@ -40,7 +40,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
         let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![
             Arc::new(
                 ops::verify_proof::VerifyProofOperation::new(
-                    zkpok_manager_address,
+                    input_verification_address,
                     provider.clone(),
                     signer.clone(),
                     conf.clone(),
@@ -50,14 +50,14 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                 .await?,
             ),
             Arc::new(ops::add_ciphertext::AddCiphertextOperation::new(
-                ciphertext_manager_address,
+                ciphertext_commits_address,
                 provider.clone(),
                 conf.clone(),
                 gas,
                 db_pool.clone(),
             )),
-            Arc::new(ops::allow_handle::ACLManagerOperation::new(
-                acl_manager_address,
+            Arc::new(ops::allow_handle::MultichainAclOperation::new(
+                multichain_acl_address,
                 provider.clone(),
                 conf.clone(),
                 gas,
@@ -68,15 +68,15 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             cancel_token,
             conf,
             operations,
-            zkpok_manager_address,
-            ciphertext_manager_address,
+            input_verification_address,
+            ciphertext_commits_address,
             db_pool,
         })
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        info!(target: TXN_SENDER_TARGET, "Starting Transaction Sender with: {:?}, ZKPoKManager: {}, CiphertextManager: {}",
-            self.conf, self.zkpok_manager_address, self.ciphertext_manager_address);
+        info!(target: TXN_SENDER_TARGET, "Starting Transaction Sender with: {:?}, InputVerification: {}, CiphertextCommits: {}",
+            self.conf, self.input_verification_address, self.ciphertext_commits_address);
 
         let mut join_set = JoinSet::new();
 

@@ -96,12 +96,12 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_WS_URL}
-      ZKPOK_MANAGER_ADDRESS: ${ZKPOK_MANAGER_ADDRESS}
+      INPUT_VERIFICATION_ADDRESS: ${INPUT_VERIFICATION_ADDRESS}
     command:
       - gw_listener
       - --database-url=${DATABASE_URL}
       - --gw-url=${GATEWAY_WS_URL}
-      - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
+      - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
       - --verify-proof-req-database-channel="event_zkpok_new_work"
     depends_on:
       db:
@@ -172,15 +172,17 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_URL}
       TX_SENDER_PRIVATE_KEY: ${TX_SENDER_PRIVATE_KEY}
-      ZKPOK_MANAGER_ADDRESS: ${ZKPOK_MANAGER_ADDRESS}
-      CIPHERTEXT_STORAGE_ADDRESS: ${CIPHERTEXT_STORAGE_ADDRESS}
+      INPUT_VERIFICATION_ADDRESS: ${INPUT_VERIFICATION_ADDRESS}
+      CIPHERTEXT_COMMITS_ADDRESS: ${CIPHERTEXT_COMMITS_ADDRESS}
+      MULTICHAIN_ACL_ADDRESS: ${MULTICHAIN_ACL_ADDRESS}
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}
       - --gateway-url=${GATEWAY_URL}
       - --private-key=${TX_SENDER_PRIVATE_KEY}
-      - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
-      - --ciphertext-storage-address=${CIPHERTEXT_STORAGE_ADDRESS}
+      - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
+      - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
+      - --multichain-acl-address=${MULTICHAIN_ACL_ADDRESS}
       - --verify-proof-resp-database-channel="event_zkpok_computed"
     depends_on:
       db:

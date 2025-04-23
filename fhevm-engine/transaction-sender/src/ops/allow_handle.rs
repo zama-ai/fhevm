@@ -23,8 +23,8 @@ use tracing::{debug, error, info};
 
 sol!(
     #[sol(rpc)]
-    ACLManager,
-    "artifacts/ACLManager.sol/ACLManager.json"
+    MultichainAcl,
+    "artifacts/MultichainAcl.sol/MultichainAcl.json"
 );
 
 struct Key {
@@ -48,15 +48,15 @@ impl Display for Key {
 }
 
 #[derive(Clone)]
-pub struct ACLManagerOperation<P: Provider<Ethereum> + Clone + 'static> {
-    acl_manager_contract_address: Address,
+pub struct MultichainAclOperation<P: Provider<Ethereum> + Clone + 'static> {
+    multichain_acl_address: Address,
     provider: NonceManagedProvider<P>,
     conf: crate::ConfigSettings,
     gas: Option<u64>,
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
+impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
@@ -136,22 +136,22 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
     }
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
+impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
     pub fn new(
-        acl_manager_contract_address: Address,
+        multichain_acl_address: Address,
         provider: NonceManagedProvider<P>,
         conf: crate::ConfigSettings,
         gas: Option<u64>,
         db_pool: Pool<Postgres>,
     ) -> Self {
         info!(
-            "Creating ACLManagerOperation with gas: {} and ACLManager address: {}",
+            "Creating MultichainAclOperation with gas: {} and MultichainAcl address: {}",
             gas.unwrap_or(0),
-            acl_manager_contract_address,
+            multichain_acl_address,
         );
 
         Self {
-            acl_manager_contract_address,
+            multichain_acl_address,
             provider,
             conf,
             gas,
@@ -183,7 +183,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> ACLManagerOperation<P> {
 }
 
 #[async_trait]
-impl<P> TransactionOperation<P> for ACLManagerOperation<P>
+impl<P> TransactionOperation<P> for MultichainAclOperation<P>
 where
     P: alloy::providers::Provider<Ethereum> + Clone + 'static,
 {
@@ -206,8 +206,8 @@ where
         .fetch_all(&self.db_pool)
         .await?;
 
-        let acl_manager: ACLManager::ACLManagerInstance<(), &P> =
-            ACLManager::new(self.acl_manager_contract_address, self.provider.inner());
+        let multichain_acl: MultichainAcl::MultichainAclInstance<(), &P> =
+            MultichainAcl::new(self.multichain_acl_address, self.provider.inner());
 
         info!("Selected {} rows to process", rows.len());
 
@@ -253,11 +253,11 @@ where
                 AllowEvents::AllowedForDecryption => {
                     // Call allowPublicDecrypt when account_address is null
                     match &self.gas {
-                        Some(gas_limit) => acl_manager
+                        Some(gas_limit) => multichain_acl
                             .allowPublicDecrypt(handle_bytes32)
                             .into_transaction_request()
                             .with_gas_limit(*gas_limit),
-                        None => acl_manager
+                        None => multichain_acl
                             .allowPublicDecrypt(handle_bytes32)
                             .into_transaction_request(),
                     }
@@ -274,11 +274,11 @@ where
                     };
 
                     match &self.gas {
-                        Some(gas_limit) => acl_manager
+                        Some(gas_limit) => multichain_acl
                             .allowAccount(handle_bytes32, address)
                             .into_transaction_request()
                             .with_gas_limit(*gas_limit),
-                        None => acl_manager
+                        None => multichain_acl
                             .allowAccount(handle_bytes32, address)
                             .into_transaction_request(),
                     }

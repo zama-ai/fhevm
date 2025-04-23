@@ -12,20 +12,20 @@ use transaction_sender::ConfigSettings;
 
 sol!(
     #[sol(rpc)]
-    ZKPoKManager,
-    "artifacts/ZKPoKManager.sol/ZKPoKManager.json"
+    InputVerification,
+    "artifacts/InputVerification.sol/InputVerification.json"
 );
 
 sol!(
     #[sol(rpc)]
-    CiphertextManager,
-    "artifacts/CiphertextManager.sol/CiphertextManager.json"
+    CiphertextCommits,
+    "artifacts/CiphertextCommits.sol/CiphertextCommits.json"
 );
 
 sol!(
     #[sol(rpc)]
-    ACLManager,
-    "artifacts/ACLManager.sol/ACLManager.json"
+    MultichainAcl,
+    "artifacts/MultichainAcl.sol/MultichainAcl.json"
 );
 
 pub struct TestEnvironment {

@@ -17,8 +17,8 @@ use tracing::Level;
 
 sol!(
     #[sol(rpc)]
-    ZKPoKManager,
-    "artifacts/ZKPoKManager.sol/ZKPoKManager.json"
+    InputVerification,
+    "artifacts/InputVerification.sol/InputVerification.json"
 );
 
 struct TestEnvironment {
@@ -76,9 +76,9 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
         .wallet(env.wallet)
         .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
         .await?;
-    let zkpok_manager = ZKPoKManager::deploy(&provider).await?;
+    let input_verification = InputVerification::deploy(&provider).await?;
     let gw_listener = GatewayListener::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         env.conf.clone(),
         env.cancel_token.clone(),
         provider.clone(),
@@ -88,7 +88,7 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
 
     let contract_address = PrivateKeySigner::random().address();
     let user_address = PrivateKeySigner::random().address();
-    let txn_req = zkpok_manager
+    let txn_req = input_verification
         .verifyProofRequest(
             U256::from(42),
             contract_address,

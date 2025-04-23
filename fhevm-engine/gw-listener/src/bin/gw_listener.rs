@@ -22,7 +22,7 @@ struct Conf {
     gw_url: Url,
 
     #[arg(short, long)]
-    zkpok_manager_address: Address,
+    input_verification_address: Address,
 
     #[arg(long, default_value = "1")]
     error_sleep_initial_secs: u16,
@@ -61,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cancel_token = CancellationToken::new();
     let gw_listener = GatewayListener::new(
-        conf.zkpok_manager_address,
+        conf.input_verification_address,
         ConfigSettings {
             database_url,
             database_pool_size: conf.database_pool_size,

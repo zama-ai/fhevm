@@ -1,6 +1,6 @@
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
-use common::{CiphertextManager, TestEnvironment};
+use common::{CiphertextCommits, TestEnvironment};
 
 use rand::{random, Rng};
 use serial_test::serial;
@@ -31,10 +31,10 @@ async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
         Some(env.wallet.default_signer().address()),
     );
 
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let ciphertext_commits = CiphertextCommits::deploy(&provider_deploy).await?;
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),

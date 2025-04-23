@@ -3,7 +3,7 @@ use alloy::providers::WsConnect;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::U256, sol_types::eip712_domain};
 use alloy::{providers::ProviderBuilder, signers::SignerSync, sol, sol_types::SolStruct};
-use common::{CiphertextManager, TestEnvironment, ZKPoKManager};
+use common::{CiphertextCommits, TestEnvironment, InputVerification};
 use futures_util::StreamExt;
 use rand::random;
 use serial_test::serial;
@@ -39,10 +39,10 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let zkpok_manager = ZKPoKManager::deploy(&provider_deploy, false, false).await?;
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let input_verification = InputVerification::deploy(&provider_deploy, false, false).await?;
+    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         *ciphertext_manager.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
@@ -53,7 +53,7 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
     )
     .await?;
 
-    let event_filter = zkpok_manager
+    let event_filter = input_verification
         .VerifyProofResponseCalled_filter()
         .watch()
         .await?;
@@ -98,10 +98,10 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
     let expected_proof_id = U256::from(proof_id);
     let expected_handles: Vec<FixedBytes<32>> = vec![FixedBytes([1u8; 32]), FixedBytes([1u8; 32])];
     let domain = eip712_domain! {
-        name: "ZKPoKManager",
+        name: "InputVerification",
         version: "1",
         chain_id: provider.get_chain_id().await?,
-        verifying_contract: *zkpok_manager.address(),
+        verifying_contract: *input_verification.address(),
     };
     let signing_hash = CiphertextVerification {
         ctHandles: expected_handles.clone(),
@@ -154,10 +154,10 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let zkpok_manager = ZKPoKManager::deploy(&provider_deploy, false, false).await?;
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let input_verification = InputVerification::deploy(&provider_deploy, false, false).await?;
+    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         *ciphertext_manager.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
@@ -168,7 +168,7 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
     )
     .await?;
 
-    let event_filter = zkpok_manager
+    let event_filter = input_verification
         .VerifyProofResponseCalled_filter()
         .watch()
         .await?;
@@ -216,10 +216,10 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
         let expected_handles: Vec<FixedBytes<32>> =
             vec![FixedBytes([1u8; 32]), FixedBytes([1u8; 32])];
         let domain = eip712_domain! {
-            name: "ZKPoKManager",
+            name: "InputVerification",
             version: "1",
             chain_id: provider.get_chain_id().await?,
-            verifying_contract: *zkpok_manager.address(),
+            verifying_contract: *input_verification.address(),
         };
         let signing_hash = CiphertextVerification {
             ctHandles: expected_handles.clone(),
@@ -271,10 +271,10 @@ async fn verify_proof_response_reversal_already_responded() -> anyhow::Result<()
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let zkpok_manager = ZKPoKManager::deploy(&provider_deploy, true, false).await?;
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let input_verification = InputVerification::deploy(&provider_deploy, true, false).await?;
+    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         *ciphertext_manager.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
@@ -353,10 +353,10 @@ async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let zkpok_manager = ZKPoKManager::deploy(&provider_deploy, false, true).await?;
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let input_verification = InputVerification::deploy(&provider_deploy, false, true).await?;
+    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         *ciphertext_manager.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
@@ -435,11 +435,11 @@ async fn verify_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let zkpok_manager = ZKPoKManager::deploy(&provider_deploy, false, true).await?;
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let input_verification = InputVerification::deploy(&provider_deploy, false, true).await?;
+    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         *ciphertext_manager.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
@@ -520,10 +520,10 @@ async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let zkpok_manager = ZKPoKManager::deploy(&provider_deploy, false, true).await?;
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let input_verification = InputVerification::deploy(&provider_deploy, false, true).await?;
+    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         *ciphertext_manager.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
@@ -594,10 +594,10 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let zkpok_manager = ZKPoKManager::deploy(&provider_deploy, false, true).await?;
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let input_verification = InputVerification::deploy(&provider_deploy, false, true).await?;
+    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         *ciphertext_manager.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
@@ -679,10 +679,10 @@ async fn reject_proof_response_success() -> anyhow::Result<()> {
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let zkpok_manager = ZKPoKManager::deploy(&provider_deploy, false, false).await?;
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let input_verification = InputVerification::deploy(&provider_deploy, false, false).await?;
+    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         *ciphertext_manager.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
@@ -693,7 +693,7 @@ async fn reject_proof_response_success() -> anyhow::Result<()> {
     )
     .await?;
 
-    let event_filter = zkpok_manager
+    let event_filter = input_verification
         .RejectProofResponseCalled_filter()
         .watch()
         .await?;
@@ -773,10 +773,10 @@ async fn reject_proof_response_reversal_already_responded() -> anyhow::Result<()
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let zkpok_manager = ZKPoKManager::deploy(&provider_deploy, true, false).await?;
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let input_verification = InputVerification::deploy(&provider_deploy, true, false).await?;
+    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         *ciphertext_manager.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
@@ -854,11 +854,11 @@ async fn reject_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let zkpok_manager = ZKPoKManager::deploy(&provider_deploy, false, true).await?;
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let input_verification = InputVerification::deploy(&provider_deploy, false, true).await?;
+    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         *ciphertext_manager.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
@@ -933,10 +933,10 @@ async fn reject_proof_response_other_reversal_gas_estimation() -> anyhow::Result
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let zkpok_manager = ZKPoKManager::deploy(&provider_deploy, false, true).await?;
-    let ciphertext_manager = CiphertextManager::deploy(&provider_deploy).await?;
+    let input_verification = InputVerification::deploy(&provider_deploy, false, true).await?;
+    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        *input_verification.address(),
         *ciphertext_manager.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),

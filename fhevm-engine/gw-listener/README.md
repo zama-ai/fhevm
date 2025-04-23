@@ -1,6 +1,6 @@
 # Gateway Listener
 
-The **gw-listener** service listens for input proof verification events from the ZKPoKManager contract and inserts them into the DB into the `verify_proofs` table: [verify_proofs table](../fhevm-db/migrations/20250207092623_verify_proofs.sql)
+The **gw-listener** service listens for input proof verification events from the InputVerification contract and inserts them into the DB into the `verify_proofs` table: [verify_proofs table](../fhevm-db/migrations/20250207092623_verify_proofs.sql)
 
 The following fields are insertion in by gw-listner:
 

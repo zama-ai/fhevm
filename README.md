@@ -165,17 +165,27 @@ Options:
 
 ```bash
 $ gw_listener --help
-Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS>
+Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --input-verification-address <INPUT_VERIFICATION_ADDRESS>
 
 Options:
       --database-url <DATABASE_URL>
-      --database-pool-size <DATABASE_POOL_SIZE>              [default: 16]
+          
+      --database-pool-size <DATABASE_POOL_SIZE>
+          [default: 16]
+      --verify-proof-req-database-channel <VERIFY_PROOF_REQ_DATABASE_CHANNEL>
+          [default: verify_proof_requests]
       --gw-url <GW_URL>
-  -z, --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS>
-      --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>  [default: 1]
-      --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>          [default: 10]
-  -h, --help                                                 Print help
-  -V, --version                                              Print version
+          
+  -i, --input-verification-address <INPUT_VERIFICATION_ADDRESS>
+          
+      --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
+          [default: 1]
+      --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>
+          [default: 10]
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 ##### sns-worker
@@ -238,35 +248,53 @@ Options:
 
 ```bash
 $ transaction_sender --help
-Usage: transaction_sender [OPTIONS] --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS> --ciphertext-storage-address <CIPHERTEXT_STORAGE_ADDRESS> --gateway-url <GATEWAY_URL> --private-key <PRIVATE_KEY>
+Usage: transaction_sender [OPTIONS] --input-verification-address <INPUT_VERIFICATION_ADDRESS> --ciphertext-commits-address <CIPHERTEXT_COMMITS_ADDRESS> --multichain-acl-address <MULTICHAIN_ACL_ADDRESS> --gateway-url <GATEWAY_URL> --private-key <PRIVATE_KEY> 
 
 Options:
-  -z, --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS>
-
-  -c, --ciphertext-storage-address <CIPHERTEXT_STORAGE_ADDRESS>
-
+  -i, --input-verification-address <INPUT_VERIFICATION_ADDRESS>
+          
+  -c, --ciphertext-commits-address <CIPHERTEXT_COMMITS_ADDRESS>
+          
+  -m, --multichain-acl-address <MULTICHAIN_ACL_ADDRESS>
+          
   -g, --gateway-url <GATEWAY_URL>
-
+          
   -p, --private-key <PRIVATE_KEY>
-
+          
   -d, --database-url <DATABASE_URL>
-
+          
       --database-pool-size <DATABASE_POOL_SIZE>
           [default: 10]
       --database-polling-interval-secs <DATABASE_POLLING_INTERVAL_SECS>
           [default: 5]
       --verify-proof-resp-database-channel <VERIFY_PROOF_RESP_DATABASE_CHANNEL>
           [default: verify_proof_responses]
-  -a, --add-ciphertexts-database-channel <ADD_CIPHERTEXTS_DATABASE_CHANNEL>
+      --add-ciphertexts-database-channel <ADD_CIPHERTEXTS_DATABASE_CHANNEL>
           [default: add_ciphertexts]
+      --allow-handle-database-channel <ALLOW_HANDLE_DATABASE_CHANNEL>
+          [default: event_allowed_handle]
       --verify-proof-resp-batch-limit <VERIFY_PROOF_RESP_BATCH_LIMIT>
           [default: 128]
       --verify-proof-resp-max-retries <VERIFY_PROOF_RESP_MAX_RETRIES>
+          [default: 15]
+      --verify-proof-remove-after-max-retries
+          
+      --add-ciphertexts-batch-limit <ADD_CIPHERTEXTS_BATCH_LIMIT>
+          [default: 10]
+      --allow-handle-batch-limit <ALLOW_HANDLE_BATCH_LIMIT>
+          [default: 10]
+      --allow-handle-max-retries <ALLOW_HANDLE_MAX_RETRIES>
+          [default: 10]
+      --add-ciphertexts-max-retries <ADD_CIPHERTEXTS_MAX_RETRIES>
           [default: 15]
       --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
           [default: 1]
       --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>
           [default: 16]
+      --txn-receipt-timeout-secs <TXN_RECEIPT_TIMEOUT_SECS>
+          [default: 10]
+      --required-txn-confirmations <REQUIRED_TXN_CONFIRMATIONS>
+          [default: 0]
   -h, --help
           Print help
   -V, --version

@@ -14,12 +14,12 @@ const LOG_TARGET: &str = "gw_listener";
 
 sol!(
     #[sol(rpc)]
-    ZKPoKManager,
-    "artifacts/ZKPoKManager.sol/ZKPoKManager.json"
+    InputVerification,
+    "artifacts/InputVerification.sol/InputVerification.json"
 );
 
 pub struct GatewayListener<P: Provider<Ethereum> + Clone + 'static> {
-    zkpok_manager_address: Address,
+    input_verification_address: Address,
     conf: ConfigSettings,
     cancel_token: CancellationToken,
     provider: P,
@@ -27,13 +27,13 @@ pub struct GatewayListener<P: Provider<Ethereum> + Clone + 'static> {
 
 impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
     pub fn new(
-        zkpok_manager_address: Address,
+        input_verification_address: Address,
         conf: ConfigSettings,
         cancel_token: CancellationToken,
         provider: P,
     ) -> Self {
         GatewayListener {
-            zkpok_manager_address,
+            input_verification_address,
             conf,
             cancel_token,
             provider,
@@ -41,7 +41,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        info!(target: LOG_TARGET, "Starting Gateway Listener with: {:?}, ZKPoKManager: {}", self.conf, self.zkpok_manager_address);
+        info!(target: LOG_TARGET, "Starting Gateway Listener with: {:?}, InputVerification: {}", self.conf, self.input_verification_address);
         let db_pool = PgPoolOptions::new()
             .max_connections(self.conf.database_pool_size)
             .connect(&self.conf.database_url)
@@ -70,14 +70,15 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         db_pool: &Pool<Postgres>,
         sleep_duration: &mut u64,
     ) -> anyhow::Result<()> {
-        let zkpok_manager = ZKPoKManager::new(self.zkpok_manager_address, &self.provider);
+        let input_verification =
+            InputVerification::new(self.input_verification_address, &self.provider);
         let mut from_block = self.get_last_block_num(db_pool).await?;
-        let filter = zkpok_manager
+        let filter = input_verification
             .VerifyProofRequest_filter()
             .from_block(from_block)
             .subscribe()
             .await?;
-        info!(target: LOG_TARGET, "Subscribed to ZKPoKManager.VerifyProofRequest events");
+        info!(target: LOG_TARGET, "Subscribed to InputVerification.VerifyProofRequest events");
         let mut stream = filter.into_stream().fuse();
         loop {
             tokio::select! {

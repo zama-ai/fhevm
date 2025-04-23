@@ -1,7 +1,7 @@
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::Address, providers::WsConnect};
-use common::{ACLManager, TestEnvironment};
+use common::{MultichainAcl, TestEnvironment};
 
 use fhevm_engine_common::types::AllowEvents;
 use rand::random;
@@ -42,12 +42,12 @@ async fn test_allow_call(event_type: AllowEvents) -> anyhow::Result<()> {
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let acl_manager = ACLManager::deploy(&provider_deploy).await?;
+    let multichain_acl = MultichainAcl::deploy(&provider_deploy).await?;
 
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
-        *acl_manager.address(),
+        *multichain_acl.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),

@@ -20,13 +20,13 @@ use tracing::{error, info};
 
 sol!(
     #[sol(rpc)]
-    CiphertextManager,
-    "artifacts/CiphertextManager.sol/CiphertextManager.json"
+    CiphertextCommits,
+    "artifacts/CiphertextCommits.sol/CiphertextCommits.json"
 );
 
 #[derive(Clone)]
 pub struct AddCiphertextOperation<P: Provider<Ethereum> + Clone + 'static> {
-    ciphertext_manager_address: Address,
+    ciphertext_commits_address: Address,
     provider: NonceManagedProvider<P>,
     conf: crate::ConfigSettings,
     gas: Option<u64>,
@@ -111,21 +111,21 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
 
 impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
     pub fn new(
-        ciphertext_manager_address: Address,
+        ciphertext_commits_address: Address,
         provider: NonceManagedProvider<P>,
         conf: crate::ConfigSettings,
         gas: Option<u64>,
         db_pool: Pool<Postgres>,
     ) -> Self {
         info!(
-            "Creating AddCiphertextOperation with gas: {} and CiphertextManager address: {}",
+            "Creating AddCiphertextOperation with gas: {} and CiphertextCommits address: {}",
             gas.unwrap_or(0),
-            ciphertext_manager_address,
+            ciphertext_commits_address,
         );
 
         Self {
             db_pool,
-            ciphertext_manager_address,
+            ciphertext_commits_address,
             provider,
             conf,
             gas,
@@ -178,8 +178,8 @@ where
         .fetch_all(&self.db_pool)
         .await?;
 
-        let ciphertext_manager: CiphertextManager::CiphertextManagerInstance<(), &P> =
-            CiphertextManager::new(self.ciphertext_manager_address, self.provider.inner());
+        let ciphertext_manager: CiphertextCommits::CiphertextCommitsInstance<(), &P> =
+            CiphertextCommits::new(self.ciphertext_commits_address, self.provider.inner());
 
         info!("Selected {} rows to process", rows.len());
 
