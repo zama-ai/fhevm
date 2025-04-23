@@ -5,6 +5,10 @@ npm run --no-install lint:sol
 printf "> make check-bindings\n\n"
 make check-bindings
 
+# Checks that the Gateway mock contracts are up-to-date.
+printf "> make check-mocks\n\n"
+make check-mocks
+
 # Checks that the contract selectors are up-to-date.
 printf "> make check-selectors\n\n"
 make check-selectors

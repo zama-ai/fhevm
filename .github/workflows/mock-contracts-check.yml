@@ -1,0 +1,27 @@
+# Check mock contracts files are up-to-date.
+name: "Mock contracts check"
+
+on:
+  pull_request:
+
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: mock-contracts-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  mock-contracts-check:
+    name: Mock contracts check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check mock contracts are up-to-date
+        run: make check-mocks
