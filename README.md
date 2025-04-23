@@ -2,7 +2,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/5d44c888-a30a-47a5-86b1-f1a10b58572d">
   <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/f9f6b6e1-db81-4cb7-b962-181802576398">
-  <img width=600 alt="HTTPZ">
+  <img width=600 alt="fhevm">
 </picture>
 </p>
 
@@ -13,9 +13,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zama-ai/httpz-solidity/releases">
+  <a href="https://github.com/zama-ai/fhevm-solidity/releases">
     <img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square"></a>
-  <a href="https://github.com/zama-ai/httpz-solidity/blob/main/LICENSE">
+  <a href="https://github.com/zama-ai/fhevm-solidity/blob/main/LICENSE">
     <!-- markdown-link-check-disable-next-line -->
     <img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square"></a>
   <a href="https://github.com/zama-ai/bounty-program">
@@ -24,25 +24,22 @@
   <a href="https://slsa.dev"><img alt="SLSA 3" src="https://slsa.dev/images/gh-badge-level3.svg" /></a>
 </p>
 
-> [!NOTE]  
-> **Renaming in progress**: The HTTPZ repositories are transitionning to **HTTPZ**. You may see both names referenced for a short time. [Sign up](https://share-eu1.hsforms.com/1F7Z672SsRAeOVyqLdXWn2Q2duixc) to stay informed about the official HTTPZ release.
-
 ## About
 
-### What is HTTPZ
+### What is fhevm?
 
-**HTTPZ** is a technology that enables confidential smart contracts on the EVM using fully homomorphic encryption (FHE).
+**fhevm** is a technology that enables confidential smart contracts on the EVM using fully homomorphic encryption (FHE).
 
-Thanks to a breakthrough in homomorphic encryption, HTTPZ makes it possible to run confidential smart contracts on encrypted data, guaranteeing both confidentiality and composability with:
+Thanks to a breakthrough in homomorphic encryption, fhevm makes it possible to run confidential smart contracts on encrypted data, guaranteeing both confidentiality and composability with:
 
 - **End-to-end encryption of transactions and state:** Data included in transactions is encrypted and never visible to anyone.
 - **Composability and data availability on-chain:** States are updated while remaining encrypted at all times.
-- **No impact on existing dapps and state:** Encrypted state co-exists alongside public one, and doesn't impact existing dapps.
+- **No impact on existing dApps and state:** Encrypted state co-exists alongside public one, and doesn't impact existing dApps.
   <br></br>
 
 ### Main features
 
-- **Solidity integration:** HTTPZ contracts are simple solidity contracts that are built using traditional solidity toolchains.
+- **Solidity integration:** fhevm contracts are simple solidity contracts that are built using traditional solidity tool-chains.
 - **Simple developer experience:** Developers can use the `euint` data types to mark which part of their contracts should be private.
 - **Programmable privacy:** All the logic for access control of encrypted states is defined by developers in their smart contracts.
 - **High precision encrypted integers :** Up to 256 bits of precision for integers
@@ -52,19 +49,19 @@ Thanks to a breakthrough in homomorphic encryption, HTTPZ makes it possible to r
 - **Configurable decryption :** Threshold, centralized or KMS decryption
 - **Unbounded compute Depth :** Unlimited consecutive FHE operations
 
-_Learn more about HTTPZ features in the [documentation](https://docs.zama.ai/fhevm)._
+_Learn more about fhevm features in the [documentation](https://docs.zama.ai/fhevm)._
 <br></br>
 
 ### Use cases
 
-HTTPZ is built for developers to write confidential smart contracts without learning cryptography. Leveraging HTTPZ, you can unlock a myriad of new use cases such as DeFi, gaming, and more. For instance:
+FhEVM is built for developers to write confidential smart contracts without the need to learn cryptography. Leveraging fhevm, you can unlock a myriad of new use cases such as DeFi, gaming, and more. For instance:
 
+- **Confidential transfers**: Keep balances and amounts private, without using mixers.
 - **Tokenization**: Swap tokens and RWAs on-chain without others seeing the amounts.
 - **Blind auctions**: Bid on items without revealing the amount or the winner.
 - **On-chain games**: Keep moves, selections, cards, or items hidden until ready to reveal.
 - **Confidential voting**: Prevents bribery and blackmailing by keeping votes private.
 - **Encrypted DIDs**: Store identities on-chain and generate attestations without ZK.
-- **Private transfers**: Keep balances and amounts private, without using mixers.
 
 _Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/tutorials/see-all-tutorials)._
 <br></br>
@@ -74,22 +71,22 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/tutor
 
 ### Citations
 
-To cite HTTPZ or the whitepaper in academic papers, please use the following entries:
+To cite fhevm or the whitepaper in academic papers, please use the following entries:
 
 ```text
-@Misc{HTTPZ,
+@Misc{fhevm,
 title={{Confidential EVM Smart Contracts using Fully Homomorphic Encryption}},
 author={Zama},
 year={2024},
-note={\url{https://github.com/zama-ai/httpz-solidity}},
+note={\url{https://github.com/zama-ai/fhevm-solidity}},
 }
 ```
 
 ### Contributing
 
-There are two ways to contribute to the HTTPZ:
+There are two ways to contribute to fhevm:
 
-- [Open issues](https://github.com/zama-ai/httpz-solidity/issues/new/choose) to report bugs and typos, or to suggest new ideas
+- [Open issues](https://github.com/zama-ai/fhevm-solidity/issues/new/choose) to report bugs and typos, or to suggest new ideas
 - Request to become an official contributor by emailing hello@zama.ai.
 
 Becoming an approved contributor involves signing our Contributor License Agreement (CLA). Only approved contributors can send pull requests, so please make sure to get in touch before you do!
@@ -105,7 +102,7 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 > Zama’s libraries are free to use under the BSD 3-Clause Clear license only for development, research, prototyping, and experimentation purposes. However, for any commercial use of Zama's open source code, companies must purchase Zama’s commercial patent license.
 >
-> Everything we do is open source and we are very transparent on what it means for our users, you can read more about how we monetize our open source products at Zama in [this blog post](https://www.zama.ai/post/open-source).
+> Everything we do is open source, and we are very transparent on what it means for our users, you can read more about how we monetize our open source products at Zama in [this blog post](https://www.zama.ai/post/open-source).
 
 **What do I need to do if I want to use Zama’s technology for commercial purposes?**
 
@@ -123,8 +120,8 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 <a target="_blank" href="https://community.zama.ai">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/httpz-solidity/assets/157474013/e249e1a8-d724-478c-afa8-e4fe01c1a0fd">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/httpz-solidity/assets/157474013/a72200cc-d93e-44c7-81a8-557901d8798d">
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/fhevm-solidity/assets/157474013/e249e1a8-d724-478c-afa8-e4fe01c1a0fd">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/fhevm-solidity/assets/157474013/a72200cc-d93e-44c7-81a8-557901d8798d">
   <img alt="Support">
 </picture>
 </a>
