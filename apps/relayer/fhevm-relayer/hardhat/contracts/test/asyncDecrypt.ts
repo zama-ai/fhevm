@@ -1,6 +1,4 @@
-import dotenv from 'dotenv';
 import { Wallet } from 'ethers';
-import fs from 'fs';
 import { ethers, network } from 'hardhat';
 
 import { DecryptionOracle } from '../types';
@@ -8,8 +6,7 @@ import { awaitCoprocessor, getClearText } from './coprocessorUtils';
 
 const networkName = network.name;
 
-const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
-const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
+const aclAdd = process.env.ACL_CONTRACT_ADDRESS;
 
 const CiphertextType = {
   0: 'bool',
@@ -33,7 +30,6 @@ const currentTime = (): string => {
   return now.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: 'numeric', second: 'numeric' });
 };
 
-const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.decryptionoracle'));
 let relayer: Wallet;
 if (networkName === 'hardhat' || networkName === 'localCoprocessorL1') {
   const privKeyRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
@@ -55,7 +51,7 @@ export const initDecryptionOracle = async (): Promise<void> => {
     await ethers.provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
   }
   // this function will emit logs for every request and fulfilment of a decryption
-  decryptionOracle = await ethers.getContractAt('DecryptionOracle', parsedEnv.DECRYPTION_ORACLE_ADDRESS);
+  decryptionOracle = await ethers.getContractAt('DecryptionOracle', process.env.DECRYPTION_ORACLE_ADDRESS);
   decryptionOracle.on(
     'DecryptionRequest',
     async (counter, requestID, cts, contractCaller, callbackSelector, eventData) => {
@@ -68,7 +64,7 @@ export const initDecryptionOracle = async (): Promise<void> => {
 };
 
 export const awaitAllDecryptionResults = async (): Promise<void> => {
-  decryptionOracle = await ethers.getContractAt('DecryptionOracle', parsedEnv.DECRYPTION_ORACLE_ADDRESS);
+  decryptionOracle = await ethers.getContractAt('DecryptionOracle', process.env.DECRYPTION_ORACLE_ADDRESS);
   const provider = ethers.provider;
   if ((networkName === 'hardhat' || networkName === 'localCoprocessorL1') && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
     // evm_snapshot is not supported in coverage mode
@@ -93,7 +89,7 @@ const allTrue = (arr: boolean[], fn = Boolean) => arr.every(fn);
 const fulfillAllPastRequestsIds = async (mocked: boolean) => {
   const eventDecryption = await decryptionOracle.filters.DecryptionRequest().getTopicFilter();
   const filterDecryption = {
-    address: parsedEnv.DECRYPTION_ORACLE_ADDRESS,
+    address: process.env.DECRYPTION_ORACLE_ADDRESS,
     fromBlock: firstBlockListening,
     toBlock: 'latest',
     topics: eventDecryption,
@@ -193,7 +189,7 @@ async function computeDecryptSignatures(
 }
 
 async function kmsSign(handlesList: bigint[], decryptedResult: string, kmsSigner: Wallet) {
-  const kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+  const kmsAdd = process.env.KMS_VERIFIER_CONTRACT_ADDRESS;
   const chainId = (await ethers.provider.getNetwork()).chainId;
 
   const domain = {

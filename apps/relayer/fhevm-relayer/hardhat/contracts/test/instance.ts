@@ -1,4 +1,3 @@
-import dotenv from 'dotenv';
 import {
   clientKeyDecryptor,
   createEIP712,
@@ -7,7 +6,6 @@ import {
   getCiphertextCallParams,
 } from '@httpz/sdk';
 import { readFileSync } from 'fs';
-import * as fs from 'fs';
 import { ethers, ethers as hethers, network } from 'hardhat';
 import { homedir } from 'os';
 import path from 'path';
@@ -26,8 +24,8 @@ const DECRYPTION_MANAGER_ADDRESS = process.env.DECRYPTION_MANAGER_ADDRESS;
 let clientKey: Uint8Array | undefined;
 
 const decryptionManagerAdd = DECRYPTION_MANAGER_ADDRESS;
-const kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
-const aclAdd = dotenv.parse(fs.readFileSync('addresses/.env.acl')).ACL_CONTRACT_ADDRESS;
+const kmsAdd = process.env.KMS_VERIFIER_CONTRACT_ADDRESS;
+const aclAdd = process.env.ACL_CONTRACT_ADDRESS;
 
 const createInstanceMocked = async () => {
   const instance = {

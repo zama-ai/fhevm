@@ -25,10 +25,8 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 # Get grep argument or fallback to default
-GREP_TEXT="$1"
-if [ -z "$GREP_TEXT" ]; then
-  GREP_TEXT="test user input uint64"
-fi
+GREP_TEXT=${1:-"test user input uint64"}
+NETWORK=${2:-"staging"}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/hardhat/contracts" || exit 1
@@ -36,4 +34,4 @@ cd "$SCRIPT_DIR/hardhat/contracts" || exit 1
 echo -e "${GREEN}Running input proof tests with grep: \"$GREP_TEXT\"...${RESET}"
 npx hardhat compile
 npx hardhat compile:specific --contract decryptionOracle
-RUST_RELAYER=true npx hardhat test --grep "$GREP_TEXT" --network staging
+RUST_RELAYER=true npx hardhat test --grep "$GREP_TEXT" --network "$NETWORK"
