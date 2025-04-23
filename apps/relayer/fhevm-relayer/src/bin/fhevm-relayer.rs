@@ -120,21 +120,18 @@ async fn main() -> eyre::Result<()> {
         Address::from_str(&settings.contracts.decryption_oracle_address)
             .map_err(|_| eyre::eyre!("Invalid decryption oracle address"))?;
 
-    let tfhe_executor_address = Address::from_str(&settings.contracts.tfhe_executor_address)
-        .map_err(|_| eyre::eyre!("Invalid TFHE executor address"))?;
+    let decryption_address = Address::from_str(&settings.contracts.decryption_address)
+        .map_err(|_| eyre::eyre!("Invalid decryption contract address"))?;
 
-    let decryption_manager_address =
-        Address::from_str(&settings.contracts.decryption_manager_address)
-            .map_err(|_| eyre::eyre!("Invalid TFHE executor address"))?;
-
-    // Update the L2 filter to include the ZKPoK contract
-    let zkpok_manager_address = Address::from_str(&settings.contracts.zkpok_manager_address)
-        .map_err(|_| eyre::eyre!("Invalid ZKPoK manager address"))?;
+    // Update the L2 filter to include the InputVerification contract
+    let input_verification_address =
+        Address::from_str(&settings.contracts.input_verification_address)
+            .map_err(|_| eyre::eyre!("Invalid InputVerification address"))?;
 
     info!(
         ?decryption_oracle_address,
-        ?decryption_manager_address,
-        ?zkpok_manager_address,
+        ?decryption_address,
+        ?input_verification_address,
         ?settings.networks.fhevm.ws_url,
         "Initialized contract addresses"
     );
@@ -260,10 +257,7 @@ async fn main() -> eyre::Result<()> {
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
     // TODO: Pass the event_dispatcher to the event_listener
-    let filter = ContractAndTopicsFilter::new(
-        vec![decryption_oracle_address, tfhe_executor_address],
-        vec![],
-    );
+    let filter = ContractAndTopicsFilter::new(vec![decryption_oracle_address], vec![]);
     let subscription = host_l1.new_subscription(filter, None).await?;
     tokio::spawn(ethereum_listener(
         subscription,
@@ -279,10 +273,8 @@ async fn main() -> eyre::Result<()> {
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
     // TODO: Pass the event_dispatcher to the event_listener
-    let filter_rollup = ContractAndTopicsFilter::new(
-        vec![decryption_manager_address, zkpok_manager_address],
-        vec![],
-    );
+    let filter_rollup =
+        ContractAndTopicsFilter::new(vec![decryption_address, input_verification_address], vec![]);
     let subscription_rollup = rollup_l2.new_subscription(filter_rollup, None).await?;
     tokio::spawn(ethereum_listener(
         subscription_rollup,

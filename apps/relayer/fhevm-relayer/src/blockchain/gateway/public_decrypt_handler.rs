@@ -1,5 +1,5 @@
 use crate::{
-    blockchain::ethereum::{bindings::DecyptionManager, ComputeCalldata},
+    blockchain::ethereum::{bindings::Decryption, ComputeCalldata},
     config::settings::{ContractConfig, RetrySettings},
     core::{
         errors::EventProcessingError,
@@ -76,7 +76,7 @@ impl PublicDecryptGatewayHandler {
     ///
     /// This function performs the following:
     /// 1. Converts the input handles to [`Uint<256, 4>`]
-    /// 2. Sends transaction to the [`DecyptionManager`] contract
+    /// 2. Sends transaction to the [`Decryption`] contract
     /// 3. Extracts the `decryption_public_id` from the receipt
     ///
     /// # Arguments
@@ -118,22 +118,20 @@ impl PublicDecryptGatewayHandler {
             .with_recommended_fillers()
             .on_http(url);
 
-        let decryption_manager_address =
-            match Address::from_str(&self.contracts.decryption_manager_address) {
-                Ok(addr) => addr,
-                Err(_) => {
-                    let error = EventProcessingError::ConfigError(
-                        crate::config::settings::AppConfigError::InvalidAddress(
-                            "contracts.decryption_manager_address".to_owned(),
-                        ),
-                    );
-                    self.handle_failed_request(event, error).await;
-                    return;
-                }
-            };
+        let decryption_address = match Address::from_str(&self.contracts.decryption_address) {
+            Ok(addr) => addr,
+            Err(_) => {
+                let error = EventProcessingError::ConfigError(
+                    crate::config::settings::AppConfigError::InvalidAddress(
+                        "contracts.decryption_address".to_owned(),
+                    ),
+                );
+                self.handle_failed_request(event, error).await;
+                return;
+            }
+        };
 
-        let decryption_manager =
-            DecyptionManager::new(decryption_manager_address, provider.clone());
+        let decryption = Decryption::new(decryption_address, provider.clone());
 
         let max_retries = self.retry_config.max_attempts;
         let retry_interval = Duration::from_secs(self.retry_config.base_delay_secs);
@@ -144,7 +142,7 @@ impl PublicDecryptGatewayHandler {
         while should_retry && retries < max_retries {
             should_retry = false;
 
-            match decryption_manager
+            match decryption
                 .clone()
                 .checkPublicDecryptionReady(handles.clone())
                 .call()
@@ -288,11 +286,8 @@ impl PublicDecryptGatewayHandler {
 
         if let RelayerEventData::Generic(GenericEventData::EventLogFromGw { log }) = &event.data {
             if let Some(topic) = log.topic0() {
-                if *topic == DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH {
-                    match DecyptionManager::PublicDecryptionResponse::decode_log_data(
-                        log.data(),
-                        true,
-                    ) {
+                if *topic == Decryption::PublicDecryptionResponse::SIGNATURE_HASH {
+                    match Decryption::PublicDecryptionResponse::decode_log_data(log.data(), true) {
                         Ok(req) => {
                             let public_decryption_id = req.publicDecryptionId;
                             info!(?public_decryption_id, "Public decryption id from event");
@@ -364,11 +359,11 @@ impl PublicDecryptGatewayHandler {
         &self,
         receipt: &TransactionReceipt,
     ) -> Result<U256, EventProcessingError> {
-        let target_topic = DecyptionManager::PublicDecryptionRequest::SIGNATURE_HASH;
+        let target_topic = Decryption::PublicDecryptionRequest::SIGNATURE_HASH;
 
         info!(
             "Looking for topic: {}",
-            DecyptionManager::PublicDecryptionRequest::SIGNATURE
+            Decryption::PublicDecryptionRequest::SIGNATURE
         );
 
         debug!(
@@ -390,7 +385,7 @@ impl PublicDecryptGatewayHandler {
         for log in receipt.inner.logs().iter() {
             if let Some(first_topic) = log.topics().first() {
                 if first_topic == &target_topic {
-                    return match DecyptionManager::PublicDecryptionRequest::decode_log_data(
+                    return match Decryption::PublicDecryptionRequest::decode_log_data(
                         log.data(),
                         true,
                     ) {
@@ -437,18 +432,18 @@ impl PublicDecryptGatewayHandler {
             handler: Arc::new(self.clone()),
         };
 
-        let decryption_manager_address =
-            Address::from_str(&self.contracts.decryption_manager_address).map_err(|_| {
+        let decryption_address =
+            Address::from_str(&self.contracts.decryption_address).map_err(|_| {
                 EventProcessingError::ConfigError(
                     crate::config::settings::AppConfigError::InvalidAddress(
-                        "contracts.decryption_manager_address".to_owned(),
+                        "contracts.decryption_address".to_owned(),
                     ),
                 )
             })?;
         self.tx_helper
             .send_transaction(
                 "decryption_request",
-                decryption_manager_address,
+                decryption_address,
                 || ComputeCalldata::public_decryption_req(handles.clone()),
                 &processor,
             )
@@ -471,12 +466,12 @@ impl EventHandler<RelayerEvent> for PublicDecryptGatewayHandler {
             RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
                 if let Some(topic0) = log.topic0() {
                     if FixedBytes::<32>::from_slice(topic0.as_slice())
-                        != DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH
+                        != Decryption::PublicDecryptionResponse::SIGNATURE_HASH
                     {
                         debug!(
                             "Ignore this event: expected event: {:?}, received {} ",
                             log.topic0(),
-                            DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH
+                            Decryption::PublicDecryptionResponse::SIGNATURE_HASH
                         );
                         self.noop_handle_decrypt_reponse_event_log(&event).await;
                     } else {

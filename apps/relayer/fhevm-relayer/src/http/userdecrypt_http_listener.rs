@@ -218,7 +218,7 @@ fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
 //                    "contractChainId": "123456",
 //                    "contractAddress": "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
 //                    "userAddress": "0x12B064FB845C1cc05e9493856a1D637a73e944bE",
-//                    "ciphertextWithZkpok": "abcdef"
+//                    "ciphertextWithInputVerification": "abcdef"
 //         }
 //         "#;
 
@@ -236,6 +236,6 @@ fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
 //             request.userAddress,
 //             "0x12B064FB845C1cc05e9493856a1D637a73e944bE"
 //         );
-//         assert_eq!(request.ciphertextWithZkpok, "abcdef");
+//         assert_eq!(request.ciphertextWithInputVerification, "abcdef");
 //     }
 // }

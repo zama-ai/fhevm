@@ -1,11 +1,11 @@
-use crate::blockchain::ethereum::bindings::DecyptionManager::{
+use crate::blockchain::ethereum::bindings::Decryption::{
     self, publicDecryptionResponseCall, PublicDecryptionRequest, PublicDecryptionResponse,
     UserDecryptionRequest,
 };
 
-use crate::blockchain::ethereum::bindings::DecyptionManager::CtHandleContractPair;
-use crate::blockchain::ethereum::bindings::IDecryptionManager::RequestValidity;
-use crate::blockchain::ethereum::bindings::ZKPoKManager;
+use crate::blockchain::ethereum::bindings::Decryption::CtHandleContractPair;
+use crate::blockchain::ethereum::bindings::IDecryption::RequestValidity;
+use crate::blockchain::ethereum::bindings::InputVerification;
 use crate::blockchain::public_decrypt_handler::DecryptionRequestData;
 use crate::core::errors::EventProcessingError;
 use crate::core::event::UserDecryptRequest;
@@ -69,7 +69,7 @@ impl ComputeCalldata {
     pub fn public_decryption_req(
         handles: Vec<FixedBytes<32>>,
     ) -> Result<Bytes, EventProcessingError> {
-        let calldata = DecyptionManager::publicDecryptionRequestCall::new((handles,)).abi_encode();
+        let calldata = Decryption::publicDecryptionRequestCall::new((handles,)).abi_encode();
 
         info!(
             "publicDecryptionRequest calldata: 0x{}",
@@ -97,7 +97,7 @@ impl ComputeCalldata {
         };
 
         // Create the userDecryptionRequest call
-        let call = DecyptionManager::userDecryptionRequestCall::new((
+        let call = Decryption::userDecryptionRequestCall::new((
             ct_handle_contract_pairs,
             validity,
             U256::from(user_decrypt_request.contracts_chain_id),
@@ -108,7 +108,7 @@ impl ComputeCalldata {
         ));
 
         // Encode the call to get the calldata
-        let calldata = DecyptionManager::userDecryptionRequestCall::abi_encode(&call);
+        let calldata = Decryption::userDecryptionRequestCall::abi_encode(&call);
 
         info!(
             "UserDecryptionRequest calldata: 0x{}",
@@ -131,7 +131,7 @@ impl ComputeCalldata {
         user_address: Address,
         ciphertext_with_zkproof: Bytes,
     ) -> Result<Bytes, EventProcessingError> {
-        let request_call = ZKPoKManager::verifyProofRequestCall {
+        let request_call = InputVerification::verifyProofRequestCall {
             contractChainId: U256::from(contract_chain_id),
             contractAddress: contract_address,
             userAddress: user_address,
@@ -145,7 +145,7 @@ impl ComputeCalldata {
     /// Used in gateway_processors_mock
     ///
     /// # Arguments
-    /// * `zkpok_id` - ID of the proof being verified
+    /// * `input_verification_id` - ID of the proof being verified
     /// * `handles` - Array of 32-byte handles
     /// * `signatures` - Vector of signatures to be concatenated
     ///
@@ -153,12 +153,12 @@ impl ComputeCalldata {
     /// * `Ok(Bytes)` - The encoded calldata
     /// * `Err(EventProcessingError)` - If encoding fails
     pub fn verify_proof_response(
-        zkpok_id: U256,
+        input_verification_id: U256,
         handles: Vec<[u8; 32]>,
         signature: Vec<u8>,
     ) -> Result<Bytes, EventProcessingError> {
-        let calldata = ZKPoKManager::verifyProofResponseCall::new((
-            zkpok_id,
+        let calldata = InputVerification::verifyProofResponseCall::new((
+            input_verification_id,
             handles
                 .into_iter()
                 .map(alloy::primitives::FixedBytes::<32>::from)
@@ -186,14 +186,14 @@ impl ComputeCalldata {
         let dummy_signature = Bytes::from(vec![42u8; 65]);
 
         // Create the userDecryptionResponse call using Alloy's type-safe interface
-        let call = DecyptionManager::userDecryptionResponseCall::new((
+        let call = Decryption::userDecryptionResponseCall::new((
             user_decryption_id,
             dummy_reencrypted_share,
             dummy_signature,
         ));
 
         // Encode the call to get the calldata
-        let calldata = DecyptionManager::userDecryptionResponseCall::abi_encode(&call);
+        let calldata = Decryption::userDecryptionResponseCall::abi_encode(&call);
 
         info!(
             "UserDecryptionResponse calldata for user_decryption_id {}: 0x{}",
@@ -206,7 +206,7 @@ impl ComputeCalldata {
 
     pub fn decryption_response(
         req: PublicDecryptionRequest,
-        decryption_manager_address: Address,
+        decryption_address: Address,
     ) -> Result<Bytes, EventProcessingError> {
         // 1. Compute decryptedResult bytes array
         let mut results: Vec<DynSolValue> = Vec::new();
@@ -303,7 +303,7 @@ impl ComputeCalldata {
             name: "DecryptionManager",
             version: "1",
             chain_id: 654321,
-            verifying_contract: decryption_manager_address,
+            verifying_contract: decryption_address,
         };
 
         println!("{:?}", domain);

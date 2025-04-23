@@ -18,14 +18,14 @@ pub struct InputProofRequestJson {
     pub contractChainId: String, // Hex encoded uint256 string with 0x prefix.
     pub contractAddress: String, // Hex encoded address with 0x prefix.
     pub userAddress: String,     // Hex encoded address with 0x prefix.
-    pub ciphertextWithZkpok: String, // List of hex encoded binary proof without 0x prefix.
+    pub ciphertextWithInputVerification: String, // List of hex encoded binary proof without 0x prefix.
 }
 
 impl InputProofRequestJson {
     pub fn validate(&self) -> Result<(), String> {
         // Add other validations here.
-        if self.ciphertextWithZkpok.is_empty() {
-            Err("ZKPoK cannot be empty.".to_string())
+        if self.ciphertextWithInputVerification.is_empty() {
+            Err("Input Verification cannot be empty.".to_string())
         } else {
             Ok(())
         }
@@ -41,7 +41,7 @@ pub struct InputProofResponseJson {
 #[derive(Debug, Serialize)]
 pub struct InputProofResponsePayloadJson {
     pub handles: Vec<String>, // Ordered List of hex encoded handles with 0x prefix.
-    pub signatures: Vec<String>, // Attestation signatures for ZkPoK for the ordered list of handles.
+    pub signatures: Vec<String>, // Attestation signatures for Input verification for the ordered list of handles.
 }
 
 /// Represents the error response from the '/input-proof' endpoint.
@@ -170,7 +170,7 @@ mod tests {
                    "contractChainId": "123456",
                    "contractAddress": "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
                    "userAddress": "0x12B064FB845C1cc05e9493856a1D637a73e944bE",
-                   "ciphertextWithZkpok": "abcdef"
+                   "ciphertextWithInputVerification": "abcdef"
         }
         "#;
 
@@ -188,6 +188,6 @@ mod tests {
             request.userAddress,
             "0x12B064FB845C1cc05e9493856a1D637a73e944bE"
         );
-        assert_eq!(request.ciphertextWithZkpok, "abcdef");
+        assert_eq!(request.ciphertextWithInputVerification, "abcdef");
     }
 }

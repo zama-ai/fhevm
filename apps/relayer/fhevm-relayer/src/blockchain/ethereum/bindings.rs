@@ -11,33 +11,23 @@ sol!(
     "./artifacts/contract-abis/DecryptionOracle.json"
 );
 
-// TFHE EXecutor
-
+// Decryption contract (Rollup)
 sol!(
     #[allow(missing_docs)]
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    TFHEExecutor,
-    "./artifacts/contract-abis/TFHEExecutor.json"
+    Decryption,
+    "./artifacts/contract-abis/Decryption.json"
 );
 
-// Decryption Manager (Rollup)
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    DecyptionManager,
-    "./artifacts/contract-abis/DecryptionManager.json"
-);
-
-// ZKPoK  Manager (Rollup)
+// Input Verification (Rollup)
 
 sol!(
     #[allow(missing_docs)]
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    ZKPoKManager,
-    "./artifacts/contract-abis/ZKPoKManager.json"
+    InputVerification,
+    "./artifacts/contract-abis/InputVerification.json"
 );
 
 // Define the Transfer event structure using alloy_sol_types
@@ -55,27 +45,27 @@ mod tests {
     fn test_decryption() {
         println!(
             "DecryptionManager UserDecryptionRequest:\n{}\n{}\n",
-            DecyptionManager::UserDecryptionRequest::SIGNATURE,
-            DecyptionManager::UserDecryptionRequest::SIGNATURE_HASH
+            Decryption::UserDecryptionRequest::SIGNATURE,
+            Decryption::UserDecryptionRequest::SIGNATURE_HASH
         );
         println!(
             "DecryptionManager UserDecryptionResponse:\n{}\n{}\n",
-            DecyptionManager::UserDecryptionResponse::SIGNATURE,
-            DecyptionManager::UserDecryptionResponse::SIGNATURE_HASH
+            Decryption::UserDecryptionResponse::SIGNATURE,
+            Decryption::UserDecryptionResponse::SIGNATURE_HASH
         );
     }
 
     #[test]
-    fn test_zkpok() {
+    fn test_input_verification() {
         println!(
-            "ZKPoKManager VerifyProofRequest:\n{}\n{}\n",
-            ZKPoKManager::VerifyProofRequest::SIGNATURE,
-            ZKPoKManager::VerifyProofRequest::SIGNATURE_HASH
+            "InputVerification VerifyProofRequest:\n{}\n{}\n",
+            InputVerification::VerifyProofRequest::SIGNATURE,
+            InputVerification::VerifyProofRequest::SIGNATURE_HASH
         );
         println!(
-            "ZKPoKManager VerifyProofResponse:\n{}\n{}\n",
-            ZKPoKManager::VerifyProofResponse::SIGNATURE,
-            ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH
+            "InputVerification VerifyProofResponse:\n{}\n{}\n",
+            InputVerification::VerifyProofResponse::SIGNATURE,
+            InputVerification::VerifyProofResponse::SIGNATURE_HASH
         );
     }
 }

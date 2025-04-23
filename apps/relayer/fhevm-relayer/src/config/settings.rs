@@ -133,10 +133,8 @@ impl Default for RetrySettings {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ContractConfig {
     pub decryption_oracle_address: String,
-    pub tfhe_executor_address: String,
-    pub decryption_manager_address: String,
-    pub zkpok_manager_address: String,
-    pub ciphertext_manager_address: String,
+    pub decryption_address: String,
+    pub input_verification_address: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -233,7 +231,11 @@ impl Settings {
                 "decryption_oracle",
                 &self.contracts.decryption_oracle_address,
             ),
-            ("tfhe_executor", &self.contracts.tfhe_executor_address),
+            ("decryption", &self.contracts.decryption_address),
+            (
+                "input_verification",
+                &self.contracts.input_verification_address,
+            ),
         ];
 
         // Iterate and validate each address

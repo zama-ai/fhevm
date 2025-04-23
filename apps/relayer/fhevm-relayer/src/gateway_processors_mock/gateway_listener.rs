@@ -1,7 +1,7 @@
 use alloy_sol_types::SolEvent;
 use tracing::{error, info};
 
-use crate::blockchain::ethereum::bindings::{DecyptionManager, ZKPoKManager};
+use crate::blockchain::ethereum::bindings::{Decryption, InputVerification};
 use crate::gateway_processors_mock::event::{
     self, GatewayProcessorsEvent, GatewayProcessorsEventData, GatewayProcessorsInputEventData,
     PublicDecryptionEventData, UserDecryptionEventData,
@@ -16,13 +16,13 @@ use std::sync::Arc;
 
 // Define event topics as constants
 const PROOF_VERIFICATION_REQUEST_TOPIC: alloy::primitives::FixedBytes<32> =
-    ZKPoKManager::VerifyProofRequest::SIGNATURE_HASH;
+    InputVerification::VerifyProofRequest::SIGNATURE_HASH;
 
 const DECRYPTION_REQUEST_TOPIC: alloy::primitives::FixedBytes<32> =
-    DecyptionManager::PublicDecryptionRequest::SIGNATURE_HASH;
+    Decryption::PublicDecryptionRequest::SIGNATURE_HASH;
 
 const USER_DECRYPTION_REQUEST_TOPIC: alloy::primitives::FixedBytes<32> =
-    DecyptionManager::UserDecryptionRequest::SIGNATURE_HASH;
+    Decryption::UserDecryptionRequest::SIGNATURE_HASH;
 
 pub async fn event_listener_gateway(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,

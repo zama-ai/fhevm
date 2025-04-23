@@ -540,8 +540,8 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
 
         // Convert ciphertext_with_zk_proof.
         // This field is assumed to be a hex string without a "0x" prefix.
-        let proof_bytes = hex::decode(&json.ciphertextWithZkpok)
-            .map_err(|e| format!("Error decoding ciphertextWithZkpok: {}", e))?;
+        let proof_bytes = hex::decode(&json.ciphertextWithInputVerification)
+            .map_err(|e| format!("Error decoding ciphertextWithInputVerification: {}", e))?;
         let ciphetext_with_zk_proof = Bytes::from(proof_bytes);
 
         Ok(InputProofRequest {
@@ -610,7 +610,7 @@ mod tests {
             contractChainId: CHAIN_ID.to_string(),
             contractAddress: CONTRACT_ADDRESS.to_string(),
             userAddress: USER_ADDRESS.to_string(),
-            ciphertextWithZkpok: CIPHERTEXT.to_string(),
+            ciphertextWithInputVerification: CIPHERTEXT.to_string(),
         };
 
         let request = InputProofRequest::try_from(json)?;

@@ -1,8 +1,8 @@
 use crate::{
     blockchain::ethereum::{
         bindings::{
-            DecyptionManager::{PublicDecryptionRequest, UserDecryptionRequest},
-            ZKPoKManager,
+            Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
+            InputVerification,
         },
         ComputeCalldata,
     },
@@ -78,10 +78,10 @@ impl GatewayProcessorsHandler {
                 "Processing log data"
             );
 
-            match ZKPoKManager::VerifyProofRequest::decode_log_data(log.data(), true) {
+            match InputVerification::VerifyProofRequest::decode_log_data(log.data(), true) {
                 Ok(request_event) => {
                     info!(
-                        zkpok_id = ?request_event.zkProofId,
+                        input_verification_id = ?request_event.zkProofId,
                         chain_id = ?request_event.contractChainId,
                         contract = ?request_event.contractAddress,
                         user = ?request_event.userAddress,
@@ -106,10 +106,10 @@ impl GatewayProcessorsHandler {
                     .unwrap();
 
                     let domain = eip712_domain! {
-                        name: "ZKPoKManager",
+                        name: "InputVerification",
                         version: "1",
                         chain_id: 654321,
-                        verifying_contract: Address::from_str(&self.contracts.zkpok_manager_address).unwrap(),
+                        verifying_contract: Address::from_str(&self.contracts.input_verification_address).unwrap(),
                     };
 
                     let handles_formatted: Vec<FixedBytes<32>> =
@@ -150,22 +150,26 @@ impl GatewayProcessorsHandler {
     /// Send InputResponse transaction
     async fn send_input_response(
         &self,
-        zkpok_id: U256,
+        input_verification_id: U256,
         handles: Vec<[u8; 32]>,
         signature: Vec<u8>,
     ) -> Result<(), EventProcessingError> {
-        info!(?zkpok_id, "Sending InputResponse transaction");
-        let zkpok_manager_address = Address::from_str(&self.contracts.zkpok_manager_address)
-            .map_err(|_| {
+        info!(?input_verification_id, "Sending InputResponse transaction");
+        let input_verification_address =
+            Address::from_str(&self.contracts.input_verification_address).map_err(|_| {
                 EventProcessingError::ConfigError(
                     crate::config::settings::AppConfigError::InvalidAddress(
-                        "self.contracts.zkpok_manager_address".to_owned(),
+                        "self.contracts.input_verification_address".to_owned(),
                     ),
                 )
             })?;
         self.tx_helper
-            .send_transaction_simple("input_response", zkpok_manager_address, || {
-                ComputeCalldata::verify_proof_response(zkpok_id, handles.clone(), signature.clone())
+            .send_transaction_simple("input_response", input_verification_address, || {
+                ComputeCalldata::verify_proof_response(
+                    input_verification_id,
+                    handles.clone(),
+                    signature.clone(),
+                )
             })
             .await?;
 
@@ -177,17 +181,17 @@ impl GatewayProcessorsHandler {
         &self,
         req: PublicDecryptionRequest,
     ) -> Result<(), EventProcessingError> {
-        let decryption_manager_address =
-            Address::from_str(&self.contracts.decryption_manager_address).map_err(|_| {
+        let decryption_address =
+            Address::from_str(&self.contracts.decryption_address).map_err(|_| {
                 EventProcessingError::ConfigError(
                     crate::config::settings::AppConfigError::InvalidAddress(
-                        "contracts.decryption_manager_address".to_owned(),
+                        "contracts.decryption_address".to_owned(),
                     ),
                 )
             })?;
         self.tx_helper
-            .send_transaction_simple("decryption_response", decryption_manager_address, || {
-                ComputeCalldata::decryption_response(req.clone(), decryption_manager_address)
+            .send_transaction_simple("decryption_response", decryption_address, || {
+                ComputeCalldata::decryption_response(req.clone(), decryption_address)
             })
             .await?;
 
@@ -198,16 +202,16 @@ impl GatewayProcessorsHandler {
         &self,
         req: UserDecryptionRequest,
     ) -> Result<(), EventProcessingError> {
-        let decryption_manager_address =
-            Address::from_str(&self.contracts.decryption_manager_address).map_err(|_| {
+        let decryption_address =
+            Address::from_str(&self.contracts.decryption_address).map_err(|_| {
                 EventProcessingError::ConfigError(
                     crate::config::settings::AppConfigError::InvalidAddress(
-                        "contracts.decryption_manager_address".to_owned(),
+                        "contracts.decryption_address".to_owned(),
                     ),
                 )
             })?;
         self.tx_helper
-            .send_transaction_simple("decryption_response", decryption_manager_address, || {
+            .send_transaction_simple("decryption_response", decryption_address, || {
                 ComputeCalldata::user_decryption_response(req.clone())
             })
             .await?;

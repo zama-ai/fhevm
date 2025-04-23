@@ -1,5 +1,5 @@
 use crate::{
-    blockchain::ethereum::{bindings::ZKPoKManager, ComputeCalldata},
+    blockchain::ethereum::{bindings::InputVerification, ComputeCalldata},
     config::settings::ContractConfig,
     core::{
         errors::EventProcessingError,
@@ -35,14 +35,15 @@ impl ReceiptProcessor for InputRequestProcessor {
     type Output = U256;
 
     fn process(&self, receipt: &TransactionReceipt) -> Result<Self::Output, EventProcessingError> {
-        self.handler.extract_zkpok_id_from_receipt(receipt)
+        self.handler
+            .extract_input_verification_id_from_receipt(receipt)
     }
 }
 
 #[derive(Clone)]
 pub struct ArbitrumGatewayL2InputHandler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
-    zkpok_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
+    input_verification_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
 }
@@ -57,7 +58,7 @@ impl ArbitrumGatewayL2InputHandler {
         Self {
             dispatcher,
             tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
-            zkpok_id_to_request_id: Arc::new(dashmap::DashMap::new()),
+            input_verification_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
         }
     }
@@ -70,10 +71,10 @@ impl ArbitrumGatewayL2InputHandler {
     ///   - contract_chain_id: Chain ID of the target contract
     ///   - contract_address: Address of the target contract
     ///   - user_address: Address of the user making the request
-    ///   - zkpok: Vector of bytes containing the ZK proof
+    ///   - input_verification: Vector of bytes containing the ZK proof
     ///
     /// # State Changes
-    /// On success, stores mapping between zkpok_id and request_id in zkpok_id_to_request_id
+    /// On success, stores mapping between input_verification_id and request_id in input_verification_id_to_request_id
     async fn send_input_request_to_rollup(
         &self,
         event: RelayerEvent,
@@ -101,9 +102,9 @@ impl ArbitrumGatewayL2InputHandler {
                     )
                     .await
                 {
-                    Ok(zkpok_id) => {
+                    Ok(input_verification_id) => {
                         self_clone
-                            .handle_successful_request(event_clone, zkpok_id)
+                            .handle_successful_request(event_clone, input_verification_id)
                             .await;
                     }
                     Err(e) => {
@@ -116,13 +117,13 @@ impl ArbitrumGatewayL2InputHandler {
 
     /// Processes a successful input request by storing state and dispatching event.
     async fn handle_successful_request(&self, event: RelayerEvent, zkproof_id: U256) {
-        self.zkpok_id_to_request_id
+        self.input_verification_id_to_request_id
             .insert(zkproof_id, event.request_id);
 
         info!(
             ?event.request_id,
             ?zkproof_id,
-            "Stored mapping between ZKPoK ID and request ID"
+            "Stored mapping between input_verification ID and request ID"
         );
 
         let next_event = event.derive_next_event(RelayerEventData::InputProof(
@@ -130,7 +131,7 @@ impl ArbitrumGatewayL2InputHandler {
         ));
 
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
-            error!(?e, "Failed to dispatch RequestSentToGwL2 event");
+            error!(?e, "Failed to dispatch RequestSentToGw event");
         }
     }
 
@@ -151,7 +152,7 @@ impl ArbitrumGatewayL2InputHandler {
         }
     }
 
-    /// Extracts ZKPoK ID from transaction receipt logs.
+    /// Extracts input_verification ID from transaction receipt logs.
     ///
     /// Searches for the [`VerifyProofRequest`] event in the logs and decodes it to extract
     /// the zkProofId.
@@ -160,9 +161,9 @@ impl ArbitrumGatewayL2InputHandler {
     /// * `receipt` - The [`TransactionReceipt`] to process
     ///
     /// # Returns
-    /// * `Ok(`[`U256`]`)` - The extracted ZKPoK ID
+    /// * `Ok(`[`U256`]`)` - The extracted input_verification ID
     /// * `Err(`[`EventProcessingError`]`)` - If event is not found or decoding fails
-    fn extract_zkpok_id_from_receipt(
+    fn extract_input_verification_id_from_receipt(
         &self,
         receipt: &TransactionReceipt,
     ) -> Result<U256, EventProcessingError> {
@@ -190,7 +191,7 @@ impl ArbitrumGatewayL2InputHandler {
         for log in receipt.inner.logs().iter() {
             if let Some(first_topic) = log.topics().first() {
                 if first_topic == &target_topic {
-                    return match ZKPoKManager::VerifyProofRequest::decode_log_data(
+                    return match InputVerification::VerifyProofRequest::decode_log_data(
                         log.data(),
                         false, // No indexed parameters in this event
                     ) {
@@ -230,46 +231,46 @@ impl ArbitrumGatewayL2InputHandler {
     /// * `contract_chain_id` - [`U256`] Chain ID of the target contract
     /// * `contract_address` - [`Address`] Address of the target contract
     /// * `user_address` - [`Address`] Address of the user making the request
-    /// * `zkpok` - [`Vec<u8>`] ZK proof data
+    /// * `input_verification` - [`Vec<u8>`] ZK proof data
     ///
     /// # Returns
-    /// * `Ok(`[`U256`]`)` - The ZKPoK ID from the transaction
+    /// * `Ok(`[`U256`]`)` - The input_verification ID from the transaction
     /// * `Err(`[`EventProcessingError`]`)` - If the transaction fails
     async fn process_input_request(
         &self,
         contract_chain_id: u64,
         contract_address: Address,
         user_address: Address,
-        zkpok: Bytes,
+        input_verification: Bytes,
     ) -> Result<U256, EventProcessingError> {
         let processor = InputRequestProcessor {
             handler: Arc::new(self.clone()),
         };
 
-        let zkpok_manager_address = Address::from_str(&self.contracts.zkpok_manager_address)
-            .map_err(|_| {
+        let input_verification_address =
+            Address::from_str(&self.contracts.input_verification_address).map_err(|_| {
                 EventProcessingError::ConfigError(
                     crate::config::settings::AppConfigError::InvalidAddress(
-                        "contracts.zkpok_manager_address".to_owned(),
+                        "contracts.input_verification_address".to_owned(),
                     ),
                 )
             })?;
 
         info!(
-            "zkpok_manager_address used for input request {:?}",
-            zkpok_manager_address
+            "input_verification_address used for input request {:?}",
+            input_verification_address
         );
 
         self.tx_helper
             .send_transaction(
                 "input_request",
-                zkpok_manager_address,
+                input_verification_address,
                 || {
                     ComputeCalldata::verify_proof_req(
                         contract_chain_id,
                         contract_address,
                         user_address,
-                        zkpok.clone(),
+                        input_verification.clone(),
                     )
                 },
                 &processor,
@@ -280,15 +281,15 @@ impl ArbitrumGatewayL2InputHandler {
     /// Processes input response events from L2.
     ///
     /// This function:
-    /// 1. Extracts `zkpok_id` from the event
-    /// 2. Retrieves original request ID using the `zkpok_id`
+    /// 1. Extracts `input_verification_id` from the event
+    /// 2. Retrieves original request ID using the `input_verification_id`
     /// 3. Creates and dispatches response event with mock handles and signatures
     ///
     /// # Arguments
     /// * `event` - The [`RelayerEvent`] containing the response data
     ///
     /// # State Access
-    /// Reads from `zkpok_id_to_request_id` mapping
+    /// Reads from `input_verification_id_to_request_id` mapping
     ///
     /// # Events
     /// Dispatches [`RelayerEventData::Input`] with [`InputEventData::RespFromGwL2`]
@@ -308,11 +309,14 @@ impl ArbitrumGatewayL2InputHandler {
 
             match log.topic0() {
                 Some(topic) => {
-                    if topic == &ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH {
-                        match ZKPoKManager::VerifyProofResponse::decode_log_data(log.data(), true) {
+                    if topic == &InputVerification::VerifyProofResponse::SIGNATURE_HASH {
+                        match InputVerification::VerifyProofResponse::decode_log_data(
+                            log.data(),
+                            true,
+                        ) {
                             Ok(request_event) => {
                                 info!(
-                                    zkpok_id = ?request_event.zkProofId,
+                                    input_verification_id = ?request_event.zkProofId,
                                     handles = ?request_event.ctHandles,
                                     signatures = ?request_event.signatures,
                                     "Processing InputResponse event"
@@ -326,8 +330,9 @@ impl ArbitrumGatewayL2InputHandler {
                                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
                                 // Use get_key_value to get both key and value, or use remove if you want to clean up
-                                if let Some(entry) =
-                                    self.zkpok_id_to_request_id.get(&request_event.zkProofId)
+                                if let Some(entry) = self
+                                    .input_verification_id_to_request_id
+                                    .get(&request_event.zkProofId)
                                 {
                                     let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
 
@@ -418,12 +423,12 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
             RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
                 if let Some(topic0) = log.topic0() {
                     if FixedBytes::<32>::from_slice(topic0.as_slice())
-                        != ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH
+                        != InputVerification::VerifyProofResponse::SIGNATURE_HASH
                     {
                         debug!(
                             "Ignore this event: expected event: {:?}, received {} ",
                             log.topic0(),
-                            ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH
+                            InputVerification::VerifyProofResponse::SIGNATURE_HASH
                         );
                         self.noop_handle_input_reponse_event_log(&event).await;
                     } else {

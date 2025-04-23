@@ -1,6 +1,6 @@
 use crate::{
     blockchain::ethereum::{
-        bindings::DecyptionManager::{self, UserDecryptionRequest},
+        bindings::Decryption::{self, UserDecryptionRequest},
         ComputeCalldata,
     },
     config::settings::{ContractConfig, RetrySettings},
@@ -18,7 +18,7 @@ use crate::{
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
 };
 
-impl From<&CtHandleContractPair> for DecyptionManager::CtHandleContractPair {
+impl From<&CtHandleContractPair> for Decryption::CtHandleContractPair {
     fn from(pair: &CtHandleContractPair) -> Self {
         Self {
             ctHandle: pair.ct_handle.into(),
@@ -89,7 +89,7 @@ impl UserDecryptGatewayHandler {
     ///
     /// This function performs the following:
     /// 1. Converts the input handles to [`Uint<256, 4>`]
-    /// 2. Sends transaction to the [`DecyptionManager`] contract
+    /// 2. Sends transaction to the [`Decryption`] contract
     /// 3. Extracts the `decryption_public_id` from the receipt
     ///
     /// # Arguments
@@ -222,11 +222,8 @@ impl UserDecryptGatewayHandler {
 
         if let RelayerEventData::Generic(GenericEventData::EventLogFromGw { log }) = &event.data {
             if let Some(topic) = log.topic0() {
-                if *topic == DecyptionManager::UserDecryptionResponse::SIGNATURE_HASH {
-                    match DecyptionManager::UserDecryptionResponse::decode_log_data(
-                        log.data(),
-                        true,
-                    ) {
+                if *topic == Decryption::UserDecryptionResponse::SIGNATURE_HASH {
+                    match Decryption::UserDecryptionResponse::decode_log_data(log.data(), true) {
                         Ok(req) => {
                             let user_decryption_id = req.userDecryptionId;
                             info!(?user_decryption_id, "User decryption id from event");
@@ -314,7 +311,7 @@ impl UserDecryptGatewayHandler {
         for log in receipt.inner.logs().iter() {
             if let Some(first_topic) = log.topics().first() {
                 if first_topic == &target_topic {
-                    return match DecyptionManager::UserDecryptionRequest::decode_log_data(
+                    return match Decryption::UserDecryptionRequest::decode_log_data(
                         log.data(),
                         true,
                     ) {
@@ -361,22 +358,21 @@ impl UserDecryptGatewayHandler {
             .with_recommended_fillers()
             .on_http(url);
 
-        let decryption_manager_address =
-            Address::from_str(&self.contracts.decryption_manager_address).map_err(|_| {
+        let decryption_address =
+            Address::from_str(&self.contracts.decryption_address).map_err(|_| {
                 EventProcessingError::ConfigError(
                     crate::config::settings::AppConfigError::InvalidAddress(
-                        "contracts.decryption_manager_address".to_owned(),
+                        "contracts.decryption_address".to_owned(),
                     ),
                 )
             })?;
-        let decryption_manager =
-            DecyptionManager::new(decryption_manager_address, provider.clone());
+        let decryption = Decryption::new(decryption_address, provider.clone());
 
         // Convert to contract related pairs
         let contract_pairs: Vec<_> = user_decrypt_request
             .ct_handle_contract_pairs
             .iter()
-            .map(DecyptionManager::CtHandleContractPair::from)
+            .map(Decryption::CtHandleContractPair::from)
             .collect();
 
         // Perform readiness check with retry logic
@@ -394,7 +390,7 @@ impl UserDecryptGatewayHandler {
         while should_retry && retries < max_retries {
             should_retry = false;
 
-            match decryption_manager
+            match decryption
                 .clone()
                 .checkUserDecryptionReady(user_decrypt_request.user_address, contract_pairs.clone())
                 .call()
@@ -437,7 +433,7 @@ impl UserDecryptGatewayHandler {
         self.tx_helper
             .send_transaction(
                 "user_decryption_request",
-                decryption_manager_address,
+                decryption_address,
                 || ComputeCalldata::user_decryption_req(user_decrypt_request.clone()),
                 &processor,
             )
@@ -460,12 +456,12 @@ impl EventHandler<RelayerEvent> for UserDecryptGatewayHandler {
             RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
                 if let Some(topic0) = log.topic0() {
                     if FixedBytes::<32>::from_slice(topic0.as_slice())
-                        != DecyptionManager::UserDecryptionResponse::SIGNATURE_HASH
+                        != Decryption::UserDecryptionResponse::SIGNATURE_HASH
                     {
                         debug!(
                             "Ignore this event: expected event: {:?}, received {} ",
                             log.topic0(),
-                            DecyptionManager::UserDecryptionResponse::SIGNATURE_HASH
+                            Decryption::UserDecryptionResponse::SIGNATURE_HASH
                         );
                         self.noop_handle_decrypt_reponse_event_log(&event).await;
                     } else {
@@ -522,15 +518,14 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     println!("Using address: {:?}", manager.sender_address());
 
     // Target contract address from config
-    let decryption_manager_address =
-        Address::from_str(&settings.contracts.decryption_manager_address)
-            .expect("Invalid decryption manager address");
+    let decryption_address = Address::from_str(&settings.contracts.decryption_address)
+        .expect("Invaliddecryption contract address");
 
-    println!("Using decryption manager: {:?}", decryption_manager_address);
+    println!("Using decryption manager: {:?}", decryption_address);
 
     println!("Checking contract state...");
     let code = manager
-        .verify_contract_code(decryption_manager_address)
+        .verify_contract_code(decryption_address)
         .await
         .expect("Failed to verify contract code");
     println!("Contract code size: {} bytes", code.len());
@@ -539,10 +534,10 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     println!("Creating minimal test data...");
 
     let simple_handle = U256::from(123); // Random handle
-    let contract_addresses = vec![decryption_manager_address];
+    let contract_addresses = vec![decryption_address];
     let ct_handle_contract_pairs = vec![CtHandleContractPair {
         ct_handle: simple_handle,
-        contract_address: decryption_manager_address,
+        contract_address: decryption_address,
     }];
     let request_validity = RequestValidity {
         start_timestamp: U256::from(1672531200), // random unix timestamp
@@ -577,7 +572,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     // Try sending the actual transaction
     println!("Sending transaction...");
     match manager
-        .send_transaction_and_wait(decryption_manager_address, calldata, Some(config))
+        .send_transaction_and_wait(decryption_address, calldata, Some(config))
         .await
     {
         Ok(receipt) => {
@@ -630,11 +625,10 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
         .await
         .expect("Failed to create transaction manager");
 
-    let decryption_manager_address =
-        Address::from_str(&settings.contracts.decryption_manager_address)
-            .expect("Invalid decryption manager address");
+    let decryption_address = Address::from_str(&settings.contracts.decryption_address)
+        .expect("Invaliddecryption contract address");
 
-    println!("Using decryption manager: {:?}", decryption_manager_address);
+    println!("Using decryption manager: {:?}", decryption_address);
     println!("Sender address: {:?}", manager.sender_address());
 
     // STEP 1: Check if the contract has the expected function
@@ -647,10 +641,7 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
     println!("Function selector: 0x{}", hex::encode(func_selector));
 
     // STEP 2: Check contract code size
-    let code = manager
-        .provider
-        .get_code_at(decryption_manager_address)
-        .await?;
+    let code = manager.provider.get_code_at(decryption_address).await?;
     println!("Contract code size: {} bytes", code.len());
 
     // Search for our function selector in the bytecode

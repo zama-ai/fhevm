@@ -94,17 +94,17 @@ async fn main() -> eyre::Result<()> {
 
     info!("Starting KMS Connector FHE Event Handler");
 
-    let decryption_manager_address =
-        Address::from_str(&settings.contracts.decryption_manager_address)
-            .map_err(|_| eyre::eyre!("Invalid decryption manager address"))?;
+    let decryption_address = Address::from_str(&settings.contracts.decryption_address)
+        .map_err(|_| eyre::eyre!("Invaliddecryption contract address"))?;
 
-    // Update the L2 filter to include the ZKPoK contract
-    let zkpok_manager_address = Address::from_str(&settings.contracts.zkpok_manager_address)
-        .map_err(|_| eyre::eyre!("Invalid ZKPoK manager address"))?;
+    // Update the L2 filter to include the InputVerification contract
+    let input_verification_address =
+        Address::from_str(&settings.contracts.input_verification_address)
+            .map_err(|_| eyre::eyre!("InvalidInputVerification address"))?;
 
     info!(
-        ?decryption_manager_address,
-        ?zkpok_manager_address,
+        ?decryption_address,
+        ?input_verification_address,
         ?settings.networks.fhevm.ws_url,
         "Initialized contract addresses"
     );
@@ -142,10 +142,8 @@ async fn main() -> eyre::Result<()> {
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
     // TODO: Pass the event_dispatcher to the event_listener
-    let filter_rollup = ContractAndTopicsFilter::new(
-        vec![decryption_manager_address, zkpok_manager_address],
-        vec![],
-    );
+    let filter_rollup =
+        ContractAndTopicsFilter::new(vec![decryption_address, input_verification_address], vec![]);
     let subscription_rollup = rollup_l2.new_subscription(filter_rollup, None).await?;
     tokio::spawn(event_listener_gateway(
         subscription_rollup,

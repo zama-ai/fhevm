@@ -1,6 +1,6 @@
 use crate::{
     blockchain::ethereum::{
-        bindings::{DecryptionOracle, DecyptionManager::PublicDecryptionResponse},
+        bindings::{Decryption::PublicDecryptionResponse, DecryptionOracle},
         ComputeCalldata,
     },
     core::{
