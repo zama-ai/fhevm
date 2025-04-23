@@ -16,9 +16,9 @@ concurrency:
 jobs:
   docker-sc-bundle:
     name: Docker - fhevm Gateway Contracts
-    uses: zama-ai/fhevm-templates/.github/workflows/docker_common.yml@58ddd70781d1456d7fe937efef501a7bc5ca2d8d # main
+    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
     secrets:
-      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
     permissions:
       contents: "read"
