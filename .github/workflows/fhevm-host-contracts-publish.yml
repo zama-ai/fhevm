@@ -1,4 +1,4 @@
-name: Publish fhEVM Solidity core contracts
+name: Publish fhevm Solidity core contracts
 
 on:
   workflow_dispatch:

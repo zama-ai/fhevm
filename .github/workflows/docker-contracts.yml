@@ -1,0 +1,37 @@
+name: "Docker - fhevm Host Contracts"
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/docker-contracts.yml
+      - contracts/**
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/docker-contracts.yml
+      - contracts/**
+  release:
+    types:
+      - published
+
+concurrency:
+  group: docker-fhevm-contracts-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  docker-fhevm-contracts:
+    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
+    secrets:
+      GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    with:
+      working-directory: "."
+      push_image: true
+      image-name: "fhevm-backend/contracts"
+      docker-file: "contracts/operations/docker/Dockerfile"
+      arm-build: true

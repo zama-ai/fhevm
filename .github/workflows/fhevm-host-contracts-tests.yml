@@ -1,9 +1,9 @@
-name: HTTPZ Host Contracts Deployment Test
+name: fhevm Host Contracts Deployment Test
 
 on:
   pull_request:
     paths:
-      - .github/workflows/httpz-sc-tests.yml
+      - .github/workflows/fhevm-sc-tests.yml
       - contracts/**
 
 concurrency:
@@ -39,13 +39,13 @@ jobs:
       run: |
         cd contracts
         # Wait for the deployment container to finish (timeout after reasonable time)
-        timeout 300s bash -c 'while docker ps --filter "name=httpz-sc-deploy" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
+        timeout 300s bash -c 'while docker ps --filter "name=fhevm-sc-deploy" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
         
         # Save logs to a file for analysis
-        docker compose logs httpz-sc-deploy > deployment_logs.txt
+        docker compose logs fhevm-sc-deploy > deployment_logs.txt
         
         # Check if the container exited with success (exit code 0)
-        EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' httpz-sc-deploy)
+        EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' fhevm-sc-deploy)
         
         # Display logs for debugging
         cat deployment_logs.txt

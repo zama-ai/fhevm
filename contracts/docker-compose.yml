@@ -1,4 +1,4 @@
-name: httpz-host
+name: fhevm-host
 
 services:
   anvil-node:
@@ -23,8 +23,8 @@ services:
     volumes:
       - .:/anvil
 
-  httpz-sc-deploy:
-    container_name: httpz-sc-deploy
+  fhevm-sc-deploy:
+    container_name: fhevm-sc-deploy
     build:
       context: ../
       dockerfile: contracts/operations/docker/Dockerfile
@@ -34,5 +34,4 @@ services:
       - HARDHAT_NETWORK=${HARDHAT_NETWORK:-staging}
       - CHAIN_ID_GATEWAY=54321
     command:
-      # - tail -f /dev/null
       - npx hardhat task:deployAllHostContracts

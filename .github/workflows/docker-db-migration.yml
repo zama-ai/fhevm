@@ -1,0 +1,38 @@
+name: "Docker - fhevm DB migration"
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/docker-fhevm-db-migration.yml
+      - fhevm-engine/fhevm-db/**
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/docker-fhevm-db-migration.yml
+      - fhevm-engine/fhevm-db/**
+  release:
+    types:
+      - published
+
+concurrency:
+  group: fhevm-db-migration-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  docker-fhevm-db-migration:
+    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
+    secrets:
+      GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    with:
+      working-directory: "."
+      push_image: true
+      image-name: "fhevm-backend/db-migration"
+      generate-dev-image: false
+      docker-file: "fhevm-engine/fhevm-db/Dockerfile"
+      arm-build: true
