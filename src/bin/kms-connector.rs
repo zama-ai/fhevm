@@ -30,19 +30,16 @@ async fn connect_with_retry(
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<Option<Arc<impl Provider + Clone + std::fmt::Debug + 'static>>> {
     loop {
-        info!(
-            "Attempting to connect to Gateway L2 RPC endpoint: {}",
-            rpc_url
-        );
+        info!("Attempting to connect to Gateway RPC endpoint: {}", rpc_url);
         let ws = WsConnect::new(rpc_url);
         match ProviderBuilder::new().on_ws(ws).await {
             Ok(provider) => {
-                info!("Connected to Gateway L2 RPC endpoint");
+                info!("Connected to Gateway RPC endpoint");
                 return Ok(Some(Arc::new(provider)));
             }
             Err(e) => {
                 error!(
-                    "Failed to connect to Gateway L2 RPC endpoint: {}, retrying in {}s...",
+                    "Failed to connect to Gateway RPC endpoint: {}, retrying in {}s...",
                     e,
                     RETRY_DELAY.as_secs()
                 );
@@ -98,8 +95,8 @@ async fn run_connector(
     );
 
     info!(
-        "Using contracts for EVENTS subscription:\n\tDecryptionManager: {}\n\tHttpz: {}",
-        config.decryption_manager_address, config.httpz_address
+        "Using contracts for EVENTS subscription:\n\tDecryption: {}\n\tGatewayConfig: {}",
+        config.decryption_address, config.gateway_config_address
     );
 
     // Initialize KMS service
@@ -178,9 +175,9 @@ async fn main() -> Result<()> {
             // Setup signal handlers for graceful shutdown
             let signal_handle = setup_signal_handlers(shutdown_tx.clone()).await?;
 
-            // Connect to L2 gateway with shutdown handling
+            // Connect to Gateway with shutdown handling
             let provider =
-                match connect_with_retry(&config.gwl2_url, shutdown_tx.subscribe()).await? {
+                match connect_with_retry(&config.gateway_url, shutdown_tx.subscribe()).await? {
                     Some(provider) => provider,
                     None => {
                         info!("Shutting down during connection attempt");

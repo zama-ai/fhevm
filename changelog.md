@@ -7,7 +7,7 @@
 #### 1.1. Completed ✅
 
 - Basic event types and filters
-- Provider interface for L2 interaction
+- Provider interface for Gateway interaction
 - Event decoding infrastructure using Alloy
 - Smart contract interaction capabilities with Alloy integration
 - WebSocket-based event subscription system
@@ -19,7 +19,7 @@
 - Graceful shutdown coordination
 - Resource cleanup with proper Drop implementations
 - EIP-712 signature support for secure message signing
-- Gateway L2 integration as git submodule
+- Gateway integration as git submodule
 - Comprehensive emulation environment for testing
 - Full configuration management
 - Enhanced error handling with exponential backoff for reconnections
@@ -43,12 +43,12 @@
 
 #### 1.3. Not Started ❌
 
-- Full event pub-sub system with KMS-core and Gateway L2 (!)
+- Full event pub-sub system with KMS-core and Gateway (!)
 - Metrics collection system design
 - Full provider implementation with advanced contract calls
 - Performance optimization and monitoring
 
-### 2. GW L2 Adapters 🔄
+### 2. Gateway Adapters 🔄
 
 #### 2.1. Completed ✅
 
@@ -59,7 +59,7 @@
   - CRS generation
 - Event filtering mechanisms
 - Decryption adapter implementation
-- HTTPZ adapter implementation
+- GatewayConfig adapter implementation
 - Event handling logic with Alloy integration
 - Advanced error recovery with retry mechanisms
 - Efficient task management and cleanup
@@ -104,8 +104,8 @@
 #### 4.1. Completed ✅
 
 - Event type definitions and structs for:
-  - IDecryptionManager events
-  - IHTTPZ events
+  - IDecryption events
+  - IGatewayConfig events
 - Contract method bindings using Alloy
 - Event subscription infrastructure
 - Transaction building and submission
@@ -142,7 +142,7 @@
 - Localhost Public decryption integration test (threshold & centralized)
 - Added S3 service Minio mock
 - Added S3 ciphertext retrieval tests with configurable endpoint support
-- User Decryption Integration test passed successfully based on httpz e2e script
+- User Decryption Integration test passed successfully based on fhevm e2e script
 
 #### 5.2. In Progress 🚧
 

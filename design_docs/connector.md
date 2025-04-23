@@ -13,7 +13,7 @@ skinparam ClassStyle rectangle
 skinparam classFontStyle bold
 skinparam classAttributeFontStyle normal
 
-package "Gateway L2 Interfaces" {
+package "Gateway Interfaces" {
     interface "ICiphertextStorage" as IStorage {
         +{abstract} get_ciphertext(handle: Vec<u8>): Result<Vec<u8>>
     }
@@ -50,7 +50,7 @@ package "KMS Connector" #PaleGoldenRod {
         }
     }
 
-    package "Gateway L2 Adapter" {
+    package "Gateway Adapter" {
         class "KmsBlockchain" as KmsBlockchain {
             -config: BlockchainConfig
             -metrics: OpenTelemetryMetrics
@@ -129,7 +129,7 @@ After analyzing the codebase, it is recommended to implement a brand new connect
 1. **Structural / Functional Differences**:
 
     - **Old**: Simple layered architecture with basic interfaces and a lot of redundant components (KVStore, Cosmos components penetrating a lot of Connector structs, outdated io logic, etc)
-    - **New**: Complex adapter-based design with multiple specialized components. Need to follow HTTPZ logic and naming conventions
+    - **New**: Complex adapter-based design with multiple specialized components. Need to follow GatewayConfig logic and naming conventions
     - **Verdict**: Too many fundamental structural changes needed
 
 2. **Code Organization**:
@@ -142,8 +142,8 @@ After analyzing the codebase, it is recommended to implement a brand new connect
 
     - **Old**: Single contract interface
     - **New**: Coordinated interaction with multiple specialized contracts each having its own interface:
-        - Decryption Manager
-        - HTTPZ Protocol
+        - Decryption
+        - GatewayConfig
 
 4. **Event-Driven Architecture Requirements**:
 
@@ -167,13 +167,13 @@ skinparam PackageBackgroundColor lightgrey
 skinparam PackageStyle rectangle
 skinparam ComponentStyle rectangle
 
-package "Gateway L2" {
-    component "Decryption Manager" as gatewayL2_decryptionManager
-    component "HTTPZ Protocol" as gatewayL2_httpz
-    component "Access Control" as gatewayL2_accessControl
-    component "RPC" as gatewayL2_Rpc
-    () "WebSocket" as gatewayL2_ws
-    () "HTTP" as gatewayL2_http
+package "Gateway" {
+    component "Decryption contract" as gateway_decryption
+    component "GatewayConfig contract" as gateway_config
+    component "Access Control" as gateway_accessControl
+    component "RPC" as gateway_rpc
+    () "WebSocket" as gateway_ws
+    () "HTTP" as gateway_http
 }
 
 package "Kms Core" as kmsCore {
@@ -185,7 +185,7 @@ package "Kms Core" as kmsCore {
 }
 
 package "KMS connector" #PaleGoldenRod {
-    package "Gateway L2 Adapter" {
+    package "Gateway Adapter" {
         component "Event Listener" as connector_eventListener
         component "Tx Sender" as connector_txSender
     }
@@ -197,12 +197,12 @@ package "KMS connector" #PaleGoldenRod {
     }
 }
 
-' Internal Gateway L2 connections
-gatewayL2_Rpc --- gatewayL2_http
-gatewayL2_Rpc --- gatewayL2_ws
-gatewayL2_decryptionManager --- gatewayL2_Rpc
-gatewayL2_httpz --- gatewayL2_Rpc
-gatewayL2_accessControl --- gatewayL2_Rpc
+' Internal Gateway connections
+gateway_rpc --- gateway_http
+gateway_rpc --- gateway_ws
+gateway_decryption --- gateway_rpc
+gateway_config --- gateway_rpc
+gateway_accessControl --- gateway_rpc
 
 ' KMS Core internal connections
 kmsCore_api -- kmsCore_grpc
@@ -210,9 +210,9 @@ kmsCore_keygen -- kmsCore_api
 kmsCore_crsgen -- kmsCore_api
 kmsCore_decryption -- kmsCore_api
 
-' KMS Connector to Gateway L2 connections
-connector_eventListener ..> gatewayL2_ws: Listen for events
-connector_txSender --> gatewayL2_http: Send transactions
+' KMS Connector to Gateway connections
+connector_eventListener ..> gateway_ws: Listen for events
+connector_txSender --> gateway_http: Send transactions
 
 ' KMS Connector to KMS Core connections
 connector_decrypt --> kmsCore_grpc: Decrypt requests
@@ -234,7 +234,7 @@ note right of connector_txSender
   - Error responses
 end note
 
-note right of gatewayL2_httpz
+note right of gateway_config
   Handles:
   - Key generation protocol
   - CRS generation protocol
@@ -245,7 +245,7 @@ end note
 
 ```
 
-Detailed KMS Connector diagram reflecting current L2 smart-contract interfaces (pls note that `reencryption` is renamed to `userDecryption`) Also iHTTPZ SC interface is about to be finalized... so I put my vision to be clarified once finalization is done
+Detailed KMS Connector diagram reflecting current L2 smart-contract interfaces (pls note that `reencryption` is renamed to `userDecryption`) Also IGatewayConfig SC interface is about to be finalized... so I put my vision to be clarified once finalization is done
 
 ```plantuml
 
@@ -268,7 +268,7 @@ package "KMS Connector Core" #PaleGoldenRod {
         -kmsClient: IKmsCore
         -metrics: MetricsCollector
         -decryptionAdapter: DecryptionAdapter
-        -httpzAdapter: HTTPZAdapter
+        -gatewayConfigAdapter: GatewayConfigAdapter
         -mpsc: Orchestrator
         +new(config: ConnectorConfig): Self
         +start(): void
@@ -296,14 +296,14 @@ package "KMS Core Adapter" #PaleGoldenRod {
     }
 
     class KeyGenerationOperation {
-        -httpz: HTTPZAdapter
+        -gateway_config_adapter: GatewayConfigAdapter
         +execute(request: KeyGenRequest): Result
         -signPublicKey(publicKey: bytes): bytes
         -preprocessKey(fheParams: FheParams): uint256
     }
 
     class CrsGenerationOperation {
-        -httpz: HTTPZAdapter
+        -gateway_config_adapter: GatewayConfigAdapter
         +execute(request: CrsGenRequest): Result
         -signCrs(crs: bytes): bytes
         -validateParameters(params: FheParameters): bool
@@ -311,11 +311,11 @@ package "KMS Core Adapter" #PaleGoldenRod {
 }
 
 ' Third Layer - Adapters
-package "Gateway L2 Adapters" #PaleGoldenRod {
+package "Gateway Adapters" #PaleGoldenRod {
     package "Decryption" {
         class DecryptionAdapter {
             -provider: Provider
-            -decryptionManager: Contract
+            -decryption: Contract
             -accessControl: Contract
             +subscribeToDecryptionEvents(): void
             +sendDecryptionResult(requestId: uint256,\n  result: bytes, signature: bytes): void
@@ -323,9 +323,9 @@ package "Gateway L2 Adapters" #PaleGoldenRod {
         }
     }
     package "Key Management" {
-        class HTTPZAdapter {
+        class GatewayConfigAdapter {
             -provider: Provider
-            -httpz: Contract
+            -gateway_config: Contract
             +subscribeToKeyGenEvents(): void
             +subscribeToCrsGenEvents(): void
             +subscribeToKskEvents(): void
@@ -348,8 +348,8 @@ package "Gateway L2 Adapters" #PaleGoldenRod {
 }
 
 ' Bottom Layer - Smart Contract Interfaces
-package "Gateway L2 (Arbitrum) Contracts" {
-    interface IDecryptionManager {
+package "Gateway (Arbitrum) Contracts" {
+    interface IDecryption {
         +struct CiphertextContract
         +publicDecryptionRequest(uint256[] ciphertextHandles): void
         +publicDecryptionResponse(uint256 publicDecryptionId,\n  bytes decryptedResult, bytes signature): void
@@ -357,7 +357,7 @@ package "Gateway L2 (Arbitrum) Contracts" {
         +userDecryptionResponse(uint256 userDecryptionId,\n  bytes decryptedResult, bytes signature): void
     }
 
-    interface IHTTPZ {
+    interface IGatewayConfigAdapter {
         +struct ProtocolMetadata
         +struct KmsNode
         +struct Coprocessor
@@ -405,11 +405,11 @@ IKmsCore <--> KmsCoreConnector : "KMS crypto ops"
 
 PublicDecryptionOperation --> DecryptionAdapter : "submits results"
 UserDecryptionOperation --> DecryptionAdapter : "submits results"
-KeyGenerationOperation --> HTTPZAdapter : "manages key operations"
-CrsGenerationOperation --> HTTPZAdapter : "manages CRS operations"
+KeyGenerationOperation --> GatewayConfigAdapter : "manages key operations"
+CrsGenerationOperation --> GatewayConfigAdapter : "manages CRS operations"
 
-DecryptionAdapter <--> IDecryptionManager : "listens for events\nsubmits results"
-HTTPZAdapter <--> IHTTPZ : "manages key, CRS, KSK\nand preprocessing"
+DecryptionAdapter <--> IDecryption : "listens for events\nsubmits results"
+GatewayConfigAdapter <--> IGatewayConfigAdapter : "manages key, CRS, KSK\nand preprocessing"
 
 note left of DecryptionAdapter
   Handles decryption flow:
@@ -418,7 +418,7 @@ note left of DecryptionAdapter
   - Result submission
 end note
 
-note right of HTTPZAdapter
+note right of GatewayConfigAdapter
   Handles key operations:
   - Key preprocessing
   - Key generation
@@ -497,49 +497,9 @@ note over User, Ethereum: **Hard finality**\n- Tx is finalized on L1\nTime: ~7-8
 
 ### **Benefits of New Implementation**
 
-- Components and their naming follow HTTPZ workflow doc
+- Components and their naming follow fhevm workflow doc
 - Clean codebase without legacy code
 - No risk of breaking existing functionality
 - Better testing coverage from start
 - Clear separation from old implementation
 - Easier to maintain and extend
-
-## Suggested Project Structure Within `kms-core` Repo
-
-```rust
-kms-connector/
-├── Cargo.toml
-├── README.md
-└── src/
-    ├── core/
-    │   ├── mod.rs
-    │   ├── connector.rs        // KmsCoreConnector implementation
-    │   ├── config.rs           // Configuration structures
-    │   └── orchestrator.rs     // MPSC-based event orchestration (might be a module jointly used with the GW)
-    │
-    ├── kms_core_adapter/
-    │   ├── mod.rs
-    │   ├── public_decryption.rs
-    │   ├── user_decryption.rs
-    │   ├── key_generation.rs
-    │   └── crs_generation.rs
-    │
-    ├── gwl2_adapters/
-    │   ├── mod.rs
-    │   ├── decryption/
-    │   │   ├── mod.rs
-    │   │   └── adapter.rs      // DecryptionAdapter
-    │   └── key_management/
-    │       ├── mod.rs
-    │       └── httpz.rs        // HTTPZAdapter (keys + CRS)
-    │
-    ├── gwl2_contracts/        // Alloy bindings
-    │   ├── mod.rs
-    │   ├── decryption.rs       // IDecryptionManager
-    │   └── httpz.rs            // IHTTPZ
-    │
-    ├── provider.rs             // Arbitrum provider
-    ├── error.rs
-    ├── types.rs
-    └── lib.rs
-```

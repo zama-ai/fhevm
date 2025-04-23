@@ -18,17 +18,17 @@ data:
     # KMS Core GRPC endpoint required, overriden by env vars
     #kms_core_endpoint =
 
-    # GateWay L2 WebSocket RPC URL endpoint (required)
-    #gwl2_url =
+    # Gateway WebSocket RPC URL endpoint (required)
+    #gateway_url =
 
     # Chain ID (required)
     #chain_id =
 
-    # Decryption manager contract address, required, overriden by env vars
-    #decryption_manager_address = "0x..."
+    # Decryption contract address, required, overriden by env vars
+    #decryption_address = "0x..."
 
-    # HTTPZ contract address, required, overriden by env vars
-    #httpz_address = "0x..."
+    # GatewayConfig contract address, required, overriden by env vars
+    #gateway_config_address = "0x..."
 
     # Size of the event processing channel (optional)
     #channel_size =

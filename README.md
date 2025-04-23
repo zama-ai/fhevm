@@ -1,6 +1,6 @@
 # KMS Connector
 
-KMS Connector is a Rust-based service that connects the KMS Core with the HTTPZ Gateway  (Arbitrum) smart contracts, handling decryption requests and key management operations.
+KMS Connector is a Rust-based service that connects the KMS Core with the fhevm Gateway (Arbitrum) smart contracts, handling decryption requests and key management operations.
 
 ## Features
 
@@ -87,17 +87,17 @@ account_index = 0
 # KMS Core endpoint (required)
 kms_core_endpoint = "http://localhost:50052"
 
-# GateWay L2 WebSocket RPC URL endpoint (required)
-gwl2_url = "ws://localhost:8757"
+# Gateway WebSocket RPC URL endpoint (required)
+gateway_url = "ws://localhost:8757"
 
 # Chain ID (required)
 chain_id = 1337
 
-# Decryption manager contract address (required)
-decryption_manager_address = "0x..."
+# Decryption contract address (required)
+decryption_address = "0x..."
 
-# HTTPZ contract address (required)
-httpz_address = "0x..."
+# GatewayConfig contract address (required)
+gateway_config_address = "0x..."
 
 # Size of the event processing channel (optional)
 channel_size = 1000
@@ -124,7 +124,7 @@ The KMS Connector supports flexible configuration through both TOML files and en
 
    ```bash
    # Set required configuration
-   export KMS_CONNECTOR_GWL2_URL="ws://localhost:8547"
+   export KMS_CONNECTOR_GATEWAY_URL="ws://localhost:8547"
    export KMS_CONNECTOR_KMS_CORE_ENDPOINT="http://localhost:50052"
    
    # Wallet configuration (one of the following is required)
@@ -139,8 +139,8 @@ The KMS Connector supports flexible configuration through both TOML files and en
    export KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT="http://localhost:4566"
    
    export KMS_CONNECTOR_CHAIN_ID="31337"
-   export KMS_CONNECTOR_DECRYPTION_MANAGER_ADDRESS="0x..."
-   export KMS_CONNECTOR_HTTPZ_ADDRESS="0x..."
+   export KMS_CONNECTOR_DECRYPTION_ADDRESS="0x..."
+   export KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS="0x..."
 
    # Optional configuration with defaults
    export KMS_CONNECTOR_ACCOUNT_INDEX="0"
@@ -173,7 +173,7 @@ The KMS Connector supports flexible configuration through both TOML files and en
 
    ```bash
    # Set specific overrides
-   export KMS_CONNECTOR_GWL2_URL="ws://localhost:8547"
+   export KMS_CONNECTOR_GATEWAY_URL="ws://localhost:8547"
    export KMS_CONNECTOR_CHAIN_ID="31337"
 
    # Use config file for other values
@@ -193,11 +193,11 @@ The configuration values are loaded in the following order, with later sources o
 When neither environment variables nor config file values are provided, the following defaults are used:
 
 ```toml
-gwl2_url = "ws://localhost:8545"
+gateway_url = "ws://localhost:8545"
 kms_core_endpoint = "http://[::1]:50052"
 chain_id = 31337
-decryption_manager_address = "0x5fbdb2315678afecb367f032d93f642f64180aa3"
-httpz_address = "0x0000000000000000000000000000000000000001"
+decryption_address = "0x5fbdb2315678afecb367f032d93f642f64180aa3"
+gateway_config_address = "0x0000000000000000000000000000000000000001"
 channel_size = 1000
 service_name = "kms-connector"
 decryption_timeout_secs = 300
@@ -212,7 +212,7 @@ All environment variables are prefixed with `KMS_CONNECTOR_`. Here's the complet
 | Environment Variable | Description | Default |
 |---------------------|-------------|---------|
 | `KMS_CONNECTOR_ACCOUNT_INDEX` | Account index for the wallet | 0 |
-| `KMS_CONNECTOR_GWL2_URL` | Gateway L2 WebSocket URL | ws://localhost:8545 |
+| `KMS_CONNECTOR_GATEWAY_URL` | Gateway WebSocket URL | ws://localhost:8545 |
 | `KMS_CONNECTOR_KMS_CORE_ENDPOINT` | KMS Core service endpoint | http://[::1]:50052 |
 | `KMS_CONNECTOR_MNEMONIC` | Wallet mnemonic phrase | (required if other wallet options not provided) |
 | `KMS_CONNECTOR_SIGNING_KEY_PATH` | Path to a serialized signing key file | (optional) |
@@ -221,19 +221,19 @@ All environment variables are prefixed with `KMS_CONNECTOR_`. Here's the complet
 | `KMS_CONNECTOR_AWS_KMS_CONFIG__REGION` | AWS region for KMS | (optional) |
 | `KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT` | AWS endpoint URL for KMS | (optional) |
 | `KMS_CONNECTOR_CHAIN_ID` | Blockchain network chain ID | 31337 |
-| `KMS_CONNECTOR_DECRYPTION_MANAGER_ADDRESS` | Address of the Decryption Manager contract | 0x5fbdb2315678afecb367f032d93f642f64180aa3 |
-| `KMS_CONNECTOR_HTTPZ_ADDRESS` | Address of the HTTPZ contract | 0x0000000000000000000000000000000000000001 |
+| `KMS_CONNECTOR_DECRYPTION_ADDRESS` | Address of the Decryption contract | 0x5fbdb2315678afecb367f032d93f642f64180aa3 |
+| `KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS` | Address of the GatewayConfig contract | 0x0000000000000000000000000000000000000001 |
 | `KMS_CONNECTOR_CHANNEL_SIZE` | Size of the event processing channel | 1000 |
 | `KMS_CONNECTOR_SERVICE_NAME` | Name of the KMS connector instance | kms-connector |
 | `KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS` | Timeout for decryption operations | 300 |
 | `KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS` | Timeout for re-encryption operations | 300 |
 | `KMS_CONNECTOR_RETRY_INTERVAL_SECS` | Interval between retry attempts | 5 |
-| `KMS_CONNECTOR_DECRYPTION_MANAGER_DOMAIN_NAME` | EIP-712 domain name for DecryptionManager contract | DecryptionManager |
-| `KMS_CONNECTOR_DECRYPTION_MANAGER_DOMAIN_VERSION` | EIP-712 domain version for DecryptionManager contract | 1 |
-| `KMS_CONNECTOR_HTTPZ_DOMAIN_NAME` | EIP-712 domain name for HTTPZ contract | HTTPZ |
-| `KMS_CONNECTOR_HTTPZ_DOMAIN_VERSION` | EIP-712 domain version for HTTPZ contract | 1 |
+| `KMS_CONNECTOR_DECRYPTION_DOMAIN_NAME` | EIP-712 domain name for Decryption contract | Decryption |
+| `KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION` | EIP-712 domain version for Decryption contract | 1 |
+| `KMS_CONNECTOR_GATEWAY_CONFIG_DOMAIN_NAME` | EIP-712 domain name for GatewayConfig contract | GatewayConfig |
+| `KMS_CONNECTOR_GATEWAY_CONFIG_DOMAIN_VERSION` | EIP-712 domain version for GatewayConfig contract | 1 |
 | `KMS_CONNECTOR_PRIVATE_KEY` | Private key as a hex string | (optional) |
-| `KMS_CONNECTOR_VERIFY_COPROCESSORS` | Whether to verify coprocessors against HTTPZ contract | false |
+| `KMS_CONNECTOR_VERIFY_COPROCESSORS` | Whether to verify coprocessors against GatewayConfig contract | false |
 | `KMS_CONNECTOR_S3_CONFIG__REGION` | AWS S3 region for ciphertext storage | (optional) |
 | `KMS_CONNECTOR_S3_CONFIG__BUCKET` | AWS S3 bucket name for ciphertext storage | (optional) |
 | `KMS_CONNECTOR_S3_CONFIG__ENDPOINT` | AWS S3 endpoint URL for ciphertext storage | (optional) |
@@ -379,13 +379,13 @@ At least one of these four options must be provided.
 
 ## Architecture: Adapter-Provider Pattern
 
-The connector uses a two-layer architecture to separate L2 chain interaction from business logic:
+The connector uses a two-layer architecture to separate Gateway interaction from business logic:
 
 ```diagram
-┌────────────────────┐     ┌────────────────┐
-│  DecryptionAdapter │     │  HTTPZAdapter  │
-│    <Domain Logic>  │     │ <Domain Logic> │
-└────────┬───────────┘     └───────┬────────┘
+┌────────────────────┐     ┌──────────────────────┐
+│  DecryptionAdapter │     │ GatewayConfigAdapter │
+│   <Domain Logic>   │     │    <Domain Logic>    │
+└────────┬───────────┘     └───────┬──────────────┘
          │                         │
          │      implements         │
          │          ▼              │
@@ -395,24 +395,24 @@ The connector uses a two-layer architecture to separate L2 chain interaction fro
               └────┬─────┘
                    │      implements
                    ▼
-         ┌─────────────────────┐
-         │  ArbitrumProvider   │
-         │ <L2 Communication>  │
-         └─────────┬───────────┘
+         ┌─────────────────────────┐
+         │     ArbitrumProvider    │
+         │ <Gateway Communication> │
+         └─────────┬───────────────┘
                    │
                    ▼
-        [Arbitrum L2 Contracts]
-        DecryptionManager, HTTPZ
+        [Arbitrum Gateway Contracts]
+        Decryption, GatewayConfig
 ```
 
 ### 1. Provider (Infrastructure Layer)
 
 ```rust
-// Provider handles raw L2 interaction
+// Provider handles raw Gateway interaction
 trait Provider {
     async fn send_transaction(&self, to: Address, data: Vec<u8>) -> Result<()>;
-    fn decryption_manager_address(&self) -> Address;
-    fn httpz_address(&self) -> Address;
+    fn decryption_address(&self) -> Address;
+    fn gateway_config_address(&self) -> Address;
 }
 ```
 
@@ -437,14 +437,14 @@ impl<P: Provider> DecryptionAdapter<P> {
             result: result.into()
         };
 
-        // 2. Encode for L2
+        // 2. Encode for Gateway
         let mut data = Vec::new();
         response.encode_data_to(&mut data);
 
         // 3. Send via provider
         self.provider
             .send_transaction(
-                self.provider.decryption_manager_address(),
+                self.provider.decryption_address(),
                 data
             )
             .await
@@ -454,7 +454,7 @@ impl<P: Provider> DecryptionAdapter<P> {
 ## Key Points
 
 1. **Provider**
-   - Single responsibility: L2 communication
+   - Single responsibility: Gateway communication
    - Knows addresses but not contract logic
    - Generic transaction sending
    - No business rules
@@ -463,13 +463,13 @@ impl<P: Provider> DecryptionAdapter<P> {
    - Contract-specific logic
    - Event encoding/decoding
    - Business rule validation
-   - Uses provider for L2 access
+   - Uses provider for Gateway access
 
 3. **Benefits**
-   - Clean separation of L2 access and business logic
+   - Clean separation of Gateway access and business logic
    - Easy to mock provider for testing
    - Type-safe contract interaction
-   - Reusable L2 connection layer
+   - Reusable Gateway connection layer
 
 ## Current Status
 

@@ -1,4 +1,4 @@
-use crate::{core::utils::wallet::KmsWallet, gwl2_contracts::IDecryptionManager};
+use crate::{core::utils::wallet::KmsWallet, gw_contracts::IDecryption};
 use alloy::{
     primitives::{Address, Bytes, U256},
     providers::Provider,
@@ -58,7 +58,7 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             "Sending public decryption response"
         );
 
-        let contract = IDecryptionManager::new(self.decryption_address, self.provider.clone());
+        let contract = IDecryption::new(self.decryption_address, self.provider.clone());
 
         // Create and send transaction
         let call = contract.publicDecryptionResponse(id, result, signature.into());
@@ -103,7 +103,7 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             "Sending user decryption response"
         );
 
-        let contract = IDecryptionManager::new(self.decryption_address, self.provider.clone());
+        let contract = IDecryption::new(self.decryption_address, self.provider.clone());
 
         // Create and send transaction
         let call = contract.userDecryptionResponse(id, result, signature.into());

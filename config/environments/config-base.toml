@@ -10,28 +10,28 @@ service_name = "kms-connector"
 # ENV: KMS_CONNECTOR_MNEMONIC
 mnemonic = "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
 
-# Chain ID for the L2 network (required)
+# Chain ID for the Gateway network (required)
 # ENV: KMS_CONNECTOR_CHAIN_ID
 chain_id = 54321
 
-# Address of the DecryptionManager contract (required)
+# Address of the Decryption contract (required)
 # Format: hex string with 0x prefix
-# ENV: KMS_CONNECTOR_DECRYPTION_MANAGER_ADDRESS
-decryption_manager_address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+# ENV: KMS_CONNECTOR_DECRYPTION_ADDRESS
+decryption_address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 
-# Address of the HTTPZ contract (required)
+# Address of the GatewayConfig contract (required)
 # Format: hex string with 0x prefix
-# ENV: KMS_CONNECTOR_HTTPZ_ADDRESS
-httpz_address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
+# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS
+gateway_config_address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
 
 # KMS-core gRPC endpoint (required)
 # Format: http://host:port
 # ENV: KMS_CONNECTOR_KMS_CORE_ENDPOINT
 kms_core_endpoint = "http://[::1]:50051"
 
-# GateWay L2 WebSocket RPC URL endpoint (required)
-# ENV: KMS_CONNECTOR_GWL2_URL
-gwl2_url = "ws://layer2-node:8546"
+# Gateway WebSocket RPC URL endpoint (required)
+# ENV: KMS_CONNECTOR_GATEWAY_URL
+gateway_url = "ws://gateway-node:8546"
 
 # Size of the event processing channel (optional)
 # ENV: KMS_CONNECTOR_CHANNEL_SIZE
@@ -54,21 +54,21 @@ channel_size = 1000
 # ENV: KMS_CONNECTOR_RETRY_INTERVAL_SECS
 # retry_interval_secs = 5
 
-# EIP-712 domain name for DecryptionManager contract (optional, defaults to "DecryptionManager")
-# ENV: KMS_CONNECTOR_DECRYPTION_MANAGER_DOMAIN_NAME
-# decryption_manager_domain_name = "DecryptionManager"
+# EIP-712 domain name for Decryption contract (optional, defaults to "Decryption")
+# ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_NAME
+# decryption_domain_name = "Decryption"
 
-# EIP-712 domain version for DecryptionManager contract (optional, defaults to "1")
-# ENV: KMS_CONNECTOR_DECRYPTION_MANAGER_DOMAIN_VERSION
-# decryption_manager_domain_version = "1"
+# EIP-712 domain version for Decryption contract (optional, defaults to "1")
+# ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
+# decryption_domain_version = "1"
 
-# EIP-712 domain name for HTTPZ contract (optional, defaults to "HTTPZ")
-# ENV: KMS_CONNECTOR_HTTPZ_DOMAIN_NAME
-# httpz_domain_name = "HTTPZ"
+# EIP-712 domain name for GatewayConfig contract (optional, defaults to "GatewayConfig")
+# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_DOMAIN_NAME
+# gateway_config_domain_name = "GatewayConfig"
 
-# EIP-712 domain version for HTTPZ contract (optional, defaults to "1")
-# ENV: KMS_CONNECTOR_HTTPZ_DOMAIN_VERSION
-# httpz_domain_version = "1"
+# EIP-712 domain version for GatewayConfig contract (optional, defaults to "1")
+# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_DOMAIN_VERSION
+# gateway_config_domain_version = "1"
 
 # Path to the signing key file (optional)
 # If provided, the connector will use this signing key instead of the mnemonic
@@ -82,7 +82,7 @@ channel_size = 1000
 # ENV: KMS_CONNECTOR_PRIVATE_KEY
 # private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 
-# Whether to verify coprocessors against the HTTPZ contract (optional, defaults to false)
+# Whether to verify coprocessors against the GatewayConfig contract (optional, defaults to false)
 # ENV: KMS_CONNECTOR_VERIFY_COPROCESSORS
 # verify_coprocessors = true
 

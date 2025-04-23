@@ -6,11 +6,11 @@ use tracing::{error, info, warn};
 use crate::{
     core::{config::Config, decryption::handler::DecryptionHandler, utils::s3},
     error::Result,
-    gwl2_adapters::events::KmsCoreEvent,
-    gwl2_contracts::IDecryptionManager::SnsCiphertextMaterial,
+    gw_adapters::events::KmsCoreEvent,
+    gw_contracts::IDecryption::SnsCiphertextMaterial,
 };
 
-/// Process events from L2
+/// Process events from the Gateway
 pub struct EventProcessor<P: Provider + Clone> {
     decryption_handler: DecryptionHandler<P>,
     config: Config,
@@ -40,10 +40,10 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> EventProcessor<P> {
         sns_materials: Vec<SnsCiphertextMaterial>,
     ) -> Vec<(Vec<u8>, Vec<u8>)> {
         let s3_config = self.config.s3_config.clone();
-        let httpz_address = self
+        let gateway_config_address = self
             .config
-            .get_httpz_address()
-            .expect("Invalid HTTPZ address");
+            .get_gateway_config_address()
+            .expect("Invalid GatewayConfig address");
 
         // Process all SNS ciphertext materials
         let mut sns_ciphertext_materials = Vec::new();
@@ -58,7 +58,7 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> EventProcessor<P> {
             // 3. Then we continue processing the next SNS material in the outer loop
             let s3_urls = s3::prefetch_coprocessor_buckets(
                 coprocessor_addresses,
-                httpz_address,
+                gateway_config_address,
                 self.provider.clone(),
                 s3_config.as_ref(),
             )
@@ -115,8 +115,8 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> EventProcessor<P> {
         sns_ciphertext_materials
     }
 
-    /// Process events from L2
-    pub async fn process_l2_events(
+    /// Process events from Gateway
+    pub async fn process_gateway_events(
         &self,
         mut event_rx: mpsc::Receiver<KmsCoreEvent>,
     ) -> Result<()> {

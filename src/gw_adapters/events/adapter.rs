@@ -17,7 +17,7 @@ use tokio::{sync::mpsc, task::JoinHandle, time::sleep};
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
 
-use crate::gwl2_contracts::{IDecryptionManager, IKeyManager};
+use crate::gw_contracts::{IDecryption, IKmsManagement};
 
 /// Maximum number of reconnection attempts before backing off
 const MAX_QUICK_RETRIES: u32 = 3;
@@ -32,41 +32,41 @@ const EVENT_TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Debug, Clone)]
 pub enum KmsCoreEvent {
     /// Public decryption request
-    PublicDecryptionRequest(IDecryptionManager::PublicDecryptionRequest),
+    PublicDecryptionRequest(IDecryption::PublicDecryptionRequest),
     /// Public decryption response
-    PublicDecryptionResponse(IDecryptionManager::PublicDecryptionResponse),
+    PublicDecryptionResponse(IDecryption::PublicDecryptionResponse),
     /// User decryption request
-    UserDecryptionRequest(IDecryptionManager::UserDecryptionRequest),
+    UserDecryptionRequest(IDecryption::UserDecryptionRequest),
     /// User decryption response
-    UserDecryptionResponse(IDecryptionManager::UserDecryptionResponse),
+    UserDecryptionResponse(IDecryption::UserDecryptionResponse),
     /// Preprocess keygen request
-    PreprocessKeygenRequest(IKeyManager::PreprocessKeygenRequest),
+    PreprocessKeygenRequest(IKmsManagement::PreprocessKeygenRequest),
     /// Preprocess keygen response
-    PreprocessKeygenResponse(IKeyManager::PreprocessKeygenResponse),
+    PreprocessKeygenResponse(IKmsManagement::PreprocessKeygenResponse),
     /// Preprocess kskgen request
-    PreprocessKskgenRequest(IKeyManager::PreprocessKskgenRequest),
+    PreprocessKskgenRequest(IKmsManagement::PreprocessKskgenRequest),
     /// Preprocess kskgen response
-    PreprocessKskgenResponse(IKeyManager::PreprocessKskgenResponse),
+    PreprocessKskgenResponse(IKmsManagement::PreprocessKskgenResponse),
     /// Keygen request
-    KeygenRequest(IKeyManager::KeygenRequest),
+    KeygenRequest(IKmsManagement::KeygenRequest),
     /// Keygen response
-    KeygenResponse(IKeyManager::KeygenResponse),
+    KeygenResponse(IKmsManagement::KeygenResponse),
     /// CRS generation request
-    CrsgenRequest(IKeyManager::CrsgenRequest),
+    CrsgenRequest(IKmsManagement::CrsgenRequest),
     /// CRS generation response
-    CrsgenResponse(IKeyManager::CrsgenResponse),
+    CrsgenResponse(IKmsManagement::CrsgenResponse),
     /// KSK generation request
-    KskgenRequest(IKeyManager::KskgenRequest),
+    KskgenRequest(IKmsManagement::KskgenRequest),
     /// KSK generation response
-    KskgenResponse(IKeyManager::KskgenResponse),
+    KskgenResponse(IKmsManagement::KskgenResponse),
 }
 
-/// Adapter for handling L2 events
+/// Adapter for handling Gateway events
 #[derive(Debug)]
 pub struct EventsAdapter {
     rpc_url: String,
-    decryption_manager: Address,
-    httpz: Address,
+    decryption: Address,
+    gateway_config: Address,
     event_tx: mpsc::Sender<KmsCoreEvent>,
     running: Arc<AtomicBool>,
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
@@ -76,14 +76,14 @@ impl EventsAdapter {
     /// Create a new events adapter
     pub fn new(
         rpc_url: String,
-        decryption_manager: Address,
-        httpz: Address,
+        decryption: Address,
+        gateway_config: Address,
         event_tx: mpsc::Sender<KmsCoreEvent>,
     ) -> Self {
         Self {
             rpc_url,
-            decryption_manager,
-            httpz,
+            decryption,
+            gateway_config,
             event_tx,
             running: Arc::new(AtomicBool::new(true)),
             handles: Arc::new(Mutex::new(Vec::new())),
@@ -95,8 +95,8 @@ impl EventsAdapter {
         info!("Initializing event subscriptions...");
 
         let rpc_url = self.rpc_url.clone();
-        let decryption_manager = self.decryption_manager;
-        let httpz = self.httpz;
+        let decryption = self.decryption;
+        let gateway_config = self.gateway_config;
         let event_tx = self.event_tx.clone();
         let running = self.running.clone();
 
@@ -109,8 +109,8 @@ impl EventsAdapter {
 
                 match Self::attempt_connection(
                     &rpc_url,
-                    decryption_manager,
-                    httpz,
+                    decryption,
+                    gateway_config,
                     event_tx.clone(),
                     running.clone(),
                 )
@@ -148,25 +148,25 @@ impl EventsAdapter {
     /// Attempt to establish a connection and subscribe to events
     async fn attempt_connection(
         rpc_url: &str,
-        decryption_manager: Address,
-        httpz: Address,
+        decryption: Address,
+        gateway_config: Address,
         event_tx: mpsc::Sender<KmsCoreEvent>,
         running: Arc<AtomicBool>,
     ) -> Result<()> {
         let ws = WsConnect::new(rpc_url);
         let provider = Arc::new(ProviderBuilder::new().on_ws(ws).await?);
 
-        info!("Connected to Gateway L2RPC endpoint");
+        info!("Connected to Gateway RPC endpoint");
 
         let mut tasks = vec![
             tokio::spawn(Self::subscribe_to_decryption_events(
-                decryption_manager,
+                decryption,
                 provider.clone(),
                 event_tx.clone(),
                 running.clone(),
             )),
-            tokio::spawn(Self::subscribe_to_httpz_events(
-                httpz,
+            tokio::spawn(Self::subscribe_to_gateway_config_events(
+                gateway_config,
                 provider,
                 event_tx,
                 running.clone(),
@@ -273,14 +273,14 @@ impl EventsAdapter {
 
     /// Subscribe to decryption events
     async fn subscribe_to_decryption_events<P: Provider<Ethereum>>(
-        decryption_manager: Address,
+        decryption: Address,
         provider: Arc<P>,
         event_tx: mpsc::Sender<KmsCoreEvent>,
         running: Arc<AtomicBool>,
     ) -> Result<()> {
-        let contract = IDecryptionManager::new(decryption_manager, provider);
+        let contract = IDecryption::new(decryption, provider);
 
-        info!("Starting IDecryptionManager event subscriptions...");
+        info!("Starting IDecryption event subscriptions...");
 
         let public_filter = contract.PublicDecryptionRequest_filter().watch().await?;
         info!("✓ Subscribed to PublicDecryptionRequest events");
@@ -291,7 +291,7 @@ impl EventsAdapter {
         let mut public_stream = public_filter.into_stream();
         let mut user_stream = user_filter.into_stream();
 
-        info!("Successfully subscribed to all IDecryptionManager events");
+        info!("Successfully subscribed to all IDecryption events");
 
         loop {
             if !running.load(Ordering::SeqCst) {
@@ -308,16 +308,16 @@ impl EventsAdapter {
         Ok(())
     }
 
-    /// Subscribe to HTTPZ events
-    async fn subscribe_to_httpz_events<P: Provider + Clone>(
+    /// Subscribe to GatewayConfig events
+    async fn subscribe_to_gateway_config_events<P: Provider + Clone>(
         address: Address,
         provider: Arc<P>,
         event_tx: mpsc::Sender<KmsCoreEvent>,
         running: Arc<AtomicBool>,
     ) -> Result<()> {
-        let contract = IKeyManager::new(address, provider);
+        let contract = IKmsManagement::new(address, provider);
 
-        info!("Starting IKeyManager event subscriptions...");
+        info!("Starting IKmsManagement event subscriptions...");
 
         let preprocess_keygen_request_filter =
             contract.PreprocessKeygenRequest_filter().watch().await?;
@@ -343,11 +343,11 @@ impl EventsAdapter {
         let mut crsgen_request_stream = crsgen_request_filter.into_stream();
         let mut kskgen_request_stream = kskgen_request_filter.into_stream();
 
-        info!("Successfully subscribed to all IKeyManager events");
+        info!("Successfully subscribed to all IKmsManagement events");
 
         loop {
             if !running.load(Ordering::SeqCst) {
-                info!("IKeyManager event subscription stopping due to shutdown signal");
+                info!("IKmsManagement event subscription stopping due to shutdown signal");
                 break;
             }
 
