@@ -67,7 +67,7 @@ services:
     depends_on:
       gateway:
         condition: service_started
-  # HTTPZ Smart contract deployment gateway-sc:
+  # fhevm Smart contract deployment gateway-sc:
   httpz-sc:
     image: ghcr.io/foundry-rs/foundry:latest
     restart: "no"
