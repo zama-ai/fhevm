@@ -21,6 +21,7 @@
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@openzeppelin/hardhat-upgrades": "^3.9.0",
+    "@solidity-parser/parser": "^0.20.1",
     "@trivago/prettier-plugin-sort-imports": "^4.3.0",
     "@types/chai": "^4.2.0",
     "@types/mocha": ">=9.1.0",
