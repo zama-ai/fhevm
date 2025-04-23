@@ -1,6 +1,6 @@
 name: httpz-coprocessor
 description: A helm chart to distribute and deploy Zama HTTPZ Co-Processor services
-version: 0.2.0
+version: 0.2.1
 apiVersion: v2
 keywords:
   - httpz
