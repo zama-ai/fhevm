@@ -59,6 +59,7 @@ spec:
             limits:
               cpu: {{ .Values.tfheWorker.resources.limits.cpu | default "500m" }}
               memory: {{ .Values.tfheWorker.resources.limits.memory | default "512Mi" }}
+      {{- if .Values.config.enabled }}
           volumeMounts:
             - name: coprocessor-account
               mountPath: /accounts
@@ -70,4 +71,5 @@ spec:
             items:
               - key: {{ .Values.config.coprocessorKey.secret.key }}
                 path: {{ .Values.config.coprocessorKey.secret.key }}
+      {{- end }}
 {{- end -}}
