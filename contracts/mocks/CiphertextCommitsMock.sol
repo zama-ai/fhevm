@@ -15,7 +15,7 @@ contract CiphertextCommitsMock {
         uint256 keyId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
-    ) public {
+    ) external {
         bytes32 ctHandle;
         bytes32 ciphertextDigest;
         bytes32 snsCiphertextDigest;

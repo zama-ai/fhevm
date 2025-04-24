@@ -19,7 +19,6 @@ interface ICiphertextCommits {
     error CiphertextMaterialNotFound(bytes32 ctHandle);
     error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
     error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
-    error InvalidCurrentKeyId(uint256 keyId);
 
     event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenderAddresses);
 
@@ -27,6 +26,7 @@ interface ICiphertextCommits {
     function checkCiphertextMaterial(bytes32 ctHandle) external view;
     function getCiphertextMaterials(bytes32[] memory ctHandles) external view returns (CiphertextMaterial[] memory ctMaterials);
     function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view returns (SnsCiphertextMaterial[] memory snsCtMaterials);
+    function getVersion() external pure returns (string memory);
 }
 ```
 
@@ -157,6 +157,19 @@ interface ICiphertextCommits {
     "stateMutability": "view"
   },
   {
+    "type": "function",
+    "name": "getVersion",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
     "type": "event",
     "name": "AddCiphertextMaterial",
     "inputs": [
@@ -222,17 +235,6 @@ interface ICiphertextCommits {
         "name": "coprocessorTxSenderAddress",
         "type": "address",
         "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidCurrentKeyId",
-    "inputs": [
-      {
-        "name": "keyId",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ]
   }
@@ -1069,79 +1071,6 @@ error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
             }
         }
     };
-    /**Custom error with signature `InvalidCurrentKeyId(uint256)` and selector `0xc7475de4`.
-```solidity
-error InvalidCurrentKeyId(uint256 keyId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct InvalidCurrentKeyId {
-        #[allow(missing_docs)]
-        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<InvalidCurrentKeyId> for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidCurrentKeyId) -> Self {
-                (value.keyId,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidCurrentKeyId {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { keyId: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidCurrentKeyId {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidCurrentKeyId(uint256)";
-            const SELECTOR: [u8; 4] = [199u8, 71u8, 93u8, 228u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
-                )
-            }
-        }
-    };
     /**Event with signature `AddCiphertextMaterial(bytes32,bytes32,bytes32,address[])` and selector `0xcb89ccb347018d7f282bb4c048e135e19bc1d13660fa0f2850e10518422536de`.
 ```solidity
 event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenderAddresses);
@@ -1907,6 +1836,125 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
             }
         }
     };
+    /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
+```solidity
+function getVersion() external pure returns (string memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getVersionCall {}
+    ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getVersionReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::String,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getVersionCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getVersionCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getVersionReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getVersionReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getVersionCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getVersionReturn;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getVersion()";
+            const SELECTOR: [u8; 4] = [13u8, 142u8, 110u8, 44u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
     ///Container for all the [`ICiphertextCommits`](self) function calls.
     pub enum ICiphertextCommitsCalls {
         #[allow(missing_docs)]
@@ -1917,6 +1965,8 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
         getCiphertextMaterials(getCiphertextMaterialsCall),
         #[allow(missing_docs)]
         getSnsCiphertextMaterials(getSnsCiphertextMaterialsCall),
+        #[allow(missing_docs)]
+        getVersion(getVersionCall),
     }
     #[automatically_derived]
     impl ICiphertextCommitsCalls {
@@ -1927,6 +1977,7 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [13u8, 142u8, 110u8, 44u8],
             [85u8, 196u8, 217u8, 151u8],
             [144u8, 243u8, 3u8, 84u8],
             [161u8, 79u8, 137u8, 113u8],
@@ -1936,8 +1987,8 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for ICiphertextCommitsCalls {
         const NAME: &'static str = "ICiphertextCommitsCalls";
-        const MIN_DATA_LENGTH: usize = 32usize;
-        const COUNT: usize = 4usize;
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const COUNT: usize = 5usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -1952,6 +2003,9 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
                 }
                 Self::getSnsCiphertextMaterials(_) => {
                     <getSnsCiphertextMaterialsCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getVersion(_) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
                 }
             }
         }
@@ -1974,6 +2028,19 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
                 &[u8],
                 bool,
             ) -> alloy_sol_types::Result<ICiphertextCommitsCalls>] = &[
+                {
+                    fn getVersion(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(ICiphertextCommitsCalls::getVersion)
+                    }
+                    getVersion
+                },
                 {
                     fn getCiphertextMaterials(
                         data: &[u8],
@@ -2060,6 +2127,9 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
                         inner,
                     )
                 }
+                Self::getVersion(inner) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
             }
         }
         #[inline]
@@ -2089,6 +2159,12 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
                         out,
                     )
                 }
+                Self::getVersion(inner) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
             }
         }
     }
@@ -2100,8 +2176,6 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
         CiphertextMaterialNotOnNetwork(CiphertextMaterialNotOnNetwork),
         #[allow(missing_docs)]
         CoprocessorTxSenderAlreadyAdded(CoprocessorTxSenderAlreadyAdded),
-        #[allow(missing_docs)]
-        InvalidCurrentKeyId(InvalidCurrentKeyId),
     }
     #[automatically_derived]
     impl ICiphertextCommitsErrors {
@@ -2115,14 +2189,13 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
             [6u8, 102u8, 203u8, 223u8],
             [64u8, 78u8, 194u8, 233u8],
             [112u8, 28u8, 126u8, 113u8],
-            [199u8, 71u8, 93u8, 228u8],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for ICiphertextCommitsErrors {
         const NAME: &'static str = "ICiphertextCommitsErrors";
         const MIN_DATA_LENGTH: usize = 32usize;
-        const COUNT: usize = 4usize;
+        const COUNT: usize = 3usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -2134,9 +2207,6 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
                 }
                 Self::CoprocessorTxSenderAlreadyAdded(_) => {
                     <CoprocessorTxSenderAlreadyAdded as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::InvalidCurrentKeyId(_) => {
-                    <InvalidCurrentKeyId as alloy_sol_types::SolError>::SELECTOR
                 }
             }
         }
@@ -2202,19 +2272,6 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
                     }
                     CoprocessorTxSenderAlreadyAdded
                 },
-                {
-                    fn InvalidCurrentKeyId(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
-                        <InvalidCurrentKeyId as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(ICiphertextCommitsErrors::InvalidCurrentKeyId)
-                    }
-                    InvalidCurrentKeyId
-                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -2244,11 +2301,6 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
                         inner,
                     )
                 }
-                Self::InvalidCurrentKeyId(inner) => {
-                    <InvalidCurrentKeyId as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
             }
         }
         #[inline]
@@ -2268,12 +2320,6 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
                 }
                 Self::CoprocessorTxSenderAlreadyAdded(inner) => {
                     <CoprocessorTxSenderAlreadyAdded as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::InvalidCurrentKeyId(inner) => {
-                    <InvalidCurrentKeyId as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -2599,6 +2645,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     ctHandles,
                 },
             )
+        }
+        ///Creates a new call builder for the [`getVersion`] function.
+        pub fn getVersion(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getVersionCall, N> {
+            self.call_builder(&getVersionCall {})
         }
     }
     /// Event filters.

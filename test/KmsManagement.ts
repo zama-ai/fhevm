@@ -564,9 +564,6 @@ describe("KmsManagement", function () {
       // Check that the 2nd response emits an event
       await expect(txResponse2).to.emit(kmsManagement, "ActivateKeyResponse").withArgs(keyId1);
 
-      // Check that the key is activated
-      expect(await kmsManagement.isCurrentKeyId(keyId1)).to.be.true;
-
       // Check that we cannot activate the 2nd key (which has been generated but for which a KSK key
       // has not been generated)
       await expect(kmsManagement.connect(owner).activateKeyRequest(keyId2))
@@ -590,10 +587,6 @@ describe("KmsManagement", function () {
       await kmsManagement.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId2);
       await kmsManagement.connect(coprocessorTxSenders[1]).activateKeyResponse(keyId2);
       await kmsManagement.connect(coprocessorTxSenders[2]).activateKeyResponse(keyId2);
-
-      // Check that the 2nd key is activated and is now the current key, while the 1st key is not
-      expect(await kmsManagement.isCurrentKeyId(keyId2)).to.be.true;
-      expect(await kmsManagement.isCurrentKeyId(keyId1)).to.be.false;
 
       // Check that we can get both activated key ids
       expect(await kmsManagement.activatedKeyIds(0)).to.be.equal(keyId1);

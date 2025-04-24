@@ -50,6 +50,7 @@ interface IDecryption {
     function checkUserDecryptionDone(uint256 userDecryptionId) external view;
     function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs) external view;
     function delegatedUserDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, RequestValidity memory requestValidity, DelegationAccounts memory delegationAccounts, uint256 contractsChainId, address[] memory contractAddresses, bytes memory publicKey, bytes memory signature) external;
+    function getVersion() external pure returns (string memory);
     function publicDecryptionRequest(bytes32[] memory ctHandles) external;
     function publicDecryptionResponse(uint256 publicDecryptionId, bytes memory decryptedResult, bytes memory signature) external;
     function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, RequestValidity memory requestValidity, uint256 contractsChainId, address[] memory contractAddresses, address userAddress, bytes memory publicKey, bytes memory signature) external;
@@ -259,6 +260,19 @@ interface IDecryption {
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getVersion",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -4552,6 +4566,125 @@ function delegatedUserDecryptionRequest(CtHandleContractPair[] memory ctHandleCo
             }
         }
     };
+    /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
+```solidity
+function getVersion() external pure returns (string memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getVersionCall {}
+    ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getVersionReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::String,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getVersionCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getVersionCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getVersionReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getVersionReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getVersionCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getVersionReturn;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getVersion()";
+            const SELECTOR: [u8; 4] = [13u8, 142u8, 110u8, 44u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
     /**Function with signature `publicDecryptionRequest(bytes32[])` and selector `0x187fe529`.
 ```solidity
 function publicDecryptionRequest(bytes32[] memory ctHandles) external;
@@ -5219,6 +5352,8 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
         #[allow(missing_docs)]
         delegatedUserDecryptionRequest(delegatedUserDecryptionRequestCall),
         #[allow(missing_docs)]
+        getVersion(getVersionCall),
+        #[allow(missing_docs)]
         publicDecryptionRequest(publicDecryptionRequestCall),
         #[allow(missing_docs)]
         publicDecryptionResponse(publicDecryptionResponseCall),
@@ -5238,6 +5373,7 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [0u8, 139u8, 195u8, 225u8],
             [2u8, 253u8, 26u8, 100u8],
+            [13u8, 142u8, 110u8, 44u8],
             [24u8, 127u8, 229u8, 41u8],
             [66u8, 47u8, 42u8, 239u8],
             [118u8, 10u8, 4u8, 25u8],
@@ -5251,8 +5387,8 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IDecryptionCalls {
         const NAME: &'static str = "IDecryptionCalls";
-        const MIN_DATA_LENGTH: usize = 32usize;
-        const COUNT: usize = 10usize;
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const COUNT: usize = 11usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5273,6 +5409,9 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                 }
                 Self::delegatedUserDecryptionRequest(_) => {
                     <delegatedUserDecryptionRequestCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getVersion(_) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::publicDecryptionRequest(_) => {
                     <publicDecryptionRequestCall as alloy_sol_types::SolCall>::SELECTOR
@@ -5332,6 +5471,19 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                             .map(IDecryptionCalls::publicDecryptionResponse)
                     }
                     publicDecryptionResponse
+                },
+                {
+                    fn getVersion(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionCalls::getVersion)
+                    }
+                    getVersion
                 },
                 {
                     fn publicDecryptionRequest(
@@ -5481,6 +5633,9 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                         inner,
                     )
                 }
+                Self::getVersion(inner) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
                 Self::publicDecryptionRequest(inner) => {
                     <publicDecryptionRequestCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -5538,6 +5693,12 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                 }
                 Self::delegatedUserDecryptionRequest(inner) => {
                     <delegatedUserDecryptionRequestCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getVersion(inner) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6642,6 +6803,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     signature,
                 },
             )
+        }
+        ///Creates a new call builder for the [`getVersion`] function.
+        pub fn getVersion(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getVersionCall, N> {
+            self.call_builder(&getVersionCall {})
         }
         ///Creates a new call builder for the [`publicDecryptionRequest`] function.
         pub fn publicDecryptionRequest(
