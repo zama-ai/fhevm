@@ -4,7 +4,12 @@ config()
 
 const genConfig: CodegenConfig = {
   schema: process.env.VITE_BACK_HTTP_URL,
-  documents: ['src/**/*.tsx', 'src/queries.ts', 'src/**/use*.ts'],
+  documents: [
+    'src/**/*.tsx',
+    'src/queries.ts',
+    'src/**/use*.ts',
+    'src/pages/*.loader.ts',
+  ],
   generates: {
     './src/__generated__/': {
       preset: 'client',

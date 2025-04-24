@@ -25,6 +25,7 @@ type Documents = {
     "\n  query Preferences {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n": typeof types.PreferencesDocument,
     "\n  mutation ChangeUserName($id: ID!, $name: String!) {\n    updateUser(input: { id: $id, name: $name }) {\n      id\n      name\n    }\n  }\n": typeof types.ChangeUserNameDocument,
     "\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n": typeof types.SignInDocument,
+    "\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n": typeof types.InvitationTokenDocument,
     "\n  mutation SignUp(\n    $name: String!\n    $password: String!\n    $invitationToken: String!\n  ) {\n    signup(\n      input: {\n        name: $name\n        password: $password\n        invitationToken: $invitationToken\n      }\n    ) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n": typeof types.SignUpDocument,
     "\n  query Me {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n        dapps {\n          id\n          name\n          status\n          createdAt\n        }\n      }\n    }\n  }\n": typeof types.MeDocument,
 };
@@ -40,6 +41,7 @@ const documents: Documents = {
     "\n  query Preferences {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n": types.PreferencesDocument,
     "\n  mutation ChangeUserName($id: ID!, $name: String!) {\n    updateUser(input: { id: $id, name: $name }) {\n      id\n      name\n    }\n  }\n": types.ChangeUserNameDocument,
     "\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n": types.SignInDocument,
+    "\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n": types.InvitationTokenDocument,
     "\n  mutation SignUp(\n    $name: String!\n    $password: String!\n    $invitationToken: String!\n  ) {\n    signup(\n      input: {\n        name: $name\n        password: $password\n        invitationToken: $invitationToken\n      }\n    ) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n": types.SignUpDocument,
     "\n  query Me {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n        dapps {\n          id\n          name\n          status\n          createdAt\n        }\n      }\n    }\n  }\n": types.MeDocument,
 };
@@ -102,6 +104,10 @@ export function graphql(source: "\n  mutation ChangeUserName($id: ID!, $name: St
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n"): (typeof documents)["\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
