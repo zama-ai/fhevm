@@ -177,6 +177,15 @@ jobs:
         run: make init_db
         working-directory: fhevm-engine/coprocessor
 
+      - name: Use Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 20.x
+
+      - run: cp ./contracts/.env.example ./contracts/.env
+      - run: npm --prefix ./contracts ci --include=optional
+      - run: "cd contracts && npm install && npx hardhat compile"
+
       - name: Run tests on GPU
         run: |
           DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor cargo test --release --features=gpu -- --test-threads=1
