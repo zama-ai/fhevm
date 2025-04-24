@@ -131,11 +131,11 @@ function generateAllMockContracts() {
   const prettierCommand = `npx prettier ${MOCKS_DIR} --write --log-level silent`;
   exec(prettierCommand, (error, _, stderr) => {
     if (error) {
-      logError(`${errorMessage}:`, error.message);
+      logError(error.message);
       return;
     }
     if (stderr) {
-      logError(`${errorMessage}:`, stderr);
+      logError(stderr);
       return;
     }
     logSuccess(`Mock generation completed for all contracts and saved to ${MOCKS_DIR} directory.`);
