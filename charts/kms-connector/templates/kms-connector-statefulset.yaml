@@ -5,8 +5,14 @@ metadata:
   labels:
     app: kms-connector
     app.kubernetes.io/name: {{ include "kmsConnectorName" . }}
+    {{- with .Values.kmsConnector.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   annotations:
     checksum/config: {{ include (print $.Template.BasePath "/kms-connector-configmap.yaml") . | sha256sum }}
+    {{- with .Values.kmsConnector.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   name: {{ include "kmsConnectorName" . }}
 spec:
   replicas: {{ .Values.kmsPeers.count }}
@@ -26,10 +32,14 @@ spec:
       labels:
         app: kms-connector
         app.kubernetes.io/name: {{ include "kmsConnectorName" . }}
+        {{- with .Values.kmsConnector.labels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/kms-connector-configmap.yaml") . | sha256sum }}
-        kuma.io/init-first: "false"
-        kuma.io/init-containers-mesh-access: "true"
+        {{- with .Values.kmsConnector.annotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -53,11 +63,11 @@ spec:
             - name: RUST_LOG
               value: {{ .Values.rustLog }}
             - name: KMS_CONNECTOR_KMS_CORE_ENDPOINT
-            {{ if .Values.kmsConnector.kmsCore.endpoint }}
+              {{- if .Values.kmsConnector.kmsCore.endpoint }}
               value: {{ .Values.kmsConnector.kmsCore.endpoint }}
-            {{ else }}
+              {{- else }}
               value: {{ printf "http://%s-$(POD_INDEX):%d" .Values.kmsConnector.kmsCore.name (int $.Values.kmsConnector.kmsCore.clientPort) | quote }}
-            {{ end }}
+              {{- end }}
 {{- toYaml .Values.kmsConnector.env | nindent 12 }}
           volumeMounts:
             - mountPath: /var/lib/kms-connector/config.toml
