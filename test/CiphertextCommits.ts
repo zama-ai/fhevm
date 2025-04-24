@@ -131,7 +131,7 @@ describe("CiphertextCommits", function () {
       ).revertedWithCustomError(ciphertextCommits, "CoprocessorTxSenderAlreadyAdded");
     });
 
-    // TODO: Add test checking `isCurrentKeyId` once keys are generated through the Gateway
+    // TODO: Add test checking `checkCurrentKeyId` once keys are generated through the Gateway
   });
 
   describe("Get ciphertext materials", async function () {

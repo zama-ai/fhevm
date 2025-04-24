@@ -92,6 +92,11 @@ interface IGatewayConfig {
     /// @param newPauser The new pauser address
     function updatePauser(address newPauser) external;
 
+    /// @notice Add a new Network metadata to the GatewayConfig contract.
+    /// @dev The associated chain ID must be non-zero and representable by a uint64.
+    /// @param network The new network metadata to include.
+    function addNetwork(Network calldata network) external;
+
     /// @notice Update the KMS threshold
     /// @dev The new threshold must verify `0 <= t <= n`, with `n` the number of KMS nodes currently registered
     /// @param newKmsThreshold The new KMS threshold
@@ -173,8 +178,7 @@ interface IGatewayConfig {
     /// @return The networks' metadata
     function getNetworks() external view returns (Network[] memory);
 
-    /// @notice Add a new Network metadata to the GatewayConfig contract.
-    /// @dev The associated chain ID must be non-zero and representable by a uint64.
-    /// @param network The new network metadata to include.
-    function addNetwork(Network calldata network) external;
+    /// @notice Returns the versions of the GatewayConfig contract in SemVer format.
+    /// @dev This is conventionally used for upgrade features.
+    function getVersion() external pure returns (string memory);
 }

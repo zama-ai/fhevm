@@ -217,4 +217,8 @@ interface IDecryption {
     /// @notice Checks if a user decryption is done
     /// @param userDecryptionId The user decryption request's unique ID
     function checkUserDecryptionDone(uint256 userDecryptionId) external view;
+
+    /// @notice Returns the versions of the Decryption contract in SemVer format.
+    /// @dev This is conventionally used for upgrade features.
+    function getVersion() external pure returns (string memory);
 }

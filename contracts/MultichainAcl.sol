@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
-import { ciphertextCommitsAddress } from "../addresses/CiphertextCommitsAddress.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -15,12 +14,14 @@ import "./shared/GatewayConfigChecks.sol";
 /// @dev See {IMultichainAcl}
 contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks {
     /// @notice The address of the GatewayConfig contract for protocol state calls.
-    IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
-    /// @notice The address of the CiphertextCommits contract for checking ciphertext materials.
-    ICiphertextCommits private constant _CIPHERTEXT_COMMITS = ICiphertextCommits(ciphertextCommitsAddress);
-    /// @notice The maximum number of contracts that can be requested for delegation.
-    uint8 internal constant _MAX_CONTRACT_ADDRESSES = 10;
+    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
+    /// @notice The maximum number of contracts that can be requested for delegation.
+    uint8 internal constant MAX_CONTRACT_ADDRESSES = 10;
+
+    /// @dev The following constants are used for versioning the contract. They are made private
+    /// @dev in order to force derived contracts to consider a different version. Note that
+    /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "MultichainAcl";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
@@ -74,6 +75,7 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @notice Initializes the contract.
+    /// @dev This function needs to be public in order to be called by the UUPS proxy.
     function initialize() public virtual reinitializer(2) {
         __Ownable_init(owner());
     }
@@ -81,7 +83,7 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IMultichainAcl-allowPublicDecrypt}.
     function allowPublicDecrypt(
         bytes32 ctHandle
-    ) public virtual override onlyCoprocessorTxSender onlyHandleFromRegisteredNetwork(ctHandle) {
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredNetwork(ctHandle) {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         /**
@@ -108,7 +110,7 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
     function allowAccount(
         bytes32 ctHandle,
         address accountAddress
-    ) public virtual override onlyCoprocessorTxSender onlyHandleFromRegisteredNetwork(ctHandle) {
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredNetwork(ctHandle) {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         /**
@@ -139,12 +141,12 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
-    ) public virtual override onlyCoprocessorTxSender {
+    ) external virtual onlyCoprocessorTxSender {
         if (contractAddresses.length == 0) {
             revert EmptyContractAddresses();
         }
-        if (contractAddresses.length > _MAX_CONTRACT_ADDRESSES) {
-            revert ContractsMaxLengthExceeded(_MAX_CONTRACT_ADDRESSES, contractAddresses.length);
+        if (contractAddresses.length > MAX_CONTRACT_ADDRESSES) {
+            revert ContractsMaxLengthExceeded(MAX_CONTRACT_ADDRESSES, contractAddresses.length);
         }
 
         MultichainAclStorage storage $ = _getMultichainAclStorage();
@@ -183,7 +185,7 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IMultichainAcl-checkPublicDecryptAllowed}.
-    function checkPublicDecryptAllowed(bytes32 ctHandle) public view virtual {
+    function checkPublicDecryptAllowed(bytes32 ctHandle) external view virtual {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         if (!$.allowedPublicDecrypts[ctHandle]) {
@@ -192,7 +194,7 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IMultichainAcl-checkAccountAllowed}.
-    function checkAccountAllowed(bytes32 ctHandle, address accountAddress) public view virtual {
+    function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view virtual {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         /// @dev Check that the account address is allowed to use this ciphertext.
@@ -201,12 +203,12 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
         }
     }
 
-    /// @dev See {IMultichainAcl-isAccountDelegated}.
+    /// @dev See {IMultichainAcl-checkAccountDelegated}.
     function checkAccountDelegated(
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
-    ) public view virtual {
+    ) external view virtual {
         if (contractAddresses.length == 0) {
             revert EmptyContractAddresses();
         }
@@ -223,9 +225,8 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
         }
     }
 
-    /// @notice Returns the versions of the MultichainAcl contract in SemVer format.
-    /// @dev This is conventionally used for upgrade features.
-    function getVersion() public pure virtual returns (string memory) {
+    /// @dev See {IMultichainAcl-getVersion}.
+    function getVersion() external pure virtual returns (string memory) {
         return
             string(
                 abi.encodePacked(
@@ -240,17 +241,26 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
             );
     }
 
+    /**
+     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     */
+    // solhint-disable-next-line no-empty-blocks
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+
     /// @notice Checks if the consensus is reached among the Coprocessors.
     /// @dev This function calls the GatewayConfig contract to retrieve the consensus threshold.
     /// @param coprocessorCounter The number of coprocessors that agreed
     /// @return Whether the consensus is reached
     function _isConsensusReached(uint8 coprocessorCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = _GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
+        uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
     }
 
     /**
      * @dev Returns the MultichainAcl storage location.
+     * Note that this function is internal but not virtual: derived contracts should be able to
+     * access it, but if the underlying storage struct version changes, we force them to define a new
+     * getter function and use that one instead in order to avoid overriding the storage location.
      */
     function _getMultichainAclStorage() internal pure returns (MultichainAclStorage storage $) {
         // solhint-disable-next-line no-inline-assembly
@@ -258,10 +268,4 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
             $.slot := MULTICHAIN_ACL_STORAGE_LOCATION
         }
     }
-
-    /**
-     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
-     */
-    // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }

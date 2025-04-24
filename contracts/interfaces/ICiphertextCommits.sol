@@ -17,9 +17,6 @@ interface ICiphertextCommits {
         address[] coprocessorTxSenderAddresses
     );
 
-    /// @notice Error indicating that the given keyId is outdated.
-    error InvalidCurrentKeyId(uint256 keyId);
-
     /// @notice Error indicating that the given coprocessor transaction sender has already added
     /// @notice the handle (for any chainId).
     error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
@@ -32,9 +29,18 @@ interface ICiphertextCommits {
     /// @notice associated with the given chain ID.
     error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
 
-    /// @notice Checks if the ciphertext material represented by the handle has been added in the contract.
-    /// @param ctHandle The handle to check.
-    function checkCiphertextMaterial(bytes32 ctHandle) external view;
+    /// @notice Adds a new ciphertext digest to the state. Also include its SNS (Switch and Squash)
+    /// @notice version and other metadata.
+    /// @param ctHandle The handle of the ciphertext.
+    /// @param keyId The ID of the key under the ciphertext has been generated.
+    /// @param ciphertextDigest The digest of the "normal" ciphertext.
+    /// @param snsCiphertextDigest The digest of the SNS ciphertext.
+    function addCiphertextMaterial(
+        bytes32 ctHandle,
+        uint256 keyId,
+        bytes32 ciphertextDigest,
+        bytes32 snsCiphertextDigest
+    ) external;
 
     /// @notice Retrieves the list of "normal" ciphertext materials for the given handles.
     /// @param ctHandles The list of handles to retrieve.
@@ -50,16 +56,11 @@ interface ICiphertextCommits {
         bytes32[] calldata ctHandles
     ) external view returns (SnsCiphertextMaterial[] memory snsCtMaterials);
 
-    /// @notice Adds a new ciphertext digest to the state. Also include its SNS (Switch and Squash)
-    /// @notice version and other metadata.
-    /// @param ctHandle The handle of the ciphertext.
-    /// @param keyId The ID of the key under the ciphertext has been generated.
-    /// @param ciphertextDigest The digest of the "normal" ciphertext.
-    /// @param snsCiphertextDigest The digest of the SNS ciphertext.
-    function addCiphertextMaterial(
-        bytes32 ctHandle,
-        uint256 keyId,
-        bytes32 ciphertextDigest,
-        bytes32 snsCiphertextDigest
-    ) external;
+    /// @notice Checks if the ciphertext material represented by the handle has been added in the contract.
+    /// @param ctHandle The handle to check.
+    function checkCiphertextMaterial(bytes32 ctHandle) external view;
+
+    /// @notice Returns the versions of the CiphertextCommits contract in SemVer format.
+    /// @dev This is conventionally used for upgrade features.
+    function getVersion() external pure returns (string memory);
 }

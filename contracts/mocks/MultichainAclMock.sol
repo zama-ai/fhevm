@@ -9,12 +9,12 @@ contract MultichainAclMock {
 
     event DelegateAccount(uint256 indexed chainId, DelegationAccounts delegationAccounts, address[] contractAddresses);
 
-    function allowPublicDecrypt(bytes32 ctHandle) public {
+    function allowPublicDecrypt(bytes32 ctHandle) external {
         bytes32 ctHandle;
         emit AllowPublicDecrypt(ctHandle);
     }
 
-    function allowAccount(bytes32 ctHandle, address accountAddress) public {
+    function allowAccount(bytes32 ctHandle, address accountAddress) external {
         bytes32 ctHandle;
         address accountAddress;
         emit AllowAccount(ctHandle, accountAddress);
@@ -24,7 +24,7 @@ contract MultichainAclMock {
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
-    ) public {
+    ) external {
         uint256 chainId;
         DelegationAccounts memory delegationAccounts;
         address[] memory contractAddresses = new address[](1);

@@ -49,7 +49,7 @@ contract InputVerification is
     }
 
     /// @notice The address of the GatewayConfig contract for protocol state calls.
-    IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
+    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /// @notice The definition of the CiphertextVerification structure typed data.
     string private constant EIP712_ZKPOK_TYPE =
@@ -58,6 +58,9 @@ contract InputVerification is
     /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
 
+    /// @dev The following constants are used for versioning the contract. They are made private
+    /// @dev in order to force derived contracts to consider a different version. Note that
+    /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "InputVerification";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
@@ -95,6 +98,7 @@ contract InputVerification is
 
     /// @notice Initializes the contract.
     /// @dev Contract name and version for EIP712 signature validation are defined here
+    /// @dev This function needs to be public in order to be called by the UUPS proxy.
     function initialize() public virtual reinitializer(2) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
@@ -106,7 +110,7 @@ contract InputVerification is
         address contractAddress,
         address userAddress,
         bytes calldata ciphertextWithZKProof
-    ) public virtual onlyRegisteredNetwork(contractChainId) {
+    ) external virtual onlyRegisteredNetwork(contractChainId) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
         // TODO(#52): Implement sending service fees to PaymentManager contract
 
@@ -128,7 +132,7 @@ contract InputVerification is
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
         bytes calldata signature
-    ) public virtual onlyCoprocessorTxSender {
+    ) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         /// @dev Retrieve stored ZK Proof verification request inputs.
@@ -164,7 +168,7 @@ contract InputVerification is
          * coprocessors. If the threshold is updated to below this number, we should also
          * check that the ZK proof request has not been rejected yet.
          */
-        if (!isProofVerified(zkProofId) && _isConsensusReached(currentSignatures.length)) {
+        if (!$.verifiedZKProofs[zkProofId] && _isConsensusReached(currentSignatures.length)) {
             // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
             $.verifiedZKProofs[zkProofId] = true;
 
@@ -173,7 +177,7 @@ contract InputVerification is
     }
 
     /// @dev See {IInputVerification-rejectProofResponse}.
-    function rejectProofResponse(uint256 zkProofId) public virtual {
+    function rejectProofResponse(uint256 zkProofId) external virtual {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         /**
@@ -196,7 +200,7 @@ contract InputVerification is
          * coprocessors. If the threshold is updated to below this number, we should also
          * check that the ZK proof request has not been verified yet.
          */
-        if (!isProofRejected(zkProofId) && _isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
+        if (!$.rejectedZKProofs[zkProofId] && _isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
             // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
             $.rejectedZKProofs[zkProofId] = true;
 
@@ -204,23 +208,24 @@ contract InputVerification is
         }
     }
 
-    /// @dev See {IInputVerification-isProofVerified}.
-    function isProofVerified(uint256 zkProofId) public view virtual returns (bool) {
+    /// @dev See {IInputVerification-checkProofVerified}.
+    function checkProofVerified(uint256 zkProofId) external view virtual {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
-        return $.verifiedZKProofs[zkProofId];
+        if (!$.verifiedZKProofs[zkProofId]) {
+            revert ProofNotVerified(zkProofId);
+        }
     }
 
-    /// @dev See {IInputVerification-isProofRejected}.
-    function isProofRejected(uint256 zkProofId) public view virtual returns (bool) {
+    /// @dev See {IInputVerification-checkProofRejected}.
+    function checkProofRejected(uint256 zkProofId) external view virtual {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
-        return $.rejectedZKProofs[zkProofId];
+        if (!$.rejectedZKProofs[zkProofId]) {
+            revert ProofNotRejected(zkProofId);
+        }
     }
 
-    /**
-     * @notice Returns the versions of the InputVerification contract in SemVer format.
-     * @dev This is conventionally used for upgrade features.
-     */
-    function getVersion() public pure virtual returns (string memory) {
+    /// @dev See {IInputVerification-getVersion}.
+    function getVersion() external pure virtual returns (string memory) {
         return
             string(
                 abi.encodePacked(
@@ -236,6 +241,12 @@ contract InputVerification is
     }
 
     /**
+     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     */
+    // solhint-disable-next-line no-empty-blocks
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+
+    /**
      * @notice Check that the given address is a registered coprocessor signer that has not already signed.
      * @param coprocessorSignerAddress The address of the potential coprocessor signer
      * @param zkProofId The ID of the ZK Proof
@@ -243,7 +254,7 @@ contract InputVerification is
     function _checkCoprocessorSignerAddress(address coprocessorSignerAddress, uint256 zkProofId) internal virtual {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
-        _GATEWAY_CONFIG.checkIsCoprocessorSigner(coprocessorSignerAddress);
+        GATEWAY_CONFIG.checkIsCoprocessorSigner(coprocessorSignerAddress);
 
         if ($.alreadyResponded[zkProofId][coprocessorSignerAddress]) {
             revert CoprocessorSignerAlreadySigned(zkProofId, coprocessorSignerAddress);
@@ -261,13 +272,13 @@ contract InputVerification is
     function _checkCoprocessorTxSenderAddress(address coprocessorTxSenderAddress, uint256 zkProofId) internal virtual {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
-        _GATEWAY_CONFIG.checkIsCoprocessorTxSender(coprocessorTxSenderAddress);
+        GATEWAY_CONFIG.checkIsCoprocessorTxSender(coprocessorTxSenderAddress);
 
         /**
          * @dev Retrieve the coprocessor signer address from the GatewayConfig contract using the
          * coprocessor transaction sender address (second element of the tuple returned).
          */
-        Coprocessor memory coprocessor = _GATEWAY_CONFIG.getCoprocessor(coprocessorTxSenderAddress);
+        Coprocessor memory coprocessor = GATEWAY_CONFIG.getCoprocessor(coprocessorTxSenderAddress);
         address coprocessorSignerAddress = coprocessor.signerAddress;
 
         /**
@@ -337,12 +348,15 @@ contract InputVerification is
      * @return Whether the consensus is reached
      */
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = _GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
+        uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
     }
 
     /**
      * @dev Returns the InputVerification storage location.
+     * Note that this function is internal but not virtual: derived contracts should be able to
+     * access it, but if the underlying storage struct version changes, we force them to define a new
+     * getter function and use that one instead in order to avoid overriding the storage location.
      */
     function _getInputVerificationStorage() internal pure returns (InputVerificationStorage storage $) {
         // solhint-disable-next-line no-inline-assembly
@@ -350,10 +364,4 @@ contract InputVerification is
             $.slot := INPUT_VERIFICATION_STORAGE_LOCATION
         }
     }
-
-    /**
-     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
-     */
-    // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }

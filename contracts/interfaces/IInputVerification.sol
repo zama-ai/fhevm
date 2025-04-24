@@ -57,6 +57,18 @@ interface IInputVerification {
     error CoprocessorSignerAlreadySigned(uint256 zkProofId, address signer);
 
     /**
+     * @notice Error indicating that the ZK Proof has not been verified
+     * @param zkProofId The ID of the ZK Proof
+     */
+    error ProofNotVerified(uint256 zkProofId);
+
+    /**
+     * @notice Error indicating that the ZK Proof has not been rejected
+     * @param zkProofId The ID of the ZK Proof
+     */
+    error ProofNotRejected(uint256 zkProofId);
+
+    /**
      * @notice Requests the verification of a ZK Proof
      * @param contractChainId The chainId of the blockchain the contract belongs to
      * @param contractAddress The address of the dapp the input is used for
@@ -90,16 +102,18 @@ interface IInputVerification {
     function rejectProofResponse(uint256 zkProofId) external;
 
     /**
-     * @notice Indicates if a given ZK Proof is already verified
+     * @notice Checks that a ZK Proof has been verified
      * @param zkProofId The ID of the ZK Proof
-     * @return Whether the ZK Proof is verified
      */
-    function isProofVerified(uint256 zkProofId) external view returns (bool);
+    function checkProofVerified(uint256 zkProofId) external view;
 
     /**
-     * @notice Indicates if a given ZK Proof is already rejected
+     * @notice Checks that a ZK Proof has been rejected
      * @param zkProofId The ID of the ZK Proof
-     * @return Whether the ZK Proof is rejected
      */
-    function isProofRejected(uint256 zkProofId) external view returns (bool);
+    function checkProofRejected(uint256 zkProofId) external view;
+
+    /// @notice Returns the versions of the InputVerification contract in SemVer format.
+    /// @dev This is conventionally used for upgrade features.
+    function getVersion() external pure returns (string memory);
 }
