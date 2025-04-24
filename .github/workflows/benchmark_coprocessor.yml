@@ -67,6 +67,7 @@ jobs:
       - name: Install git LFS
         run: |
           sudo systemctl stop unattended-upgrades
+          sleep 10
           sudo apt-get update
           sudo apt-get install -y git-lfs
           git lfs install
@@ -120,6 +121,17 @@ jobs:
       - name: Init database
         run: make init_db
         working-directory: fhevm-engine/coprocessor
+
+      - name: Use Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 20.x
+
+      - name: Build contracts
+        run: |
+          cp ./contracts/.env.example ./contracts/.env
+          npm --prefix ./contracts ci --include=optional
+          cd contracts && npm install && npx hardhat compile
 
       - name: Run benchmarks on CPU
         run: |
