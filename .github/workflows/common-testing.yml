@@ -227,7 +227,7 @@ jobs:
           mc anonymous set public "${{ env.MINIO_ALIAS }}"/"${{ env.MINIO_BUCKET }}"
 
       - name: Formatting
-        run: cargo fmt --all -- --check
+        run: cargo fmt -- --check  # TODO: use --all option once gateway bindings are no longer used via submodules
 
       - name: Linting
         run: cargo clippy --all-targets --all-features --package ${{inputs.package-name}} -- -D warnings

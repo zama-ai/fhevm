@@ -7,7 +7,7 @@ license = "BSD-3-Clause-Clear"
 version = "0.11.0-rc7"
 
 [dependencies]
-alloy = { version = "=0.14.0", default-features = true,  features = [
+alloy = { version = "=0.13.0", default-features = true,  features = [
     "provider-ws",
     "signer-aws",
     "signer-mnemonic",
@@ -39,7 +39,8 @@ aws-sdk-s3 = { version = "=1.82.0", default-features = true }
 # TODO: substitute with existing KMS-Core implementation
 tracing-subscriber = { version = "=0.3.19", default-features = true, features = ["env-filter"] }
 
-# TODO: replace git submodule and path import by git import when kms-core becomes open-source
+# TODO: replace git submodule and path import by git import when fhevm-gateway and kms-core becomes open-source
+fhevm_gateway_rust_bindings = { path = "fhevm-gateway/rust_bindings" }
 kms-grpc = { path = "kms-core/core/grpc", default-features = true, features = ["insecure"] }
 
 [dev-dependencies]

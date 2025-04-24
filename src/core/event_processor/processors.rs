@@ -1,4 +1,5 @@
 use alloy::{hex, providers::Provider};
+use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, warn};
@@ -7,7 +8,6 @@ use crate::{
     core::{config::Config, decryption::handler::DecryptionHandler, utils::s3},
     error::Result,
     gw_adapters::events::KmsCoreEvent,
-    gw_contracts::IDecryption::SnsCiphertextMaterial,
 };
 
 /// Process events from the Gateway

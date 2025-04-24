@@ -2,6 +2,7 @@ use alloy::{hex::encode, primitives::Address, providers::Provider, transports::h
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{Client as S3Client, config::Region};
 use dashmap::DashMap;
+use fhevm_gateway_rust_bindings::gatewayconfig::GatewayConfig;
 use sha3::{Digest, Keccak256};
 use std::{
     sync::{Arc, LazyLock},
@@ -12,7 +13,6 @@ use tracing::{debug, info, warn};
 use crate::{
     core::config::S3Config,
     error::{Error, Result},
-    gw_contracts::GatewayConfig,
 };
 
 // Global cache for coprocessor S3 bucket URLs
@@ -75,7 +75,7 @@ pub async fn call_gateway_config_to_get_s3_url<P: Provider + Clone>(
     };
 
     // Extract S3 bucket URL from the coprocessor
-    let s3_bucket_url = coprocessor.s3BucketUrl.to_string();
+    let s3_bucket_url = coprocessor._0.s3BucketUrl.to_string();
 
     if s3_bucket_url.is_empty() {
         warn!(

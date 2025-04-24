@@ -6,6 +6,7 @@ use alloy::{
     transports::ws::WsConnect,
 };
 use anyhow::{Result, anyhow};
+use fhevm_gateway_rust_bindings::{decryption::Decryption, kmsmanagement::KmsManagement};
 use std::{
     sync::{
         Arc, Mutex,
@@ -17,8 +18,6 @@ use tokio::{sync::mpsc, task::JoinHandle, time::sleep};
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
 
-use crate::gw_contracts::{IDecryption, IKmsManagement};
-
 /// Maximum number of reconnection attempts before backing off
 const MAX_QUICK_RETRIES: u32 = 3;
 /// Initial retry delay in seconds
@@ -29,36 +28,37 @@ const MAX_RETRY_DELAY: u64 = 60;
 const EVENT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Events that can be processed by the KMS Core
-#[derive(Debug, Clone)]
+// #[derive(Clone, Debug)]  TODO: uncomment when bindings are generated with `forge bind` version >= 1.1.0
+#[derive(Clone)]
 pub enum KmsCoreEvent {
     /// Public decryption request
-    PublicDecryptionRequest(IDecryption::PublicDecryptionRequest),
+    PublicDecryptionRequest(Decryption::PublicDecryptionRequest),
     /// Public decryption response
-    PublicDecryptionResponse(IDecryption::PublicDecryptionResponse),
+    PublicDecryptionResponse(Decryption::PublicDecryptionResponse),
     /// User decryption request
-    UserDecryptionRequest(IDecryption::UserDecryptionRequest),
+    UserDecryptionRequest(Decryption::UserDecryptionRequest),
     /// User decryption response
-    UserDecryptionResponse(IDecryption::UserDecryptionResponse),
+    UserDecryptionResponse(Decryption::UserDecryptionResponse),
     /// Preprocess keygen request
-    PreprocessKeygenRequest(IKmsManagement::PreprocessKeygenRequest),
+    PreprocessKeygenRequest(KmsManagement::PreprocessKeygenRequest),
     /// Preprocess keygen response
-    PreprocessKeygenResponse(IKmsManagement::PreprocessKeygenResponse),
+    PreprocessKeygenResponse(KmsManagement::PreprocessKeygenResponse),
     /// Preprocess kskgen request
-    PreprocessKskgenRequest(IKmsManagement::PreprocessKskgenRequest),
+    PreprocessKskgenRequest(KmsManagement::PreprocessKskgenRequest),
     /// Preprocess kskgen response
-    PreprocessKskgenResponse(IKmsManagement::PreprocessKskgenResponse),
+    PreprocessKskgenResponse(KmsManagement::PreprocessKskgenResponse),
     /// Keygen request
-    KeygenRequest(IKmsManagement::KeygenRequest),
+    KeygenRequest(KmsManagement::KeygenRequest),
     /// Keygen response
-    KeygenResponse(IKmsManagement::KeygenResponse),
+    KeygenResponse(KmsManagement::KeygenResponse),
     /// CRS generation request
-    CrsgenRequest(IKmsManagement::CrsgenRequest),
+    CrsgenRequest(KmsManagement::CrsgenRequest),
     /// CRS generation response
-    CrsgenResponse(IKmsManagement::CrsgenResponse),
+    CrsgenResponse(KmsManagement::CrsgenResponse),
     /// KSK generation request
-    KskgenRequest(IKmsManagement::KskgenRequest),
+    KskgenRequest(KmsManagement::KskgenRequest),
     /// KSK generation response
-    KskgenResponse(IKmsManagement::KskgenResponse),
+    KskgenResponse(KmsManagement::KskgenResponse),
 }
 
 /// Adapter for handling Gateway events
@@ -278,9 +278,9 @@ impl EventsAdapter {
         event_tx: mpsc::Sender<KmsCoreEvent>,
         running: Arc<AtomicBool>,
     ) -> Result<()> {
-        let contract = IDecryption::new(decryption, provider);
+        let contract = Decryption::new(decryption, provider);
 
-        info!("Starting IDecryption event subscriptions...");
+        info!("Starting Decryption event subscriptions...");
 
         let public_filter = contract.PublicDecryptionRequest_filter().watch().await?;
         info!("✓ Subscribed to PublicDecryptionRequest events");
@@ -291,7 +291,7 @@ impl EventsAdapter {
         let mut public_stream = public_filter.into_stream();
         let mut user_stream = user_filter.into_stream();
 
-        info!("Successfully subscribed to all IDecryption events");
+        info!("Successfully subscribed to all Decryption events");
 
         loop {
             if !running.load(Ordering::SeqCst) {
@@ -315,9 +315,9 @@ impl EventsAdapter {
         event_tx: mpsc::Sender<KmsCoreEvent>,
         running: Arc<AtomicBool>,
     ) -> Result<()> {
-        let contract = IKmsManagement::new(address, provider);
+        let contract = KmsManagement::new(address, provider);
 
-        info!("Starting IKmsManagement event subscriptions...");
+        info!("Starting KmsManagement event subscriptions...");
 
         let preprocess_keygen_request_filter =
             contract.PreprocessKeygenRequest_filter().watch().await?;
@@ -343,11 +343,11 @@ impl EventsAdapter {
         let mut crsgen_request_stream = crsgen_request_filter.into_stream();
         let mut kskgen_request_stream = kskgen_request_filter.into_stream();
 
-        info!("Successfully subscribed to all IKmsManagement events");
+        info!("Successfully subscribed to all KmsManagement events");
 
         loop {
             if !running.load(Ordering::SeqCst) {
-                info!("IKmsManagement event subscription stopping due to shutdown signal");
+                info!("KmsManagement event subscription stopping due to shutdown signal");
                 break;
             }
 
@@ -364,7 +364,7 @@ impl EventsAdapter {
     }
 
     /// Helper function to handle event stream results
-    async fn handle_event<T: std::fmt::Debug>(
+    async fn handle_event<T>(
         result: Option<Result<(T, EthLog), alloy::sol_types::Error>>,
         event_tx: mpsc::Sender<KmsCoreEvent>,
         event_constructor: fn(T) -> KmsCoreEvent,
@@ -387,11 +387,13 @@ impl EventsAdapter {
                 );
                 info!("  Topics: {:?}", log.topics());
                 debug!("  Raw Data: {:?}", log.data());
-                debug!("  Decoded Event: {:#?}", event);
+                // debug!("  Decoded Event: {:#?}", event);  TODO: uncomment when bindings are generated with `forge bind` version >= 1.1.0
 
-                let core_event = event_constructor(event);
-                debug!("🔎 Event processed: {:#?}", core_event);
-                core_event
+                // TODO: uncomment when bindings are generated with `forge bind` version >= 1.1.0
+                // let core_event = event_constructor(event);
+                // debug!("🔎 Event processed: {:#?}", core_event);
+                // core_event
+                event_constructor(event)
             }
             Some(Err(e)) => {
                 error!("Failed to decode {}: {}", event_name, e);
