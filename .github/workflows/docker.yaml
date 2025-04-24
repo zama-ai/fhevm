@@ -1,6 +1,9 @@
 name: Docker Build and Push
 
 on:
+  # TODO: remove this when we have a proper release process
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       test:
