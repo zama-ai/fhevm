@@ -34,7 +34,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
  * separator from the immutable values, which is cheaper than accessing a cached version in cold storage.
  */
 abstract contract EIP712UpgradeableCrossChain is Initializable, IERC5267 {
-    bytes32 private constant TYPE_HASH =
+    bytes32 private constant TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
     /// @custom:storage-location fhevm.storage.EIP712UpgradeableCrossChain
@@ -109,7 +109,7 @@ abstract contract EIP712UpgradeableCrossChain is Initializable, IERC5267 {
         return
             keccak256(
                 abi.encode(
-                    TYPE_HASH,
+                    TYPEHASH,
                     _EIP712NameHash(),
                     _EIP712VersionHash(),
                     $._chainIDSource,
