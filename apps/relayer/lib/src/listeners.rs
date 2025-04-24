@@ -51,7 +51,10 @@ pub async fn wait_for_response_with_id(
         {
             Ok(value) => value,
             Err(err) => {
-                warn!("SQS listenning error: {:?}", err);
+                warn!(
+                    "SQS listening error on queue {:?} : {:?}",
+                    request_queue_url, err
+                );
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 continue;
             }
@@ -412,7 +415,7 @@ pub async fn sqs_listener(
         {
             Ok(value) => value,
             Err(err) => {
-                warn!("SQS listenning error: {:?}", err);
+                warn!("SQS listening error {:?}: {:?}", url, err);
                 tokio::time::sleep(tokio::time::Duration::from_millis(
                     retry_wait_time.unwrap_or(1000),
                 ))
