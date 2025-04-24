@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 use tracing::error;
 use tracing::info;
 
-/// Represents the payload coming into the '/input-proof' endpoint.
+/// Represents the payload coming into the endpoint for user decrypt.
 #[derive(Debug, Deserialize, Clone, Serialize)]
 #[allow(non_snake_case)]
 pub struct UserDecryptRequestJson {
@@ -36,7 +36,7 @@ pub struct CtHandleContractPairJson {
 #[derive(Debug, Deserialize, Clone, Serialize)]
 #[allow(non_snake_case)]
 pub struct RequestValidityJson {
-    pub startTimestamp: String, // TODO(mano): Can be u64, as its epoch timestamp ?
+    pub startTimestamp: String,
     pub durationDays: String,
 }
 
@@ -47,7 +47,7 @@ impl UserDecryptRequestJson {
     }
 }
 
-/// Represents the response from the '/input-proof' endpoint.
+/// Represents the response from the endpoint for user decrypt.
 #[derive(Debug, Serialize)]
 pub struct UserDecryptResponseJson {
     pub response: Vec<UserDecryptResponsePayloadJson>,
@@ -59,7 +59,7 @@ pub struct UserDecryptResponsePayloadJson {
     pub signature: Bytes,
 }
 
-/// Represents the error response from the '/input-proof' endpoint.
+/// Represents the error response from the endpoint for user decrypt.
 #[derive(Debug, Serialize)]
 pub struct UserDecryptErrorResponseJson {
     pub message: String,
@@ -81,8 +81,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         }
     }
 
-    /// Handles POST requests to '/input-proof'. This function is responsible only for handling
-    /// the validated request and returning the corresponding response.
+    /// Handles requests to the endpoint for user decrypt.
     pub async fn handle(&self, Json(payload): Json<UserDecryptRequestJson>) -> impl IntoResponse {
         info!("Handling user decryption request in http listener");
         // Validate the payload
@@ -111,12 +110,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             }
         };
 
-        // Generate Request ID
         let request_id = self.orchestrator.new_request_id();
 
         info!("Validated and assigned request id: {}", request_id);
 
-        // Register once handlers for receiving the decryption response from the gateway l2
+        // Register once handlers for receiving the decryption response from the gateway.
         let (handler, rx): (OnceHandler<RelayerEvent>, oneshot::Receiver<RelayerEvent>) =
             OnceHandler::new();
         let handler = Arc::new(handler);
@@ -140,8 +138,6 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         info!("Dispatched event to orchestrator to initiate processing");
 
         info!("Waiting for user decrypt reponse event");
-        // TODO(Mano): Handle failed event as well.
-        // Wait for response on the rx of Onshot channel.
         let event = match rx.await {
             Ok(event) => {
                 info!("Received user decrypt response event");
@@ -204,38 +200,3 @@ impl Serialize for UserDecryptResponsePayloadJson {
 fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
     hex::encode(vec)
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use serde_json;
-
-//     #[test]
-//     fn test_deserialize_input_proof_request_json() {
-//         // Define a sample JSON input.
-//         let json_data = r#"
-//         {
-//                    "contractChainId": "123456",
-//                    "contractAddress": "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
-//                    "userAddress": "0x12B064FB845C1cc05e9493856a1D637a73e944bE",
-//                    "ciphertextWithInputVerification": "abcdef"
-//         }
-//         "#;
-
-//         // Deserialize the JSON string into the struct.
-//         let request: UserDecryptRequestJson =
-//             serde_json::from_str(json_data).expect("JSON deserialization failed");
-
-//         // Assert that each field was deserialized correctly.
-//         assert_eq!(request.contractChainId, "123456");
-//         assert_eq!(
-//             request.contractAddress,
-//             "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
-//         );
-//         assert_eq!(
-//             request.userAddress,
-//             "0x12B064FB845C1cc05e9493856a1D637a73e944bE"
-//         );
-//         assert_eq!(request.ciphertextWithInputVerification, "abcdef");
-//     }
-// }

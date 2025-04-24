@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::info;
 
-/// Represents the payload coming into the '/input-proof' endpoint.
+/// Represents the payload coming into the endpoint for input proof.
 #[derive(Debug, Deserialize)]
 #[allow(non_snake_case)]
 pub struct InputProofRequestJson {
@@ -32,7 +32,7 @@ impl InputProofRequestJson {
     }
 }
 
-/// Represents the response from the '/input-proof' endpoint.
+/// Represents the response from the endpoint for input proof.
 #[derive(Debug, Serialize)]
 pub struct InputProofResponseJson {
     pub response: InputProofResponsePayloadJson,
@@ -44,7 +44,7 @@ pub struct InputProofResponsePayloadJson {
     pub signatures: Vec<String>, // Attestation signatures for Input verification for the ordered list of handles.
 }
 
-/// Represents the error response from the '/input-proof' endpoint.
+/// Represents the error response from the endpoint for input proof.
 #[derive(Debug, Serialize)]
 pub struct InputProofErrorResponseJson {
     pub message: String,
@@ -66,8 +66,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         }
     }
 
-    /// Handles POST requests to '/input-proof'. This function is responsible only for handling
-    /// the validated request and returning the corresponding response.
+    /// Handles requests to the endpoint for input proof.
     pub async fn handle(&self, Json(payload): Json<InputProofRequestJson>) -> impl IntoResponse {
         info!("Handling input proof request");
         // Validate the payload
@@ -76,7 +75,6 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
         }
 
-        // Generate Request ID
         let request_id = self.orchestrator.new_request_id();
 
         info!("Validated and assigned request id: {}", request_id);
@@ -93,7 +91,6 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         );
         info!("Registered once handler");
 
-        // Prepare and send an event
         let request_data: InputProofRequest = match payload.try_into() {
             Ok(event_data) => event_data,
             Err(message) => {
