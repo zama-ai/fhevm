@@ -1,8 +1,0 @@
-helm:
-  parameters:
-  - name: kvStore.image.name
-    value: ghcr.io/zama-ai/kms-blockchain-gateway
-    forcestring: true
-  - name: kvStore.image.tag
-    value: v0.9.0-rc38
-    forcestring: true

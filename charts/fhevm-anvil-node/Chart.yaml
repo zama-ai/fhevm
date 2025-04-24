@@ -1,0 +1,7 @@
+name: fhevm-anvil-node
+description: A helm chart to deploy fhevm anvil node
+version: 0.3.0
+apiVersion: v2
+keywords:
+  - fhevm
+  - anvil

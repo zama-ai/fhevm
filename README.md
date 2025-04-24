@@ -1,5 +1,10 @@
-# ZWS Helm Charts
+# Fhevm Helm Charts
 
-Zama [Kubernetes Helm](https://helm.sh/) charts collection.
+Fhevm [Kubernetes Helm](https://helm.sh/) charts collection.
 
 ## Charts list
+
+- fhevm-anvil-node
+- fhevm-sc-deploy
+- fhevm-coprocessor
+- fhevm-relayer

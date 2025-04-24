@@ -1,0 +1,51 @@
+scDeploy:
+  enabled: true
+  image:
+    name: ghcr.io/zama-ai/fhevm-smart-contracts
+    tag: v0.7.0-rc2
+  configmap:
+    name: "host-sc-addresses"
+  env:
+    - name: MNEMONIC
+      value: "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
+    - name: CHAIN_ID_GATEWAY
+      value: "54321" # L2
+    - name: PRIVATE_KEY_FHEVM_DEPLOYER
+      value: "2d24c36c57e6bfbf90c43173481cc00edcbd1a3922de5e5fdb9aba5fc4e0fafd" # accounts[9] - L1
+    - name: PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER
+      value: "527bd7b9f1150dc8a0936e8b5a3ba6a62bbdfd7ef0bcecbbf4d140f6c5cb5d85" # accounts[10] - L1
+    - name: NUM_KMS_SIGNERS
+      value: "1"
+    - name: INITIAL_KMS_THRESHOLD
+      value: "1"
+    - name: ADDRESS_KMS_SIGNER_0
+      value: "0x6518D50aDc9036Df37119eA465a8159E34417E2E"
+    - name: NUM_COPROCESSOR_SIGNERS
+      value: "1"
+    - name: ADDRESS_COPROCESSOR_ACCOUNT_0
+      value: "0x6254A198F67ad40290a2E7B48aDB2d19B71f67BD" # same as COPROCESSOR_ADDRESS in gateway-sc-deploy
+    - name: SEPOLIA_RPC_URL
+      value: "https://sepolia.infura.io/v3/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    - name: RPC_URL
+      value: "http://host-anvil-node:8545"
+    - name: DECRYPTION_MANAGER_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gateway-sc-addresses
+          key: fhevm.address
+    - name: ZKPOK_MANAGER_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gateway-sc-addresses
+          key: zkpok_manager.address
+
+  deployCommands:
+    - "cat /app/.env"
+    - "/app/deploy-core-contracts.sh staging"
+  postDeployCommands:
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"acl.address\" \"$(cat /app/addresses/.env.acl | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"decryptionoracle.address\" \"$(cat /app/addresses/.env.decryptionoracle | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"exec.address\" \"$(cat /app/addresses/.env.exec | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"fhegaslimit.address\" \"$(cat /app/addresses/.env.fhegaslimit | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"inputverifier.address\" \"$(cat /app/addresses/.env.inputverifier | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"kmsverifier.address\" \"$(cat /app/addresses/.env.kmsverifier | cut -d'=' -f 2)\""

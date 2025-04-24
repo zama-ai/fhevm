@@ -1,0 +1,100 @@
+{{- if .Values.scDeploy.enabled }}
+{{- $volumeName := default .Release.Name .Values.scDeploy.persistence.volumeClaim.name }}
+{{- if .Values.scDeploy.persistence.volumeClaim.create }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $volumeName }}
+  labels:
+    app: fhevm-sc-deploy
+    app.kubernetes.io/name: {{ $volumeName }}
+spec:
+  storageClassName: {{ .Values.scDeploy.persistence.volumeClaim.storageClassName }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.scDeploy.persistence.volumeClaim.storageCapacity }}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: fhevm-sc-deploy
+    app.kubernetes.io/name: {{ .Release.Name }}-deploy
+  name: {{ .Release.Name }}-deploy
+spec:
+  template:
+    spec:
+      serviceAccountName: {{ .Release.Name }}-config-writer
+      securityContext:
+        {{- toYaml .Values.scDeploy.securityContext | nindent 8 }}
+      containers:
+      - name: deploy
+        image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}
+        command: ["/app/deploy-contracts.sh"]
+        {{- if .Values.scDeploy.env }}
+        env:
+          {{ toYaml .Values.scDeploy.env | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+          - mountPath: /app/deploy-contracts.sh
+            subPath: deploy-contracts.sh
+            name: config
+          {{- if .Values.scDeploy.persistence.enabled }}
+          - mountPath: /app/.openzeppelin
+            name: openzeppelin-persistence
+          {{- end }}
+        resources:
+          requests:
+            cpu: {{ .Values.scDeploy.resources.requests.cpu | default "100m" }}
+            memory: {{ .Values.scDeploy.resources.requests.memory | default "256Mi" }}
+          limits:
+            cpu: {{ .Values.scDeploy.resources.limits.cpu | default "500m" }}
+            memory: {{ .Values.scDeploy.resources.limits.memory | default "512Mi" }}
+      volumes:
+      - name: config
+        configMap:
+          name: {{ .Release.Name }}-config
+          defaultMode: 0755
+      {{- if .Values.scDeploy.persistence.enabled }}
+      - name: openzeppelin-persistence
+        persistentVolumeClaim:
+          claimName: {{ $volumeName }}
+      {{- end }}
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-config-writer
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "watch", "list", "create", "patch"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-config-writer
+  namespace: {{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-config-writer
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ .Release.Name }}-config-writer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-config-writer
+  namespace: {{ .Release.Namespace }}
+{{- end }}

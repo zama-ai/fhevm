@@ -1,0 +1,353 @@
+config:
+  enabled: true
+  image:
+    name: ghcr.io/zama-ai/kube-utils
+    tag: 0.1.0
+  coprocessorKey:
+    secret:
+      name: coprocessor-key
+      key: coprocessor.hex
+  apiKey:
+    secret:
+      name: coprocessor-api-key
+      key: coprocessor-api-key
+  database:
+    secret:
+      name: coprocessor-db-url
+      key: coprocessor-db-url
+      value: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
+  annotations:
+#    "helm.sh/hook": "pre-install"
+#    "helm.sh/hook-weight": "-1"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+dbMigration:
+  enabled: true
+  annotations:
+#    "helm.sh/hook": "pre-install, pre-upgrade"
+#    "helm.sh/hook-weight": "0"
+#    "helm.sh/hook-needs": "config-setup"
+  image:
+    name: ghcr.io/zama-ai/fhevm-db-migration
+    tag: v0.7.0-rc2
+  env:
+    - name: CHAIN_ID
+      value: "12345"
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+  serviceAccountName:
+  insertInitContainer:
+    pksURL: http://minio:9000/kms-public/kms/PUB/PublicKey/d74037feb1394aec0eb724afc4a690e16a0203eb1dc868de08179f2e4828f335
+    sksURL: http://minio:9000/kms-public/kms/PUB/ServerKey/812b602c11693dda4bfa68db78269849972b6f1920a725a98fc78cf619a6ab5f
+    publicParamsURL: http://minio:9000/kms-public/kms/PUB/CRS/e4e3f0deef6492bde2fac3f2c698112ace878d4a3656b272197ed332391c48fa
+  storage:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+
+fhevmListener:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --coprocessor-api-key=$(TENANT_API_KEY)
+    - --url=ws://host-node:8545
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  serviceAccountName:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+gwListener:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: ZKPOK_MANAGER_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gateway-sc-addresses
+          key: zkpok_manager.address
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --gw-url=ws://gateway-anvil-node:8546
+    - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  serviceAccountName:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+tfheWorker:
+  enabled: true
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+    - name: ACL_CONTRACT_ADDRESS
+      value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+    - name: INPUT_VERIFIER_ADDRESS
+      value: "0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11"
+  args:
+    - --coprocessor-private-key=/accounts/coprocessor.hex
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  serviceAccountName:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  tracing:
+    enabled: false
+    endpoint: ""
+    service: "coprocessor_server"
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+zkProofWorker:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+  args:
+    - --pg-listen-channel="event_zkpok_new_work"
+    - --pg-notify-channel="event_zkpok_computed"
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  serviceAccountName:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+snsWorker:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --tenant-api-key=$(TENANT_API_KEY)
+    - --pg-listen-channels=["event_pbs_computations" "event_ciphertext_computed"]
+    - --pg-notify-channel="event_ciphertext128_computed"
+    - --work-items-batch-size=4
+    - --pg-polling-interval=60
+    - --pg-pool-connections=10
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  serviceAccountName:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+txSender:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TX_SENDER_PRIVATE_KEY
+      value: "0x8f82b3f482c19a95ac29c82cf048c076ed0de2530c64a73f2d2d7d1e64b5cc6e"
+    - name: ZKPOK_MANAGER_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gateway-sc-addresses
+          key: zkpok_manager.address
+    - name: CIPHERTEXT_STORAGE_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gateway-sc-addresses
+          key: fhevm.address
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --gateway-url=http://gateway-anvil-node:8546
+    - --private-key=$(TX_SENDER_PRIVATE_KEY)
+    - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
+    - --ciphertext-storage-address=$(CIPHERTEXT_STORAGE_ADDRESS)
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  serviceAccountName:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0

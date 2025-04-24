@@ -1,0 +1,71 @@
+scDeploy:
+  enabled: true
+  image:
+    name: ghcr.io/zama-ai/gateway-l2/sc-bundle
+    tag: v0.1.0-rc4
+  configmap:
+    name: "gateway-sc-addresses"
+  env:
+    - name: MNEMONIC
+      value: "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
+    - name: DEPLOYER_ADDRESS
+      value: "0xCf28E90D4A6dB23c34E1881aEF5fd9fF2e478634"
+    - name: DEPLOYER_PRIVATE_KEY
+      value: "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
+    - name: RPC_URL
+      value: "http://gateway-anvil-node:8546"
+    - name: PROTOCOL_NAME
+      value: ""
+    - name: PROTOCOL_WEBSITE
+      value: ""
+    - name: NUM_ADMINS
+      value: "1"
+    - name: ADMIN_ADDRESS_0
+      value: "0xCf28E90D4A6dB23c34E1881aEF5fd9fF2e478634"
+    - name: KMS_THRESHOLD
+      value: "0"
+    - name: NUM_KMS_NODES
+      value: "1"
+    - name: KMS_NODE_ADDRESS_1
+      value: "0x0000000000000000000000000000000000000000"
+    - name: KMS_NODE_IDENTITY_1
+      value: "0x0000000000000000000000000000000000000000"
+    - name: KMS_NODE_IP_ADDRESS_1
+      value: ""
+    - name: KMS_NODE_DA_ADDRESS_1
+      value: ""
+    - name: NUM_COPROCESSORS
+      value: "1"
+    - name: COPROCESSOR_ADDRESS_1
+      value: "0x6254A198F67ad40290a2E7B48aDB2d19B71f67BD"
+    - name: COPROCESSOR_IDENTITY_1
+      value: "0x0000000000000000000000000000000000000000"
+    - name: COPROCESSOR_DA_ADDRESS_1
+      value: ""
+    - name: NUM_NETWORKS
+      value: "1"
+    - name: NETWORK_CHAIN_ID_1
+      value: "12345"
+    - name: NETWORK_fhevm_EXECUTOR_1
+      value: "0x0000000000000000000000000000000000000000"
+    - name: NETWORK_ACL_ADDRESS_1
+      value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+    - name: NETWORK_NAME_1
+      value: ""
+    - name: NETWORK_WEBSITE_1
+      value: ""
+    - name: FHE_PARAMS_NAME
+      value: "test"
+    - name: FHE_PARAMS_DIGEST
+      value: "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+  deployCommands:
+    - "cat /app/.env"
+    - "/app/deploy-fhevm-gateway-deployment.sh staging"
+  postDeployCommands:
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"fhevm.address\" \"$(cat /app/addresses/.env.fhevm | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"zkpok_manager.address\" \"$(cat /app/addresses/.env.zkpok_manager | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"key_manager.address\" \"$(cat /app/addresses/.env.key_manager | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"ciphertext_manager.address\" \"$(cat /app/addresses/.env.ciphertext_manager | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"acl_manager.address\" \"$(cat /app/addresses/.env.acl_manager | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"decryption_manager.address\" \"$(cat /app/addresses/.env.decryption_manager | cut -d'=' -f 2)\""
