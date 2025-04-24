@@ -21,8 +21,8 @@ kmsConnector:
   kmsCore:
     name: kms-threshold-staging
     clientPort: 50100
-    # Optional endpoint if variable above are not set
-    endpoint: http://kms-threshold-staging:50100
+    # Optional endpoint URL (replace use of the above variables abovse if set)
+    endpoint: ""
   # Define all the environment variable needed for the connector:
   env:
     - name: PROBE
@@ -67,6 +67,10 @@ kmsConnector:
   storage:
     storageClassName: gp3
     capacity: 5Gi
+  # Additional labels for the connector:
+  labels: {}
+  # Additional annotations for the connector:
+  annotations: {}
   # Define the node selector for the connector:
   nodeSelector:
   # Define the affinity for the connector:
