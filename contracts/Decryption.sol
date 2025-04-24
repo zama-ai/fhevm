@@ -84,55 +84,58 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     }
 
     /// @notice The address of the GatewayConfig contract for checking if a signer is valid
-    IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
+    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /// @notice The address of the MultichainAcl contract for checking if a decryption requests are allowed
-    IMultichainAcl private constant _MULTICHAIN_ACL = IMultichainAcl(multichainAclAddress);
+    IMultichainAcl private constant MULTICHAIN_ACL = IMultichainAcl(multichainAclAddress);
 
     /// @notice The address of the CiphertextCommits contract for getting ciphertext materials.
-    ICiphertextCommits private constant _CIPHERTEXT_COMMITS = ICiphertextCommits(ciphertextCommitsAddress);
+    ICiphertextCommits private constant CIPHERTEXT_COMMITS = ICiphertextCommits(ciphertextCommitsAddress);
 
     /// @notice The maximum number of duration days that can be requested for a user decryption.
-    uint16 internal constant _MAX_USER_DECRYPT_DURATION_DAYS = 365;
+    uint16 internal constant MAX_USER_DECRYPT_DURATION_DAYS = 365;
 
     /// @notice The maximum number of contracts that can request for user decryption at once.
-    uint8 internal constant _MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
+    uint8 internal constant MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 
     /// @notice The maximum number of bits that can be decrypted in a single public/user decryption request.
-    uint256 internal constant _MAX_DECRYPTION_REQUEST_BITS = 2048;
+    uint256 internal constant MAX_DECRYPTION_REQUEST_BITS = 2048;
 
     /// @notice The definition of the PublicDecryptVerification structure typed data.
-    string public constant EIP712_PUBLIC_DECRYPT_TYPE =
+    string private constant EIP712_PUBLIC_DECRYPT_TYPE =
         "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult)";
 
     /// @notice The hash of the PublicDecryptVerification structure typed data definition used for signature validation.
-    bytes32 public constant EIP712_PUBLIC_DECRYPT_TYPE_HASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
+    bytes32 private constant EIP712_PUBLIC_DECRYPT_TYPE_HASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
 
     /// @notice The definition of the UserDecryptRequestVerification structure typed data.
-    string public constant EIP712_USER_DECRYPT_REQUEST_TYPE =
+    string private constant EIP712_USER_DECRYPT_REQUEST_TYPE =
         "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 contractsChainId,"
         "uint256 startTimestamp,uint256 durationDays)";
 
     /// @notice The hash of the UserDecryptRequestVerification structure typed data definition
     /// @notice used for signature validation.
-    bytes32 public constant EIP712_USER_DECRYPT_REQUEST_TYPE_HASH = keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE));
+    bytes32 private constant EIP712_USER_DECRYPT_REQUEST_TYPE_HASH = keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE));
 
-    string public constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
+    string private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
         "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,"
         "uint256 contractsChainId,uint256 startTimestamp,uint256 durationDays)";
 
-    bytes32 public constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
+    bytes32 private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
         keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
 
     /// @notice The definition of the UserDecryptResponseVerification structure typed data.
-    string public constant EIP712_USER_DECRYPT_RESPONSE_TYPE =
+    string private constant EIP712_USER_DECRYPT_RESPONSE_TYPE =
         "UserDecryptResponseVerification(bytes publicKey,bytes32[] ctHandles,bytes reencryptedShare)";
 
     /// @notice The hash of the UserDecryptResponseVerification structure typed data definition
     /// @notice used for signature validation.
-    bytes32 public constant EIP712_USER_DECRYPT_RESPONSE_TYPE_HASH =
+    bytes32 private constant EIP712_USER_DECRYPT_RESPONSE_TYPE_HASH =
         keccak256(bytes(EIP712_USER_DECRYPT_RESPONSE_TYPE));
 
+    /// @dev The following constants are used for versioning the contract. They are made private
+    /// @dev in order to force derived contracts to consider a different version. Note that
+    /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
@@ -200,13 +203,14 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
     /// @notice Initializes the contract.
     /// @dev Contract name and version for EIP712 signature validation are defined here
+    /// @dev This function needs to be public in order to be called by the UUPS proxy.
     function initialize() public virtual reinitializer(2) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
     }
 
     /// @dev See {IDecryption-publicDecryptionRequest}.
-    function publicDecryptionRequest(bytes32[] calldata ctHandles) public virtual {
+    function publicDecryptionRequest(bytes32[] calldata ctHandles) external virtual {
         /// @dev Check that the list of handles is not empty
         if (ctHandles.length == 0) {
             revert EmptyCtHandles();
@@ -220,7 +224,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
         /// @dev without being added to the contract first (and we currently have no ways of deleting
         /// @dev a ciphertext from the contract).
-        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
@@ -246,7 +250,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         uint256 publicDecryptionId,
         bytes calldata decryptedResult,
         bytes calldata signature
-    ) public virtual onlyKmsTxSender {
+    ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
@@ -288,8 +292,8 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         bytes calldata signature
     ) external virtual {
         /// @dev Check the number of contractAddresses does not exceed the maximum allowed.
-        if (contractAddresses.length > _MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-            revert ContractAddressesMaxLengthExceeded(_MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
+        if (contractAddresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+            revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
         }
 
         /// @dev Check the user decryption request is valid.
@@ -324,7 +328,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
         /// @dev without being added to the contract first (and we currently have no ways of deleting
         /// @dev a ciphertext from the contract).
-        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
@@ -354,8 +358,8 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         bytes calldata signature
     ) external virtual {
         /// @dev Check the number of contractAddresses does not exceed the maximum allowed.
-        if (contractAddresses.length > _MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-            revert ContractAddressesMaxLengthExceeded(_MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
+        if (contractAddresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+            revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
         }
 
         /// @dev Check the user decryption request is valid.
@@ -375,7 +379,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
         /// @dev Check that the delegated address has been granted access to the contract addresses
         /// @dev by the delegator.
-        _MULTICHAIN_ACL.checkAccountDelegated(contractsChainId, delegationAccounts, contractAddresses);
+        MULTICHAIN_ACL.checkAccountDelegated(contractsChainId, delegationAccounts, contractAddresses);
 
         /// @dev Initialize the EIP712UserDecryptRequest structure for the signature validation.
         DelegatedUserDecryptRequestVerification
@@ -400,7 +404,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
         /// @dev without being added to the contract first (and we currently have no ways of deleting
         /// @dev a ciphertext from the contract).
-        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
@@ -462,12 +466,12 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     }
 
     /// @dev See {IDecryption-checkPublicDecryptionReady}.
-    function checkPublicDecryptionReady(bytes32[] calldata ctHandles) external view {
+    function checkPublicDecryptionReady(bytes32[] calldata ctHandles) external view virtual {
         /// @dev Check that the handles are allowed for public decryption and that the ciphertext materials
         /// @dev represented by them have been added.
         for (uint256 i = 0; i < ctHandles.length; i++) {
-            _MULTICHAIN_ACL.checkPublicDecryptAllowed(ctHandles[i]);
-            _CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandles[i]);
+            MULTICHAIN_ACL.checkPublicDecryptAllowed(ctHandles[i]);
+            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandles[i]);
         }
     }
 
@@ -475,16 +479,16 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     function checkUserDecryptionReady(
         address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs
-    ) external view {
+    ) external view virtual {
         /// @dev Check that the user and contracts accounts have access to the handles and that the
         /// @dev ciphertext materials represented by them have been added.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            _MULTICHAIN_ACL.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, userAddress);
-            _MULTICHAIN_ACL.checkAccountAllowed(
+            MULTICHAIN_ACL.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, userAddress);
+            MULTICHAIN_ACL.checkAccountAllowed(
                 ctHandleContractPairs[i].ctHandle,
                 ctHandleContractPairs[i].contractAddress
             );
-            _CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
+            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
         }
     }
 
@@ -494,25 +498,25 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         address[] calldata contractAddresses
-    ) external view {
+    ) external view virtual {
         /// @dev Check that the delegated address has been granted access to the given contractAddresses
         /// @dev by the delegator.
-        _MULTICHAIN_ACL.checkAccountDelegated(contractsChainId, delegationAccounts, contractAddresses);
+        MULTICHAIN_ACL.checkAccountDelegated(contractsChainId, delegationAccounts, contractAddresses);
 
         /// @dev Check that the delegator and contract accounts have access to the handles and that the
         /// @dev ciphertext materials represented by them have been added.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            _MULTICHAIN_ACL.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, delegationAccounts.delegatorAddress);
-            _MULTICHAIN_ACL.checkAccountAllowed(
+            MULTICHAIN_ACL.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, delegationAccounts.delegatorAddress);
+            MULTICHAIN_ACL.checkAccountAllowed(
                 ctHandleContractPairs[i].ctHandle,
                 ctHandleContractPairs[i].contractAddress
             );
-            _CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
+            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
         }
     }
 
     /// @dev See {IDecryption-checkPublicDecryptionDone}.
-    function checkPublicDecryptionDone(uint256 publicDecryptionId) public view virtual {
+    function checkPublicDecryptionDone(uint256 publicDecryptionId) external view virtual {
         DecryptionStorage storage $ = _getDecryptionStorage();
         if (!$.publicDecryptionDone[publicDecryptionId]) {
             revert PublicDecryptionNotDone(publicDecryptionId);
@@ -520,15 +524,14 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     }
 
     /// @dev See {IDecryption-checkUserDecryptionDone}.
-    function checkUserDecryptionDone(uint256 userDecryptionId) public view virtual {
+    function checkUserDecryptionDone(uint256 userDecryptionId) external view virtual {
         DecryptionStorage storage $ = _getDecryptionStorage();
         if (!$.userDecryptionDone[userDecryptionId]) {
             revert UserDecryptionNotDone(userDecryptionId);
         }
     }
 
-    /// @notice Returns the versions of the Decryption contract in SemVer format.
-    /// @dev This is conventionally used for upgrade features.
+    /// @dev See {IDecryption-getVersion}.
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -557,7 +560,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         address signer = ECDSA.recover(digest, signature);
 
         /// @dev Check that the signer is a KMS signer
-        _GATEWAY_CONFIG.checkIsKmsSigner(signer);
+        GATEWAY_CONFIG.checkIsKmsSigner(signer);
 
         /// @dev Check that the signer has not already responded to the public decryption request.
         if ($._alreadyPublicDecryptResponded[publicDecryptionId][signer]) {
@@ -566,6 +569,35 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
         $._alreadyPublicDecryptResponded[publicDecryptionId][signer] = true;
     }
+
+    /// @notice Validates the EIP712 signature for a given user decryption response.
+    /// @param userDecryptionId The ID of the user decryption request.
+    /// @param digest The hash of the UserDecryptResponseVerification structure.
+    /// @param signature The signature to be validated.
+    function _validateUserDecryptResponseEIP712Signature(
+        uint256 userDecryptionId,
+        bytes32 digest,
+        bytes calldata signature
+    ) internal virtual {
+        DecryptionStorage storage $ = _getDecryptionStorage();
+        address signer = ECDSA.recover(digest, signature);
+
+        /// @dev Check that the signer is a KMS signer.
+        GATEWAY_CONFIG.checkIsKmsSigner(signer);
+
+        /// @dev Check that the signer has not already responded to the user decryption request.
+        if ($._alreadyUserDecryptResponded[userDecryptionId][signer]) {
+            revert KmsSignerAlreadyResponded(userDecryptionId, signer);
+        }
+
+        $._alreadyUserDecryptResponded[userDecryptionId][signer] = true;
+    }
+
+    /**
+     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     */
+    // solhint-disable-next-line no-empty-blocks
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
     /// @notice Validates the EIP712 signature for a given user decryption request
     /// @dev This function checks that the signer address is the same as the user address.
@@ -597,29 +629,6 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         if (signer != delegatedAddress) {
             revert InvalidUserSignature(signature);
         }
-    }
-
-    /// @notice Validates the EIP712 signature for a given user decryption response.
-    /// @param userDecryptionId The ID of the user decryption request.
-    /// @param digest The hash of the UserDecryptResponseVerification structure.
-    /// @param signature The signature to be validated.
-    function _validateUserDecryptResponseEIP712Signature(
-        uint256 userDecryptionId,
-        bytes32 digest,
-        bytes calldata signature
-    ) internal virtual {
-        DecryptionStorage storage $ = _getDecryptionStorage();
-        address signer = ECDSA.recover(digest, signature);
-
-        /// @dev Check that the signer is a KMS signer.
-        _GATEWAY_CONFIG.checkIsKmsSigner(signer);
-
-        /// @dev Check that the signer has not already responded to the user decryption request.
-        if ($._alreadyUserDecryptResponded[userDecryptionId][signer]) {
-            revert KmsSignerAlreadyResponded(userDecryptionId, signer);
-        }
-
-        $._alreadyUserDecryptResponded[userDecryptionId][signer] = true;
     }
 
     /// @notice Computes the hash of a given PublicDecryptVerification structured data
@@ -707,7 +716,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     /// @param kmsCounter The number of KMS nodes that agreed
     /// @return Whether the consensus is reached
     function _isConsensusReachedPublic(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = _GATEWAY_CONFIG.getKmsMajorityThreshold();
+        uint256 consensusThreshold = GATEWAY_CONFIG.getKmsMajorityThreshold();
         return kmsCounter >= consensusThreshold;
     }
 
@@ -715,7 +724,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     /// @param verifiedSignaturesCount The number of signatures that have been verified for a user decryption.
     /// @return Whether the consensus is reached.
     function _isConsensusReachedUser(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
-        uint256 consensusThreshold = _GATEWAY_CONFIG.getKmsReconstructionThreshold();
+        uint256 consensusThreshold = GATEWAY_CONFIG.getKmsReconstructionThreshold();
         return verifiedSignaturesCount >= consensusThreshold;
     }
 
@@ -725,7 +734,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     /// @dev - FHE type validity for each handle
     /// @dev - Handles are allowed for public decryption
     /// @param ctHandles The list of ciphertext handles
-    function _checkCtHandlesConformancePublic(bytes32[] memory ctHandles) internal view {
+    function _checkCtHandlesConformancePublic(bytes32[] memory ctHandles) internal view virtual {
         uint256 totalBitSize = 0;
         for (uint256 i = 0; i < ctHandles.length; i++) {
             bytes32 ctHandle = ctHandles[i];
@@ -738,12 +747,12 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
             /// @dev Check that the handles are allowed for public decryption.
-            _MULTICHAIN_ACL.checkPublicDecryptAllowed(ctHandle);
+            MULTICHAIN_ACL.checkPublicDecryptAllowed(ctHandle);
         }
 
         /// @dev Revert if the total bit size exceeds the maximum allowed.
-        if (totalBitSize > _MAX_DECRYPTION_REQUEST_BITS) {
-            revert MaxDecryptionRequestBitSizeExceeded(_MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
+        if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
+            revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
         }
     }
 
@@ -762,7 +771,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         CtHandleContractPair[] calldata ctHandleContractPairs,
         address[] memory contractAddresses,
         address allowedAddress
-    ) internal view returns (bytes32[] memory ctHandles) {
+    ) internal view virtual returns (bytes32[] memory ctHandles) {
         /// @dev Check that the list of ctHandleContractPair is not empty
         if (ctHandleContractPairs.length == 0) {
             revert EmptyCtHandleContractPairs();
@@ -783,10 +792,10 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
             /// @dev Check that the allowed account has access to the handles.
-            _MULTICHAIN_ACL.checkAccountAllowed(ctHandle, allowedAddress);
+            MULTICHAIN_ACL.checkAccountAllowed(ctHandle, allowedAddress);
 
             /// @dev Check that the contract account has access to the handles.
-            _MULTICHAIN_ACL.checkAccountAllowed(ctHandle, contractAddress);
+            MULTICHAIN_ACL.checkAccountAllowed(ctHandle, contractAddress);
 
             /// @dev Check the contract is included in the list of allowed contract addresses.
             if (!_containsContractAddress(contractAddresses, contractAddress)) {
@@ -797,21 +806,21 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         }
 
         /// @dev Revert if the total bit size exceeds the maximum allowed.
-        if (totalBitSize > _MAX_DECRYPTION_REQUEST_BITS) {
-            revert MaxDecryptionRequestBitSizeExceeded(_MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
+        if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
+            revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
         }
     }
 
     /// @notice Checks if a user decryption request's start timestamp and duration days are valid.
     /// @param requestValidity The RequestValidity structure
-    function _checkUserDecryptionRequestValidity(RequestValidity memory requestValidity) internal view {
+    function _checkUserDecryptionRequestValidity(RequestValidity memory requestValidity) internal view virtual {
         /// @dev Check the durationDays is not null.
         if (requestValidity.durationDays == 0) {
             revert InvalidNullDurationDays();
         }
         /// @dev Check the durationDays does not exceed the maximum allowed.
-        if (requestValidity.durationDays > _MAX_USER_DECRYPT_DURATION_DAYS) {
-            revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
+        if (requestValidity.durationDays > MAX_USER_DECRYPT_DURATION_DAYS) {
+            revert MaxDurationDaysExceeded(MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
         }
 
         /// @dev Check the start timestamp is not set in the future. This is to prevent a user
@@ -835,7 +844,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     function _containsContractAddress(
         address[] memory contractAddresses,
         address contractAddress
-    ) internal pure returns (bool) {
+    ) internal pure virtual returns (bool) {
         for (uint256 i = 0; i < contractAddresses.length; i++) {
             if (contractAddresses[i] == contractAddress) {
                 return true;
@@ -846,7 +855,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
     /// @notice Checks that all SNS ciphertext materials have the same keyId.
     /// @param snsCtMaterials The list of SNS ciphertext materials to check
-    function _checkCtMaterialKeyIds(SnsCiphertextMaterial[] memory snsCtMaterials) internal pure {
+    function _checkCtMaterialKeyIds(SnsCiphertextMaterial[] memory snsCtMaterials) internal pure virtual {
         if (snsCtMaterials.length <= 1) return;
 
         uint256 firstKeyId = snsCtMaterials[0].keyId;
@@ -859,6 +868,9 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
     /**
      * @dev Returns the Decryption storage location.
+     * Note that this function is internal but not virtual: derived contracts should be able to
+     * access it, but if the underlying storage struct version changes, we force them to define a new
+     * getter function and use that one instead in order to avoid overriding the storage location.
      */
     function _getDecryptionStorage() internal pure returns (DecryptionStorage storage $) {
         // solhint-disable-next-line no-inline-assembly
@@ -866,10 +878,4 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
             $.slot := DECRYPTION_STORAGE_LOCATION
         }
     }
-
-    /**
-     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
-     */
-    // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }

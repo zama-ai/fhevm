@@ -14,9 +14,11 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
  */
 contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeable {
     /// @notice The maximum chain ID.
-    uint256 public constant MAX_CHAIN_ID = type(uint64).max;
+    uint256 internal constant MAX_CHAIN_ID = type(uint64).max;
 
-    /// @notice The contract's metadata
+    /// @dev The following constants are used for versioning the contract. They are made private
+    /// @dev in order to force derived contracts to consider a different version. Note that
+    /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
@@ -70,6 +72,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @notice Initializes the contract
+    /// @dev This function needs to be public in order to be called by the UUPS proxy.
     /// @param initialPauser Pauser address
     /// @param initialMetadata Metadata of the protocol
     /// @param initialKmsThreshold The KMS threshold. Must verify `3t < n` for `n` KMS nodes.
@@ -141,6 +144,25 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         $.kmsThreshold = newKmsThreshold;
         emit UpdateKmsThreshold(newKmsThreshold);
+    }
+
+    /// @dev See {IGatewayConfig-addNetwork}.
+    function addNetwork(Network calldata network) external virtual {
+        if (network.chainId == 0) {
+            revert InvalidNullChainId();
+        }
+        if (network.chainId > MAX_CHAIN_ID) {
+            revert ChainIdNotUint64(network.chainId);
+        }
+
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if ($._isNetworkRegistered[network.chainId]) {
+            revert NetworkAlreadyRegistered(network.chainId);
+        }
+
+        $.networks.push(network);
+        $._isNetworkRegistered[network.chainId] = true;
+        emit AddNetwork(network);
     }
 
     /// @dev See {IGatewayConfig-checkIsPauser}.
@@ -269,28 +291,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         return $.networks;
     }
 
-    /// @dev See {IGatewayConfig-addNetwork}.
-    function addNetwork(Network calldata network) external virtual {
-        if (network.chainId == 0) {
-            revert InvalidNullChainId();
-        }
-        if (network.chainId > MAX_CHAIN_ID) {
-            revert ChainIdNotUint64(network.chainId);
-        }
-
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if ($._isNetworkRegistered[network.chainId]) {
-            revert NetworkAlreadyRegistered(network.chainId);
-        }
-
-        $.networks.push(network);
-        $._isNetworkRegistered[network.chainId] = true;
-        emit AddNetwork(network);
-    }
-
-    /// @notice Returns the versions of the GatewayConfig contract in SemVer format.
-    /// @dev This is conventionally used for upgrade features.
-    function getVersion() public pure virtual returns (string memory) {
+    /// @dev See {IGatewayConfig-getVersion}.
+    function getVersion() external pure virtual returns (string memory) {
         return
             string(
                 abi.encodePacked(
@@ -306,7 +308,16 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
+     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     */
+    // solhint-disable-next-line no-empty-blocks
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+
+    /**
      * @dev Returns the GatewayConfig storage location.
+     * Note that this function is internal but not virtual: derived contracts should be able to
+     * access it, but if the underlying storage struct version changes, we force them to define a new
+     * getter function and use that one instead in order to avoid overriding the storage location.
      */
     function _getGatewayConfigStorage() internal pure returns (GatewayConfigStorage storage $) {
         // solhint-disable-next-line no-inline-assembly
@@ -314,10 +325,4 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             $.slot := GATEWAY_CONFIG_STORAGE_LOCATION
         }
     }
-
-    /**
-     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
-     */
-    // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }

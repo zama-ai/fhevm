@@ -13,8 +13,11 @@ import "./shared/GatewayConfigChecks.sol";
 /// @dev See {IKmsManagement}.
 contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks {
     /// @notice The address of the GatewayConfig contract for protocol state calls.
-    IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
+    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
+    /// @dev The following constants are used for versioning the contract. They are made private
+    /// @dev in order to force derived contracts to consider a different version. Note that
+    /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "KmsManagement";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
@@ -114,6 +117,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @notice Initializes the contract.
+    /// @dev This function needs to be public in order to be called by the UUPS proxy.
     function initialize(string memory fheParamsName, bytes32 fheParamsDigest) public virtual reinitializer(2) {
         __Ownable_init(owner());
 
@@ -456,47 +460,6 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
         emit UpdateFheParams(fheParamsName, fheParamsDigest);
     }
 
-    /// @dev See {IKmsManagement-isCurrentKeyId}.
-    function isCurrentKeyId(uint256 keyId) external view virtual returns (bool) {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
-        return keyId == $.currentKeyId;
-    }
-
-    /// @notice Checks if the consensus is reached among the KMS nodes.
-    /// @dev This function calls the GatewayConfig contract to retrieve the consensus threshold.
-    /// @param kmsCounter The number of KMS nodes that agreed
-    /// @return Whether the consensus is reached
-    function _isKmsConsensusReached(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = _GATEWAY_CONFIG.getKmsMajorityThreshold();
-        return kmsCounter >= consensusThreshold;
-    }
-
-    /// @notice Checks if the consensus is reached among the Coprocessors.
-    /// @dev This function calls the GatewayConfig contract to retrieve the consensus threshold.
-    /// @param coprocessorCounter The number of coprocessors that agreed
-    /// @return Whether the consensus is reached
-    function _isCoprocessorConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = _GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
-        return coprocessorCounter >= consensusThreshold;
-    }
-
-    /// @notice Returns the versions of the KmsManagement contract in SemVer format.
-    /// @dev This is conventionally used for upgrade features.
-    function getVersion() public pure virtual returns (string memory) {
-        return
-            string(
-                abi.encodePacked(
-                    CONTRACT_NAME,
-                    " v",
-                    Strings.toString(MAJOR_VERSION),
-                    ".",
-                    Strings.toString(MINOR_VERSION),
-                    ".",
-                    Strings.toString(PATCH_VERSION)
-                )
-            );
-    }
-
     /// @dev See {IKmsManagement-fheParamsDigests}.
     function fheParamsDigests(string calldata fheParamsName) external view virtual returns (bytes32) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
@@ -533,14 +496,20 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
         return $.crsFheParamsDigests[crsId];
     }
 
-    /**
-     * @dev Returns the KmsManagement storage location.
-     */
-    function _getKmsManagementStorage() internal pure returns (KmsManagementStorage storage $) {
-        // solhint-disable-next-line no-inline-assembly
-        assembly {
-            $.slot := KMS_MANAGEMENT_STORAGE_LOCATION
-        }
+    /// @dev See {IKmsManagement-getVersion}.
+    function getVersion() external pure virtual returns (string memory) {
+        return
+            string(
+                abi.encodePacked(
+                    CONTRACT_NAME,
+                    " v",
+                    Strings.toString(MAJOR_VERSION),
+                    ".",
+                    Strings.toString(MINOR_VERSION),
+                    ".",
+                    Strings.toString(PATCH_VERSION)
+                )
+            );
     }
 
     /**
@@ -548,4 +517,35 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+
+    /// @notice Checks if the consensus is reached among the KMS nodes.
+    /// @dev This function calls the GatewayConfig contract to retrieve the consensus threshold.
+    /// @param kmsCounter The number of KMS nodes that agreed
+    /// @return Whether the consensus is reached
+    function _isKmsConsensusReached(uint256 kmsCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = GATEWAY_CONFIG.getKmsMajorityThreshold();
+        return kmsCounter >= consensusThreshold;
+    }
+
+    /// @notice Checks if the consensus is reached among the Coprocessors.
+    /// @dev This function calls the GatewayConfig contract to retrieve the consensus threshold.
+    /// @param coprocessorCounter The number of coprocessors that agreed
+    /// @return Whether the consensus is reached
+    function _isCoprocessorConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
+        return coprocessorCounter >= consensusThreshold;
+    }
+
+    /**
+     * @dev Returns the KmsManagement storage location.
+     * Note that this function is internal but not virtual: derived contracts should be able to
+     * access it, but if the underlying storage struct version changes, we force them to define a new
+     * getter function and use that one instead in order to avoid overriding the storage location.
+     */
+    function _getKmsManagementStorage() internal pure returns (KmsManagementStorage storage $) {
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            $.slot := KMS_MANAGEMENT_STORAGE_LOCATION
+        }
+    }
 }

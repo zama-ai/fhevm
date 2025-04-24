@@ -218,14 +218,6 @@ interface IKmsManagement {
     /// @param fheParamsDigest The new digest of the FHE params
     function updateFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external;
 
-    // TODO: May not be needed if contracts are made pausable
-    // https://github.com/zama-ai/fhevm-gateway/issues/51
-    /// @notice Check if a given key ID is the current one
-    /// @dev The current key is the latest generated key that has been activated
-    /// @param keyId The key ID to check
-    /// @return True if the key ID is the current one, false otherwise
-    function isCurrentKeyId(uint256 keyId) external view returns (bool);
-
     /// @notice Get the digest of the given FHE params name
     /// @return The digest of the given FHE params name
     function fheParamsDigests(string calldata fheParamsName) external view returns (bytes32);
@@ -249,4 +241,8 @@ interface IKmsManagement {
     /// @notice Get the generator FHE params digest associated with the CRS ID
     /// @return The generator FHE params digest associated with the CRS ID
     function crsFheParamsDigests(uint256 crsId) external view returns (bytes32);
+
+    /// @notice Returns the versions of the KmsManagement contract in SemVer format.
+    /// @dev This is conventionally used for upgrade features.
+    function getVersion() external pure returns (string memory);
 }

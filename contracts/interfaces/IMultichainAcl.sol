@@ -93,4 +93,8 @@ interface IMultichainAcl {
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
     ) external view;
+
+    /// @notice Returns the versions of the MultichainACL contract in SemVer format.
+    /// @dev This is conventionally used for upgrade features.
+    function getVersion() external pure returns (string memory);
 }

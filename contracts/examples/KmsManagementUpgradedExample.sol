@@ -15,7 +15,7 @@ contract KmsManagementUpgradedExample is KmsManagement {
 
     /// @notice Getter for the name and version of the contract
     /// @return string representing the name and the version of the contract
-    function getVersion() public pure virtual override returns (string memory) {
+    function getVersion() external pure virtual override returns (string memory) {
         return
             string(
                 abi.encodePacked(

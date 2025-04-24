@@ -46,7 +46,7 @@ interface IKmsManagement {
     function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external;
     function fheParamsDigests(string memory fheParamsName) external view returns (bytes32);
     function getCurrentKeyId() external view returns (uint256);
-    function isCurrentKeyId(uint256 keyId) external view returns (bool);
+    function getVersion() external pure returns (string memory);
     function keyFheParamsDigests(uint256 keyId) external view returns (bytes32);
     function keygenRequest(uint256 preKeyId) external;
     function keygenResponse(uint256 preKeyId, uint256 keyId) external;
@@ -211,22 +211,16 @@ interface IKmsManagement {
   },
   {
     "type": "function",
-    "name": "isCurrentKeyId",
-    "inputs": [
-      {
-        "name": "keyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "name": "getVersion",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "bool",
-        "internalType": "bool"
+        "type": "string",
+        "internalType": "string"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -5483,22 +5477,19 @@ function getCurrentKeyId() external view returns (uint256);
             }
         }
     };
-    /**Function with signature `isCurrentKeyId(uint256)` and selector `0x9f8ec91c`.
+    /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
-function isCurrentKeyId(uint256 keyId) external view returns (bool);
+function getVersion() external pure returns (string memory);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct isCurrentKeyIdCall {
-        #[allow(missing_docs)]
-        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    ///Container type for the return parameters of the [`isCurrentKeyId(uint256)`](isCurrentKeyIdCall) function.
+    pub struct getVersionCall {}
+    ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct isCurrentKeyIdReturn {
+    pub struct getVersionReturn {
         #[allow(missing_docs)]
-        pub _0: bool,
+        pub _0: alloy::sol_types::private::String,
     }
     #[allow(
         non_camel_case_types,
@@ -5510,11 +5501,9 @@ function isCurrentKeyId(uint256 keyId) external view returns (bool);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
+            type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
             fn _type_assertion(
@@ -5528,24 +5517,24 @@ function isCurrentKeyId(uint256 keyId) external view returns (bool);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isCurrentKeyIdCall> for UnderlyingRustTuple<'_> {
-                fn from(value: isCurrentKeyIdCall) -> Self {
-                    (value.keyId,)
+            impl ::core::convert::From<getVersionCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getVersionCall) -> Self {
+                    ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isCurrentKeyIdCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { keyId: tuple.0 }
+                    Self {}
                 }
             }
         }
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
             fn _type_assertion(
@@ -5559,34 +5548,32 @@ function isCurrentKeyId(uint256 keyId) external view returns (bool);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isCurrentKeyIdReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: isCurrentKeyIdReturn) -> Self {
+            impl ::core::convert::From<getVersionReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getVersionReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isCurrentKeyIdReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for isCurrentKeyIdCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        impl alloy_sol_types::SolCall for getVersionCall {
+            type Parameters<'a> = ();
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = isCurrentKeyIdReturn;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type Return = getVersionReturn;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "isCurrentKeyId(uint256)";
-            const SELECTOR: [u8; 4] = [159u8, 142u8, 201u8, 28u8];
+            const SIGNATURE: &'static str = "getVersion()";
+            const SELECTOR: [u8; 4] = [13u8, 142u8, 110u8, 44u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -5595,11 +5582,7 @@ function isCurrentKeyId(uint256 keyId) external view returns (bool);
             }
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
-                )
+                ()
             }
             #[inline]
             fn abi_decode_returns(
@@ -7140,7 +7123,7 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
         #[allow(missing_docs)]
         getCurrentKeyId(getCurrentKeyIdCall),
         #[allow(missing_docs)]
-        isCurrentKeyId(isCurrentKeyIdCall),
+        getVersion(getVersionCall),
         #[allow(missing_docs)]
         keyFheParamsDigests(keyFheParamsDigestsCall),
         #[allow(missing_docs)]
@@ -7173,6 +7156,7 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [13u8, 142u8, 110u8, 44u8],
             [38u8, 115u8, 158u8, 124u8],
             [41u8, 52u8, 121u8, 177u8],
             [57u8, 76u8, 123u8, 214u8],
@@ -7187,7 +7171,6 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
             [148u8, 28u8, 141u8, 246u8],
             [149u8, 148u8, 169u8, 1u8],
             [158u8, 22u8, 127u8, 118u8],
-            [159u8, 142u8, 201u8, 28u8],
             [167u8, 171u8, 68u8, 64u8],
             [216u8, 144u8, 158u8, 171u8],
             [224u8, 229u8, 95u8, 215u8],
@@ -7231,8 +7214,8 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
                 Self::getCurrentKeyId(_) => {
                     <getCurrentKeyIdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::isCurrentKeyId(_) => {
-                    <isCurrentKeyIdCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::getVersion(_) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::keyFheParamsDigests(_) => {
                     <keyFheParamsDigestsCall as alloy_sol_types::SolCall>::SELECTOR
@@ -7288,6 +7271,19 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
                 &[u8],
                 bool,
             ) -> alloy_sol_types::Result<IKmsManagementCalls>] = &[
+                {
+                    fn getVersion(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IKmsManagementCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IKmsManagementCalls::getVersion)
+                    }
+                    getVersion
+                },
                 {
                     fn preprocessKeygenRequest(
                         data: &[u8],
@@ -7471,19 +7467,6 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
                     activateKeyRequest
                 },
                 {
-                    fn isCurrentKeyId(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IKmsManagementCalls> {
-                        <isCurrentKeyIdCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IKmsManagementCalls::isCurrentKeyId)
-                    }
-                    isCurrentKeyId
-                },
-                {
                     fn addFheParams(
                         data: &[u8],
                         validate: bool,
@@ -7620,10 +7603,8 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
                         inner,
                     )
                 }
-                Self::isCurrentKeyId(inner) => {
-                    <isCurrentKeyIdCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                Self::getVersion(inner) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::keyFheParamsDigests(inner) => {
                     <keyFheParamsDigestsCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -7739,8 +7720,8 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
                         out,
                     )
                 }
-                Self::isCurrentKeyId(inner) => {
-                    <isCurrentKeyIdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::getVersion(inner) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -9428,12 +9409,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<T, &P, getCurrentKeyIdCall, N> {
             self.call_builder(&getCurrentKeyIdCall {})
         }
-        ///Creates a new call builder for the [`isCurrentKeyId`] function.
-        pub fn isCurrentKeyId(
+        ///Creates a new call builder for the [`getVersion`] function.
+        pub fn getVersion(
             &self,
-            keyId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, isCurrentKeyIdCall, N> {
-            self.call_builder(&isCurrentKeyIdCall { keyId })
+        ) -> alloy_contract::SolCallBuilder<T, &P, getVersionCall, N> {
+            self.call_builder(&getVersionCall {})
         }
         ///Creates a new call builder for the [`keyFheParamsDigests`] function.
         pub fn keyFheParamsDigests(

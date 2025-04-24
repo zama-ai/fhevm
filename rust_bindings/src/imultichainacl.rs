@@ -26,6 +26,7 @@ interface IMultichainAcl {
     function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external view;
     function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
     function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external;
+    function getVersion() external pure returns (string memory);
 }
 ```
 
@@ -163,6 +164,19 @@ interface IMultichainAcl {
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getVersion",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "pure"
   },
   {
     "type": "event",
@@ -2494,6 +2508,125 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
             }
         }
     };
+    /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
+```solidity
+function getVersion() external pure returns (string memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getVersionCall {}
+    ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getVersionReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::String,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getVersionCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getVersionCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getVersionReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getVersionReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getVersionCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getVersionReturn;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getVersion()";
+            const SELECTOR: [u8; 4] = [13u8, 142u8, 110u8, 44u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
     ///Container for all the [`IMultichainAcl`](self) function calls.
     pub enum IMultichainAclCalls {
         #[allow(missing_docs)]
@@ -2508,6 +2641,8 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
         checkPublicDecryptAllowed(checkPublicDecryptAllowedCall),
         #[allow(missing_docs)]
         delegateAccount(delegateAccountCall),
+        #[allow(missing_docs)]
+        getVersion(getVersionCall),
     }
     #[automatically_derived]
     impl IMultichainAclCalls {
@@ -2518,6 +2653,7 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [13u8, 142u8, 110u8, 44u8],
             [25u8, 63u8, 63u8, 44u8],
             [29u8, 122u8, 133u8, 134u8],
             [59u8, 206u8, 73u8, 141u8],
@@ -2529,8 +2665,8 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IMultichainAclCalls {
         const NAME: &'static str = "IMultichainAclCalls";
-        const MIN_DATA_LENGTH: usize = 32usize;
-        const COUNT: usize = 6usize;
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const COUNT: usize = 7usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -2551,6 +2687,9 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                 }
                 Self::delegateAccount(_) => {
                     <delegateAccountCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getVersion(_) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
                 }
             }
         }
@@ -2573,6 +2712,19 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                 &[u8],
                 bool,
             ) -> alloy_sol_types::Result<IMultichainAclCalls>] = &[
+                {
+                    fn getVersion(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IMultichainAclCalls::getVersion)
+                    }
+                    getVersion
+                },
                 {
                     fn checkPublicDecryptAllowed(
                         data: &[u8],
@@ -2695,6 +2847,9 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                         inner,
                     )
                 }
+                Self::getVersion(inner) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
             }
         }
         #[inline]
@@ -2732,6 +2887,12 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                 }
                 Self::delegateAccount(inner) => {
                     <delegateAccountCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getVersion(inner) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -3456,6 +3617,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     contractAddresses,
                 },
             )
+        }
+        ///Creates a new call builder for the [`getVersion`] function.
+        pub fn getVersion(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getVersionCall, N> {
+            self.call_builder(&getVersionCall {})
         }
     }
     /// Event filters.
