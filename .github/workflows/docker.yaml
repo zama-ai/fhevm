@@ -15,32 +15,108 @@ on:
   release:
     types: [created]
   pull_request:
-    types: [labeled]
+    types: [labeled, opened, synchronize, reopened]
 permissions:
   contents: read
   packages: write
 
 jobs:
-  build-and-push-docker:
+  # Detect which files have changed
+  changes:
+    runs-on: ubuntu-latest
+    # Required permissions
+    permissions:
+      pull-requests: read
+      contents: read
+    outputs:
+      # Expose matched filters as a JSON array for the matrix
+      changes: ${{ steps.filter.outputs.changes }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 100
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          token: ${{ github.token }}
+          filters: |
+            back:
+              - 'apps/back/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'docker/back/**'
+            email:
+              - 'apps/email/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'docker/email/**'
+            orchestrator:
+              - 'apps/orchestrator/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'docker/orchestrator/**'
+            web3:
+              - 'apps/web3/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'docker/web3/**'
+            front:
+              - 'apps/front/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'docker/front/**'
+            relayer:
+              - 'apps/relayer/**'
+              - 'docker/relayer/**'
+            relayer-migrate:
+              - 'apps/relayer/**'
+              - 'docker/relayer-migrate/**'
+          list-files: json
+  
+  
+  # Build and push Docker images for services with changes
+  build-docker:
+    needs: changes
     if: |
-      github.event_name != 'pull_request' ||
+      github.event_name == 'release' || 
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && needs.changes.outputs.changes != '[]') ||
+      (github.event_name == 'push' && needs.changes.outputs.changes != '[]') ||
       (github.event.action == 'labeled' && github.event.label.name == 'docker')
     strategy:
       matrix:
-        service_name:
-          - {name: "back", context: "."}
-          - {name: "email", context: "."}
-          - {name: "orchestrator", context: "."}
-          - {name: "web3", context: "."}
-          - {name: "front", context: "."}
-          - {name: "relayer", context: "./apps/relayer"}
-          - {name: "relayer-migrate", context: "./apps/relayer"}
+        # Use include to define matrix based on the objects in the configs output
+        service: ${{ fromJSON(needs.changes.outputs.changes) }}
       fail-fast: false
     runs-on: ubuntu-latest
     permissions:
       packages: write
       contents: read
     steps:
+      # TODO: remove this when we separate the relayer service from the console
+      - name: Map Service Variables
+        uses: kanga333/variable-mapper@master
+        id: vars
+        with:
+          key: ${{ matrix.service }}
+          map: |
+            {
+              "back":           { "context": ".", "cargo_git_cli": "false" },
+              "email":          { "context": ".", "cargo_git_cli": "false" },
+              "orchestrator":   { "context": ".", "cargo_git_cli": "false" },
+              "web3":           { "context": ".", "cargo_git_cli": "false" },
+              "front":          { "context": ".", "cargo_git_cli": "false" },
+              "relayer":        { "context": "./apps/relayer", "cargo_git_cli": "true"  },
+              "relayer-migrate":{ "context": "./apps/relayer", "cargo_git_cli": "true"  }
+            }
+
       - name: Checkout Project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -74,7 +150,31 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
+      # Determine if we should push:
+      # - Push to main branch
+      # - Release
+      # - Workflow dispatch
+      - name: Determine if we should push
+        id: should-push
+        run: |
+          SHOULD_PUSH=false
+          
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            SHOULD_PUSH=true
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            SHOULD_PUSH=true
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            SHOULD_PUSH=true
+          elif [[ "${{ github.event.action }}" == "labeled" && "${{ github.event.label.name }}" == "docker" ]]; then
+            SHOULD_PUSH=true
+          fi
+          
+          echo "push=${SHOULD_PUSH}" >> $GITHUB_OUTPUT
+          echo "Will push: ${SHOULD_PUSH}"
+
+      # Only login to the registry when we intend to push
       - name: Login to GitHub Container Registry
+        if: steps.should-push.outputs.push == 'true'
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
@@ -84,23 +184,23 @@ jobs:
       - name: Docker Build and Push with Platform Tag
         uses: docker/build-push-action@5cd11c3a4ced054e52742c5fd54dca954e0edd85 # v6.7.0
         with:
-          file: docker/${{ matrix.service_name.name }}/Dockerfile
-          push: true
+          file: docker/${{ matrix.service }}/Dockerfile
+          push: ${{ steps.should-push.outputs.push }}
           pull: false
           provenance: true
           sbom: true
           target: runtime
-          build-args:
-            ${{ matrix.service_name.name == 'relayer' && format('CARGO_NET_GIT_FETCH_WITH_CLI={0}', true) || '' }}
-          context: ${{ matrix.service_name.context }}
+          build-args: |
+            ${{ env.cargo_git_cli == 'true' && format('CARGO_NET_GIT_FETCH_WITH_CLI={0}', true) || '' }}
+          context: ${{ env.context }}
           tags: |
-            ghcr.io/zama-zws/console/${{ matrix.service_name.name }}:${{ steps.set-tag.outputs.gitsha }}
-            ghcr.io/zama-zws/console/${{ matrix.service_name.name }}:latest
+            ghcr.io/zama-zws/console/${{ matrix.service }}:${{ steps.set-tag.outputs.gitsha }}
+            ghcr.io/zama-zws/console/${{ matrix.service }}:latest
 
   # TODO: find out why the test is failing
   integration-test:
     runs-on: ubuntu-latest
-    needs: [build-and-push-docker]
+    needs: [build-docker]
     if: ${{ github.event.workflow_dispatch && inputs.test }} 
     steps:
       - name: Checkout Project
