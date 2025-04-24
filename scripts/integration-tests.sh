@@ -19,7 +19,7 @@ make console-side-run
 # This isn't expected.
 # To fix this we need to extract the key-id and crs-id from the log if they are not dumped somewhere
 
-LOGS=$(docker logs generate-kms-keys)
+LOGS=$(docker logs httpz-generate-fhe-keys)
 # Extract key request IDs
 export KEY_GEN_ID=$(echo "$LOGS" | grep -A1 "insecure keygen done" | grep "request_id" | sed 's/.*"request_id": "\([^"]*\)".*/\1/')
 export CRS_GEN_ID=$(echo "$LOGS" | grep -A1 "crsgen done" | grep "request_id" | sed 's/.*"request_id": "\([^"]*\)".*/\1/')

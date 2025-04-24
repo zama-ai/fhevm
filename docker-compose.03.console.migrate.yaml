@@ -9,6 +9,9 @@ services:
       - |
         echo "Waiting for database to be ready..." &&
         until nc -z console-postgres 5432; do sleep 1; done &&
+        echo "PRINTENV" &&
+        printenv &&
+        echo "PRINTENV" &&
         echo "Running migrations..." &&
         pnpm --filter back prisma:migrate
     depends_on:

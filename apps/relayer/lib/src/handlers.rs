@@ -461,8 +461,7 @@ impl ZWSRelayerHandler {
                                         );
                         let mut ct_handles: Vec<[u8; 32]> = Vec::new();
                         for ct_handle in decryption_request.cts {
-                            // TODO: Check if to_le_bytes will work.
-                            ct_handles.push(ct_handle.to_le_bytes());
+                            ct_handles.push(ct_handle.into());
                         }
                         let contract_caller = decryption_request.contractCaller;
 
@@ -550,7 +549,7 @@ impl ZWSRelayerHandler {
                         let response = ZwsRelayerEvent::HTTPInputRegistrationResponse(
                             HTTPInputRegistrationResponse {
                                 request_id: source_request_id,
-                                handles: verification_response.handles,
+                                handles: verification_response.ctHandles,
                                 signatures: verification_response.signatures,
                             },
                         );
@@ -719,8 +718,7 @@ impl ZWSRelayerHandler {
                 Ok(eth_decryption_request) => {
                     let mut ct_handles: Vec<[u8; 32]> = Vec::new();
                     for ct_handle in eth_decryption_request.cts {
-                        // TODO: Check if to_le_bytes will work.
-                        ct_handles.push(ct_handle.to_le_bytes());
+                        ct_handles.push(ct_handle.into());
                     }
                     ct_handles
                 }

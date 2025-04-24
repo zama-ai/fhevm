@@ -68,7 +68,7 @@ console-up:
 	bash scripts/console-up.sh
 
 console-down:
-	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.run.yaml down --volumes --remove-orphans
+	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.03.console.run.yaml down --volumes --remove-orphans
 
 console-infra-up:
 	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml up -d --wait

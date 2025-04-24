@@ -18,12 +18,11 @@ services:
       - KEY_URLS=${KEY_URLS}
     env_file:
       - ./apps/back/.env.compose
-    # This returns 404 error because it's not implemented yet
-    # healthcheck:
-    #   test: ["CMD", "wget", "-qO-", "http://localhost:3005"]
-    #   interval: 30s
-    #   timeout: 5s
-    #   retries: 3
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3005/healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     ports:
       - "3005:3005"
     networks:
@@ -51,13 +50,13 @@ services:
     container_name: console-front
     env_file:
       - ./apps/front/.env.compose
-#    healthcheck:
-#      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
-#      interval: 30s
-#      timeout: 5s
-#      retries: 3
+    # healthcheck:
+    #   test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8001"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 3
     ports:
-      - "8001:8080"
+      - "8001:8080" 
     networks:
       - console-net
     depends_on:
@@ -76,7 +75,7 @@ services:
       - ./apps/orchestrator/.env.compose
     # This returns 404 error because it's not implemented yet
     # healthcheck:
-    #   test: ["CMD", "wget", "-qO-", "http://localhost:8003"]
+    #   test: ["CMD", "wget", "-qO-", "http://localhost:3001"]
     #   interval: 30s
     #   timeout: 5s
     #   retries: 3
@@ -95,7 +94,7 @@ services:
       - ./apps/web3/.env.compose
     # This returns 404 error because it's not implemented yet
     # healthcheck:
-    #   test: ["CMD", "wget", "-qO-", "http://localhost:8004"]
+    #   test: ["CMD", "wget", "-qO-", "http://localhost:3002"]
     #   interval: 30s
     #   timeout: 5s
     #   retries: 3
@@ -113,17 +112,24 @@ services:
     build:
       context: ../apps/relayer/
       dockerfile: ../../docker/relayer/Dockerfile
-    command:
+    command: 
       - "/bin/server"
       - "--config-file"
-      - "/config.toml"
+      - "/config.toml" 
+      - "--config-file"
+      - "/compose/host.toml" 
+      - "--config-file"
+      - "/compose/gateway.toml" 
     networks:
-      - zama_default
+      - httpz_default
       - console-net
     volumes:
       - type: bind
         target: /config.toml
         source: ${PWD}/apps/relayer/compose.toml
+      - type: bind
+        target: /compose/
+        source: ${PWD}/apps/relayer/compose/
     depends_on:
       # NOTE: we can't provide a dependency on the HTTPZ stack components
       # but the blockchain nodes are required
@@ -136,7 +142,6 @@ services:
 networks:
   console-net:
     name: console-net
-    external: true
-  zama_default:
-    name: zama_default
+  httpz_default:
+    name: httpz_default
     external: true

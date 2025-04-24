@@ -1,32 +1,3 @@
-[[host_chains]]
-decryption_oracle = "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
-[host_chains.chain_config]
-chain_id = 12345
-# ws_url = "ws://localhost:8546"
-# http_url = "http://localhost:8546"
-ws_url = "ws://layer1-node:8545"
-http_url = "http://layer1-node:8545"
-# ws_url = "ws://host.docker.internal:8545"
-# http_url = "http://host.docker.internal:8545"
-[host_chains.chain_config.signer_config]
-type = "LOCAL"
-private_key_env = "HTTPZ_PRIVATE_KEY"
-
-[gateway_chain]
-zkpok_manager = "0x812b06e1CDCE800494b79fFE4f925A504a9A9810"
-decryption_manager = "0x2Fb4341027eb1d2aD8B5D9708187df8633cAFA92"
-[gateway_chain.chain_config]
-chain_id = 54321
-# ws_url = "ws://localhost:8546"
-# http_url = "http://localhost:8546"
-ws_url = "ws://layer2-node:8546"
-http_url = "http://layer2-node:8546"
-# ws_url = "ws://host.docker.internal:8546"
-# http_url = "http://host.docker.internal:8546"
-[gateway_chain.chain_config.signer_config]
-type = "LOCAL"
-private_key_env = "GATEWAY_PRIVATE_KEY"
-
 [queues]
 console_queue = "http://console-aws:4566/000000000000/orchestrator-queue"
 relayer_queue = "http://console-aws:4566/000000000000/relayer-queue"

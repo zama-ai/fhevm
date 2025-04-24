@@ -19,7 +19,7 @@ A user-friendly web app to manage your FHE dApps
 
 ```bash
 # build & run local aws services and databases
-docker compose -f docker-compose.01.infra.yaml up
+make console-infra-up
 
 # set up environment
 cp apps/front/.env.template apps/front/.env

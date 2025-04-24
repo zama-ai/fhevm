@@ -21,6 +21,7 @@ These docker-compose files build a local development environment. It includes:
 
 ```bash
 make httpz-up
+make console-build
 make console-up
 make httpz-test-input
 ```

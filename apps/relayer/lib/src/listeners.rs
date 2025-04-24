@@ -113,11 +113,13 @@ pub async fn public_decryption_handler(
     State(_listener_state): State<Arc<HTTPListenerState>>,
     Json(_payload): Json<InputProofRequestJson>,
 ) -> impl IntoResponse {
-    debug!("Handling input proof request");
+    debug!("Handling http public decryption request");
     // Validate the payload
+    let error_message = "Public decryption isn't implemented yet".to_string();
     let error_response = PublicDecryptErrorResponseJson {
-        message: "Public decryption isn't implemented yet".to_string(),
+        message: error_message.clone(),
     };
+    error!(error_message);
     (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
 }
 
@@ -128,7 +130,7 @@ pub async fn private_decryption_handler(
     State(listener_state): State<Arc<HTTPListenerState>>,
     Json(payload): Json<UserDecryptRequestJson>,
 ) -> impl IntoResponse {
-    debug!("Handling input proof request");
+    debug!("Handling http private decryption request");
     // Validate the payload
     if let Err(message) = payload.validate() {
         let error_response = InputProofErrorResponseJson { message };
@@ -207,7 +209,7 @@ pub async fn input_registration_handler(
     State(listener_state): State<Arc<HTTPListenerState>>,
     Json(payload): Json<InputProofRequestJson>,
 ) -> impl IntoResponse {
-    debug!("Handling input proof request");
+    debug!("Handling http input proof request");
     // Validate the payload
     if let Err(message) = payload.validate() {
         let error_response = InputProofErrorResponseJson { message };

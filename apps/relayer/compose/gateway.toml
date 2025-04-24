@@ -1,0 +1,12 @@
+[gateway_chain]
+zkpok_manager = "0x35760912360E875DA50D40a74305575c23D55783"
+decryption_manager = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
+[gateway_chain.chain_config]
+chain_id = 54321
+ws_url = "ws://httpz-gateway-node:8546"
+http_url = "http://httpz-gateway-node:8546"
+[gateway_chain.chain_config.signer_config]
+type = "LOCAL"
+private_key_env = "GATEWAY_PRIVATE_KEY"
+
+

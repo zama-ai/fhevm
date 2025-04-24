@@ -102,25 +102,25 @@ pub struct SQSConfiguration {
 #[command(version, about, long_about = None)]
 pub struct CliArgs {
     #[arg(long = "config-file")]
-    pub config_file: Option<String>,
+    pub config_file: Vec<String>,
 }
 
 impl RelayerConfiguration {
-    pub fn new(config_file: Option<String>) -> Result<Self, String> {
+    pub fn new(config_files: Vec<String>) -> Result<Self, String> {
         // First get base config from files
-        let s = match Config::builder()
-            .add_source(
-                File::with_name(&config_file.unwrap_or("config.toml".to_string())).required(false),
-            )
-            // Change how we specify environment variables
-            // Env takes precedence over other sources
-            .add_source(
-                Environment::with_prefix("RELAYER")
-                    .separator("__") // Use double underscore
-                    .prefix_separator("_"), // Separator between RELAYER and the rest
-            )
-            .build()
-        {
+        let mut config_builder = Config::builder();
+        for config_file in config_files {
+            config_builder = config_builder.add_source(File::with_name(&config_file.clone()));
+        }
+        // Change how we specify environment variables
+        // Env takes precedence over other sources
+        config_builder = config_builder.add_source(
+            Environment::with_prefix("RELAYER")
+                .separator("__") // Use double underscore
+                .prefix_separator("_"), // Separator between RELAYER and the rest
+        );
+
+        let s = match config_builder.build() {
             Ok(value) => value,
             Err(error) => {
                 error!("{:?}", error);
@@ -231,7 +231,7 @@ async fn main() {
     let args = CliArgs::parse();
 
     // Check if the config file exists
-    if let Some(conf) = &args.config_file {
+    for conf in args.config_file.clone() {
         let conf_path = Path::new(&conf);
         if !conf_path.exists() {
             error!("Config file not found: {}", conf);
@@ -242,8 +242,6 @@ async fn main() {
             std::process::exit(1);
         }
         debug!("Using configuration file: {:?}", conf);
-    } else {
-        debug!("Not using configuration file");
     }
 
     // Settings
@@ -278,6 +276,7 @@ async fn main() {
     let signer: Arc<dyn Signer + Send + Sync> =
         match settings.gateway_chain.chain_config.signer_config {
             SignerConfig::Local(signer_config) => {
+                // TODO: catch NotPresent errors and show a better custom error
                 let mut signer: PrivateKeySigner = std::env::var(&signer_config.private_key_env)
                     .unwrap()
                     .parse()
@@ -321,6 +320,7 @@ async fn main() {
     for host_chain in settings.host_chains.clone() {
         let signer: Arc<dyn Signer + Send + Sync> = match host_chain.chain_config.signer_config {
             SignerConfig::Local(signer_config) => {
+                // TODO: catch NotPresent errors and show a better custom error
                 let mut signer: PrivateKeySigner = std::env::var(&signer_config.private_key_env)
                     .unwrap()
                     .parse()

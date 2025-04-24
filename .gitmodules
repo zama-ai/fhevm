@@ -1,4 +1,7 @@
 [submodule "apps/relayer/fhevm-relayer"]
 	path = apps/relayer/fhevm-relayer
 	url = git@github.com:zama-ai/fhevm-relayer.git
-	branch = fd0r/docker-compose-makefile
+	branch = fd0r/traits
+[submodule "external/httpz-test-suite"]
+	path = external/httpz-test-suite
+	url = git@github.com:zama-ai/httpz-test-suite.git

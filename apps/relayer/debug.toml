@@ -1,5 +1,3 @@
-mock_console = true
-
 # NOTE: Needs to be updated each time we re-gen the public material (i.e. relaunch docker compose locally)
 [key_url]
 [key_url.fhe_public_key]

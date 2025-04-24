@@ -1,22 +1,17 @@
 name: Rust CI
 
+# NOTE: could be parametrized with which package to test when we have a specific transaction manager different from the relayer itself.
+
 on:
-  pull_request:
-    paths:
-      - 'apps/relayer/**'
-      - '.github/workflows/rust_ci.yaml'
-  push:
-    branches:
-      - main
-    paths:
-      - 'apps/relayer/**'
-      - '.github/workflows/rust_ci.yaml'
+  workflow_call:
+    secrets:
+      RELAYER_TOKEN:
+        required: true
 permissions:
   contents: read
 
 jobs:
   compile-rust-unit-tests:
-    if: ${{ false }} # disable until Luis is back
     runs-on: ubuntu-latest
     strategy:
       matrix:

@@ -2,4 +2,4 @@
 
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
-cd $SCRIPTPATH/../apps/relayer/fhevm-relayer && make run-httpz
+cd $SCRIPTPATH/../external/httpz-test-suite/httpz && bash ./httpz-cli deploy

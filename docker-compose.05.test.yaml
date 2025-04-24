@@ -1,0 +1,25 @@
+services:
+  tests-e2e-debug:
+    container_name: console-tests-e2e-debug
+    image: ghcr.io/zama-ai/fhevm-e2e-test:${TESTS_VERSION:-6ff6eed}
+    env_file:
+      - ./external/httpz-test-suite/httpz/env/staging/.env.tests.local
+    environment:
+      - RELAYER_URL=${RELAYER_URL:-http://console-back:3005}
+    command:
+      - /bin/bash
+      - -c
+      - tail -f /dev/null
+    networks:
+      - httpz_default
+      - console-net
+
+
+networks:
+  console-net:
+    name: console-net
+    external: true
+  httpz_default:
+    name: httpz_default
+    external: true
+

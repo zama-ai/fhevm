@@ -1,0 +1,76 @@
+# Main CI entrypoint
+#
+# The check-changes job returns a boolean represented as a string if some changes were made to a list of folders
+# Accordingly jobs are then launched or skipped.
+# This allows to have a single entrypoint against which github can accept PR requirements or not.
+# Also this creates less actions and a more coherent view of all checks made for a PR or new commit to main.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/*
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      # Each output indicates if files in a specific component were modified
+      ci: ${{ steps.filter.outputs.ci }}
+      js: ${{ steps.filter.outputs.js }}
+      rust: ${{ steps.filter.outputs.rust }}
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+      id: filter
+      with:
+        # Define paths that trigger specific component workflows
+        # Changes to conf-trace affect multiple components
+        filters: |
+          ci:
+            - '.github/workflows/**'
+          docker:
+            - 'docker/**'
+          rust:
+            - 'apps/relayer/**'
+          js:
+            - 'apps/back/**'
+            - 'apps/email/**'
+            - 'apps/front/**'
+            - 'apps/orchestrator/**'
+            - 'apps/web3/**'
+            - 'packages/**'
+
+  js:
+    needs:
+      - check-changes
+    if: >-
+      (startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && needs.check-changes.outputs.js == 'true') ||
+      (github.event_name == 'pull_request' && needs.check-changes.outputs.ci == 'true')
+    uses: ./.github/workflows/js_ci.yaml
+    with:
+      node-version: 22
+
+  rust:
+    needs:
+      - check-changes
+    if: >-
+      (startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && needs.check-changes.outputs.rust == 'true') ||
+      (github.event_name == 'pull_request' && needs.check-changes.outputs.ci == 'true')
+    uses: ./.github/workflows/rust_ci.yaml
+    secrets:
+      RELAYER_TOKEN: ${{ secrets.RELAYER_TOKEN }}
+    # TODO: setup S3 cache
+    #   AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+    #   AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+

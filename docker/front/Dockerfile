@@ -24,7 +24,7 @@ RUN mkdir -p /prod/front/dist/scripts
 COPY ./apps/front/src/public/scripts /prod/front/dist/scripts
 
 # --- Runtime stage ---
-FROM nginx:1.24-alpine
+FROM nginx:1.24-alpine as runtime
 WORKDIR /prod-wrkspc
 COPY --from=builder /prod/front/dist /usr/share/nginx/html/
 COPY /docker/front/nginx.conf /etc/nginx/nginx.conf
