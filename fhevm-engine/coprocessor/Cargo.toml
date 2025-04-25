@@ -67,6 +67,10 @@ path = "src/bin/coprocessor.rs"
 name = "cli"
 path = "src/bin/cli.rs"
 
+[[bin]]
+name = "utils"
+path = "src/bin/utils.rs"
+
 [[bench]]
 name = "erc20"
 path = "benches/erc20.rs"

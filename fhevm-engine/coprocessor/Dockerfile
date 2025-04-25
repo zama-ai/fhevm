@@ -48,7 +48,7 @@ COPY --from=build /app/fhevm-engine/target/release/sns_worker /usr/local/bin/sns
 COPY --from=build /app/fhevm-engine/target/release/transaction_sender /usr/local/bin/transaction_sender
 
 RUN groupadd -g 10001 zama && \
-     useradd -u 10000 -g zama zama && \
+    useradd -u 10000 -g zama zama && \
     chown -R zama:zama /usr/local/bin && \
     chmod 500 /usr/local/bin/coprocessor && \
     chmod 500 /usr/local/bin/cli && \

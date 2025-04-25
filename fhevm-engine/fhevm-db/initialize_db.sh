@@ -29,14 +29,17 @@ sqlx migrate run --source $MIGRATION_DIR || { echo "Failed to run migrations."; 
 
 echo "-------------- Start inserting keys for tenant: $TENANT_API_KEY --------------"
 
+
 CHAIN_ID=${CHAIN_ID:-"12345"}
 PKS_FILE=${PKS_FILE:-"$KEY_DIR/pks"}
-SKS_FILE=${SKS_FILE:-"$KEY_DIR/sks"}
 PUBLIC_PARAMS_FILE=${PUBLIC_PARAMS_FILE:-"$KEY_DIR/pp"}
 SNS_PK_FILE=${SNS_PK_FILE:-"$KEY_DIR/sns_pk"}
 KEY_ID=${KEY_ID:-"10f49fdf75a123370ce2e2b1c5cc0615fb6e78dd829d0d850470cdbc84f15c11"}
 KEY_ID_HEX="\\x${KEY_ID}"
 
+# Extract small ServerKey from ServerKey with noise squashing keys
+SKS_FILE="/tmp/sks"
+/usr/local/bin/utils extract-sks-without-noise --src-path $SNS_PK_FILE --dst-path $SKS_FILE
 
 for file in "$PKS_FILE" "$SKS_FILE" "$PUBLIC_PARAMS_FILE" "$SNS_PK_FILE"; do
     if [[ ! -f $file ]]; then
