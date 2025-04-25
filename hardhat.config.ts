@@ -1,6 +1,7 @@
 import "@nomicfoundation/hardhat-toolbox";
 import "@openzeppelin/hardhat-upgrades";
 import dotenv from "dotenv";
+import "hardhat-ignore-warnings";
 import { HardhatUserConfig, task } from "hardhat/config";
 import { resolve } from "path";
 
@@ -107,6 +108,12 @@ const config: HardhatUserConfig = {
       },
       evmVersion: "cancun",
       viaIR: false,
+    },
+  },
+  warnings: {
+    // Turn off all warnings for mocked contracts
+    "contracts/mocks/*": {
+      default: "off",
     },
   },
   paths: {
