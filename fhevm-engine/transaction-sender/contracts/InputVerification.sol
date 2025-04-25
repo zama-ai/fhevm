@@ -7,14 +7,21 @@ contract InputVerification {
     event VerifyProofResponseCalled(uint256, bytes32[], bytes);
     event RejectProofResponseCalled(uint256);
 
-    error CoprocessorSignerAlreadyResponded(uint256 zkProofId, address signer);
+    error CoprocessorSignerAlreadyVerified(uint256 zkProofId, address signer);
+    error CoprocessorSignerAlreadyRejected(uint256 zkProofId, address signer);
 
-    bool alreadyRespondedRevert;
-    bool generalRevert;
+    bool alreadyVerifiedRevert;
+    bool alreadyRejectedRevert;
+    bool otherRevert;
 
-    constructor(bool _alreadyRespondedRevert, bool _generalRevert) {
-        alreadyRespondedRevert = _alreadyRespondedRevert;
-        generalRevert = _generalRevert;
+    constructor(
+        bool _alreadyVerifiedRevert,
+        bool _alreadyRejectedRevert,
+        bool _otherRevert
+    ) {
+        alreadyVerifiedRevert = _alreadyVerifiedRevert;
+        alreadyRejectedRevert = _alreadyRejectedRevert;
+        otherRevert = _otherRevert;
     }
 
     function verifyProofResponse(
@@ -22,24 +29,24 @@ contract InputVerification {
         bytes32[] calldata handles,
         bytes calldata signature
     ) public {
-        if (generalRevert) {
-            revert("General revert");
+        if (otherRevert) {
+            revert("Other revert");
         }
 
-        if (alreadyRespondedRevert) {
-            revert CoprocessorSignerAlreadyResponded(zkProofId, msg.sender);
+        if (alreadyVerifiedRevert) {
+            revert CoprocessorSignerAlreadyVerified(zkProofId, msg.sender);
         }
 
         emit VerifyProofResponseCalled(zkProofId, handles, signature);
     }
 
     function rejectProofResponse(uint256 zkProofId) public {
-        if (generalRevert) {
-            revert("General revert");
+        if (otherRevert) {
+            revert("Other revert");
         }
 
-        if (alreadyRespondedRevert) {
-            revert CoprocessorSignerAlreadyResponded(zkProofId, msg.sender);
+        if (alreadyRejectedRevert) {
+            revert CoprocessorSignerAlreadyRejected(zkProofId, msg.sender);
         }
 
         emit RejectProofResponseCalled(zkProofId);

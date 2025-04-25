@@ -17,6 +17,7 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
     operations: Vec<Arc<dyn ops::TransactionOperation<P>>>,
     input_verification_address: Address,
     ciphertext_commits_address: Address,
+    multichain_acl_address: Address,
     db_pool: Pool<Postgres>,
 }
 
@@ -70,13 +71,14 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             operations,
             input_verification_address,
             ciphertext_commits_address,
+            multichain_acl_address,
             db_pool,
         })
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        info!(target: TXN_SENDER_TARGET, "Starting Transaction Sender with: {:?}, InputVerification: {}, CiphertextCommits: {}",
-            self.conf, self.input_verification_address, self.ciphertext_commits_address);
+        info!(target: TXN_SENDER_TARGET, "Starting Transaction Sender with: {:?}, InputVerification: {}, CiphertextCommits: {}, MultichainAcl: {}",
+            self.conf, self.input_verification_address, self.ciphertext_commits_address, self.multichain_acl_address);
 
         let mut join_set = JoinSet::new();
 

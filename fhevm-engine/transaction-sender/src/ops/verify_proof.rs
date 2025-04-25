@@ -117,11 +117,18 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
             Ok(txn) => txn,
             Err(e) => {
                 error!(target: VERIFY_PROOFS_TARGET, "Transaction {:?} sending failed with error: {}", txn_req, e);
-                if let Some(InputVerificationErrors::CoprocessorSignerAlreadyResponded(_)) = e
+                if let Some(InputVerificationErrors::CoprocessorSignerAlreadyVerified(_)) = e
                     .as_error_resp()
                     .and_then(|payload| payload.as_decoded_error::<InputVerificationErrors>(true))
                 {
-                    info!(target: VERIFY_PROOFS_TARGET, "Coprocessor has already responded, removing proof");
+                    info!(target: VERIFY_PROOFS_TARGET, "Coprocessor has already verified the proof, removing it from the DB");
+                    self.remove_proof_by_id(txn_request.0).await?;
+                    return Ok(());
+                } else if let Some(InputVerificationErrors::CoprocessorSignerAlreadyRejected(_)) = e
+                    .as_error_resp()
+                    .and_then(|payload| payload.as_decoded_error::<InputVerificationErrors>(true))
+                {
+                    info!(target: VERIFY_PROOFS_TARGET, "Coprocessor has already rejected the proof, removing it from the DB");
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
                 } else {
