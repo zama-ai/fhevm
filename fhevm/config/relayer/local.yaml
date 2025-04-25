@@ -26,7 +26,7 @@ networks:
     max_reconnection_attempts: 3
 
 transaction:
-  private_key_httpz_env: FHEVM_PRIVATE_KEY
+  private_key_fhevm_env: FHEVM_PRIVATE_KEY
   private_key_gateway_env: GATEWAY_PRIVATE_KEY
   gas_limit: 150000
   max_priority_fee: 2000000000
