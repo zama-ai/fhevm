@@ -2,7 +2,7 @@
 
 ## Handling Sensitive Data
 
-This document outlines security best practices for the HTTPZ project, particularly regarding the handling of sensitive configuration data.
+This document outlines security best practices for the fhevm project, particularly regarding the handling of sensitive configuration data.
 
 ### Environment Files
 

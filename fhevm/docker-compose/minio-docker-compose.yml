@@ -1,0 +1,50 @@
+services:
+  minio:
+    container_name: fhevm-minio
+    image: quay.io/minio/minio
+    env_file:
+      - ../env/staging/.env.minio.local
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    entrypoint: >
+      minio server /data --console-address ":9001"
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 1s
+      timeout: 10s
+      retries: 10
+
+  minio-setup:
+    container_name: fhevm-minio-setup
+    image: quay.io/minio/mc
+    env_file:
+      - ../env/staging/.env.minio.local
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        sleep 1
+        mc alias set myminio $${MINIO_ENDPOINT} $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}
+        mc admin user add myminio $${ACCESS_KEY} $${SECRET_KEY}
+        mc admin policy attach myminio readwrite --user $${ACCESS_KEY}
+        echo $${ACCESS_KEY}
+        echo $${SECRET_KEY}
+        echo $${ACCESS_KEY} > /minio_secrets/access_key
+        echo $${SECRET_KEY} > /minio_secrets/secret_key
+        cat /minio_secrets/access_key
+        cat /minio_secrets/secret_key
+        mc mb --with-lock --ignore-existing myminio/kms-public
+        mc mb --with-lock --ignore-existing myminio/ct64
+        mc mb --with-lock --ignore-existing myminio/ct128
+        mc anonymous set public myminio/kms-public
+        mc anonymous set public myminio/ct64
+        mc anonymous set public myminio/ct128
+    volumes:
+      - minio_secrets:/minio_secrets
+    depends_on:
+      minio:
+        condition: service_healthy
+
+volumes:
+  minio_secrets:

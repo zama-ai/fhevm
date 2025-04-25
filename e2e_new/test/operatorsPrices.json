@@ -1,0 +1,465 @@
+{
+  "fheAdd": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 94000,
+      "Uint16": 133000,
+      "Uint32": 162000,
+      "Uint64": 188000,
+      "Uint128": 218000
+    },
+    "nonScalar": {
+      "Uint8": 94000,
+      "Uint16": 133000,
+      "Uint32": 162000,
+      "Uint64": 188000,
+      "Uint128": 218000
+    }
+  },
+  "fheSub": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 94000,
+      "Uint16": 133000,
+      "Uint32": 162000,
+      "Uint64": 188000,
+      "Uint128": 218000
+    },
+    "nonScalar": {
+      "Uint8": 94000,
+      "Uint16": 133000,
+      "Uint32": 162000,
+      "Uint64": 188000,
+      "Uint128": 218000
+    }
+  },
+  "fheMul": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 159000,
+      "Uint16": 208000,
+      "Uint32": 264000,
+      "Uint64": 356000,
+      "Uint128": 480000
+    },
+    "nonScalar": {
+      "Uint8": 197000,
+      "Uint16": 262000,
+      "Uint32": 359000,
+      "Uint64": 641000,
+      "Uint128": 1145000
+    }
+  },
+  "fheDiv": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 238000,
+      "Uint16": 314000,
+      "Uint32": 398000,
+      "Uint64": 584000,
+      "Uint128": 857000
+    }
+  },
+  "fheRem": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 460000,
+      "Uint16": 622000,
+      "Uint32": 805000,
+      "Uint64": 1095000,
+      "Uint128": 1499000
+    }
+  },
+  "fheBitAnd": {
+    "binary": true,
+    "scalar": {
+      "Bool": 26000,
+      "Uint8": 34000,
+      "Uint16": 34000,
+      "Uint32": 35000,
+      "Uint64": 38000,
+      "Uint128": 41000,
+      "Uint256": 44000
+    },
+    "nonScalar": {
+      "Bool": 26000,
+      "Uint8": 34000,
+      "Uint16": 34000,
+      "Uint32": 35000,
+      "Uint64": 38000,
+      "Uint128": 41000,
+      "Uint256": 44000
+    }
+  },
+  "fheBitOr": {
+    "binary": true,
+    "scalar": {
+      "Bool": 26000,
+      "Uint8": 34000,
+      "Uint16": 34000,
+      "Uint32": 35000,
+      "Uint64": 38000,
+      "Uint128": 41000,
+      "Uint256": 44000
+    },
+    "nonScalar": {
+      "Bool": 26000,
+      "Uint8": 34000,
+      "Uint16": 34000,
+      "Uint32": 35000,
+      "Uint64": 38000,
+      "Uint128": 41000,
+      "Uint256": 44000
+    }
+  },
+  "fheBitXor": {
+    "binary": true,
+    "scalar": {
+      "Bool": 26000,
+      "Uint8": 34000,
+      "Uint16": 34000,
+      "Uint32": 35000,
+      "Uint64": 38000,
+      "Uint128": 41000,
+      "Uint256": 44000
+    },
+    "nonScalar": {
+      "Bool": 26000,
+      "Uint8": 34000,
+      "Uint16": 34000,
+      "Uint32": 35000,
+      "Uint64": 38000,
+      "Uint128": 41000,
+      "Uint256": 44000
+    }
+  },
+  "fheShl": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 35000,
+      "Uint16": 35000,
+      "Uint32": 35000,
+      "Uint64": 38000,
+      "Uint128": 41000,
+      "Uint256": 44000
+    },
+    "nonScalar": {
+      "Uint8": 133000,
+      "Uint16": 153000,
+      "Uint32": 183000,
+      "Uint64": 227000,
+      "Uint128": 282000,
+      "Uint256": 350000
+    }
+  },
+  "fheShr": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 35000,
+      "Uint16": 35000,
+      "Uint32": 35000,
+      "Uint64": 38000,
+      "Uint128": 41000,
+      "Uint256": 44000
+    },
+    "nonScalar": {
+      "Uint8": 133000,
+      "Uint16": 153000,
+      "Uint32": 183000,
+      "Uint64": 227000,
+      "Uint128": 282000,
+      "Uint256": 350000
+    }
+  },
+  "fheRotl": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 35000,
+      "Uint16": 35000,
+      "Uint32": 35000,
+      "Uint64": 38000,
+      "Uint128": 41000,
+      "Uint256": 44000
+    },
+    "nonScalar": {
+      "Uint8": 133000,
+      "Uint16": 153000,
+      "Uint32": 183000,
+      "Uint64": 227000,
+      "Uint128": 282000,
+      "Uint256": 350000
+    }
+  },
+  "fheRotr": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 35000,
+      "Uint16": 35000,
+      "Uint32": 35000,
+      "Uint64": 38000,
+      "Uint128": 41000,
+      "Uint256": 44000
+    },
+    "nonScalar": {
+      "Uint8": 133000,
+      "Uint16": 153000,
+      "Uint32": 183000,
+      "Uint64": 227000,
+      "Uint128": 282000,
+      "Uint256": 350000
+    }
+  },
+  "fheEq": {
+    "binary": true,
+    "scalar": {
+      "Bool": 49000,
+      "Uint8": 53000,
+      "Uint16": 54000,
+      "Uint32": 82000,
+      "Uint64": 86000,
+      "Uint128": 88000,
+      "Uint160": 90000,
+      "Uint256": 100000,
+      "Uint512": 150000,
+      "Uint1024": 200000,
+      "Uint2048": 300000
+    },
+    "nonScalar": {
+      "Bool": 49000,
+      "Uint8": 53000,
+      "Uint16": 54000,
+      "Uint32": 82000,
+      "Uint64": 86000,
+      "Uint128": 88000,
+      "Uint160": 90000,
+      "Uint256": 100000,
+      "Uint512": 150000,
+      "Uint1024": 200000,
+      "Uint2048": 300000
+    }
+  },
+  "fheNe": {
+    "binary": true,
+    "scalar": {
+      "Bool": 49000,
+      "Uint8": 53000,
+      "Uint16": 54000,
+      "Uint32": 82000,
+      "Uint64": 86000,
+      "Uint128": 88000,
+      "Uint160": 90000,
+      "Uint256": 100000,
+      "Uint512": 150000,
+      "Uint1024": 200000,
+      "Uint2048": 300000
+    },
+    "nonScalar": {
+      "Bool": 49000,
+      "Uint8": 53000,
+      "Uint16": 54000,
+      "Uint32": 82000,
+      "Uint64": 86000,
+      "Uint128": 88000,
+      "Uint160": 90000,
+      "Uint256": 100000,
+      "Uint512": 150000,
+      "Uint1024": 200000,
+      "Uint2048": 300000
+    }
+  },
+  "fheGe": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 82000,
+      "Uint16": 105000,
+      "Uint32": 128000,
+      "Uint64": 156000,
+      "Uint128": 190000
+    },
+    "nonScalar": {
+      "Uint8": 82000,
+      "Uint16": 105000,
+      "Uint32": 128000,
+      "Uint64": 156000,
+      "Uint128": 190000
+    }
+  },
+  "fheGt": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 82000,
+      "Uint16": 105000,
+      "Uint32": 128000,
+      "Uint64": 156000,
+      "Uint128": 190000
+    },
+    "nonScalar": {
+      "Uint8": 82000,
+      "Uint16": 105000,
+      "Uint32": 128000,
+      "Uint64": 156000,
+      "Uint128": 190000
+    }
+  },
+  "fheLe": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 82000,
+      "Uint16": 105000,
+      "Uint32": 128000,
+      "Uint64": 156000,
+      "Uint128": 190000
+    },
+    "nonScalar": {
+      "Uint8": 82000,
+      "Uint16": 105000,
+      "Uint32": 128000,
+      "Uint64": 156000,
+      "Uint128": 190000
+    }
+  },
+  "fheLt": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 82000,
+      "Uint16": 105000,
+      "Uint32": 128000,
+      "Uint64": 156000,
+      "Uint128": 190000
+    },
+    "nonScalar": {
+      "Uint8": 82000,
+      "Uint16": 105000,
+      "Uint32": 128000,
+      "Uint64": 156000,
+      "Uint128": 190000
+    }
+  },
+  "fheMin": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 128000,
+      "Uint16": 150000,
+      "Uint32": 164000,
+      "Uint64": 192000,
+      "Uint128": 225000
+    },
+    "nonScalar": {
+      "Uint8": 128000,
+      "Uint16": 153000,
+      "Uint32": 183000,
+      "Uint64": 210000,
+      "Uint128": 241000
+    }
+  },
+  "fheMax": {
+    "binary": true,
+    "scalar": {
+      "Uint8": 128000,
+      "Uint16": 150000,
+      "Uint32": 164000,
+      "Uint64": 192000,
+      "Uint128": 225000
+    },
+    "nonScalar": {
+      "Uint8": 128000,
+      "Uint16": 153000,
+      "Uint32": 183000,
+      "Uint64": 210000,
+      "Uint128": 241000
+    }
+  },
+  "fheNeg": {
+    "binary": false,
+    "types": {
+      "Uint8": 95000,
+      "Uint16": 131000,
+      "Uint32": 160000,
+      "Uint64": 199000,
+      "Uint128": 248000,
+      "Uint256": 309000
+    }
+  },
+  "fheNot": {
+    "binary": false,
+    "types": {
+      "Bool": 30000,
+      "Uint8": 34000,
+      "Uint16": 35000,
+      "Uint32": 36000,
+      "Uint64": 37000,
+      "Uint128": 38000,
+      "Uint256": 39000
+    }
+  },
+  "cast": {
+    "binary": false,
+    "types": {
+      "Bool": 200,
+      "Uint8": 200,
+      "Uint16": 200,
+      "Uint32": 200,
+      "Uint64": 200,
+      "Uint128": 200,
+      "Uint256": 200
+    }
+  },
+  "trivialEncrypt": {
+    "binary": false,
+    "types": {
+      "Bool": 100,
+      "Uint8": 100,
+      "Uint16": 200,
+      "Uint32": 300,
+      "Uint64": 600,
+      "Uint128": 650,
+      "Uint160": 700,
+      "Uint256": 800,
+      "Uint512": 1600,
+      "Uint1024": 3200,
+      "Uint2048": 6400
+    }
+  },
+  "ifThenElse": {
+    "binary": false,
+    "types": {
+      "Bool": 43000,
+      "Uint8": 47000,
+      "Uint16": 47000,
+      "Uint32": 50000,
+      "Uint64": 53000,
+      "Uint128": 70000,
+      "Uint160": 80000,
+      "Uint256": 90000,
+      "Uint512": 150000,
+      "Uint1024": 200000,
+      "Uint2048": 300000
+    }
+  },
+  "fheRand": {
+    "binary": false,
+    "types": {
+      "Bool": 100000,
+      "Uint8": 100000,
+      "Uint16": 100000,
+      "Uint32": 100000,
+      "Uint64": 100000,
+      "Uint128": 100000,
+      "Uint256": 100000,
+      "Uint512": 200000,
+      "Uint1024": 300000,
+      "Uint2048": 400000
+    }
+  },
+  "fheRandBounded": {
+    "binary": false,
+    "types": {
+      "Uint8": 100000,
+      "Uint16": 100000,
+      "Uint32": 100000,
+      "Uint64": 100000,
+      "Uint128": 100000,
+      "Uint256": 100000
+    }
+  }
+}

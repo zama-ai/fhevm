@@ -1,0 +1,118 @@
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT="fhevm"
+
+export CORE_VERSION=${CORE_VERSION:-"nightly-fd875f9-amd64-prod"}
+export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"0b81d9e"}
+export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"b2a2895"}
+export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"b2a2895"}
+export HOST_VERSION=${HOST_VERSION:-"37e9517"}
+export GATEWAY_VERSION=${GATEWAY_VERSION:-"980e5b0"}
+export RELAYER_VERSION=${RELAYER_VERSION:-"e150de4"}
+export TESTS_VERSION=${TESTS_VERSION:-"e1d89a4"}
+
+function usage {
+  echo "Usage: fhevm-cli COMMAND [OPTIONS]"
+  echo
+  echo "Commands:"
+  echo "  deploy              Deploy the full fhevm stack"
+  echo "  test [TYPE]         Run tests (input-proof|user-decryption|public-decryption|erc20|debug)"
+  echo "  upgrade [SERVICE]   Upgrade specific service (host|gateway|connector|coprocessor|relayer|tests)"
+  echo "  clean               Remove all containers and volumes"
+  echo "  logs [SERVICE]      View logs for a specific service"
+  echo "  help                Display this help message"
+  echo
+  echo "Examples:"
+  echo "  ./fhevm-cli deploy"
+  echo "  ./fhevm-cli test input-proof"
+  echo "  ./fhevm-cli test user-decryption"
+  echo "  ./fhevm-cli test public-decryption"
+  echo "  ./fhevm-cli test erc20"
+  echo "  ./fhevm-cli upgrade coprocessor"
+}
+
+COMMAND=$1
+shift
+
+case $COMMAND in
+  deploy)
+    "${SCRIPT_DIR}/scripts/deploy-fhevm-stack.sh"
+    ;;
+    
+  test)
+    TEST_TYPE=$1
+    case $TEST_TYPE in
+      input-proof)
+        echo "Running input proof test..."
+        docker exec fhevm-tests-e2e-debug ./run-tests.sh
+        ;;
+      user-decryption)
+        echo "Running user decryption test: ebool type..."
+        docker exec fhevm-tests-e2e-debug ./run-tests.sh "test reencrypt ebool"
+        ;;
+      public-decryption)
+        echo "Running public decryption test: euint64 type..."
+        docker exec fhevm-tests-e2e-debug ./run-tests.sh "test async decrypt uint64"
+        ;;
+      public-decryption-ebytes256)
+        echo "Running public decryption test: ebytes256 type..."
+        docker exec fhevm-tests-e2e-debug ./run-tests.sh "test async decrypt ebytes256 trivial"
+        ;;
+      erc20)
+        echo "Running erc20 test..."
+        docker exec fhevm-tests-e2e-debug ./run-tests.sh "should transfer tokens between two users."
+        ;;
+      debug)
+        echo "Running e2e test debug..."
+        docker exec -it fhevm-tests-e2e-debug bash
+        ;;
+      *)
+        echo "Unknown test type: $TEST_TYPE"
+        usage
+        exit 1
+        ;;
+    esac
+    ;;
+    
+  help|-h|--help)
+    usage
+    exit 0
+    ;;
+    
+  upgrade)
+    SERVICE=$1
+    if [[ ! $SERVICE =~ ^(minio|core|gateway|host|connector|coprocessor|relayer|tests)$ ]]; then
+      echo "Unknown service: $SERVICE"
+      usage
+      exit 1
+    fi
+    
+    echo "Upgrading $SERVICE..."
+    docker compose -p "${PROJECT}" --env-file "${SCRIPT_DIR}/env/staging/.env.${SERVICE}.local"  -f "${SCRIPT_DIR}/docker-compose/${SERVICE}-docker-compose.yml" up -d
+    ;;
+    
+  clean)
+    echo "Cleaning up fhevm stack..."
+    docker compose -p "${PROJECT}" down -v --remove-orphans
+    ;;
+    
+  logs)
+    SERVICE=$1
+    if [ -z "${SERVICE}" ]; then
+      echo "Service name is required"
+      usage
+      exit 1
+    fi
+    
+    echo "Showing logs for $SERVICE..."
+    docker logs "${PROJECT}-${SERVICE}"
+    ;;
+    
+  *)
+    echo "Unknown command: ${COMMAND}"
+    usage
+    exit 1
+    ;;
+esac

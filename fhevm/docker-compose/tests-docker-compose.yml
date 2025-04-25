@@ -1,0 +1,9 @@
+services:
+
+  tests-e2e-debug:
+    container_name: fhevm-tests-e2e-debug
+    image: ghcr.io/zama-ai/fhevm-test-suite/e2e-new:${TESTS_VERSION}
+    env_file:
+      - ../env/staging/.env.tests.local
+    command:
+      - tail -f /dev/null
