@@ -82,7 +82,7 @@ async fn main() -> eyre::Result<()> {
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
 
     let mut host_signer: PrivateKeySigner =
-        std::env::var(&settings.transaction.private_key_httpz_env)
+        std::env::var(&settings.transaction.private_key_fhevm_env)
             .unwrap_or(String::new())
             .parse()?;
     host_signer.set_chain_id(Some(settings.networks.fhevm.chain_id));

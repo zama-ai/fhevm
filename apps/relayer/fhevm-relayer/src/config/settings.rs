@@ -70,8 +70,8 @@ impl NetworksConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct TransactionConfig {
-    /// Environment variable name containing the private key for httpz
-    pub private_key_httpz_env: String,
+    /// Environment variable name containing the private key for fhevm
+    pub private_key_fhevm_env: String,
     /// Environment variable name containing the private key for rollup
     pub private_key_gateway_env: String,
     /// Optional gas limit for transactions

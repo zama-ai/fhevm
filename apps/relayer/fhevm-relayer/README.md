@@ -1,15 +1,33 @@
-# fhEVM Relayer Service
+# fhevm Relayer Service
 
-A bridge service connecting HTTPZ and Gateway networks.
+fhevm (Fully Homomorphic Encryption Virtual Machine) relayer service is a bridge connecting fhevm blockchains and Gateway.
+It enables the following functionalities for the fhevm blockchains:
 
-## Overview
+- **Public Decryption**:
 
-The fhEVM Relayer provides crucial connectivity between Ethereum HTTPZ and Gateway networks for FHE-related operations:
+  - Decrypt ciphertexts on fhevm blockchains to plain text.
+  - Public decryption should be permitted for the ciphertext handle on fhevm blockchain.
+  - Requests are received as fhevm blockchain events or call to public decryption HTTP endpoint.
+  - Received requests are relayed to gateway, which processes it and emits a response event.
+  - Responses are relayed back to fhevm blockchain or the HTTP caller.
 
-- **Public Decryption**: Relays decryption requests from HTTPZ event (or from user) to Gateway, and responses back to HTTPZ (or to user)
-- **Input Proof Verification**: Handles zero-knowledge proof verification between layers
-- **User Decryption**: Supports user-specific decryption operations (HTTP request)
-- **Key Materialn**: Exposes key material URLs (as FHE public key, FHE evaluation key ...)
+- **Input proof verification**:
+
+  - Verify and attest ZKPoK (Zero Knowledge Proof of Plaintext Knowledge) on input ciphertexts is valid or not.
+  - Requests are received as calls to input proof HTTP endpoint.
+  - Received requests are relayed to gateway, which processes it and emits a response event.
+  - Responses are relayed back to the HTTP caller.
+
+- **User Decryption**:
+
+  - Decrypt ciphertexts encrypted with fhevm keys on fhevm blockchains to ciphertext encrypted with public key provided by the user.
+  - User should have the permission to access the ciphertext handle.
+  - Requests are received as call to user decryption HTTP endpoint.
+  - Received requests are relayed to gateway, which processes it and emits a response event.
+  - Responses are relayed back to the HTTP caller.
+
+- **Key Material**:
+  - Exposes key material URLs (as FHE public key, FHE evaluation key ...)
 
 ## Architecture
 
@@ -17,7 +35,7 @@ The system follows an event-driven architecture with these key components:
 
 - **Orchestrator**: Central coordinator for event flow and handling
 - **Event Handlers**: Process specific event types:
-  - `EthereumHostL1Handler`: Manages HTTPZ events and responses
+  - `EthereumHostL1Handler`: Manages fhevm events and responses
   - `ArbitrumGatewayL2Handler`: Handles Gateway interaction for decryption
   - `ArbitrumGatewayL2InputHandler`: Processes input verification
 - **Transaction Service**: Reliable transaction management
@@ -33,7 +51,7 @@ src
 ├── blockchain               # Blockchain connectivity
 │   ├── ethereum             # Bindings of contracts
 │   ├── gateway              # Gateway interactions
-│   └── httpz                # HTTPZ interactions
+│   └── fhevm                # fhevm interactions
 ├── config                   # Configuration handling
 ├── core                     # Core domain types and utilities
 │   ├── errors.rs            # Error types
@@ -46,7 +64,7 @@ src
 │   ├── keyurl_http_listener.rs # Key URL endpoint
 │   └── userdecrypt_http_listener.rs # User decryption endpoint
 ├── orchestrator             # Event orchestration system
-│   ├── orchestrator.rs      # Core orchestrator 
+│   ├── orchestrator.rs      # Core orchestrator
 │   ├── tokio_event_dispatcher.rs # Async event dispatch
 │   └── traits.rs            # Interface definitions
 └── transaction              # Transaction management
@@ -60,11 +78,12 @@ src
 ### Prerequisites
 
 - Rust 1.70+
-- Access to Ethereum HTTPZ and Gateway RPC endpoints
+- Access to Ethereum fhevm and Gateway RPC endpoints
 
 ### Configuration
 
 Configuration is handled via:
+
 - Environment variables
 - YAML files in `config/` directory
 - Command-line arguments
@@ -76,7 +95,7 @@ environment: development
 networks:
   fhevm:
     ws_url: "ws://localhost:8545"
-    http_url: "http://localhost:8545" 
+    http_url: "http://localhost:8545"
     chain_id: 12345
   rollup:
     ws_url: "ws://localhost:8546"
@@ -88,7 +107,7 @@ contracts:
   decryption_manager_address: "0x9876..."
   zkpok_manager_address: "0xef01..."
 transaction:
-  private_key_httpz_env: "FHEVM_PRIVATE_KEY"
+  private_key_fhevm_env: "FHEVM_PRIVATE_KEY"
   private_key_gateway_env: "ROLLUP_PRIVATE_KEY"
   gas_limit: 1000000
   max_priority_fee: "2000000000"
@@ -100,12 +119,12 @@ transaction:
 ### Full setup using docker
 
 This setup is using real components:
+
 - coprocessor
 - relayer
 - zkpok verifier
 
 See [deployments](./deployments/README.md)
-
 
 ### Setup with mock and tests (from binaries)
 
@@ -127,7 +146,7 @@ cargo build --release
 ### Environment Variables
 
 - `RUN_MODE`: Select configuration environment (development, production)
-- `FHEVM_PRIVATE_KEY`: Private key for HTTPZ transactions
+- `FHEVM_PRIVATE_KEY`: Private key for fhevm transactions
 - `ROLLUP_PRIVATE_KEY`: Private key for Gateway transactions
 - `APP_LOG__LEVEL`: Log level (trace, debug, info, warn, error)
 
@@ -140,9 +159,10 @@ POST /input-proof
 ```
 
 Request:
+
 ```json
 {
-  "contractChainId": "123456", 
+  "contractChainId": "123456",
   "contractAddress": "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
   "userAddress": "0x12B064FB845C1cc05e9493856a1D637a73e944bE",
   "ciphertextWithZkpok": "abcdef..."
@@ -150,6 +170,7 @@ Request:
 ```
 
 Response:
+
 ```json
 {
   "response": {
@@ -166,9 +187,10 @@ POST /user-decrypt
 ```
 
 Request:
+
 ```json
 {
-  "signature": "0x123...", 
+  "signature": "0x123...",
   "userAddress": "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
   "enc_key": "0x456...",
   "ct_handle": "0x789...",
@@ -178,6 +200,7 @@ Request:
 ```
 
 Response:
+
 ```json
 {
   "response": {
@@ -194,15 +217,18 @@ GET /keyurl
 ```
 
 Response:
+
 ```json
 {
   "response": {
-    "fhe_key_info": [{
-      "fhe_public_key": {
-        "data_id": "fhe_public_key_1",
-        "urls": ["s3://bucket/id"]
+    "fhe_key_info": [
+      {
+        "fhe_public_key": {
+          "data_id": "fhe_public_key_1",
+          "urls": ["s3://bucket/id"]
+        }
       }
-    }],
+    ],
     "crs": {
       "2048": {
         "data_id": "crs_2048",
