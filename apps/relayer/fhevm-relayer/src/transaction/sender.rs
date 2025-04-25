@@ -2,11 +2,12 @@ use alloy::{
     network::TransactionBuilder,
     // network::{EthereumWallet, TransactionBuilder},
     primitives::{Address, Bytes, B256, U256},
-    providers::{Provider, ProviderBuilder},
+    providers::{fillers::CachedNonceManager, fillers::NonceFiller, Provider, ProviderBuilder},
     rpc::types::{TransactionReceipt, TransactionRequest},
     signers::Signer,
     transports::http::{Client, Http},
 };
+
 use eyre::Result;
 use reqwest::Url;
 use std::fmt;
@@ -151,7 +152,8 @@ impl TransactionManager {
             .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {}", e)))?;
 
         let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
+            .filler(NonceFiller::new(CachedNonceManager::default()))
+            .filler(alloy::providers::fillers::GasFiller)
             .on_http(url);
 
         // let wallet = EthereumWallet::from(signer);
