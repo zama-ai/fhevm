@@ -1,5 +1,6 @@
 scDeploy:
   enabled: true
+  nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm-gateway/sc-bundle
     tag: v0.1.0-rc11
@@ -15,13 +16,6 @@ scDeploy:
       value: "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
     - name: RPC_URL
       value: "http://gateway-node:8546"
-  persistence:
-    enabled: true
-    volumeClaim:
-      name: ""
-      create: true
-      storageClassName: ""
-      storageCapacity: 1Gi
   resources:
     requests:
       cpu: 100m
@@ -33,3 +27,15 @@ scDeploy:
     runAsNonRoot: true
     runAsUser: 10000
     fsGroup: 10001
+
+scDebug:
+  enabled: false
+  nameOverride:
+
+persistence:
+  enabled: true
+  volumeClaim:
+    name: ""
+    create: true
+    storageClassName: ""
+    storageCapacity: 1Gi

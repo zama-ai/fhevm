@@ -1,29 +1,11 @@
 {{- if .Values.scDeploy.enabled }}
-{{- $volumeName := default .Release.Name .Values.scDeploy.persistence.volumeClaim.name }}
-{{- if .Values.scDeploy.persistence.volumeClaim.create }}
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ $volumeName }}
-  labels:
-    app: fhevm-sc-deploy
-    app.kubernetes.io/name: {{ $volumeName }}
-spec:
-  storageClassName: {{ .Values.scDeploy.persistence.volumeClaim.storageClassName }}
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: {{ .Values.scDeploy.persistence.volumeClaim.storageCapacity }}
----
-{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
   labels:
     app: fhevm-sc-deploy
-    app.kubernetes.io/name: {{ .Release.Name }}-deploy
-  name: {{ .Release.Name }}-deploy
+    app.kubernetes.io/name: {{ include "scDeployJobName" . }}
+  name: {{ include "scDeployJobName" . }}
 spec:
   template:
     spec:
@@ -36,15 +18,18 @@ spec:
         command: ["/app/deploy-contracts.sh"]
         {{- if .Values.scDeploy.env }}
         env:
+          {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
+          - name: MANIFEST_DEFAULT_DIR
+            value: "/app/cache/.openzeppelin"
           {{ toYaml .Values.scDeploy.env | nindent 10 }}
         {{- end }}
         volumeMounts:
           - mountPath: /app/deploy-contracts.sh
             subPath: deploy-contracts.sh
             name: config
-          {{- if .Values.scDeploy.persistence.enabled }}
-          - mountPath: /app/.openzeppelin
-            name: openzeppelin-persistence
+          {{- if .Values.persistence.enabled }}
+          - mountPath: /app/cache
+            name: persistence
           {{- end }}
         resources:
           requests:
@@ -58,10 +43,10 @@ spec:
         configMap:
           name: {{ .Release.Name }}-config
           defaultMode: 0755
-      {{- if .Values.scDeploy.persistence.enabled }}
-      - name: openzeppelin-persistence
+      {{- if .Values.persistence.enabled }}
+      - name: persistence
         persistentVolumeClaim:
-          claimName: {{ $volumeName }}
+          claimName: {{ include "scVolumeName" . }}
       {{- end }}
       restartPolicy: Never
       imagePullSecrets:
