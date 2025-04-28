@@ -1,0 +1,59 @@
+{{- if .Values.scDebug.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: fhevm-sc-debug
+    app.kubernetes.io/name: {{ include "scDebugStatefulSetName" . }}
+  name: {{ include "scDebugStatefulSetName" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fhevm-sc-debug
+  template:
+    metadata:
+      labels:
+        app: fhevm-sc-debug
+    spec:
+      securityContext:
+        {{- toYaml .Values.scDeploy.securityContext | nindent 8 }}
+      containers:
+        - name: debug
+          image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}
+          command: [ "/bin/bash", "-c", "tail -f /dev/null" ]
+          {{- if .Values.scDeploy.env }}
+          env:
+          {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
+          - name: MANIFEST_DEFAULT_DIR
+            value: "/app/cache/.openzeppelin"
+          {{ toYaml .Values.scDeploy.env | nindent 10 }}
+          {{- end }}
+          volumeMounts:
+            - mountPath: /app/deploy-contracts.sh
+              subPath: deploy-contracts.sh
+              name: config
+            {{- if .Values.persistence.enabled }}
+            - mountPath: /app/cache
+              name: persistence
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.scDeploy.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.scDeploy.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.scDeploy.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.scDeploy.resources.limits.memory | default "512Mi" }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
+            defaultMode: 0755
+      {{- if .Values.persistence.enabled }}
+        - name: persistence
+          persistentVolumeClaim:
+            claimName: {{ include "scVolumeName" . }}
+      {{- end }}
+      imagePullSecrets:
+        - name: registry-credentials
+{{- end }}

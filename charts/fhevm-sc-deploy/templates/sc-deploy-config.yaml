@@ -100,7 +100,6 @@ data:
 
     # Post-deploy commands
     {{- range .Values.scDeploy.postDeployCommands }}
-    {{ . }}
+    {{ . | nindent 4 }}
     {{- end }}
-    echo "${CONFIGMAP_NAME} configmap updated successfully"
-    {{- end -}}
+{{- end }}
