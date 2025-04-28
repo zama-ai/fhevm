@@ -14,7 +14,9 @@ jobs:
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
       - run: cp ./contracts/.env.example ./contracts/.env
       - run: npm --prefix ./contracts ci --include=optional
       - run: npm --prefix ./contracts install
@@ -30,6 +32,6 @@ jobs:
           fail-on: none
           target: "./contracts/"
       - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@80f993039571a6de66594ecaa432875a6942e8e0 #v2.20.6
+        uses: github/codeql-action/upload-sarif@6bb031afdd8eb862ea3fc1848194185e076637e5 # v3.28.11
         with:
           sarif_file: results.sarif

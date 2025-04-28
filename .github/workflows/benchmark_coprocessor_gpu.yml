@@ -136,9 +136,9 @@ jobs:
         run: |
           sudo apt-get install -y protobuf-compiler cmake pkg-config libssl-dev \
                                   libclang-dev docker-compose-v2 docker.io acl
-          sudo usermod -aG docker $USER
+          sudo usermod -aG docker "$USER"
           newgrp docker
-          sudo setfacl --modify user:$USER:rw /var/run/docker.sock
+          sudo setfacl --modify user:"$USER":rw /var/run/docker.sock
           cargo install sqlx-cli
 
       - name: Install foundry

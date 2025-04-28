@@ -16,7 +16,9 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        persist-credentials: 'false'
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
     - name: Login to Docker Registry
@@ -40,16 +42,16 @@ jobs:
         cd contracts
         # Wait for the deployment container to finish (timeout after reasonable time)
         timeout 300s bash -c 'while docker ps --filter "name=fhevm-sc-deploy" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
-        
+
         # Save logs to a file for analysis
         docker compose logs fhevm-sc-deploy > deployment_logs.txt
-        
+
         # Check if the container exited with success (exit code 0)
         EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' fhevm-sc-deploy)
-        
+
         # Display logs for debugging
         cat deployment_logs.txt
-        
+
         # Check for exit code and expected message in logs
         if [ "$EXIT_CODE" -ne 0 ]; then
           echo "Deployment failed with exit code $EXIT_CODE"
