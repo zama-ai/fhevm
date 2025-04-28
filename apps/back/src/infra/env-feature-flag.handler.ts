@@ -18,10 +18,10 @@ export class EnvFeatureFlagHandler
         `flag ${feature} is ${process.env[`FLAG_${feature}`]}`,
       )
       const value = (process.env[`FLAG_${feature}`] ?? '').toLowerCase()
-      if (['1', 'true', 't'].includes(value)) {
+      if (['1', 'true', 't', 'yes', 'y'].includes(value)) {
         return Task.of(true)
       }
-      if (['0', 'false', 'f'].includes(value)) {
+      if (['0', 'false', 'f', 'no', 'n'].includes(value)) {
         return Task.of(false)
       }
       this.logger.warn(`flag ${value} is not valid!`)

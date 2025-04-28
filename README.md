@@ -59,3 +59,12 @@ To do so one can do the following:
 ## run local env into containers
 
 There are more complicated and fun ways to have a local env, check [tech-specs/local_env](tech-specs/local_env.md)
+
+## Feature flags
+
+There are a few feature flags implemented in the console. Currently, you can change them only setting an environemnt variable, and it accepts `true`, `t`, `yes`, `y` and `1` to enable it, and `false`, `f`, `no`, `n` and `0` to disable it.
+
+The implemented feature flags are:
+
+- `FLAG_API_KEY`: when enabled, it requires an API key header for all the httpz requests. Default value: `false`
+- `FLAG_GRAPHQL_PLAYGROUND` : when enabled, it exposes the Graph QL Playground. Default value `true`

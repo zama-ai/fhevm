@@ -1,6 +1,6 @@
 import { AppError, Task, unknownError } from 'utils'
 
-export type FeatureFlag = 'API_KEYS'
+export type FeatureFlag = 'API_KEYS' | 'GRAPHQL_PLAYGROUND'
 
 export interface FeatureFlagHandler {
   setNext(handler: FeatureFlagHandler): FeatureFlagHandler

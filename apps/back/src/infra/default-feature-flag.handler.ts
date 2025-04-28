@@ -8,6 +8,7 @@ import { AppError, Task } from 'utils'
 
 const DEFAULTS: Partial<Record<FeatureFlag, boolean>> = {
   API_KEYS: false,
+  GRAPHQL_PLAYGROUND: true,
 }
 
 export class DefaultFeatureFlagHandler

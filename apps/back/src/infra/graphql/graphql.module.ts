@@ -8,22 +8,40 @@ import { TeamsModule } from '#teams/infra/teams.module.js'
 import { InvitationsModule } from '#invitations/infra/invitations.module.js'
 import { DappsModule } from '#dapps/infra/dapps.module.js'
 import { ComplexityPlugin } from './graphql-complexity.plugin.js'
+import { FeatureFlagModule } from '#feature-flag/feature-flag.module.js'
+import {
+  FEATURE_FLAGS_SERVICE,
+  FeatureFlagHandler,
+} from '#feature-flag/services/feature-flags.service.js'
 
 @Module({
   imports: [
-    BaseGraphQLModule.forRoot<ApolloDriverConfig>({
+    BaseGraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
-      autoSchemaFile: join(process.cwd(), 'src/infra/graphql/schema.gql'),
-      context: ({ req, res }: { req: Request; res: Response }) => ({
-        req,
-        res,
-      }),
-      subscriptions: {
-        'graphql-ws': {
-          path: '/graphql',
-        },
+      imports: [FeatureFlagModule],
+      inject: [FEATURE_FLAGS_SERVICE],
+      useFactory: async (flags: FeatureFlagHandler) => {
+        const playground = await flags
+          .handle('GRAPHQL_PLAYGROUND')
+          .or(true)
+          .toPromise()
+
+        return {
+          autoSchemaFile: join(process.cwd(), 'src/infra/graphql/schema.gql'),
+          // Disable introspection in production
+          introspection: process.env.NODE_ENV !== 'production',
+          context: ({ req, res }: { req: Request; res: Response }) => ({
+            req,
+            res,
+          }),
+          subscriptions: {
+            'graphql-ws': {
+              path: '/graphql',
+            },
+          },
+          playground,
+        }
       },
-      playground: true,
     }),
     AuthModule,
     UsersModule,
