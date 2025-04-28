@@ -24,7 +24,7 @@ export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc6"}
 export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc6"}
 export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.1.0-rc13"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc7"}
-export TESTS_VERSION=${TESTS_VERSION:-"latest"}
+export TESTS_VERSION=${TESTS_VERSION:-"v0.7.2-rc0"}
 
 function print_logo() {
   echo -e "${LIGHT_BLUE}"

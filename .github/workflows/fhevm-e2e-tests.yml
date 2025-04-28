@@ -41,7 +41,7 @@ on:
       tests_version:
         description: "E2E Tests Image Version"
         required: false
-        default: "latest"
+        default: "v0.7.2-rc0"
         type: string
   pull_request:
     paths:
