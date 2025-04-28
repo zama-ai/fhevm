@@ -1,0 +1,27 @@
+# directories
+.coverage_artifacts
+.coverage_cache
+.coverage_contracts
+artifacts
+build
+cache
+coverage
+dist
+node_modules
+/types
+deployments
+kms-fhe-keys/
+network-fhe-keys/
+fhevmTemp/
+abi/
+
+# files
+*.env
+*.log
+.env.docker
+.DS_Store
+.pnp.*
+coverage.json
+pnpm-lock.yaml
+yarn.lock
+contracts/E2EFHEVMConfig.sol

@@ -1,49 +1,211 @@
-import { HTTPZInstance, createInstance as createHTTPZInstance } from "@httpz/sdk/node";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import dotenv from "dotenv";
-import * as fs from "fs";
-import { network } from "hardhat";
-import { NetworkConfig } from "hardhat/types";
+import {
+  clientKeyDecryptor,
+  createInstance as createFhevmInstance,
+  getCiphertextCallParams,
+} from "@fhevm/sdk";
+import { readFileSync } from "fs";
+import { ethers, ethers as hethers, network } from "hardhat";
+import { homedir } from "os";
+import path from "path";
 
-const parsedEnv = dotenv.parse(fs.readFileSync(".env"));
+import type { Signers } from "./signers";
+import { FhevmInstances } from "./types";
+
+const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
+
+let clientKey: Uint8Array | undefined;
+
+const kmsAdd = process.env.KMS_VERIFIER_CONTRACT_ADDRESS;
+const aclAdd = process.env.ACL_CONTRACT_ADDRESS;
+const gatewayChainID = +process.env.CHAIN_ID_GATEWAY!;
+const verifyingContract = process.env.DECRYPTION_ADDRESS!;
+const relayerUrl = process.env.RELAYER_URL!;
+
+export const createInstances = async (
+  accounts: Signers
+): Promise<FhevmInstances> => {
+  // Create instance
+  const instances: FhevmInstances = {} as FhevmInstances;
+  await Promise.all(
+    Object.keys(accounts).map(async (k) => {
+      instances[k as keyof FhevmInstances] = await createInstance();
+    })
+  );
+  return instances;
+};
 
 export const createInstance = async () => {
-  const instance = await createHTTPZInstance({
-    gatewayChainId: parseInt(parsedEnv.GATEWAY_CHAINID),
-    verifyingContractAddress: parsedEnv.VERIFYING_CONTRACT_ADDRESS,
-    network: (network.config as NetworkConfig & { url: string }).url,
-    relayerUrl: parsedEnv.RELAYER_URL,
-    aclContractAddress: parsedEnv.ACL_CONTRACT_ADDRESS,
-    kmsContractAddress: parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS,
+  console.log("relayer url given to create instance", relayerUrl);
+  const instance = await createFhevmInstance({
+    verifyingContractAddress: verifyingContract,
+    kmsContractAddress: kmsAdd,
+    aclContractAddress: aclAdd,
+    network: network.config.url,
+    relayerUrl: relayerUrl,
+    gatewayChainId: gatewayChainID,
   });
   return instance;
 };
 
-export type Decrypt = (handles: { ctHandle: bigint; contractAddress: string }[]) => Promise<bigint[]>;
-export type CreateDecrypt = (
-  instance: HTTPZInstance,
-  signer: HardhatEthersSigner,
-  contractAddresses: string[],
-) => Decrypt;
+const getCiphertext = async (
+  handle: string,
+  ethers: typeof hethers
+): Promise<string> => {
+  return ethers.provider.call(getCiphertextCallParams(handle));
+};
 
-export const createDecrypt: CreateDecrypt = (instance, signer, contractAddresses) => async (handles) => {
-  const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = instance.generateKeypair();
-  const startTimestamp = Date.now();
-  const eip712 = instance.createEIP712(publicKeyAlice, contractAddresses, startTimestamp, 365);
-  const signatureAlice = await signer.signTypedData(
-    eip712.domain,
-    { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
-    eip712.message,
-  );
+const getDecryptor = () => {
+  if (clientKey == null) {
+    if (FHE_CLIENT_KEY_PATH) {
+      clientKey = readFileSync(FHE_CLIENT_KEY_PATH);
+    } else {
+      const home = homedir();
+      const clientKeyPath = path.join(home, "network-fhe-keys/cks");
+      clientKey = readFileSync(clientKeyPath);
+    }
+  }
+  return clientKeyDecryptor(clientKey);
+};
 
-  return instance.userDecrypt(
-    handles,
-    privateKeyAlice,
-    publicKeyAlice,
-    signatureAlice.replace("0x", ""),
-    contractAddresses,
-    signer.address,
-    startTimestamp,
-    365,
-  );
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bool}
+ */
+export const decryptBool = async (handle: string): Promise<boolean> => {
+  return getDecryptor().decryptBool(await getCiphertext(handle, ethers));
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decrypt8 = async (handle: string): Promise<bigint> => {
+  return getDecryptor().decrypt8(await getCiphertext(handle, ethers));
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decrypt16 = async (handle: string): Promise<bigint> => {
+  return getDecryptor().decrypt16(await getCiphertext(handle, ethers));
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decrypt32 = async (handle: string): Promise<bigint> => {
+  return getDecryptor().decrypt32(await getCiphertext(handle, ethers));
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decrypt64 = async (handle: string): Promise<bigint> => {
+  return getDecryptor().decrypt64(await getCiphertext(handle, ethers));
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decrypt128 = async (handle: string): Promise<bigint> => {
+  return getDecryptor().decrypt128(await getCiphertext(handle, ethers));
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decrypt256 = async (handle: string): Promise<bigint> => {
+  return getDecryptor().decrypt256(await getCiphertext(handle, ethers));
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {string}
+ */
+export const decryptAddress = async (handle: string): Promise<string> => {
+  return getDecryptor().decryptAddress(await getCiphertext(handle, ethers));
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decryptEbytes64 = async (handle: string): Promise<bigint> => {
+  return getDecryptor().decryptEbytes64(await getCiphertext(handle, ethers));
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decryptEbytes128 = async (handle: string): Promise<bigint> => {
+  return getDecryptor().decryptEbytes128(await getCiphertext(handle, ethers));
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decryptEbytes256 = async (handle: string): Promise<bigint> => {
+  return getDecryptor().decryptEbytes256(await getCiphertext(handle, ethers));
 };

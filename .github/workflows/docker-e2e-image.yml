@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - .github/workflows/docker-e2e-image.yml
-      - e2e_new/**
+      - e2e/**
   push:
     branches:
       - main
     paths:
       - .github/workflows/docker-e2e-image.yml
-      - e2e_new/**
+      - e2e/**
   release:
     types:
       - published
@@ -33,6 +33,6 @@ jobs:
     with:
       working-directory: "."
       push_image: true
-      image-name: "fhevm-test-suite/e2e-new"
-      docker-file: "e2e_new/Dockerfile"
+      image-name: "fhevm-test-suite/e2e"
+      docker-file: "e2e/Dockerfile"
       arm-build: true
