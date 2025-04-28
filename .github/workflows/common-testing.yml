@@ -320,12 +320,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: Generate wasm test files
-        if: ${{ inputs.run-wasm }}
-        run: |
-          cargo test test_reencryption_threshold_and_write_transcript ${{ inputs.wasm-test-feature }} --lib
-          cargo test test_reencryption_centralized_and_write_transcript ${{ inputs.wasm-test-feature }} --lib
-
       - name: Test wasm
         if: ${{ inputs.run-wasm }}
         run: node --test tests/js

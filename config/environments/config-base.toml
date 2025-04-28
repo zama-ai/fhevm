@@ -42,13 +42,13 @@ channel_size = 1000
 # ENV: KMS_CONNECTOR_ACCOUNT_INDEX
 # account_index = 0
 
-# Timeout for decryption requests in seconds (optional, defaults to 300s / 5min)
-# ENV: KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS
-# decryption_timeout_secs = 300
+# Timeout for public decryption requests in seconds (optional, defaults to 300s / 5min)
+# ENV: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
+# public_decryption_timeout_secs = 300
 
-# Timeout for reencryption requests in seconds (optional, defaults to 300s / 5min)
-# ENV: KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS
-# reencryption_timeout_secs = 300
+# Timeout for user decryption requests in seconds (optional, defaults to 300s / 5min)
+# ENV: KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS
+# user_decryption_timeout_secs = 300
 
 # Retry interval in seconds (optional, defaults to 5s)
 # ENV: KMS_CONNECTOR_RETRY_INTERVAL_SECS

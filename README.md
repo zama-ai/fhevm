@@ -146,8 +146,8 @@ The KMS Connector supports flexible configuration through both TOML files and en
    export KMS_CONNECTOR_ACCOUNT_INDEX="0"
    export KMS_CONNECTOR_CHANNEL_SIZE="1000"
    export KMS_CONNECTOR_SERVICE_NAME="kms-connector"
-   export KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS="300"
-   export KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS="300"
+   export KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS="300"
+   export KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS="300"
    export KMS_CONNECTOR_RETRY_INTERVAL_SECS="5"
 
    # S3 configuration (optional)
@@ -200,8 +200,8 @@ decryption_address = "0x5fbdb2315678afecb367f032d93f642f64180aa3"
 gateway_config_address = "0x0000000000000000000000000000000000000001"
 channel_size = 1000
 service_name = "kms-connector"
-decryption_timeout_secs = 300
-reencryption_timeout_secs = 300
+public_decryption_timeout_secs = 300
+user_decryption_timeout_secs = 300
 retry_interval_secs = 5
 ```
 
@@ -225,8 +225,8 @@ All environment variables are prefixed with `KMS_CONNECTOR_`. Here's the complet
 | `KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS` | Address of the GatewayConfig contract | 0x0000000000000000000000000000000000000001 |
 | `KMS_CONNECTOR_CHANNEL_SIZE` | Size of the event processing channel | 1000 |
 | `KMS_CONNECTOR_SERVICE_NAME` | Name of the KMS connector instance | kms-connector |
-| `KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS` | Timeout for decryption operations | 300 |
-| `KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS` | Timeout for re-encryption operations | 300 |
+| `KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS` | Timeout for public decryption operations | 300 |
+| `KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS` | Timeout for user decryption operations | 300 |
 | `KMS_CONNECTOR_RETRY_INTERVAL_SECS` | Interval between retry attempts | 5 |
 | `KMS_CONNECTOR_DECRYPTION_DOMAIN_NAME` | EIP-712 domain name for Decryption contract | Decryption |
 | `KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION` | EIP-712 domain version for Decryption contract | 1 |

@@ -5,7 +5,7 @@ use alloy::{
     sol_types::Eip712Domain,
 };
 use kms_grpc::kms::v1::{
-    CiphertextFormat, DecryptionRequest, ReencryptionRequest, RequestId, TypedCiphertext,
+    CiphertextFormat, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
 use std::{borrow::Cow, sync::Arc};
 use tonic::Request;
@@ -18,7 +18,7 @@ use crate::{
             abi_encode_plaintexts, extract_fhe_type_from_handle, fhe_type_to_string,
             format_request_id, log_and_extract_result,
         },
-        utils::eip712::{alloy_to_protobuf_domain, verify_reencryption_eip712},
+        utils::eip712::{alloy_to_protobuf_domain, verify_user_decryption_eip712},
     },
     error::Result,
     gw_adapters::decryption::DecryptionAdapter,
@@ -125,7 +125,7 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
         match client_addr {
             // Public decryption
             None => {
-                // Prepare ciphertexts for the decryption request
+                // Prepare ciphertexts for the public decryption request
                 let ciphertexts = sns_ciphertext_materials
                     .iter()
                     .map(|(handle, ciphertext)| {
@@ -139,14 +139,14 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
                     })
                     .collect();
 
-                let request = Request::new(DecryptionRequest {
+                let request = Request::new(PublicDecryptionRequest {
                     ciphertexts,
                     key_id: Some(key_id_obj.clone()),
                     domain: Some(domain_msg),
                     request_id: Some(request_id_obj.clone()),
                 });
 
-                let response = self.kms_client.request_decryption(request).await?;
+                let response = self.kms_client.request_public_decryption(request).await?;
                 info!(
                     "[IN] 📡 PublicDecryptionResponse({}) received",
                     request_id_hex
@@ -181,7 +181,7 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
                         .await?;
                 } else {
                     error!(
-                        "Received empty payload for decryption request {}",
+                        "Received empty payload for public decryption request {}",
                         request_id
                     );
                     return Err(crate::error::Error::Contract(
@@ -191,9 +191,9 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
 
                 Ok(())
             }
-            // User decryption aka reencryption
+            // User decryption
             Some(client_addr) => {
-                // Prepare typed ciphertexts for the reencryption request
+                // Prepare typed ciphertexts for the user decryption request
                 let typed_ciphertexts = sns_ciphertext_materials
                     .iter()
                     .map(|(handle, ciphertext)| {
@@ -236,7 +236,7 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
                     client_addr.len()
                 );
 
-                let reencryption_request = ReencryptionRequest {
+                let user_decryption_request = UserDecryptionRequest {
                     request_id: Some(request_id_obj.clone()),
                     client_address: client_address_str.clone(),
                     key_id: Some(key_id_obj.clone()),
@@ -247,13 +247,13 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
                     typed_ciphertexts,
                 };
 
-                verify_reencryption_eip712(&reencryption_request)?;
+                verify_user_decryption_eip712(&user_decryption_request)?;
 
-                let request = Request::new(reencryption_request.clone());
+                let request = Request::new(user_decryption_request.clone());
 
                 // Log a more concise version of the request with hex representations
                 info!(
-                    "ReencryptionRequest constructed with: request_id={}, client_address={}, key_id={}, typed_ciphertexts.len={}, domain.chain_id={}",
+                    "UserDecryptionRequest constructed with: request_id={}, client_address={}, key_id={}, typed_ciphertexts.len={}, domain.chain_id={}",
                     request
                         .get_ref()
                         .request_id
@@ -300,21 +300,24 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
                     }
                 }
 
-                let response = self.kms_client.request_reencryption(request).await?;
-                info!("[IN] 📡 ReencryptionResponse({}) received", request_id_hex);
-                let reencryption_response = response.into_inner();
+                let response = self.kms_client.request_user_decryption(request).await?;
+                info!(
+                    "[IN] 📡 UserDecryptionResponse({}) received",
+                    request_id_hex
+                );
+                let user_decryption_response = response.into_inner();
 
-                // Get the external signature (non-optional in ReencryptionResponsePayload)
-                let signature = reencryption_response.external_signature;
+                // Get the external signature (non-optional in UserDecryptionResponsePayload)
+                let signature = user_decryption_response.external_signature;
 
-                if let Some(payload) = reencryption_response.payload {
+                if let Some(payload) = user_decryption_response.payload {
                     // Serialize all signcrypted ciphertexts
-                    let reencrypted_share_buf = bincode::serialize(&payload).map_err(|e| {
-                        crate::error::Error::InvalidResponse(format!(
-                            "Failed to serialize user decryption payload: {}",
-                            e
-                        ))
-                    })?;
+                    let serialized_response_payload =
+                        bincode::serialize(&payload).map_err(|e| {
+                            crate::error::Error::InvalidResponse(format!(
+                                "Failed to serialize user decryption payload: {e}"
+                            ))
+                        })?;
 
                     // Log each ciphertext for debugging
                     for ct in &payload.signcrypted_ciphertexts {
@@ -327,17 +330,17 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
                     }
 
                     // Send response back to the Gateway
-                    info!("Sending userDecryptionResponse for request {}", request_id);
+                    info!("Sending UserDecryptionResponse for request {}", request_id);
                     self.decryption
                         .send_user_decryption_response(
                             request_id,
-                            Bytes::from(reencrypted_share_buf),
+                            Bytes::from(serialized_response_payload),
                             signature,
                         )
                         .await?;
                 } else {
                     error!(
-                        "Received empty payload for reencryption request {}",
+                        "Received empty payload for user decryption request {}",
                         request_id
                     );
                     return Err(crate::error::Error::Contract(

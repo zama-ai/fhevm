@@ -47,9 +47,9 @@ kmsConnector:
       value: "1000"
     - name: KMS_CONNECTOR_SERVICE_NAME
       value: "kms-connector"
-    - name: KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS
+    - name: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
       value: "300"
-    - name: KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS
+    - name: KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS
       value: "300"
     - name: KMS_CONNECTOR_RETRY_INTERVAL_SECS
       value: "5"

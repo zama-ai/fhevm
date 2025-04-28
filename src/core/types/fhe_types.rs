@@ -75,13 +75,13 @@ pub fn log_and_extract_result<T>(
 
     match user_addr {
         Some(addr) => info!(
-            "Reencrypted result type: {} for request {} (user: 0x{})",
+            "User decryption result type: {} for request {} (user: 0x{})",
             fhe_type_str,
             request_id,
             hex::encode(addr)
         ),
         None => info!(
-            "Decrypted result type: {} for request {}",
+            "Public decryption result type: {} for request {}",
             fhe_type_str, request_id
         ),
     }
