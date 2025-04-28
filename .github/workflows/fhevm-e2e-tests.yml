@@ -6,7 +6,7 @@ on:
       core_version:
         description: "KMS Core Version"
         required: false
-        default: "v0.11.0-rc8"
+        default: "v0.11.0-rc9"
         type: string
       connector_version:
         description: "Connector Version"
@@ -41,7 +41,7 @@ on:
       tests_version:
         description: "E2E Tests Image Version"
         required: false
-        default: "bb99c3a"
+        default: "8c8de11"
         type: string
   pull_request:
     paths:
