@@ -48,12 +48,12 @@ pub struct Config {
     /// Service name for tracing
     #[serde(default = "default_service_name")]
     pub service_name: String,
-    /// Timeout for decryption requests in seconds (default: 300s / 5min)
-    #[serde(default = "default_decryption_timeout")]
-    pub decryption_timeout_secs: u64,
-    /// Timeout for reencryption requests in seconds (default: 300s / 5min)
-    #[serde(default = "default_reencryption_timeout")]
-    pub reencryption_timeout_secs: u64,
+    /// Timeout for public decryption requests in seconds (default: 300s / 5min)
+    #[serde(default = "default_public_decryption_timeout")]
+    pub public_decryption_timeout_secs: u64,
+    /// Timeout for user decryption requests in seconds (default: 300s / 5min)
+    #[serde(default = "default_user_decryption_timeout")]
+    pub user_decryption_timeout_secs: u64,
     /// Retry interval in seconds (default: 5s)
     #[serde(default = "default_retry_interval")]
     pub retry_interval_secs: u64,
@@ -93,11 +93,11 @@ fn default_service_name() -> String {
     "kms-connector".to_string()
 }
 
-fn default_decryption_timeout() -> u64 {
+fn default_public_decryption_timeout() -> u64 {
     300 // 5 minutes
 }
 
-fn default_reencryption_timeout() -> u64 {
+fn default_user_decryption_timeout() -> u64 {
     300 // 5 minutes
 }
 
@@ -141,8 +141,8 @@ impl Default for Config {
             gateway_config_address: "0x0000000000000000000000000000000000000001".to_string(),
             channel_size: Some(1000),
             service_name: default_service_name(),
-            decryption_timeout_secs: default_decryption_timeout(),
-            reencryption_timeout_secs: default_reencryption_timeout(),
+            public_decryption_timeout_secs: default_public_decryption_timeout(),
+            user_decryption_timeout_secs: default_user_decryption_timeout(),
             retry_interval_secs: default_retry_interval(),
             account_index: None,
             decryption_domain_name: default_decryption_domain_name(),
@@ -185,10 +185,13 @@ impl Config {
         } else {
             warn!("  Channel Size: not specified, using default");
         }
-        info!("  Decryption Timeout: {}s", config.decryption_timeout_secs);
         info!(
-            "  Reencryption Timeout: {}s",
-            config.reencryption_timeout_secs
+            "  Public Decryption Timeout: {}s",
+            config.public_decryption_timeout_secs
+        );
+        info!(
+            "  User Decryption Timeout: {}s",
+            config.user_decryption_timeout_secs
         );
         info!("  Retry Interval: {}s", config.retry_interval_secs);
 
@@ -332,10 +335,13 @@ impl Config {
         } else {
             info!("  Channel Size: default");
         }
-        info!("  Decryption Timeout: {}s", config.decryption_timeout_secs);
         info!(
-            "  Reencryption Timeout: {}s",
-            config.reencryption_timeout_secs
+            "  Public Decryption Timeout: {}s",
+            config.public_decryption_timeout_secs
+        );
+        info!(
+            "  User Decryption Timeout: {}s",
+            config.user_decryption_timeout_secs
         );
         info!("  Retry Interval: {}s", config.retry_interval_secs);
 
@@ -462,14 +468,14 @@ impl Config {
             .map_err(|e| Error::Config(format!("Invalid GatewayConfig address: {}", e)))
     }
 
-    /// Get decryption timeout as Duration
-    pub fn decryption_timeout(&self) -> Duration {
-        Duration::from_secs(self.decryption_timeout_secs)
+    /// Get public decryption timeout as Duration
+    pub fn public_decryption_timeout(&self) -> Duration {
+        Duration::from_secs(self.public_decryption_timeout_secs)
     }
 
-    /// Get reencryption timeout as Duration
-    pub fn reencryption_timeout(&self) -> Duration {
-        Duration::from_secs(self.reencryption_timeout_secs)
+    /// Get user decryption timeout as Duration
+    pub fn user_decryption_timeout(&self) -> Duration {
+        Duration::from_secs(self.user_decryption_timeout_secs)
     }
 
     /// Get retry interval as Duration
@@ -523,8 +529,8 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS");
             env::remove_var("KMS_CONNECTOR_CHANNEL_SIZE");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
-            env::remove_var("KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS");
-            env::remove_var("KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS");
+            env::remove_var("KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS");
+            env::remove_var("KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS");
             env::remove_var("KMS_CONNECTOR_RETRY_INTERVAL_SECS");
         }
     }
@@ -541,8 +547,8 @@ mod tests {
             gateway_config_address: "0x0000000000000000000000000000000000000000".to_string(),
             channel_size: Some(100),
             service_name: "kms-connector".to_string(),
-            decryption_timeout_secs: 300,
-            reencryption_timeout_secs: 300,
+            public_decryption_timeout_secs: 300,
+            user_decryption_timeout_secs: 300,
             retry_interval_secs: 5,
             account_index: None,
             decryption_domain_name: "IDecryption".to_string(),
@@ -575,12 +581,12 @@ mod tests {
         assert_eq!(config.kms_core_endpoint, loaded_config.kms_core_endpoint);
         assert_eq!(config.service_name, loaded_config.service_name);
         assert_eq!(
-            config.decryption_timeout_secs,
-            loaded_config.decryption_timeout_secs
+            config.public_decryption_timeout_secs,
+            loaded_config.public_decryption_timeout_secs
         );
         assert_eq!(
-            config.reencryption_timeout_secs,
-            loaded_config.reencryption_timeout_secs
+            config.user_decryption_timeout_secs,
+            loaded_config.user_decryption_timeout_secs
         );
         assert_eq!(
             config.retry_interval_secs,
@@ -622,8 +628,8 @@ mod tests {
             gateway_config_address: "0x0000000000000000000000000000000000000000".to_string(),
             channel_size: None,
             service_name: "kms-connector".to_string(),
-            decryption_timeout_secs: 300,
-            reencryption_timeout_secs: 300,
+            public_decryption_timeout_secs: 300,
+            user_decryption_timeout_secs: 300,
             retry_interval_secs: 5,
             account_index: None,
             decryption_domain_name: "Decryption".to_string(),
@@ -656,8 +662,8 @@ mod tests {
             gateway_config_address: "0x000010".to_string(),
             channel_size: None,
             service_name: "kms-connector".to_string(),
-            decryption_timeout_secs: 300,
-            reencryption_timeout_secs: 300,
+            public_decryption_timeout_secs: 300,
+            user_decryption_timeout_secs: 300,
             retry_interval_secs: 5,
             account_index: None,
             decryption_domain_name: "Decryption".to_string(),
@@ -698,8 +704,8 @@ mod tests {
             );
             env::set_var("KMS_CONNECTOR_CHANNEL_SIZE", "2000");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
-            env::set_var("KMS_CONNECTOR_DECRYPTION_TIMEOUT_SECS", "600");
-            env::set_var("KMS_CONNECTOR_REENCRYPTION_TIMEOUT_SECS", "600");
+            env::set_var("KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS", "600");
+            env::set_var("KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS", "600");
             env::set_var("KMS_CONNECTOR_RETRY_INTERVAL_SECS", "10");
         }
 
@@ -721,8 +727,8 @@ mod tests {
         );
         assert_eq!(config.channel_size, Some(2000));
         assert_eq!(config.service_name, "kms-connector-test");
-        assert_eq!(config.decryption_timeout_secs, 600);
-        assert_eq!(config.reencryption_timeout_secs, 600);
+        assert_eq!(config.public_decryption_timeout_secs, 600);
+        assert_eq!(config.user_decryption_timeout_secs, 600);
         assert_eq!(config.retry_interval_secs, 10);
 
         cleanup_env_vars();
@@ -743,8 +749,8 @@ mod tests {
             gateway_config_address: "0x0000000000000000000000000000000000000000".to_string(),
             channel_size: Some(100),
             service_name: "kms-connector".to_string(),
-            decryption_timeout_secs: 300,
-            reencryption_timeout_secs: 300,
+            public_decryption_timeout_secs: 300,
+            user_decryption_timeout_secs: 300,
             retry_interval_secs: 5,
             account_index: None,
             decryption_domain_name: "Decryption".to_string(),

@@ -4,7 +4,7 @@ use alloy::{
     primitives::{Address, U256},
     sol_types::Eip712Domain,
 };
-use kms_grpc::kms::v1::{Eip712DomainMsg, ReencryptionRequest};
+use kms_grpc::kms::v1::{Eip712DomainMsg, UserDecryptionRequest};
 use tracing::warn;
 
 /// Convert an alloy EIP-712 domain to a protobuf domain message
@@ -76,8 +76,8 @@ pub fn protobuf_to_alloy_domain(pb_domain: &Eip712DomainMsg) -> Result<Eip712Dom
     Ok(out)
 }
 
-/// Verify the EIP-712 signature for a reencryption request
-pub fn verify_reencryption_eip712(req: &ReencryptionRequest) -> Result<()> {
+/// Verify the EIP-712 signature for a user decryption request
+pub fn verify_user_decryption_eip712(req: &UserDecryptionRequest) -> Result<()> {
     // Check if client_address is a valid Ethereum address format
     if !req.client_address.starts_with("0x") {
         warn!(
@@ -91,7 +91,7 @@ pub fn verify_reencryption_eip712(req: &ReencryptionRequest) -> Result<()> {
     let domain_msg = match req.domain.as_ref() {
         Some(domain) => domain,
         None => {
-            warn!("Domain is missing in reencryption request");
+            warn!("Domain is missing in user decryption request");
             return Ok(());
         }
     };

@@ -82,8 +82,8 @@ package "KMS Connector" #PaleGoldenRod {
 
     package "Operations" {
         class "KmsOperations" as Ops {
-            +ReencryptOperation
-            +DecryptOperation
+            +UserDecryptOperation
+            +PublicDecryptOperation
             +VerifyProvenCtOperation
             __
             Each operation:

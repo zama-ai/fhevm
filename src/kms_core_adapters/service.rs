@@ -1,5 +1,8 @@
 use kms_grpc::{
-    kms::v1::{DecryptionRequest, DecryptionResponse, ReencryptionRequest, ReencryptionResponse},
+    kms::v1::{
+        PublicDecryptionRequest, PublicDecryptionResponse, UserDecryptionRequest,
+        UserDecryptionResponse,
+    },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
 use std::sync::{
@@ -12,20 +15,20 @@ use tonic::{Code, Request, Response, Status, transport::Channel};
 use tracing::{error, info, warn};
 
 use crate::core::config::Config;
-use crate::core::utils::eip712::verify_reencryption_eip712;
+use crate::core::utils::eip712::verify_user_decryption_eip712;
 use crate::error::Result;
 
 #[tonic::async_trait]
 pub trait KmsService {
-    async fn request_decryption(
+    async fn request_public_decryption(
         &self,
-        request: Request<DecryptionRequest>,
-    ) -> std::result::Result<Response<DecryptionResponse>, Status>;
+        request: Request<PublicDecryptionRequest>,
+    ) -> std::result::Result<Response<PublicDecryptionResponse>, Status>;
 
-    async fn request_reencryption(
+    async fn request_user_decryption(
         &self,
-        request: Request<ReencryptionRequest>,
-    ) -> std::result::Result<Response<ReencryptionResponse>, Status>;
+        request: Request<UserDecryptionRequest>,
+    ) -> std::result::Result<Response<UserDecryptionResponse>, Status>;
 }
 
 #[derive(Debug)]
@@ -121,10 +124,10 @@ impl KmsServiceImpl {
 
 #[tonic::async_trait]
 impl KmsService for KmsServiceImpl {
-    async fn request_decryption(
+    async fn request_public_decryption(
         &self,
-        request: Request<DecryptionRequest>,
-    ) -> std::result::Result<Response<DecryptionResponse>, Status> {
+        request: Request<PublicDecryptionRequest>,
+    ) -> std::result::Result<Response<PublicDecryptionResponse>, Status> {
         if !self.running.load(Ordering::SeqCst) {
             return Err(Status::cancelled("Service is shutting down"));
         }
@@ -154,10 +157,10 @@ impl KmsService for KmsServiceImpl {
             .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
 
         // Send initial request
-        client.decrypt(request).await?;
+        client.public_decrypt(request).await?;
 
         // Poll for result with timeout
-        let timeout = self.config.decryption_timeout();
+        let timeout = self.config.public_decryption_timeout();
 
         self.poll_for_result(timeout, || {
             let request = Request::new(request_id.clone());
@@ -166,16 +169,16 @@ impl KmsService for KmsServiceImpl {
                     .get_client()
                     .await
                     .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
-                client.get_decrypt_result(request).await
+                client.get_public_decryption_result(request).await
             }
         })
         .await
     }
 
-    async fn request_reencryption(
+    async fn request_user_decryption(
         &self,
-        request: Request<ReencryptionRequest>,
-    ) -> std::result::Result<Response<ReencryptionResponse>, Status> {
+        request: Request<UserDecryptionRequest>,
+    ) -> std::result::Result<Response<UserDecryptionResponse>, Status> {
         if !self.running.load(Ordering::SeqCst) {
             return Err(Status::cancelled("Service is shutting down"));
         }
@@ -186,13 +189,10 @@ impl KmsService for KmsServiceImpl {
             .clone()
             .ok_or_else(|| Status::invalid_argument("Missing request ID"))?;
 
-        // Verify the EIP-712 signature for the reencryption request
-        if let Err(e) = verify_reencryption_eip712(request.get_ref()) {
-            error!("Failed to verify reencryption request: {}", e);
-            warn!(
-                "Proceeding with reencryption despite verification failure: {}",
-                e
-            );
+        // Verify the EIP-712 signature for the user decryption request
+        if let Err(e) = verify_user_decryption_eip712(request.get_ref()) {
+            error!("Failed to verify user decryption request: {e}");
+            warn!("Proceeding with user decryption despite verification failure: {e}");
         }
 
         // Log the client address and FHE types being processed
@@ -205,7 +205,7 @@ impl KmsService for KmsServiceImpl {
             .join(", ");
 
         info!(
-            "[OUT] 🔑 Sending ReencryptionRequest({}) for client {} with FHE types: [{}]",
+            "[OUT] 🔑 Sending UserDecryptionRequest({}) for client {} with FHE types: [{}]",
             request_id.request_id,
             request.get_ref().client_address,
             fhe_types
@@ -217,10 +217,10 @@ impl KmsService for KmsServiceImpl {
             .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
 
         // Send initial request
-        client.reencrypt(request).await?;
+        client.user_decrypt(request).await?;
 
         // Poll for result with timeout
-        let timeout = self.config.reencryption_timeout();
+        let timeout = self.config.user_decryption_timeout();
 
         self.poll_for_result(timeout, || {
             let request = Request::new(request_id.clone());
@@ -229,7 +229,7 @@ impl KmsService for KmsServiceImpl {
                     .get_client()
                     .await
                     .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
-                client.get_reencrypt_result(request).await
+                client.get_user_decryption_result(request).await
             }
         })
         .await

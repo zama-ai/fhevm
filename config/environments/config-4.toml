@@ -16,9 +16,9 @@ channel_size = 2000
 
 # account_index = 1
 
-# decryption_timeout_secs = 300
+# public_decryption_timeout_secs = 300
 
-# reencryption_timeout_secs = 300
+# user_decryption_timeout_secs = 300
 
 # retry_interval_secs = 5
 
