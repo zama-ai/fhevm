@@ -40,7 +40,11 @@ export class Task<A, E> {
    * @returns A Task that resolves with the value of the Promise
    * or rejects with the error of the Promise.
    */
-  static fromPromise<A, E>(promise: Promise<A>): Task<A, E> {
+  static fromPromise<A, E>(
+    promiseOrFn: Promise<A> | (() => Promise<A>),
+  ): Task<A, E> {
+    const promise =
+      typeof promiseOrFn === 'function' ? promiseOrFn() : promiseOrFn
     return new Task((resolve, reject) => {
       promise.then(resolve).catch(reject)
     })
@@ -301,14 +305,12 @@ export class Task<A, E> {
   }
 
   tapError(fn: (error: E) => void): Task<A, E> {
-    this.computation(
-      () => {},
-      error => {
+    return new Task((resolve, reject) => {
+      this.fork(resolve, (error: E) => {
         fn(error)
-      },
-    )
-
-    return this
+        reject(error)
+      })
+    })
   }
 }
 

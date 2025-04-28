@@ -11,6 +11,7 @@ export {
   NotFoundError,
   UnauthorizedError,
   UnknownError,
+  TimeoutError,
   ValidationError,
   isAppError,
   isDuplicatedError,
@@ -24,6 +25,7 @@ export {
   unauthorizedError,
   unknownError,
   validationError,
+  timeoutError,
 } from './app-error.js'
 export * from './chains.js'
 export { Entity } from './entity.js'

@@ -7,6 +7,7 @@ A counterpart for the Coprocessor + HTTPZ protocol can be found at [https://gith
 
 - [services and interactions](services.md)
 - [users, teams and dapps](users-teams-dapps.md)
+- [back pubsub](back-pub-sub.md)
 - [ZWS Console deployment](deployment.md)
 - [Dapp developer registration](registration.md)
 - [Public decryption](public_decryption.md)

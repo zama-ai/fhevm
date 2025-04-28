@@ -94,6 +94,9 @@ importers:
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
+      bullmq:
+        specifier: ^5.41.9
+        version: 5.42.0
       dotenv:
         specifier: ^16.4.7
         version: 16.4.7
@@ -113,7 +116,7 @@ importers:
         specifier: ^6.0.2
         version: 6.0.4(graphql@16.10.0)(ws@8.18.1)
       ioredis:
-        specifier: ^5.4.2
+        specifier: ^5.6.0
         version: 5.6.0
       messages:
         specifier: workspace:*

@@ -1,12 +1,14 @@
-import { PRODUCER, PUBSUB } from '#constants.js'
+import { PRODUCER } from '#constants.js'
 import { ApiKeyAllowsRequest } from '#dapps/use-cases/api-key-allows-request.use-case.js'
 import { ChainId } from '#shared/entities/value-objects/chain-id.js'
 import { Web3Address } from '#shared/entities/value-objects/web3-address.js'
 import { IProducer } from '#shared/services/producer.js'
+import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
+import { SyncInstances } from '#shared/use-cases/sync-instances.use-case.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
 import { back, generateRequestId } from 'messages'
-import { AppError, every, IPubSub, ISubscriber, Task, UseCase } from 'utils'
+import { AppError, every, Task, unknownError, UseCase } from 'utils'
 
 type Input = {
   contractChainId: string | number
@@ -24,12 +26,16 @@ type Output = {
 export class InputProof implements UseCase<Input, Output> {
   private readonly logger = new Logger(InputProof.name)
   constructor(
-    @Inject(PUBSUB)
-    private readonly pubsub: IPubSub<back.BackEvent>,
     @Inject(PRODUCER)
-    private readonly publisher: IProducer,
+    private readonly producer: IProducer,
+    @Inject(SYNC_SERVICE)
+    private readonly syncService: SyncService,
     private readonly apiKeyAllowsRequest: ApiKeyAllowsRequest,
-  ) {}
+    syncInstances: SyncInstances,
+  ) {
+    // Note: I need to instruct the SyncInstances to listen to this event
+    syncInstances.listenToEvent('back:httpz:input-proof:completed')
+  }
 
   execute = (
     input: Input,
@@ -56,7 +62,7 @@ export class InputProof implements UseCase<Input, Output> {
           this.logger.verbose(`executing for ${requestId}`)
 
           return Task.race([
-            this.publisher
+            this.producer
               .publish(
                 back.httpzInputProofRequested(
                   {
@@ -71,43 +77,29 @@ export class InputProof implements UseCase<Input, Output> {
                   },
                 ),
               )
-              .chain(
-                () =>
-                  new Task<Output, AppError>(resolve => {
-                    const handler: ISubscriber<back.BackEvent> = event => {
-                      this.logger.verbose(
-                        `handling event ${event.type} with requestId ${event.payload.requestId}`,
-                      )
-                      if (
-                        event.type === 'back:httpz:input-proof:completed' &&
-                        event.payload.requestId === requestId
-                      ) {
-                        resolve({
-                          handles: event.payload.handles,
-                          signatures: event.payload.signatures,
-                        })
-                        this.logger.verbose(
-                          `unsubscribing from 'back:httpz:input-proof:completed' event`,
-                        )
-                        this.pubsub.unsubscribe(
-                          'back:httpz:input-proof:completed',
-                          handler,
-                        )
-                      }
-                      return Task.of(void 0)
-                    }
-                    this.logger.verbose(
-                      `subscribing to 'back:httpz:input-proof:completed' event`,
-                    )
-                    this.pubsub.subscribe(
-                      'back:httpz:input-proof:completed',
-                      handler,
-                    )
-                  }),
+              .chain(() =>
+                this.syncService.waitForResponse<Output>(requestId, data => {
+                  if (back.isBackEvent(data) && isInputProofResult(data)) {
+                    return Task.of<Output, AppError>({
+                      handles: data.payload.handles,
+                      signatures: data.payload.signatures,
+                    })
+                  }
+                  return Task.reject(unknownError('Invalid evnet received'))
+                }),
               ),
             Task.timeout(parseInt(process.env.DEFAULT_TIMEOUT ?? '30', 10)),
           ])
         }),
       )
   }
+}
+
+type InputProofResult = Extract<
+  back.BackEvent,
+  { type: 'back:httpz:input-proof:completed' }
+>
+
+function isInputProofResult(event: back.BackEvent): event is InputProofResult {
+  return event.type === 'back:httpz:input-proof:completed'
 }

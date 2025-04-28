@@ -1,9 +1,13 @@
-import { PUBSUB } from '#constants.js'
+import { PRODUCER } from '#constants.js'
 import { Address } from '#dapps/domain/entities/value-objects.js'
+import { ChainId } from '#shared/entities/value-objects/chain-id.js'
+import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
 import { back, generateRequestId } from 'messages'
-import { AppError, IPubSub, ISubscriber, Task, UseCase } from 'utils'
+import { AppError, every, Task, unknownError, UseCase } from 'utils'
+import { SyncInstances } from '../../shared/use-cases/sync-instances.use-case.js'
+import { IProducer } from '#shared/services/producer.js'
 
 export type ValidateAddressInput = {
   chainId: string
@@ -21,59 +25,80 @@ export class ValidateAddress
   private readonly logger = new Logger(ValidateAddress.name)
 
   constructor(
-    @Inject(PUBSUB) private readonly pubsub: IPubSub<back.BackEvent>,
-  ) {}
+    @Inject(PRODUCER) private readonly producer: IProducer,
+    @Inject(SYNC_SERVICE) private readonly syncService: SyncService,
+
+    syncInstances: SyncInstances,
+  ) {
+    // Note: I need to instruct the SyncInstances to listen to this event
+    syncInstances.listenToEvent('back:address:validation:confirmed')
+    syncInstances.listenToEvent('back:address:validation:failed')
+  }
 
   execute = (
     input: ValidateAddressInput,
   ): Task<ValidateAddressOutput, AppError> => {
-    return Address.fromString(input.address).asyncChain(address =>
-      Task.race<AppError, ValidateAddressOutput>([
-        new Task<ValidateAddressOutput, AppError>(resolve => {
-          const handler: ISubscriber<back.BackEvent> = event => {
-            switch (event.type) {
-              case 'back:address:validation:confirmed':
-                if (
-                  event.payload.chainId === input.chainId &&
-                  event.payload.address === address.value
-                ) {
-                  this.pubsub.unsubscribe('back:address:validation:*', handler)
-                  resolve({ check: true })
-                }
-                break
-
-              case 'back:address:validation:failed':
-                if (
-                  event.payload.chainId === input.chainId &&
-                  event.payload.address === address.value
-                ) {
-                  this.pubsub.unsubscribe('back:address:validation:*', handler)
-                  resolve({ check: false, message: event.payload.reason })
-                }
-                break
-            }
-            return Task.of(void 0)
-          }
-          this.pubsub.subscribe('back:address:validation:*', handler)
-          // Note: retrieve the correlationId & requestId from the request
-          this.pubsub.publish(
+    return every([
+      ChainId.parse(input.chainId),
+      Address.fromString(input.address),
+    ])
+      .asyncChain(([chainId, address]) => {
+        const requestId = generateRequestId()
+        this.logger.verbose(
+          `publishing address validation for requestId=${requestId}`,
+        )
+        return this.producer
+          .publish(
             back.addressValidationRequested(
-              { ...input, requestId: generateRequestId() },
+              { chainId: chainId.value, address: address.value, requestId },
               { correlationId: randomUUID() },
             ),
           )
-        }),
-        // It fails after waiting for 30 seconds
-        // TODO: move the timeout delay into a constant or a configuration value
-        Task.timeout<ValidateAddressOutput>(30),
-      ])
-        .tap(value => {
-          this.logger.debug(`value=${JSON.stringify(value)}`)
-        })
-        .mapError(error => {
-          this.logger.debug(`${error._tag}: ${error.message}`)
-          return error
-        }),
-    )
+          .chain(() => Task.of(requestId))
+      })
+      .chain(requestId => {
+        this.logger.verbose(
+          `waiting for response sync for requestId=${requestId}`,
+        )
+        return this.syncService.waitForResponse<ValidateAddressOutput>(
+          requestId,
+          data => {
+            if (back.isBackEvent(data) && isAddressValidationResponse(data)) {
+              return data.type === 'back:address:validation:confirmed'
+                ? Task.of({ check: true })
+                : Task.of({
+                    check: false,
+                    message: data.payload.reason,
+                  })
+            }
+            this.logger.warn(`invalid event received: ${JSON.stringify(data)}`)
+            return Task.reject(unknownError('Invalid event received'))
+          },
+        )
+      })
+      .tap(value => {
+        this.logger.debug(`value=${JSON.stringify(value)}`)
+      })
+      .tapError(error => {
+        this.logger.warn(
+          `failed to validate address: ${error._tag}/${error.message}`,
+        )
+      })
   }
+}
+
+const EVENT_TYPES = [
+  'back:address:validation:confirmed',
+  'back:address:validation:failed',
+] as const
+
+type AddressValidationResponse = Extract<
+  back.BackEvent,
+  { type: (typeof EVENT_TYPES)[number] }
+>
+
+function isAddressValidationResponse(
+  event: back.BackEvent,
+): event is AddressValidationResponse {
+  return (EVENT_TYPES as readonly string[]).includes(event.type)
 }

@@ -1,25 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { InputProof } from './input-proof.use-case.js'
-import { PRODUCER, PUBSUB } from '#constants.js'
-import { AppError, IPubSub, PubSub, Task } from 'utils'
+import { PRODUCER } from '#constants.js'
+import { AppError, Task, timeoutError } from 'utils'
 import { faker } from '@faker-js/faker'
 import { IProducer } from '#shared/services/producer.js'
 import { back } from 'messages'
 import { TestBed } from '@suites/unit'
 import { Mocked } from '@suites/doubles.vitest'
 import { ApiKeyAllowsRequest } from '#dapps/use-cases/api-key-allows-request.use-case.js'
+import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
 
 describe('InputProof', () => {
   // let module: UnitReference
   let useCase: InputProof
-
-  let producer: Mocked<IProducer>
-  let pubsub: IPubSub<back.BackEvent>
-  let apiKeyAllowsRequest: Mocked<ApiKeyAllowsRequest>
-  let contractChainId
-  let contractAddress
-  let userAddress
-  let ciphertextWithZkpok
   let task: Task<
     {
       handles: string[]
@@ -28,16 +21,21 @@ describe('InputProof', () => {
     AppError
   >
 
+  let producer: Mocked<IProducer>
+  let syncService: Mocked<SyncService>
+  let apiKeyAllowsRequest: Mocked<ApiKeyAllowsRequest>
+  let contractChainId: string
+  let contractAddress: string
+  let userAddress: string
+  let ciphertextWithZkpok: string
+
   beforeEach(async () => {
-    pubsub = new PubSub()
-    const { unit, unitRef } = await TestBed.solitary(InputProof)
-      .mock(PUBSUB)
-      .final(pubsub)
-      .compile()
+    const { unit, unitRef } = await TestBed.solitary(InputProof).compile()
 
     useCase = unit
 
     producer = unitRef.get(PRODUCER) as unknown as Mocked<IProducer>
+    syncService = unitRef.get(SYNC_SERVICE) as unknown as Mocked<SyncService>
 
     contractChainId = faker.string.numeric(5)
     contractAddress = faker.string.hexadecimal({ length: 40 })
@@ -52,15 +50,6 @@ describe('InputProof', () => {
     apiKeyAllowsRequest.execute.mockReturnValue(Task.of(void 0))
 
     producer.publish.mockReturnValue(Task.of(void 0))
-    task = useCase.execute(
-      {
-        contractChainId,
-        contractAddress,
-        userAddress,
-        ciphertextWithZkpok,
-      },
-      {},
-    )
   })
 
   test('should be defined', () => {
@@ -68,6 +57,30 @@ describe('InputProof', () => {
   })
 
   describe('when input proof is valid', () => {
+    beforeEach(() => {
+      syncService.waitForResponse.mockImplementation((requestId, cb) => {
+        return Task.of<unknown, AppError>(
+          back.httpzInputProofCompleted(
+            {
+              requestId,
+              handles: [faker.string.hexadecimal({ length: 40 })],
+              signatures: [faker.string.hexadecimal({ length: 40 })],
+            },
+            { correlationId: faker.string.uuid() },
+          ),
+        ).chain(cb)
+      })
+      task = useCase.execute(
+        {
+          contractChainId,
+          contractAddress,
+          userAddress,
+          ciphertextWithZkpok,
+        },
+        {},
+      )
+    })
+
     test('should complete without errors', async () => {
       // Act
       const p = task.toPromise()
@@ -77,19 +90,6 @@ describe('InputProof', () => {
       const { requestId } = producer.publish.mock.calls[0][0].payload
       expect(requestId).toBeDefined()
 
-      await pubsub
-        .publish(
-          back.httpzInputProofCompleted(
-            {
-              requestId,
-              handles: [faker.string.hexadecimal({ length: 40 })],
-              signatures: [faker.string.hexadecimal({ length: 40 })],
-            },
-            { correlationId: faker.string.uuid() },
-          ),
-        )
-        .toPromise()
-
       // Assert
       await expect(p).resolves.not.toThrow()
     })
@@ -97,6 +97,19 @@ describe('InputProof', () => {
   describe('errors', () => {
     beforeEach(() => {
       vi.useFakeTimers()
+
+      syncService.waitForResponse.mockImplementation((requestId, cb) => {
+        return Task.reject<unknown, AppError>(timeoutError()).chain(cb)
+      })
+      task = useCase.execute(
+        {
+          contractChainId,
+          contractAddress,
+          userAddress,
+          ciphertextWithZkpok,
+        },
+        {},
+      )
     })
 
     afterEach(() => {

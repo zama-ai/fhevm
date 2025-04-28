@@ -1,26 +1,13 @@
 TOP := $(dir $(firstword $(MAKEFILE_LIST)))
 
-.PHONY: publish-app-deployment-requested
-publish-app-deployment-requested:
+# simulate the event of the smart contract address being validated
+.PHONY: back-address-validation-confirmed
+back-address-validation-confirmed:
 	aws --endpoint=http://localhost:4566 sqs send-message \
 		--queue-url 'http://localhost:4566/000000000000/back-queue' \
 		--region eu-central-1 \
-		--message-body '{"_tag": "Event", "type": "app-deployment.requested", "payload": {"applicationId": "test-app", "deploymentId": "depl-id", "address": "0x12345", "chainId": "1"}}'
+		--message-body '{"_tag": "Event", "type": "back:address:validation:confirmed", "meta": {"correlationId":"a68ccede-f794-44c4-9c12-78a80418b78d"}, "payload": {"requestId": "01966856-a84e-7452-add1-5fa9b23ec93f", "address": "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee99", "chainId": "11155111"}}'
 
-.PHONY: publish-app-deployment-discover-sc
-publish-app-deployment-discover-sc:
-	aws --endpoint=http://localhost:4566 sqs send-message \
-		--queue-url 'http://localhost:4566/000000000000/back-queue' \
-		--region eu-central-1 \
-		--message '{"_tag": "Command", "type": "app-deployment.discover-sc", "payload": {"applicationId": "test-app", "deploymentId": "depl-id", "address": "0x278a72ccffee5dc758c1b573ca71f377609e39af", "chainId": "11155111"}}'
-
-# simulate the event of the smart contract being discovered
-.PHONY: publish-app-deployment.sc-discovered
-publish-app-deployment-sc-discovered:
-	aws --endpoint=http://localhost:4566 sqs send-message \
-		--queue-url 'http://localhost:4566/000000000000/back-queue' \
-		--region eu-central-1 \
-		--message-body '{"_tag": "Event", "type": "app-deployment.sc-discovered", "meta": { "userId": "user_h8I8DmFLwF"}, "payload": {"applicationId": "dapp_cRcSlh0_the9", "deploymentId": "depl-id", "contractAddress": "0x278a72ccffee5dc758c1b573ca71f377609e39af", "creatorAddress": "0x278a72ccffee5dc758c1b573ca71f377609e39af"}}'
 
 .PHONY: publish-back-dapp-stats-requests
 publish-back-dapp-stats-requests:
