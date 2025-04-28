@@ -14,6 +14,7 @@ contract FHEVMExecutorTest is Test {
 
     address internal constant owner = address(456);
 
+    /// @dev Proxy and implementation variables
     address internal proxy;
     address internal implementation;
 
@@ -46,5 +47,13 @@ contract FHEVMExecutorTest is Test {
     function setUp() public {
         _deployProxy();
         _upgradeProxy();
+    }
+
+    /**
+     * @dev Tests that the contract is reinitialized correctly.
+     */
+    function test_PostProxyUpgradeCheck() public view {
+        // Check if the owner is set correctly
+        assertEq(fhevmExecutor.owner(), owner);
     }
 }

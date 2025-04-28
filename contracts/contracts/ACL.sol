@@ -171,16 +171,16 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param contractAddresses Contract addresses.
      */
     function delegateAccount(address delegatee, address[] memory contractAddresses) public virtual {
-        uint256 lenghtContractAddresses = contractAddresses.length;
-        if (lenghtContractAddresses == 0) {
+        uint256 lengthContractAddresses = contractAddresses.length;
+        if (lengthContractAddresses == 0) {
             revert ContractAddressesIsEmpty();
         }
-        if (lenghtContractAddresses > MAX_NUM_CONTRACT_ADDRESSES) {
+        if (lengthContractAddresses > MAX_NUM_CONTRACT_ADDRESSES) {
             revert ContractAddressesMaxLengthExceeded();
         }
 
         ACLStorage storage $ = _getACLStorage();
-        for (uint256 k = 0; k < lenghtContractAddresses; k++) {
+        for (uint256 k = 0; k < lengthContractAddresses; k++) {
             if (contractAddresses[k] == msg.sender) {
                 revert SenderCannotBeContractAddress(contractAddresses[k]);
             }
@@ -200,15 +200,15 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param contractAddresses Contract addresses.
      */
     function revokeDelegation(address delegatee, address[] memory contractAddresses) public virtual {
-        uint256 lenghtContractAddresses = contractAddresses.length;
-        if (lenghtContractAddresses == 0) {
+        uint256 lengthContractAddresses = contractAddresses.length;
+        if (lengthContractAddresses == 0) {
             revert ContractAddressesIsEmpty();
         }
 
         ACLStorage storage $ = _getACLStorage();
 
-        for (uint256 k = 0; k < lenghtContractAddresses; k++) {
-            if ($.delegates[msg.sender][delegatee][contractAddresses[k]]) {
+        for (uint256 k = 0; k < lengthContractAddresses; k++) {
+            if (!$.delegates[msg.sender][delegatee][contractAddresses[k]]) {
                 revert NotDelegatedYet(delegatee, contractAddresses[k]);
             }
             $.delegates[msg.sender][delegatee][contractAddresses[k]] = false;

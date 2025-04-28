@@ -381,7 +381,7 @@ contract InputVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that the contract is initialized correctly.
+     * @dev Tests that the contract is reinitialized correctly.
      */
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxyWithSigners(3);
@@ -390,18 +390,18 @@ contract InputVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that the getCoprocessorSigners view function works as expected.
+     * @dev Tests that getCoprocessorSigners view function works as expected.
      */
     function test_GetCoprocessorSigners() public {
-        _upgradeProxyWithSigners(3);
+        uint256 numberSigners = 3;
+        _upgradeProxyWithSigners(numberSigners);
         address[] memory signers = inputVerifier.getCoprocessorSigners();
-        assertEq(signers.length, 3);
+        assertEq(signers.length, numberSigners);
         assertEq(signers[0], signer0);
         assertEq(signers[1], signer1);
-        assertEq(signers[2], signer2);
-        assertTrue(inputVerifier.isSigner(signers[0]));
-        assertTrue(inputVerifier.isSigner(signer1));
-        assertTrue(inputVerifier.isSigner(signer2));
+        for (uint256 i = 0; i < numberSigners; i++) {
+            assertTrue(inputVerifier.isSigner(signers[i]));
+        }
     }
 
     /**
@@ -459,7 +459,7 @@ contract InputVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that the verify ciphertext function works as expected for one input.
+     * @dev Tests that the verifyCiphertext function works as expected for one input.
      */
     function test_VerifyCiphertextWorksAsExpectedForOneInput(uint64 cleartextValue) public {
         _upgradeProxyWithSigners(3);
@@ -488,9 +488,9 @@ contract InputVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that the verify ciphertext function works as expected for one input.
+     * @dev Tests that the verifyCiphertext function works as expected for two inputs.
      */
-    function test_VerifyCiphertextWorksAsExpectedForTwoInputs(uint64 cleartextValue) public {
+    function test_VerifyCiphertextWorksAsExpectedForTwoInputs(uint64 cleartextValue, bool cleartextValue2) public {
         _upgradeProxyWithSigners(3);
 
         address userAddress = address(1111);
@@ -502,7 +502,7 @@ contract InputVerifierTest is Test {
         fheTypes[1] = FheType.Bool;
 
         cleartextValues[0] = bytes32(uint256(cleartextValue));
-        cleartextValues[1] = bytes32(0);
+        cleartextValues[1] = bytes32(cleartextValue2 ? uint256(1) : uint256(0));
 
         (
             FHEVMExecutorNoEvents.ContextUserInputs memory context,
@@ -975,8 +975,9 @@ contract InputVerifierTest is Test {
     /**
      * @dev Tests that anyone can call cleanTransientStorage.
      */
-    function test_AnyoneCanCallCleanTransientStorage(address randomAccount) public {
-        _upgradeProxyWithSigners(3);
+    function test_AnyoneCanCallCleanTransientStorage(uint64 cleartextValue, address randomAccount) public {
+        /// @dev It inherits a working test since transient storage would be cleaned up after a call in the same transaction.
+        test_VerifyCiphertextWorksAsExpectedForOneInput(cleartextValue);
         vm.prank(randomAccount);
         inputVerifier.cleanTransientStorage();
     }
