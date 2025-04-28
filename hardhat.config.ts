@@ -91,6 +91,21 @@ const config: HardhatUserConfig = {
       url: rpcUrl,
     },
   },
+  etherscan: {
+    apiKey: {
+      zwsDev: "empty",
+    },
+    customChains: [
+      {
+        network: "zwsDev",
+        chainId: 412346,
+        urls: {
+          apiURL: "http://l2-blockscout-zws-dev-blockscout-stack-blockscout-svc/api",
+          browserURL: "https://l2-explorer-zws-dev.diplodocus-boa.ts.net",
+        },
+      },
+    ],
+  },
   // We use 0.8.24 to align with the solidity compiler version used in the host chain smart contracts
   solidity: {
     version: "0.8.24",
