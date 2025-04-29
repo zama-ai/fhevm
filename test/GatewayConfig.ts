@@ -308,7 +308,7 @@ describe("GatewayConfig", function () {
 
       const newNetwork = {
         chainId: newChainId,
-        fhevmExecutor: fhevmExecutorAddress,
+        fhevmExecutorAddress,
         aclAddress,
         name,
         website,
@@ -330,7 +330,7 @@ describe("GatewayConfig", function () {
       it("Should revert because the network's chainId is null", async function () {
         const nullChainIdNetwork = {
           chainId: 0,
-          fhevmExecutor: fhevmExecutorAddress,
+          fhevmExecutorAddress,
           aclAddress,
           name,
           website,
@@ -348,7 +348,7 @@ describe("GatewayConfig", function () {
 
         const chainIdTooLargeNetwork = {
           chainId: chainIdTooLarge,
-          fhevmExecutor: fhevmExecutorAddress,
+          fhevmExecutorAddress,
           aclAddress,
           name,
           website,
@@ -365,7 +365,7 @@ describe("GatewayConfig", function () {
 
         const alreadyAddedNetwork = {
           chainId: alreadyAddedHostChainId,
-          fhevmExecutor: fhevmExecutorAddress,
+          fhevmExecutorAddress,
           aclAddress,
           name,
           website,

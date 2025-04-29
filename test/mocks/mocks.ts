@@ -52,7 +52,7 @@ describe("Mock contracts", function () {
 
   const DefaultNetwork = {
     chainId: DefaultUint256,
-    fhevmExecutor: DefaultAddress,
+    fhevmExecutorAddress: DefaultAddress,
     aclAddress: DefaultAddress,
     name: DefaultString,
     website: DefaultString,
