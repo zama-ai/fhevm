@@ -5,7 +5,16 @@ import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
 import { back, generateRequestId } from 'messages'
-import { AppError, every, Task, unknownError, UseCase } from 'utils'
+import {
+  AppError,
+  every,
+  fromNullable,
+  fromOption,
+  Task,
+  unknownError,
+  UseCase,
+  validationError,
+} from 'utils'
 import { SyncInstances } from '../../shared/use-cases/sync-instances.use-case.js'
 import { IProducer } from '#shared/services/producer.js'
 
@@ -18,14 +27,57 @@ export type ValidateAddressOutput =
   | { check: true; message?: never }
   | { check: false; message: string }
 
+export type IValidateAddress = UseCase<
+  ValidateAddressInput,
+  ValidateAddressOutput
+>
+
+export const VALIDATE_ADDRESS = 'VALIDATE_ADDRESS'
+
 @Injectable()
-export class ValidateAddress
-  implements UseCase<ValidateAddressInput, ValidateAddressOutput>
-{
+export class ValidateAddress implements IValidateAddress {
   private readonly logger = new Logger(ValidateAddress.name)
 
+  constructor(@Inject(PRODUCER) private readonly producer: IProducer) {}
+
+  execute = (
+    input: ValidateAddressInput,
+    context?: Record<string, any>,
+  ): Task<ValidateAddressOutput, AppError> => {
+    // TODO: remove this
+    console.log(`validate address execute: ${context?.requestId}`)
+    return every([
+      fromOption(
+        fromNullable(context?.requestId).orElse(() => generateRequestId()),
+        () => validationError('missing requestId'),
+      ),
+      ChainId.parse(input.chainId),
+      Address.fromString(input.address),
+    ])
+      .asyncChain(([requestId, chainId, address]) => {
+        this.logger.verbose(
+          `publishing address validation for requestId=${requestId}`,
+        )
+        // TODO: remove this
+        console.log(
+          `publishing address validation requested for requestId=${requestId}`,
+        )
+        return this.producer.publish(
+          back.addressValidationRequested(
+            { chainId: chainId.value, address: address.value, requestId },
+            { correlationId: randomUUID() },
+          ),
+        )
+      })
+      .map(() => ({ check: true }))
+  }
+}
+
+@Injectable()
+export class ValidateAddressWithSync implements IValidateAddress {
+  private readonly logger = new Logger(ValidateAddressWithSync.name)
   constructor(
-    @Inject(PRODUCER) private readonly producer: IProducer,
+    private readonly validateAddress: ValidateAddress,
     @Inject(SYNC_SERVICE) private readonly syncService: SyncService,
 
     syncInstances: SyncInstances,
@@ -34,48 +86,49 @@ export class ValidateAddress
     syncInstances.listenToEvent('back:address:validation:confirmed')
     syncInstances.listenToEvent('back:address:validation:failed')
   }
-
-  execute = (
+  execute(
     input: ValidateAddressInput,
-  ): Task<ValidateAddressOutput, AppError> => {
-    return every([
-      ChainId.parse(input.chainId),
-      Address.fromString(input.address),
-    ])
-      .asyncChain(([chainId, address]) => {
-        const requestId = generateRequestId()
-        this.logger.verbose(
-          `publishing address validation for requestId=${requestId}`,
-        )
-        return this.producer
-          .publish(
-            back.addressValidationRequested(
-              { chainId: chainId.value, address: address.value, requestId },
-              { correlationId: randomUUID() },
-            ),
-          )
-          .chain(() => Task.of(requestId))
-      })
-      .chain(requestId => {
-        this.logger.verbose(
-          `waiting for response sync for requestId=${requestId}`,
-        )
-        return this.syncService.waitForResponse<ValidateAddressOutput>(
-          requestId,
-          data => {
-            if (back.isBackEvent(data) && isAddressValidationResponse(data)) {
-              return data.type === 'back:address:validation:confirmed'
-                ? Task.of({ check: true })
-                : Task.of({
-                    check: false,
-                    message: data.payload.reason,
-                  })
-            }
-            this.logger.warn(`invalid event received: ${JSON.stringify(data)}`)
-            return Task.reject(unknownError('Invalid event received'))
-          },
-        )
-      })
+    context?: Record<string, any>,
+  ): Task<ValidateAddressOutput, AppError> {
+    return fromOption<string, AppError>(
+      fromNullable<string>(context?.requestId).orElse(() =>
+        generateRequestId(),
+      ),
+      () => validationError('missing requestId'),
+    )
+      .asyncChain<ValidateAddressOutput>(requestId =>
+        Task.race([
+          this.validateAddress
+            .execute(input, { ...context, requestId })
+            .chain(() => {
+              this.logger.verbose(
+                `waiting for response sync for requestId=${requestId}`,
+              )
+              return this.syncService.waitForResponse<ValidateAddressOutput>(
+                requestId,
+                data => {
+                  this.logger.verbose(`received event: ${JSON.stringify(data)}`)
+                  if (
+                    back.isBackEvent(data) &&
+                    isAddressValidationResponse(data)
+                  ) {
+                    return data.type === 'back:address:validation:confirmed'
+                      ? Task.of({ check: true })
+                      : Task.of({
+                          check: false,
+                          message: data.payload.reason,
+                        })
+                  }
+                  this.logger.warn(
+                    `invalid event received: ${JSON.stringify(data)}`,
+                  )
+                  return Task.reject(unknownError('Invalid event received'))
+                },
+              )
+            }),
+          Task.timeout(parseInt(process.env.DEFAULT_TIMEOUT ?? '30', 10)),
+        ]),
+      )
       .tap(value => {
         this.logger.debug(`value=${JSON.stringify(value)}`)
       })

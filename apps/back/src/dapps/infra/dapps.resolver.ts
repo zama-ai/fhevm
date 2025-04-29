@@ -45,10 +45,12 @@ export class DappsResolver {
     private readonly deployDappUC: uc.DeployDApp,
     private readonly getDappRawStatsUC: uc.GetDappRawStatsUseCase,
     private readonly appUpdatesSubscriptionUC: uc.AppUpdatesSubscription,
-    private readonly validateAddressUC: uc.ValidateAddress,
   ) {}
   @Inject(uc.GetAllApiKeys)
   private readonly getAllApiKeysUC: uc.GetAllApiKeys
+
+  @Inject(uc.VALIDATE_ADDRESS)
+  private readonly validateAddressUC: uc.IValidateAddress
 
   @Query(() => DappType, { name: 'dapp' })
   @UseGuards(JwtAuthGuard)

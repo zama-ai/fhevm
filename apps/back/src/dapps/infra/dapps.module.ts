@@ -13,6 +13,8 @@ import {
   FEATURE_FLAGS_SERVICE,
   FeatureFlagHandler,
 } from '#feature-flag/services/feature-flags.service.js'
+import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
+import { SyncInstances } from '#shared/use-cases/sync-instances.use-case.js'
 
 @Module({
   imports: [DatabaseModule, SharedModule, SubscriptionsModule],
@@ -31,6 +33,20 @@ import {
     uc.AppUpdatesSubscription,
     uc.StoreDAppStats,
     uc.ValidateAddress,
+    {
+      provide: uc.VALIDATE_ADDRESS,
+      inject: [uc.ValidateAddress, SYNC_SERVICE, SyncInstances],
+      useFactory: (
+        validateAddress: uc.ValidateAddress,
+        syncService: SyncService,
+        syncInstances: SyncInstances,
+      ) =>
+        new uc.ValidateAddressWithSync(
+          validateAddress,
+          syncService,
+          syncInstances,
+        ),
+    },
     uc.CreateApiKey,
     uc.GetAllApiKeys,
     uc.GetApiKey,

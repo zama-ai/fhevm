@@ -19,6 +19,13 @@ export { GetDappsByTeamId } from './get-dapps-by-team-id.use-case.js'
 export { StoreDAppStats } from './store-dapp-stats.use-case.js'
 export { UpdateApiKey } from './update-api-key.use-case.js'
 export { UpdateDapp } from './update-dapp.use-case.js'
-export { ValidateAddress } from './validate-address.use-case.js'
+export {
+  type IValidateAddress,
+  type ValidateAddressInput,
+  type ValidateAddressOutput,
+  VALIDATE_ADDRESS,
+  ValidateAddress,
+  ValidateAddressWithSync,
+} from './validate-address.use-case.js'
 export { GetDappCumulativeStatsUseCase } from './get-dapp-cumulative-stats.use-case.js'
 export { GetDappDailyStatsUseCase } from './get-dapp-daily-stats.use-case.js'

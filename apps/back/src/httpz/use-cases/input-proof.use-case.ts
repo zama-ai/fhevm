@@ -102,27 +102,32 @@ export class InputProofWithSync implements IInputProof {
   }
 
   execute(input: Input, context?: Record<string, any>): Task<Output, AppError> {
-    const requestId = generateRequestId()
-
-    return Task.race([
-      this.inputProof
-        .execute(input, {
-          ...context,
-          requestId,
-        })
-        .chain(() =>
-          this.syncService.waitForResponse<Output>(requestId, data => {
-            if (back.isBackEvent(data) && isInputProofResult(data)) {
-              return Task.of<Output, AppError>({
-                handles: data.payload.handles,
-                signatures: data.payload.signatures,
-              })
-            }
-            return Task.reject(unknownError('Invalid event received'))
-          }),
-        ),
-      Task.timeout(parseInt(process.env.DEFAULT_TIMEOUT ?? '30', 10)),
-    ])
+    return fromOption<string, AppError>(
+      fromNullable<string>(context?.requestId).orElse(() =>
+        generateRequestId(),
+      ),
+      () => validationError('missing requestId'),
+    ).asyncChain(requestId =>
+      Task.race([
+        this.inputProof
+          .execute(input, {
+            ...context,
+            requestId,
+          })
+          .chain(() =>
+            this.syncService.waitForResponse<Output>(requestId, data => {
+              if (back.isBackEvent(data) && isInputProofResult(data)) {
+                return Task.of<Output, AppError>({
+                  handles: data.payload.handles,
+                  signatures: data.payload.signatures,
+                })
+              }
+              return Task.reject(unknownError('Invalid event received'))
+            }),
+          ),
+        Task.timeout(parseInt(process.env.DEFAULT_TIMEOUT ?? '30', 10)),
+      ]),
+    )
   }
 }
 

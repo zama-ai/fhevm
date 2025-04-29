@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, Mock, test } from 'vitest'
+import { beforeEach, describe, expect, Mock, test } from 'vitest'
 import {
   IInputProof,
   InputProof,
@@ -44,7 +44,6 @@ describe('InputProof', () => {
     useCase = unit
 
     producer = unitRef.get(PRODUCER) as unknown as Mocked<IProducer>
-    // syncService = unitRef.get(SYNC_SERVICE) as unknown as Mocked<SyncService>
 
     contractChainId = faker.string.numeric(5)
     contractAddress = faker.string.hexadecimal({ length: 40 })
@@ -93,34 +92,25 @@ describe('InputProof', () => {
     let message: string
     beforeEach(() => {
       message = faker.string.alphanumeric({ length: { min: 10, max: 100 } })
-      // vi.useFakeTimers()
-
-      // syncService.waitForResponse.mockImplementation((requestId, cb) => {
-      //   return Task.reject<unknown, AppError>(timeoutError()).chain(cb)
-      // })
       producer.publish.mockReturnValue(Task.reject(unknownError(message)))
     })
 
-    afterEach(() => {
-      // vi.useRealTimers()
-    })
-
     test('should forward error', async () => {
-      const p = useCase
-        .execute(
-          {
-            contractChainId,
-            contractAddress,
-            userAddress,
-            ciphertextWithZkpok,
-          },
-          {
-            requestId,
-          },
-        )
-        .toPromise()
-      // vi.runAllTimers()
-      await expect(p).rejects.toThrowError(message)
+      await expect(
+        useCase
+          .execute(
+            {
+              contractChainId,
+              contractAddress,
+              userAddress,
+              ciphertextWithZkpok,
+            },
+            {
+              requestId,
+            },
+          )
+          .toPromise(),
+      ).rejects.toThrowError(message)
     })
   })
 })
@@ -185,7 +175,7 @@ describe('InputProofWithSync', () => {
       })
     })
 
-    test('should returns the right result', async () => {
+    test('then it should returns the right result', async () => {
       const result = await useCase
         .execute({
           contractChainId,
