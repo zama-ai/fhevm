@@ -42,7 +42,7 @@ spec:
             set -ex
             wget {{ .Values.dbMigration.insertInitContainer.pksURL }} -O /fhevm-keys/pks
             sha256sum /fhevm-keys/pks
-            wget {{ .Values.dbMigration.insertInitContainer.sksURL }} -O /fhevm-keys/sks
+            wget {{ .Values.dbMigration.insertInitContainer.sksURL }} -O /fhevm-keys/sns_pk
             sha256sum /fhevm-keys/sns_pk
             wget {{ .Values.dbMigration.insertInitContainer.publicParamsURL }} -O /fhevm-keys/pp
             sha256sum /fhevm-keys/pp
@@ -66,9 +66,9 @@ spec:
             name: cache-volume
             subPath: pks
             readOnly: true
-          - mountPath: /fhevm-keys/sks
+          - mountPath: /fhevm-keys/sns_pk
             name: cache-volume
-            subPath: sks
+            subPath: sns_pk
             readOnly: true
           - mountPath: /fhevm-keys/pp
             name: cache-volume
