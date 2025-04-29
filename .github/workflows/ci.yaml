@@ -48,6 +48,8 @@ jobs:
             - 'apps/orchestrator/**'
             - 'apps/web3/**'
             - 'packages/**'
+            - 'package.json'
+            - 'pnpm-lock.yaml'
 
   js:
     needs:
