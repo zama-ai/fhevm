@@ -56,7 +56,6 @@ export type Option<T> = Some<T> | None
  * @returns True if the Option has a value, false otherwise.
  */
 export function isSome<T>(option: Option<T>): option is Some<T> {
-  console.log(`isSome ${JSON.stringify(option)} ${option._tag}`)
   return option._tag === 'Some'
 }
 
