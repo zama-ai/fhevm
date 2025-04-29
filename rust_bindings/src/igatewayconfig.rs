@@ -15,7 +15,7 @@ interface IGatewayConfig {
     }
     struct Network {
         uint256 chainId;
-        address fhevmExecutor;
+        address fhevmExecutorAddress;
         address aclAddress;
         string name;
         string website;
@@ -86,7 +86,7 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "fhevmExecutor",
+            "name": "fhevmExecutorAddress",
             "type": "address",
             "internalType": "address"
           },
@@ -387,7 +387,7 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "fhevmExecutor",
+            "name": "fhevmExecutorAddress",
             "type": "address",
             "internalType": "address"
           },
@@ -427,7 +427,7 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "fhevmExecutor",
+            "name": "fhevmExecutorAddress",
             "type": "address",
             "internalType": "address"
           },
@@ -531,7 +531,7 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "fhevmExecutor",
+            "name": "fhevmExecutorAddress",
             "type": "address",
             "internalType": "address"
           },
@@ -1285,7 +1285,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
         }
     };
     /**```solidity
-struct Network { uint256 chainId; address fhevmExecutor; address aclAddress; string name; string website; }
+struct Network { uint256 chainId; address fhevmExecutorAddress; address aclAddress; string name; string website; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1293,7 +1293,7 @@ struct Network { uint256 chainId; address fhevmExecutor; address aclAddress; str
         #[allow(missing_docs)]
         pub chainId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub fhevmExecutor: alloy::sol_types::private::Address,
+        pub fhevmExecutorAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
         pub aclAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
@@ -1342,7 +1342,7 @@ struct Network { uint256 chainId; address fhevmExecutor; address aclAddress; str
             fn from(value: Network) -> Self {
                 (
                     value.chainId,
-                    value.fhevmExecutor,
+                    value.fhevmExecutorAddress,
                     value.aclAddress,
                     value.name,
                     value.website,
@@ -1355,7 +1355,7 @@ struct Network { uint256 chainId; address fhevmExecutor; address aclAddress; str
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     chainId: tuple.0,
-                    fhevmExecutor: tuple.1,
+                    fhevmExecutorAddress: tuple.1,
                     aclAddress: tuple.2,
                     name: tuple.3,
                     website: tuple.4,
@@ -1375,7 +1375,7 @@ struct Network { uint256 chainId; address fhevmExecutor; address aclAddress; str
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.fhevmExecutor,
+                        &self.fhevmExecutorAddress,
                     ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.aclAddress,
@@ -1460,7 +1460,7 @@ struct Network { uint256 chainId; address fhevmExecutor; address aclAddress; str
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "Network(uint256 chainId,address fhevmExecutor,address aclAddress,string name,string website)",
+                    "Network(uint256 chainId,address fhevmExecutorAddress,address aclAddress,string name,string website)",
                 )
             }
             #[inline]
@@ -1481,7 +1481,7 @@ struct Network { uint256 chainId; address fhevmExecutor; address aclAddress; str
                     > as alloy_sol_types::SolType>::eip712_data_word(&self.chainId)
                         .0,
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.fhevmExecutor,
+                            &self.fhevmExecutorAddress,
                         )
                         .0,
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
@@ -1511,7 +1511,7 @@ struct Network { uint256 chainId; address fhevmExecutor; address aclAddress; str
                         &rust.chainId,
                     )
                     + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.fhevmExecutor,
+                        &rust.fhevmExecutorAddress,
                     )
                     + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.aclAddress,
@@ -1538,7 +1538,7 @@ struct Network { uint256 chainId; address fhevmExecutor; address aclAddress; str
                     out,
                 );
                 <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.fhevmExecutor,
+                    &rust.fhevmExecutorAddress,
                     out,
                 );
                 <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
