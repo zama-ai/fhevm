@@ -79,7 +79,7 @@ impl KmsServiceImpl {
                 Ok(_) => continue, // Client is now initialized, try to get it
                 Err(e) => {
                     error!("Failed to connect to KMS-core: {}, retrying...", e);
-                    sleep(self.config.retry_interval()).await;
+                    sleep(self.config.retry_interval).await;
                 }
             }
         }
@@ -96,7 +96,7 @@ impl KmsServiceImpl {
         Fut: std::future::Future<Output = std::result::Result<Response<T>, Status>>,
     {
         let start = Instant::now();
-        let retry_interval = self.config.retry_interval();
+        let retry_interval = self.config.retry_interval;
 
         loop {
             match poll_fn().await {
@@ -160,9 +160,7 @@ impl KmsService for KmsServiceImpl {
         client.public_decrypt(request).await?;
 
         // Poll for result with timeout
-        let timeout = self.config.public_decryption_timeout();
-
-        self.poll_for_result(timeout, || {
+        self.poll_for_result(self.config.public_decryption_timeout, || {
             let request = Request::new(request_id.clone());
             async move {
                 let mut client = self
@@ -220,9 +218,7 @@ impl KmsService for KmsServiceImpl {
         client.user_decrypt(request).await?;
 
         // Poll for result with timeout
-        let timeout = self.config.user_decryption_timeout();
-
-        self.poll_for_result(timeout, || {
+        self.poll_for_result(self.config.user_decryption_timeout, || {
             let request = Request::new(request_id.clone());
             async move {
                 let mut client = self

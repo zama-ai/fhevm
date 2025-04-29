@@ -11,9 +11,9 @@ data:
     # Service name for tracing (optional, default: "kms-connector")
     #service_name = "kms-connector"
 
-    # mnemonic for anvil
+    # private key for anvil
     # this one is for testing purpose
-    #mnemonic = "test test test test test test test test test test test junk"
+    #private_key = "8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f"
 
     # KMS Core GRPC endpoint required, overriden by env vars
     #kms_core_endpoint =

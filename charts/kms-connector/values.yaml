@@ -29,8 +29,6 @@ kmsConnector:
       value: "true"
     - name: KMS_CONNECTOR_GATEWAY_URL
       value: "ws://gateway-node:8546"
-    - name: KMS_CONNECTOR_MNEMONIC
-      value: "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
     - name: KMS_CONNECTOR_CHAIN_ID
       value: "54321"
     - name: KMS_CONNECTOR_DECRYPTION_ADDRESS

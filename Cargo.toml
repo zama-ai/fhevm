@@ -10,7 +10,6 @@ version = "0.1.0-rc2"
 alloy = { version = "=0.13.0", default-features = true,  features = [
     "provider-ws",
     "signer-aws",
-    "signer-mnemonic",
 ] }
 anyhow = { version = "=1.0.98", default-features = false }
 aws-sdk-kms = { version = "=1.65.0", default-features = true }

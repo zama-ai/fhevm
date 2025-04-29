@@ -24,7 +24,6 @@
 - Full configuration management
 - Enhanced error handling with exponential backoff for reconnections
 - Improved logging for better observability
-- Secure wallet implementation with mnemonic-based key derivation
 - S3 ciphertext retrieval with configurable endpoint support
 - Non-failable S3 URL processing with graceful fallbacks
 - Optional S3 configuration with flexible deployment scenarios
