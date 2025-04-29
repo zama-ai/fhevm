@@ -14,7 +14,7 @@ KMS Connector is a Rust-based service that connects the KMS Core with the fhevm 
 - S3 ciphertext retrieval with configurable endpoint support
 - Non-failable S3 URL processing with graceful fallbacks
 - Optional S3 configuration for flexible deployment scenarios
-- Multiple wallet initialization options (AWS KMS, signing key file, private key, mnemonic)
+- Multiple wallet initialization options (AWS KMS, private key)
 
 ## CLI Usage
 
@@ -62,17 +62,10 @@ Configuration files use TOML format with the following structure:
 # Service name for tracing (optional, default: "kms-connector")
 service_name = "my-connector"
 
-# Wallet configuration - one of the following must be provided:
-# 1. BIP39 mnemonic phrase for wallet generation
-mnemonic = "test test test test test test test test test test test junk"
-
-# 2. Path to a serialized signing key file (relative to execution directory)
-signing_key_path = "../keys/CLIENT/SigningKey/e164d9de0bec6656928726433cc56bef6ee8417ad5a4f8c82fbcc2d3e5f220fd"
-
-# 3. Private key as a hex string (with or without 0x prefix)
+# 1. Private key as a hex string (with or without 0x prefix)
 private_key = "0x0000000000000000000000000000000000000000000000000000000000000001"
 
-# 4. AWS KMS configuration (for using AWS KMS for signing)
+# 2. AWS KMS configuration (for using AWS KMS for signing)
 [aws_kms_config]
 # AWS KMS key ID (required for AWS KMS wallet)
 key_id = "alias/my-kms-key"
@@ -80,9 +73,6 @@ key_id = "alias/my-kms-key"
 region = "us-east-1"
 # AWS endpoint URL (optional, for testing or non-standard endpoints)
 endpoint = "http://localhost:4566"
-
-# Account index for mnemonic-based wallets (optional, default: 0)
-account_index = 0
 
 # KMS Core endpoint (required)
 kms_core_endpoint = "http://localhost:50052"
@@ -128,10 +118,6 @@ The KMS Connector supports flexible configuration through both TOML files and en
    export KMS_CONNECTOR_KMS_CORE_ENDPOINT="http://localhost:50052"
    
    # Wallet configuration (one of the following is required)
-   export KMS_CONNECTOR_MNEMONIC="your mnemonic here"
-   # OR
-   export KMS_CONNECTOR_SIGNING_KEY_PATH="/path/to/signing/key"
-   # OR
    export KMS_CONNECTOR_PRIVATE_KEY="0x0000000000000000000000000000000000000000000000000000000000000001"
    # OR for AWS KMS
    export KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID="alias/my-kms-key"
@@ -143,7 +129,6 @@ The KMS Connector supports flexible configuration through both TOML files and en
    export KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS="0x..."
 
    # Optional configuration with defaults
-   export KMS_CONNECTOR_ACCOUNT_INDEX="0"
    export KMS_CONNECTOR_CHANNEL_SIZE="1000"
    export KMS_CONNECTOR_SERVICE_NAME="kms-connector"
    export KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS="300"
@@ -211,15 +196,12 @@ All environment variables are prefixed with `KMS_CONNECTOR_`. Here's the complet
 
 | Environment Variable | Description | Default |
 |---------------------|-------------|---------|
-| `KMS_CONNECTOR_ACCOUNT_INDEX` | Account index for the wallet | 0 |
 | `KMS_CONNECTOR_GATEWAY_URL` | Gateway WebSocket URL | ws://localhost:8545 |
 | `KMS_CONNECTOR_KMS_CORE_ENDPOINT` | KMS Core service endpoint | http://[::1]:50052 |
-| `KMS_CONNECTOR_MNEMONIC` | Wallet mnemonic phrase | (required if other wallet options not provided) |
-| `KMS_CONNECTOR_SIGNING_KEY_PATH` | Path to a serialized signing key file | (optional) |
-| `KMS_CONNECTOR_PRIVATE_KEY` | Private key as a hex string | (optional) |
-| `KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID` | AWS KMS key ID | (optional) |
-| `KMS_CONNECTOR_AWS_KMS_CONFIG__REGION` | AWS region for KMS | (optional) |
-| `KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT` | AWS endpoint URL for KMS | (optional) |
+| `KMS_CONNECTOR_PRIVATE_KEY` | Private key as a hex string | (optional if `KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID` is configured) |
+| `KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID` | AWS KMS key ID | (optional if `KMS_CONNECTOR_PRIVATE_KEY` is configured) |
+| `KMS_CONNECTOR_AWS_KMS_CONFIG__REGION` | AWS region for KMS | (optional if `KMS_CONNECTOR_PRIVATE_KEY` is configured) |
+| `KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT` | AWS endpoint URL for KMS | (optional if `KMS_CONNECTOR_PRIVATE_KEY` is configured) |
 | `KMS_CONNECTOR_CHAIN_ID` | Blockchain network chain ID | 31337 |
 | `KMS_CONNECTOR_DECRYPTION_ADDRESS` | Address of the Decryption contract | 0x5fbdb2315678afecb367f032d93f642f64180aa3 |
 | `KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS` | Address of the GatewayConfig contract | 0x0000000000000000000000000000000000000001 |
@@ -244,7 +226,7 @@ All environment variables are prefixed with `KMS_CONNECTOR_`. Here's the complet
 
 1. Use a config file for development and testing environments where values change infrequently
 2. Use environment variables for production deployments and when values need to be changed dynamically
-3. Store sensitive information (like mnemonics) as environment variables rather than in config files
+3. Store sensitive information (like private keys) as environment variables rather than in config files
 
 ## S3 Configuration
 
@@ -294,39 +276,9 @@ S3 configuration is optional. If not provided, the connector will log warnings b
 
 The KMS Connector supports three methods for configuring the wallet used for signing decryption responses:
 
-### 1. Mnemonic-based Wallet
+### 1. Private Key String
 
-You can provide a BIP39 mnemonic phrase to generate a deterministic wallet:
-
-```toml
-# In config file
-mnemonic = "test test test test test test test test test test test junk"
-```
-
-```bash
-# Or as environment variable
-export KMS_CONNECTOR_MNEMONIC="test test test test test test test test test test test junk"
-```
-
-### 2. Signing Key File
-
-Alternatively, you can load a serialized signing key from a file:
-
-```toml
-# In config file
-signing_key_path = "../keys/CLIENT/SigningKey/e164d9de0bec6656928726433cc56bef6ee8417ad5a4f8c82fbcc2d3e5f220fd"
-```
-
-```bash
-# Or as environment variable
-export KMS_CONNECTOR_SIGNING_KEY_PATH="../keys/CLIENT/SigningKey/e164d9de0bec6656928726433cc56bef6ee8417ad5a4f8c82fbcc2d3e5f220fd"
-```
-
-The path is relative to the execution directory of the application.
-
-### 3. Private Key String
-
-You can also provide a private key directly as a hex string:
+You can provide a private key directly as a hex string:
 
 ```toml
 # In config file
@@ -340,7 +292,7 @@ export KMS_CONNECTOR_PRIVATE_KEY="8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7
 
 The private key can be provided with or without the '0x' prefix.
 
-### 4. AWS KMS Wallet
+### 2. AWS KMS Wallet
 
 You can also use AWS KMS for signing:
 
@@ -363,19 +315,14 @@ export KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT="http://localhost:4566"
 
 The connector will attempt to initialize the wallet in the following order:
 
-1. Signing key file (if provided)
-2. Private key string (if provided)
-3. Mnemonic (if provided)
-4. AWS KMS configuration (if provided)
+1. Private key string (if provided)
+2. AWS KMS configuration (if provided)
 
-At least one of these four options must be provided.
+At least one of these two options must be provided.
 
 ### Security Considerations
 
-- For production environments, it's recommended to use the signing key file approach with proper file permissions
-- The signing key file should be securely stored and accessible only to the KMS Connector process
 - Private keys provided as strings should be handled with extreme caution to avoid exposure
-- In development environments, the mnemonic approach can be more convenient
 
 ## Architecture: Adapter-Provider Pattern
 

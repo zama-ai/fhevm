@@ -40,10 +40,6 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> EventProcessor<P> {
         sns_materials: Vec<SnsCiphertextMaterial>,
     ) -> Vec<(Vec<u8>, Vec<u8>)> {
         let s3_config = self.config.s3_config.clone();
-        let gateway_config_address = self
-            .config
-            .get_gateway_config_address()
-            .expect("Invalid GatewayConfig address");
 
         // Process all SNS ciphertext materials
         let mut sns_ciphertext_materials = Vec::new();
@@ -58,7 +54,7 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> EventProcessor<P> {
             // 3. Then we continue processing the next SNS material in the outer loop
             let s3_urls = s3::prefetch_coprocessor_buckets(
                 coprocessor_addresses,
-                gateway_config_address,
+                self.config.gateway_config_address,
                 self.provider.clone(),
                 s3_config.as_ref(),
             )

@@ -98,15 +98,7 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
             name: Some(Cow::Owned(domain_name)),
             version: Some(Cow::Owned(domain_version)),
             chain_id: Some(U256::from(self.kms_client.config().chain_id)),
-            verifying_contract: Some(
-                self.kms_client
-                    .config()
-                    .decryption_address
-                    .parse()
-                    .map_err(|e| {
-                        crate::error::Error::Config(format!("Invalid Decryption address: {}", e))
-                    })?,
-            ),
+            verifying_contract: Some(self.kms_client.config().decryption_address),
             salt: None, // TODO: verify policy on this
         };
 

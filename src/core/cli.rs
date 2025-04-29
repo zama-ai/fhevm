@@ -1,3 +1,4 @@
+use super::config::Config;
 use crate::error::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -94,9 +95,9 @@ impl Commands {
     }
 
     /// Validate a configuration file
-    pub fn validate_config(config_path: &PathBuf) -> Result<()> {
+    pub async fn validate_config(config_path: &PathBuf) -> Result<()> {
         // Leverage existing Config parsing for validation
-        super::config::Config::from_file(config_path)?;
+        Config::from_env_and_file(Some(config_path)).await?;
         Ok(())
     }
 }

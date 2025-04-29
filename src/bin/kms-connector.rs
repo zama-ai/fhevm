@@ -5,7 +5,6 @@ use kms_connector::{
         cli::{Cli, Commands},
         config::Config,
         connector::KmsCoreConnector,
-        utils::wallet::KmsWallet,
     },
     error::{Error, Result},
     kms_core_adapters::service::KmsServiceImpl,
@@ -22,7 +21,6 @@ use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 const RETRY_DELAY: Duration = Duration::from_secs(5);
-const DEFAULT_CHANNEL_SIZE: usize = 1000;
 
 /// Keep trying to connect to the RPC endpoint until successful or shutdown signal
 async fn connect_with_retry(
@@ -63,42 +61,6 @@ async fn run_connector(
     gw_provider: Arc<impl Provider + Clone + std::fmt::Debug + 'static>,
     shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<()> {
-    // Initialize wallet based on configuration
-    let wallet = if let Some(aws_kms_config) = &config.aws_kms_config {
-        info!(
-            "Using AWS KMS for signing with key ID: {}",
-            aws_kms_config.key_id
-        );
-        KmsWallet::from_aws_kms(
-            aws_kms_config.key_id.clone(),
-            aws_kms_config.region.clone(),
-            aws_kms_config.endpoint.clone(),
-            Some(config.chain_id),
-        )
-        .await?
-    } else if let Some(signing_key_path) = &config.signing_key_path {
-        info!("Using signing key from file: {}", signing_key_path);
-        KmsWallet::from_signing_key_file(Some(signing_key_path), Some(config.chain_id))?
-    } else if let Some(private_key) = &config.private_key {
-        info!("Using private key from configuration");
-        KmsWallet::from_private_key_str(private_key, Some(config.chain_id))?
-    } else {
-        // Initialize wallet with account index derived from service name
-        let account_index = config.get_account_index();
-        info!("Using mnemonic with account index: {}", account_index);
-        KmsWallet::from_mnemonic_with_index(&config.mnemonic, account_index, Some(config.chain_id))?
-    };
-
-    info!(
-        "Wallet created successfully with address: {:#x}",
-        wallet.address()
-    );
-
-    info!(
-        "Using contracts for EVENTS subscription:\n\tDecryption: {}\n\tGatewayConfig: {}",
-        config.decryption_address, config.gateway_config_address
-    );
-
     // Initialize KMS service
     let kms_core_endpoint = config.kms_core_endpoint.clone();
     info!("Connecting to KMS-Core at {}", kms_core_endpoint);
@@ -107,7 +69,6 @@ async fn run_connector(
     // Create and start connector
     let (mut connector, event_rx) = KmsCoreConnector::new(
         gw_provider.clone(),
-        wallet.clone(),
         config,
         kms_provider.clone(),
         shutdown_rx.resubscribe(),
@@ -162,15 +123,14 @@ async fn main() -> Result<()> {
             }
 
             // Load config and potentially override service name
-            let mut config = Config::from_env_and_file(config.as_ref())?;
+            let mut config = Config::from_env_and_file(config.as_ref()).await?;
             if let Some(name) = name {
                 config.service_name = name;
                 info!("Using custom service name: {}", config.service_name);
             }
 
             // Create shutdown channel
-            let (shutdown_tx, shutdown_rx) =
-                broadcast::channel(config.channel_size.unwrap_or(DEFAULT_CHANNEL_SIZE));
+            let (shutdown_tx, shutdown_rx) = broadcast::channel(config.channel_size);
 
             // Setup signal handlers for graceful shutdown
             let signal_handle = setup_signal_handlers(shutdown_tx.clone()).await?;
@@ -222,7 +182,7 @@ async fn main() -> Result<()> {
             }
             Err(e) => error!("Error listing configs: {}", e),
         },
-        Commands::Validate { config } => match Commands::validate_config(&config) {
+        Commands::Validate { config } => match Commands::validate_config(&config).await {
             Ok(()) => info!("Configuration is valid: {}", config.display()),
             Err(e) => error!("Configuration validation failed: {}", e),
         },

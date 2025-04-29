@@ -1,14 +1,6 @@
-use alloy::{primitives::Address, providers::Provider};
-use std::str::FromStr;
-use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info};
-
-/// Default channel size for event processing
-const DEFAULT_CHANNEL_SIZE: usize = 1000;
-
+use super::event_processor::processors::EventProcessor;
 use crate::{
-    core::{config::Config, decryption::handler::DecryptionHandler, utils::config_validator},
+    core::{config::Config, decryption::handler::DecryptionHandler},
     error::Result,
     gw_adapters::{
         decryption::DecryptionAdapter,
@@ -16,8 +8,10 @@ use crate::{
     },
     kms_core_adapters::service::KmsServiceImpl,
 };
-
-use super::{event_processor::processors::EventProcessor, utils::wallet::KmsWallet};
+use alloy::providers::Provider;
+use std::sync::Arc;
+use tokio::sync::{broadcast, mpsc};
+use tracing::{error, info};
 
 /// Core KMS connector that handles all interactions with the Gateway
 pub struct KmsCoreConnector<P: Provider + Clone> {
@@ -25,29 +19,30 @@ pub struct KmsCoreConnector<P: Provider + Clone> {
     event_processor: EventProcessor<P>,
     kms_client: Arc<KmsServiceImpl>,
     shutdown: Option<broadcast::Receiver<()>>,
-    config: Config,
 }
 
 impl<P: Provider + Clone + std::fmt::Debug + 'static> KmsCoreConnector<P> {
     /// Creates a new KMS Core connector
     pub fn new(
         provider: Arc<P>,
-        wallet: KmsWallet,
         config: Config,
         kms_client: Arc<KmsServiceImpl>,
         shutdown: broadcast::Receiver<()>,
     ) -> (Self, mpsc::Receiver<KmsCoreEvent>) {
-        let (event_tx, event_rx) =
-            mpsc::channel(config.channel_size.unwrap_or(DEFAULT_CHANNEL_SIZE));
-
-        let decryption =
-            Address::from_str(&config.decryption_address).expect("Invalid Decryption address");
-        let gateway_config = Address::from_str(&config.gateway_config_address)
-            .expect("Invalid GatewayConfig address");
+        let (event_tx, event_rx) = mpsc::channel(config.channel_size);
 
         let rpc_url = config.gateway_url.clone();
-        let events = EventsAdapter::new(rpc_url, decryption, gateway_config, event_tx);
-        let decryption = DecryptionAdapter::new(decryption, provider.clone(), wallet.clone());
+        let events = EventsAdapter::new(
+            rpc_url,
+            config.decryption_address,
+            config.gateway_config_address,
+            event_tx,
+        );
+        let decryption = DecryptionAdapter::new(
+            config.decryption_address,
+            provider.clone(),
+            config.wallet.clone(),
+        );
 
         let decryption_handler =
             DecryptionHandler::new(decryption.clone(), kms_client.clone(), config.clone());
@@ -64,7 +59,6 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> KmsCoreConnector<P> {
             event_processor,
             kms_client,
             shutdown: Some(shutdown),
-            config,
         };
 
         (connector, event_rx)
@@ -73,9 +67,6 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> KmsCoreConnector<P> {
     /// Start the connector
     pub async fn start(&mut self, event_rx: mpsc::Receiver<KmsCoreEvent>) -> Result<()> {
         info!("Starting KMS Core Connector...");
-
-        // Validate configuration
-        config_validator::validate_config(&self.config)?;
 
         // Initialize event subscriptions
         self.events.initialize().await?;

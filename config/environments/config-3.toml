@@ -1,7 +1,5 @@
 service_name = "kms-connector-3"
 
-mnemonic = "test test test test test test test test test test test junk"
-
 chain_id = 31337
 
 decryption_address = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
@@ -14,7 +12,7 @@ gateway_url = "ws://0.0.0.0:8545"
 
 channel_size = 2000
 
-# account_index = 1
+private_key = "8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f"
 
 # public_decryption_timeout_secs = 300
 
@@ -29,10 +27,6 @@ channel_size = 2000
 # gateway_config_domain_name = "GatewayConfig"
 
 # gateway_config_domain_version = "1"
-
-# signing_key_path = "./keys/PRIV-p3/SigningKey/e164d9de0bec6656928726433cc56bef6ee8417ad5a4f8c82fbcc2d3e5f220fd"
-
-# private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 
 # [s3_config]
 # region = "us-east-1"

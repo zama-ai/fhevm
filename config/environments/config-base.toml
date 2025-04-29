@@ -4,12 +4,6 @@
 # ENV: KMS_CONNECTOR_SERVICE_NAME
 service_name = "kms-connector"
 
-# BIP39 mnemonic phrase for wallet generation (required)
-# This is used to derive the private key for signing responses
-# IMPORTANT: Keep this secure and never share it!
-# ENV: KMS_CONNECTOR_MNEMONIC
-mnemonic = "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
-
 # Chain ID for the Gateway network (required)
 # ENV: KMS_CONNECTOR_CHAIN_ID
 chain_id = 54321
@@ -37,10 +31,12 @@ gateway_url = "ws://gateway-node:8546"
 # ENV: KMS_CONNECTOR_CHANNEL_SIZE
 channel_size = 1000
 
-# Account index for wallet derivation (optional)
-# If not specified, it will be extracted from the service name (e.g., "kms-connector-2" -> 2)
-# ENV: KMS_CONNECTOR_ACCOUNT_INDEX
-# account_index = 0
+# Private key as a hex string (optional if `aws_kms_config` is configured)
+# If provided, the connector will use this private key
+# Format: hex string with or without 0x prefix
+# IMPORTANT: Keep this secure and never share it!
+# ENV: KMS_CONNECTOR_PRIVATE_KEY
+private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 
 # Timeout for public decryption requests in seconds (optional, defaults to 300s / 5min)
 # ENV: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
@@ -70,17 +66,17 @@ channel_size = 1000
 # ENV: KMS_CONNECTOR_GATEWAY_CONFIG_DOMAIN_VERSION
 # gateway_config_domain_version = "1"
 
-# Path to the signing key file (optional)
-# If provided, the connector will use this signing key instead of the mnemonic
-# ENV: KMS_CONNECTOR_SIGNING_KEY_PATH
-# signing_key_path = "./keys/CLIENT/SigningKey/e164d9de0bec6656928726433cc56bef6ee8417ad5a4f8c82fbcc2d3e5f220fd"
-
-# Private key as a hex string (optional)
-# If provided, the connector will use this private key instead of the mnemonic or signing key file
-# Format: hex string with or without 0x prefix
-# IMPORTANT: Keep this secure and never share it!
-# ENV: KMS_CONNECTOR_PRIVATE_KEY
-# private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
+# AWS KMS configuration (optional if `private_key` is configured)
+# [aws_kms_config]
+# AWS KMS key ID for signing
+# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
+# key_id = "12345678-1234-1234-1234-123456789012"
+# Optional: AWS region for KMS (if not using default from AWS credentials)
+# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__REGION
+# region = "us-east-1"
+# Optional: AWS endpoint URL for KMS (for testing or custom endpoints)
+# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT
+# endpoint = "https://kms.us-east-1.amazonaws.com"
 
 # Whether to verify coprocessors against the GatewayConfig contract (optional, defaults to false)
 # ENV: KMS_CONNECTOR_VERIFY_COPROCESSORS
@@ -95,15 +91,3 @@ channel_size = 1000
 # bucket = "my-ciphertext-bucket"
 # ENV: KMS_CONNECTOR_S3_CONFIG__ENDPOINT
 # endpoint = "http://localhost:9876"
-
-# AWS KMS configuration
-# [aws_kms_config]
-# AWS KMS key ID for signing
-# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
-# key_id = "12345678-1234-1234-1234-123456789012"
-# Optional: AWS region for KMS (if not using default from AWS credentials)
-# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__REGION
-# region = "us-east-1"
-# Optional: AWS endpoint URL for KMS (for testing or custom endpoints)
-# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT
-# endpoint = "https://kms.us-east-1.amazonaws.com"
