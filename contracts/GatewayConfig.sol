@@ -147,7 +147,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IGatewayConfig-addNetwork}.
-    function addNetwork(Network calldata network) external virtual {
+    function addNetwork(Network calldata network) external virtual onlyOwner {
         if (network.chainId == 0) {
             revert InvalidNullChainId();
         }

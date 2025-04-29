@@ -124,11 +124,11 @@ async function createAndRotateKey(
 }
 
 describe("Decryption", function () {
-  // Define the host chainId(s)
+  // Get the registered host chainId(s)
   const hostChainIds = loadChainIds();
   const hostChainId = hostChainIds[0];
 
-  // Define the gateway chain ID
+  // Get the gateway chain ID
   const chainId = hre.network.config.chainId!;
 
   // Define input values
