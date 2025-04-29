@@ -7,7 +7,10 @@ import { IProducer } from '#shared/services/producer.js'
 import { back } from 'messages'
 import { TestBed } from '@suites/unit'
 import { Mocked } from '@suites/doubles.vitest'
-import { ApiKeyAllowsRequest } from '#dapps/use-cases/api-key-allows-request.use-case.js'
+import {
+  API_KEY_ALLOWS_REQUEST,
+  type IApiKeyAllowsRequest,
+} from '#dapps/use-cases/api-key-allows-request.use-case.js'
 import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
 
 describe('InputProof', () => {
@@ -23,7 +26,7 @@ describe('InputProof', () => {
 
   let producer: Mocked<IProducer>
   let syncService: Mocked<SyncService>
-  let apiKeyAllowsRequest: Mocked<ApiKeyAllowsRequest>
+  let apiKeyAllowsRequest: Mocked<IApiKeyAllowsRequest>
   let contractChainId: string
   let contractAddress: string
   let userAddress: string
@@ -45,8 +48,8 @@ describe('InputProof', () => {
     })
 
     apiKeyAllowsRequest = unitRef.get(
-      ApiKeyAllowsRequest,
-    ) as unknown as Mocked<ApiKeyAllowsRequest>
+      API_KEY_ALLOWS_REQUEST,
+    ) as unknown as Mocked<IApiKeyAllowsRequest>
     apiKeyAllowsRequest.execute.mockReturnValue(Task.of(void 0))
 
     producer.publish.mockReturnValue(Task.of(void 0))

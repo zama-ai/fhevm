@@ -9,6 +9,10 @@ import { SharedModule } from '#shared/shared.module.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
 import { ApiKeyResolver } from './api-key.resolver.js'
 import { StatsResolver } from './stats.resolver.js'
+import {
+  FEATURE_FLAGS_SERVICE,
+  FeatureFlagHandler,
+} from '#feature-flag/services/feature-flags.service.js'
 
 @Module({
   imports: [DatabaseModule, SharedModule, SubscriptionsModule],
@@ -34,12 +38,25 @@ import { StatsResolver } from './stats.resolver.js'
     uc.UpdateApiKey,
     uc.DeleteApiKey,
     uc.ApiKeyAllowsRequest,
+    {
+      provide: uc.API_KEY_ALLOWS_REQUEST,
+      inject: [uc.ApiKeyAllowsRequest, FEATURE_FLAGS_SERVICE],
+      useFactory: (
+        apiKeyAllowsRequest: uc.ApiKeyAllowsRequest,
+        ffService: FeatureFlagHandler,
+      ) =>
+        new uc.ApiKeyAllowRequestWithFeatureFlag(
+          apiKeyAllowsRequest,
+          ffService,
+        ),
+    },
+    uc.ApiKeyAllowsRequest,
     GetTeamById,
   ],
   exports: [
     UpdateDapp,
     GetDappById,
-    uc.ApiKeyAllowsRequest,
+    uc.API_KEY_ALLOWS_REQUEST,
     uc.GetApiKeyByToken,
   ],
 })

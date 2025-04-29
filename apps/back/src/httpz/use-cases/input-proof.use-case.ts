@@ -1,5 +1,8 @@
 import { PRODUCER } from '#constants.js'
-import { ApiKeyAllowsRequest } from '#dapps/use-cases/api-key-allows-request.use-case.js'
+import {
+  type IApiKeyAllowsRequest,
+  API_KEY_ALLOWS_REQUEST,
+} from '#dapps/use-cases/api-key-allows-request.use-case.js'
 import { ChainId } from '#shared/entities/value-objects/chain-id.js'
 import { Web3Address } from '#shared/entities/value-objects/web3-address.js'
 import { IProducer } from '#shared/services/producer.js'
@@ -30,7 +33,8 @@ export class InputProof implements UseCase<Input, Output> {
     private readonly producer: IProducer,
     @Inject(SYNC_SERVICE)
     private readonly syncService: SyncService,
-    private readonly apiKeyAllowsRequest: ApiKeyAllowsRequest,
+    @Inject(API_KEY_ALLOWS_REQUEST)
+    private readonly apiKeyAllowsRequest: IApiKeyAllowsRequest,
     syncInstances: SyncInstances,
   ) {
     // Note: I need to instruct the SyncInstances to listen to this event
