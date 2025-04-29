@@ -74,7 +74,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
 
 // Loads the addresses of the deployed contracts, and the values required for the tests.
 export async function loadTestVariablesFixture() {
-  // Define the number of KMS nodes and coprocessors
+  // Load the number of KMS nodes and coprocessors
   const nKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
   const nCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
 
@@ -127,6 +127,8 @@ export async function loadTestVariablesFixture() {
     decryption,
     inputVerification,
     chainIds,
+    nKmsNodes,
+    nCoprocessors,
     fheParamsName,
     fheParamsDigest,
   };
