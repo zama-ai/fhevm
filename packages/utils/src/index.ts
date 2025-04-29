@@ -29,8 +29,17 @@ export {
 } from './app-error.js'
 export * from './chains.js'
 export { Entity } from './entity.js'
-export { isNone, isSome, none, some } from './option.js'
+export { isNone, isSome, none, some, fromNullable } from './option.js'
 export { PubSub } from './pubsub.js'
-export { isFail, isOk, every, fail, ok, wrap, match } from './result.js'
+export {
+  isFail,
+  isOk,
+  every,
+  fail,
+  ok,
+  wrap,
+  match,
+  fromOption,
+} from './result.js'
 export { Task, executeTask } from './task.js'
 export { ValueObject } from './value-object.js'

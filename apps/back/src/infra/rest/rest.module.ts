@@ -6,6 +6,12 @@ import { HttpzController } from './httpz.controller.js'
 import * as uc from '#httpz/use-cases/index.js'
 import { SharedModule } from '#shared/shared.module.js'
 import { DappsModule } from '#dapps/infra/dapps.module.js'
+import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
+import { SyncInstances } from '#shared/use-cases/sync-instances.use-case.js'
+import {
+  API_KEY_ALLOWS_REQUEST,
+  IApiKeyAllowsRequest,
+} from '#dapps/use-cases/api-key-allows-request.use-case.js'
 
 @Module({
   imports: [SharedModule, DappsModule],
@@ -17,6 +23,23 @@ import { DappsModule } from '#dapps/infra/dapps.module.js'
       useClass: ConfigKeyUrlService,
     },
     uc.InputProof,
+    {
+      provide: uc.InputProofWithSync,
+      inject: [uc.InputProof, SYNC_SERVICE, SyncInstances],
+      useFactory: (
+        inputProof: uc.IInputProof,
+        syncService: SyncService,
+        syncInstances: SyncInstances,
+      ) => new uc.InputProofWithSync(inputProof, syncService, syncInstances),
+    },
+    {
+      provide: uc.INPUT_PROOF,
+      inject: [uc.InputProofWithSync, API_KEY_ALLOWS_REQUEST],
+      useFactory: (
+        inputProof: uc.IInputProof,
+        apiKeyAllowsRequest: IApiKeyAllowsRequest,
+      ) => new uc.InputProofWithAuth(inputProof, apiKeyAllowsRequest),
+    },
     uc.GetKeyUrl,
   ],
 })

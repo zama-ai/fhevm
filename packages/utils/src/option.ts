@@ -12,6 +12,10 @@ export interface Some<T> {
   unwrapOr(defaultValue: T): T
   /*** Returns the value of the Option if it exists, otherwise calls the provided function and returns its result. */
   unwrapOrElse(fn: () => T): T
+
+  or(value: T): Option<T>
+  orElse(fn: () => T): Option<T>
+
   /*** Returns true if the Option contains a value, false otherwise. */
   isSome(this: Option<T>): this is Some<T>
   /*** Returns true if the Option does not contain a value, false otherwise. */
@@ -32,6 +36,8 @@ export interface None {
   /*** Calls the provided function and returns its result because None does not contains a value. */
   unwrapOrElse<T>(fn: () => T): T
   /*** Returns true if the Option contains a value, false otherwise. */
+  or<T>(value: T): Option<T>
+  orElse<T>(fn: () => T): Option<T>
   isSome<T>(this: Option<T>): this is Some<T>
   /*** Returns true if the Option does not contain a value, false otherwise. */
   isNone<T>(this: Option<T>): this is None
@@ -50,6 +56,7 @@ export type Option<T> = Some<T> | None
  * @returns True if the Option has a value, false otherwise.
  */
 export function isSome<T>(option: Option<T>): option is Some<T> {
+  console.log(`isSome ${JSON.stringify(option)} ${option._tag}`)
   return option._tag === 'Some'
 }
 
@@ -63,7 +70,7 @@ export function isNone<T>(option: Option<T>): option is None {
 }
 
 class SomeImpl<T> implements Some<T> {
-  _tag: 'Some'
+  _tag = 'Some' as const
   constructor(readonly value: T) {}
   unwrap(): T {
     return this.value
@@ -73,6 +80,14 @@ class SomeImpl<T> implements Some<T> {
   }
   unwrapOrElse(): T {
     return this.value
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  or(_value: T): Option<T> {
+    return this
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  orElse(_fn: () => T): Option<T> {
+    return this
   }
   isSome(this: Option<T>): this is Some<T> {
     return true
@@ -101,7 +116,7 @@ export function some<T>(value: T): Some<T> {
 }
 
 class NoneImpl implements None {
-  _tag: 'None'
+  _tag = 'None' as const
   unwrap(): never {
     throw new Error('Cannot unwrap None')
   }
@@ -110,6 +125,13 @@ class NoneImpl implements None {
   }
   unwrapOrElse<T>(fn: () => T): T {
     return fn()
+  }
+  or<T>(value: T): Option<T> {
+    return some(value)
+  }
+
+  orElse<T>(fn: () => T): Option<T> {
+    return some(fn())
   }
   isSome<T>(this: Option<T>): this is Some<T> {
     return false
@@ -133,4 +155,8 @@ class NoneImpl implements None {
  */
 export function none(): None {
   return new NoneImpl()
+}
+
+export function fromNullable<T>(value: T | null | undefined): Option<T> {
+  return value === null || value === undefined ? none() : some(value)
 }

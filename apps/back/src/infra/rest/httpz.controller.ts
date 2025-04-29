@@ -1,9 +1,13 @@
 import { GetKeyUrl } from '#httpz/use-cases/get-key-url.use-case.js'
-import { InputProof } from '#httpz/use-cases/input-proof.use-case.js'
+import {
+  IInputProof,
+  INPUT_PROOF,
+} from '#httpz/use-cases/input-proof.use-case.js'
 import {
   Body,
   Controller,
   Get,
+  Inject,
   Logger,
   Post,
   UseGuards,
@@ -24,7 +28,7 @@ export class HttpzController {
 
   constructor(
     private readonly getKeyUrlUC: GetKeyUrl,
-    private readonly inputProofUC: InputProof,
+    @Inject(INPUT_PROOF) private readonly inputProofUC: IInputProof,
   ) {}
 
   @Get('/healthcheck')

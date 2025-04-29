@@ -1,3 +1,4 @@
+import { isSome, Option } from './option.js'
 import { Task } from './task.js'
 
 /*** Represents a successful computation. */
@@ -171,6 +172,13 @@ class FailImpl<T, E> implements Fail<T, E> {
  */
 export function fail<T, E>(error: E): Fail<T, E> {
   return new FailImpl(error)
+}
+
+export function fromOption<T, E>(
+  option: Option<T>,
+  onNone: () => E,
+): Result<T, E> {
+  return isSome(option) ? ok(option.value) : fail(onNone())
 }
 
 export function wrap<T, E, R>(fn: (value: T) => R) {

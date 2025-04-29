@@ -8,7 +8,7 @@ import {
   FHEPublicKey,
 } from '#httpz/domain/entities/value-objects/index.js'
 import { faker } from '@faker-js/faker'
-import { GetKeyUrl, InputProof } from '#httpz/use-cases/index.js'
+import { GetKeyUrl, INPUT_PROOF, IInputProof } from '#httpz/use-cases/index.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import {
   ApiKeyId,
@@ -76,7 +76,7 @@ describe('HttpzController', () => {
   })
 
   describe(`POST /v1/input-proof`, () => {
-    let inputProof: Mocked<InputProof>
+    let inputProof: Mocked<IInputProof>
     let handles: string[]
     let signatures: string[]
     let apiKey: ApiKey
@@ -84,7 +84,7 @@ describe('HttpzController', () => {
     beforeEach(() => {
       handles = [faker.string.hexadecimal({ length: 40, prefix: '' })]
       signatures = [faker.string.hexadecimal({ length: 40 })]
-      inputProof = unitRef.get(InputProof) as unknown as Mocked<InputProof>
+      inputProof = unitRef.get(INPUT_PROOF) as unknown as Mocked<IInputProof>
       inputProof.execute.mockReturnValue(Task.of({ handles, signatures }))
       apiKey = ApiKey.parse({
         id: ApiKeyId.random().value,
