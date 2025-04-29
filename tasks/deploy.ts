@@ -286,6 +286,36 @@ address constant ${pascalCaseToCamelCase(name)}Address = ${address};\n`;
     }
   });
 
+task("task:deployGatewayMockContracts")
+  .setDescription(
+    "Deploys the mock contract for the given name or all contracts contained in the /contracts/mocks directory.",
+  )
+  .addOptionalParam("name", "The name in PascalCase of the mock contract to deploy")
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    // Find and filter mock contracts from /contracts/mocks directory
+    let mockContracts = fs
+      .readdirSync("./contracts/mocks")
+      .filter((file) => file.endsWith(".sol"))
+      .map((file) => file.replace(".sol", ""));
+
+    // Validate the "name" parameter and set it for deployment if present
+    const name = taskArguments.name;
+    if (name) {
+      if (!mockContracts.includes(name)) {
+        throw new Error(`Invalid mock contract name: ${name}`);
+      }
+      mockContracts = [name];
+    }
+
+    // Deploy mock contract for given "name" or all available mock contracts
+    for (const mockContract of mockContracts) {
+      const mockContractFactory = await ethers.getContractFactory(mockContract);
+      const mockContractDeployment = await mockContractFactory.deploy();
+      const mockContractAddress = await mockContractDeployment.getAddress();
+      console.log(`${mockContract} code set successfully at address: ${mockContractAddress}\n`);
+    }
+  });
+
 function pascalCaseToSnakeCase(str: string) {
   return str
     .split(/\.?(?=[A-Z])/)
