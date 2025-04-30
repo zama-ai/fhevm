@@ -8,6 +8,22 @@ metadata:
   name: {{ include "scDeployJobName" . }}
 spec:
   template:
+    metadata:
+      annotations:
+        {{- if .Values.persistence.enabled }}
+        checksum/pvc: {{ include (print $.Template.BasePath "/sc-deploy-pvc.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- if .Values.persistence.enabled }}
+        checksum/pvc: {{ include (print $.Template.BasePath "/sc-deploy-pvc.yaml") . | sha256sum | trunc 63 }}
+        {{- end }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+
     spec:
       serviceAccountName: {{ .Release.Name }}-config-writer
       securityContext:

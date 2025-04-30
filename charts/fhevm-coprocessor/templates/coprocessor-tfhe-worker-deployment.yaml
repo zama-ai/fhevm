@@ -20,6 +20,13 @@ spec:
       labels:
         app: coprocessor-server
         app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       restartPolicy: Always
       {{- if and .Values.tfheWorker.affinity .Values.tfheWorker.affinity.enabled }}

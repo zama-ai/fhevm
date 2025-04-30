@@ -20,6 +20,13 @@ spec:
       labels:
         app: coprocessor-tx-sender
         app.kubernetes.io/name: {{ include "txSenderName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       restartPolicy: Always
       {{- if and .Values.txSender.affinity .Values.txSender.affinity.enabled }}
