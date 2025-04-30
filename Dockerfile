@@ -19,9 +19,10 @@ COPY --chown=fhevm:fhevm ./contracts ./contracts/
 COPY --chown=fhevm:fhevm ./addresses ./addresses/
 COPY --chown=fhevm:fhevm ./tasks ./tasks/
 
-# Pre-compile proxy contracts
+# Pre-compile proxy and mock contracts
 RUN npx hardhat clean && \
-    npx hardhat compile:specific --contract contracts/emptyProxy
+    npx hardhat compile:specific --contract contracts/emptyProxy && \
+    npx hardhat compile:specific --contract contracts/mocks 
 
 USER fhevm:fhevm
 
