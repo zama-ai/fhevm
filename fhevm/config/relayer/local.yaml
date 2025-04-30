@@ -18,7 +18,7 @@ networks:
     chain_id: 12345
     retry_delay: 1000
     max_reconnection_attempts: 3
-  rollup:
+  gateway:
     ws_url: "ws://gateway-node:8546"
     http_url: "http://gateway-node:8546"
     chain_id: 54321

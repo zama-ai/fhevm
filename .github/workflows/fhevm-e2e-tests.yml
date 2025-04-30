@@ -36,7 +36,7 @@ on:
       relayer_version:
         description: "Relayer Image Version"
         required: false
-        default: "v0.1.0-rc7"
+        default: "45dc80d"
         type: string
       tests_version:
         description: "E2E Tests Image Version"
