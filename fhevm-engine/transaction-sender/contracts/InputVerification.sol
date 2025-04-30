@@ -4,8 +4,12 @@ pragma solidity ^0.8.28;
 /// @dev This contract is a mock of the InputVerification contract from the Gateway.
 /// source: github.com/zama-ai/fhevm-gateway/blob/main/contracts/InputVerification.sol
 contract InputVerification {
-    event VerifyProofResponseCalled(uint256, bytes32[], bytes);
-    event RejectProofResponseCalled(uint256);
+    event VerifyProofResponse(
+        uint256 indexed zkProofId,
+        bytes32[] ctHandles,
+        bytes[] signatures
+    );
+    event RejectProofResponse(uint256 indexed zkProofId);
 
     error CoprocessorSignerAlreadyVerified(uint256 zkProofId, address signer);
     error CoprocessorSignerAlreadyRejected(uint256 zkProofId, address signer);
@@ -37,7 +41,9 @@ contract InputVerification {
             revert CoprocessorSignerAlreadyVerified(zkProofId, msg.sender);
         }
 
-        emit VerifyProofResponseCalled(zkProofId, handles, signature);
+        bytes[] memory signatures = new bytes[](1);
+        signatures[0] = signature;
+        emit VerifyProofResponse(zkProofId, handles, signatures);
     }
 
     function rejectProofResponse(uint256 zkProofId) public {
@@ -49,6 +55,6 @@ contract InputVerification {
             revert CoprocessorSignerAlreadyRejected(zkProofId, msg.sender);
         }
 
-        emit RejectProofResponseCalled(zkProofId);
+        emit RejectProofResponse(zkProofId);
     }
 }

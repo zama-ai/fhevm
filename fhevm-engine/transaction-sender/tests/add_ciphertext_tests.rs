@@ -16,7 +16,7 @@ mod common;
 
 #[tokio::test]
 #[serial(db)]
-async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
+async fn add_ciphertext_digests() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
@@ -31,7 +31,9 @@ async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
         Some(env.wallet.default_signer().address()),
     );
 
-    let ciphertext_commits = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
@@ -73,8 +75,7 @@ async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
     .await?;
 
     // Make sure the digest was tagged as sent.
-    let mut digests_sent = false;
-    for _retries in 0..10 {
+    loop {
         let rows = sqlx::query!(
             "SELECT txn_is_sent
              FROM ciphertext_digest
@@ -84,7 +85,6 @@ async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
         .fetch_one(&env.db_pool)
         .await?;
         if rows.txn_is_sent.unwrap_or_default() {
-            digests_sent = true;
             break;
         }
 
@@ -97,11 +97,6 @@ async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
     )
     .execute(&env.db_pool)
     .await?;
-
-    assert!(
-        digests_sent,
-        "Expected the digests to be tagged as sent after sending a notification"
-    );
 
     // Verify that a transaction has been sent.
     let tx_count = provider.get_transaction_count(env.signer.address()).await?;
@@ -118,7 +113,93 @@ async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
 
 #[tokio::test]
 #[serial(db)]
-async fn test_retry_mechanism() -> anyhow::Result<()> {
+async fn ciphertext_digest_already_added() -> anyhow::Result<()> {
+    let env = TestEnvironment::new().await?;
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
+
+    let already_added_revert = true;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
+    let txn_sender = TransactionSender::new(
+        PrivateKeySigner::random().address(),
+        *ciphertext_commits.address(),
+        PrivateKeySigner::random().address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+
+    //  Add a ciphertext digest to database
+    let handle = random::<[u8; 32]>().to_vec();
+
+    // Insert a ciphertext digest into the database.
+    insert_ciphertext_digest(
+        &env.db_pool,
+        tenant_id,
+        handle.clone(),
+        random::<[u8; 32]>().to_vec(),
+        random::<[u8; 32]>().to_vec(),
+        1,
+    )
+    .await?;
+
+    sqlx::query!(
+        "
+        SELECT pg_notify($1, '')",
+        env.conf.add_ciphertexts_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    // Make sure the digest was tagged as sent.
+    loop {
+        let rows = sqlx::query!(
+            "SELECT txn_is_sent
+             FROM ciphertext_digest
+             WHERE handle = $1",
+            handle,
+        )
+        .fetch_one(&env.db_pool)
+        .await?;
+        if rows.txn_is_sent.unwrap_or_default() {
+            break;
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+    sqlx::query!(
+        "
+        delete from tenants where tenant_id = $1",
+        tenant_id
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    env.cancel_token.cancel();
+    run_handle.await??;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn retry_mechanism() -> anyhow::Result<()> {
     let conf = ConfigSettings {
         add_ciphertexts_max_retries: 3,
         ..Default::default()

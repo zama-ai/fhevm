@@ -16,19 +16,28 @@ mod common;
 
 #[tokio::test]
 #[serial(db)]
-async fn test_allow_account() -> anyhow::Result<()> {
-    test_allow_call(AllowEvents::AllowedAccount).await
+async fn allow_account() -> anyhow::Result<()> {
+    let already_allowed_revert = false;
+    allow_call(AllowEvents::AllowedAccount, already_allowed_revert).await
     // TODO: Emit AllowAccount event in the mocked contract and assert AllowAccount is called.
 }
 
 #[tokio::test]
 #[serial(db)]
-async fn test_allow_for_decrypt() -> anyhow::Result<()> {
-    test_allow_call(AllowEvents::AllowedForDecryption).await
+async fn allow_for_decrypt() -> anyhow::Result<()> {
+    let already_allowed_revert = false;
+    allow_call(AllowEvents::AllowedForDecryption, already_allowed_revert).await
     // TODO: Emit AllowedForDecryption event in the mocked contract and assert AllowedForDecryption is called.
 }
 
-async fn test_allow_call(event_type: AllowEvents) -> anyhow::Result<()> {
+#[tokio::test]
+#[serial(db)]
+async fn allow_account_already_allowed() -> anyhow::Result<()> {
+    let already_allowed_revert = true;
+    allow_call(AllowEvents::AllowedAccount, already_allowed_revert).await
+}
+
+async fn allow_call(event_type: AllowEvents, already_allowed_revert: bool) -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
@@ -42,7 +51,7 @@ async fn test_allow_call(event_type: AllowEvents) -> anyhow::Result<()> {
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let multichain_acl = MultichainAcl::deploy(&provider_deploy).await?;
+    let multichain_acl = MultichainAcl::deploy(&provider_deploy, already_allowed_revert).await?;
 
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
@@ -59,6 +68,9 @@ async fn test_allow_call(event_type: AllowEvents) -> anyhow::Result<()> {
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     let tenant_id = insert_random_tenant(&env.db_pool).await?;
+
+    // Record initial transaction count.
+    let initial_tx_count = provider.get_transaction_count(env.signer.address()).await?;
 
     let handle = random::<[u8; 32]>().to_vec();
     insert_allowed_handle(
@@ -79,8 +91,7 @@ async fn test_allow_call(event_type: AllowEvents) -> anyhow::Result<()> {
     .await?;
 
     // Make sure the allowed handle was tagged as sent.
-    let mut allow_handle_is_sent = false;
-    for _retries in 0..10 {
+    loop {
         let rows = sqlx::query!(
             "SELECT txn_is_sent
              FROM allowed_handles
@@ -90,7 +101,6 @@ async fn test_allow_call(event_type: AllowEvents) -> anyhow::Result<()> {
         .fetch_one(&env.db_pool)
         .await?;
         if rows.txn_is_sent.unwrap_or_default() {
-            allow_handle_is_sent = true;
             break;
         }
 
@@ -104,10 +114,15 @@ async fn test_allow_call(event_type: AllowEvents) -> anyhow::Result<()> {
     .execute(&env.db_pool)
     .await?;
 
-    assert!(
-        allow_handle_is_sent,
-        "Expected the allowed handle to be tagged as sent"
-    );
+    // Verify that a transaction has been sent if not reverted during gas estimation.
+    if !already_allowed_revert {
+        let tx_count = provider.get_transaction_count(env.signer.address()).await?;
+        assert_eq!(
+            tx_count,
+            initial_tx_count + 1,
+            "Expected a new transaction to be sent"
+        );
+    }
 
     env.cancel_token.cancel();
     run_handle.await??;

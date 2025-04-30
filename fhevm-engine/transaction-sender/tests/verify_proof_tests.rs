@@ -49,10 +49,12 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
         other_revert,
     )
     .await?;
-    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
         *input_verification.address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
@@ -63,7 +65,7 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
     .await?;
 
     let event_filter = input_verification
-        .VerifyProofResponseCalled_filter()
+        .VerifyProofResponse_filter()
         .watch()
         .await?;
 
@@ -122,9 +124,9 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
     let expected_sig = env.signer.sign_hash_sync(&signing_hash)?;
 
     // Make sure data in the event is correct, including the deterministic ECDSA signature.
-    assert_eq!(event.0._0, expected_proof_id);
-    assert_eq!(event.0._1, expected_handles);
-    assert_eq!(event.0._2.as_ref(), expected_sig.as_bytes());
+    assert_eq!(event.0.zkProofId, expected_proof_id);
+    assert_eq!(event.0.ctHandles, expected_handles);
+    assert_eq!(event.0.signatures[0].as_ref(), expected_sig.as_bytes());
 
     // Make sure the proof is removed from the database.
     loop {
@@ -173,10 +175,12 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
         other_revert,
     )
     .await?;
-    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
         *input_verification.address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
@@ -187,7 +191,7 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
     .await?;
 
     let event_filter = input_verification
-        .VerifyProofResponseCalled_filter()
+        .VerifyProofResponse_filter()
         .watch()
         .await?;
 
@@ -249,9 +253,9 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
         let expected_sig = env.signer.sign_hash_sync(&signing_hash)?;
 
         // Make sure data in the event is correct, including the deterministic ECDSA signature.
-        assert_eq!(event.0._0, expected_proof_id);
-        assert_eq!(event.0._1, expected_handles);
-        assert_eq!(event.0._2.as_ref(), expected_sig.as_bytes());
+        assert_eq!(event.0.zkProofId, expected_proof_id);
+        assert_eq!(event.0.ctHandles, expected_handles);
+        assert_eq!(event.0.signatures[0].as_ref(), expected_sig.as_bytes());
     }
 
     // Make sure the proofs are removed from the database.
@@ -299,10 +303,12 @@ async fn reject_proof_response_success() -> anyhow::Result<()> {
         other_revert,
     )
     .await?;
-    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
         *input_verification.address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
@@ -313,7 +319,7 @@ async fn reject_proof_response_success() -> anyhow::Result<()> {
     .await?;
 
     let event_filter = input_verification
-        .RejectProofResponseCalled_filter()
+        .RejectProofResponse_filter()
         .watch()
         .await?;
 
@@ -353,7 +359,7 @@ async fn reject_proof_response_success() -> anyhow::Result<()> {
 
     let expected_proof_id = U256::from(proof_id);
 
-    assert_eq!(event.0._0, expected_proof_id);
+    assert_eq!(event.0.zkProofId, expected_proof_id);
 
     // Make sure the proof is removed from the database.
     loop {
@@ -402,10 +408,12 @@ async fn verify_proof_response_reversal_already_verified() -> anyhow::Result<()>
         other_revert,
     )
     .await?;
-    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
         *input_verification.address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
@@ -493,10 +501,12 @@ async fn reject_proof_response_reversal_already_rejected() -> anyhow::Result<()>
         other_revert,
     )
     .await?;
-    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
         *input_verification.address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
@@ -583,11 +593,13 @@ async fn verify_proof_response_other_reversal() -> anyhow::Result<()> {
         other_revert,
     )
     .await?;
-    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
     let txn_sender = TransactionSender::new(
         *input_verification.address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
@@ -675,11 +687,13 @@ async fn reject_proof_response_other_reversal() -> anyhow::Result<()> {
         other_revert,
     )
     .await?;
-    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
     let txn_sender = TransactionSender::new(
         *input_verification.address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
@@ -763,10 +777,12 @@ async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result
         other_revert,
     )
     .await?;
-    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
         *input_verification.address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
@@ -854,10 +870,12 @@ async fn reject_proof_response_other_reversal_gas_estimation() -> anyhow::Result
         other_revert,
     )
     .await?;
-    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
         *input_verification.address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
@@ -947,10 +965,12 @@ async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
         other_revert,
     )
     .await?;
-    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
         *input_verification.address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
@@ -1030,10 +1050,12 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
         other_revert,
     )
     .await?;
-    let ciphertext_manager = CiphertextCommits::deploy(&provider_deploy).await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
         *input_verification.address(),
-        *ciphertext_manager.address(),
+        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
