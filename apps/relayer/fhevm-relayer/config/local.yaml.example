@@ -15,7 +15,7 @@ networks:
     chain_id: 123456
     retry_delay: 1000
     max_reconnection_attempts: 3
-  rollup:
+  gateway:
     ws_url: "ws://localhost:8757"
     http_url: "http://localhost:8757"
     chain_id: 654321

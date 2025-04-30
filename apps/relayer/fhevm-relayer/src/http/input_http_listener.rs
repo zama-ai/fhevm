@@ -79,7 +79,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
 
         info!("Validated and assigned request id: {}", request_id);
 
-        // Register once handlers for receiving the decryption response from the gateway l2
+        // Register once handlers for receiving the decryption response from the gateway
         let (handler, rx): (OnceHandler<RelayerEvent>, oneshot::Receiver<RelayerEvent>) =
             OnceHandler::new();
         let handler = Arc::new(handler);
@@ -120,7 +120,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             Err(_) => {
                 info!("received errror while waiting for response event");
                 let error_response = InputProofErrorResponseJson {
-                    message: "Failed to receive response from the gateway l2.".to_string(),
+                    message: "Failed to receive response from the gateway.".to_string(),
                 };
                 return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response();
             }

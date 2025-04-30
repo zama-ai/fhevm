@@ -31,7 +31,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 struct PublicDecryptionRequestProcessor {
-    handler: Arc<PublicDecryptGatewayHandler>,
+    handler: Arc<GatewayHandler>,
 }
 
 impl ReceiptProcessor for PublicDecryptionRequestProcessor {
@@ -44,7 +44,7 @@ impl ReceiptProcessor for PublicDecryptionRequestProcessor {
 }
 
 #[derive(Clone)]
-pub struct PublicDecryptGatewayHandler {
+pub struct GatewayHandler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
     public_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
     tx_helper: Arc<TransactionHelper>,
@@ -53,7 +53,7 @@ pub struct PublicDecryptGatewayHandler {
     retry_config: RetrySettings,
 }
 
-impl PublicDecryptGatewayHandler {
+impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
         tx_service: Arc<TransactionService>,
@@ -87,9 +87,9 @@ impl PublicDecryptGatewayHandler {
     /// On success, stores mapping between `decryption_public_id` and the original request ID
     ///
     /// # Events
-    /// * Success: [`RelayerEventData::DecryptionRequestSentToGwL2`]
+    /// * Success: [`RelayerEventData::DecryptionRequestSentToGw`]
     /// * Failure: [`RelayerEventData::DecryptionFailed`]
-    async fn send_public_decryption_request_to_rollup(
+    async fn send_public_decryption_request_to_gateway(
         &self,
         event: RelayerEvent,
         handles: Vec<[u8; 32]>,
@@ -100,7 +100,7 @@ impl PublicDecryptGatewayHandler {
             .collect();
 
         info!(
-            "Decryption request received. Making a tx to rollup: request_id: {:?} with handles {:?}",
+            "Decryption request received. Making a tx to gateway: request_id: {:?} with handles {:?}",
             event.request_id,
             handles
         );
@@ -183,7 +183,7 @@ impl PublicDecryptGatewayHandler {
         let self_clone = self.clone();
         let event_clone = event.clone();
 
-        // Spawn a blocking task to make a transaction to rollup
+        // Spawn a blocking task to make a transaction to gateway
         task::spawn(async move {
             match self_clone.process_decryption_request(handles).await {
                 Ok(decryption_public_id) => {
@@ -208,7 +208,7 @@ impl PublicDecryptGatewayHandler {
     /// Stores mapping in `decryption_id_to_request_id`
     ///
     /// # Events
-    /// Dispatches [`RelayerEventData::DecryptionRequestSentToGwL2`]
+    /// Dispatches [`RelayerEventData::DecryptionRequestSentToGw`]
     async fn handle_successful_public_request(
         &self,
         event: RelayerEvent,
@@ -227,7 +227,7 @@ impl PublicDecryptGatewayHandler {
         // Create and dispatch the new event
         let next_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
             PublicDecryptEventData::ReqSentToGw {
-                public_decryption_id: decryption_public_id,
+                gw_req_reference_id: decryption_public_id,
             },
         ));
 
@@ -277,7 +277,7 @@ impl PublicDecryptGatewayHandler {
     /// Reads from `decryption_id_to_request_id` mapping
     ///
     /// # Events
-    /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGwL2`]
+    /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGw`]
     async fn handle_decrypt_reponse_event_log(&self, event: RelayerEvent) {
         info!(
             "Public Decryption response received. Trigger a tx to L1  {:?}",
@@ -350,7 +350,7 @@ impl PublicDecryptGatewayHandler {
     /// * `Err(`[`EventProcessingError`]`)` - If event is not found or decoding fails
     fn handle_decrypt_request_sent(&self, id: U256) {
         info!(
-            "Transaction to rollup has been done, the associated public decryption id is {}",
+            "Transaction to gateway has been done, the associated public decryption id is {}",
             id
         );
     }
@@ -413,7 +413,7 @@ impl PublicDecryptGatewayHandler {
 
     async fn noop_handle_decrypt_reponse_event_log(&self, _event: &RelayerEvent) {}
 
-    /// Processes a decryption request by sending it to the L2 contract.
+    /// Processes a decryption request by sending it to the gateway contract.
     ///
     /// Uses [`TransactionHelper`] with [`DecryptionRequestProcessor`] to send
     /// and process the transaction.
@@ -452,15 +452,15 @@ impl PublicDecryptGatewayHandler {
 }
 
 #[async_trait]
-impl EventHandler<RelayerEvent> for PublicDecryptGatewayHandler {
+impl EventHandler<RelayerEvent> for GatewayHandler {
     async fn handle_event(&self, event: RelayerEvent) {
         match event.data {
-            RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromHostBc {
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromFhevm {
                 ref decrypt_request,
                 ..
             }) => {
                 let handles = decrypt_request.ct_handles.clone();
-                self.send_public_decryption_request_to_rollup(event, handles)
+                self.send_public_decryption_request_to_gateway(event, handles)
                     .await;
             }
             RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
@@ -480,9 +480,9 @@ impl EventHandler<RelayerEvent> for PublicDecryptGatewayHandler {
                 };
             }
             RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqSentToGw {
-                public_decryption_id,
+                gw_req_reference_id,
             }) => {
-                self.handle_decrypt_request_sent(public_decryption_id);
+                self.handle_decrypt_request_sent(gw_req_reference_id);
             }
             _ => {
                 self.noop_handle_decrypt_reponse_event_log(&event).await;

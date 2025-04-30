@@ -1,20 +1,20 @@
-//! fhEVM Relayer
+//! fhevm Relayer
 //!
-//! This relayer service acts as a bridge between Ethereum L1 and a rollup L2 network,
+//! fhevm relayer service acts as a bridge between fhevm and gateway blockchains,
 //! specifically handling FHE keys related operations. The service:
 //!
-//! 1. Listens for decryption events on Ethereum L1
-//! 2. Forwards requests to the L2 for processing
-//! 3. Receives responses from L2
-//! 4. Sends results back to L1
+//! 1. Listens for requests to from fhevm blockchain events to http endpoint.
+//! 2. Forwards requests to the gateway blockchain for processing
+//! 3. Receives responses from gateway blockchain
+//! 4. Relay the result back to source (fhevm blockchain or HTTP caller).
 //!
 //! # Architecture
 //!
 //! The system consists of several key components:
 //! - [`Orchestrator`]: Manages event flow and dispatch
-//! - [`EthereumHostL1Handler`]: Processes L1 events and responses
-//! - [`ArbitrumGatewayL2Handler`]: Manages L2 interaction
-//! - [`TransactionService`]: Handles blockchain transactions
+//! - [`FhevmHandler`]: Processes fhevm blockchain events and responses
+//! - [`GatewayHandler`]: Manages gateway interactions
+//! - [`TransactionService`]: Handles blockchain transactions (for both fhevm and gateway)
 //!
 //! # Configuration
 //!
@@ -28,9 +28,9 @@
 //! # Event Flow
 //!
 //! ```text
-//! [Ethereum L1] → [L1 Listener] → [Orchestrator] → [L2 Handler]
+//! [fhevm] → [fhevm listener] → [Orchestrator] → [gateway Handler]
 //!                                       ↓
-//! [Ethereum L1] ← [L1 Handler] ← [Orchestrator] ← [L2 Listener]
+//! [fhevm] ← [fhevm Handler] ← [Orchestrator] ← [gateway Listener]
 //! ```
 
 use alloy::primitives::Address;
@@ -42,10 +42,10 @@ use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 use fhevm_relayer::{
     blockchain::{
         ethereum::listener::{
-            ethereum_listener, gateway_event_log_converter, host_bc_event_log_converter,
+            ethereum_listener, fhevm_event_log_converter, gateway_event_log_converter,
         },
         ethereum::{ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient},
-        ArbitrumGatewayL2InputHandler, EthereumHostL1Handler, PublicDecryptGatewayHandler,
+        InputProofGatewayHandler, PublicDecryptFhevmHandler, PublicDecryptGatewayHandler,
         UserDecryptGatewayHandler,
     },
     config::settings::{LogConfig, Settings},
@@ -65,7 +65,7 @@ use fhevm_relayer::{
 /// This function performs the following initialization steps:
 /// 1. Loads and validates configuration
 /// 2. Initializes logging
-/// 3. Sets up transaction services for L1 and L2
+/// 3. Sets up transaction services for fhevm and gateway
 /// 4. Creates and configures event handlers
 /// 5. Starts event listeners
 /// 6. Waits for shutdown signal
@@ -81,38 +81,38 @@ async fn main() -> eyre::Result<()> {
         .validate_addresses()
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
 
-    let mut host_signer: PrivateKeySigner =
+    let mut fhevm_signer: PrivateKeySigner =
         std::env::var(&settings.transaction.private_key_fhevm_env)
             .unwrap_or(String::new())
             .parse()?;
-    host_signer.set_chain_id(Some(settings.networks.fhevm.chain_id));
+    fhevm_signer.set_chain_id(Some(settings.networks.fhevm.chain_id));
 
-    // Prepare tx service for L1
+    // Prepare tx service for fhevm
     let tx_service =
-        TransactionService::new(&settings.networks.fhevm.http_url, Arc::new(host_signer))
+        TransactionService::new(&settings.networks.fhevm.http_url, Arc::new(fhevm_signer))
             .await
             .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
     Arc::clone(&tx_service).spawn_maintenance_tasks();
 
-    let rollup_settings = settings
-        .get_network("rollup")
+    let gateway_settings = settings
+        .get_network("gateway")
         .cloned()
-        .map_err(|e| eyre::eyre!("Failed to get rollup settings: {}", e))?;
+        .map_err(|e| eyre::eyre!("Failed to get gateway settings: {}", e))?;
 
     let mut gateway_signer: PrivateKeySigner =
         std::env::var(&settings.transaction.private_key_gateway_env)
             .unwrap_or(String::new())
             .parse()?;
-    gateway_signer.set_chain_id(Some(rollup_settings.chain_id));
+    gateway_signer.set_chain_id(Some(gateway_settings.chain_id));
 
-    // Prepare tx service for rollup
-    let tx_service_rollup =
-        TransactionService::new(&rollup_settings.http_url, Arc::new(gateway_signer))
+    // Prepare tx service for gateway
+    let tx_service_gateway =
+        TransactionService::new(&gateway_settings.http_url, Arc::new(gateway_signer))
             .await
             .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
-    Arc::clone(&tx_service_rollup).spawn_maintenance_tasks();
+    Arc::clone(&tx_service_gateway).spawn_maintenance_tasks();
 
     info!("Starting FHE Event Handler");
 
@@ -123,7 +123,6 @@ async fn main() -> eyre::Result<()> {
     let decryption_address = Address::from_str(&settings.contracts.decryption_address)
         .map_err(|_| eyre::eyre!("Invalid decryption contract address"))?;
 
-    // Update the L2 filter to include the InputVerification contract
     let input_verification_address =
         Address::from_str(&settings.contracts.input_verification_address)
             .map_err(|_| eyre::eyre!("Invalid InputVerification address"))?;
@@ -143,20 +142,17 @@ async fn main() -> eyre::Result<()> {
 
     // === Register the event handlers
     let tx_config = TxConfig::from(settings.transaction.clone());
-    let host_l1_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> =
-        Arc::new(EthereumHostL1Handler::new(
+    let fhevm_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> =
+        Arc::new(PublicDecryptFhevmHandler::new(
             Arc::clone(&dispatcher),
             tx_service.clone(),
             tx_config.clone(),
         ));
 
-    // Create input handler for L2
-    // This handler will make a transaction to the L2 network
-    // to request input verification and listen for the response
-    let input_handler: Arc<dyn EventHandler<RelayerEvent>> =
-        Arc::new(ArbitrumGatewayL2InputHandler::new(
+    let input_proof_gw_handler: Arc<dyn EventHandler<RelayerEvent>> =
+        Arc::new(InputProofGatewayHandler::new(
             Arc::clone(&dispatcher),
-            tx_service_rollup.clone(),
+            tx_service_gateway.clone(),
             tx_config.clone(),
             settings.contracts.clone(),
         ));
@@ -164,56 +160,56 @@ async fn main() -> eyre::Result<()> {
     // Register input event handlers
     orchestrator.register_handler(
         InputProofEventId::ReqRcvdFromUser.into(),
-        Arc::clone(&input_handler),
+        Arc::clone(&input_proof_gw_handler),
     );
     orchestrator.register_handler(
         InputProofEventId::ReqSentToGw.into(),
-        Arc::clone(&input_handler),
+        Arc::clone(&input_proof_gw_handler),
     );
     orchestrator.register_handler(
         InputProofEventId::RespRcvdFromGw.into(),
-        Arc::clone(&input_handler),
+        Arc::clone(&input_proof_gw_handler),
     );
     orchestrator.register_handler(
         GenericEventId::EventLogRcvdFromGw.into(),
-        Arc::clone(&input_handler),
+        Arc::clone(&input_proof_gw_handler),
     );
 
     // Register public decryption events
     orchestrator.register_handler(
-        GenericEventId::EventLogRcvdFromHostBc.into(),
-        Arc::clone(&host_l1_event_log_handler),
+        GenericEventId::EventLogRcvdFromFhevm.into(),
+        Arc::clone(&fhevm_event_log_handler),
     );
     orchestrator.register_handler(
         PublicDecryptEventId::RespRcvdFromGw.into(),
-        Arc::clone(&host_l1_event_log_handler),
+        Arc::clone(&fhevm_event_log_handler),
     );
     orchestrator.register_handler(
-        PublicDecryptEventId::RespSentToHostBc.into(),
-        Arc::clone(&host_l1_event_log_handler),
+        PublicDecryptEventId::RespSentToFhevm.into(),
+        Arc::clone(&fhevm_event_log_handler),
     );
     orchestrator.register_handler(
         UserDecryptEventId::RespSentToUser.into(),
-        Arc::clone(&host_l1_event_log_handler),
+        Arc::clone(&fhevm_event_log_handler),
     );
 
     let public_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =
         Arc::new(PublicDecryptGatewayHandler::new(
             Arc::clone(&dispatcher),
-            tx_service_rollup.clone(),
+            tx_service_gateway.clone(),
             tx_config.clone(),
             settings.contracts.clone(),
-            rollup_settings.http_url.clone(),
+            gateway_settings.http_url.clone(),
             settings.transaction.clone().ciphertext_check_retry.clone(),
         ));
 
     let user_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =
         Arc::new(UserDecryptGatewayHandler::new(
             Arc::clone(&dispatcher),
-            tx_service_rollup,
+            tx_service_gateway,
             tx_config,
             settings.contracts,
-            rollup_settings.http_url.clone(),
+            gateway_settings.http_url.clone(),
             settings.transaction.clone().ciphertext_check_retry.clone(),
         ));
 
@@ -249,35 +245,35 @@ async fn main() -> eyre::Result<()> {
         Arc::clone(&user_decrypt_gateway_handler),
     );
 
-    // === Initialize Ethereum host L1 adapter
-    let host_l1 = EthereumJsonRPCWsClient::new(ChainName::Httpz, &settings.networks.fhevm.ws_url)
+    // === Initialize fhevm adapter
+    let fhevm = EthereumJsonRPCWsClient::new(ChainName::Httpz, &settings.networks.fhevm.ws_url)
         .await
         .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
-    let host_l1 = Arc::new(host_l1);
+    let fhevm = Arc::new(fhevm);
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
     // TODO: Pass the event_dispatcher to the event_listener
-    let filter = ContractAndTopicsFilter::new(vec![decryption_oracle_address], vec![]);
-    let subscription = host_l1.new_subscription(filter, None).await?;
+    let filter_fhevm = ContractAndTopicsFilter::new(vec![decryption_oracle_address], vec![]);
+    let subscription_fhevm = fhevm.new_subscription(filter_fhevm, None).await?;
     tokio::spawn(ethereum_listener(
-        subscription,
-        host_bc_event_log_converter,
+        subscription_fhevm,
+        fhevm_event_log_converter,
         Arc::clone(&orchestrator),
     ));
 
-    // === Initialize Rollup L2 adapter
-    let rollup_l2 = EthereumJsonRPCWsClient::new(ChainName::Gateway, &rollup_settings.ws_url)
+    // === Initialize gateway adapter
+    let gateway = EthereumJsonRPCWsClient::new(ChainName::Gateway, &gateway_settings.ws_url)
         .await
-        .map_err(|e| eyre::eyre!("Failed to create event handler for Rollup L2: {}", e))?;
-    let rollup_l2 = Arc::new(rollup_l2);
+        .map_err(|e| eyre::eyre!("Failed to create event handler for gateway: {}", e))?;
+    let gateway = Arc::new(gateway);
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
     // TODO: Pass the event_dispatcher to the event_listener
-    let filter_rollup =
+    let filter_gateway =
         ContractAndTopicsFilter::new(vec![decryption_address, input_verification_address], vec![]);
-    let subscription_rollup = rollup_l2.new_subscription(filter_rollup, None).await?;
+    let subscription_gateway = gateway.new_subscription(filter_gateway, None).await?;
     tokio::spawn(ethereum_listener(
-        subscription_rollup,
+        subscription_gateway,
         gateway_event_log_converter,
         Arc::clone(&orchestrator),
     ));

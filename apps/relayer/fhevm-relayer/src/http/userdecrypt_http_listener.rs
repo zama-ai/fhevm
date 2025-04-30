@@ -146,7 +146,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             Err(_) => {
                 info!("Received errror while waiting for response event");
                 let error_response = UserDecryptErrorResponseJson {
-                    message: "Failed to receive response from the gateway l2.".to_string(),
+                    message: "Failed to receive response from the gateway.".to_string(),
                 };
                 return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response();
             }

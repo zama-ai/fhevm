@@ -28,7 +28,7 @@ use tracing::{debug, error, info};
 use uuid::Uuid;
 
 struct InputRequestProcessor {
-    handler: Arc<ArbitrumGatewayL2InputHandler>,
+    handler: Arc<GatewayHandler>,
 }
 
 impl ReceiptProcessor for InputRequestProcessor {
@@ -41,14 +41,14 @@ impl ReceiptProcessor for InputRequestProcessor {
 }
 
 #[derive(Clone)]
-pub struct ArbitrumGatewayL2InputHandler {
+pub struct GatewayHandler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
     input_verification_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
 }
 
-impl ArbitrumGatewayL2InputHandler {
+impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
         tx_service: Arc<TransactionService>,
@@ -63,7 +63,7 @@ impl ArbitrumGatewayL2InputHandler {
         }
     }
 
-    /// Sends an input request transaction to the rollup with ZK proof of knowledge.
+    /// Sends an input request transaction to the gateway with ZK proof of knowledge.
     ///
     /// # Arguments
     /// * `event` - The [`RelayerEvent`] containing the request context
@@ -75,7 +75,7 @@ impl ArbitrumGatewayL2InputHandler {
     ///
     /// # State Changes
     /// On success, stores mapping between input_verification_id and request_id in input_verification_id_to_request_id
-    async fn send_input_request_to_rollup(
+    async fn send_input_request_to_gateway(
         &self,
         event: RelayerEvent,
         req_data: InputProofEventData,
@@ -85,7 +85,7 @@ impl ArbitrumGatewayL2InputHandler {
         } = req_data
         {
             info!(
-                "Input request received. Making tx to rollup: chain_id : {:?},request_id: {:?}, contract: {:?}, user: {:?}",
+                "Input request received. Making tx to gateway: chain_id : {:?},request_id: {:?}, contract: {:?}, user: {:?}",
                 input_proof_request.contract_chain_id, event.request_id, input_proof_request. contract_address, input_proof_request.user_address
             );
 
@@ -127,7 +127,9 @@ impl ArbitrumGatewayL2InputHandler {
         );
 
         let next_event = event.derive_next_event(RelayerEventData::InputProof(
-            InputProofEventData::ReqSentToGw { zkproof_id },
+            InputProofEventData::ReqSentToGw {
+                gw_req_reference_id: zkproof_id,
+            },
         ));
 
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
@@ -225,7 +227,7 @@ impl ArbitrumGatewayL2InputHandler {
         ))
     }
 
-    /// Processes input request by sending transaction to L2.
+    /// Processes input request by sending transaction to gateway.
     ///
     /// # Arguments
     /// * `contract_chain_id` - [`U256`] Chain ID of the target contract
@@ -278,7 +280,7 @@ impl ArbitrumGatewayL2InputHandler {
             .await
     }
 
-    /// Processes input response events from L2.
+    /// Processes input response events from gateway.
     ///
     /// This function:
     /// 1. Extracts `input_verification_id` from the event
@@ -292,7 +294,7 @@ impl ArbitrumGatewayL2InputHandler {
     /// Reads from `input_verification_id_to_request_id` mapping
     ///
     /// # Events
-    /// Dispatches [`RelayerEventData::Input`] with [`InputEventData::RespFromGwL2`]
+    /// Dispatches [`RelayerEventData::Input`] with [`InputEventData::RespFromGw`]
     /// containing handles and signatures
     async fn handle_input_reponse_event_log(&self, event: RelayerEvent) {
         info!(
@@ -387,7 +389,7 @@ impl ArbitrumGatewayL2InputHandler {
 }
 
 #[async_trait]
-impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
+impl EventHandler<RelayerEvent> for GatewayHandler {
     async fn handle_event(&self, event: RelayerEvent) {
         match &event.data {
             // Borrow event.data instead of moving it
@@ -400,10 +402,15 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
                         let req_data = InputProofEventData::ReqRcvdFromUser {
                             input_proof_request: input_proof_request.clone(),
                         };
-                        self.send_input_request_to_rollup(event, req_data).await;
+                        self.send_input_request_to_gateway(event, req_data).await;
                     }
-                    InputProofEventData::ReqSentToGw { zkproof_id } => {
-                        info!(?zkproof_id, "Input request sent to rollup successfully");
+                    InputProofEventData::ReqSentToGw {
+                        gw_req_reference_id,
+                    } => {
+                        info!(
+                            ?gw_req_reference_id,
+                            "Input request sent to gateway successfully"
+                        );
                     }
                     InputProofEventData::RespRcvdFromGw {
                         input_proof_response,
@@ -411,7 +418,7 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
                         info!(
                             handles_count = input_proof_response.handles.len(),
                             signatures_count = input_proof_response.signatures.len(),
-                            "Received L2 response, ready for HTTP handler"
+                            "Received gateway response, ready for HTTP handler"
                         );
                     }
                     InputProofEventData::Failed { error } => {

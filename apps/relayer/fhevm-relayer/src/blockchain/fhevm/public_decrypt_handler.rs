@@ -26,25 +26,25 @@ use uuid::Uuid;
 
 use alloy_sol_types::SolEvent;
 
-/// Contains the context data for a decryption request from Ethereum L1.
+/// Contains the context data for a decryption request from fhevm.
 ///
 /// This data is stored when processing the initial request and is used
 /// when sending the decryption response back to fhEVM.
 #[derive(Debug, Clone)]
 pub struct DecryptionRequestData {
-    pub host_l1_request_id: Uint<256, 4>,
+    pub fhevm_request_id: Uint<256, 4>,
     pub callback_selector: FixedBytes<4>,
     pub contract_caller: Address,
 }
 
 #[derive(Clone)]
-pub struct EthereumHostL1Handler {
+pub struct FhevmHandler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
     context_data: dashmap::DashMap<Uuid, DecryptionRequestData>,
     tx_helper: Arc<TransactionHelper>,
 }
 
-impl EthereumHostL1Handler {
+impl FhevmHandler {
     pub fn new(
         dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
         tx_service: Arc<TransactionService>,
@@ -65,7 +65,7 @@ impl EthereumHostL1Handler {
     ///
     /// # State Changes
     /// Stores context in [`DecryptionRequestData`] mapped to the event's request ID:
-    /// - `host_l1_request_id`: Original Ethereum request ID
+    /// - `fhevm_request_id`: Original fhevm request ID
     /// - `callback_selector`: Function selector for the callback
     /// - `contract_caller`: [`Address`] of the contract that initiated the request
     async fn handle_public_decrypt_event_log(&self, event: RelayerEvent, eth_event_log: Log) {
@@ -78,13 +78,13 @@ impl EthereumHostL1Handler {
                 self.context_data.insert(
                     event.request_id,
                     DecryptionRequestData {
-                        host_l1_request_id: eth_decryption_request.requestID,
+                        fhevm_request_id: eth_decryption_request.requestID,
                         callback_selector: eth_decryption_request.callbackSelector,
                         contract_caller: eth_decryption_request.contractCaller,
                     },
                 );
                 info!(
-                    "Decryption event log received from listener: request_id: {:?} block number: {:?}, ethereum_request_id: {:?}, selector {:?}",
+                    "Decryption event log received from listener: request_id: {:?} block number: {:?}, decryption_request_id: {:?}, selector {:?}",
                     event.request_id, eth_event_log.block_number, eth_decryption_request.requestID, eth_decryption_request.callbackSelector
                 );
 
@@ -93,7 +93,7 @@ impl EthereumHostL1Handler {
                     ct_handles.push(ct_handle.into());
                 }
                 event.derive_next_event(RelayerEventData::PublicDecrypt(
-                    PublicDecryptEventData::ReqRcvdFromHostBc {
+                    PublicDecryptEventData::ReqRcvdFromFhevm {
                         decrypt_request: PublicDecryptRequest { ct_handles },
                     },
                 ))
@@ -177,13 +177,13 @@ impl EthereumHostL1Handler {
     /// * `event` - The [`RelayerEvent`] to derive the confirmation event from
     ///
     /// # Events
-    /// Dispatches [`RelayerEventData::DecryptResponseSentToHostL1`]
+    /// Dispatches [`RelayerEventData::DecryptResponseSentToFhevm`]
     async fn handle_successful_request(&self, event: RelayerEvent) {
         // Store the mapping
 
         // Create and dispatch the new event
         let next_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
-            PublicDecryptEventData::RespSentToHostBc,
+            PublicDecryptEventData::RespSentToFhevm,
         ));
 
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
@@ -243,15 +243,15 @@ impl EthereumHostL1Handler {
     }
 
     fn handle_decrypt_response_sent(&self) {
-        info!("Transaction to host chain has been done");
+        info!("Transaction to fhevm chain has been done");
     }
 }
 
 #[async_trait]
-impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
+impl EventHandler<RelayerEvent> for FhevmHandler {
     async fn handle_event(&self, event: RelayerEvent) {
         match event.clone().data {
-            RelayerEventData::Generic(GenericEventData::EventLogFromHostBc {
+            RelayerEventData::Generic(GenericEventData::EventLogFromFhevm {
                 log: eth_event_log,
             }) => {
                 if let Some(topic0) = eth_event_log.topic0() {
@@ -275,7 +275,7 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
                 self.send_decrypt_response_to_fhevm(event, decrypt_response)
                     .await;
             }
-            RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespSentToHostBc) => {
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespSentToFhevm) => {
                 self.handle_decrypt_response_sent();
             }
             _ => {

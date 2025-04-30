@@ -233,7 +233,7 @@ impl GatewayProcessorsHandler {
     /// Reads from `decryption_id_to_request_id` mapping
     ///
     /// # Events
-    /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGwL2`]
+    /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGw`]
     async fn process_public_decryption_request(
         &self,
         event: GatewayProcessorsEvent,

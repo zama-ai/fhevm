@@ -15,8 +15,8 @@ pub fn gateway_event_log_converter(log: Log) -> RelayerEventData {
     RelayerEventData::Generic(GenericEventData::EventLogFromGw { log })
 }
 
-pub fn host_bc_event_log_converter(log: Log) -> RelayerEventData {
-    RelayerEventData::Generic(GenericEventData::EventLogFromHostBc { log })
+pub fn fhevm_event_log_converter(log: Log) -> RelayerEventData {
+    RelayerEventData::Generic(GenericEventData::EventLogFromFhevm { log })
 }
 
 pub async fn ethereum_listener(

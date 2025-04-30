@@ -6,7 +6,7 @@ use crate::blockchain::ethereum::bindings::Decryption::{
 use crate::blockchain::ethereum::bindings::Decryption::CtHandleContractPair;
 use crate::blockchain::ethereum::bindings::IDecryption::RequestValidity;
 use crate::blockchain::ethereum::bindings::InputVerification;
-use crate::blockchain::public_decrypt_handler::DecryptionRequestData;
+use crate::blockchain::PublicDecryptFhevmRequestData;
 use crate::core::errors::EventProcessingError;
 use crate::core::event::UserDecryptRequest;
 use alloy::primitives::{Address, Bytes, FixedBytes, Uint, U256};
@@ -37,14 +37,14 @@ pub struct ComputeCalldata;
 
 impl ComputeCalldata {
     pub fn callback_req(
-        req: &DecryptionRequestData,
+        req: &PublicDecryptFhevmRequestData,
         public_decryption_response: PublicDecryptionResponse,
     ) -> Result<Bytes, EventProcessingError> {
         let mut calldata = Vec::new();
 
         calldata.extend_from_slice(&req.callback_selector.0);
 
-        let request_id_bytes = req.host_l1_request_id.to_be_bytes::<32>();
+        let request_id_bytes = req.fhevm_request_id.to_be_bytes::<32>();
         calldata.extend_from_slice(&request_id_bytes);
 
         calldata.extend_from_slice(&public_decryption_response.decryptedResult);

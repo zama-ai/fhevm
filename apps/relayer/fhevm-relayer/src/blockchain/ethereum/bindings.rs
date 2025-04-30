@@ -11,7 +11,7 @@ sol!(
     "./artifacts/contract-abis/DecryptionOracle.json"
 );
 
-// Decryption contract (Rollup)
+// Decryption contract (Gateway)
 sol!(
     #[allow(missing_docs)]
     #[sol(rpc)]
@@ -20,7 +20,7 @@ sol!(
     "./artifacts/contract-abis/Decryption.json"
 );
 
-// Input Verification (Rollup)
+// Input Verification (Gateway)
 
 sol!(
     #[allow(missing_docs)]

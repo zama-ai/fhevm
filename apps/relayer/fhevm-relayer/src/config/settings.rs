@@ -5,7 +5,7 @@ use std::env;
 
 /// Network configuration for blockchain connections.
 ///
-/// This struct holds connection details for both L1 and L2 networks.
+/// This struct holds connection details for both fhevm and gateway networks.
 #[derive(Debug, Deserialize, Clone)]
 pub struct NetworkConfig {
     /// WebSocket endpoint URL
@@ -42,14 +42,14 @@ impl NetworkConfig {
 #[derive(Debug, Deserialize)]
 pub struct NetworksConfig {
     pub fhevm: NetworkConfig,
-    pub rollup: Option<NetworkConfig>,
+    pub gateway: Option<NetworkConfig>,
 }
 
 impl NetworksConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         self.fhevm.validate()?;
-        if let Some(rollup) = &self.rollup {
-            rollup.validate()?;
+        if let Some(gateway) = &self.gateway {
+            gateway.validate()?;
         }
         Ok(())
     }
@@ -57,8 +57,8 @@ impl NetworksConfig {
     pub fn get_network(&self, network_name: &str) -> Result<&NetworkConfig, AppConfigError> {
         match network_name {
             "fhevm" => Ok(&self.fhevm),
-            "rollup" => self.rollup.as_ref().ok_or_else(|| {
-                AppConfigError::InvalidNetworkConfig("Rollup network not configured".into())
+            "gateway" => self.gateway.as_ref().ok_or_else(|| {
+                AppConfigError::InvalidNetworkConfig("Gateway network not configured".into())
             }),
             _ => Err(AppConfigError::InvalidNetworkConfig(format!(
                 "Unknown network: {}",
@@ -72,7 +72,7 @@ impl NetworksConfig {
 pub struct TransactionConfig {
     /// Environment variable name containing the private key for fhevm
     pub private_key_fhevm_env: String,
-    /// Environment variable name containing the private key for rollup
+    /// Environment variable name containing the private key for gateway
     pub private_key_gateway_env: String,
     /// Optional gas limit for transactions
     pub gas_limit: Option<u64>,
@@ -217,7 +217,7 @@ impl Settings {
         tracing::info!(
             fhevm_ws = %settings.networks.fhevm.ws_url,
             fhevm_chain_id = %settings.networks.fhevm.chain_id,
-            rollup_configured = settings.networks.rollup.is_some(),
+            gateway_configured = settings.networks.gateway.is_some(),
             "Loaded network configurations"
         );
 

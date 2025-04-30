@@ -15,8 +15,9 @@ use uuid::Uuid;
 
 #[repr(u8)]
 #[derive(Debug)]
+/// Event Ids corresponding the events of GenericEvent type.
 pub enum GenericEventId {
-    EventLogRcvdFromHostBc = 0,
+    EventLogRcvdFromFhevm = 0,
     EventLogRcvdFromGw = 1,
 }
 
@@ -28,11 +29,12 @@ impl From<GenericEventId> for u8 {
 
 #[repr(u8)]
 #[derive(Debug)]
+/// Event Ids corresponding the events of PublicDecryptEvent type.
 pub enum PublicDecryptEventId {
     ReqRcvdFromUser = 11,
     ReqSentToGw = 12,
     RespRcvdFromGw = 13,
-    RespSentToHostBc = 14,
+    RespSentToFhevm = 14,
     Failed = 15,
 }
 
@@ -44,6 +46,7 @@ impl From<PublicDecryptEventId> for u8 {
 
 #[repr(u8)]
 #[derive(Debug)]
+/// Event Ids corresponding the events of UserDecryptEvent type.
 pub enum UserDecryptEventId {
     ReqRcvdFromUser = 20,
     ReqSentToGw = 21,
@@ -60,6 +63,7 @@ impl From<UserDecryptEventId> for u8 {
 
 #[repr(u8)]
 #[derive(Debug)]
+/// Event Ids corresponding the events of InputProofEvent type.
 pub enum InputProofEventId {
     ReqRcvdFromUser = 30,
     ReqSentToGw = 31,
@@ -74,6 +78,8 @@ impl From<InputProofEventId> for u8 {
 }
 
 #[derive(Clone, Debug)]
+/// Relayer event represents a single step in one of the different flows of the
+/// relayer (such as public decryption, input proof verification and so on).
 pub struct RelayerEvent {
     pub request_id: Uuid,
     pub api_version: ApiVersion,
@@ -103,19 +109,18 @@ impl Event for RelayerEvent {
         self.data.as_ref()
     }
 
-    //TODO: Replace boiler plate with macro based code.
     fn event_id(&self) -> u8 {
         match &self.data {
             RelayerEventData::Generic(generic_event) => match generic_event {
-                GenericEventData::EventLogFromHostBc { .. } => {
-                    GenericEventId::EventLogRcvdFromHostBc.into()
+                GenericEventData::EventLogFromFhevm { .. } => {
+                    GenericEventId::EventLogRcvdFromFhevm.into()
                 }
                 GenericEventData::EventLogFromGw { .. } => {
                     GenericEventId::EventLogRcvdFromGw.into()
                 }
             },
             RelayerEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
-                PublicDecryptEventData::ReqRcvdFromHostBc { .. } => {
+                PublicDecryptEventData::ReqRcvdFromFhevm { .. } => {
                     PublicDecryptEventId::ReqRcvdFromUser.into()
                 }
                 PublicDecryptEventData::ReqSentToGw { .. } => {
@@ -124,8 +129,8 @@ impl Event for RelayerEvent {
                 PublicDecryptEventData::RespRcvdFromGw { .. } => {
                     PublicDecryptEventId::RespRcvdFromGw.into()
                 }
-                PublicDecryptEventData::RespSentToHostBc => {
-                    PublicDecryptEventId::RespSentToHostBc.into()
+                PublicDecryptEventData::RespSentToFhevm => {
+                    PublicDecryptEventId::RespSentToFhevm.into()
                 }
                 PublicDecryptEventData::Failed { .. } => PublicDecryptEventId::Failed.into(),
             },
@@ -137,7 +142,7 @@ impl Event for RelayerEvent {
                 UserDecryptEventData::RespRcvdFromGw { .. } => {
                     UserDecryptEventId::RespRcvdFromGw.into()
                 }
-                UserDecryptEventData::RespSentToHostBc => UserDecryptEventId::RespSentToUser.into(),
+                UserDecryptEventData::RespSentToUser => UserDecryptEventId::RespSentToUser.into(),
                 UserDecryptEventData::Failed { .. } => UserDecryptEventId::Failed.into(),
             },
             RelayerEventData::InputProof(input_event) => match input_event {
@@ -173,6 +178,9 @@ impl Display for ApiVersion {
     }
 }
 
+/// Api version allows for differentiating between different versions of the
+/// same API. The different versions can have entirely different flows or share
+/// part of the flow.
 impl ApiVersion {
     pub fn new(category: ApiCategory, number: u8) -> Self {
         ApiVersion { category, number }
@@ -180,12 +188,17 @@ impl ApiVersion {
 }
 
 #[derive(Clone, Debug)]
+/// Api category allows for differentiating between production and experimental
+/// APIs.
 pub enum ApiCategory {
     PRODUCTION,
     EXPERIMENTAL,
 }
 
 #[derive(Clone, Debug)]
+/// Relayer event data represents the different categories of event data, each
+/// representing a specific flow. Generic event data represents the event data
+/// shared between the different flows.
 pub enum RelayerEventData {
     Generic(GenericEventData),
     PublicDecrypt(PublicDecryptEventData),
@@ -206,31 +219,17 @@ impl AsRef<str> for RelayerEventData {
 
 #[derive(Clone, Debug)]
 pub enum GenericEventData {
-    // Raw event log from ethereum. Handler will check event type, decode the
-    // event, store ethereum related contextual data and dispatch a decryption
-    // request event.
-    EventLogFromHostBc {
-        // For ethereum handler
-        // TODO: Make relayer event generic of this log type, to make it blockchain agnostic.
-        log: Log,
-    },
+    /// Event representing a raw blockchain event log received from fhevm blockchain.
+    EventLogFromFhevm { log: Log },
 
-    // Raw event log from gateway l2. Will be processed by gateway l2 handler.
-    // Handler will check the event type and decode the event. After decoding,
-    // it will check if gateway_l2_request_id is available in the contextual
-    // data store of the handler. if not, drops the request (not meant for this
-    // relayer instance). if found, creates the next event with the original
-    // orchestrator request id retreived from contextual data store.
-    EventLogFromGw {
-        // For gateway l2 handler
-        log: Log,
-    },
+    /// Event representing a raw blockchain event log received from gateway blockchain.
+    EventLogFromGw { log: Log },
 }
 
 impl GenericEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            GenericEventData::EventLogFromHostBc { .. } => "Generic::EventLogFromHostBc",
+            GenericEventData::EventLogFromFhevm { .. } => "Generic::EventLogFromFhevm",
             GenericEventData::EventLogFromGw { .. } => "Generic::EventLogFromGw",
         }
     }
@@ -238,52 +237,36 @@ impl GenericEventData {
 
 #[derive(Clone, Debug)]
 pub enum PublicDecryptEventData {
-    // Decryption request after processing by ethereum adapter. This will be
-    // picked up by gateway l2 adapter, which will send a request to decryption
-    // manager contract on the gateway l2 blockchain.
-    // After sending the request, it will receive a gateway_l2_request_id, which
-    // it will persist in contextual data of gateway l2 adapter.
-    //
-    // After this system will wait until a gateway l2 listener catches a response and creates a new request.
-    //
-    // For gateway l2 handler
-    ReqRcvdFromHostBc {
+    /// Event representing a public decryption request for ciphertexts on fhevm.
+    ReqRcvdFromFhevm {
         decrypt_request: PublicDecryptRequest,
     },
 
-    ReqSentToGw {
-        public_decryption_id: U256,
-    },
+    /// Event representing the result of sending a public decryption request to
+    /// gateway. Id will be used to map the response that will be received later
+    /// to the request.
+    ReqSentToGw { gw_req_reference_id: U256 },
 
-    // Raw event log from gateway l2. Will be processed by gateway l2 handler.
-    // Handler will check the event type and decode the event. After decoding,
-    // it will check if gateway_l2_request_id is available in the contextual
-    // data store of the handler. if not, drops the request (not meant for this
-    // relayer instance). if found, creates the next event with the original
-    // orchestrator request id retreived from contextual data store.
-    //
-    // For ethereum handler
+    /// Event representing the success response received from gateway for public
+    /// decryption request sent from this instance of relayer.
     RespRcvdFromGw {
         decrypt_response: PublicDecryptResponse,
     },
 
-    // This event data could be used to update the dashboard.
-    RespSentToHostBc,
+    /// Event representing the public decryption response sent to fhevm.
+    RespSentToFhevm,
 
-    // For no handler, just status update.
-    Failed {
-        // For no handler, just status updated.
-        error: String,
-    },
+    /// Event representing the failure in processing the public decryption request.
+    Failed { error: String },
 }
 
 impl PublicDecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            PublicDecryptEventData::ReqRcvdFromHostBc { .. } => "PublicDecrypt::ReqRcvdFromHostBc",
+            PublicDecryptEventData::ReqRcvdFromFhevm { .. } => "PublicDecrypt::ReqRcvdFromFhevm",
             PublicDecryptEventData::ReqSentToGw { .. } => "PublicDecrypt::ReqSentToGw",
             PublicDecryptEventData::RespRcvdFromGw { .. } => "PublicDecrypt::RespRcvdFromGw",
-            PublicDecryptEventData::RespSentToHostBc => "PublicDecrypt::RespSentToHostBc",
+            PublicDecryptEventData::RespSentToFhevm => "PublicDecrypt::RespSentToFhevm",
             PublicDecryptEventData::Failed { .. } => "PublicDecrypt::Failed",
         }
     }
@@ -291,26 +274,25 @@ impl PublicDecryptEventData {
 
 #[derive(Clone, Debug)]
 pub enum UserDecryptEventData {
-    ReqRcvdFromUser {
-        decrypt_request: UserDecryptRequest,
-    },
+    /// Event representing a user decryption request for ciphertexts on fhevm.
+    ReqRcvdFromUser { decrypt_request: UserDecryptRequest },
 
-    ReqSentToGw {
-        user_decryption_id: U256,
-    },
+    /// Event representing the result of sending a user decryption request to
+    /// gateway. Id will be used to map the response that will be received later
+    /// to the request.
+    ReqSentToGw { gw_req_reference_id: U256 },
 
+    /// Event representing the success response received from gateway for user
+    /// decryption sent from this instance of relayer.
     RespRcvdFromGw {
         decrypt_response: UserDecryptResponse,
     },
 
-    // This event data could be used to update the dashboard.
-    RespSentToHostBc,
+    /// Event representing the user decryption response sent to the user.
+    RespSentToUser,
 
-    // For no handler, just status update.
-    Failed {
-        // For no handler, just status updated.
-        error: String,
-    },
+    /// Event representing the failure in processing the user decryption request.
+    Failed { error: String },
 }
 
 impl UserDecryptEventData {
@@ -319,7 +301,7 @@ impl UserDecryptEventData {
             UserDecryptEventData::ReqRcvdFromUser { .. } => "UserDecrypt::ReqRcvdFromUser",
             UserDecryptEventData::ReqSentToGw { .. } => "UserDecrypt::ReqSentToGw",
             UserDecryptEventData::RespRcvdFromGw { .. } => "UserDecrypt::RespRcvdFromGw",
-            UserDecryptEventData::RespSentToHostBc => "UserDecrypt::RespSentToHostBc",
+            UserDecryptEventData::RespSentToUser => "UserDecrypt::RespSentToFhevm",
             UserDecryptEventData::Failed { .. } => "UserDecrypt::Failed",
         }
     }
@@ -459,18 +441,25 @@ impl TryFrom<UserDecryptResponse> for UserDecryptResponseJson {
 
 #[derive(Clone, Debug)]
 pub enum InputProofEventData {
+    /// Event representing a input proof verification request from the user.
     ReqRcvdFromUser {
         input_proof_request: InputProofRequest,
     },
-    ReqSentToGw {
-        zkproof_id: U256,
-    },
+
+    /// Event representing the result of sending a input proof verification
+    /// request to the gateway. Id will be used to map the response that will be
+    /// received later to the request.
+    ReqSentToGw { gw_req_reference_id: U256 },
+
+    /// Event representing the success response received from gateway for input
+    /// proof verification request sent from this instance of gateway.
     RespRcvdFromGw {
         input_proof_response: InputProofResponse,
     },
-    Failed {
-        error: String,
-    },
+
+    /// Event representing the failure in processing the input proof
+    /// verification request.
+    Failed { error: String },
 }
 
 impl InputProofEventData {
@@ -538,8 +527,7 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
         let user_address = Address::from_str(&json.userAddress)
             .map_err(|e| format!("Error parsing userAddress: {:?}", e))?;
 
-        // Convert ciphertext_with_zk_proof.
-        // This field is assumed to be a hex string without a "0x" prefix.
+        // Should be hex string without a "0x" prefix.
         let proof_bytes = hex::decode(&json.ciphertextWithInputVerification)
             .map_err(|e| format!("Error decoding ciphertextWithInputVerification: {}", e))?;
         let ciphetext_with_zk_proof = Bytes::from(proof_bytes);
@@ -596,7 +584,7 @@ mod tests {
     use std::convert::{TryFrom, TryInto};
     use std::str::FromStr;
 
-    // Define constants for the test strings.
+    // Constants for the test strings.
     const CHAIN_ID: &str = "123456";
     const CONTRACT_ADDRESS: &str = "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d";
     const USER_ADDRESS: &str = "0x12B064FB845C1cc05e9493856a1D637a73e944bE";

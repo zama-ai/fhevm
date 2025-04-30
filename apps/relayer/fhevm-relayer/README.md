@@ -35,9 +35,10 @@ The system follows an event-driven architecture with these key components:
 
 - **Orchestrator**: Central coordinator for event flow and handling
 - **Event Handlers**: Process specific event types:
-  - `EthereumHostL1Handler`: Manages fhevm events and responses
-  - `ArbitrumGatewayL2Handler`: Handles Gateway interaction for decryption
-  - `ArbitrumGatewayL2InputHandler`: Processes input verification
+  - `PublicDecryptFhevmHandler`: Handles fhevm interaction for public decryption
+  - `PublicDecryptGatewayHandler`: Handles gateway interaction for public decryption
+  - `UserDecryptGatewayHandler`: Handles gateway interaction for user decryption
+  - `InputProofGatewayHandler`: Handles gateway interaction for input verification
 - **Transaction Service**: Reliable transaction management
 - **HTTP Endpoints**: RESTful API for input proofs and user/public decryption and key material info
 
@@ -97,7 +98,7 @@ networks:
     ws_url: "ws://localhost:8545"
     http_url: "http://localhost:8545"
     chain_id: 12345
-  rollup:
+  gateway:
     ws_url: "ws://localhost:8546"
     http_url: "http://localhost:8546"
     chain_id: 54321
@@ -108,7 +109,7 @@ contracts:
   zkpok_manager_address: "0xef01..."
 transaction:
   private_key_fhevm_env: "FHEVM_PRIVATE_KEY"
-  private_key_gateway_env: "ROLLUP_PRIVATE_KEY"
+  private_key_gateway_env: "GATEWAY_PRIVATE_KEY"
   gas_limit: 1000000
   max_priority_fee: "2000000000"
   timeout_secs: 60
@@ -147,7 +148,7 @@ cargo build --release
 
 - `RUN_MODE`: Select configuration environment (development, production)
 - `FHEVM_PRIVATE_KEY`: Private key for fhevm transactions
-- `ROLLUP_PRIVATE_KEY`: Private key for Gateway transactions
+- `GATEWAY_PRIVATE_KEY`: Private key for Gateway transactions
 - `APP_LOG__LEVEL`: Log level (trace, debug, info, warn, error)
 
 ## API Endpoints

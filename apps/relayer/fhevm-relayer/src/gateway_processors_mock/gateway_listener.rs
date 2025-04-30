@@ -37,7 +37,7 @@ pub async fn event_listener_gateway(
         tokio::select! {
             event = subscription.next() => match event {
                 Some(event_log) => {
-                    info!("Kms connector rollup listener catches one event with topic {:?}", event_log.topic0());
+                    info!("Gateway listener catches one event with topic {:?}", event_log.topic0());
 
                     let id = orchestrator.new_request_id();
 

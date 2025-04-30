@@ -44,7 +44,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 struct UserDecryptionRequestProcessor {
-    handler: Arc<UserDecryptGatewayHandler>,
+    handler: Arc<GatewayHandler>,
 }
 
 impl ReceiptProcessor for UserDecryptionRequestProcessor {
@@ -57,7 +57,7 @@ impl ReceiptProcessor for UserDecryptionRequestProcessor {
 }
 
 #[derive(Clone)]
-pub struct UserDecryptGatewayHandler {
+pub struct GatewayHandler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
     user_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
     tx_helper: Arc<TransactionHelper>,
@@ -66,7 +66,7 @@ pub struct UserDecryptGatewayHandler {
     retry_config: RetrySettings,
 }
 
-impl UserDecryptGatewayHandler {
+impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
         tx_service: Arc<TransactionService>,
@@ -100,15 +100,15 @@ impl UserDecryptGatewayHandler {
     /// On success, stores mapping between `decryption_public_id` and the original request ID
     ///
     /// # Events
-    /// * Success: [`RelayerEventData::DecryptionRequestSentToGwL2`]
+    /// * Success: [`RelayerEventData::DecryptionRequestSentToGw`]
     /// * Failure: [`RelayerEventData::DecryptionFailed`]
-    async fn send_user_decryption_request_to_rollup(
+    async fn send_user_decryption_request_to_gateway(
         &self,
         event: RelayerEvent,
         user_decrypt_request: UserDecryptRequest,
     ) {
         info!(
-            "User Decryption request received. Making a tx to rollup: request_id: {:?} with user request {:?}",
+            "User Decryption request received. Making a tx to gateway: request_id: {:?} with user request {:?}",
             event.request_id,
             user_decrypt_request
         );
@@ -116,7 +116,7 @@ impl UserDecryptGatewayHandler {
         let self_clone = self.clone();
         let event_clone = event.clone();
 
-        // Spawn a blocking task to make a transaction to rollup
+        // Spawn a blocking task to make a transaction to gateway
         task::spawn(async move {
             match self_clone
                 .process_user_decryption_request(user_decrypt_request)
@@ -144,7 +144,7 @@ impl UserDecryptGatewayHandler {
     /// Stores mapping in `decryption_id_to_request_id`
     ///
     /// # Events
-    /// Dispatches [`RelayerEventData::DecryptionRequestSentToGwL2`]
+    /// Dispatches [`RelayerEventData::DecryptionRequestSentToGw`]
     async fn handle_successful_user_decryption_request(
         &self,
         event: RelayerEvent,
@@ -164,7 +164,9 @@ impl UserDecryptGatewayHandler {
 
         // Create and dispatch the new event
         let next_event = event.derive_next_event(RelayerEventData::UserDecrypt(
-            UserDecryptEventData::ReqSentToGw { user_decryption_id },
+            UserDecryptEventData::ReqSentToGw {
+                gw_req_reference_id: user_decryption_id,
+            },
         ));
 
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
@@ -216,7 +218,7 @@ impl UserDecryptGatewayHandler {
     /// Reads from `decryption_id_to_request_id` mapping
     ///
     /// # Events
-    /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGwL2`]
+    /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGw`]
     async fn handle_user_decrypt_reponse_event_log(&self, event: RelayerEvent) {
         info!("User Decryption response received: {:?}", event.request_id,);
 
@@ -278,7 +280,7 @@ impl UserDecryptGatewayHandler {
 
     fn handle_user_decrypt_request_sent(&self, id: U256) {
         info!(
-            "Transaction to rollup has been done, the associated user decryption id is {}",
+            "Transaction to gateway has been done, the associated user decryption id is {}",
             id
         );
     }
@@ -442,7 +444,7 @@ impl UserDecryptGatewayHandler {
 }
 
 #[async_trait]
-impl EventHandler<RelayerEvent> for UserDecryptGatewayHandler {
+impl EventHandler<RelayerEvent> for GatewayHandler {
     async fn handle_event(&self, event: RelayerEvent) {
         match event.data {
             RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
@@ -450,7 +452,7 @@ impl EventHandler<RelayerEvent> for UserDecryptGatewayHandler {
                 ..
             }) => {
                 let cloned_request = decrypt_request.clone();
-                self.send_user_decryption_request_to_rollup(event.clone(), cloned_request)
+                self.send_user_decryption_request_to_gateway(event.clone(), cloned_request)
                     .await;
             }
             RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
@@ -470,9 +472,9 @@ impl EventHandler<RelayerEvent> for UserDecryptGatewayHandler {
                 };
             }
             RelayerEventData::UserDecrypt(UserDecryptEventData::ReqSentToGw {
-                user_decryption_id,
+                gw_req_reference_id,
             }) => {
-                self.handle_user_decrypt_request_sent(user_decryption_id);
+                self.handle_user_decrypt_request_sent(gw_req_reference_id);
             }
             _ => {
                 self.noop_handle_decrypt_reponse_event_log(&event).await;
@@ -496,10 +498,10 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     let settings = Settings::new().expect("Failed to load configuration");
 
     // Get network settings
-    let rollup_settings = settings
-        .get_network("rollup")
+    let gateway_settings = settings
+        .get_network("gateway")
         .cloned()
-        .expect("Failed to get rollup settings");
+        .expect("Failed to get gateway settings");
 
     // Test private key from environment variable or use default
     let private_key =
@@ -507,11 +509,11 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
             "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f".to_string()
         });
     let mut gateway_signer: PrivateKeySigner = private_key.parse()?;
-    gateway_signer.set_chain_id(Some(rollup_settings.chain_id));
+    gateway_signer.set_chain_id(Some(gateway_settings.chain_id));
 
     // Create transaction manager
     println!("Setting up manager with configured private key...");
-    let manager = TransactionManager::new(&rollup_settings.http_url, Arc::new(gateway_signer))
+    let manager = TransactionManager::new(&gateway_settings.http_url, Arc::new(gateway_signer))
         .await
         .expect("Failed to create transaction manager");
 
@@ -544,7 +546,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
         duration_days: U256::from(10),
     };
 
-    let contracts_chain_id = rollup_settings.chain_id;
+    let contracts_chain_id = gateway_settings.chain_id;
     let user_address = manager.sender_address();
 
     let public_key = Bytes::from(vec![1, 2, 3, 4, 5]);
@@ -607,10 +609,10 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
 
     // Load configuration
     let settings = Settings::new().expect("Failed to load configuration");
-    let rollup_settings = settings
-        .get_network("rollup")
+    let gateway_settings = settings
+        .get_network("gateway")
         .cloned()
-        .expect("Failed to get rollup settings");
+        .expect("Failed to get gateway settings");
 
     // Test private key from environment variable or use default
     let private_key =
@@ -618,10 +620,10 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
             "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f".to_string()
         });
     let mut gateway_signer: PrivateKeySigner = private_key.parse()?;
-    gateway_signer.set_chain_id(Some(rollup_settings.chain_id));
+    gateway_signer.set_chain_id(Some(gateway_settings.chain_id));
 
     println!("Setting up manager with configured private key...");
-    let manager = TransactionManager::new(&rollup_settings.http_url, Arc::new(gateway_signer))
+    let manager = TransactionManager::new(&gateway_settings.http_url, Arc::new(gateway_signer))
         .await
         .expect("Failed to create transaction manager");
 
