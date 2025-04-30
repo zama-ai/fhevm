@@ -27,7 +27,7 @@ import {
       provide: uc.InputProofWithSync,
       inject: [uc.InputProof, SYNC_SERVICE, SyncInstances],
       useFactory: (
-        inputProof: uc.IInputProof,
+        inputProof: uc.InputProof,
         syncService: SyncService,
         syncInstances: SyncInstances,
       ) => new uc.InputProofWithSync(inputProof, syncService, syncInstances),
