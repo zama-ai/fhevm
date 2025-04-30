@@ -20,6 +20,13 @@ spec:
       labels:
         app: coprocessor-sns-worker
         app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       restartPolicy: Always
       {{- if and .Values.snsWorker.affinity .Values.snsWorker.affinity.enabled }}

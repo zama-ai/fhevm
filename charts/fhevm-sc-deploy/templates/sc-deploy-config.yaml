@@ -96,7 +96,7 @@ data:
     {{- range .Values.scDeploy.deployCommands }}
     {{ . }}
     {{- end }}
-    echo "L2 smart contracts deployed successfully"
+    echo "Smart contracts deployed successfully"
 
     # Post-deploy commands
     {{- range .Values.scDeploy.postDeployCommands }}

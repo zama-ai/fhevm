@@ -80,3 +80,8 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
+
+# Set Pod Annotations, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+# Set Pod Labels, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}

@@ -20,6 +20,13 @@ spec:
       labels:
         app: coprocessor-gw-listener
         app.kubernetes.io/name: {{ include "gwListenerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       restartPolicy: Always
       {{- if and .Values.gwListener.affinity .Values.gwListener.affinity.enabled }}

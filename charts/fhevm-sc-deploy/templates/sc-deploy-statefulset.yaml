@@ -15,6 +15,13 @@ spec:
     metadata:
       labels:
         app: fhevm-sc-debug
+      {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       securityContext:
         {{- toYaml .Values.scDeploy.securityContext | nindent 8 }}
