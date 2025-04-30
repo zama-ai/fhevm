@@ -44,8 +44,6 @@ export class ValidateAddress implements IValidateAddress {
     input: ValidateAddressInput,
     context?: Record<string, any>,
   ): Task<ValidateAddressOutput, AppError> => {
-    // TODO: remove this
-    console.log(`validate address execute: ${context?.requestId}`)
     return every([
       fromOption(
         fromNullable(context?.requestId).orElse(() => generateRequestId()),
@@ -57,10 +55,6 @@ export class ValidateAddress implements IValidateAddress {
       .asyncChain(([requestId, chainId, address]) => {
         this.logger.verbose(
           `publishing address validation for requestId=${requestId}`,
-        )
-        // TODO: remove this
-        console.log(
-          `publishing address validation requested for requestId=${requestId}`,
         )
         return this.producer.publish(
           back.addressValidationRequested(
