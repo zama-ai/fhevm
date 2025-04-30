@@ -36,9 +36,9 @@ import {
       provide: uc.INPUT_PROOF,
       inject: [uc.InputProofWithSync, API_KEY_ALLOWS_REQUEST],
       useFactory: (
-        inputProof: uc.IInputProof,
+        inputProof: uc.InputProofWithSync,
         apiKeyAllowsRequest: IApiKeyAllowsRequest,
-      ) => new uc.InputProofWithAuth(inputProof, apiKeyAllowsRequest),
+      ) => new uc.InputProofWithApiKey(inputProof, apiKeyAllowsRequest),
     },
     uc.GetKeyUrl,
   ],

@@ -3,6 +3,6 @@ export {
   type IInputProof,
   INPUT_PROOF,
   InputProof,
-  InputProofWithAuth,
+  InputProofWithApiKey,
   InputProofWithSync,
 } from './input-proof.use-case.js'

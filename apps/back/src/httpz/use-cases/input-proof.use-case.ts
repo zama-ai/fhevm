@@ -144,8 +144,8 @@ function isInputProofResult(event: back.BackEvent): event is InputProofResult {
  * It decorates the InputProof use case with the authorization logic.
  */
 @Injectable()
-export class InputProofWithAuth implements IInputProof {
-  private readonly logger = new Logger(InputProofWithAuth.name)
+export class InputProofWithApiKey implements IInputProof {
+  private readonly logger = new Logger(InputProofWithApiKey.name)
   constructor(
     private readonly inputProof: InputProofWithSync,
     @Inject(API_KEY_ALLOWS_REQUEST)

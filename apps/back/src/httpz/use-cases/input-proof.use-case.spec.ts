@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, Mock, test } from 'vitest'
 import {
   IInputProof,
   InputProof,
-  InputProofWithAuth,
+  InputProofWithApiKey,
   InputProofWithSync,
 } from './input-proof.use-case.js'
 import { PRODUCER } from '#constants.js'
@@ -238,8 +238,8 @@ describe('InputProofWithSync', () => {
   })
 })
 
-describe('InputProofWithAuth', () => {
-  let useCase: InputProofWithAuth
+describe('InputProofWithApiKey', () => {
+  let useCase: InputProofWithApiKey
   let inputProof: Mocked<InputProofWithSync>
   let apiKeyAllowsRequest: Mocked<IApiKeyAllowsRequest>
 
@@ -250,7 +250,7 @@ describe('InputProofWithAuth', () => {
 
   beforeEach(async () => {
     const { unit, unitRef } =
-      await TestBed.solitary(InputProofWithAuth).compile()
+      await TestBed.solitary(InputProofWithApiKey).compile()
 
     useCase = unit
 
@@ -270,7 +270,7 @@ describe('InputProofWithAuth', () => {
   })
 
   test('should be defined', () => {
-    expect(InputProofWithAuth).toBeDefined()
+    expect(InputProofWithApiKey).toBeDefined()
   })
 
   describe('when request is allowed', () => {
