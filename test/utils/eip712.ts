@@ -268,7 +268,7 @@ export function createEIP712ResponseUserDecrypt(
   verifyingContract: string,
   publicKey: string,
   ctHandles: string[],
-  reencryptedShare: string,
+  userDecryptedShare: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
@@ -284,7 +284,7 @@ export function createEIP712ResponseUserDecrypt(
       UserDecryptResponseVerification: [
         { name: "publicKey", type: "bytes" },
         { name: "ctHandles", type: "bytes32[]" },
-        { name: "reencryptedShare", type: "bytes" },
+        { name: "userDecryptedShare", type: "bytes" },
       ],
     },
     primaryType: "UserDecryptResponseVerification",
@@ -297,7 +297,7 @@ export function createEIP712ResponseUserDecrypt(
     message: {
       publicKey,
       ctHandles,
-      reencryptedShare,
+      userDecryptedShare,
     },
   };
 }
