@@ -5,8 +5,8 @@ pragma solidity ^0.8.24;
 import "@fhevm/solidity/lib/FHE.sol";
 import { E2EFHEVMConfig } from "./E2EFHEVMConfigLocal.sol";
 
-/// @notice Contract for demonstrating reencryption of various FHE data types
-contract Reencrypt is E2EFHEVMConfig {
+/// @notice Contract for demonstrating user decryption of various FHE data types
+contract UserDecrypt is E2EFHEVMConfig {
     /// @dev Encrypted boolean
     ebool public xBool;
     /// @dev Encrypted 8-bit unsigned integer

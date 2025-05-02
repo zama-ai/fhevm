@@ -23,7 +23,7 @@ describe("EncryptedERC20", function () {
     const transaction = await this.erc20.mint(1000);
     await transaction.wait();
 
-    // Reencrypt Alice's balance
+    // User decryption of Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
 
     // Balance handle is deterministic so we can verify the last bytes of the handle
@@ -82,7 +82,7 @@ describe("EncryptedERC20", function () {
     const t2 = await tx.wait();
     expect(t2?.status).to.eq(1);
 
-    // Reencrypt Alice's balance
+    // User decryption of Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } =
       this.instances.alice.generateKeypair();
@@ -97,7 +97,7 @@ describe("EncryptedERC20", function () {
 
     expect(balanceAlice).to.equal(10000 - 1337);
 
-    // Reencrypt Bob's balance
+    // User decryption of Bob's balance
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
 
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } =
@@ -124,11 +124,11 @@ describe("EncryptedERC20", function () {
         publicKeyBob
       );
       expect.fail(
-        "Expected an error to be thrown - Bob should not be able to reencrypt Alice balance"
+        "Expected an error to be thrown - Bob should not be able to user decrypt Alice balance"
       );
     } catch (error) {
       expect(error.message).to.equal(
-        "User is not authorized to reencrypt this handle!"
+        "User is not authorized to user decrypt this handle!"
       );
     }
   });
@@ -165,7 +165,7 @@ describe("EncryptedERC20", function () {
 
     expect(balanceAlice).to.equal(1000n);
 
-    // Reencrypt Bob's balance
+    // User decryption of Bob's balance
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
 
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } =

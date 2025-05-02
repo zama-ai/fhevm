@@ -6,12 +6,12 @@ on:
       core_version:
         description: "KMS Core Version"
         required: false
-        default: "v0.11.0-rc9"
+        default: "v0.11.0-rc11"
         type: string
       connector_version:
         description: "Connector Version"
         required: false
-        default: "v0.1.0-rc1"
+        default: "v0.1.0-rc2"
         type: string
       coprocessor_version:
         description: "Coprocessor Image Version"
@@ -31,7 +31,7 @@ on:
       gateway_version:
         description: "Gateway Image Version"
         required: false
-        default: "0929037"
+        default: "v0.1.0-rc14"
         type: string
       relayer_version:
         description: "Relayer Image Version"
@@ -41,7 +41,7 @@ on:
       tests_version:
         description: "E2E Tests Image Version"
         required: false
-        default: "v0.7.2-rc0"
+        default: "02c6691"
         type: string
   pull_request:
     paths:

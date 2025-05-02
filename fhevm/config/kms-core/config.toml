@@ -31,8 +31,8 @@ storage = "file://./keys"
 
 [rate_limiter_conf]
 bucket_size = 50000
-dec = 1
-reenc = 1
+pub_decrypt = 1
+user_decrypt = 1
 crsgen = 100
 preproc = 5000
 keygen = 1000
