@@ -4,6 +4,7 @@ use sns_executor::{
 };
 use tokio::{signal::unix, spawn, sync::mpsc};
 use tokio_util::sync::CancellationToken;
+use tracing::Level;
 mod utils;
 
 fn handle_sigint(token: CancellationToken) {
@@ -44,7 +45,11 @@ async fn main() {
     let conf: Config = construct_config();
     let parent = CancellationToken::new();
 
-    tracing_subscriber::fmt().json().with_level(true).init();
+    tracing_subscriber::fmt()
+        .json()
+        .with_level(true)
+        .with_max_level(Level::INFO)
+        .init();
 
     // Handle SIGINIT signals
     handle_sigint(parent.clone());

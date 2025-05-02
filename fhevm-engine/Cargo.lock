@@ -2158,6 +2158,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bytesize"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3c8f83209414aacf0eeae3cf730b18d6981697fba62f200fcfb92b9f082acba"
+
+[[package]]
 name = "bytestring"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6363,6 +6369,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "bincode",
+ "bytesize",
  "clap",
  "fhevm-engine-common",
  "hex",

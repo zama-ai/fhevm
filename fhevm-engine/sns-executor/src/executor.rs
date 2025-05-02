@@ -81,8 +81,8 @@ pub(crate) async fn run_loop(
 
             select! {
                 _ = token.cancelled() => return Ok(()),
-                _ = listener.try_recv() => {
-                    debug!(target: "worker", "Received notification");
+                notification = listener.try_recv() => {
+                    info!(target: "worker", "Received notification {:?}", notification);
                 },
                 _ = tokio::time::sleep(Duration::from_secs(conf.polling_interval.into())) => {
                     debug!(target: "worker", "Polling timeout, rechecking for tasks");
@@ -255,6 +255,12 @@ fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), Executio
 }
 
 /// Updates the database with the computed large ciphertexts.
+///
+/// The ct128 is temporarily stored in PostgresDB to ensure reliability.
+/// After the AWS uploader successfully uploads the ct128 to S3, the ct128 blob is deleted from Postgres.
+///
+/// The assumption for now is that the DB insertion is faster and more reliable than the S3 upload.
+/// Later on, the DB insertion of ct128 might be removed completely.
 async fn update_ciphertext128(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],

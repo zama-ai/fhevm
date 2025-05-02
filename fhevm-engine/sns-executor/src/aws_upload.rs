@@ -1,6 +1,8 @@
 use crate::{Config, ExecutionError, HandleItem, S3Config};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client;
+use bytesize::ByteSize;
+use fhevm_engine_common::utils::compact_hex;
 use sha3::{Digest, Keccak256};
 
 use sqlx::postgres::PgPoolOptions;
@@ -65,7 +67,7 @@ async fn upload_ciphertexts(
     pool: &PgPool,
     conf: &S3Config,
 ) -> Result<(), ExecutionError> {
-    let handle_as_hex: String = hex::encode(&task.handle);
+    let handle_as_hex: String = compact_hex(&task.handle);
     info!("Received uploading task, handle: {}", handle_as_hex);
 
     let ct128_bytes = match task.ct128_uncompressed {
@@ -79,8 +81,11 @@ async fn upload_ciphertexts(
     let ct64_digest = compute_digest(&task.ct64_compressed);
 
     info!(
-        "Start uploading task, handle: {}, tenant_id: {}",
-        handle_as_hex, task.tenant_id
+        "Start uploading task, handle: {}, tenant_id: {}, ct128_len: {}, ct64_compressed_len: {}",
+        handle_as_hex,
+        task.tenant_id,
+        ByteSize::b(ct128_bytes.len() as u64),
+        ByteSize::b(task.ct64_compressed.len() as u64)
     );
 
     let (up1, up2) = join!(
@@ -125,6 +130,17 @@ async fn upload_ciphertexts(
                  SET ciphertext128 = $1
                  WHERE handle = $2",
                 ct128_digest,
+                task.handle
+            )
+            .execute(trx.as_mut())
+            .await?;
+
+            // Reset ciphertext128 as the ct128 has been successfully uploaded to S3
+            // NB: For reclaiming the disk-space in DB, we rely on auto vacuuming in Postgres
+            sqlx::query!(
+                "UPDATE ciphertexts
+                     SET ciphertext128 = NULL
+                     WHERE handle = $1",
                 task.handle
             )
             .execute(trx.as_mut())
@@ -183,8 +199,8 @@ async fn upload_ciphertexts(
         info!(
             "Uploaded to S3, handle = {}, ct64_digest = {}, ct128_digest = {}",
             handle_as_hex,
-            hex::encode(ct64_digest),
-            hex::encode(ct128_digest)
+            compact_hex(&ct64_digest),
+            compact_hex(&ct128_digest)
         );
     }
 

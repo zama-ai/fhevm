@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ciphertexts\n                     SET ciphertext128 = NULL\n                     WHERE handle = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6805649335eaa2094d6241fb73277a46aadcd15ce5252c89d5320987b1e23086"
+}
