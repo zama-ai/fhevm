@@ -19,7 +19,7 @@ contract DecryptionMock {
         bytes publicKey
     );
 
-    event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] reencryptedShares, bytes[] signatures);
+    event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] userDecryptedShares, bytes[] signatures);
 
     function publicDecryptionRequest(bytes32[] calldata ctHandles) external {
         uint256 publicDecryptionId;
@@ -72,12 +72,12 @@ contract DecryptionMock {
 
     function userDecryptionResponse(
         uint256 userDecryptionId,
-        bytes calldata reencryptedShare,
+        bytes calldata userDecryptedShare,
         bytes calldata signature
     ) external {
         uint256 userDecryptionId;
-        bytes[] memory reencryptedShares = new bytes[](1);
+        bytes[] memory userDecryptedShares = new bytes[](1);
         bytes[] memory signatures = new bytes[](1);
-        emit UserDecryptionResponse(userDecryptionId, reencryptedShares, signatures);
+        emit UserDecryptionResponse(userDecryptionId, userDecryptedShares, signatures);
     }
 }
