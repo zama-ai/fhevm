@@ -42,7 +42,7 @@ interface IDecryption {
     event PublicDecryptionRequest(uint256 indexed publicDecryptionId, SnsCiphertextMaterial[] snsCtMaterials);
     event PublicDecryptionResponse(uint256 indexed publicDecryptionId, bytes decryptedResult, bytes[] signatures);
     event UserDecryptionRequest(uint256 indexed userDecryptionId, SnsCiphertextMaterial[] snsCtMaterials, address userAddress, bytes publicKey);
-    event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] reencryptedShares, bytes[] signatures);
+    event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] userDecryptedShares, bytes[] signatures);
 
     function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, address[] memory contractAddresses) external view;
     function checkPublicDecryptionDone(uint256 publicDecryptionId) external view;
@@ -54,7 +54,7 @@ interface IDecryption {
     function publicDecryptionRequest(bytes32[] memory ctHandles) external;
     function publicDecryptionResponse(uint256 publicDecryptionId, bytes memory decryptedResult, bytes memory signature) external;
     function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, RequestValidity memory requestValidity, uint256 contractsChainId, address[] memory contractAddresses, address userAddress, bytes memory publicKey, bytes memory signature) external;
-    function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencryptedShare, bytes memory signature) external;
+    function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecryptedShare, bytes memory signature) external;
 }
 ```
 
@@ -387,7 +387,7 @@ interface IDecryption {
         "internalType": "uint256"
       },
       {
-        "name": "reencryptedShare",
+        "name": "userDecryptedShare",
         "type": "bytes",
         "internalType": "bytes"
       },
@@ -530,7 +530,7 @@ interface IDecryption {
         "internalType": "uint256"
       },
       {
-        "name": "reencryptedShares",
+        "name": "userDecryptedShares",
         "type": "bytes[]",
         "indexed": false,
         "internalType": "bytes[]"
@@ -3422,7 +3422,7 @@ event UserDecryptionRequest(uint256 indexed userDecryptionId, SnsCiphertextMater
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UserDecryptionResponse(uint256,bytes[],bytes[])` and selector `0x7312dec4cead0d5d3da836cdbaed1eb6a81e218c519c8740da4ac75afcb6c5c7`.
 ```solidity
-event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] reencryptedShares, bytes[] signatures);
+event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] userDecryptedShares, bytes[] signatures);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3435,7 +3435,7 @@ event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] reencrypt
         #[allow(missing_docs)]
         pub userDecryptionId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub reencryptedShares: alloy::sol_types::private::Vec<
+        pub userDecryptedShares: alloy::sol_types::private::Vec<
             alloy::sol_types::private::Bytes,
         >,
         #[allow(missing_docs)]
@@ -3477,7 +3477,7 @@ event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] reencrypt
             ) -> Self {
                 Self {
                     userDecryptionId: topics.1,
-                    reencryptedShares: data.0,
+                    userDecryptedShares: data.0,
                     signatures: data.1,
                 }
             }
@@ -3501,7 +3501,7 @@ event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] reencrypt
                 (
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::Bytes,
-                    > as alloy_sol_types::SolType>::tokenize(&self.reencryptedShares),
+                    > as alloy_sol_types::SolType>::tokenize(&self.userDecryptedShares),
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::Bytes,
                     > as alloy_sol_types::SolType>::tokenize(&self.signatures),
@@ -5106,7 +5106,7 @@ function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPai
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `userDecryptionResponse(uint256,bytes,bytes)` and selector `0xb9bfe0a8`.
 ```solidity
-function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencryptedShare, bytes memory signature) external;
+function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecryptedShare, bytes memory signature) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5114,7 +5114,7 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
         #[allow(missing_docs)]
         pub userDecryptionId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub reencryptedShare: alloy::sol_types::private::Bytes,
+        pub userDecryptedShare: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
         pub signature: alloy::sol_types::private::Bytes,
     }
@@ -5159,7 +5159,7 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
             impl ::core::convert::From<userDecryptionResponseCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: userDecryptionResponseCall) -> Self {
-                    (value.userDecryptionId, value.reencryptedShare, value.signature)
+                    (value.userDecryptionId, value.userDecryptedShare, value.signature)
                 }
             }
             #[automatically_derived]
@@ -5169,7 +5169,7 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         userDecryptionId: tuple.0,
-                        reencryptedShare: tuple.1,
+                        userDecryptedShare: tuple.1,
                         signature: tuple.2,
                     }
                 }
@@ -5238,7 +5238,7 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory reencrypt
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.userDecryptionId),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.reencryptedShare,
+                        &self.userDecryptedShare,
                     ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.signature,
@@ -6676,13 +6676,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn userDecryptionResponse(
             &self,
             userDecryptionId: alloy::sol_types::private::primitives::aliases::U256,
-            reencryptedShare: alloy::sol_types::private::Bytes,
+            userDecryptedShare: alloy::sol_types::private::Bytes,
             signature: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<T, &P, userDecryptionResponseCall, N> {
             self.call_builder(
                 &userDecryptionResponseCall {
                     userDecryptionId,
-                    reencryptedShare,
+                    userDecryptedShare,
                     signature,
                 },
             )

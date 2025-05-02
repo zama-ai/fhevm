@@ -54,7 +54,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         /// @notice The handles of the ciphertexts that have been decrypted.
         bytes32[] ctHandles;
         /// @notice The partial decryption share reencrypted with the user's public key.
-        bytes reencryptedShare;
+        bytes userDecryptedShare;
     }
 
     /// @notice The typed data structure for the EIP712 signature to validate in user decryption with delegation requests.
@@ -126,7 +126,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
     /// @notice The definition of the UserDecryptResponseVerification structure typed data.
     string private constant EIP712_USER_DECRYPT_RESPONSE_TYPE =
-        "UserDecryptResponseVerification(bytes publicKey,bytes32[] ctHandles,bytes reencryptedShare)";
+        "UserDecryptResponseVerification(bytes publicKey,bytes32[] ctHandles,bytes userDecryptedShare)";
 
     /// @notice The hash of the UserDecryptResponseVerification structure typed data definition
     /// @notice used for signature validation.
@@ -186,8 +186,8 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         mapping(uint256 userDecryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
         /// @notice Whether a user decryption has been done
         mapping(uint256 userDecryptionId => bool userDecryptionDone) userDecryptionDone;
-        /// @notice The reencrypted shares received from user decryption responses.
-        mapping(uint256 userDecryptionId => bytes[] shares) reencryptedShares;
+        /// @notice The user decrypted shares received from user decryption responses.
+        mapping(uint256 userDecryptionId => bytes[] shares) userDecryptedShares;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -428,7 +428,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     /// @dev prevent anyone else from copying the signature and sending it to trigger a consensus.
     function userDecryptionResponse(
         uint256 userDecryptionId,
-        bytes calldata reencryptedShare,
+        bytes calldata userDecryptedShare,
         bytes calldata signature
     ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
@@ -438,7 +438,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         UserDecryptResponseVerification memory userDecryptResponseVerification = UserDecryptResponseVerification(
             userDecryptionPayload.publicKey,
             userDecryptionPayload.ctHandles,
-            reencryptedShare
+            userDecryptedShare
         );
 
         /// @dev Compute the digest of the UserDecryptResponseVerification structure.
@@ -451,8 +451,8 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         bytes[] storage verifiedSignatures = $._verifiedUserDecryptSignatures[userDecryptionId][digest];
         verifiedSignatures.push(signature);
 
-        /// @dev Store the reencrypted share for the user decryption response.
-        $.reencryptedShares[userDecryptionId].push(reencryptedShare);
+        /// @dev Store the user decrypted share for the user decryption response.
+        $.userDecryptedShares[userDecryptionId].push(userDecryptedShare);
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
@@ -461,7 +461,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
             // TODO: Implement sending service fees to PaymentManager contract
 
-            emit UserDecryptionResponse(userDecryptionId, $.reencryptedShares[userDecryptionId], verifiedSignatures);
+            emit UserDecryptionResponse(userDecryptionId, $.userDecryptedShares[userDecryptionId], verifiedSignatures);
         }
     }
 
@@ -705,7 +705,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
                         EIP712_USER_DECRYPT_RESPONSE_TYPE_HASH,
                         keccak256(userDecryptResponseVerification.publicKey),
                         keccak256(abi.encodePacked(userDecryptResponseVerification.ctHandles)),
-                        keccak256(userDecryptResponseVerification.reencryptedShare)
+                        keccak256(userDecryptResponseVerification.userDecryptedShare)
                     )
                 )
             );

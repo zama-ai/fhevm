@@ -47,9 +47,9 @@ interface IDecryption {
     /// @notice Emitted when an public decryption response is made
     /// @dev This event is meant to be listened by a user or relayer
     /// @param userDecryptionId The user decryption request's unique ID associated with the response
-    /// @param reencryptedShares The list of decryption shares reencrypted with the user's public key
+    /// @param userDecryptedShares The list of decryption shares reencrypted with the user's public key
     /// @param signatures The signatures of all the KMS Connectors that responded
-    event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] reencryptedShares, bytes[] signatures);
+    event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] userDecryptedShares, bytes[] signatures);
 
     /// @notice Error indicating that the input list of handles is empty.
     error EmptyCtHandles();
@@ -178,11 +178,11 @@ interface IDecryption {
     /// @notice Responds to a user decryption request
     /// @dev This function can only be called by the KMS Connectors
     /// @param userDecryptionId The user decryption request's unique ID associated with the response
-    /// @param reencryptedShare The partial decryption share reencrypted with the user's public key
+    /// @param userDecryptedShare The partial decryption share reencrypted with the user's public key
     /// @param signature The signature of the KMS Connector that responded
     function userDecryptionResponse(
         uint256 userDecryptionId,
-        bytes calldata reencryptedShare,
+        bytes calldata userDecryptedShare,
         bytes calldata signature
     ) external;
 
