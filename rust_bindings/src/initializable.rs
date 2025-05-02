@@ -68,6 +68,7 @@ pub mod Initializable {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidInitialization()` and selector `0xf92ee8a9`.
 ```solidity
 error InvalidInitialization();
@@ -132,6 +133,7 @@ error InvalidInitialization();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotInitializing()` and selector `0xd7e6bcf8`.
 ```solidity
 error NotInitializing();
@@ -196,6 +198,7 @@ error NotInitializing();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Initialized(uint64)` and selector `0xc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2`.
 ```solidity
 event Initialized(uint64 version);
@@ -228,38 +231,9 @@ event Initialized(uint64 version);
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "Initialized(uint64)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                199u8,
-                245u8,
-                5u8,
-                178u8,
-                243u8,
-                113u8,
-                174u8,
-                33u8,
-                117u8,
-                238u8,
-                73u8,
-                19u8,
-                244u8,
-                73u8,
-                158u8,
-                31u8,
-                38u8,
-                51u8,
-                167u8,
-                181u8,
-                147u8,
-                99u8,
-                33u8,
-                238u8,
-                209u8,
-                205u8,
-                174u8,
-                182u8,
-                17u8,
-                81u8,
-                129u8,
-                210u8,
+                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8,
+                19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
+                33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -329,6 +303,7 @@ event Initialized(uint64 version);
         }
     };
     ///Container for all the [`Initializable`](self) custom errors.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum InitializableErrors {
         #[allow(missing_docs)]
         InvalidInitialization(InvalidInitialization),
@@ -454,6 +429,7 @@ event Initialized(uint64 version);
         }
     }
     ///Container for all the [`Initializable`](self) events.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum InitializableEvents {
         #[allow(missing_docs)]
         Initialized(Initialized),
@@ -468,38 +444,9 @@ event Initialized(uint64 version);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                199u8,
-                245u8,
-                5u8,
-                178u8,
-                243u8,
-                113u8,
-                174u8,
-                33u8,
-                117u8,
-                238u8,
-                73u8,
-                19u8,
-                244u8,
-                73u8,
-                158u8,
-                31u8,
-                38u8,
-                51u8,
-                167u8,
-                181u8,
-                147u8,
-                99u8,
-                33u8,
-                238u8,
-                209u8,
-                205u8,
-                174u8,
-                182u8,
-                17u8,
-                81u8,
-                129u8,
-                210u8,
+                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8,
+                19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
+                33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ],
         ];
     }

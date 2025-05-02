@@ -70,6 +70,7 @@ pub mod Strings {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"s\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x000\x14`\x80`@R__\xFD",
     );
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `StringsInsufficientHexLength(uint256,uint256)` and selector `0xe22e27eb`.
 ```solidity
 error StringsInsufficientHexLength(uint256 value, uint256 length);
@@ -157,6 +158,7 @@ error StringsInsufficientHexLength(uint256 value, uint256 length);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `StringsInvalidAddressFormat()` and selector `0x1d15ae44`.
 ```solidity
 error StringsInvalidAddressFormat();
@@ -223,6 +225,7 @@ error StringsInvalidAddressFormat();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `StringsInvalidChar()` and selector `0x94e2737e`.
 ```solidity
 error StringsInvalidChar();
@@ -288,6 +291,7 @@ error StringsInvalidChar();
         }
     };
     ///Container for all the [`Strings`](self) custom errors.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum StringsErrors {
         #[allow(missing_docs)]
         StringsInsufficientHexLength(StringsInsufficientHexLength),

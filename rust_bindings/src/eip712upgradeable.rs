@@ -120,6 +120,7 @@ pub mod EIP712Upgradeable {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidInitialization()` and selector `0xf92ee8a9`.
 ```solidity
 error InvalidInitialization();
@@ -184,6 +185,7 @@ error InvalidInitialization();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotInitializing()` and selector `0xd7e6bcf8`.
 ```solidity
 error NotInitializing();
@@ -248,6 +250,7 @@ error NotInitializing();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `EIP712DomainChanged()` and selector `0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31`.
 ```solidity
 event EIP712DomainChanged();
@@ -277,38 +280,9 @@ event EIP712DomainChanged();
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "EIP712DomainChanged()";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                10u8,
-                99u8,
-                135u8,
-                201u8,
-                234u8,
-                54u8,
-                40u8,
-                184u8,
-                138u8,
-                99u8,
-                59u8,
-                180u8,
-                243u8,
-                177u8,
-                81u8,
-                119u8,
-                15u8,
-                112u8,
-                8u8,
-                81u8,
-                23u8,
-                161u8,
-                95u8,
-                155u8,
-                243u8,
-                120u8,
-                124u8,
-                218u8,
-                83u8,
-                241u8,
-                61u8,
-                49u8,
+                10u8, 99u8, 135u8, 201u8, 234u8, 54u8, 40u8, 184u8, 138u8, 99u8, 59u8,
+                180u8, 243u8, 177u8, 81u8, 119u8, 15u8, 112u8, 8u8, 81u8, 23u8, 161u8,
+                95u8, 155u8, 243u8, 120u8, 124u8, 218u8, 83u8, 241u8, 61u8, 49u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -373,6 +347,7 @@ event EIP712DomainChanged();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Initialized(uint64)` and selector `0xc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2`.
 ```solidity
 event Initialized(uint64 version);
@@ -405,38 +380,9 @@ event Initialized(uint64 version);
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "Initialized(uint64)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                199u8,
-                245u8,
-                5u8,
-                178u8,
-                243u8,
-                113u8,
-                174u8,
-                33u8,
-                117u8,
-                238u8,
-                73u8,
-                19u8,
-                244u8,
-                73u8,
-                158u8,
-                31u8,
-                38u8,
-                51u8,
-                167u8,
-                181u8,
-                147u8,
-                99u8,
-                33u8,
-                238u8,
-                209u8,
-                205u8,
-                174u8,
-                182u8,
-                17u8,
-                81u8,
-                129u8,
-                210u8,
+                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8,
+                19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
+                33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -505,6 +451,7 @@ event Initialized(uint64 version);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `eip712Domain()` and selector `0x84b0196e`.
 ```solidity
 function eip712Domain() external view returns (bytes1 fields, string memory name, string memory version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] memory extensions);
@@ -512,6 +459,7 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct eip712DomainCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`eip712Domain()`](eip712DomainCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -681,6 +629,7 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
         }
     };
     ///Container for all the [`EIP712Upgradeable`](self) function calls.
+    #[derive()]
     pub enum EIP712UpgradeableCalls {
         #[allow(missing_docs)]
         eip712Domain(eip712DomainCall),
@@ -774,6 +723,7 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
         }
     }
     ///Container for all the [`EIP712Upgradeable`](self) custom errors.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum EIP712UpgradeableErrors {
         #[allow(missing_docs)]
         InvalidInitialization(InvalidInitialization),
@@ -899,6 +849,7 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
         }
     }
     ///Container for all the [`EIP712Upgradeable`](self) events.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum EIP712UpgradeableEvents {
         #[allow(missing_docs)]
         EIP712DomainChanged(EIP712DomainChanged),
@@ -915,72 +866,14 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                10u8,
-                99u8,
-                135u8,
-                201u8,
-                234u8,
-                54u8,
-                40u8,
-                184u8,
-                138u8,
-                99u8,
-                59u8,
-                180u8,
-                243u8,
-                177u8,
-                81u8,
-                119u8,
-                15u8,
-                112u8,
-                8u8,
-                81u8,
-                23u8,
-                161u8,
-                95u8,
-                155u8,
-                243u8,
-                120u8,
-                124u8,
-                218u8,
-                83u8,
-                241u8,
-                61u8,
-                49u8,
+                10u8, 99u8, 135u8, 201u8, 234u8, 54u8, 40u8, 184u8, 138u8, 99u8, 59u8,
+                180u8, 243u8, 177u8, 81u8, 119u8, 15u8, 112u8, 8u8, 81u8, 23u8, 161u8,
+                95u8, 155u8, 243u8, 120u8, 124u8, 218u8, 83u8, 241u8, 61u8, 49u8,
             ],
             [
-                199u8,
-                245u8,
-                5u8,
-                178u8,
-                243u8,
-                113u8,
-                174u8,
-                33u8,
-                117u8,
-                238u8,
-                73u8,
-                19u8,
-                244u8,
-                73u8,
-                158u8,
-                31u8,
-                38u8,
-                51u8,
-                167u8,
-                181u8,
-                147u8,
-                99u8,
-                33u8,
-                238u8,
-                209u8,
-                205u8,
-                174u8,
-                182u8,
-                17u8,
-                81u8,
-                129u8,
-                210u8,
+                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8,
+                19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
+                33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ],
         ];
     }

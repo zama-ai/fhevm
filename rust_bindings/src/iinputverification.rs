@@ -288,6 +288,7 @@ pub mod IInputVerification {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorSignerAlreadyResponded(uint256,address)` and selector `0xfc5774ab`.
 ```solidity
 error CoprocessorSignerAlreadyResponded(uint256 zkProofId, address signer);
@@ -375,6 +376,7 @@ error CoprocessorSignerAlreadyResponded(uint256 zkProofId, address signer);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorSignerAlreadySigned(uint256,address)` and selector `0x8f27d148`.
 ```solidity
 error CoprocessorSignerAlreadySigned(uint256 zkProofId, address signer);
@@ -462,6 +464,7 @@ error CoprocessorSignerAlreadySigned(uint256 zkProofId, address signer);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ProofNotRejected(uint256)` and selector `0x3acd4253`.
 ```solidity
 error ProofNotRejected(uint256 zkProofId);
@@ -535,6 +538,7 @@ error ProofNotRejected(uint256 zkProofId);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ProofNotVerified(uint256)` and selector `0xc579a791`.
 ```solidity
 error ProofNotVerified(uint256 zkProofId);
@@ -608,6 +612,7 @@ error ProofNotVerified(uint256 zkProofId);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `RejectProofResponse(uint256)` and selector `0xe465e141fa8abd95ab7e0855543307f8506ab0170ef664420fb71ab7de0183de`.
 ```solidity
 event RejectProofResponse(uint256 indexed zkProofId);
@@ -643,38 +648,9 @@ event RejectProofResponse(uint256 indexed zkProofId);
             );
             const SIGNATURE: &'static str = "RejectProofResponse(uint256)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                228u8,
-                101u8,
-                225u8,
-                65u8,
-                250u8,
-                138u8,
-                189u8,
-                149u8,
-                171u8,
-                126u8,
-                8u8,
-                85u8,
-                84u8,
-                51u8,
-                7u8,
-                248u8,
-                80u8,
-                106u8,
-                176u8,
-                23u8,
-                14u8,
-                246u8,
-                100u8,
-                66u8,
-                15u8,
-                183u8,
-                26u8,
-                183u8,
-                222u8,
-                1u8,
-                131u8,
-                222u8,
+                228u8, 101u8, 225u8, 65u8, 250u8, 138u8, 189u8, 149u8, 171u8, 126u8, 8u8,
+                85u8, 84u8, 51u8, 7u8, 248u8, 80u8, 106u8, 176u8, 23u8, 14u8, 246u8,
+                100u8, 66u8, 15u8, 183u8, 26u8, 183u8, 222u8, 1u8, 131u8, 222u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -742,6 +718,7 @@ event RejectProofResponse(uint256 indexed zkProofId);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `VerifyProofRequest(uint256,uint256,address,address,bytes)` and selector `0x18548e08c36e87f31f540ad85cfda94cfd6f63b059c4cd8a0b7eb1ea419083f2`.
 ```solidity
 event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChainId, address contractAddress, address userAddress, bytes ciphertextWithZKProof);
@@ -790,38 +767,9 @@ event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChai
             );
             const SIGNATURE: &'static str = "VerifyProofRequest(uint256,uint256,address,address,bytes)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                24u8,
-                84u8,
-                142u8,
-                8u8,
-                195u8,
-                110u8,
-                135u8,
-                243u8,
-                31u8,
-                84u8,
-                10u8,
-                216u8,
-                92u8,
-                253u8,
-                169u8,
-                76u8,
-                253u8,
-                111u8,
-                99u8,
-                176u8,
-                89u8,
-                196u8,
-                205u8,
-                138u8,
-                11u8,
-                126u8,
-                177u8,
-                234u8,
-                65u8,
-                144u8,
-                131u8,
-                242u8,
+                24u8, 84u8, 142u8, 8u8, 195u8, 110u8, 135u8, 243u8, 31u8, 84u8, 10u8,
+                216u8, 92u8, 253u8, 169u8, 76u8, 253u8, 111u8, 99u8, 176u8, 89u8, 196u8,
+                205u8, 138u8, 11u8, 126u8, 177u8, 234u8, 65u8, 144u8, 131u8, 242u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -912,6 +860,7 @@ event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChai
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `VerifyProofResponse(uint256,bytes32[],bytes[])` and selector `0xfe2c43585786a5a658d2ec5df5dea3fb3385b77c94f60f724ff810896f419835`.
 ```solidity
 event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
@@ -958,38 +907,9 @@ event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[
             );
             const SIGNATURE: &'static str = "VerifyProofResponse(uint256,bytes32[],bytes[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                254u8,
-                44u8,
-                67u8,
-                88u8,
-                87u8,
-                134u8,
-                165u8,
-                166u8,
-                88u8,
-                210u8,
-                236u8,
-                93u8,
-                245u8,
-                222u8,
-                163u8,
-                251u8,
-                51u8,
-                133u8,
-                183u8,
-                124u8,
-                148u8,
-                246u8,
-                15u8,
-                114u8,
-                79u8,
-                248u8,
-                16u8,
-                137u8,
-                111u8,
-                65u8,
-                152u8,
-                53u8,
+                254u8, 44u8, 67u8, 88u8, 87u8, 134u8, 165u8, 166u8, 88u8, 210u8, 236u8,
+                93u8, 245u8, 222u8, 163u8, 251u8, 51u8, 133u8, 183u8, 124u8, 148u8,
+                246u8, 15u8, 114u8, 79u8, 248u8, 16u8, 137u8, 111u8, 65u8, 152u8, 53u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -1068,6 +988,7 @@ event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkProofRejected(uint256)` and selector `0x1814ae89`.
 ```solidity
 function checkProofRejected(uint256 zkProofId) external view;
@@ -1197,6 +1118,7 @@ function checkProofRejected(uint256 zkProofId) external view;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkProofVerified(uint256)` and selector `0x5a5174eb`.
 ```solidity
 function checkProofVerified(uint256 zkProofId) external view;
@@ -1326,6 +1248,7 @@ function checkProofVerified(uint256 zkProofId) external view;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
 function getVersion() external pure returns (string memory);
@@ -1333,6 +1256,7 @@ function getVersion() external pure returns (string memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1445,6 +1369,7 @@ function getVersion() external pure returns (string memory);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `rejectProofResponse(uint256)` and selector `0x12fe7315`.
 ```solidity
 function rejectProofResponse(uint256 zkProofId) external;
@@ -1574,6 +1499,7 @@ function rejectProofResponse(uint256 zkProofId) external;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `verifyProofRequest(uint256,address,address,bytes)` and selector `0x954d2712`.
 ```solidity
 function verifyProofRequest(uint256 contractChainId, address contractAddress, address userAddress, bytes memory ciphertextWithZKProof) external;
@@ -1741,6 +1667,7 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `verifyProofResponse(uint256,bytes32[],bytes)` and selector `0xbebd1e6a`.
 ```solidity
 function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, bytes memory signature) external;
@@ -1903,6 +1830,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         }
     };
     ///Container for all the [`IInputVerification`](self) function calls.
+    #[derive()]
     pub enum IInputVerificationCalls {
         #[allow(missing_docs)]
         checkProofRejected(checkProofRejectedCall),
@@ -2146,6 +2074,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         }
     }
     ///Container for all the [`IInputVerification`](self) custom errors.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IInputVerificationErrors {
         #[allow(missing_docs)]
         CoprocessorSignerAlreadyResponded(CoprocessorSignerAlreadyResponded),
@@ -2335,6 +2264,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         }
     }
     ///Container for all the [`IInputVerification`](self) events.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IInputVerificationEvents {
         #[allow(missing_docs)]
         RejectProofResponse(RejectProofResponse),
@@ -2353,106 +2283,19 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                24u8,
-                84u8,
-                142u8,
-                8u8,
-                195u8,
-                110u8,
-                135u8,
-                243u8,
-                31u8,
-                84u8,
-                10u8,
-                216u8,
-                92u8,
-                253u8,
-                169u8,
-                76u8,
-                253u8,
-                111u8,
-                99u8,
-                176u8,
-                89u8,
-                196u8,
-                205u8,
-                138u8,
-                11u8,
-                126u8,
-                177u8,
-                234u8,
-                65u8,
-                144u8,
-                131u8,
-                242u8,
+                24u8, 84u8, 142u8, 8u8, 195u8, 110u8, 135u8, 243u8, 31u8, 84u8, 10u8,
+                216u8, 92u8, 253u8, 169u8, 76u8, 253u8, 111u8, 99u8, 176u8, 89u8, 196u8,
+                205u8, 138u8, 11u8, 126u8, 177u8, 234u8, 65u8, 144u8, 131u8, 242u8,
             ],
             [
-                228u8,
-                101u8,
-                225u8,
-                65u8,
-                250u8,
-                138u8,
-                189u8,
-                149u8,
-                171u8,
-                126u8,
-                8u8,
-                85u8,
-                84u8,
-                51u8,
-                7u8,
-                248u8,
-                80u8,
-                106u8,
-                176u8,
-                23u8,
-                14u8,
-                246u8,
-                100u8,
-                66u8,
-                15u8,
-                183u8,
-                26u8,
-                183u8,
-                222u8,
-                1u8,
-                131u8,
-                222u8,
+                228u8, 101u8, 225u8, 65u8, 250u8, 138u8, 189u8, 149u8, 171u8, 126u8, 8u8,
+                85u8, 84u8, 51u8, 7u8, 248u8, 80u8, 106u8, 176u8, 23u8, 14u8, 246u8,
+                100u8, 66u8, 15u8, 183u8, 26u8, 183u8, 222u8, 1u8, 131u8, 222u8,
             ],
             [
-                254u8,
-                44u8,
-                67u8,
-                88u8,
-                87u8,
-                134u8,
-                165u8,
-                166u8,
-                88u8,
-                210u8,
-                236u8,
-                93u8,
-                245u8,
-                222u8,
-                163u8,
-                251u8,
-                51u8,
-                133u8,
-                183u8,
-                124u8,
-                148u8,
-                246u8,
-                15u8,
-                114u8,
-                79u8,
-                248u8,
-                16u8,
-                137u8,
-                111u8,
-                65u8,
-                152u8,
-                53u8,
+                254u8, 44u8, 67u8, 88u8, 87u8, 134u8, 165u8, 166u8, 88u8, 210u8, 236u8,
+                93u8, 245u8, 222u8, 163u8, 251u8, 51u8, 133u8, 183u8, 124u8, 148u8,
+                246u8, 15u8, 114u8, 79u8, 248u8, 16u8, 137u8, 111u8, 65u8, 152u8, 53u8,
             ],
         ];
     }
