@@ -270,6 +270,7 @@ pub mod ICiphertextCommits {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextDigest; address[] coprocessorTxSenderAddresses; }
 ```*/
@@ -553,6 +554,7 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphertextDigest; address[] coprocessorTxSenderAddresses; }
 ```*/
@@ -836,6 +838,7 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CiphertextMaterialNotFound(bytes32)` and selector `0x0666cbdf`.
 ```solidity
 error CiphertextMaterialNotFound(bytes32 ctHandle);
@@ -909,6 +912,7 @@ error CiphertextMaterialNotFound(bytes32 ctHandle);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CiphertextMaterialNotOnNetwork(bytes32,uint256)` and selector `0x404ec2e9`.
 ```solidity
 error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
@@ -996,6 +1000,7 @@ error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorTxSenderAlreadyAdded(address)` and selector `0x701c7e71`.
 ```solidity
 error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
@@ -1071,6 +1076,7 @@ error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AddCiphertextMaterial(bytes32,bytes32,bytes32,address[])` and selector `0xcb89ccb347018d7f282bb4c048e135e19bc1d13660fa0f2850e10518422536de`.
 ```solidity
 event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenderAddresses);
@@ -1118,38 +1124,9 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
             );
             const SIGNATURE: &'static str = "AddCiphertextMaterial(bytes32,bytes32,bytes32,address[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                203u8,
-                137u8,
-                204u8,
-                179u8,
-                71u8,
-                1u8,
-                141u8,
-                127u8,
-                40u8,
-                43u8,
-                180u8,
-                192u8,
-                72u8,
-                225u8,
-                53u8,
-                225u8,
-                155u8,
-                193u8,
-                209u8,
-                54u8,
-                96u8,
-                250u8,
-                15u8,
-                40u8,
-                80u8,
-                225u8,
-                5u8,
-                24u8,
-                66u8,
-                37u8,
-                54u8,
-                222u8,
+                203u8, 137u8, 204u8, 179u8, 71u8, 1u8, 141u8, 127u8, 40u8, 43u8, 180u8,
+                192u8, 72u8, 225u8, 53u8, 225u8, 155u8, 193u8, 209u8, 54u8, 96u8, 250u8,
+                15u8, 40u8, 80u8, 225u8, 5u8, 24u8, 66u8, 37u8, 54u8, 222u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -1234,6 +1211,7 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `addCiphertextMaterial(bytes32,uint256,bytes32,bytes32)` and selector `0x90f30354`.
 ```solidity
 function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest) external;
@@ -1401,6 +1379,7 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 cipherte
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkCiphertextMaterial(bytes32)` and selector `0xd4476f63`.
 ```solidity
 function checkCiphertextMaterial(bytes32 ctHandle) external view;
@@ -1528,6 +1507,7 @@ function checkCiphertextMaterial(bytes32 ctHandle) external view;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCiphertextMaterials(bytes32[])` and selector `0x55c4d997`.
 ```solidity
 function getCiphertextMaterials(bytes32[] memory ctHandles) external view returns (CiphertextMaterial[] memory ctMaterials);
@@ -1540,6 +1520,7 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
             alloy::sol_types::private::FixedBytes<32>,
         >,
     }
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getCiphertextMaterials(bytes32[])`](getCiphertextMaterialsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1682,6 +1663,7 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getSnsCiphertextMaterials(bytes32[])` and selector `0xa14f8971`.
 ```solidity
 function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view returns (SnsCiphertextMaterial[] memory snsCtMaterials);
@@ -1694,6 +1676,7 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
             alloy::sol_types::private::FixedBytes<32>,
         >,
     }
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getSnsCiphertextMaterials(bytes32[])`](getSnsCiphertextMaterialsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1836,6 +1819,7 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
 function getVersion() external pure returns (string memory);
@@ -1843,6 +1827,7 @@ function getVersion() external pure returns (string memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1956,6 +1941,7 @@ function getVersion() external pure returns (string memory);
         }
     };
     ///Container for all the [`ICiphertextCommits`](self) function calls.
+    #[derive()]
     pub enum ICiphertextCommitsCalls {
         #[allow(missing_docs)]
         addCiphertextMaterial(addCiphertextMaterialCall),
@@ -2169,6 +2155,7 @@ function getVersion() external pure returns (string memory);
         }
     }
     ///Container for all the [`ICiphertextCommits`](self) custom errors.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ICiphertextCommitsErrors {
         #[allow(missing_docs)]
         CiphertextMaterialNotFound(CiphertextMaterialNotFound),
@@ -2328,6 +2315,7 @@ function getVersion() external pure returns (string memory);
         }
     }
     ///Container for all the [`ICiphertextCommits`](self) events.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ICiphertextCommitsEvents {
         #[allow(missing_docs)]
         AddCiphertextMaterial(AddCiphertextMaterial),
@@ -2342,38 +2330,9 @@ function getVersion() external pure returns (string memory);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                203u8,
-                137u8,
-                204u8,
-                179u8,
-                71u8,
-                1u8,
-                141u8,
-                127u8,
-                40u8,
-                43u8,
-                180u8,
-                192u8,
-                72u8,
-                225u8,
-                53u8,
-                225u8,
-                155u8,
-                193u8,
-                209u8,
-                54u8,
-                96u8,
-                250u8,
-                15u8,
-                40u8,
-                80u8,
-                225u8,
-                5u8,
-                24u8,
-                66u8,
-                37u8,
-                54u8,
-                222u8,
+                203u8, 137u8, 204u8, 179u8, 71u8, 1u8, 141u8, 127u8, 40u8, 43u8, 180u8,
+                192u8, 72u8, 225u8, 53u8, 225u8, 155u8, 193u8, 209u8, 54u8, 96u8, 250u8,
+                15u8, 40u8, 80u8, 225u8, 5u8, 24u8, 66u8, 37u8, 54u8, 222u8,
             ],
         ];
     }

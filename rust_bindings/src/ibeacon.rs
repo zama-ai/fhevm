@@ -55,6 +55,7 @@ pub mod IBeacon {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `implementation()` and selector `0x5c60da1b`.
 ```solidity
 function implementation() external view returns (address);
@@ -62,6 +63,7 @@ function implementation() external view returns (address);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct implementationCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`implementation()`](implementationCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -177,6 +179,7 @@ function implementation() external view returns (address);
         }
     };
     ///Container for all the [`IBeacon`](self) function calls.
+    #[derive()]
     pub enum IBeaconCalls {
         #[allow(missing_docs)]
         implementation(implementationCall),
