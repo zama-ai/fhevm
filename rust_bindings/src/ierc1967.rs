@@ -89,6 +89,7 @@ pub mod IERC1967 {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AdminChanged(address,address)` and selector `0x7e644d79422f17c01e4894b5f4f588d331ebfa28653d42ae832dc59e38c9798f`.
 ```solidity
 event AdminChanged(address previousAdmin, address newAdmin);
@@ -126,38 +127,9 @@ event AdminChanged(address previousAdmin, address newAdmin);
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "AdminChanged(address,address)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                126u8,
-                100u8,
-                77u8,
-                121u8,
-                66u8,
-                47u8,
-                23u8,
-                192u8,
-                30u8,
-                72u8,
-                148u8,
-                181u8,
-                244u8,
-                245u8,
-                136u8,
-                211u8,
-                49u8,
-                235u8,
-                250u8,
-                40u8,
-                101u8,
-                61u8,
-                66u8,
-                174u8,
-                131u8,
-                45u8,
-                197u8,
-                158u8,
-                56u8,
-                201u8,
-                121u8,
-                143u8,
+                126u8, 100u8, 77u8, 121u8, 66u8, 47u8, 23u8, 192u8, 30u8, 72u8, 148u8,
+                181u8, 244u8, 245u8, 136u8, 211u8, 49u8, 235u8, 250u8, 40u8, 101u8, 61u8,
+                66u8, 174u8, 131u8, 45u8, 197u8, 158u8, 56u8, 201u8, 121u8, 143u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -232,6 +204,7 @@ event AdminChanged(address previousAdmin, address newAdmin);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `BeaconUpgraded(address)` and selector `0x1cf3b03a6cf19fa2baba4df148e9dcabedea7f8a5c07840e207e5c089be95d3e`.
 ```solidity
 event BeaconUpgraded(address indexed beacon);
@@ -267,38 +240,9 @@ event BeaconUpgraded(address indexed beacon);
             );
             const SIGNATURE: &'static str = "BeaconUpgraded(address)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                28u8,
-                243u8,
-                176u8,
-                58u8,
-                108u8,
-                241u8,
-                159u8,
-                162u8,
-                186u8,
-                186u8,
-                77u8,
-                241u8,
-                72u8,
-                233u8,
-                220u8,
-                171u8,
-                237u8,
-                234u8,
-                127u8,
-                138u8,
-                92u8,
-                7u8,
-                132u8,
-                14u8,
-                32u8,
-                126u8,
-                92u8,
-                8u8,
-                155u8,
-                233u8,
-                93u8,
-                62u8,
+                28u8, 243u8, 176u8, 58u8, 108u8, 241u8, 159u8, 162u8, 186u8, 186u8, 77u8,
+                241u8, 72u8, 233u8, 220u8, 171u8, 237u8, 234u8, 127u8, 138u8, 92u8, 7u8,
+                132u8, 14u8, 32u8, 126u8, 92u8, 8u8, 155u8, 233u8, 93u8, 62u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -366,6 +310,7 @@ event BeaconUpgraded(address indexed beacon);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Upgraded(address)` and selector `0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b`.
 ```solidity
 event Upgraded(address indexed implementation);
@@ -401,38 +346,9 @@ event Upgraded(address indexed implementation);
             );
             const SIGNATURE: &'static str = "Upgraded(address)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                188u8,
-                124u8,
-                215u8,
-                90u8,
-                32u8,
-                238u8,
-                39u8,
-                253u8,
-                154u8,
-                222u8,
-                186u8,
-                179u8,
-                32u8,
-                65u8,
-                247u8,
-                85u8,
-                33u8,
-                77u8,
-                188u8,
-                107u8,
-                255u8,
-                169u8,
-                12u8,
-                192u8,
-                34u8,
-                91u8,
-                57u8,
-                218u8,
-                46u8,
-                92u8,
-                45u8,
-                59u8,
+                188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8,
+                179u8, 32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8,
+                12u8, 192u8, 34u8, 91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -501,6 +417,7 @@ event Upgraded(address indexed implementation);
         }
     };
     ///Container for all the [`IERC1967`](self) events.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IERC1967Events {
         #[allow(missing_docs)]
         AdminChanged(AdminChanged),
@@ -519,106 +436,19 @@ event Upgraded(address indexed implementation);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                28u8,
-                243u8,
-                176u8,
-                58u8,
-                108u8,
-                241u8,
-                159u8,
-                162u8,
-                186u8,
-                186u8,
-                77u8,
-                241u8,
-                72u8,
-                233u8,
-                220u8,
-                171u8,
-                237u8,
-                234u8,
-                127u8,
-                138u8,
-                92u8,
-                7u8,
-                132u8,
-                14u8,
-                32u8,
-                126u8,
-                92u8,
-                8u8,
-                155u8,
-                233u8,
-                93u8,
-                62u8,
+                28u8, 243u8, 176u8, 58u8, 108u8, 241u8, 159u8, 162u8, 186u8, 186u8, 77u8,
+                241u8, 72u8, 233u8, 220u8, 171u8, 237u8, 234u8, 127u8, 138u8, 92u8, 7u8,
+                132u8, 14u8, 32u8, 126u8, 92u8, 8u8, 155u8, 233u8, 93u8, 62u8,
             ],
             [
-                126u8,
-                100u8,
-                77u8,
-                121u8,
-                66u8,
-                47u8,
-                23u8,
-                192u8,
-                30u8,
-                72u8,
-                148u8,
-                181u8,
-                244u8,
-                245u8,
-                136u8,
-                211u8,
-                49u8,
-                235u8,
-                250u8,
-                40u8,
-                101u8,
-                61u8,
-                66u8,
-                174u8,
-                131u8,
-                45u8,
-                197u8,
-                158u8,
-                56u8,
-                201u8,
-                121u8,
-                143u8,
+                126u8, 100u8, 77u8, 121u8, 66u8, 47u8, 23u8, 192u8, 30u8, 72u8, 148u8,
+                181u8, 244u8, 245u8, 136u8, 211u8, 49u8, 235u8, 250u8, 40u8, 101u8, 61u8,
+                66u8, 174u8, 131u8, 45u8, 197u8, 158u8, 56u8, 201u8, 121u8, 143u8,
             ],
             [
-                188u8,
-                124u8,
-                215u8,
-                90u8,
-                32u8,
-                238u8,
-                39u8,
-                253u8,
-                154u8,
-                222u8,
-                186u8,
-                179u8,
-                32u8,
-                65u8,
-                247u8,
-                85u8,
-                33u8,
-                77u8,
-                188u8,
-                107u8,
-                255u8,
-                169u8,
-                12u8,
-                192u8,
-                34u8,
-                91u8,
-                57u8,
-                218u8,
-                46u8,
-                92u8,
-                45u8,
-                59u8,
+                188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8,
+                179u8, 32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8,
+                12u8, 192u8, 34u8, 91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
             ],
         ];
     }

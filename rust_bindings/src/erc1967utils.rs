@@ -83,6 +83,7 @@ pub mod ERC1967Utils {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"s\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x000\x14`\x80`@R__\xFD",
     );
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1967InvalidAdmin(address)` and selector `0x62e77ba2`.
 ```solidity
 error ERC1967InvalidAdmin(address admin);
@@ -154,6 +155,7 @@ error ERC1967InvalidAdmin(address admin);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1967InvalidBeacon(address)` and selector `0x64ced0ec`.
 ```solidity
 error ERC1967InvalidBeacon(address beacon);
@@ -225,6 +227,7 @@ error ERC1967InvalidBeacon(address beacon);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1967InvalidImplementation(address)` and selector `0x4c9c8ce3`.
 ```solidity
 error ERC1967InvalidImplementation(address implementation);
@@ -298,6 +301,7 @@ error ERC1967InvalidImplementation(address implementation);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1967NonPayable()` and selector `0xb398979f`.
 ```solidity
 error ERC1967NonPayable();
@@ -363,6 +367,7 @@ error ERC1967NonPayable();
         }
     };
     ///Container for all the [`ERC1967Utils`](self) custom errors.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ERC1967UtilsErrors {
         #[allow(missing_docs)]
         ERC1967InvalidAdmin(ERC1967InvalidAdmin),

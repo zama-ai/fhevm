@@ -327,6 +327,7 @@ pub mod EmptyUUPSProxy {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"`\x80`@R`\x046\x10a\0\x85W_5`\xE0\x1C\x80c\x8D\xA5\xCB[\x11a\0XW\x80c\x8D\xA5\xCB[\x14a\0\xFBW\x80c\xAD<\xB1\xCC\x14a\x01%W\x80c\xC4\xD6m\xE8\x14a\x01OW\x80c\xE3\x0C9x\x14a\x01wW\x80c\xF2\xFD\xE3\x8B\x14a\x01\xA1Wa\0\x85V[\x80cO\x1E\xF2\x86\x14a\0\x89W\x80cR\xD1\x90-\x14a\0\xA5W\x80cqP\x18\xA6\x14a\0\xCFW\x80cy\xBAP\x97\x14a\0\xE5W[__\xFD[a\0\xA3`\x04\x806\x03\x81\x01\x90a\0\x9E\x91\x90a\x0F\xFFV[a\x01\xC9V[\0[4\x80\x15a\0\xB0W__\xFD[Pa\0\xB9a\x01\xE8V[`@Qa\0\xC6\x91\x90a\x10qV[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\0\xDAW__\xFD[Pa\0\xE3a\x02\x19V[\0[4\x80\x15a\0\xF0W__\xFD[Pa\0\xF9a\x02,V[\0[4\x80\x15a\x01\x06W__\xFD[Pa\x01\x0Fa\x02\xBAV[`@Qa\x01\x1C\x91\x90a\x10\x99V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x010W__\xFD[Pa\x019a\x02\xEFV[`@Qa\x01F\x91\x90a\x11\x12V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x01ZW__\xFD[Pa\x01u`\x04\x806\x03\x81\x01\x90a\x01p\x91\x90a\x112V[a\x03(V[\0[4\x80\x15a\x01\x82W__\xFD[Pa\x01\x8Ba\x04\xA9V[`@Qa\x01\x98\x91\x90a\x10\x99V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x01\xACW__\xFD[Pa\x01\xC7`\x04\x806\x03\x81\x01\x90a\x01\xC2\x91\x90a\x112V[a\x04\xDEV[\0[a\x01\xD1a\x05\x97V[a\x01\xDA\x82a\x06}V[a\x01\xE4\x82\x82a\x06\x88V[PPV[_a\x01\xF1a\x07\xA6V[\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC_\x1B\x90P\x90V[a\x02!a\x08-V[a\x02*_a\x08\xB4V[V[_a\x025a\x08\xF1V[\x90P\x80s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16a\x02Va\x04\xA9V[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x02\xAEW\x80`@Q\x7F\x11\x8C\xDA\xA7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x02\xA5\x91\x90a\x10\x99V[`@Q\x80\x91\x03\x90\xFD[a\x02\xB7\x81a\x08\xB4V[PV[__a\x02\xC4a\x08\xF8V[\x90P\x80_\x01_\x90T\x90a\x01\0\n\x90\x04s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x91PP\x90V[`@Q\x80`@\x01`@R\x80`\x05\x81R` \x01\x7F5.0.0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81RP\x81V[_a\x031a\t\x1FV[\x90P_\x81_\x01`\x08\x90T\x90a\x01\0\n\x90\x04`\xFF\x16\x15\x90P_\x82_\x01_\x90T\x90a\x01\0\n\x90\x04g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x90P__\x82g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14\x80\x15a\x03yWP\x82[\x90P_`\x01\x83g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14\x80\x15a\x03\xACWP_0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16;\x14[\x90P\x81\x15\x80\x15a\x03\xBAWP\x80\x15[\x15a\x03\xF1W`@Q\x7F\xF9.\xE8\xA9\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x01\x85_\x01_a\x01\0\n\x81T\x81g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x02\x19\x16\x90\x83g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x02\x17\x90UP\x83\x15a\x04>W`\x01\x85_\x01`\x08a\x01\0\n\x81T\x81`\xFF\x02\x19\x16\x90\x83\x15\x15\x02\x17\x90UP[a\x04G\x86a\tFV[\x83\x15a\x04\xA1W_\x85_\x01`\x08a\x01\0\n\x81T\x81`\xFF\x02\x19\x16\x90\x83\x15\x15\x02\x17\x90UP\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2`\x01`@Qa\x04\x98\x91\x90a\x11\xB2V[`@Q\x80\x91\x03\x90\xA1[PPPPPPV[__a\x04\xB3a\tZV[\x90P\x80_\x01_\x90T\x90a\x01\0\n\x90\x04s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x91PP\x90V[a\x04\xE6a\x08-V[_a\x04\xEFa\tZV[\x90P\x81\x81_\x01_a\x01\0\n\x81T\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x02\x19\x16\x90\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x02\x17\x90UP\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16a\x05Qa\x02\xBAV[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F8\xD1k\x8C\xAC\"\xD9\x9F\xC7\xC1$\xB9\xCD\r\xE2\xD3\xFA\x1F\xAE\xF4 \xBF\xE7\x91\xD8\xC3b\xD7e\xE2'\0`@Q`@Q\x80\x91\x03\x90\xA3PPV[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x160s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14\x80a\x06DWP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16a\x06+a\t\x81V[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14\x15[\x15a\x06{W`@Q\x7F\xE0|\x8D\xBA\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[V[a\x06\x85a\x08-V[PV[\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cR\xD1\x90-`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x92PPP\x80\x15a\x06\xF0WP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x06\xED\x91\x90a\x11\xF5V[`\x01[a\x071W\x81`@Q\x7FL\x9C\x8C\xE3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x07(\x91\x90a\x10\x99V[`@Q\x80\x91\x03\x90\xFD[\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC_\x1B\x81\x14a\x07\x97W\x80`@Q\x7F\xAA\x1DI\xA4\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x07\x8E\x91\x90a\x10qV[`@Q\x80\x91\x03\x90\xFD[a\x07\xA1\x83\x83a\t\xD4V[PPPV[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x160s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x08+W`@Q\x7F\xE0|\x8D\xBA\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[V[a\x085a\x08\xF1V[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16a\x08Sa\x02\xBAV[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x08\xB2Wa\x08va\x08\xF1V[`@Q\x7F\x11\x8C\xDA\xA7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x08\xA9\x91\x90a\x10\x99V[`@Q\x80\x91\x03\x90\xFD[V[_a\x08\xBDa\tZV[\x90P\x80_\x01_a\x01\0\n\x81T\x90s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x02\x19\x16\x90Ua\x08\xED\x82a\nFV[PPV[_3\x90P\x90V[_\x7F\x90\x16\xD0\x9Dr\xD4\x0F\xDA\xE2\xFD\x8C\xEA\xC6\xB6#Lw\x06!O\xD3\x9C\x1C\xD1\xE6\t\xA0R\x8C\x19\x93\0\x90P\x90V[_\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x90P\x90V[a\tNa\x0B\x17V[a\tW\x81a\x0BWV[PV[_\x7F#~\x15\x82\"\xE3\xE6\x96\x8Br\xB9\xDB\r\x80C\xAA\xCF\x07J\xD9\xF6P\xF0\xD1`kM\x82\xEEC,\0\x90P\x90V[_a\t\xAD\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC_\x1Ba\x0B\xDBV[_\x01_\x90T\x90a\x01\0\n\x90\x04s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x90P\x90V[a\t\xDD\x82a\x0B\xE4V[\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xBC|\xD7Z \xEE'\xFD\x9A\xDE\xBA\xB3 A\xF7U!M\xBCk\xFF\xA9\x0C\xC0\"[9\xDA.\\-;`@Q`@Q\x80\x91\x03\x90\xA2_\x81Q\x11\x15a\n9Wa\n3\x82\x82a\x0C\xADV[Pa\nBV[a\nAa\r-V[[PPV[_a\nOa\x08\xF8V[\x90P_\x81_\x01_\x90T\x90a\x01\0\n\x90\x04s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x90P\x82\x82_\x01_a\x01\0\n\x81T\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x02\x19\x16\x90\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x02\x17\x90UP\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\x8B\xE0\x07\x9CS\x16Y\x14\x13D\xCD\x1F\xD0\xA4\xF2\x84\x19I\x7F\x97\"\xA3\xDA\xAF\xE3\xB4\x18okdW\xE0`@Q`@Q\x80\x91\x03\x90\xA3PPPV[a\x0B\x1Fa\riV[a\x0BUW`@Q\x7F\xD7\xE6\xBC\xF8\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[V[a\x0B_a\x0B\x17V[_s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x03a\x0B\xCFW_`@Q\x7F\x1EO\xBD\xF7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x0B\xC6\x91\x90a\x10\x99V[`@Q\x80\x91\x03\x90\xFD[a\x0B\xD8\x81a\x08\xB4V[PV[_\x81\x90P\x91\x90PV[_\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16;\x03a\x0C?W\x80`@Q\x7FL\x9C\x8C\xE3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x0C6\x91\x90a\x10\x99V[`@Q\x80\x91\x03\x90\xFD[\x80a\x0Ck\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC_\x1Ba\x0B\xDBV[_\x01_a\x01\0\n\x81T\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x02\x19\x16\x90\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x02\x17\x90UPPV[``__\x84s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x84`@Qa\x0C\xD6\x91\x90a\x12dV[_`@Q\x80\x83\x03\x81\x85Z\xF4\x91PP=\x80_\x81\x14a\r\x0EW`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=_` \x84\x01>a\r\x13V[``\x91P[P\x91P\x91Pa\r#\x85\x83\x83a\r\x87V[\x92PPP\x92\x91PPV[_4\x11\x15a\rgW`@Q\x7F\xB3\x98\x97\x9F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[V[_a\rra\t\x1FV[_\x01`\x08\x90T\x90a\x01\0\n\x90\x04`\xFF\x16\x90P\x90V[``\x82a\r\x9CWa\r\x97\x82a\x0E\x14V[a\x0E\x0CV[_\x82Q\x14\x80\x15a\r\xC2WP_\x84s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16;\x14[\x15a\x0E\x04W\x83`@Q\x7F\x99\x96\xB3\x15\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\r\xFB\x91\x90a\x10\x99V[`@Q\x80\x91\x03\x90\xFD[\x81\x90Pa\x0E\rV[[\x93\x92PPPV[_\x81Q\x11\x15a\x0E&W\x80Q\x80\x82` \x01\xFD[`@Q\x7F\xD6\xBD\xA2u\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`@Q\x90P\x90V[__\xFD[__\xFD[_s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x16\x90P\x91\x90PV[_a\x0E\x92\x82a\x0EiV[\x90P\x91\x90PV[a\x0E\xA2\x81a\x0E\x88V[\x81\x14a\x0E\xACW__\xFD[PV[_\x815\x90Pa\x0E\xBD\x81a\x0E\x99V[\x92\x91PPV[__\xFD[__\xFD[_`\x1F\x19`\x1F\x83\x01\x16\x90P\x91\x90PV[\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`A`\x04R`$_\xFD[a\x0F\x11\x82a\x0E\xCBV[\x81\x01\x81\x81\x10g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x11\x17\x15a\x0F0Wa\x0F/a\x0E\xDBV[[\x80`@RPPPV[_a\x0FBa\x0EXV[\x90Pa\x0FN\x82\x82a\x0F\x08V[\x91\x90PV[_g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x11\x15a\x0FmWa\x0Fla\x0E\xDBV[[a\x0Fv\x82a\x0E\xCBV[\x90P` \x81\x01\x90P\x91\x90PV[\x82\x81\x837_\x83\x83\x01RPPPV[_a\x0F\xA3a\x0F\x9E\x84a\x0FSV[a\x0F9V[\x90P\x82\x81R` \x81\x01\x84\x84\x84\x01\x11\x15a\x0F\xBFWa\x0F\xBEa\x0E\xC7V[[a\x0F\xCA\x84\x82\x85a\x0F\x83V[P\x93\x92PPPV[_\x82`\x1F\x83\x01\x12a\x0F\xE6Wa\x0F\xE5a\x0E\xC3V[[\x815a\x0F\xF6\x84\x82` \x86\x01a\x0F\x91V[\x91PP\x92\x91PPV[__`@\x83\x85\x03\x12\x15a\x10\x15Wa\x10\x14a\x0EaV[[_a\x10\"\x85\x82\x86\x01a\x0E\xAFV[\x92PP` \x83\x015g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15a\x10CWa\x10Ba\x0EeV[[a\x10O\x85\x82\x86\x01a\x0F\xD2V[\x91PP\x92P\x92\x90PV[_\x81\x90P\x91\x90PV[a\x10k\x81a\x10YV[\x82RPPV[_` \x82\x01\x90Pa\x10\x84_\x83\x01\x84a\x10bV[\x92\x91PPV[a\x10\x93\x81a\x0E\x88V[\x82RPPV[_` \x82\x01\x90Pa\x10\xAC_\x83\x01\x84a\x10\x8AV[\x92\x91PPV[_\x81Q\x90P\x91\x90PV[_\x82\x82R` \x82\x01\x90P\x92\x91PPV[\x82\x81\x83^_\x83\x83\x01RPPPV[_a\x10\xE4\x82a\x10\xB2V[a\x10\xEE\x81\x85a\x10\xBCV[\x93Pa\x10\xFE\x81\x85` \x86\x01a\x10\xCCV[a\x11\x07\x81a\x0E\xCBV[\x84\x01\x91PP\x92\x91PPV[_` \x82\x01\x90P\x81\x81\x03_\x83\x01Ra\x11*\x81\x84a\x10\xDAV[\x90P\x92\x91PPV[_` \x82\x84\x03\x12\x15a\x11GWa\x11Fa\x0EaV[[_a\x11T\x84\x82\x85\x01a\x0E\xAFV[\x91PP\x92\x91PPV[_\x81\x90P\x91\x90PV[_g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x16\x90P\x91\x90PV[_\x81\x90P\x91\x90PV[_a\x11\x9Ca\x11\x97a\x11\x92\x84a\x11]V[a\x11yV[a\x11fV[\x90P\x91\x90PV[a\x11\xAC\x81a\x11\x82V[\x82RPPV[_` \x82\x01\x90Pa\x11\xC5_\x83\x01\x84a\x11\xA3V[\x92\x91PPV[a\x11\xD4\x81a\x10YV[\x81\x14a\x11\xDEW__\xFD[PV[_\x81Q\x90Pa\x11\xEF\x81a\x11\xCBV[\x92\x91PPV[_` \x82\x84\x03\x12\x15a\x12\nWa\x12\ta\x0EaV[[_a\x12\x17\x84\x82\x85\x01a\x11\xE1V[\x91PP\x92\x91PPV[_\x81Q\x90P\x91\x90PV[_\x81\x90P\x92\x91PPV[_a\x12>\x82a\x12 V[a\x12H\x81\x85a\x12*V[\x93Pa\x12X\x81\x85` \x86\x01a\x10\xCCV[\x80\x84\x01\x91PP\x92\x91PPV[_a\x12o\x82\x84a\x124V[\x91P\x81\x90P\x92\x91PPV",
     );
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AddressEmptyCode(address)` and selector `0x9996b315`.
 ```solidity
 error AddressEmptyCode(address target);
@@ -398,6 +399,7 @@ error AddressEmptyCode(address target);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1967InvalidImplementation(address)` and selector `0x4c9c8ce3`.
 ```solidity
 error ERC1967InvalidImplementation(address implementation);
@@ -471,6 +473,7 @@ error ERC1967InvalidImplementation(address implementation);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1967NonPayable()` and selector `0xb398979f`.
 ```solidity
 error ERC1967NonPayable();
@@ -535,6 +538,7 @@ error ERC1967NonPayable();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `FailedCall()` and selector `0xd6bda275`.
 ```solidity
 error FailedCall();
@@ -599,6 +603,7 @@ error FailedCall();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidInitialization()` and selector `0xf92ee8a9`.
 ```solidity
 error InvalidInitialization();
@@ -663,6 +668,7 @@ error InvalidInitialization();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotInitializing()` and selector `0xd7e6bcf8`.
 ```solidity
 error NotInitializing();
@@ -727,6 +733,7 @@ error NotInitializing();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `OwnableInvalidOwner(address)` and selector `0x1e4fbdf7`.
 ```solidity
 error OwnableInvalidOwner(address owner);
@@ -798,6 +805,7 @@ error OwnableInvalidOwner(address owner);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `OwnableUnauthorizedAccount(address)` and selector `0x118cdaa7`.
 ```solidity
 error OwnableUnauthorizedAccount(address account);
@@ -871,6 +879,7 @@ error OwnableUnauthorizedAccount(address account);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UUPSUnauthorizedCallContext()` and selector `0xe07c8dba`.
 ```solidity
 error UUPSUnauthorizedCallContext();
@@ -937,6 +946,7 @@ error UUPSUnauthorizedCallContext();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UUPSUnsupportedProxiableUUID(bytes32)` and selector `0xaa1d49a4`.
 ```solidity
 error UUPSUnsupportedProxiableUUID(bytes32 slot);
@@ -1010,6 +1020,7 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Initialized(uint64)` and selector `0xc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2`.
 ```solidity
 event Initialized(uint64 version);
@@ -1042,38 +1053,9 @@ event Initialized(uint64 version);
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "Initialized(uint64)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                199u8,
-                245u8,
-                5u8,
-                178u8,
-                243u8,
-                113u8,
-                174u8,
-                33u8,
-                117u8,
-                238u8,
-                73u8,
-                19u8,
-                244u8,
-                73u8,
-                158u8,
-                31u8,
-                38u8,
-                51u8,
-                167u8,
-                181u8,
-                147u8,
-                99u8,
-                33u8,
-                238u8,
-                209u8,
-                205u8,
-                174u8,
-                182u8,
-                17u8,
-                81u8,
-                129u8,
-                210u8,
+                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8,
+                19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
+                33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -1142,6 +1124,7 @@ event Initialized(uint64 version);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `OwnershipTransferStarted(address,address)` and selector `0x38d16b8cac22d99fc7c124b9cd0de2d3fa1faef420bfe791d8c362d765e22700`.
 ```solidity
 event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
@@ -1180,38 +1163,9 @@ event OwnershipTransferStarted(address indexed previousOwner, address indexed ne
             );
             const SIGNATURE: &'static str = "OwnershipTransferStarted(address,address)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                56u8,
-                209u8,
-                107u8,
-                140u8,
-                172u8,
-                34u8,
-                217u8,
-                159u8,
-                199u8,
-                193u8,
-                36u8,
-                185u8,
-                205u8,
-                13u8,
-                226u8,
-                211u8,
-                250u8,
-                31u8,
-                174u8,
-                244u8,
-                32u8,
-                191u8,
-                231u8,
-                145u8,
-                216u8,
-                195u8,
-                98u8,
-                215u8,
-                101u8,
-                226u8,
-                39u8,
-                0u8,
+                56u8, 209u8, 107u8, 140u8, 172u8, 34u8, 217u8, 159u8, 199u8, 193u8, 36u8,
+                185u8, 205u8, 13u8, 226u8, 211u8, 250u8, 31u8, 174u8, 244u8, 32u8, 191u8,
+                231u8, 145u8, 216u8, 195u8, 98u8, 215u8, 101u8, 226u8, 39u8, 0u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -1291,6 +1245,7 @@ event OwnershipTransferStarted(address indexed previousOwner, address indexed ne
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `OwnershipTransferred(address,address)` and selector `0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0`.
 ```solidity
 event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
@@ -1329,38 +1284,9 @@ event OwnershipTransferred(address indexed previousOwner, address indexed newOwn
             );
             const SIGNATURE: &'static str = "OwnershipTransferred(address,address)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                139u8,
-                224u8,
-                7u8,
-                156u8,
-                83u8,
-                22u8,
-                89u8,
-                20u8,
-                19u8,
-                68u8,
-                205u8,
-                31u8,
-                208u8,
-                164u8,
-                242u8,
-                132u8,
-                25u8,
-                73u8,
-                127u8,
-                151u8,
-                34u8,
-                163u8,
-                218u8,
-                175u8,
-                227u8,
-                180u8,
-                24u8,
-                111u8,
-                107u8,
-                100u8,
-                87u8,
-                224u8,
+                139u8, 224u8, 7u8, 156u8, 83u8, 22u8, 89u8, 20u8, 19u8, 68u8, 205u8,
+                31u8, 208u8, 164u8, 242u8, 132u8, 25u8, 73u8, 127u8, 151u8, 34u8, 163u8,
+                218u8, 175u8, 227u8, 180u8, 24u8, 111u8, 107u8, 100u8, 87u8, 224u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -1438,6 +1364,7 @@ event OwnershipTransferred(address indexed previousOwner, address indexed newOwn
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Upgraded(address)` and selector `0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b`.
 ```solidity
 event Upgraded(address indexed implementation);
@@ -1473,38 +1400,9 @@ event Upgraded(address indexed implementation);
             );
             const SIGNATURE: &'static str = "Upgraded(address)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                188u8,
-                124u8,
-                215u8,
-                90u8,
-                32u8,
-                238u8,
-                39u8,
-                253u8,
-                154u8,
-                222u8,
-                186u8,
-                179u8,
-                32u8,
-                65u8,
-                247u8,
-                85u8,
-                33u8,
-                77u8,
-                188u8,
-                107u8,
-                255u8,
-                169u8,
-                12u8,
-                192u8,
-                34u8,
-                91u8,
-                57u8,
-                218u8,
-                46u8,
-                92u8,
-                45u8,
-                59u8,
+                188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8,
+                179u8, 32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8,
+                12u8, 192u8, 34u8, 91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -1630,6 +1528,7 @@ constructor();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `UPGRADE_INTERFACE_VERSION()` and selector `0xad3cb1cc`.
 ```solidity
 function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
@@ -1637,6 +1536,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct UPGRADE_INTERFACE_VERSIONCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`UPGRADE_INTERFACE_VERSION()`](UPGRADE_INTERFACE_VERSIONCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1753,6 +1653,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `acceptOwnership()` and selector `0x79ba5097`.
 ```solidity
 function acceptOwnership() external;
@@ -1871,6 +1772,7 @@ function acceptOwnership() external;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `initialize(address)` and selector `0xc4d66de8`.
 ```solidity
 function initialize(address initialOwner) external;
@@ -1994,6 +1896,7 @@ function initialize(address initialOwner) external;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `owner()` and selector `0x8da5cb5b`.
 ```solidity
 function owner() external view returns (address);
@@ -2001,6 +1904,7 @@ function owner() external view returns (address);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ownerCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`owner()`](ownerCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2113,6 +2017,7 @@ function owner() external view returns (address);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `pendingOwner()` and selector `0xe30c3978`.
 ```solidity
 function pendingOwner() external view returns (address);
@@ -2120,6 +2025,7 @@ function pendingOwner() external view returns (address);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct pendingOwnerCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`pendingOwner()`](pendingOwnerCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2232,6 +2138,7 @@ function pendingOwner() external view returns (address);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `proxiableUUID()` and selector `0x52d1902d`.
 ```solidity
 function proxiableUUID() external view returns (bytes32);
@@ -2239,6 +2146,7 @@ function proxiableUUID() external view returns (bytes32);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct proxiableUUIDCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`proxiableUUID()`](proxiableUUIDCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2351,6 +2259,7 @@ function proxiableUUID() external view returns (bytes32);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `renounceOwnership()` and selector `0x715018a6`.
 ```solidity
 function renounceOwnership() external;
@@ -2471,6 +2380,7 @@ function renounceOwnership() external;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `transferOwnership(address)` and selector `0xf2fde38b`.
 ```solidity
 function transferOwnership(address newOwner) external;
@@ -2598,6 +2508,7 @@ function transferOwnership(address newOwner) external;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `upgradeToAndCall(address,bytes)` and selector `0x4f1ef286`.
 ```solidity
 function upgradeToAndCall(address newImplementation, bytes memory data) external payable;
@@ -2743,6 +2654,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
     };
     ///Container for all the [`EmptyUUPSProxy`](self) function calls.
+    #[derive()]
     pub enum EmptyUUPSProxyCalls {
         #[allow(missing_docs)]
         UPGRADE_INTERFACE_VERSION(UPGRADE_INTERFACE_VERSIONCall),
@@ -3069,6 +2981,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
     }
     ///Container for all the [`EmptyUUPSProxy`](self) custom errors.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum EmptyUUPSProxyErrors {
         #[allow(missing_docs)]
         AddressEmptyCode(AddressEmptyCode),
@@ -3429,6 +3342,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
     }
     ///Container for all the [`EmptyUUPSProxy`](self) events.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum EmptyUUPSProxyEvents {
         #[allow(missing_docs)]
         Initialized(Initialized),
@@ -3449,140 +3363,24 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                56u8,
-                209u8,
-                107u8,
-                140u8,
-                172u8,
-                34u8,
-                217u8,
-                159u8,
-                199u8,
-                193u8,
-                36u8,
-                185u8,
-                205u8,
-                13u8,
-                226u8,
-                211u8,
-                250u8,
-                31u8,
-                174u8,
-                244u8,
-                32u8,
-                191u8,
-                231u8,
-                145u8,
-                216u8,
-                195u8,
-                98u8,
-                215u8,
-                101u8,
-                226u8,
-                39u8,
-                0u8,
+                56u8, 209u8, 107u8, 140u8, 172u8, 34u8, 217u8, 159u8, 199u8, 193u8, 36u8,
+                185u8, 205u8, 13u8, 226u8, 211u8, 250u8, 31u8, 174u8, 244u8, 32u8, 191u8,
+                231u8, 145u8, 216u8, 195u8, 98u8, 215u8, 101u8, 226u8, 39u8, 0u8,
             ],
             [
-                139u8,
-                224u8,
-                7u8,
-                156u8,
-                83u8,
-                22u8,
-                89u8,
-                20u8,
-                19u8,
-                68u8,
-                205u8,
-                31u8,
-                208u8,
-                164u8,
-                242u8,
-                132u8,
-                25u8,
-                73u8,
-                127u8,
-                151u8,
-                34u8,
-                163u8,
-                218u8,
-                175u8,
-                227u8,
-                180u8,
-                24u8,
-                111u8,
-                107u8,
-                100u8,
-                87u8,
-                224u8,
+                139u8, 224u8, 7u8, 156u8, 83u8, 22u8, 89u8, 20u8, 19u8, 68u8, 205u8,
+                31u8, 208u8, 164u8, 242u8, 132u8, 25u8, 73u8, 127u8, 151u8, 34u8, 163u8,
+                218u8, 175u8, 227u8, 180u8, 24u8, 111u8, 107u8, 100u8, 87u8, 224u8,
             ],
             [
-                188u8,
-                124u8,
-                215u8,
-                90u8,
-                32u8,
-                238u8,
-                39u8,
-                253u8,
-                154u8,
-                222u8,
-                186u8,
-                179u8,
-                32u8,
-                65u8,
-                247u8,
-                85u8,
-                33u8,
-                77u8,
-                188u8,
-                107u8,
-                255u8,
-                169u8,
-                12u8,
-                192u8,
-                34u8,
-                91u8,
-                57u8,
-                218u8,
-                46u8,
-                92u8,
-                45u8,
-                59u8,
+                188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8,
+                179u8, 32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8,
+                12u8, 192u8, 34u8, 91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
             ],
             [
-                199u8,
-                245u8,
-                5u8,
-                178u8,
-                243u8,
-                113u8,
-                174u8,
-                33u8,
-                117u8,
-                238u8,
-                73u8,
-                19u8,
-                244u8,
-                73u8,
-                158u8,
-                31u8,
-                38u8,
-                51u8,
-                167u8,
-                181u8,
-                147u8,
-                99u8,
-                33u8,
-                238u8,
-                209u8,
-                205u8,
-                174u8,
-                182u8,
-                17u8,
-                81u8,
-                129u8,
-                210u8,
+                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8,
+                19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
+                33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ],
         ];
     }

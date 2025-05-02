@@ -810,6 +810,7 @@ pub mod IGatewayConfig {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct Coprocessor { address txSenderAddress; address signerAddress; string s3BucketUrl; }
 ```*/
@@ -1047,6 +1048,7 @@ struct Coprocessor { address txSenderAddress; address signerAddress; string s3Bu
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; }
 ```*/
@@ -1284,6 +1286,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct Network { uint256 chainId; address fhevmExecutorAddress; address aclAddress; string name; string website; }
 ```*/
@@ -1569,6 +1572,7 @@ struct Network { uint256 chainId; address fhevmExecutorAddress; address aclAddre
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct ProtocolMetadata { string name; string website; }
 ```*/
@@ -1787,6 +1791,7 @@ struct ProtocolMetadata { string name; string website; }
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ChainIdNotUint64(uint256)` and selector `0x4178de42`.
 ```solidity
 error ChainIdNotUint64(uint256 chainId);
@@ -1860,6 +1865,7 @@ error ChainIdNotUint64(uint256 chainId);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidNullChainId()` and selector `0x22f73fea`.
 ```solidity
 error InvalidNullChainId();
@@ -1924,6 +1930,7 @@ error InvalidNullChainId();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidNullPauser()` and selector `0x3555aed1`.
 ```solidity
 error InvalidNullPauser();
@@ -1988,6 +1995,7 @@ error InvalidNullPauser();
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsThresholdTooHigh(uint256,uint256)` and selector `0x48676fe0`.
 ```solidity
 error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
@@ -2073,6 +2081,7 @@ error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NetworkAlreadyRegistered(uint256)` and selector `0xb1825c5e`.
 ```solidity
 error NetworkAlreadyRegistered(uint256 chainId);
@@ -2148,6 +2157,7 @@ error NetworkAlreadyRegistered(uint256 chainId);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NetworkNotRegistered(uint256)` and selector `0x6df6fe89`.
 ```solidity
 error NetworkNotRegistered(uint256 chainId);
@@ -2221,6 +2231,7 @@ error NetworkNotRegistered(uint256 chainId);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotCoprocessorSigner(address)` and selector `0x26cd75dc`.
 ```solidity
 error NotCoprocessorSigner(address signerAddress);
@@ -2292,6 +2303,7 @@ error NotCoprocessorSigner(address signerAddress);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotCoprocessorTxSender(address)` and selector `0x52d725f5`.
 ```solidity
 error NotCoprocessorTxSender(address txSenderAddress);
@@ -2363,6 +2375,7 @@ error NotCoprocessorTxSender(address txSenderAddress);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotKmsSigner(address)` and selector `0x2a7c6ef6`.
 ```solidity
 error NotKmsSigner(address signerAddress);
@@ -2434,6 +2447,7 @@ error NotKmsSigner(address signerAddress);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotKmsTxSender(address)` and selector `0xaee86323`.
 ```solidity
 error NotKmsTxSender(address txSenderAddress);
@@ -2505,6 +2519,7 @@ error NotKmsTxSender(address txSenderAddress);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotPauser(address)` and selector `0x206a346e`.
 ```solidity
 error NotPauser(address pauserAddress);
@@ -2576,6 +2591,7 @@ error NotPauser(address pauserAddress);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AddNetwork((uint256,address,address,string,string))` and selector `0xb8207b5bb791730ae8f0534fa4c7be7da49dd75d701f9c7acf51c94b8ace96b2`.
 ```solidity
 event AddNetwork(Network network);
@@ -2608,38 +2624,9 @@ event AddNetwork(Network network);
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "AddNetwork((uint256,address,address,string,string))";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                184u8,
-                32u8,
-                123u8,
-                91u8,
-                183u8,
-                145u8,
-                115u8,
-                10u8,
-                232u8,
-                240u8,
-                83u8,
-                79u8,
-                164u8,
-                199u8,
-                190u8,
-                125u8,
-                164u8,
-                157u8,
-                215u8,
-                93u8,
-                112u8,
-                31u8,
-                156u8,
-                122u8,
-                207u8,
-                81u8,
-                201u8,
-                75u8,
-                138u8,
-                206u8,
-                150u8,
-                178u8,
+                184u8, 32u8, 123u8, 91u8, 183u8, 145u8, 115u8, 10u8, 232u8, 240u8, 83u8,
+                79u8, 164u8, 199u8, 190u8, 125u8, 164u8, 157u8, 215u8, 93u8, 112u8, 31u8,
+                156u8, 122u8, 207u8, 81u8, 201u8, 75u8, 138u8, 206u8, 150u8, 178u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -2704,6 +2691,7 @@ event AddNetwork(Network network);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Initialization(address,(string,string),uint256,(address,address,string)[],(address,address,string)[])` and selector `0xf33d908c4a8b532fe64df20b726f11405c11b9772d31b66f5eef6887a43c3fde`.
 ```solidity
 event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
@@ -2754,38 +2742,9 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThres
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "Initialization(address,(string,string),uint256,(address,address,string)[],(address,address,string)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                243u8,
-                61u8,
-                144u8,
-                140u8,
-                74u8,
-                139u8,
-                83u8,
-                47u8,
-                230u8,
-                77u8,
-                242u8,
-                11u8,
-                114u8,
-                111u8,
-                17u8,
-                64u8,
-                92u8,
-                17u8,
-                185u8,
-                119u8,
-                45u8,
-                49u8,
-                182u8,
-                111u8,
-                94u8,
-                239u8,
-                104u8,
-                135u8,
-                164u8,
-                60u8,
-                63u8,
-                222u8,
+                243u8, 61u8, 144u8, 140u8, 74u8, 139u8, 83u8, 47u8, 230u8, 77u8, 242u8,
+                11u8, 114u8, 111u8, 17u8, 64u8, 92u8, 17u8, 185u8, 119u8, 45u8, 49u8,
+                182u8, 111u8, 94u8, 239u8, 104u8, 135u8, 164u8, 60u8, 63u8, 222u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -2872,6 +2831,7 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThres
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UpdateKmsThreshold(uint256)` and selector `0xea6c6521bc495731082e23ad12c7b1207d13ca0bd38d1d511081ab568917cb84`.
 ```solidity
 event UpdateKmsThreshold(uint256 newKmsThreshold);
@@ -2904,38 +2864,9 @@ event UpdateKmsThreshold(uint256 newKmsThreshold);
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "UpdateKmsThreshold(uint256)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                234u8,
-                108u8,
-                101u8,
-                33u8,
-                188u8,
-                73u8,
-                87u8,
-                49u8,
-                8u8,
-                46u8,
-                35u8,
-                173u8,
-                18u8,
-                199u8,
-                177u8,
-                32u8,
-                125u8,
-                19u8,
-                202u8,
-                11u8,
-                211u8,
-                141u8,
-                29u8,
-                81u8,
-                16u8,
-                129u8,
-                171u8,
-                86u8,
-                137u8,
-                23u8,
-                203u8,
-                132u8,
+                234u8, 108u8, 101u8, 33u8, 188u8, 73u8, 87u8, 49u8, 8u8, 46u8, 35u8,
+                173u8, 18u8, 199u8, 177u8, 32u8, 125u8, 19u8, 202u8, 11u8, 211u8, 141u8,
+                29u8, 81u8, 16u8, 129u8, 171u8, 86u8, 137u8, 23u8, 203u8, 132u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -3004,6 +2935,7 @@ event UpdateKmsThreshold(uint256 newKmsThreshold);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UpdatePauser(address)` and selector `0xa690668c24d277243ff6fa650d3fd6e3d331a99ca0a8857c82e7f89452fc665d`.
 ```solidity
 event UpdatePauser(address newPauser);
@@ -3036,38 +2968,9 @@ event UpdatePauser(address newPauser);
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "UpdatePauser(address)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                166u8,
-                144u8,
-                102u8,
-                140u8,
-                36u8,
-                210u8,
-                119u8,
-                36u8,
-                63u8,
-                246u8,
-                250u8,
-                101u8,
-                13u8,
-                63u8,
-                214u8,
-                227u8,
-                211u8,
-                49u8,
-                169u8,
-                156u8,
-                160u8,
-                168u8,
-                133u8,
-                124u8,
-                130u8,
-                231u8,
-                248u8,
-                148u8,
-                82u8,
-                252u8,
-                102u8,
-                93u8,
+                166u8, 144u8, 102u8, 140u8, 36u8, 210u8, 119u8, 36u8, 63u8, 246u8, 250u8,
+                101u8, 13u8, 63u8, 214u8, 227u8, 211u8, 49u8, 169u8, 156u8, 160u8, 168u8,
+                133u8, 124u8, 130u8, 231u8, 248u8, 148u8, 82u8, 252u8, 102u8, 93u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -3136,6 +3039,7 @@ event UpdatePauser(address newPauser);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `addNetwork((uint256,address,address,string,string))` and selector `0x70cc9a3c`.
 ```solidity
 function addNetwork(Network memory network) external;
@@ -3257,6 +3161,7 @@ function addNetwork(Network memory network) external;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkIsCoprocessorSigner(address)` and selector `0xcdb4c2b9`.
 ```solidity
 function checkIsCoprocessorSigner(address signerAddress) external view;
@@ -3384,6 +3289,7 @@ function checkIsCoprocessorSigner(address signerAddress) external view;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkIsCoprocessorTxSender(address)` and selector `0xcb661755`.
 ```solidity
 function checkIsCoprocessorTxSender(address coprocessorTxSenderAddress) external view;
@@ -3513,6 +3419,7 @@ function checkIsCoprocessorTxSender(address coprocessorTxSenderAddress) external
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkIsKmsSigner(address)` and selector `0x6c88eb43`.
 ```solidity
 function checkIsKmsSigner(address signerAddress) external view;
@@ -3640,6 +3547,7 @@ function checkIsKmsSigner(address signerAddress) external view;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkIsKmsTxSender(address)` and selector `0xc6275258`.
 ```solidity
 function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
@@ -3769,6 +3677,7 @@ function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkIsPauser(address)` and selector `0x195afde6`.
 ```solidity
 function checkIsPauser(address pauserAddress) external view;
@@ -3892,6 +3801,7 @@ function checkIsPauser(address pauserAddress) external view;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkNetworkIsRegistered(uint256)` and selector `0xc6b3024d`.
 ```solidity
 function checkNetworkIsRegistered(uint256 chainId) external view;
@@ -4021,6 +3931,7 @@ function checkNetworkIsRegistered(uint256 chainId) external view;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCoprocessor(address)` and selector `0xef6997f9`.
 ```solidity
 function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
@@ -4031,6 +3942,7 @@ function getCoprocessor(address coprocessorTxSenderAddress) external view return
         #[allow(missing_docs)]
         pub coprocessorTxSenderAddress: alloy::sol_types::private::Address,
     }
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getCoprocessor(address)`](getCoprocessorCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -4153,6 +4065,7 @@ function getCoprocessor(address coprocessorTxSenderAddress) external view return
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCoprocessorMajorityThreshold()` and selector `0x6799ef52`.
 ```solidity
 function getCoprocessorMajorityThreshold() external view returns (uint256);
@@ -4160,6 +4073,7 @@ function getCoprocessorMajorityThreshold() external view returns (uint256);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getCoprocessorMajorityThresholdCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getCoprocessorMajorityThreshold()`](getCoprocessorMajorityThresholdCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -4278,6 +4192,7 @@ function getCoprocessorMajorityThreshold() external view returns (uint256);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCoprocessorSigners()` and selector `0x9164d0ae`.
 ```solidity
 function getCoprocessorSigners() external view returns (address[] memory);
@@ -4285,6 +4200,7 @@ function getCoprocessorSigners() external view returns (address[] memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getCoprocessorSignersCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getCoprocessorSigners()`](getCoprocessorSignersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -4407,6 +4323,7 @@ function getCoprocessorSigners() external view returns (address[] memory);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCoprocessorTxSenders()` and selector `0x1ea5bd42`.
 ```solidity
 function getCoprocessorTxSenders() external view returns (address[] memory);
@@ -4414,6 +4331,7 @@ function getCoprocessorTxSenders() external view returns (address[] memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getCoprocessorTxSendersCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getCoprocessorTxSenders()`](getCoprocessorTxSendersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -4536,6 +4454,7 @@ function getCoprocessorTxSenders() external view returns (address[] memory);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsMajorityThreshold()` and selector `0x47cd4b3e`.
 ```solidity
 function getKmsMajorityThreshold() external view returns (uint256);
@@ -4543,6 +4462,7 @@ function getKmsMajorityThreshold() external view returns (uint256);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getKmsMajorityThresholdCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getKmsMajorityThreshold()`](getKmsMajorityThresholdCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -4661,6 +4581,7 @@ function getKmsMajorityThreshold() external view returns (uint256);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsNode(address)` and selector `0xe3b2a874`.
 ```solidity
 function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
@@ -4671,6 +4592,7 @@ function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode m
         #[allow(missing_docs)]
         pub kmsTxSenderAddress: alloy::sol_types::private::Address,
     }
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getKmsNode(address)`](getKmsNodeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -4791,6 +4713,7 @@ function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode m
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsReconstructionThreshold()` and selector `0x490413aa`.
 ```solidity
 function getKmsReconstructionThreshold() external view returns (uint256);
@@ -4798,6 +4721,7 @@ function getKmsReconstructionThreshold() external view returns (uint256);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getKmsReconstructionThresholdCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getKmsReconstructionThreshold()`](getKmsReconstructionThresholdCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -4916,6 +4840,7 @@ function getKmsReconstructionThreshold() external view returns (uint256);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsSigners()` and selector `0x7eaac8f2`.
 ```solidity
 function getKmsSigners() external view returns (address[] memory);
@@ -4923,6 +4848,7 @@ function getKmsSigners() external view returns (address[] memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getKmsSignersCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getKmsSigners()`](getKmsSignersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5041,6 +4967,7 @@ function getKmsSigners() external view returns (address[] memory);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsThreshold()` and selector `0x4921a3bd`.
 ```solidity
 function getKmsThreshold() external view returns (uint256);
@@ -5048,6 +4975,7 @@ function getKmsThreshold() external view returns (uint256);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getKmsThresholdCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getKmsThreshold()`](getKmsThresholdCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5164,6 +5092,7 @@ function getKmsThreshold() external view returns (uint256);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsTxSenders()` and selector `0x7420f3d4`.
 ```solidity
 function getKmsTxSenders() external view returns (address[] memory);
@@ -5171,6 +5100,7 @@ function getKmsTxSenders() external view returns (address[] memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getKmsTxSendersCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getKmsTxSenders()`](getKmsTxSendersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5291,6 +5221,7 @@ function getKmsTxSenders() external view returns (address[] memory);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getNetwork(uint256)` and selector `0x95ea5717`.
 ```solidity
 function getNetwork(uint256 index) external view returns (Network memory);
@@ -5301,6 +5232,7 @@ function getNetwork(uint256 index) external view returns (Network memory);
         #[allow(missing_docs)]
         pub index: alloy::sol_types::private::primitives::aliases::U256,
     }
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getNetwork(uint256)`](getNetworkCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5421,6 +5353,7 @@ function getNetwork(uint256 index) external view returns (Network memory);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getNetworks()` and selector `0x01a20520`.
 ```solidity
 function getNetworks() external view returns (Network[] memory);
@@ -5428,6 +5361,7 @@ function getNetworks() external view returns (Network[] memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getNetworksCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getNetworks()`](getNetworksCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5546,6 +5480,7 @@ function getNetworks() external view returns (Network[] memory);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getProtocolMetadata()` and selector `0x48144c61`.
 ```solidity
 function getProtocolMetadata() external view returns (ProtocolMetadata memory);
@@ -5553,6 +5488,7 @@ function getProtocolMetadata() external view returns (ProtocolMetadata memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getProtocolMetadataCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getProtocolMetadata()`](getProtocolMetadataCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5671,6 +5607,7 @@ function getProtocolMetadata() external view returns (ProtocolMetadata memory);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
 function getVersion() external pure returns (string memory);
@@ -5678,6 +5615,7 @@ function getVersion() external pure returns (string memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5790,6 +5728,7 @@ function getVersion() external pure returns (string memory);
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `updateKmsThreshold(uint256)` and selector `0x0219150f`.
 ```solidity
 function updateKmsThreshold(uint256 newKmsThreshold) external;
@@ -5919,6 +5858,7 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `updatePauser(address)` and selector `0x554bab3c`.
 ```solidity
 function updatePauser(address newPauser) external;
@@ -6043,6 +5983,7 @@ function updatePauser(address newPauser) external;
         }
     };
     ///Container for all the [`IGatewayConfig`](self) function calls.
+    #[derive()]
     pub enum IGatewayConfigCalls {
         #[allow(missing_docs)]
         addNetwork(addNetworkCall),
@@ -6790,6 +6731,7 @@ function updatePauser(address newPauser) external;
         }
     }
     ///Container for all the [`IGatewayConfig`](self) custom errors.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IGatewayConfigErrors {
         #[allow(missing_docs)]
         ChainIdNotUint64(ChainIdNotUint64),
@@ -7176,6 +7118,7 @@ function updatePauser(address newPauser) external;
         }
     }
     ///Container for all the [`IGatewayConfig`](self) events.
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IGatewayConfigEvents {
         #[allow(missing_docs)]
         AddNetwork(AddNetwork),
@@ -7196,140 +7139,24 @@ function updatePauser(address newPauser) external;
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                166u8,
-                144u8,
-                102u8,
-                140u8,
-                36u8,
-                210u8,
-                119u8,
-                36u8,
-                63u8,
-                246u8,
-                250u8,
-                101u8,
-                13u8,
-                63u8,
-                214u8,
-                227u8,
-                211u8,
-                49u8,
-                169u8,
-                156u8,
-                160u8,
-                168u8,
-                133u8,
-                124u8,
-                130u8,
-                231u8,
-                248u8,
-                148u8,
-                82u8,
-                252u8,
-                102u8,
-                93u8,
+                166u8, 144u8, 102u8, 140u8, 36u8, 210u8, 119u8, 36u8, 63u8, 246u8, 250u8,
+                101u8, 13u8, 63u8, 214u8, 227u8, 211u8, 49u8, 169u8, 156u8, 160u8, 168u8,
+                133u8, 124u8, 130u8, 231u8, 248u8, 148u8, 82u8, 252u8, 102u8, 93u8,
             ],
             [
-                184u8,
-                32u8,
-                123u8,
-                91u8,
-                183u8,
-                145u8,
-                115u8,
-                10u8,
-                232u8,
-                240u8,
-                83u8,
-                79u8,
-                164u8,
-                199u8,
-                190u8,
-                125u8,
-                164u8,
-                157u8,
-                215u8,
-                93u8,
-                112u8,
-                31u8,
-                156u8,
-                122u8,
-                207u8,
-                81u8,
-                201u8,
-                75u8,
-                138u8,
-                206u8,
-                150u8,
-                178u8,
+                184u8, 32u8, 123u8, 91u8, 183u8, 145u8, 115u8, 10u8, 232u8, 240u8, 83u8,
+                79u8, 164u8, 199u8, 190u8, 125u8, 164u8, 157u8, 215u8, 93u8, 112u8, 31u8,
+                156u8, 122u8, 207u8, 81u8, 201u8, 75u8, 138u8, 206u8, 150u8, 178u8,
             ],
             [
-                234u8,
-                108u8,
-                101u8,
-                33u8,
-                188u8,
-                73u8,
-                87u8,
-                49u8,
-                8u8,
-                46u8,
-                35u8,
-                173u8,
-                18u8,
-                199u8,
-                177u8,
-                32u8,
-                125u8,
-                19u8,
-                202u8,
-                11u8,
-                211u8,
-                141u8,
-                29u8,
-                81u8,
-                16u8,
-                129u8,
-                171u8,
-                86u8,
-                137u8,
-                23u8,
-                203u8,
-                132u8,
+                234u8, 108u8, 101u8, 33u8, 188u8, 73u8, 87u8, 49u8, 8u8, 46u8, 35u8,
+                173u8, 18u8, 199u8, 177u8, 32u8, 125u8, 19u8, 202u8, 11u8, 211u8, 141u8,
+                29u8, 81u8, 16u8, 129u8, 171u8, 86u8, 137u8, 23u8, 203u8, 132u8,
             ],
             [
-                243u8,
-                61u8,
-                144u8,
-                140u8,
-                74u8,
-                139u8,
-                83u8,
-                47u8,
-                230u8,
-                77u8,
-                242u8,
-                11u8,
-                114u8,
-                111u8,
-                17u8,
-                64u8,
-                92u8,
-                17u8,
-                185u8,
-                119u8,
-                45u8,
-                49u8,
-                182u8,
-                111u8,
-                94u8,
-                239u8,
-                104u8,
-                135u8,
-                164u8,
-                60u8,
-                63u8,
-                222u8,
+                243u8, 61u8, 144u8, 140u8, 74u8, 139u8, 83u8, 47u8, 230u8, 77u8, 242u8,
+                11u8, 114u8, 111u8, 17u8, 64u8, 92u8, 17u8, 185u8, 119u8, 45u8, 49u8,
+                182u8, 111u8, 94u8, 239u8, 104u8, 135u8, 164u8, 60u8, 63u8, 222u8,
             ],
         ];
     }
