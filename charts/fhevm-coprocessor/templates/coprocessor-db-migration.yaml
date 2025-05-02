@@ -46,6 +46,8 @@ spec:
             sha256sum /fhevm-keys/sns_pk
             wget {{ .Values.dbMigration.insertInitContainer.publicParamsURL }} -O /fhevm-keys/pp
             sha256sum /fhevm-keys/pp
+        env:
+{{ toYaml .Values.dbMigration.env | nindent 12 }}
         volumeMounts:
           - mountPath: /fhevm-keys
             name: cache-volume
