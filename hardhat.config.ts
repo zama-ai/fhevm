@@ -7,7 +7,9 @@ import { resolve } from "path";
 
 import "./tasks/accounts";
 import "./tasks/addNetworks";
-import "./tasks/deploy";
+import "./tasks/deployment/contracts";
+import "./tasks/deployment/empty_proxies";
+import "./tasks/deployment/mock_contracts";
 import "./tasks/faucet";
 import "./tasks/getters";
 import "./tasks/upgradeProxy";
