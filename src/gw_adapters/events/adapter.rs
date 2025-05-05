@@ -8,6 +8,7 @@ use alloy::{
 use anyhow::{Result, anyhow};
 use fhevm_gateway_rust_bindings::{decryption::Decryption, kmsmanagement::KmsManagement};
 use std::{
+    fmt,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -28,8 +29,7 @@ const MAX_RETRY_DELAY: u64 = 60;
 const EVENT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Events that can be processed by the KMS Core
-// #[derive(Clone, Debug)]  TODO: uncomment when bindings are generated with `forge bind` version >= 1.1.0
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum KmsCoreEvent {
     /// Public decryption request
     PublicDecryptionRequest(Decryption::PublicDecryptionRequest),
@@ -364,7 +364,7 @@ impl EventsAdapter {
     }
 
     /// Helper function to handle event stream results
-    async fn handle_event<T>(
+    async fn handle_event<T: fmt::Debug>(
         result: Option<Result<(T, EthLog), alloy::sol_types::Error>>,
         event_tx: mpsc::Sender<KmsCoreEvent>,
         event_constructor: fn(T) -> KmsCoreEvent,
@@ -387,13 +387,10 @@ impl EventsAdapter {
                 );
                 info!("  Topics: {:?}", log.topics());
                 debug!("  Raw Data: {:?}", log.data());
-                // debug!("  Decoded Event: {:#?}", event);  TODO: uncomment when bindings are generated with `forge bind` version >= 1.1.0
-
-                // TODO: uncomment when bindings are generated with `forge bind` version >= 1.1.0
-                // let core_event = event_constructor(event);
-                // debug!("🔎 Event processed: {:#?}", core_event);
-                // core_event
-                event_constructor(event)
+                debug!("  Decoded Event: {:#?}", event);
+                let core_event = event_constructor(event);
+                debug!("🔎 Event processed: {:#?}", core_event);
+                core_event
             }
             Some(Err(e)) => {
                 error!("Failed to decode {}: {}", event_name, e);
