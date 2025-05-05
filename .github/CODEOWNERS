@@ -5,8 +5,7 @@
 # the repo. Unless a later match takes precedence,
 # the following team members will be requested for review when 
 # someone opens a pull request.
-*       @jot2re
-*       @maksymsur
+*       @jatZama
 *       @isaacdecoded
 *       @romanbredehoft
 
@@ -20,4 +19,4 @@
 # be identified in the format @org/team-name. Teams must have
 # explicit write access to the repository. In this example,
 # the @kms-devops team owns all .txt files.
-.github/workflows @kms-devops
+.github/workflows @fhevm-devops
