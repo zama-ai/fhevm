@@ -2,17 +2,68 @@ import dotenv from "dotenv";
 import { Wallet } from "ethers";
 import fs from "fs";
 import { task } from "hardhat/config";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import path from "path";
 
 import { getRequiredEnvVar } from "../utils/loadVariables";
+import { pascalCaseToSnakeCase } from "../utils/stringOps";
 
 const ADDRESSES_DIR = path.join(__dirname, "../../addresses");
 
-// Deploy the GatewayConfig contract
-task("task:deployGatewayConfig").setAction(async function (_, { ethers, upgrades }) {
+// Helper function to deploy a contract implementation to its proxy
+async function deployContractImplementation(
+  name: string,
+  hre: HardhatRuntimeEnvironment,
+  initializeArgs?: unknown[],
+): Promise<string> {
+  const { ethers, upgrades } = hre;
+
+  // Get a deployer wallet
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
+  // Get contract factories
+  const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+  const newImplem = await ethers.getContractFactory(name, deployer);
+
+  // Determine env file path and env variable name
+  const nameSnakeCase = pascalCaseToSnakeCase(name);
+  const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
+  const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;
+
+  // Get the proxy address
+  if (!fs.existsSync(envFilePath)) {
+    throw new Error(`Environment file not found: ${envFilePath}`);
+  }
+  const parsedEnv = dotenv.parse(fs.readFileSync(envFilePath));
+  const proxyAddress = parsedEnv[addressEnvVarName];
+  if (!proxyAddress) {
+    throw new Error(`Address variable ${addressEnvVarName} not found in ${envFilePath}`);
+  }
+
+  // Force import
+  const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
+
+  // Set the upgrade options
+  const upgradeOptions = {
+    call: {
+      fn: "initialize",
+      args: [] as unknown[],
+    },
+  };
+  if (initializeArgs !== undefined && initializeArgs.length > 0) {
+    upgradeOptions.call.args = initializeArgs;
+  }
+
+  // Upgrade the proxy
+  await upgrades.upgradeProxy(proxy, newImplem, upgradeOptions);
+
+  console.log(`${name} implementation set successfully at address: ${proxyAddress}\n`);
+  return proxyAddress;
+}
+
+// Deploy the GatewayConfig contract
+task("task:deployGatewayConfig").setAction(async function (_, hre) {
   // Parse the protocol metadata
   const protocolMetadata = {
     name: getRequiredEnvVar("PROTOCOL_NAME"),
@@ -47,116 +98,50 @@ task("task:deployGatewayConfig").setAction(async function (_, { ethers, upgrades
     });
   }
 
-  // Upgrade proxy to GatewayConfig
-  const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("GatewayConfig", deployer);
-
-  const parsedEnvGatewayConfig = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.gateway_config")));
-  const proxyAddress = parsedEnvGatewayConfig.GATEWAY_CONFIG_ADDRESS;
-  const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, {
-    call: {
-      fn: "initialize",
-      args: [pauserAddress, protocolMetadata, kmsThreshold, kmsNodes, coprocessors],
-    },
-  });
-
-  console.log("GatewayConfig contract deployed to:", proxyAddress);
-  console.log("Pauser address:", pauserAddress, "\n");
+  console.log("Pauser address:", pauserAddress);
   console.log("Protocol metadata:", protocolMetadata);
-  console.log("KMS threshold:", kmsThreshold, "\n");
-  console.log("KMS nodes:", kmsNodes, "\n");
-  console.log("Coprocessors:", coprocessors, "\n");
+  console.log("KMS threshold:", kmsThreshold);
+  console.log("KMS nodes:", kmsNodes);
+  console.log("Coprocessors:", coprocessors);
+
+  await deployContractImplementation("GatewayConfig", hre, [
+    pauserAddress,
+    protocolMetadata,
+    kmsThreshold,
+    kmsNodes,
+    coprocessors,
+  ]);
 });
 
 // Deploy the InputVerification contract
-task("task:deployInputVerification").setAction(async function (_, { ethers, upgrades }) {
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-  const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
-
-  // Upgrade proxy to InputVerification
-  const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("InputVerification", deployer);
-
-  const parsedEnvInputVerification = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.input_verification")));
-  const proxyAddress = parsedEnvInputVerification.INPUT_VERIFICATION_ADDRESS;
-  const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
-
-  console.log(`InputVerification code set successfully at address: ${proxyAddress}\n`);
+task("task:deployInputVerification").setAction(async function (_, hre) {
+  await deployContractImplementation("InputVerification", hre);
 });
 
 // Deploy the KmsManagement contract
-task("task:deployKmsManagement").setAction(async function (_, { ethers, upgrades }) {
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-  const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
-
+task("task:deployKmsManagement").setAction(async function (_, hre) {
   const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
   const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
 
-  // Upgrade proxy to KmsManagement
-  const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("KmsManagement", deployer);
+  console.log("FHE params name:", fheParamsName);
+  console.log("FHE params digest:", fheParamsDigest);
 
-  const parsedEnvKmsManagement = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.kms_management")));
-  const proxyAddress = parsedEnvKmsManagement.KMS_MANAGEMENT_ADDRESS;
-  const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, {
-    call: { fn: "initialize", args: [fheParamsName, fheParamsDigest] },
-  });
-
-  console.log(`KmsManagement code set successfully at address: ${proxyAddress}\n`);
+  await deployContractImplementation("KmsManagement", hre, [fheParamsName, fheParamsDigest]);
 });
 
 // Deploy the CiphertextCommits contract
-task("task:deployCiphertextCommits").setAction(async function (_, { ethers, upgrades }) {
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-  const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
-
-  // Upgrade proxy to CiphertextCommits
-  const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("CiphertextCommits", deployer);
-
-  const parsedEnvCiphertextCommits = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.ciphertext_commits")));
-  const proxyAddress = parsedEnvCiphertextCommits.CIPHERTEXT_COMMITS_ADDRESS;
-  const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
-
-  console.log(`CiphertextCommits code set successfully at address: ${proxyAddress}\n`);
+task("task:deployCiphertextCommits").setAction(async function (_, hre) {
+  await deployContractImplementation("CiphertextCommits", hre);
 });
 
 // Deploy the MultichainAcl contract
-task("task:deployMultichainAcl").setAction(async function (_, { ethers, upgrades }) {
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-  const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
-
-  // Upgrade proxy to MultichainAcl
-  const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("MultichainAcl", deployer);
-
-  const parsedEnvMultichainAcl = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.multichain_acl")));
-  const proxyAddress = parsedEnvMultichainAcl.MULTICHAIN_ACL_ADDRESS;
-  const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
-
-  console.log(`MultichainAcl code set successfully at address: ${proxyAddress}\n`);
+task("task:deployMultichainAcl").setAction(async function (_, hre) {
+  await deployContractImplementation("MultichainAcl", hre);
 });
 
 // Deploy the Decryption contract
-task("task:deployDecryption").setAction(async function (_, { ethers, upgrades }) {
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-  const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
-
-  // Upgrade proxy to Decryption
-  const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const newImplem = await ethers.getContractFactory("Decryption", deployer);
-
-  const parsedEnvDecryption = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.decryption")));
-  const proxyAddress = parsedEnvDecryption.DECRYPTION_ADDRESS;
-  const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
-
-  console.log(`Decryption code set successfully at address: ${proxyAddress}\n`);
+task("task:deployDecryption").setAction(async function (_, hre) {
+  await deployContractImplementation("Decryption", hre);
 });
 
 // Deploy all the contracts
