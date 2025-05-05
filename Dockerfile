@@ -20,6 +20,8 @@ COPY --chown=fhevm:fhevm ./addresses ./addresses/
 COPY --chown=fhevm:fhevm ./tasks ./tasks/
 
 # Pre-compile proxy and mock contracts
+# Implementation contracts cannot be pre-compiled as they depend on the proxy contracts' addresses
+# which are only available after they are deployed
 RUN npx hardhat clean && \
     npx hardhat compile:specific --contract contracts/emptyProxy && \
     npx hardhat compile:specific --contract contracts/mocks 

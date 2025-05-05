@@ -1,73 +1,12 @@
-import { HardhatEthersHelpers } from "@nomicfoundation/hardhat-ethers/types";
-import { HardhatUpgrades } from "@openzeppelin/hardhat-upgrades";
 import dotenv from "dotenv";
 import { Wallet } from "ethers";
 import fs from "fs";
 import { task } from "hardhat/config";
-import type { TaskArguments } from "hardhat/types";
 import path from "path";
 
-import { getRequiredEnvVar } from "./utils/loadVariables";
+import { getRequiredEnvVar } from "../utils/loadVariables";
 
-// Deploy a new EmptyUUPSProxy contract
-async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
-  const factory = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
-  const UUPSEmpty = await upgrades.deployProxy(factory, [deployer.address], {
-    initializer: "initialize",
-    kind: "uups",
-  });
-  await UUPSEmpty.waitForDeployment();
-  const UUPSEmptyAddress = await UUPSEmpty.getAddress();
-  console.log("EmptyUUPS proxy contract successfully deployed!\n");
-  return UUPSEmptyAddress;
-}
-
-task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgrades, run }) {
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-  const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
-
-  console.log("Deploying an EmptyUUPS proxy contract for MultichainAcl...");
-  const multichainAclAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run("task:setContractAddress", {
-    name: "MultichainAcl",
-    address: multichainAclAddress,
-  });
-
-  console.log("Deploying an EmptyUUPS proxy contract for CiphertextCommits...");
-  const ciphertextCommitsAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run("task:setContractAddress", {
-    name: "CiphertextCommits",
-    address: ciphertextCommitsAddress,
-  });
-
-  console.log("Deploying an EmptyUUPS proxy contract for Decryption...");
-  const decryptionAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run("task:setContractAddress", {
-    name: "Decryption",
-    address: decryptionAddress,
-  });
-
-  console.log("Deploying an EmptyUUPS proxy contract for GatewayConfig...");
-  const gatewayConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run("task:setContractAddress", {
-    name: "GatewayConfig",
-    address: gatewayConfigAddress,
-  });
-
-  console.log("Deploying an EmptyUUPS proxy contract for KmsManagement...");
-  const kmsManagementAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run("task:setContractAddress", {
-    name: "KmsManagement",
-    address: kmsManagementAddress,
-  });
-
-  console.log("Deploying an EmptyUUPS proxy contract for InputVerification...");
-  const inputVerificationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run("task:setContractAddress", {
-    name: "InputVerification",
-    address: inputVerificationAddress,
-  });
-});
+const ADDRESSES_DIR = path.join(__dirname, "../../addresses");
 
 // Deploy the GatewayConfig contract
 task("task:deployGatewayConfig").setAction(async function (_, { ethers, upgrades }) {
@@ -112,7 +51,7 @@ task("task:deployGatewayConfig").setAction(async function (_, { ethers, upgrades
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
   const newImplem = await ethers.getContractFactory("GatewayConfig", deployer);
 
-  const parsedEnvGatewayConfig = dotenv.parse(fs.readFileSync("addresses/.env.gateway_config"));
+  const parsedEnvGatewayConfig = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.gateway_config")));
   const proxyAddress = parsedEnvGatewayConfig.GATEWAY_CONFIG_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
@@ -139,7 +78,7 @@ task("task:deployInputVerification").setAction(async function (_, { ethers, upgr
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
   const newImplem = await ethers.getContractFactory("InputVerification", deployer);
 
-  const parsedEnvInputVerification = dotenv.parse(fs.readFileSync("addresses/.env.input_verification"));
+  const parsedEnvInputVerification = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.input_verification")));
   const proxyAddress = parsedEnvInputVerification.INPUT_VERIFICATION_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
@@ -159,7 +98,7 @@ task("task:deployKmsManagement").setAction(async function (_, { ethers, upgrades
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
   const newImplem = await ethers.getContractFactory("KmsManagement", deployer);
 
-  const parsedEnvKmsManagement = dotenv.parse(fs.readFileSync("addresses/.env.kms_management"));
+  const parsedEnvKmsManagement = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.kms_management")));
   const proxyAddress = parsedEnvKmsManagement.KMS_MANAGEMENT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
@@ -178,7 +117,7 @@ task("task:deployCiphertextCommits").setAction(async function (_, { ethers, upgr
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
   const newImplem = await ethers.getContractFactory("CiphertextCommits", deployer);
 
-  const parsedEnvCiphertextCommits = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_commits"));
+  const parsedEnvCiphertextCommits = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.ciphertext_commits")));
   const proxyAddress = parsedEnvCiphertextCommits.CIPHERTEXT_COMMITS_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
@@ -195,7 +134,7 @@ task("task:deployMultichainAcl").setAction(async function (_, { ethers, upgrades
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
   const newImplem = await ethers.getContractFactory("MultichainAcl", deployer);
 
-  const parsedEnvMultichainAcl = dotenv.parse(fs.readFileSync("addresses/.env.multichain_acl"));
+  const parsedEnvMultichainAcl = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.multichain_acl")));
   const proxyAddress = parsedEnvMultichainAcl.MULTICHAIN_ACL_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
@@ -212,7 +151,7 @@ task("task:deployDecryption").setAction(async function (_, { ethers, upgrades })
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
   const newImplem = await ethers.getContractFactory("Decryption", deployer);
 
-  const parsedEnvDecryption = dotenv.parse(fs.readFileSync("addresses/.env.decryption"));
+  const parsedEnvDecryption = dotenv.parse(fs.readFileSync(path.join(ADDRESSES_DIR, ".env.decryption")));
   const proxyAddress = parsedEnvDecryption.DECRYPTION_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
@@ -222,13 +161,14 @@ task("task:deployDecryption").setAction(async function (_, { ethers, upgrades })
 
 // Deploy all the contracts
 task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
-  await hre.run("clean");
-  await hre.run("compile:specific", { contract: "contracts/emptyProxy" });
+  // Deploy the EmptyUUPS proxy contracts
   await hre.run("task:deployEmptyUUPSProxies");
 
-  // The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
-  // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
-  // used.
+  // Compile the implementation contracts
+  // The deployEmptyUUPSProxies task has generated the contracts' addresses in `addresses/*.sol`.
+  // Contracts thus need to be compiled after deploying the EmptyUUPS proxy contracts in order to
+  // use these addresses. Otherwise, irrelevant addresses will be used and, although deployment will
+  // succeed, most transactions made to the contracts will revert as inter-contract calls will fail.
   await hre.run("compile:specific", { contract: "contracts" });
 
   console.log("Deploy GatewayConfig contract:");
@@ -251,78 +191,3 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
 
   console.log("Contract deployment done!");
 });
-
-// A helpher task to update a contract's address in their .sol and .env file in the `addresses` folder
-task("task:setContractAddress")
-  .addParam("name", "The name of the contract (PascalCase)")
-  .addParam("address", "The address of the contract")
-  .setAction(async function (taskArguments: TaskArguments) {
-    const name = taskArguments.name;
-    const address = taskArguments.address;
-
-    // Write address of contract in its addresses/.env.xxx file
-    const envFilePath = path.join(__dirname, `../addresses/.env.${pascalCaseToSnakeCase(name)}`);
-    const content = `${pascalCaseToSnakeCase(name).toUpperCase()}_ADDRESS=${address}\n`;
-    try {
-      fs.writeFileSync(envFilePath, content, { flag: "w" });
-      console.log(`${name} address ${address} written successfully!`);
-    } catch (err) {
-      console.error(`Failed to write ${name} address:`, err);
-    }
-
-    // Write address of contract in its addresses/xxxAddress.sol file
-    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear\n
-pragma solidity ^0.8.24;\n
-address constant ${pascalCaseToCamelCase(name)}Address = ${address};\n`;
-
-    try {
-      fs.writeFileSync(`./addresses/${name}Address.sol`, solidityTemplate, {
-        encoding: "utf8",
-        flag: "w",
-      });
-      console.log(`./addresses/${name}Address.sol file generated successfully!\n`);
-    } catch (error) {
-      console.error(`Failed to write ./addresses/${name}Address.sol\n`, error);
-    }
-  });
-
-task("task:deployGatewayMockContracts")
-  .setDescription(
-    "Deploys the mock contract for the given name or all contracts contained in the /contracts/mocks directory.",
-  )
-  .addOptionalParam("name", "The name in PascalCase of the mock contract to deploy")
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    // Find and filter mock contracts from /contracts/mocks directory
-    let mockContracts = fs
-      .readdirSync("./contracts/mocks")
-      .filter((file) => file.endsWith(".sol"))
-      .map((file) => file.replace(".sol", ""));
-
-    // Validate the "name" parameter and set it for deployment if present
-    const name = taskArguments.name;
-    if (name) {
-      if (!mockContracts.includes(name)) {
-        throw new Error(`Invalid mock contract name: ${name}`);
-      }
-      mockContracts = [name];
-    }
-
-    // Deploy mock contract for given "name" or all available mock contracts
-    for (const mockContract of mockContracts) {
-      const mockContractFactory = await ethers.getContractFactory(mockContract);
-      const mockContractDeployment = await mockContractFactory.deploy();
-      const mockContractAddress = await mockContractDeployment.getAddress();
-      console.log(`${mockContract} code set successfully at address: ${mockContractAddress}\n`);
-    }
-  });
-
-function pascalCaseToSnakeCase(str: string) {
-  return str
-    .split(/\.?(?=[A-Z])/)
-    .join("_")
-    .toLowerCase();
-}
-
-function pascalCaseToCamelCase(str: string) {
-  return str[0].toLowerCase() + str.substring(1);
-}
