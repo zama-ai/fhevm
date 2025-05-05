@@ -129,6 +129,8 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     let tfhe_contract = FHEVMExecutorTest::deploy(provider.clone()).await?;
     let args = Args {
         url: url.clone(),
+        initial_block_time: 1,
+        no_block_immediate_recheck: false,
         ignore_tfhe_events: false,
         ignore_acl_events: false,
         acl_contract_address: None,

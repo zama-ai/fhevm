@@ -49,6 +49,12 @@ pub struct Args {
 
     #[arg(long, default_value = "5", help = "Catchup margin relative the last seen block")]
     pub catchup_margin: u64,
+
+    #[arg(long, default_value = "false", help = "Disable block immediate recheck")]
+    pub no_block_immediate_recheck: bool,
+
+    #[arg(long, default_value = "5", help = "Initial block time, refined on each block")]
+    pub initial_block_time: u64,
 }
 
 type RProvider = FillProvider<
@@ -62,6 +68,8 @@ type RProvider = FillProvider<
 // TODO: to merge with Levent works
 struct InfiniteLogIter {
     url: String,
+    block_time: u64,  // A default value that is refined with real-time events data
+    no_block_immediate_recheck: bool,
     contract_addresses: Vec<Address>,
     catchup_logs: VecDeque<Log>,
     stream: Option<SubscriptionStream<Log>>,
@@ -72,6 +80,12 @@ struct InfiniteLogIter {
     catchup_margin: u64,
     prev_event: Option<Log>,
     current_event: Option<Log>,
+    last_block_event_count: u64,
+    last_block_recheck_planned: u64,
+}
+enum LogOrBlockTimeout {
+    Log(Option<Log>),
+    BlockTimeout,
 }
 
 impl InfiniteLogIter {
@@ -85,6 +99,8 @@ impl InfiniteLogIter {
         };
         Self {
             url: args.url.clone(),
+            block_time: args.catchup_margin,
+            no_block_immediate_recheck: args.no_block_immediate_recheck,
             contract_addresses,
             catchup_logs: VecDeque::new(),
             stream: None,
@@ -95,6 +111,8 @@ impl InfiniteLogIter {
             catchup_margin: args.catchup_margin,
             prev_event: None,
             current_event: None,
+            last_block_event_count: 0,
+            last_block_recheck_planned: 0,
         }
     }
 
@@ -127,6 +145,47 @@ impl InfiniteLogIter {
     async fn fill_catchup_events(&mut self, provider: &RProvider, filter: &Filter) {
         let logs = provider.get_logs(&filter).await.expect("BLA2");
         self.catchup_logs.extend(logs);
+    }
+
+    async fn recheck_prev_block(&mut self) -> bool {
+        let Some(provider) = &self.provider else {
+            eprintln!("No provider, inconsistent state");
+            return false;
+        };
+        let Some(event) = &self.prev_event else {
+            return false;
+        };
+        let Some(block) = event.block_number else {
+            return false;
+        };
+        let last_block_event_count = self.last_block_event_count;
+        self.last_block_event_count = 0;
+        if self.last_block_recheck_planned == block {
+            // no need to replan anything
+            return false;
+        }
+        let mut filter = Filter::new()
+            .from_block(block)
+            .to_block(block); // inclusive
+        if !self.contract_addresses.is_empty() {
+            filter = filter.address(self.contract_addresses.clone())
+        }
+        let Ok(logs) = provider.get_logs(&filter).await else {
+            return false;
+        };
+        if logs.is_empty() {
+            return false;
+        }
+        if logs.len() as u64 == last_block_event_count {
+            return false;
+        }
+        eprintln!("Replaying Block {block} with {} events (vs {})", logs.len(), last_block_event_count);
+        self.catchup_logs.extend(logs);
+        if let Some(event) = self.current_event.take() {
+            self.catchup_logs.push_back(event);
+        }
+        self.last_block_recheck_planned = block;
+        true
     }
 
     async fn new_log_stream(&mut self, not_initialized: bool) {
@@ -190,41 +249,68 @@ impl InfiniteLogIter {
         }
     }
 
+    async fn next_event_or_block_end(&mut self) -> LogOrBlockTimeout {
+        let Some(stream) = &mut self.stream else {
+            eprintln!("No stream, inconsistent state");
+            return LogOrBlockTimeout::Log(None) // simulate a stream end to force reinit
+        };
+        let next_opt_event = stream.next();
+        // it assume the eventual discard of next_opt_event is handled correctly by alloy
+        // if not the case, the recheck mecanism ensures it's only extra latency
+        match tokio::time::timeout(Duration::from_secs(self.block_time + 2), next_opt_event).await {
+            Err(_) => LogOrBlockTimeout::BlockTimeout,
+            Ok(opt_log) => LogOrBlockTimeout::Log(opt_log),
+        }
+    }
+
     async fn next(&mut self) -> Option<Log> {
         let mut not_initialized = true;
         self.prev_event = self.current_event.take();
         while self.current_event.is_none() {
-            let Some(stream) = &mut self.stream else {
+            if self.stream.is_none() {
                 self.new_log_stream(not_initialized).await;
                 not_initialized = false;
                 continue;
             };
             if let Some(log) = self.catchup_logs.pop_front() {
                 if self.catchup_logs.is_empty() {
-                    eprintln!("Last catchup event");
+                    eprintln!("Going back to real-time events");
                 };
                 self.current_event = Some(log);
                 break;
             };
-            let Some(log) = stream.next().await else {
-                // the stream ends, could be a restart of the full node, or just a temporary gap
-                self.stream = None;
-                if let (Some(end_at_block), Some(last_seen_block)) =
-                    (self.end_at_block, self.last_valid_block)
-                {
-                    if end_at_block == last_seen_block {
-                        eprintln!(
-                            "Nothing to read, reached end of block range"
-                        );
-                        return None;
+            match self.next_event_or_block_end().await {
+                LogOrBlockTimeout::Log(None) => {
+                    // the stream ends, could be a restart of the full node, or just a temporary gap
+                    self.stream = None;
+                    if let (Some(end_at_block), Some(last_seen_block)) = (self.end_at_block, self.last_valid_block) {
+                        if end_at_block == last_seen_block {
+                            return None;
+                        }
+                    }
+                    eprintln!("Nothing to read, retrying");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+                LogOrBlockTimeout::Log(Some(log)) => {
+                    self.current_event = Some(log);
+                    let recheck_planned = if !self.no_block_immediate_recheck && self.is_first_of_block() {
+                        self.recheck_prev_block().await
+                    } else {
+                        false
+                    };
+                    if recheck_planned {
+                        // current log is delayed and pushed to be replayed after the previous block in catchup
+                        continue; // jump to the first event of catchup phase
+                    } else {
+                        break;
                     }
                 }
-                eprintln!("Nothing to read, retrying");
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                continue;
-            };
-            self.current_event = Some(log);
-            break;
+                LogOrBlockTimeout::BlockTimeout => {
+                    self.recheck_prev_block().await;
+                    continue;
+                }
+            }
         }
         let Some(current_event) = &self.current_event else {
             return None;
@@ -233,6 +319,7 @@ impl InfiniteLogIter {
             // we subtract one because the current block is on going
             self.last_valid_block = Some(block_number.max(self.last_valid_block.unwrap_or_default()) - 1);
         }
+        self.last_block_event_count += 1;
         return self.current_event.clone();
     }
 
@@ -242,6 +329,16 @@ impl InfiniteLogIter {
                 current_event.block_number != prev_event.block_number
             }
             _ => false,
+        }
+    }
+
+    fn reestimated_block_time(&mut self) {
+        match (&self.current_event, &self.prev_event) {
+            (
+                Some(Log {block_timestamp:Some(curr_t), block_number:Some(curr_n), ..}),
+                Some(Log {block_timestamp:Some(prev_t), block_number:Some(prev_n), ..})
+            ) => self.block_time = (curr_t - prev_t) / (curr_n - prev_n),
+            _ => (),
         }
     }
 }
@@ -289,6 +386,7 @@ pub async fn main(args: Args) {
     let mut block_error_event_fthe = 0;
     while let Some(log) = log_iter.next().await {
         if log_iter.is_first_of_block() {
+            log_iter.reestimated_block_time();
             if let Some(block_number) = log.block_number {
                 if block_error_event_fthe == 0 {
                     if let Some(ref mut db) = db {
