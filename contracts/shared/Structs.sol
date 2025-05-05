@@ -44,7 +44,7 @@ struct Network {
 }
 
 /**
- * @notice Data structure used to transfer a SNS ciphertext and some of its metadata between
+ * @notice Data structure used to transfer a Switch and Squash (SNS) ciphertext and some of its metadata between
  * the Gateway contracts.
  */
 struct SnsCiphertextMaterial {
