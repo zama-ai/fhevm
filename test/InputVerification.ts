@@ -228,11 +228,11 @@ describe("InputVerification", function () {
       await expect(
         inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signatures[0]),
       )
-        .revertedWithCustomError(inputVerification, "CoprocessorSignerAlreadySigned")
-        .withArgs(zkProofId, coprocessorSigners[0].address);
+        .revertedWithCustomError(inputVerification, "CoprocessorAlreadyVerified")
+        .withArgs(zkProofId, coprocessorTxSenders[0].address, coprocessorSigners[0].address);
     });
 
-    it("Should revert because same coprocessor signer both verifies and rejects a proof", async function () {
+    it("Should revert because same coprocessor first verifies then rejects a proof", async function () {
       // Trigger a proof verification response with:
       // - the first coprocessor transaction sender
       // - the first coprocessor signer's signature
@@ -243,8 +243,8 @@ describe("InputVerification", function () {
       // The address in the error message is the coprocessor signer's address as we are checking
       // the coprocessor signer's address here, not the coprocessor transaction sender's address
       await expect(inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId))
-        .revertedWithCustomError(inputVerification, "CoprocessorSignerAlreadyResponded")
-        .withArgs(zkProofId, coprocessorSigners[0].address);
+        .revertedWithCustomError(inputVerification, "CoprocessorAlreadyVerified")
+        .withArgs(zkProofId, coprocessorTxSenders[0].address, coprocessorSigners[0].address);
     });
 
     it("Should revert because the signer is not a coprocessor", async function () {
@@ -364,7 +364,7 @@ describe("InputVerification", function () {
       await expect(txResponse3).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId);
     });
 
-    it("Should revert because of two responses from the same coprocessor transaction sender", async function () {
+    it("Should revert because of two rejections from the same coprocessor", async function () {
       const coprocessorTxSender = coprocessorTxSenders[0];
       const coprocessorSigner = coprocessorSigners[0];
 
@@ -373,8 +373,34 @@ describe("InputVerification", function () {
 
       // Check that a coprocessor transaction sender cannot send a second response for the same proof
       await expect(inputVerification.connect(coprocessorTxSender).rejectProofResponse(zkProofId))
-        .revertedWithCustomError(inputVerification, "CoprocessorSignerAlreadyResponded")
-        .withArgs(zkProofId, coprocessorSigner.address);
+        .revertedWithCustomError(inputVerification, "CoprocessorAlreadyRejected")
+        .withArgs(zkProofId, coprocessorTxSender.address, coprocessorSigner.address);
+    });
+
+    it("Should revert because same coprocessor first rejects then verifies a proof", async function () {
+      const coprocessorTxSender = coprocessorTxSenders[0];
+      const coprocessorSigner = coprocessorSigners[0];
+
+      // Create the EIP712 message
+      const eip712Message = createEIP712ResponseZKPoK(
+        hre.network.config.chainId!,
+        inputVerificationAddress,
+        ctHandles,
+        userAddress,
+        contractAddress,
+        contractChainId,
+      );
+
+      // Get the EIP712 signatures
+      const [signature1] = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
+
+      // Trigger a first proof response
+      await inputVerification.connect(coprocessorTxSender).rejectProofResponse(zkProofId);
+
+      // Check that a Coprocessor transaction sender cannot send a second response for the same proof
+      await expect(inputVerification.connect(coprocessorTxSender).verifyProofResponse(zkProofId, ctHandles, signature1))
+        .revertedWithCustomError(inputVerification, "CoprocessorAlreadyRejected")
+        .withArgs(zkProofId, coprocessorTxSender.address, coprocessorSigner.address);
     });
 
     it("Should revert because the sender is not a coprocessor transaction sender", async function () {

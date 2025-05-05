@@ -37,19 +37,20 @@ interface IInputVerification {
     event RejectProofResponse(uint256 indexed zkProofId);
 
     /**
-     * @notice Error indicating that the coprocessor signer has already responded to
-     * the ZK Proof verification request (either by verifying or rejecting the proof).
-     * @param zkProofId The ID of the ZK Proof.
-     * @param signer The address of the coprocessor signer that has already responded.
+     * @notice Error indicating that the coprocessor has already verified the ZKPoK.
+     * @param zkProofId The ID of the ZKPoK.
+     * @param txSender The transaction sender address of the coprocessor that has already verified.
+     * @param signer The signer address of the coprocessor that has already verified.
      */
-    error CoprocessorSignerAlreadyResponded(uint256 zkProofId, address signer);
+    error CoprocessorAlreadyVerified(uint256 zkProofId, address txSender, address signer);
 
     /**
-     * @notice Error indicating that the coprocessor signer has already signed the ZK Proof verification.
-     * @param zkProofId The ID of the ZK Proof.
-     * @param signer The address of the coprocessor signer that has already signed.
+     * @notice Error indicating that the coprocessor has already rejected the ZKPoK.
+     * @param zkProofId The ID of the ZKPoK.
+     * @param txSender The transaction sender address of the coprocessor that has already rejected.
+     * @param signer The signer address of the coprocessor that has already rejected.
      */
-    error CoprocessorSignerAlreadySigned(uint256 zkProofId, address signer);
+    error CoprocessorAlreadyRejected(uint256 zkProofId, address txSender, address signer);
 
     /**
      * @notice Error indicating that the ZK Proof has not been verified.
