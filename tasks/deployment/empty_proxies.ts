@@ -7,19 +7,9 @@ import type { TaskArguments } from "hardhat/types";
 import path from "path";
 
 import { getRequiredEnvVar } from "../utils/loadVariables";
+import { pascalCaseToCamelCase, pascalCaseToSnakeCase } from "../utils/stringOps";
 
 const ADDRESSES_DIR = path.join(__dirname, "../../addresses");
-
-function pascalCaseToSnakeCase(str: string) {
-  return str
-    .split(/\.?(?=[A-Z])/)
-    .join("_")
-    .toLowerCase();
-}
-
-function pascalCaseToCamelCase(str: string) {
-  return str[0].toLowerCase() + str.substring(1);
-}
 
 // Deploy a new EmptyUUPSProxy contract
 async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
@@ -42,8 +32,9 @@ task("task:setContractAddress")
     const name = taskArguments.name;
     const address = taskArguments.address;
 
-    const envFilePath = path.join(ADDRESSES_DIR, `.env.${pascalCaseToSnakeCase(name)}`);
-    const envContent = `${pascalCaseToSnakeCase(name).toUpperCase()}_ADDRESS=${address}\n`;
+    const nameSnakeCase = pascalCaseToSnakeCase(name);
+    const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
+    const envContent = `${nameSnakeCase.toUpperCase()}_ADDRESS=${address}\n`;
 
     // Write the contract's address in its addresses/.env.xxx file
     try {
