@@ -9,7 +9,6 @@ RESET='\033[0m'
 DEFAULT_GREP="test user input uint64"
 DEFAULT_NETWORK="staging"
 VERBOSE=false
-RUST_RELAYER=true
 
 show_help() {
   echo -e "${BLUE}============================================================${RESET}"
@@ -63,10 +62,6 @@ while (( "$#" )); do
       VERBOSE=true
       shift
       ;;
-    -r|--no-relayer)
-      RUST_RELAYER=false
-      shift
-      ;;
     *)
       PARAMS="$PARAMS $1"
       shift
@@ -89,7 +84,6 @@ echo -e "${BLUE}============================================================${RE
 echo -e "${GREEN}Test Configuration:${RESET}"
 echo -e "  Test filter: ${YELLOW}\"$GREP_TEXT\"${RESET}"
 echo -e "  Network:     ${YELLOW}$NETWORK${RESET}"
-echo -e "  Rust Relayer:${YELLOW}$([ "$RUST_RELAYER" = true ] && echo " Enabled" || echo " Disabled")${RESET}"
 if [ "$VERBOSE" = true ]; then
   echo -e "  Verbose:     ${YELLOW}Enabled${RESET}"
 fi
@@ -105,7 +99,7 @@ if [ "$VERBOSE" = true ]; then
 fi
 
 # Run the tests
-if RUST_RELAYER=$RUST_RELAYER npx hardhat test $HARDHAT_OPTS --grep "$GREP_TEXT" --network "$NETWORK"; then
+if npx hardhat test $HARDHAT_OPTS --grep "$GREP_TEXT" --network "$NETWORK"; then
   echo -e "\n${GREEN}✓ Tests completed successfully!${RESET}"
 else
   echo -e "\n${RED}✗ Tests failed!${RESET}"

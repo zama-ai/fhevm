@@ -7,7 +7,7 @@ services:
     entrypoint:
       - anvil
       - --block-time
-      - "0.1"
+      - "1"
       - --host
       - 0.0.0.0
       - --port
@@ -20,7 +20,7 @@ services:
       - "${MNEMONIC}"
     ports:
       - "8545:8545"
-  
+
   host-sc-deploy:
     container_name: fhevm-host-sc-deploy
     image: ghcr.io/zama-ai/fhevm-backend/contracts:${HOST_VERSION}

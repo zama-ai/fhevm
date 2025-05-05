@@ -22,7 +22,6 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
 
     /// @dev Decrypted state variables
     bool public yBool;
-    uint8 public yUint4;
     uint8 public yUint8;
     uint16 public yUint16;
     uint32 public yUint32;
@@ -110,15 +109,6 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
         FHE.checkSignatures(requestID, signatures);
         yBool = decryptedInput;
         return yBool;
-    }
-
-    /// @notice Callback function for 4-bit unsigned integer decryption
-    /// @param decryptedInput The decrypted 4-bit unsigned integer
-    /// @return The decrypted value
-    function callbackUint4(uint256 requestID, uint8 decryptedInput, bytes[] memory signatures) public returns (uint8) {
-        FHE.checkSignatures(requestID, signatures);
-        yUint4 = decryptedInput;
-        return decryptedInput;
     }
 
     /// @notice Request decryption of an 8-bit unsigned integer

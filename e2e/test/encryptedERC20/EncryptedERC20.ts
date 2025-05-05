@@ -128,7 +128,7 @@ describe("EncryptedERC20", function () {
       );
     } catch (error) {
       expect(error.message).to.equal(
-        "User is not authorized to user decrypt this handle!"
+        `User 0xfCefe53c7012a075b8a711df391100d9c431c468 is not authorized to user decrypt handle ${balanceHandleAlice}!`
       );
     }
   });

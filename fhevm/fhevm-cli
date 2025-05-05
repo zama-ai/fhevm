@@ -23,7 +23,7 @@ export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"v0.7.0-rc6"}
 export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc6"}
 export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc6"}
 export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.1.0-rc14"}
-export RELAYER_VERSION=${RELAYER_VERSION:-"45dc80d"}
+export RELAYER_VERSION=${RELAYER_VERSION:-"6573721"}
 export TESTS_VERSION=${TESTS_VERSION:-"02c6691"}
 
 function print_logo() {
@@ -162,6 +162,14 @@ case $COMMAND in
         erc20)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] ERC20${RESET}"
           docker_args+=("-g" "should transfer tokens between two users.")
+          ;;
+        public-decrypt-http-ebool)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION OVER HTTP FOR EBOOL${RESET}"
+          docker_args+=("-g" "test HTTPPublicDecrypt ebool")
+          ;;
+        public-decrypt-http-mixed)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION OVER HTTP FOR MIXED${RESET}"
+          docker_args+=("-g" "test HTTPPublicDecrypt mixed")
           ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"

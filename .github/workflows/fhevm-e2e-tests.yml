@@ -36,7 +36,7 @@ on:
       relayer_version:
         description: "Relayer Image Version"
         required: false
-        default: "45dc80d"
+        default: "6573721"
         type: string
       tests_version:
         description: "E2E Tests Image Version"
@@ -113,6 +113,18 @@ jobs:
         continue-on-error: true
         run: |
           ./fhevm-cli test erc20
+
+      - name: Public Decryption HTTP endpoint test (ebool)
+        working-directory: fhevm
+        continue-on-error: true
+        run: |
+          ./fhevm-cli test public-decrypt-ebool
+
+      - name: Public Decryption HTTP endpoint test (mixed)
+        working-directory: fhevm
+        continue-on-error: true
+        run: |
+          ./fhevm-cli test public-decrypt-mixed
 
       - name: Show logs on test failure
         working-directory: fhevm
