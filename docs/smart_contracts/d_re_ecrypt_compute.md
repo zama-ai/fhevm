@@ -1,8 +1,8 @@
 # Encryption, decryption, re-encryption, and computation
 
-This document introduces the core cryptographic operations in the HTTPZ system, including how data is encrypted, decrypted, re-encrypted and computed upon while maintaining privacy.
+This document introduces the core cryptographic operations in the fhevm system, including how data is encrypted, decrypted, re-encrypted and computed upon while maintaining privacy.
 
-The HTTPZ system ensures end-to-end confidentiality by leveraging Fully Homomorphic Encryption (FHE). The encryption, decryption, re-encryption, and computation processes rely on a coordinated flow of information and cryptographic keys across the HTTPZ components. This section details how these operations work and outlines the role of the FHE keys in enabling secure and private processing.
+The fhevm system ensures end-to-end confidentiality by leveraging Fully Homomorphic Encryption (FHE). The encryption, decryption, re-encryption, and computation processes rely on a coordinated flow of information and cryptographic keys across the fhevm components. This section details how these operations work and outlines the role of the FHE keys in enabling secure and private processing.
 
 ## **FHE keys and their locations**
 
@@ -16,13 +16,13 @@ The HTTPZ system ensures end-to-end confidentiality by leveraging Fully Homomorp
    - **Location**: Stored on the coprocessor.
    - **Role**: Enables operations on ciphertexts (e.g., addition, multiplication) without decrypting them.
 
-<figure><img src="../.gitbook/assets/architecture.png" alt="FHE Keys Overview"><figcaption><p>High level overview of the HTTPZ Architecture</p></figcaption></figure>
+<figure><img src="../.gitbook/assets/architecture.png" alt="FHE Keys Overview"><figcaption><p>High level overview of the fhevm Architecture</p></figcaption></figure>
 
 ## **Workflow: encryption, decryption, and processing**
 
 ### **Encryption**
 
-Encryption is the starting point for any interaction with the HTTPZ system, ensuring that data is protected before it is transmitted or processed.
+Encryption is the starting point for any interaction with the fhevm system, ensuring that data is protected before it is transmitted or processed.
 
 - **How It Works**:
   1. The **frontend** or client application uses the **public key** to encrypt user-provided plaintext inputs.
@@ -94,7 +94,7 @@ Re-encryption enables encrypted data to be securely shared or reused under a dif
 
 #### Client-side implementation
 
-Re-encryption is initiated on the client side via the **Gateway service** using the [`@httpz/sdk`](https://github.com/zama-ai/fhevmjs/) library. Here’s the general workflow:
+Re-encryption is initiated on the client side via the **Gateway service** using the [`@fhevm/sdk`](https://github.com/zama-ai/fhevmjs/) library. Here’s the general workflow:
 
 1. **Retrieve the ciphertext**:
    - The dApp calls a view function (e.g., `balanceOf`) on the smart contract to get the handle of the ciphertext to be re-encrypted.
@@ -116,7 +116,7 @@ You can read [our re-encryption guide explaining how to use it](decryption/reenc
 
 ## **Tying It All Together**
 
-The flow of information across the HTTPZ components during these operations highlights how the system ensures privacy while maintaining usability:
+The flow of information across the fhevm components during these operations highlights how the system ensures privacy while maintaining usability:
 
 | Operation         |                         |                                                                                                                                                                                 |
 | ----------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -125,4 +125,4 @@ The flow of information across the HTTPZ components during these operations high
 | **Decryption**    | Private Key             | Blockchain or Gateway sends ciphertext to KMS → KMS decrypts using private key → Plaintext returned to authorized requester (e.g., frontend or specific user).                  |
 | **Re-encryption** | Private and Target Keys | Blockchain or Gateway sends ciphertext to KMS → KMS re-encrypts using private key and target key → Updated ciphertext returned to blockchain, frontend, or other contract/user. |
 
-This architecture ensures that sensitive data remains encrypted throughout its lifecycle, with decryption or re-encryption only occurring in controlled, secure environments. By separating key roles and processing responsibilities, HTTPZ provides a scalable and robust framework for private smart contracts.
+This architecture ensures that sensitive data remains encrypted throughout its lifecycle, with decryption or re-encryption only occurring in controlled, secure environments. By separating key roles and processing responsibilities, fhevm provides a scalable and robust framework for private smart contracts.

@@ -1,35 +1,35 @@
-# HTTPZ components
+# fhevm components
 
-This document gives a detailed explanantion of each component of HTTPZ and illustrate how they work together to perform computations.&#x20;
+This document gives a detailed explanantion of each component of fhevm and illustrate how they work together to perform computations.&#x20;
 
 ## Overview
 
-The HTTPZ architecture is built around four primary components, each contributing to the system's functionality and performance. These components work together to enable the development and execution of private, composable smart contracts on EVM-compatible blockchains. Below is an overview of these components and their responsibilities:
+The fhevm architecture is built around four primary components, each contributing to the system's functionality and performance. These components work together to enable the development and execution of private, composable smart contracts on EVM-compatible blockchains. Below is an overview of these components and their responsibilities:
 
-| [**HTTPZ Smart Contracts**](fhevm-components.md#fhevm-smart-contracts)           | Smart contracts deployed on the blockchain to manage encrypted data and interactions.                     | Includes the Access Control List (ACL) contract, `TFHE.sol` Solidity library, `Gateway.sol` and other FHE-enabled smart contracts. |
+| [**fhevm Smart Contracts**](fhevm-components.md#fhevm-smart-contracts)           | Smart contracts deployed on the blockchain to manage encrypted data and interactions.                     | Includes the Access Control List (ACL) contract, `TFHE.sol` Solidity library, `Gateway.sol` and other FHE-enabled smart contracts. |
 | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | [**Gateway**](fhevm-components.md#gateway)                                       | An off-chain service that bridges the blockchain with the cryptographic systems like KMS and coprocessor. | Acts as an intermediary to forward the necessary requests and results between the blockchain, the KMS, and users.                  |
 | [**Coprocessor**](fhevm-components.md#coprocessor)                               | An off-chain computational engine designed to execute resource-intensive FHE operations.                  | Executes symbolic FHE operations, manages ciphertext storage, and ensures efficient computation handling.                          |
 | [**Key Management System (KMS)**](fhevm-components.md#key-management-system-kms) | A decentralized cryptographic service that securely manages FHE keys and validates operations.            | Manages the global FHE key (public, private, evaluation), performs threshold decryption, and validates ZKPoKs.                     |
 
-<figure><img src="../../.gitbook/assets/architecture.png" alt="FHE Keys Overview"><figcaption><p>High level overview of the HTTPZ Architecture</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/architecture.png" alt="FHE Keys Overview"><figcaption><p>High level overview of the fhevm Architecture</p></figcaption></figure>
 
 ## **Developer workflow:**
 
-As a developer working with HTTPZ, your workflow typically involves two key elements:
+As a developer working with fhevm, your workflow typically involves two key elements:
 
 1. **Frontend development**:\
    You create a frontend interface for users to interact with your confidential application. This includes encrypting inputs using the public FHE key and submitting them to the blockchain.
 2. **Smart contract development**:\
-   You write Solidity contracts deployed on the same blockchain as the HTTPZ smart contracts. These contracts leverage the `TFHE.sol` library to perform operations on encrypted data. Below, we explore the major components involved.
+   You write Solidity contracts deployed on the same blockchain as the fhevm smart contracts. These contracts leverage the `TFHE.sol` library to perform operations on encrypted data. Below, we explore the major components involved.
 
-## **HTTPZ smart contracts**
+## **fhevm smart contracts**
 
-HTTPZ smart contracts include the Access Control List (ACL) contract, `TFHE.sol` library, and related FHE-enabled contracts.
+fhevm smart contracts include the Access Control List (ACL) contract, `TFHE.sol` library, and related FHE-enabled contracts.
 
 ### **Symbolic execution in Solidity**
 
-HTTPZ implements **symbolic execution** to optimize FHE computations:
+fhevm implements **symbolic execution** to optimize FHE computations:
 
 - **Handles**: Operations on encrypted data return "handles" (references to ciphertexts) instead of immediate results.
 - **Lazy Execution**: Actual computations are performed asynchronously, offloading resource-intensive tasks to the coprocessor.
@@ -38,12 +38,12 @@ This approach ensures high throughput and flexibility in managing encrypted data
 
 ### **Zero-Knowledge proofs of knowledge (ZKPoKs)**
 
-HTTPZ incorporates ZKPoKs to verify the correctness of encrypted inputs and outputs:
+fhevm incorporates ZKPoKs to verify the correctness of encrypted inputs and outputs:
 
 - **Validation**: ZKPoKs ensure that inputs are correctly formed and correspond to known plaintexts without revealing sensitive data.
 - **Integrity**: They prevent misuse of ciphertexts and ensure the correctness of computations.
 
-By combining symbolic execution and ZKPoKs, HTTPZ smart contracts maintain both privacy and verifiability.
+By combining symbolic execution and ZKPoKs, fhevm smart contracts maintain both privacy and verifiability.
 
 ## **Coprocessor**
 
@@ -68,7 +68,7 @@ The Gateway simplifies the development process by abstracting the complexity of 
 
 ## **Key management system (KMS)**
 
-The KMS securely manages the cryptographic backbone of HTTPZ by maintaining and distributing the global FHE keys.
+The KMS securely manages the cryptographic backbone of fhevm by maintaining and distributing the global FHE keys.
 
 ### **Key functions**:
 

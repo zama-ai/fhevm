@@ -1,6 +1,6 @@
 # Debugging with `debug.decrypt[XX]`
 
-This guide explains how to use the `debug.decrypt[XX]` functions for debugging encrypted data in mocked environments during development with HTTPZ.
+This guide explains how to use the `debug.decrypt[XX]` functions for debugging encrypted data in mocked environments during development with fhevm.
 
 {% hint style="warning" %}
 The `debug.decrypt[XX]` functions should not be used in production as they rely on private keys.

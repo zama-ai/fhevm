@@ -1,12 +1,12 @@
 # Hardhat
 
-This tutorial covers the essential steps to quickly write and deploy a confidential ERC20 smart contract using the [HTTPZ Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template).
+This tutorial covers the essential steps to quickly write and deploy a confidential ERC20 smart contract using the [fhevm Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template).
 
-Hardhat is a flexible, extensible development environment for Ethereum, providing a robust toolkit for compiling, testing, and deploying smart contracts. With Zama’s HTTPZ integration, you can develop confidential ERC20 contracts locally and then seamlessly deploy them to a real HTTPZ node.
+Hardhat is a flexible, extensible development environment for Ethereum, providing a robust toolkit for compiling, testing, and deploying smart contracts. With Zama’s fhevm integration, you can develop confidential ERC20 contracts locally and then seamlessly deploy them to a real fhevm node.
 
 **In this tutorial, you will learn to:**
 
-1. Set up a Hardhat project with the [**HTTPZ Hardhat Template**](https://github.com/zama-ai/fhevm-hardhat-template).
+1. Set up a Hardhat project with the [**fhevm Hardhat Template**](https://github.com/zama-ai/fhevm-hardhat-template).
 2. Write confidential contracts utilizing encrypted data types.
 3. Test your contracts in **mocked mode** (for rapid feedback and coverage).
 4. Deploy your confidential ERC20 contract to the Sepolia test network.

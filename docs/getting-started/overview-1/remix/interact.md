@@ -1,6 +1,6 @@
 # 4. Interacting with the contract
 
-After deploying your first **HTTPZ** contract using **Remix**, this guide shows you how to interact with it directly in Remix using the **Zama Plugin**.
+After deploying your first **fhevm** contract using **Remix**, this guide shows you how to interact with it directly in Remix using the **Zama Plugin**.
 
 ## Prerequisite
 
@@ -104,15 +104,15 @@ Always re-encrypt to validate ciphertext transformations and confirm operations.
 
 ## Next steps
 
-🎉 **Congratulations on completing this tutorial!** You’ve taken the first step in building confidential smart contracts using **HTTPZ**. It's time now to take the next step and build your own confidential dApps!
+🎉 **Congratulations on completing this tutorial!** You’ve taken the first step in building confidential smart contracts using **fhevm**. It's time now to take the next step and build your own confidential dApps!
 
 ### 1. Resources
 
 To continue your journey and deepen your knowledge, explore the resources below.
 
-- [**Read the Whitepaper**](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper-v2.pdf): Understand the core technology behind HTTPZ, including its cryptographic foundations and use cases.
+- [**Read the Whitepaper**](https://github.com/zama-ai/fhevm-solidity/blob/main/fhevm-whitepaper-v2.pdf): Understand the core technology behind fhevm, including its cryptographic foundations and use cases.
 - [**See more demos and tutorials**](../../../tutorials/see-all-tutorials.md): Expand your skills with hands-on demos and tutorials crafted to guide you through various real-world scenarios.
-- [**Try out AI coding assistant**](https://chatgpt.com/g/g-67518aee3c708191b9f08d077a7d6fa1-zama-solidity-developer): If you have a chatGPT plus account, try out our custom ChatGPT model tailored for Solidity and HTTPZ developers.
+- [**Try out AI coding assistant**](https://chatgpt.com/g/g-67518aee3c708191b9f08d077a7d6fa1-zama-solidity-developer): If you have a chatGPT plus account, try out our custom ChatGPT model tailored for Solidity and fhevm developers.
 
 ### 2. Tools
 
@@ -120,8 +120,8 @@ Use out-of-box templates and frameworks designed for developers to build confide
 
 **Smart contract development**
 
-- [**Hardhat Template**](https://github.com/zama-ai/fhevm-hardhat-template): A developer-friendly starting point for building and testing smart contracts on HTTPZ.
-- [**HTTPZ Contracts Library**](https://github.com/zama-ai/fhevm-contracts): Access standardized contracts for encrypted operations.
+- [**Hardhat Template**](https://github.com/zama-ai/fhevm-hardhat-template): A developer-friendly starting point for building and testing smart contracts on fhevm.
+- [**fhevm Contracts Library**](https://github.com/zama-ai/fhevm-contracts): Access standardized contracts for encrypted operations.
 
 **Frontend development**
 
@@ -134,5 +134,5 @@ Use out-of-box templates and frameworks designed for developers to build confide
 Join the community to shape the future of blockchain together with us.
 
 - [**Discord**](https://discord.gg/zama-ai): Join the community to get the latest update, have live discussion with fellow developers and Zama team.
-- [**Community Forum**](https://community.zama.ai/): Get support on all technical questions related to HTTPZ
+- [**Community Forum**](https://community.zama.ai/): Get support on all technical questions related to fhevm
 - [**Zama Bounty Program**](https://github.com/zama-ai/bounty-program): Participate to tackle challenges and earn rewards in cash.

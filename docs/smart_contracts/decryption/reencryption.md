@@ -2,7 +2,7 @@
 
 This document explains how to perform re-encryption. Re-encryption is required when you want a user to access their private data without it being exposed to the blockchain.
 
-Re-encryption in HTTPZ enables the secure sharing or reuse of encrypted data under a new public key without exposing the plaintext. This feature is essential for scenarios where encrypted data must be transferred between contracts, dApps, or users while maintaining its confidentiality.
+Re-encryption in fhevm enables the secure sharing or reuse of encrypted data under a new public key without exposing the plaintext. This feature is essential for scenarios where encrypted data must be transferred between contracts, dApps, or users while maintaining its confidentiality.
 
 {% hint style="info" %}
 Before implementing re-encryption, ensure you are familiar with the foundational concepts of encryption, re-encryption and computation. Refer to [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md).
@@ -43,14 +43,14 @@ Here, `balanceOf` allows retrieval of the user’s encrypted balance stored on t
 
 ## Step 2: re-encrypt the ciphertext
 
-Re-encryption is performed client-side using the `@httpz/sdk` library. [Refer to the guide](../../frontend/webapp.md) to learn how to include `@httpz/sdk` in your project.
+Re-encryption is performed client-side using the `@fhevm/sdk` library. [Refer to the guide](../../frontend/webapp.md) to learn how to include `@fhevm/sdk` in your project.
 Below is an example of how to implement reencryption in a dApp:
 
 ```ts
 import { createInstances } from "../instance";
 import { getSigners, initSigners } from "../signers";
 import abi from "./abi.json";
-import { createInstance } from "@httpz/sdk/bundle";
+import { createInstance } from "@fhevm/sdk/bundle";
 import { Contract, BrowserProvider } from "ethers";
 
 const CONTRACT_ADDRESS = "";

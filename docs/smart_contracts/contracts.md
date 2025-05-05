@@ -1,10 +1,10 @@
 # fhevm-contracts
 
-This guide explains how to use the [HTTPZ Contracts standard library](https://github.com/zama-ai/fhevm-contracts/tree/main). This library provides secure, extensible, and pre-tested Solidity templates designed for developing smart contracts on HTTPZ using the TFHE library.
+This guide explains how to use the [fhevm Contracts standard library](https://github.com/zama-ai/fhevm-contracts/tree/main). This library provides secure, extensible, and pre-tested Solidity templates designed for developing smart contracts on fhevm using the TFHE library.
 
 ## Overview
 
-The **HTTPZ Contracts standard library** streamlines the development of confidential smart contracts by providing templates and utilities for tokens, governance, and error management. These contracts have been rigorously tested by Zama's engineers and are designed to accelerate development while enhancing security.
+The **fhevm Contracts standard library** streamlines the development of confidential smart contracts by providing templates and utilities for tokens, governance, and error management. These contracts have been rigorously tested by Zama's engineers and are designed to accelerate development while enhancing security.
 
 ## Installation
 

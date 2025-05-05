@@ -1,10 +1,10 @@
 # Decryption in depth
 
-This document provides a detailed guide on implementing decryption in your smart contracts using the `GatewayContract` in HTTPZ. It covers the setup, usage of the `Gateway.requestDecryption` function, and testing with Hardhat.
+This document provides a detailed guide on implementing decryption in your smart contracts using the `GatewayContract` in fhevm. It covers the setup, usage of the `Gateway.requestDecryption` function, and testing with Hardhat.
 
 ## `GatewayContract` set up
 
-The `GatewayContract` is pre-deployed on the HTTPZ testnet. It uses a default relayer account specified in the `PRIVATE_KEY_GATEWAY_RELAYER` or `ADDRESS_GATEWAY_RELAYER` environment variable in the `.env` file.
+The `GatewayContract` is pre-deployed on the fhevm testnet. It uses a default relayer account specified in the `PRIVATE_KEY_GATEWAY_RELAYER` or `ADDRESS_GATEWAY_RELAYER` environment variable in the `.env` file.
 
 Relayers are the only accounts authorized to fulfill decryption requests. The role of the `GatewayContract`, however, is to independently verify the KMS signature during execution. This ensures that the relayers cannot manipulate or send fraudulent decryption results, even if compromised. However, the relayers are still trusted to forward decryption requests on time.
 
@@ -59,7 +59,7 @@ Here `callbackName` is a custom name given by the developer to the callback func
 
 `maxTimestamp` is the maximum timestamp after which the callback will not be able to receive the results of decryption, i.e the fulfillment transaction will fail in this case. This can be used for time-sensitive applications, where we prefer to reject decryption results on too old, out-of-date, values.
 
-`passSignaturesToCaller` determines whether the callback needs to transmit signatures from the KMS or not. This is useful if the dApp developer wants to remove trust from the Gateway service and prefers to check the KMS signatures directly from within his dApp smart contract. A concrete example of how to verify the KMS signatures inside a dApp is available [here](https://github.com/zama-ai/httpz-solidity/tree/v0.6.2/examples/TestAsyncDecrypt.sol#L82-L94) in the `requestBoolTrustless` function.
+`passSignaturesToCaller` determines whether the callback needs to transmit signatures from the KMS or not. This is useful if the dApp developer wants to remove trust from the Gateway service and prefers to check the KMS signatures directly from within his dApp smart contract. A concrete example of how to verify the KMS signatures inside a dApp is available [here](https://github.com/zama-ai/fhevm-solidity/tree/v0.6.2/examples/TestAsyncDecrypt.sol#L82-L94) in the `requestBoolTrustless` function.
 
 > _**WARNING:**_ Notice that the callback should be protected by the `onlyGateway` modifier to ensure security, as only the `GatewayContract` contract should be able to call it.
 
@@ -148,7 +148,7 @@ event ResultCallback(uint256 indexed requestID, bool success, bytes result);
 
 The first argument is the `requestID` of the corresponding decryption request, `success` is a boolean assessing if the call to the callback succeeded, and `result` is the bytes array corresponding to the return data from the callback.
 
-In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfillment of those decryptions, you should import the two helper methods `initGateway` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on a HTTPZ node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](https://github.com/zama-ai/httpz-solidity/tree/v0.6.2/test/gatewayDecrypt/testAsyncDecrypt.ts)):
+In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfillment of those decryptions, you should import the two helper methods `initGateway` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on a fhevm node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](https://github.com/zama-ai/fhevm-solidity/tree/v0.6.2/test/gatewayDecrypt/testAsyncDecrypt.ts)):
 
 ```js
 import { initGateway, awaitAllDecryptionResults } from "../asyncDecrypt";
@@ -169,7 +169,7 @@ describe("TestAsyncDecrypt", function () {
   });
 
   it("test async decrypt uint32", async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).requestUint32(5, 15, { gasLimit: 500_000 }); // custom gasLimit to avoid gas estimation error in HTTPZ mode
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint32(5, 15, { gasLimit: 500_000 }); // custom gasLimit to avoid gas estimation error in fhevm mode
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint32();
@@ -178,4 +178,4 @@ describe("TestAsyncDecrypt", function () {
 });
 ```
 
-You should initialize the gateway by calling `initGateway` at the top of the `before` block - more specifically, before doing any transaction which could involve a decryption request. Notice that when testing on the HTTPZ, a decryption is fulfilled usually 2 blocks after the request, while in mocked mode the fulfillment will always happen as soon as you call the `awaitAllDecryptionResults` helper function. A good way to standardize hardhat tests is hence to always call the `awaitAllDecryptionResults` function which will ensure that all pending decryptions are fulfilled in both modes.
+You should initialize the gateway by calling `initGateway` at the top of the `before` block - more specifically, before doing any transaction which could involve a decryption request. Notice that when testing on the fhevm, a decryption is fulfilled usually 2 blocks after the request, while in mocked mode the fulfillment will always happen as soon as you call the `awaitAllDecryptionResults` helper function. A good way to standardize hardhat tests is hence to always call the `awaitAllDecryptionResults` function which will ensure that all pending decryptions are fulfilled in both modes.

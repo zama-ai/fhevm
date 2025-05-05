@@ -1,6 +1,6 @@
 # Build with Node
 
-This document provides instructions on how to build with `Node.js` using the `@httpz/sdk` library.
+This document provides instructions on how to build with `Node.js` using the `@fhevm/sdk` library.
 
 ## Install the library
 
@@ -8,16 +8,16 @@ First, you need to install the library:
 
 ```bash
 # Using npm
-npm install @httpz/sdk
+npm install @fhevm/sdk
 
 # Using Yarn
-yarn add @httpz/sdk
+yarn add @fhevm/sdk
 
 # Using pnpm
-pnpm add @httpz/sdk
+pnpm add @fhevm/sdk
 ```
 
-`@httpz/sdk` uses ESM format for web version and commonjs for node version. You need to set the [type to "commonjs" in your package.json](https://nodejs.org/api/packages.html#type) to load the correct version of @httpz/sdk. If your node project use `"type": "module"`, you can force the loading of the Node version by using `import { createInstance } from '@httpz/sdk/node';`
+`@fhevm/sdk` uses ESM format for web version and commonjs for node version. You need to set the [type to "commonjs" in your package.json](https://nodejs.org/api/packages.html#type) to load the correct version of @fhevm/sdk. If your node project use `"type": "module"`, you can force the loading of the Node version by using `import { createInstance } from '@fhevm/sdk/node';`
 
 ## Create an instance
 
@@ -31,7 +31,7 @@ An instance receives an object containing:
 - `coprocessorUrl` (optional): the URL of the coprocessor
 
 ```javascript
-const { createInstance } = require("@httpz/sdk");
+const { createInstance } = require("@fhevm/sdk");
 
 const createFhevmInstance = async () => {
   return createInstance({

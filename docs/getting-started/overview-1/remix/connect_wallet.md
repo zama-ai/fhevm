@@ -1,6 +1,6 @@
 # 2. Connect your wallet to Remix
 
-In this guide, you'll learn how to connect your wallet and the **Zama Plugin** in Remix IDE to interact with HTTPZ smart contracts.
+In this guide, you'll learn how to connect your wallet and the **Zama Plugin** in Remix IDE to interact with fhevm smart contracts.
 
 ## Prerequisites
 
@@ -49,7 +49,7 @@ If Sepolia isn’t pre-configured in your wallet, add it manually:
 
 ## Step 2. Connecting to Zama Plugin
 
-**Zama Plugin** provides the **Zama Coprocessor - Sepolia configuration** that ensures Remix and the wallet are properly set up to interact with HTTPZ smart contracts.
+**Zama Plugin** provides the **Zama Coprocessor - Sepolia configuration** that ensures Remix and the wallet are properly set up to interact with fhevm smart contracts.
 
 To complete the configuration:
 

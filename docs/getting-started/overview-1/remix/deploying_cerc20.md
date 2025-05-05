@@ -1,6 +1,6 @@
 # 3. Deploying ConfidentialERC20
 
-In this tutorial, you'll learn how to deploy a confidential token contract using **HTTPZ**. We'll create `MyConfidentialERC20.sol` to demonstrate the essential features.
+In this tutorial, you'll learn how to deploy a confidential token contract using **fhevm**. We'll create `MyConfidentialERC20.sol` to demonstrate the essential features.
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ First, let's create a file for our confidential ERC20 contract:
 
 ### Step 2.1 Basic contract structure
 
-The foundational structure includes importing Zama's libraries and connecting to Sepolia's HTTPZ configuration.
+The foundational structure includes importing Zama's libraries and connecting to Sepolia's fhevm configuration.
 
 Copy the following code in the `MyConfidentialERC20.sol` that you just created:
 
@@ -45,7 +45,7 @@ It should appear as follows:
 
 Remix automatically saves any changes as you type. Upon saving, it imports the following libraries:
 
-- **`TFHE.sol`**: The core Solidity library of HTTPZ. It enables encrypted data type like `euint64`, secures encrypted operations, such as addition and comparison and allows access control.
+- **`TFHE.sol`**: The core Solidity library of fhevm. It enables encrypted data type like `euint64`, secures encrypted operations, such as addition and comparison and allows access control.
 - **`SepoliaZamaFHEVMConfig`**: A configuration contract that automatically sets up the required configurations for real-time encrypted operations on the Sepolia testnet.
 
 ### Step 2.2 Enhancing the functionality
@@ -53,14 +53,14 @@ Remix automatically saves any changes as you type. Upon saving, it imports the f
 Next, we'll enhance our contract by importing the `fhevm-contracts` library.
 
 {% hint style="info" %}
-The **fhevm-contracts** is a Solidity library designed for developers to easily develop confidential smart contracts using HTTPZ. It provides:
+The **fhevm-contracts** is a Solidity library designed for developers to easily develop confidential smart contracts using fhevm. It provides:
 
 - **Ready-to-use confidential contracts**: Pre-built implementations of common token standards with FHE capabilities
 - **Base contracts**: Foundational building blocks for creating custom confidential smart contracts
 - **Extensions**: Additional features and utilities that can be added to base contracts
 - **Testing utilities**: Tools to help test FHE-enabled smart contracts
 
-See more details in [the fhEVM-contracts documentation](../../../smart_contracts/contracts.md).
+See more details in [the fhevm-contracts documentation](../../../smart_contracts/contracts.md).
 {% endhint %}
 
 The `fhevm-contracts` library includes the `ConfidentialERC20Mintable` contract, which is an extention of `ConfidentialERC20` with minting capabilities, providing:
@@ -121,4 +121,4 @@ Once successfully deployed, your contract will appear under **Deployed Contracts
 
 ---
 
-By following these steps, you’ve successfully created and deployed an confidential ERC-20 token using HTTPZ!🎉 Let's see how the transaction works in the next chapter.
+By following these steps, you’ve successfully created and deployed an confidential ERC-20 token using fhevm!🎉 Let's see how the transaction works in the next chapter.

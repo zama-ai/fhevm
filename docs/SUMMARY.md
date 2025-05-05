@@ -1,7 +1,7 @@
 # Table of contents
 
-- [Welcome to HTTPZ](README.md)
-- [White paper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper-v2.pdf)
+- [Welcome to fhevm](README.md)
+- [White paper](https://github.com/zama-ai/fhevm-solidity/blob/main/fhevm-whitepaper-v2.pdf)
 
 ## Getting Started
 
@@ -28,7 +28,7 @@
 
 - [Key features](smart_contracts/key_concepts.md)
 - [Configuration](smart_contracts/configure.md)
-- [HTTPZ contracts](smart_contracts/contracts.md)
+- [fhevm contracts](smart_contracts/contracts.md)
 - [Supported types](smart_contracts/types.md)
 - [Operations on encrypted types](smart_contracts/operations.md)
 - [Access Control List](smart_contracts/acl/README.md)
@@ -63,21 +63,21 @@
 
 - [Architectural overview](smart_contracts/architecture_overview.md)
 - [FHE on blockchain](smart_contracts/architecture_overview/fhe-on-blockchain.md)
-- [HTTPZ components](smart_contracts/architecture_overview/fhevm-components.md)
+- [fhevm components](smart_contracts/architecture_overview/fhevm-components.md)
 - [Encryption, decryption, re-encryption, and computation](smart_contracts/d_re_ecrypt_compute.md)
 
 ## References
 
 - [Table of all addresses](references/table_of_addresses.md)
-- [Smart contracts - HTTPZ API](references/functions.md)
-- [Frontend - HTTPZ SDK](references/fhevmjs.md)
+- [Smart contracts - fhevm API](references/functions.md)
+- [Frontend - fhevm SDK](references/fhevmjs.md)
 - [Repositories](references/repositories.md)
 
 ## Developer
 
 - [Contributing](developer/contribute.md)
 - [Development roadmap](developer/roadmap.md)
-- [Release note](https://github.com/zama-ai/fhevm/releases)
-- [Feature request](https://github.com/zama-ai/fhevm/issues/new?assignees=&labels=enhancement&projects=&template=feature-request.md&title=)
-- [Bug report](https://github.com/zama-ai/fhevm/issues/new?assignees=&labels=bug&projects=&template=bug_report_fhevm.md&title=)
+- [Release note](https://github.com/zama-ai/fhevm-solidity/releases)
+- [Feature request](https://github.com/zama-ai/fhevm-solidity/issues/new?assignees=&labels=enhancement&projects=&template=feature-request.md&title=)
+- [Bug report](https://github.com/zama-ai/fhevm-solidity/issues/new?assignees=&labels=bug&projects=&template=bug_report_fhevm.md&title=)
 - [Status](https://status.zama.ai/)

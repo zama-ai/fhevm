@@ -1,14 +1,14 @@
 # Access Control List
 
-This document describes the Access Control List (ACL) system in HTTPZ, a core feature that governs access to encrypted data. The ACL ensures that only authorized accounts or contracts can interact with specific ciphertexts, preserving confidentiality while enabling composable smart contracts. This overview provides a high-level understanding of what the ACL is, why it's essential, and how it works.
+This document describes the Access Control List (ACL) system in fhevm, a core feature that governs access to encrypted data. The ACL ensures that only authorized accounts or contracts can interact with specific ciphertexts, preserving confidentiality while enabling composable smart contracts. This overview provides a high-level understanding of what the ACL is, why it's essential, and how it works.
 
 ## What is the ACL?
 
-The ACL is a permission management system designed to control who can access, compute on, or decrypt encrypted values in HTTPZ. By defining and enforcing these permissions, the ACL ensures that encrypted data remains secure while still being usable within authorized contexts.
+The ACL is a permission management system designed to control who can access, compute on, or decrypt encrypted values in fhevm. By defining and enforcing these permissions, the ACL ensures that encrypted data remains secure while still being usable within authorized contexts.
 
 ## Why is the ACL important?
 
-Encrypted data in HTTPZ is entirely confidential, meaning that without proper access control, even the contract holding the ciphertext cannot interact with it. The ACL enables:
+Encrypted data in fhevm is entirely confidential, meaning that without proper access control, even the contract holding the ciphertext cannot interact with it. The ACL enables:
 
 - **Granular permissions**: Define specific access rules for individual accounts or contracts.
 - **Secure computations**: Ensure that only authorized entities can manipulate or decrypt encrypted data.

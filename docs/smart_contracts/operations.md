@@ -128,7 +128,7 @@ Despite both leading to the same encrypted result!
 
 ### Beware of overflows of TFHE arithmetic operators
 
-TFHE arithmetic operators can overflow. Do not forget to take into account such a possibility when implementing HTTPZ smart contracts.
+TFHE arithmetic operators can overflow. Do not forget to take into account such a possibility when implementing fhevm smart contracts.
 
 ❌ For example, if you wanted to create a mint function for an encrypted ERC20 token with an encrypted `totalSupply` state variable, this code is vulnerable to overflows:
 
@@ -161,8 +161,8 @@ Notice that we did not check separately the overflow on `balances[msg.sender]` b
 
 ## Additional Resources
 
-- For detailed API specifications, visit the [HTTPZ API Documentation](../references/functions.md).
-- Check our [Roadmap](../developer/roadmap.md) for upcoming features or submit a feature request on [GitHub](https://github.com/zama-ai/fhevm/issues/new?template=feature-request.md).
+- For detailed API specifications, visit the [fhevm API Documentation](../references/functions.md).
+- Check our [Roadmap](../developer/roadmap.md) for upcoming features or submit a feature request on [GitHub](https://github.com/zama-ai/fhevm-solidity/issues/new?template=feature-request.md).
 - Join the discussion on the [Community Forum](https://community.zama.ai/c/fhevm/15).
 
 {% hint style="success" %}

@@ -1,6 +1,6 @@
 # Supported types
 
-This document introduces the encrypted integer types provided by the `TFHE` library in HTTPZ and explains their usage, including casting, state variable declarations, and type-specific considerations.
+This document introduces the encrypted integer types provided by the `TFHE` library in fhevm and explains their usage, including casting, state variable declarations, and type-specific considerations.
 
 ## Introduction
 
@@ -16,7 +16,7 @@ The `TFHE` library offers a robust type system with encrypted integer types, ena
 Encrypted integers with overflow checking will soon be available in the `TFHE` library. These will allow reversible arithmetic operations but may reveal some information about the input values.
 {% endhint %}
 
-Encrypted integers in HTTPZ are represented as FHE ciphertexts, abstracted using ciphertext handles. These types, prefixed with `e` (for example, `euint64`) act as secure wrappers over the ciphertext handles.
+Encrypted integers in fhevm are represented as FHE ciphertexts, abstracted using ciphertext handles. These types, prefixed with `e` (for example, `euint64`) act as secure wrappers over the ciphertext handles.
 
 ## List of encrypted types
 
@@ -43,5 +43,5 @@ The `TFHE` library currently supports the following encrypted types:
 | `eint256`   | No, coming soon       |
 
 {% hint style="info" %}
-Higher-precision integer types are available in the `TFHE-rs` library and can be added to `HTTPZ` as needed.
+Higher-precision integer types are available in the `TFHE-rs` library and can be added to `fhevm` as needed.
 {% endhint %}

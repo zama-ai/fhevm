@@ -1,6 +1,6 @@
 # 1. Setting up Remix
 
-This guide helps you set up the **Zama Plugin** in the official Remix IDE, enabling seamless development and management of smart contracts using the **HTTPZ**.
+This guide helps you set up the **Zama Plugin** in the official Remix IDE, enabling seamless development and management of smart contracts using the **fhevm**.
 
 ## Prerequisites
 
@@ -34,4 +34,4 @@ Use the following configurations:
 
 ---
 
-Now that you've configured the plugin, you are able to deploy and interact with **HTTPZ** encrypted contracts directly directly via Remix interface. Next, let's dive into the contract deployment.
+Now that you've configured the plugin, you are able to deploy and interact with **fhevm** encrypted contracts directly directly via Remix interface. Next, let's dive into the contract deployment.

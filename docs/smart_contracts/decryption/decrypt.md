@@ -1,6 +1,6 @@
 # Decryption
 
-This section explains how to handle decryption in HTTPZ. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
+This section explains how to handle decryption in fhevm. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
 
 {% hint style="info" %}
 Understanding how encryption, decryption and reencryption works is a prerequisit before implementation, see [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md).
@@ -15,7 +15,7 @@ To learn how decryption works see [Encryption, Decryption, Re-encryption, and Co
 
 ## Overview
 
-Decryption in HTTPZ is an asynchronous process that involves the Gateway and Key Management System (KMS). Contracts requiring decryption must extend the GatewayCaller contract, which imports the necessary libraries and provides access to the Gateway.
+Decryption in fhevm is an asynchronous process that involves the Gateway and Key Management System (KMS). Contracts requiring decryption must extend the GatewayCaller contract, which imports the necessary libraries and provides access to the Gateway.
 
 Here’s an example of how to request decryption in a contract:
 
@@ -52,7 +52,7 @@ contract TestAsyncDecrypt is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, G
 
 #### Key additions to the code
 
-1.  **Configuration imports**: The configuration contracts are imported to set up the HTTPZ environment and Gateway.
+1.  **Configuration imports**: The configuration contracts are imported to set up the fhevm environment and Gateway.
 
     ```solidity
     import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";

@@ -1,6 +1,6 @@
 # Error handling
 
-This document explains how to handle errors effectively in HTTPZ smart contracts. Since transactions involving encrypted data do not automatically revert when conditions are not met, developers need alternative mechanisms to communicate errors to users.
+This document explains how to handle errors effectively in fhevm smart contracts. Since transactions involving encrypted data do not automatically revert when conditions are not met, developers need alternative mechanisms to communicate errors to users.
 
 ## **Challenges in error handling**
 

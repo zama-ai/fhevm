@@ -1,22 +1,22 @@
-# Gas estimation in HTTPZ
+# Gas estimation in fhevm
 
-This guide explains how to estimate gas costs for Fully Homomorphic Encryption (FHE) operations in your smart contracts on HTTPZ. Understanding gas consumption is critical for designing efficient confidential smart contracts.
+This guide explains how to estimate gas costs for Fully Homomorphic Encryption (FHE) operations in your smart contracts on fhevm. Understanding gas consumption is critical for designing efficient confidential smart contracts.
 
 ## Overview
 
-FHE operations in HTTPZ are computationally intensive, resulting in higher gas costs compared to standard Ethereum operations. This is due to the complex mathematical operations required to ensure privacy and security.
+FHE operations in fhevm are computationally intensive, resulting in higher gas costs compared to standard Ethereum operations. This is due to the complex mathematical operations required to ensure privacy and security.
 
-### Types of gas in HTTPZ
+### Types of gas in fhevm
 
 1. **Native Gas**:
    - Standard gas used for operations on the underlying EVM chain.
-   - On HTTPZ, native gas consumption is approximately 20% higher than in mocked environments.
+   - On fhevm, native gas consumption is approximately 20% higher than in mocked environments.
 2. **FHEGas**:
    - Represents gas consumed by FHE-specific computations.
    - A new synthetic kind of gas consumed by FHE-specific computations.
    - FHEGas is tracked in each block by the FHEGasLimit contract to prevent DDOS attacks.
    - If too many FHE operations are requested in the same block, the transaction will revert once the FHEGas block limit is reached.
-   - FHEGas is consistent across both mocked and real HTTPZ environments.
+   - FHEGas is consistent across both mocked and real fhevm environments.
 
 > **Note**: Gas values provided are approximate and may vary based on network conditions, implementation details, and contract complexity.
 
@@ -29,13 +29,13 @@ To monitor gas usage during development, use the following tools:
 - **`getFHEGasFromTxReceipt`**:
 
   - Extracts FHEGas consumption from a transaction receipt.
-  - Works only in mocked HTTPZ environments, but gives the exact same value as in non-mocked environments.
+  - Works only in mocked fhevm environments, but gives the exact same value as in non-mocked environments.
   - Import as: `import { getFHEGasFromTxReceipt } from "../coprocessorUtils";`
 
 - **`.gasUsed` from ethers.js transaction receipt**:
   - Standard ethers.js transaction receipt property that returns the native gas used.
   - In mocked mode, this value underestimates real native gas usage by ~20%.
-  - Works in both mocked and real HTTPZ environments, as it's a standard Ethereum transaction property.
+  - Works in both mocked and real fhevm environments, as it's a standard Ethereum transaction property.
 
 ### Example: gas measurement
 
