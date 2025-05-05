@@ -24,8 +24,8 @@ interface ICiphertextCommits {
 
     function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest) external;
     function checkCiphertextMaterial(bytes32 ctHandle) external view;
-    function getCiphertextMaterials(bytes32[] memory ctHandles) external view returns (CiphertextMaterial[] memory ctMaterials);
-    function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view returns (SnsCiphertextMaterial[] memory snsCtMaterials);
+    function getCiphertextMaterials(bytes32[] memory ctHandles) external view returns (CiphertextMaterial[] memory);
+    function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view returns (SnsCiphertextMaterial[] memory);
     function getVersion() external pure returns (string memory);
 }
 ```
@@ -86,7 +86,7 @@ interface ICiphertextCommits {
     ],
     "outputs": [
       {
-        "name": "ctMaterials",
+        "name": "",
         "type": "tuple[]",
         "internalType": "struct CiphertextMaterial[]",
         "components": [
@@ -127,7 +127,7 @@ interface ICiphertextCommits {
     ],
     "outputs": [
       {
-        "name": "snsCtMaterials",
+        "name": "",
         "type": "tuple[]",
         "internalType": "struct SnsCiphertextMaterial[]",
         "components": [
@@ -1510,7 +1510,7 @@ function checkCiphertextMaterial(bytes32 ctHandle) external view;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCiphertextMaterials(bytes32[])` and selector `0x55c4d997`.
 ```solidity
-function getCiphertextMaterials(bytes32[] memory ctHandles) external view returns (CiphertextMaterial[] memory ctMaterials);
+function getCiphertextMaterials(bytes32[] memory ctHandles) external view returns (CiphertextMaterial[] memory);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1526,7 +1526,7 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
     #[derive(Clone)]
     pub struct getCiphertextMaterialsReturn {
         #[allow(missing_docs)]
-        pub ctMaterials: alloy::sol_types::private::Vec<
+        pub _0: alloy::sol_types::private::Vec<
             <CiphertextMaterial as alloy::sol_types::SolType>::RustType,
         >,
     }
@@ -1606,7 +1606,7 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
             impl ::core::convert::From<getCiphertextMaterialsReturn>
             for UnderlyingRustTuple<'_> {
                 fn from(value: getCiphertextMaterialsReturn) -> Self {
-                    (value.ctMaterials,)
+                    (value._0,)
                 }
             }
             #[automatically_derived]
@@ -1614,7 +1614,7 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for getCiphertextMaterialsReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { ctMaterials: tuple.0 }
+                    Self { _0: tuple.0 }
                 }
             }
         }
@@ -1666,7 +1666,7 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getSnsCiphertextMaterials(bytes32[])` and selector `0xa14f8971`.
 ```solidity
-function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view returns (SnsCiphertextMaterial[] memory snsCtMaterials);
+function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view returns (SnsCiphertextMaterial[] memory);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1682,7 +1682,7 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
     #[derive(Clone)]
     pub struct getSnsCiphertextMaterialsReturn {
         #[allow(missing_docs)]
-        pub snsCtMaterials: alloy::sol_types::private::Vec<
+        pub _0: alloy::sol_types::private::Vec<
             <SnsCiphertextMaterial as alloy::sol_types::SolType>::RustType,
         >,
     }
@@ -1762,7 +1762,7 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
             impl ::core::convert::From<getSnsCiphertextMaterialsReturn>
             for UnderlyingRustTuple<'_> {
                 fn from(value: getSnsCiphertextMaterialsReturn) -> Self {
-                    (value.snsCtMaterials,)
+                    (value._0,)
                 }
             }
             #[automatically_derived]
@@ -1770,7 +1770,7 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for getSnsCiphertextMaterialsReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { snsCtMaterials: tuple.0 }
+                    Self { _0: tuple.0 }
                 }
             }
         }

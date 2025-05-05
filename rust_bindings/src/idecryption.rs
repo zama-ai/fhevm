@@ -30,7 +30,7 @@ interface IDecryption {
     error EmptyCtHandles();
     error InvalidNullDurationDays();
     error InvalidUserSignature(bytes signature);
-    error KmsSignerAlreadyResponded(uint256 publicDecryptionId, address signer);
+    error KmsSignerAlreadyResponded(uint256 decryptionRequestId, address signer);
     error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
     error PublicDecryptionNotDone(uint256 publicDecryptionId);
@@ -634,7 +634,7 @@ interface IDecryption {
     "name": "KmsSignerAlreadyResponded",
     "inputs": [
       {
-        "name": "publicDecryptionId",
+        "name": "decryptionRequestId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -2362,13 +2362,13 @@ error InvalidUserSignature(bytes signature);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsSignerAlreadyResponded(uint256,address)` and selector `0xa1714c77`.
 ```solidity
-error KmsSignerAlreadyResponded(uint256 publicDecryptionId, address signer);
+error KmsSignerAlreadyResponded(uint256 decryptionRequestId, address signer);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct KmsSignerAlreadyResponded {
         #[allow(missing_docs)]
-        pub publicDecryptionId: alloy::sol_types::private::primitives::aliases::U256,
+        pub decryptionRequestId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub signer: alloy::sol_types::private::Address,
     }
@@ -2406,7 +2406,7 @@ error KmsSignerAlreadyResponded(uint256 publicDecryptionId, address signer);
         impl ::core::convert::From<KmsSignerAlreadyResponded>
         for UnderlyingRustTuple<'_> {
             fn from(value: KmsSignerAlreadyResponded) -> Self {
-                (value.publicDecryptionId, value.signer)
+                (value.decryptionRequestId, value.signer)
             }
         }
         #[automatically_derived]
@@ -2415,7 +2415,7 @@ error KmsSignerAlreadyResponded(uint256 publicDecryptionId, address signer);
         for KmsSignerAlreadyResponded {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    publicDecryptionId: tuple.0,
+                    decryptionRequestId: tuple.0,
                     signer: tuple.1,
                 }
             }
@@ -2439,7 +2439,7 @@ error KmsSignerAlreadyResponded(uint256 publicDecryptionId, address signer);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.publicDecryptionId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.decryptionRequestId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.signer,
                     ),
