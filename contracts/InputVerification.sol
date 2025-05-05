@@ -28,7 +28,7 @@ contract InputVerification is
      * @dev EIP712_ZKPOK_TYPE is, but we keep it the same for clarity.
      */
     struct CiphertextVerification {
-        /// @notice The Coprocessor's computed ciphertext handles.
+        /// @notice The coprocessor's computed ciphertext handles.
         bytes32[] ctHandles;
         /// @notice The address of the user that has provided the input in the ZK Proof verification request.
         address userAddress;
@@ -69,19 +69,21 @@ contract InputVerification is
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.InputVerification
     struct InputVerificationStorage {
-        /// @notice The counter used for the ZK Proof IDs returned in verification request events.
+        /// @notice The counter used for the ZKPoK IDs returned in verification request events.
         uint256 zkProofIdCounter;
-        /// @notice The ZK Proof request IDs that have been verified.
+        /// @notice The ZKPoK request IDs that have been verified.
         mapping(uint256 zkProofId => bool isVerified) verifiedZKProofs;
-        /// @notice The ZK Proof request IDs that have been rejected.
+        /// @notice The ZKPoK request IDs that have been rejected.
         mapping(uint256 zkProofId => bool isRejected) rejectedZKProofs;
-        /// @notice The validated signatures associated to a verified proof for a given ZK Proof ID.
+        /// @notice The validated signatures associated to a verified ZKPoK with the given ID.
         mapping(uint256 zkProofId => mapping(bytes32 digest => bytes[] signatures)) zkProofSignatures;
-        /// @notice The number of coprocessors that have responded with a proof rejection for a given ZK Proof ID.
+        /// @notice The number of coprocessors that have rejected a ZKPoK with the given ID.
         mapping(uint256 zkProofId => uint256 responseCounter) rejectedProofResponseCounter;
-        /// @notice Whether a coprocessor signer has already responded to a ZK Proof verification request.
-        mapping(uint256 zkProofId => mapping(address coprocessorSigner => bool alreadyResponded)) alreadyResponded;
-        /// @notice The ZK Proof request inputs to be used for signature validation in response calls.
+        /// @notice Whether a coprocessor has signed a ZKPoK verification.
+        mapping(uint256 zkProofId => mapping(address coprocessorSigner => bool hasVerified)) signerVerifiedZKPoK;
+        /// @notice Whether a coprocessor has signed a ZKPoK rejection.
+        mapping(uint256 zkProofId => mapping(address coprocessorSigner => bool hasRejected)) signerRejectedZKPoK;
+        /// @notice The ZKPoK request inputs to be used for signature validation in response calls.
         mapping(uint256 zkProofId => ZKProofInput zkProofInput) _zkProofInputs;
     }
 
@@ -149,14 +151,17 @@ contract InputVerification is
         /// @dev Compute the digest of the CiphertextVerification structure.
         bytes32 digest = _hashCiphertextVerification(ciphertextVerification);
 
-        /**
-         * @dev Recover the signer address from the signature and validate that it is a coprocessor
-         * that has not already responded (with either a proof verification or rejection).
-         */
-        _validateEIP712Signature(zkProofId, digest, signature);
+        /// @dev Recover the signer address from the signature,
+        address signerAddress = ECDSA.recover(digest, signature);
+
+        GATEWAY_CONFIG.checkIsCoprocessorSigner(signerAddress);
+
+        /// @dev Check that the coprocessor has not already responded to the ZKPoK verification request.
+        _checkCoprocessorAlreadyResponded(zkProofId, msg.sender, signerAddress);
 
         bytes[] storage currentSignatures = $.zkProofSignatures[zkProofId][digest];
         currentSignatures.push(signature);
+        $.signerVerifiedZKPoK[zkProofId][signerAddress] = true;
 
         /**
          * @dev Send the event if and only if the consensus is reached in the current response call
@@ -177,18 +182,24 @@ contract InputVerification is
     }
 
     /// @dev See {IInputVerification-rejectProofResponse}.
-    function rejectProofResponse(uint256 zkProofId) external virtual {
+    function rejectProofResponse(uint256 zkProofId) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         /**
-         * @dev Validate that the caller is a coprocessor that has not already responded.
-         *
-         * More info on why we do not need to validate the signature in this case is in the
-         * functions's description from the interface.
+         * @dev Retrieve the coprocessor signer address from the GatewayConfig contract using the
+         * coprocessor transaction sender address.
+         * Extracting the signer address is important in order to prevent potential issues with re-org, as this could
+         * lead to situations where a coprocessor can both verify and reject a proof, which is forbidden. This check
+         * is directly done within `_checkCoprocessorAlreadyResponded` below.
          */
-        _checkCoprocessorTxSenderAddress(msg.sender, zkProofId);
+        Coprocessor memory coprocessor = GATEWAY_CONFIG.getCoprocessor(msg.sender);
+        address coprocessorSignerAddress = coprocessor.signerAddress;
+
+        /// @dev Check that the coprocessor has not already responded to the ZKPoK verification request.
+        _checkCoprocessorAlreadyResponded(zkProofId, msg.sender, coprocessorSignerAddress);
 
         $.rejectedProofResponseCounter[zkProofId]++;
+        $.signerRejectedZKPoK[zkProofId][coprocessorSignerAddress] = true;
 
         /**
          * @dev Send the event if and only if the consensus is reached in the current response call
@@ -247,67 +258,25 @@ contract InputVerification is
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
     /**
-     * @notice Check that the given address is a registered coprocessor signer that has not already signed.
-     * @param coprocessorSignerAddress The address of the potential coprocessor signer
-     * @param zkProofId The ID of the ZK Proof
+     * @notice Checks if the coprocessor has already verified or rejected a ZKPoK verification request.
+     * @param zkProofId The ID of the ZK Proof.
+     * @param txSenderAddress The transaction sender address of the coprocessor.
+     * @param signerAddress The signer address of the coprocessor.
      */
-    function _checkCoprocessorSignerAddress(address coprocessorSignerAddress, uint256 zkProofId) internal virtual {
+    function _checkCoprocessorAlreadyResponded(
+        uint256 zkProofId,
+        address txSenderAddress,
+        address signerAddress
+    ) internal virtual {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
-        GATEWAY_CONFIG.checkIsCoprocessorSigner(coprocessorSignerAddress);
-
-        if ($.alreadyResponded[zkProofId][coprocessorSignerAddress]) {
-            revert CoprocessorSignerAlreadySigned(zkProofId, coprocessorSignerAddress);
+        if ($.signerVerifiedZKPoK[zkProofId][signerAddress]) {
+            revert CoprocessorAlreadyVerified(zkProofId, txSenderAddress, signerAddress);
         }
 
-        $.alreadyResponded[zkProofId][coprocessorSignerAddress] = true;
-    }
-
-    /**
-     * @notice Check that the given address is a registered coprocessor transaction sender that has
-     * not already responded.
-     * @param coprocessorTxSenderAddress The address of the potential coprocessor transaction sender
-     * @param zkProofId The ID of the ZK Proof
-     */
-    function _checkCoprocessorTxSenderAddress(address coprocessorTxSenderAddress, uint256 zkProofId) internal virtual {
-        InputVerificationStorage storage $ = _getInputVerificationStorage();
-
-        GATEWAY_CONFIG.checkIsCoprocessorTxSender(coprocessorTxSenderAddress);
-
-        /**
-         * @dev Retrieve the coprocessor signer address from the GatewayConfig contract using the
-         * coprocessor transaction sender address (second element of the tuple returned).
-         */
-        Coprocessor memory coprocessor = GATEWAY_CONFIG.getCoprocessor(coprocessorTxSenderAddress);
-        address coprocessorSignerAddress = coprocessor.signerAddress;
-
-        /**
-         * @dev Check that the coprocessor signer has not already responded to the ZK Proof verification
-         * request (either by verifying or rejecting the proof).
-         *
-         * Here, it is important that we consider the signer address, not the transaction sender,
-         * address as the `alreadyResponded` mapping is shared between responses for both rejecting
-         * and verifying proofs. This is to avoid a coprocessor to be able to both reject and verify
-         * a proof for the same ZK Proof ID.
-         */
-        if ($.alreadyResponded[zkProofId][coprocessorSignerAddress]) {
-            revert CoprocessorSignerAlreadyResponded(zkProofId, coprocessorSignerAddress);
+        if ($.signerRejectedZKPoK[zkProofId][signerAddress]) {
+            revert CoprocessorAlreadyRejected(zkProofId, txSenderAddress, signerAddress);
         }
-
-        /// @dev As explained above, we need to consider the signer address, not the transaction sender one.
-        $.alreadyResponded[zkProofId][coprocessorSignerAddress] = true;
-    }
-
-    /**
-     * @notice Validates the EIP712 signature for a given ZK Proof
-     * @param zkProofId The ID of the ZK Proof
-     * @param digest The hash of the CiphertextVerification structure
-     * @param signature The signature to be validated
-     */
-    function _validateEIP712Signature(uint256 zkProofId, bytes32 digest, bytes calldata signature) internal virtual {
-        address signerAddress = ECDSA.recover(digest, signature);
-
-        _checkCoprocessorSignerAddress(signerAddress, zkProofId);
     }
 
     /**
@@ -342,7 +311,7 @@ contract InputVerification is
     }
 
     /**
-     * @notice Checks if the consensus is reached among the Coprocessors.
+     * @notice Checks if the consensus is reached among the coprocessors.
      * @dev This function calls the GatewayConfig contract to retrieve the consensus threshold.
      * @param coprocessorCounter The number of coprocessors that agreed
      * @return Whether the consensus is reached
