@@ -30,7 +30,7 @@ interface IDecryption {
     error EmptyCtHandles();
     error InvalidNullDurationDays();
     error InvalidUserSignature(bytes signature);
-    error KmsSignerAlreadyResponded(uint256 decryptionRequestId, address signer);
+    error KmsSignerAlreadySigned(uint256 decryptionRequestId, address signer);
     error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
     error PublicDecryptionNotDone(uint256 publicDecryptionId);
@@ -631,7 +631,7 @@ interface IDecryption {
   },
   {
     "type": "error",
-    "name": "KmsSignerAlreadyResponded",
+    "name": "KmsSignerAlreadySigned",
     "inputs": [
       {
         "name": "decryptionRequestId",
@@ -2360,13 +2360,13 @@ error InvalidUserSignature(bytes signature);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `KmsSignerAlreadyResponded(uint256,address)` and selector `0xa1714c77`.
+    /**Custom error with signature `KmsSignerAlreadySigned(uint256,address)` and selector `0x4a576524`.
 ```solidity
-error KmsSignerAlreadyResponded(uint256 decryptionRequestId, address signer);
+error KmsSignerAlreadySigned(uint256 decryptionRequestId, address signer);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct KmsSignerAlreadyResponded {
+    pub struct KmsSignerAlreadySigned {
         #[allow(missing_docs)]
         pub decryptionRequestId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -2403,16 +2403,14 @@ error KmsSignerAlreadyResponded(uint256 decryptionRequestId, address signer);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<KmsSignerAlreadyResponded>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: KmsSignerAlreadyResponded) -> Self {
+        impl ::core::convert::From<KmsSignerAlreadySigned> for UnderlyingRustTuple<'_> {
+            fn from(value: KmsSignerAlreadySigned) -> Self {
                 (value.decryptionRequestId, value.signer)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for KmsSignerAlreadyResponded {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsSignerAlreadySigned {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     decryptionRequestId: tuple.0,
@@ -2421,13 +2419,13 @@ error KmsSignerAlreadyResponded(uint256 decryptionRequestId, address signer);
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for KmsSignerAlreadyResponded {
+        impl alloy_sol_types::SolError for KmsSignerAlreadySigned {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "KmsSignerAlreadyResponded(uint256,address)";
-            const SELECTOR: [u8; 4] = [161u8, 113u8, 76u8, 119u8];
+            const SIGNATURE: &'static str = "KmsSignerAlreadySigned(uint256,address)";
+            const SELECTOR: [u8; 4] = [74u8, 87u8, 101u8, 36u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -5671,7 +5669,7 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
         #[allow(missing_docs)]
         InvalidUserSignature(InvalidUserSignature),
         #[allow(missing_docs)]
-        KmsSignerAlreadyResponded(KmsSignerAlreadyResponded),
+        KmsSignerAlreadySigned(KmsSignerAlreadySigned),
         #[allow(missing_docs)]
         MaxDecryptionRequestBitSizeExceeded(MaxDecryptionRequestBitSizeExceeded),
         #[allow(missing_docs)]
@@ -5701,8 +5699,8 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
             [45u8, 231u8, 84u8, 56u8],
             [48u8, 52u8, 128u8, 64u8],
             [50u8, 149u8, 24u8, 99u8],
+            [74u8, 87u8, 101u8, 36u8],
             [112u8, 92u8, 59u8, 169u8],
-            [161u8, 113u8, 76u8, 119u8],
             [164u8, 195u8, 3u8, 145u8],
             [166u8, 166u8, 203u8, 33u8],
             [195u8, 68u8, 106u8, 199u8],
@@ -5746,8 +5744,8 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                 Self::InvalidUserSignature(_) => {
                     <InvalidUserSignature as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::KmsSignerAlreadyResponded(_) => {
-                    <KmsSignerAlreadyResponded as alloy_sol_types::SolError>::SELECTOR
+                Self::KmsSignerAlreadySigned(_) => {
+                    <KmsSignerAlreadySigned as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::MaxDecryptionRequestBitSizeExceeded(_) => {
                     <MaxDecryptionRequestBitSizeExceeded as alloy_sol_types::SolError>::SELECTOR
@@ -5857,6 +5855,19 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                     MaxDurationDaysExceeded
                 },
                 {
+                    fn KmsSignerAlreadySigned(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <KmsSignerAlreadySigned as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionErrors::KmsSignerAlreadySigned)
+                    }
+                    KmsSignerAlreadySigned
+                },
+                {
                     fn UserDecryptionNotDone(
                         data: &[u8],
                         validate: bool,
@@ -5868,19 +5879,6 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                             .map(IDecryptionErrors::UserDecryptionNotDone)
                     }
                     UserDecryptionNotDone
-                },
-                {
-                    fn KmsSignerAlreadyResponded(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
-                        <KmsSignerAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IDecryptionErrors::KmsSignerAlreadyResponded)
-                    }
-                    KmsSignerAlreadyResponded
                 },
                 {
                     fn ContractNotInContractAddresses(
@@ -6053,8 +6051,8 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                         inner,
                     )
                 }
-                Self::KmsSignerAlreadyResponded(inner) => {
-                    <KmsSignerAlreadyResponded as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::KmsSignerAlreadySigned(inner) => {
+                    <KmsSignerAlreadySigned as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -6146,8 +6144,8 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                         out,
                     )
                 }
-                Self::KmsSignerAlreadyResponded(inner) => {
-                    <KmsSignerAlreadyResponded as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::KmsSignerAlreadySigned(inner) => {
+                    <KmsSignerAlreadySigned as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

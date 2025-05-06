@@ -564,7 +564,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
         /// @dev Check that the signer has not already responded to the public decryption request.
         if ($._alreadyPublicDecryptResponded[publicDecryptionId][signer]) {
-            revert KmsSignerAlreadyResponded(publicDecryptionId, signer);
+            revert KmsSignerAlreadySigned(publicDecryptionId, signer);
         }
 
         $._alreadyPublicDecryptResponded[publicDecryptionId][signer] = true;
@@ -587,7 +587,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
         /// @dev Check that the signer has not already responded to the user decryption request.
         if ($._alreadyUserDecryptResponded[userDecryptionId][signer]) {
-            revert KmsSignerAlreadyResponded(userDecryptionId, signer);
+            revert KmsSignerAlreadySigned(userDecryptionId, signer);
         }
 
         $._alreadyUserDecryptResponded[userDecryptionId][signer] = true;

@@ -409,7 +409,7 @@ describe("Decryption", function () {
           .connect(kmsTxSenders[0])
           .publicDecryptionResponse(publicDecryptionId, decryptedResult, kmsSignatures[0]),
       )
-        .to.be.revertedWithCustomError(decryption, "KmsSignerAlreadyResponded")
+        .to.be.revertedWithCustomError(decryption, "KmsSignerAlreadySigned")
         .withArgs(publicDecryptionId, kmsSigners[0].address);
     });
 
@@ -1123,7 +1123,7 @@ describe("Decryption", function () {
           .connect(kmsTxSenders[0])
           .userDecryptionResponse(userDecryptionId, userDecryptedShare, kmsSignatures[0]),
       )
-        .to.be.revertedWithCustomError(decryption, "KmsSignerAlreadyResponded")
+        .to.be.revertedWithCustomError(decryption, "KmsSignerAlreadySigned")
         .withArgs(userDecryptionId, kmsSigners[0].address);
     });
 

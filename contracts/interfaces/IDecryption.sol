@@ -79,7 +79,7 @@ interface IDecryption {
      * @param decryptionRequestId The ID of the public or user decryption request.
      * @param signer The signer address of the KMS node that has already signed.
      */
-    error KmsSignerAlreadyResponded(uint256 decryptionRequestId, address signer);
+    error KmsSignerAlreadySigned(uint256 decryptionRequestId, address signer);
 
     /**
      * @notice Error indicating that the given signature for the user decryption request is invalid.
