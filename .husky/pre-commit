@@ -16,3 +16,7 @@ make check-selectors
 # Lints the crate's code.
 printf "> cd rust_bindings && cargo clippy -- -D warnings && cd ..\n\n"
 cd rust_bindings && cargo clippy -- -D warnings && cd ..
+
+# Check license compliance
+printf "> make check-licenses\n\n"
+make check-licenses
