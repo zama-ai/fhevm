@@ -27,14 +27,14 @@ use crate::{
 
 /// Handle decryption requests and responses
 #[derive(Clone)]
-pub struct DecryptionHandler<P: Provider + Clone> {
+pub struct DecryptionHandler<P> {
     decryption: DecryptionAdapter<P>,
     kms_client: Arc<KmsServiceImpl>,
     #[allow(dead_code)]
     config: Config,
 }
 
-impl<P: Provider + Clone + std::fmt::Debug + 'static> DecryptionHandler<P> {
+impl<P: Provider + Clone> DecryptionHandler<P> {
     /// Create a new decryption handler
     pub fn new(
         decryption: DecryptionAdapter<P>,

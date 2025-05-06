@@ -1,30 +1,19 @@
 use alloy::rpc::types::eth::Log as EthLog;
-use alloy::{
-    network::Ethereum,
-    primitives::Address,
-    providers::{Provider, ProviderBuilder},
-    transports::ws::WsConnect,
-};
+use alloy::{primitives::Address, providers::Provider};
 use anyhow::{Result, anyhow};
 use fhevm_gateway_rust_bindings::{decryption::Decryption, kmsmanagement::KmsManagement};
 use std::{
-    fmt,
+    fmt::Debug,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
-use tokio::{sync::mpsc, task::JoinHandle, time::sleep};
+use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
 
-/// Maximum number of reconnection attempts before backing off
-const MAX_QUICK_RETRIES: u32 = 3;
-/// Initial retry delay in seconds
-const INITIAL_RETRY_DELAY: u64 = 1;
-/// Maximum retry delay in seconds
-const MAX_RETRY_DELAY: u64 = 60;
 /// Default event processing timeout
 const EVENT_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -63,8 +52,8 @@ pub enum KmsCoreEvent {
 
 /// Adapter for handling Gateway events
 #[derive(Debug)]
-pub struct EventsAdapter {
-    rpc_url: String,
+pub struct EventsAdapter<P> {
+    provider: Arc<P>,
     decryption: Address,
     gateway_config: Address,
     event_tx: mpsc::Sender<KmsCoreEvent>,
@@ -72,16 +61,16 @@ pub struct EventsAdapter {
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
-impl EventsAdapter {
+impl<P: Provider + Clone + 'static> EventsAdapter<P> {
     /// Create a new events adapter
     pub fn new(
-        rpc_url: String,
+        provider: Arc<P>,
         decryption: Address,
         gateway_config: Address,
         event_tx: mpsc::Sender<KmsCoreEvent>,
     ) -> Self {
         Self {
-            rpc_url,
+            provider,
             decryption,
             gateway_config,
             event_tx,
@@ -94,74 +83,42 @@ impl EventsAdapter {
     pub async fn initialize(&self) -> Result<()> {
         info!("Initializing event subscriptions...");
 
-        let rpc_url = self.rpc_url.clone();
+        let provider = Arc::clone(&self.provider);
         let decryption = self.decryption;
         let gateway_config = self.gateway_config;
         let event_tx = self.event_tx.clone();
         let running = self.running.clone();
 
         let handle = tokio::spawn(async move {
-            let mut retry_count = 0;
-            let mut retry_delay = INITIAL_RETRY_DELAY;
-
             while running.load(Ordering::SeqCst) {
-                info!("Attempting to connect to {}", rpc_url);
-
-                match Self::attempt_connection(
-                    &rpc_url,
+                Self::subscribe_to_events(
+                    Arc::clone(&provider),
                     decryption,
                     gateway_config,
                     event_tx.clone(),
                     running.clone(),
                 )
                 .await
-                {
-                    Ok(_) => {
-                        info!("Connection successful");
-                        retry_count = 0;
-                        retry_delay = INITIAL_RETRY_DELAY;
-                    }
-                    Err(e) => {
-                        error!("Connection failed: {}", e);
-                        retry_count += 1;
-
-                        if retry_count >= MAX_QUICK_RETRIES {
-                            retry_delay = (retry_delay * 2).min(MAX_RETRY_DELAY);
-                        }
-
-                        warn!(
-                            "Retrying in {} seconds (attempt {})...",
-                            retry_delay, retry_count
-                        );
-                        sleep(Duration::from_secs(retry_delay)).await;
-                    }
-                }
             }
-
-            info!("Connection loop terminated");
+            info!("Subscription loop terminated");
         });
 
         self.store_handle(handle);
         Ok(())
     }
 
-    /// Attempt to establish a connection and subscribe to events
-    async fn attempt_connection(
-        rpc_url: &str,
+    /// Subscribe to events
+    async fn subscribe_to_events(
+        provider: Arc<P>,
         decryption: Address,
         gateway_config: Address,
         event_tx: mpsc::Sender<KmsCoreEvent>,
         running: Arc<AtomicBool>,
-    ) -> Result<()> {
-        let ws = WsConnect::new(rpc_url);
-        let provider = Arc::new(ProviderBuilder::new().on_ws(ws).await?);
-
-        info!("Connected to Gateway RPC endpoint");
-
+    ) {
         let mut tasks = vec![
             tokio::spawn(Self::subscribe_to_decryption_events(
                 decryption,
-                provider.clone(),
+                Arc::clone(&provider),
                 event_tx.clone(),
                 running.clone(),
             )),
@@ -186,7 +143,7 @@ impl EventsAdapter {
                         for task in &tasks {
                             task.abort();
                         }
-                        return Ok(());
+                        return;
                     }
                 }
                 result = futures::future::select_all(tasks.iter_mut()) => {
@@ -203,21 +160,19 @@ impl EventsAdapter {
                             for task in &tasks {
                                 task.abort();
                             }
-                            return Err(anyhow!("Task {} failed: {}", idx, e));
+                            return error!("Task {} failed: {}", idx, e);
                         }
                         Err(e) => {
                             // Abort other tasks
                             for task in &tasks {
                                 task.abort();
                             }
-                            return Err(anyhow!("Task {} panicked: {}", idx, e));
+                            return error!("Task {} panicked: {}", idx, e);
                         }
                     }
                 }
             }
         }
-
-        Ok(())
     }
 
     /// Stop event subscriptions and clean up resources
@@ -272,16 +227,15 @@ impl EventsAdapter {
     }
 
     /// Subscribe to decryption events
-    async fn subscribe_to_decryption_events<P: Provider<Ethereum>>(
+    async fn subscribe_to_decryption_events(
         decryption: Address,
         provider: Arc<P>,
         event_tx: mpsc::Sender<KmsCoreEvent>,
         running: Arc<AtomicBool>,
     ) -> Result<()> {
-        let contract = Decryption::new(decryption, provider);
-
         info!("Starting Decryption event subscriptions...");
 
+        let contract = Decryption::new(decryption, provider);
         let public_filter = contract.PublicDecryptionRequest_filter().watch().await?;
         info!("✓ Subscribed to PublicDecryptionRequest events");
 
@@ -309,16 +263,15 @@ impl EventsAdapter {
     }
 
     /// Subscribe to GatewayConfig events
-    async fn subscribe_to_gateway_config_events<P: Provider + Clone>(
+    async fn subscribe_to_gateway_config_events(
         address: Address,
         provider: Arc<P>,
         event_tx: mpsc::Sender<KmsCoreEvent>,
         running: Arc<AtomicBool>,
     ) -> Result<()> {
-        let contract = KmsManagement::new(address, provider);
-
         info!("Starting KmsManagement event subscriptions...");
 
+        let contract = KmsManagement::new(address, provider);
         let preprocess_keygen_request_filter =
             contract.PreprocessKeygenRequest_filter().watch().await?;
         info!("✓ Subscribed to PreprocessKeygenRequest events");
@@ -364,7 +317,7 @@ impl EventsAdapter {
     }
 
     /// Helper function to handle event stream results
-    async fn handle_event<T: fmt::Debug>(
+    async fn handle_event<T: Debug>(
         result: Option<Result<(T, EthLog), alloy::sol_types::Error>>,
         event_tx: mpsc::Sender<KmsCoreEvent>,
         event_constructor: fn(T) -> KmsCoreEvent,
@@ -420,7 +373,7 @@ impl EventsAdapter {
     }
 }
 
-impl Drop for EventsAdapter {
+impl<P> Drop for EventsAdapter<P> {
     fn drop(&mut self) {
         // Set running to false to signal all tasks to stop
         self.running.store(false, Ordering::SeqCst);
@@ -434,7 +387,7 @@ impl Drop for EventsAdapter {
     }
 }
 
-impl EventsAdapter {
+impl<P> EventsAdapter<P> {
     /// Graceful shutdown with timeout
     pub async fn shutdown(&mut self, timeout: Duration) -> Result<()> {
         // Signal shutdown
