@@ -162,7 +162,7 @@ impl FhevmHandler {
                 let _next_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
                     PublicDecryptEventData::Failed {
                         error: format!(
-                            "httpz response received for unknown request id: {:?}",
+                            "fhevm response received for unknown request id: {:?}",
                             &request_id
                         ),
                     },

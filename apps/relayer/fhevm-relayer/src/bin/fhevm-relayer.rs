@@ -244,7 +244,7 @@ async fn main() -> eyre::Result<()> {
     );
 
     // === Initialize fhevm adapter
-    let fhevm = EthereumJsonRPCWsClient::new(ChainName::Httpz, &settings.networks.fhevm.ws_url)
+    let fhevm = EthereumJsonRPCWsClient::new(ChainName::Fhevm, &settings.networks.fhevm.ws_url)
         .await
         .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
     let fhevm = Arc::new(fhevm);

@@ -323,7 +323,7 @@ impl GatewayHandler {
                                     "Processing InputResponse event"
                                 );
 
-                                // FIXME: https://github.com/zama-ai/httpz-relayer/issues/234
+                                // FIXME: https://github.com/zama-ai/fhevm-relayer/issues/234
                                 info!("Wait half a second to make sure we receive and process the request ");
                                 info!("event before the current response one");
                                 info!("This race conditions should not happen in a real scenario");

@@ -12,7 +12,7 @@ use tracing::{info, instrument};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChainName {
-    Httpz,
+    Fhevm,
     Gateway,
 }
 
