@@ -270,17 +270,17 @@ pub async fn call_s3_ciphertext_retrieval(
         digest_hex, s3_bucket_url
     );
 
-    // Process S3 bucket URL or use fallback configuration
-    let (region, endpoint, bucket) = get_s3_components(&s3_bucket_url, s3_config.as_ref())?;
-
     // Try direct HTTP retrieval first if we have an HTTP endpoint
-    if endpoint.starts_with("http") {
+    if s3_bucket_url.starts_with("http") {
         if let Some(data) =
-            try_direct_http_retrieval(&endpoint, &bucket, &digest_hex, &ciphertext_digest).await
+            try_direct_http_retrieval(&s3_bucket_url, &digest_hex, &ciphertext_digest).await
         {
             return Some(data);
         }
     }
+
+    // Process S3 bucket URL or use fallback configuration
+    let (region, endpoint, bucket) = get_s3_components(&s3_bucket_url, s3_config.as_ref())?;
 
     // Fall back to S3 SDK retrieval
     try_s3_sdk_retrieval(&region, &endpoint, &bucket, &digest_hex, &ciphertext_digest).await
@@ -326,20 +326,16 @@ fn get_s3_components(
 /// Try to retrieve ciphertext via direct HTTP
 async fn try_direct_http_retrieval(
     endpoint: &str,
-    bucket: &str,
     digest_hex: &str,
     ciphertext_digest: &[u8],
 ) -> Option<Vec<u8>> {
     info!(
-        "Attempting direct HTTP retrieval from endpoint: {}, bucket: {}, key: {}",
-        endpoint, bucket, digest_hex
+        "Attempting direct HTTP retrieval from endpoint: {}, key: {}",
+        endpoint, digest_hex
     );
 
-    // Construct direct URL
-    let direct_url = format!("{}/{}/{}", endpoint, bucket, digest_hex);
-    info!("Direct URL: {}", direct_url);
-
     // Try direct HTTP retrieval
+    let direct_url = format!("{endpoint}/{digest_hex}");
     let ciphertext = match direct_http_retrieval(&direct_url).await {
         Ok(data) => data,
         Err(e) => {
