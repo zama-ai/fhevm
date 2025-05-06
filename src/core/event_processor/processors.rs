@@ -11,14 +11,14 @@ use crate::{
 };
 
 /// Process events from the Gateway
-pub struct EventProcessor<P: Provider + Clone> {
+pub struct EventProcessor<P> {
     decryption_handler: DecryptionHandler<P>,
     config: Config,
     provider: Arc<P>,
     shutdown: Option<broadcast::Receiver<()>>,
 }
 
-impl<P: Provider + Clone + std::fmt::Debug + 'static> EventProcessor<P> {
+impl<P: Provider + Clone> EventProcessor<P> {
     /// Create a new event processor
     pub fn new(
         decryption_handler: DecryptionHandler<P>,

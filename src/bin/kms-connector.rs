@@ -24,13 +24,19 @@ const RETRY_DELAY: Duration = Duration::from_secs(5);
 
 /// Keep trying to connect to the RPC endpoint until successful or shutdown signal
 async fn connect_with_retry(
-    rpc_url: &str,
+    config: &Config,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<Option<Arc<impl Provider + Clone + std::fmt::Debug + 'static>>> {
     loop {
-        info!("Attempting to connect to Gateway RPC endpoint: {}", rpc_url);
-        let ws = WsConnect::new(rpc_url);
-        match ProviderBuilder::new().on_ws(ws).await {
+        info!(
+            "Attempting to connect to Gateway RPC endpoint: {}",
+            config.gateway_url
+        );
+        match ProviderBuilder::new()
+            .wallet(config.wallet.clone())
+            .on_ws(WsConnect::new(&config.gateway_url))
+            .await
+        {
             Ok(provider) => {
                 info!("Connected to Gateway RPC endpoint");
                 return Ok(Some(Arc::new(provider)));
@@ -136,14 +142,13 @@ async fn main() -> Result<()> {
             let signal_handle = setup_signal_handlers(shutdown_tx.clone()).await?;
 
             // Connect to Gateway with shutdown handling
-            let provider =
-                match connect_with_retry(&config.gateway_url, shutdown_tx.subscribe()).await? {
-                    Some(provider) => provider,
-                    None => {
-                        info!("Shutting down during connection attempt");
-                        return Ok(());
-                    }
-                };
+            let provider = match connect_with_retry(&config, shutdown_tx.subscribe()).await? {
+                Some(provider) => provider,
+                None => {
+                    info!("Shutting down during connection attempt");
+                    return Ok(());
+                }
+            };
 
             // Run the connector
             let connector_handle = tokio::spawn(run_connector(config, provider, shutdown_rx));

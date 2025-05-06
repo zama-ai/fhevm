@@ -1,4 +1,4 @@
-use crate::core::utils::wallet::KmsWallet;
+use crate::error::{Error, Result};
 use alloy::{
     primitives::{Address, Bytes, U256},
     providers::Provider,
@@ -7,23 +7,19 @@ use fhevm_gateway_rust_bindings::decryption::Decryption;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::error::{Error, Result};
-
 /// Adapter for decryption operations
 #[derive(Clone)]
-pub struct DecryptionAdapter<P: Provider + Clone> {
+pub struct DecryptionAdapter<P> {
     decryption_address: Address,
     provider: Arc<P>,
-    wallet: Arc<KmsWallet>,
 }
 
 impl<P: Provider + Clone> DecryptionAdapter<P> {
     /// Create a new decryption adapter
-    pub fn new(decryption_address: Address, provider: Arc<P>, wallet: KmsWallet) -> Self {
+    pub fn new(decryption_address: Address, provider: Arc<P>) -> Self {
         Self {
             decryption_address,
             provider,
-            wallet: Arc::new(wallet),
         }
     }
 
@@ -64,7 +60,6 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         // Create and send transaction
         let call = contract.publicDecryptionResponse(id, result, signature.into());
         let tx = call
-            .from(self.wallet.address())
             .send()
             .await
             .map_err(|e| Error::Contract(e.to_string()))?;
@@ -109,7 +104,6 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         // Create and send transaction
         let call = contract.userDecryptionResponse(id, result, signature.into());
         let tx = call
-            .from(self.wallet.address())
             .send()
             .await
             .map_err(|e| Error::Contract(e.to_string()))?;

@@ -1,4 +1,5 @@
 use alloy::hex::decode;
+use alloy::network::{EthereumWallet, IntoWallet};
 use alloy::primitives::{Address, B256, Bytes, ChainId, U256};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::{Signer, SignerSync};
@@ -199,6 +200,17 @@ impl KmsWallet {
         // Sign using the existing method
         self.sign_decryption_response(&id_bytes, result.as_ref())
             .await
+    }
+}
+
+impl IntoWallet for KmsWallet {
+    type NetworkWallet = EthereumWallet;
+
+    fn into_wallet(self) -> Self::NetworkWallet {
+        match self.signer {
+            WalletSigner::Local(wallet) => wallet.into(),
+            WalletSigner::AwsKms(wallet) => wallet.into(),
+        }
     }
 }
 

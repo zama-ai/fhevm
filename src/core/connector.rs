@@ -14,14 +14,14 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info};
 
 /// Core KMS connector that handles all interactions with the Gateway
-pub struct KmsCoreConnector<P: Provider + Clone> {
-    events: EventsAdapter,
+pub struct KmsCoreConnector<P> {
+    events: EventsAdapter<P>,
     event_processor: EventProcessor<P>,
     kms_client: Arc<KmsServiceImpl>,
     shutdown: Option<broadcast::Receiver<()>>,
 }
 
-impl<P: Provider + Clone + std::fmt::Debug + 'static> KmsCoreConnector<P> {
+impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
     /// Creates a new KMS Core connector
     pub fn new(
         provider: Arc<P>,
@@ -31,18 +31,13 @@ impl<P: Provider + Clone + std::fmt::Debug + 'static> KmsCoreConnector<P> {
     ) -> (Self, mpsc::Receiver<KmsCoreEvent>) {
         let (event_tx, event_rx) = mpsc::channel(config.channel_size);
 
-        let rpc_url = config.gateway_url.clone();
         let events = EventsAdapter::new(
-            rpc_url,
+            Arc::clone(&provider),
             config.decryption_address,
             config.gateway_config_address,
             event_tx,
         );
-        let decryption = DecryptionAdapter::new(
-            config.decryption_address,
-            provider.clone(),
-            config.wallet.clone(),
-        );
+        let decryption = DecryptionAdapter::new(config.decryption_address, provider.clone());
 
         let decryption_handler =
             DecryptionHandler::new(decryption.clone(), kms_client.clone(), config.clone());

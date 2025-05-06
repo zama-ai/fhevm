@@ -14,16 +14,14 @@ use crate::{
 pub struct GatewayConfigAdapter<P: Provider + Clone> {
     gateway_config_address: Address,
     provider: Arc<P>,
-    wallet: Arc<KmsWallet>,
 }
 
 impl<P: Provider + Clone> GatewayConfigAdapter<P> {
     /// Create a new GatewayConfig adapter
-    pub fn new(gateway_config_address: Address, provider: Arc<P>, wallet: KmsWallet) -> Self {
+    pub fn new(gateway_config_address: Address, provider: Arc<P>) -> Self {
         Self {
             gateway_config_address,
             provider,
-            wallet: Arc::new(wallet),
         }
     }
 
@@ -49,7 +47,6 @@ impl<P: Provider + Clone> GatewayConfigAdapter<P> {
 
     //     let call = contract.preprocessKskgenResponse(pre_ksk_id);
     //     let _ = call
-    //         .from(self.wallet.address())
     //         .send()
     //         .await
     //         .map_err(|e| Error::Contract(e.to_string()))?;
@@ -63,7 +60,6 @@ impl<P: Provider + Clone> GatewayConfigAdapter<P> {
 
     //     let call = contract.keygenResponse(keygen_id);
     //     let _ = call
-    //         .from(self.wallet.address())
     //         .send()
     //         .await
     //         .map_err(|e| Error::Contract(e.to_string()))?;
@@ -77,7 +73,6 @@ impl<P: Provider + Clone> GatewayConfigAdapter<P> {
 
     //     let call = contract.crsgenResponse(crs_id);
     //     let _ = call
-    //         .from(self.wallet.address())
     //         .send()
     //         .await
     //         .map_err(|e| Error::Contract(e.to_string()))?;
@@ -91,7 +86,6 @@ impl<P: Provider + Clone> GatewayConfigAdapter<P> {
 
     //     let call = contract.kskgenResponse(ksk_id);
     //     let _ = call
-    //         .from(self.wallet.address())
     //         .send()
     //         .await
     //         .map_err(|e| Error::Contract(e.to_string()))?;
@@ -105,7 +99,6 @@ impl<P: Provider + Clone> GatewayConfigAdapter<P> {
 
     //     let call = contract.activateKeyResponse(key_id);
     //     let _ = call
-    //         .from(self.wallet.address())
     //         .send()
     //         .await
     //         .map_err(|e| Error::Contract(e.to_string()))?;
