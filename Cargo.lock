@@ -3563,7 +3563,7 @@ dependencies = [
 
 [[package]]
 name = "kms-grpc"
-version = "0.11.0-rc9"
+version = "0.11.0-rc11"
 dependencies = [
  "alloy-primitives 1.0.0",
  "alloy-sol-types 1.0.0",
