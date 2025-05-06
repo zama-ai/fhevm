@@ -50,9 +50,7 @@ async fn main() -> eyre::Result<()> {
         .map_err(|e| eyre::eyre!("Failed to get gateway settings: {}", e))?;
 
     let mut signer_gateway: PrivateKeySigner =
-        std::env::var(&settings.transaction.private_key_gateway_env)
-            .unwrap_or(String::new())
-            .parse()?;
+        "e746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c".parse()?;
     signer_gateway.set_chain_id(Some(gateway_settings.chain_id));
 
     // Prepare tx service for gateway

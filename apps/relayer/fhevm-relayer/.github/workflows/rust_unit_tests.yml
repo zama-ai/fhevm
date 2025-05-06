@@ -15,6 +15,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GHCR_READ_TOKEN }}
+
     - name: Checkout code
       uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
 
@@ -35,21 +43,63 @@ jobs:
         curl -v http://localhost:8756/ || echo "Port 8756 not responding"
         curl -v http://localhost:8757/ || echo "Port 8757 not responding"
 
-    - name: Deploy Gateway Smart Contracts
-      run: |
-        make setup-mock
-        make deploy-gateway-smart-contracts
-
     - name: Setup config for relayer
       run: |
         make config-fhevm-relayer
 
     - name: Run tests
       run: cargo test
-    
-    - name: Stop Anvil nodes
+
+    - name: Build fhevm-relayer
+      run: make build-fhevm-relayer
+
+    - name: Start fhevm-relayer
+      run: |
+        APP_TRANSACTION__RETRY__MOCK_MODE=true cargo run --bin fhevm-relayer > fhevm-relayer.log 2>&1 &
+        FHEVM_PID=$!
+        echo "FHEVM_PID=${FHEVM_PID}" >> "${GITHUB_ENV}"
+        sleep 2
+  
+    - name: Start processors mock
+      run: |
+        cargo run --bin gateway-processors-mock > processors-mock.log 2>&1 &
+        PROCESSORS_PID=$!
+        echo "PROCESSORS_PID=${PROCESSORS_PID}" >> "${GITHUB_ENV}"
+        sleep 2
+        echo "Processors mock started with PID: ${PROCESSORS_PID}"
+  
+    - name: Run api test
+      run: make run-test-api
+  
+    - name: Stop services and nodes
       if: always()
-      run: make stop-anvil-nodes
+      run: |
+        # Stop  Rust binaries using stored PIDs
+        if [ -n "${FHEVM_PID}" ]; then
+          echo "Stopping fhevm-relayer (PID: ${FHEVM_PID})"
+          kill "${FHEVM_PID}" || true
+        else
+          echo "No PID found for fhevm-relayer, using pkill -f"
+          pkill -f "fhevm-relayer" || true
+        fi
+        
+        if [ -n "${PROCESSORS_PID}" ]; then
+          echo "Stopping gateway-processors-mock (PID: ${PROCESSORS_PID})"
+          kill "${PROCESSORS_PID}" || true
+        else
+          echo "No PID found for gateway-processors-mock, using pkill -f"
+          pkill -f "gateway-processors-mock" || true
+        fi
+        
+        # Stop anvil nodes
+        make stop-anvil-nodes
+        
+        # Show logs for debugging if needed
+        echo "=== fhevm-relayer logs ==="
+        cat fhevm-relayer.log || true
+        
+        echo "=== processors-mock logs ==="
+        cat processors-mock.log || true
 
 permissions:
   contents: read

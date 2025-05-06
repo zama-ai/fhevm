@@ -1,5 +1,0 @@
-// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
-address constant DECRYPTION_ORACLE_ADDRESS = 0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d;

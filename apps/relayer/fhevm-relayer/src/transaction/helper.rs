@@ -25,7 +25,7 @@ impl ReceiptProcessor for DefaultProcessor {
 #[derive(Debug)]
 pub struct TransactionHelper {
     tx_service: Arc<TransactionService>,
-    tx_config: TxConfig,
+    pub tx_config: TxConfig,
 }
 
 impl TransactionHelper {

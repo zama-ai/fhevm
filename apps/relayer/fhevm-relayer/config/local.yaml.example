@@ -5,9 +5,6 @@
 
 environment: development
 
-
-
-
 networks:
   fhevm:
     ws_url: "ws://localhost:8756"
@@ -34,8 +31,8 @@ keyurl:
       url: "http://0.0.0.0:3001/crs2048.bin"
 
 transaction:
-  private_key_fhevm_env: "FHEVM_PRIVATE_KEY"
-  private_key_gateway_env: "GATEWAY_PRIVATE_KEY"
+  private_key_fhevm_env: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+  private_key_gateway_env: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
   gas_limit: 150000
   max_priority_fee: 2000000000
   timeout_secs: 30
@@ -45,6 +42,7 @@ transaction:
     max_attempts: 3
     base_delay_secs: 2
     max_delay_secs: 60
+    mock_mode: false
   ciphertext_check_retry:
     enabled: false
     max_attempts: 75
@@ -54,8 +52,8 @@ transaction:
 contracts:
   # Example local contract addresses - Update these after deployment
   decryption_oracle_address: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
-  decryption_address: "0x857Ca72A957920Fa0FB138602995839866Bd4005"
-  input_verification_address: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+  decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
+  input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
 
 log:
   # Set log level for development
@@ -69,12 +67,7 @@ log:
   # Include timestamps in logs
   show_timestamp: true
   # Optional: Set specific log levels for different modules
-
-
-# Development-specific settings
-development:
-  # Enable for detailed error messages
-  verbose_errors: true
+  
 
 
 # Instructions:

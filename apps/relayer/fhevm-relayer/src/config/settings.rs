@@ -108,6 +108,8 @@ pub struct RetrySettings {
     pub base_delay_secs: u64,
     #[serde(default = "default_max_delay")]
     pub max_delay_secs: u64,
+    #[serde(default = "default_mock_mode")]
+    pub mock_mode: bool,
 }
 
 fn default_max_attempts() -> u32 {
@@ -119,6 +121,9 @@ fn default_base_delay() -> u64 {
 fn default_max_delay() -> u64 {
     60
 }
+fn default_mock_mode() -> bool {
+    false
+}
 
 impl Default for RetrySettings {
     fn default() -> Self {
@@ -126,6 +131,7 @@ impl Default for RetrySettings {
             max_attempts: default_max_attempts(),
             base_delay_secs: default_base_delay(),
             max_delay_secs: default_max_delay(),
+            mock_mode: default_mock_mode(),
         }
     }
 }

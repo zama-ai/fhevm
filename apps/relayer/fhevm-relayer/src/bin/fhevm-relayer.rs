@@ -34,7 +34,7 @@
 //! ```
 
 use alloy::primitives::Address;
-use alloy::signers::{local::PrivateKeySigner, Signer};
+use alloy::signers::Signer;
 use std::{str::FromStr, sync::Arc};
 use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
@@ -44,7 +44,9 @@ use fhevm_relayer::{
         ethereum::listener::{
             ethereum_listener, fhevm_event_log_converter, gateway_event_log_converter,
         },
-        ethereum::{ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient},
+        ethereum::{
+            parse_private_key, ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
+        },
         InputProofGatewayHandler, PublicDecryptFhevmHandler, PublicDecryptGatewayHandler,
         UserDecryptGatewayHandler,
     },
@@ -81,10 +83,8 @@ async fn main() -> eyre::Result<()> {
         .validate_addresses()
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
 
-    let mut fhevm_signer: PrivateKeySigner =
-        std::env::var(&settings.transaction.private_key_fhevm_env)
-            .unwrap_or(String::new())
-            .parse()?;
+    let mut fhevm_signer = parse_private_key(&settings.transaction.private_key_fhevm_env)?;
+
     fhevm_signer.set_chain_id(Some(settings.networks.fhevm.chain_id));
 
     // Prepare tx service for fhevm
@@ -100,10 +100,8 @@ async fn main() -> eyre::Result<()> {
         .cloned()
         .map_err(|e| eyre::eyre!("Failed to get gateway settings: {}", e))?;
 
-    let mut gateway_signer: PrivateKeySigner =
-        std::env::var(&settings.transaction.private_key_gateway_env)
-            .unwrap_or(String::new())
-            .parse()?;
+    let mut gateway_signer = parse_private_key(&settings.transaction.private_key_gateway_env)?;
+
     gateway_signer.set_chain_id(Some(gateway_settings.chain_id));
 
     // Prepare tx service for gateway

@@ -389,6 +389,13 @@ impl GatewayHandler {
             user_decrypt_request.user_address, contract_pairs
         );
 
+        if let Some(retry_config) = &self.tx_helper.tx_config.retry_config {
+            if retry_config.mock_mode {
+                info!("Mock mode is enabled, skipping readiness check");
+                should_retry = false;
+            }
+        }
+
         while should_retry && retries < max_retries {
             should_retry = false;
 
@@ -596,6 +603,9 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
+/// Test for diagnosing the user decryption request
+/// This test checks if the contract has the expected function and if the function selector is present in the bytecode.
+/// It works only with mock contracts because original contracts are deployed behind a proxy
 #[tokio::test]
 async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::error::Error>> {
     use crate::config::settings::Settings;
@@ -632,15 +642,16 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
 
     println!("Using decryption manager: {:?}", decryption_address);
     println!("Sender address: {:?}", manager.sender_address());
+    println!("Looking for topic: {}", UserDecryptionRequest::SIGNATURE);
 
     // STEP 1: Check if the contract has the expected function
     println!("\nSTEP 1: Checking if contract implements userDecryptionRequest...");
 
     // Get the function selector for userDecryptionRequest
-    let func_selector =
-        &keccak256("userDecryptionRequest((uint256,address)[],(uint256,uint256),uint256,address[],address,bytes,bytes)")
-            [..4];
-    println!("Function selector: 0x{}", hex::encode(func_selector));
+    let func_selector = &keccak256(
+        "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes)",
+    )[..4];
+    println!("Function selector : 0x{}", hex::encode(func_selector));
 
     // STEP 2: Check contract code size
     let code = manager.provider.get_code_at(decryption_address).await?;

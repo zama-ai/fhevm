@@ -8,4 +8,4 @@ pub mod bindings;
 pub use client::{ChainName, EthereumJsonRPCWsClient};
 pub use filter::ContractAndTopicsFilter;
 pub use transaction_helper::transaction_calldata::ComputeCalldata;
-pub use utils::extract_event_signature;
+pub use utils::{extract_event_signature, parse_private_key};

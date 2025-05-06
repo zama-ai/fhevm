@@ -9,7 +9,7 @@ services:
       [
         "anvil",
         "--block-time",
-        "0.1",
+        "1",
         "--host",
         "0.0.0.0",
         "--port",
@@ -33,7 +33,7 @@ services:
       [
         "anvil",
         "--block-time",
-        "0.1",
+        "1",
         "--host",
         "0.0.0.0",
         "--port",
@@ -47,3 +47,15 @@ services:
       ]
     ports:
       - "8757:8757"
+
+
+  gateway-sc-deploy:
+    container_name: fhevm-gateway-sc-deploy
+    image: ghcr.io/zama-ai/fhevm-gateway/contracts:46ce936
+    env_file:
+      - ./.env.gateway
+    command:
+      - npx hardhat task:deployGatewayMockContracts
+    depends_on:
+      anvil-gateway:
+        condition: service_started

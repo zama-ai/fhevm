@@ -26,6 +26,7 @@ pub struct RetryConfig {
     pub max_attempts: u32,
     pub base_delay: Duration,
     pub max_delay: Duration,
+    pub mock_mode: bool,
 }
 
 impl Default for RetryConfig {
@@ -34,16 +35,25 @@ impl Default for RetryConfig {
             max_attempts: 3,
             base_delay: Duration::from_secs(1),
             max_delay: Duration::from_secs(60),
+            mock_mode: false,
         }
     }
 }
 
 impl From<RetrySettings> for RetryConfig {
     fn from(settings: RetrySettings) -> Self {
+        info!(
+            max_attempts = settings.max_attempts,
+            base_delay_secs = settings.base_delay_secs,
+            max_delay_secs = settings.max_delay_secs,
+            mock_mode = settings.mock_mode,
+            "Retry configuration"
+        );
         RetryConfig {
             max_attempts: settings.max_attempts,
             base_delay: Duration::from_secs(settings.base_delay_secs),
             max_delay: Duration::from_secs(settings.max_delay_secs),
+            mock_mode: settings.mock_mode,
         }
     }
 }
@@ -526,7 +536,7 @@ mod tests {
     async fn test_counter_contract() {
         // Test private key (default)
         let private_key = std::env::var("TEST_PRIVATE_KEY").unwrap_or_else(|_| {
-            "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f".to_string()
+            "34aacca926bab195601bcf5702786d35cab968159b718ae671b226de11b9afee".to_string()
         });
 
         println!("Setting up manager with test private key...");
