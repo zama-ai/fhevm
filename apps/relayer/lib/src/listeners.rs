@@ -10,7 +10,7 @@ use axum::{
 use fhevm_relayer::blockchain::ethereum::{
     ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
 };
-use fhevm_relayer::orchestrator::traits::Event;
+use fhevm_relayer::core::utils::OnceHandler;
 use fhevm_relayer::{
     config::settings::KeyUrl,
     core::event::{InputProofRequest, UserDecryptRequest},
@@ -33,81 +33,31 @@ use fhevm_relayer::{
 use futures_util::StreamExt;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::sync::oneshot;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-pub async fn wait_for_response_with_id(
-    sqs_client: &aws_sdk_sqs::Client,
-    request_queue_url: &str,
+pub async fn register_once_handler(
+    orchestrator: Arc<Orchestrator<TokioEventDispatcher<ZwsRelayerEvent>, ZwsRelayerEvent>>,
     request_id: Uuid,
-) -> ZwsRelayerEvent {
-    loop {
-        let rcv_message_output = match sqs_client
-            .receive_message()
-            .queue_url(request_queue_url)
-            .wait_time_seconds(10)
-            .send()
-            .await
-        {
-            Ok(value) => value,
-            Err(err) => {
-                warn!(
-                    "SQS listening error on queue {:?} : {:?}",
-                    request_queue_url, err
-                );
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                continue;
-            }
-        };
+    event_id: u8,
+) -> oneshot::Receiver<ZwsRelayerEvent> {
+    // Register once handlers for receiving the decryption response from the gateway l2
+    let (handler, rx): (
+        OnceHandler<ZwsRelayerEvent>,
+        oneshot::Receiver<ZwsRelayerEvent>,
+    ) = OnceHandler::new();
+    let handler = Arc::new(handler);
 
-        let messages = rcv_message_output.messages.unwrap_or_default();
-        if !messages.is_empty() {
-            debug!("Received {} messages from SQS.", messages.len());
-        }
-
-        for message in messages {
-            match message.body() {
-                Some(content) => {
-                    match serde_json::from_str::<ZwsRelayerEvent>(content) {
-                        Ok(value) => {
-                            debug!("successfuly parsed content from sqs: {:?}", content);
-                            if value.request_id() == request_id {
-                                match sqs_client
-                                    .delete_message()
-                                    .queue_url(request_queue_url)
-                                    .set_receipt_handle(message.receipt_handle)
-                                    .send()
-                                    .await
-                                {
-                                    Ok(_) => {
-                                        debug!("message deleted");
-                                    }
-                                    Err(err) => {
-                                        error!("error deleting message: {:?}", err);
-                                    }
-                                };
-                                return value;
-                            }
-                        }
-                        Err(err) => {
-                            error!("Couldn't deserialize message: {content} with error {err}");
-                            continue;
-                        }
-                    };
-                }
-                None => {
-                    error!("Message is empty");
-                    continue;
-                }
-            };
-        }
-    }
+    orchestrator.register_once_handler(event_id, request_id, handler);
+    info!("registered once handler");
+    rx
 }
 
 pub struct HTTPListenerState {
     sqs_client: aws_sdk_sqs::Client,
     relayer_queue_url: String,
-    orchestrator_queue_url: String,
+    orchestrator: Arc<Orchestrator<TokioEventDispatcher<ZwsRelayerEvent>, ZwsRelayerEvent>>,
 }
 
 // TODO: change payload type
@@ -164,46 +114,58 @@ pub async fn private_decryption_handler(
         signature: request_data.signature,
     });
 
+    let rx = register_once_handler(
+        Arc::clone(&listener_state.orchestrator),
+        request_id,
+        PrivateDecryptionResponse::event_id(),
+    );
+
     match send_message_to_sqs_queue(
         true,
         &listener_state.sqs_client,
         &listener_state.relayer_queue_url,
-        event,
+        &event,
     )
     .await
     {
         Ok(_) => debug!("success sending request"),
         Err(error) => {
-            error!("Couldn't send request to sqs");
+            error!(
+                "Couldn't send request to sqs: {:?}",
+                listener_state.relayer_queue_url
+            );
             let error_response = UserDecryptErrorResponseJson { message: error };
             return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
         }
     }
 
-    // TODO: implement the callback
-    // Wait for response on the rx of Onshot channel.
-    loop {
-        match wait_for_response_with_id(
-            &listener_state.sqs_client,
-            &listener_state.orchestrator_queue_url,
-            request_id,
-        )
-        .await
-        {
-            ZwsRelayerEvent::HTTPPrivateDecryptionResponse(value) => {
-                info!("Received response event.");
-                return (
-                    StatusCode::OK,
-                    Json(UserDecryptResponseJson {
-                        response: value.responses,
-                    }),
-                )
-                    .into_response();
+    match rx.await.await {
+        Ok(event) => {
+            match event {
+                ZwsRelayerEvent::HTTPPrivateDecryptionResponse(value) => {
+                    info!("Received response event.");
+                    (
+                        StatusCode::OK,
+                        Json(UserDecryptResponseJson {
+                            response: value.responses,
+                        }),
+                    )
+                        .into_response()
+                }
+                // Should be unreachable
+                _ => {
+                    let error_response = UserDecryptErrorResponseJson {
+                        message: "Failed to handle input registration.".to_string(),
+                    };
+                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                }
             }
-            _ => {
-                debug!("Received an event but not the response yet")
-            }
-        };
+        }
+        _ => {
+            let message = "".to_string();
+            let error_response = UserDecryptErrorResponseJson { message };
+            (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
+        }
     }
 }
 
@@ -240,52 +202,65 @@ pub async fn input_registration_handler(
         ciphetext_with_zk_proof: request_data.ciphetext_with_zk_proof,
     });
 
+    let rx = register_once_handler(
+        Arc::clone(&listener_state.orchestrator),
+        request_id,
+        HTTPInputRegistrationResponse::event_id(),
+    );
+
     match send_message_to_sqs_queue(
         true,
         &listener_state.sqs_client,
         &listener_state.relayer_queue_url,
-        event,
+        &event,
     )
     .await
     {
         Ok(_) => debug!("success sending request"),
         Err(error) => {
-            error!("Couldn't send request to sqs");
+            error!(
+                "Couldn't send request to sqs: {:?}",
+                listener_state.relayer_queue_url,
+            );
             let error_response = InputProofErrorResponseJson { message: error };
             return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
         }
     }
 
-    // Wait for response on the rx of Onshot channel.
-    loop {
-        match wait_for_response_with_id(
-            &listener_state.sqs_client,
-            &listener_state.orchestrator_queue_url,
-            request_id,
-        )
-        .await
-        {
-            ZwsRelayerEvent::HTTPInputRegistrationResponse(value) => {
-                info!("Received response event.");
-                return (
-                    StatusCode::OK,
-                    Json(InputProofResponseJson {
-                        response: InputProofResponsePayloadJson {
-                            handles: value.handles.iter().map(|elt| elt.to_string()).collect(),
-                            signatures: value
-                                .signatures
-                                .iter()
-                                .map(|elt| elt.to_string())
-                                .collect(),
-                        },
-                    }),
-                )
-                    .into_response();
+    match rx.await.await {
+        Ok(event) => {
+            match event {
+                ZwsRelayerEvent::HTTPInputRegistrationResponse(value) => {
+                    info!("Received response event.");
+                    (
+                        StatusCode::OK,
+                        Json(InputProofResponseJson {
+                            response: InputProofResponsePayloadJson {
+                                handles: value.handles.iter().map(|elt| elt.to_string()).collect(),
+                                signatures: value
+                                    .signatures
+                                    .iter()
+                                    .map(|elt| elt.to_string())
+                                    .collect(),
+                            },
+                        }),
+                    )
+                        .into_response()
+                }
+                // Should be unreachable
+                _ => {
+                    let error_response = InputProofErrorResponseJson {
+                        message: "Failed to handle input registration.".to_string(),
+                    };
+                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                }
             }
-            _ => {
-                debug!("Received an event but not the response yet")
-            }
-        };
+        }
+        _ => {
+            let message = "".to_string();
+            let error_response = InputProofErrorResponseJson { message };
+            (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
+        }
     }
 }
 
@@ -317,9 +292,8 @@ pub fn key_url_route(key_url: KeyUrl) -> keyurl_http_listener::KeyUrlResponseJso
 pub async fn http_listener(
     sqs_client: aws_sdk_sqs::Client,
     relayer_queue_url: String,
-    orchestrator_queue_url: String,
     key_url: KeyUrl,
-    _orchestrator: Arc<Orchestrator<TokioEventDispatcher<ZwsRelayerEvent>, ZwsRelayerEvent>>,
+    orchestrator: Arc<Orchestrator<TokioEventDispatcher<ZwsRelayerEvent>, ZwsRelayerEvent>>,
 ) {
     let app = Router::new()
         // Input registration
@@ -327,19 +301,19 @@ pub async fn http_listener(
         .with_state(Arc::new(HTTPListenerState {
             sqs_client: sqs_client.clone(),
             relayer_queue_url: relayer_queue_url.clone(),
-            orchestrator_queue_url: orchestrator_queue_url.clone(),
+            orchestrator: orchestrator.clone(),
         }))
         .route("/v1/user-decrypt", post(private_decryption_handler))
         .with_state(Arc::new(HTTPListenerState {
             sqs_client: sqs_client.clone(),
             relayer_queue_url: relayer_queue_url.clone(),
-            orchestrator_queue_url: orchestrator_queue_url.clone(),
+            orchestrator: orchestrator.clone(),
         }))
         .route("/v1/public-decrypt", post(public_decryption_handler))
         .with_state(Arc::new(HTTPListenerState {
             sqs_client: sqs_client.clone(),
             relayer_queue_url: relayer_queue_url.clone(),
-            orchestrator_queue_url: orchestrator_queue_url.clone(),
+            orchestrator: orchestrator.clone(),
         }))
         // Key-URL
         .route(
@@ -392,7 +366,8 @@ pub async fn http_listener(
     };
 }
 
-pub async fn sqs_listener(
+// TODO: we should probably add a name to listeners
+pub async fn sqs_listener<F>(
     sqs_client: aws_sdk_sqs::Client,
     request_queue_url: String,
     retry_wait_time: Option<u64>,
@@ -402,7 +377,12 @@ pub async fn sqs_listener(
             ZwsRelayerEvent,
         >,
     >,
-) {
+    filter: Option<F>,
+    name: Option<&str>,
+    visibility_timeout: i32,
+) where
+    F: Fn(&ZwsRelayerEvent) -> bool,
+{
     // TODO: SQS client
     let url = &request_queue_url.clone();
     loop {
@@ -410,6 +390,9 @@ pub async fn sqs_listener(
             .receive_message()
             .queue_url(url)
             .wait_time_seconds(10)
+            // TODO: DEBUG
+            // NOTE: this value should be set only for debug
+            .visibility_timeout(visibility_timeout)
             .send()
             .await
         {
@@ -426,7 +409,7 @@ pub async fn sqs_listener(
 
         let messages = rcv_message_output.messages.unwrap_or_default();
         if !messages.is_empty() {
-            debug!("Received {} messages from SQS.", messages.len());
+            debug!("{:?} Received {} messages from SQS.", name, messages.len());
         }
 
         for message in messages {
@@ -434,18 +417,30 @@ pub async fn sqs_listener(
                 Some(content) => {
                     let payload: ZwsRelayerEvent = match serde_json::from_str(content) {
                         Ok(value) => {
-                            debug!("successfuly parsed content from sqs: {:?}", content);
+                            debug!("Successfuly parsed relayer event: {} from sqs", value);
                             value
                         }
                         Err(err) => {
-                            error!("Couldn't deserialize message: {content} with error {err}");
+                            error!(
+                                "{:?} Couldn't deserialize message: {content} with error {err}",
+                                name
+                            );
                             continue;
                         }
                     };
+                    if let Some(ref filter_function) = filter {
+                        if !filter_function(&payload) {
+                            debug!(
+                                "{:?} Skipping {:?} because it didn't pass filter.",
+                                payload, name
+                            );
+                            continue;
+                        }
+                    }
                     payload
                 }
                 None => {
-                    error!("Message is empty");
+                    error!("{:?} Message is empty", name);
                     continue;
                 }
             };
@@ -455,17 +450,19 @@ pub async fn sqs_listener(
                 file = file!(),
                 line = line!(),
                 event_id = ?id,
+                name = name,
                 "Dispatching event"
             );
 
             // TODO: ERROR handling on event dispatch
 
             // Dispatch with error logging
-            if let Err(e) = orchestrator.dispatch_event(event).await {
+            if let Err(e) = orchestrator.dispatch_event(event.clone()).await {
                 error!(
                     file = file!(),
                     line = line!(),
                     error = %e,
+                    name = name,
                     "Failed to dispatch event"
                 );
             }
@@ -481,7 +478,7 @@ pub async fn sqs_listener(
                 .await
             {
                 Ok(_) => {
-                    debug!("message deleted");
+                    debug!("Deleted message {}", &event);
                 }
                 Err(err) => {
                     error!("{:?}", err);
@@ -498,6 +495,7 @@ pub async fn blockchain_event_listener(
     // mut subscription: alloy::pubsub::SubscriptionStream<Log>,
     chain_name: ChainName,
     ws_url: String,
+    chain_id: u64,
     contract_addresses: Vec<Address>,
     retry_wait_time: Option<u64>,
     orchestrator: Arc<
@@ -518,8 +516,8 @@ pub async fn blockchain_event_listener(
                     Ok(value) => value,
                     Err(error) => {
                         warn!(
-                            "Couldn't create EthereumJsonRPCWsClient {:?}, {:?} blockchain: {:?}",
-                            chain_name, name, error
+                            "Couldn't create EthereumJsonRPCWsClient {:?}, {:?} blockchain at {:?}: {:?}",
+                            chain_name, name, ws_url, error
                         );
 
                         // Check for ctrl+c during the retry wait
@@ -592,6 +590,7 @@ pub async fn blockchain_event_listener(
                         let event = ZwsRelayerEvent::BlockchainEvent(BlockchainEvent{
                             request_id: id,
                             event_log,
+                            chain_id,
                         });
 
                         debug!(
@@ -622,7 +621,7 @@ pub async fn blockchain_event_listener(
                     }
                 },
                 _ = tokio::signal::ctrl_c() => {
-                    info!(blockchain = name,"Received ctrl + c signal, stopping {:?}, {:?} listener...", chain_name, name);
+                    info!(blockchain = name, "Received ctrl + c signal, stopping {:?}, {:?} listener...", chain_name, name);
                     break 'outer;
                 }
                 else => {

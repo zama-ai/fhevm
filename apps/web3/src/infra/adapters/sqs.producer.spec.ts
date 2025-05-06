@@ -37,7 +37,7 @@ describe('SqsProducer', () => {
         {
           requestId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
-          address: faker.string.hexadecimal({ length: 40 }),
+          address: faker.string.hexadecimal({ length: 40 }), //  as `0x${string}`
         },
         {
           correlationId: faker.string.uuid(),

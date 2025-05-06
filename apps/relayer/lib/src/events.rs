@@ -1,7 +1,9 @@
+use std::fmt::Display;
 use std::io::Write;
 
 use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::rpc::types::{Log, TransactionReceipt};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use diesel::deserialize::{FromSql, FromSqlRow};
 use diesel::expression::AsExpression;
 use diesel::pg::{Pg, PgValue};
@@ -14,6 +16,7 @@ use fhevm_relayer::core::event::{CtHandleContractPair, RequestValidity};
 use fhevm_relayer::http::userdecrypt_http_listener::UserDecryptResponsePayloadJson;
 use fhevm_relayer::orchestrator::traits::Event;
 use serde::{Deserialize, Serialize};
+use std::io::Cursor;
 use uuid::Uuid;
 
 // TODO: maybe rename some types defined here
@@ -28,7 +31,25 @@ use uuid::Uuid;
 //   - TODO
 
 // NOTE: Box<dyn Event> vs Enum implementing Event trait
+//
 
+// Convert u64 to Vec<u8>
+fn u64_to_bytes(value: u64) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(8);
+    bytes.write_u64::<BigEndian>(value).unwrap();
+    bytes
+}
+
+pub fn bytes_to_u64(bytes: &[u8]) -> Result<u64, std::io::Error> {
+    if bytes.len() != 8 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Invalid byte length for u64",
+        ));
+    }
+    let mut cursor = Cursor::new(bytes);
+    cursor.read_u64::<BigEndian>()
+}
 // TODO: prefix events with relayer
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
@@ -89,6 +110,12 @@ pub enum ZwsRelayerEvent {
     /// Transaction response, i.e. receipt and response
     #[serde(rename = "relayer:transaction:tx-response")]
     TransactionResponse(Box<TransactionResponse>),
+}
+
+impl Display for ZwsRelayerEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}({})", self.event_name(), self.request_id())
+    }
 }
 
 // TODO: clean this with a macro
@@ -160,6 +187,8 @@ pub struct BlockchainEvent {
     pub request_id: Uuid,
     #[serde(rename = "eventLog")]
     pub event_log: alloy::rpc::types::Log,
+    #[serde(rename = "chainId")]
+    pub chain_id: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Queryable, Selectable, Insertable)]
@@ -170,23 +199,32 @@ pub struct BlockchainEventRow {
     pub request_id: Uuid,
     #[serde(rename = "eventLog")]
     pub event_log: diesel_json::Json<Log>,
+    #[serde(rename = "chainId")]
+    #[diesel(sql_type = Binary)]
+    pub chain_id: Vec<u8>,
 }
 
-impl From<BlockchainEvent> for BlockchainEventRow {
+impl BlockchainEventRow {
     fn from(event: BlockchainEvent) -> Self {
         Self {
             request_id: event.request_id,
             event_log: diesel_json::Json(event.event_log),
+            chain_id: u64_to_bytes(event.chain_id),
         }
     }
 }
 
-impl From<BlockchainEventRow> for BlockchainEvent {
-    fn from(row: BlockchainEventRow) -> Self {
-        Self {
+impl TryFrom<BlockchainEventRow> for BlockchainEvent {
+    type Error = std::io::Error;
+
+    fn try_from(row: BlockchainEventRow) -> Result<Self, Self::Error> {
+        let chain_id = bytes_to_u64(&row.chain_id)?;
+
+        Ok(Self {
             request_id: row.request_id,
             event_log: row.event_log.0,
-        }
+            chain_id,
+        })
     }
 }
 
@@ -328,6 +366,7 @@ table! {
     httpz_host_events (request_id) {
         request_id -> Uuid,
         event_log -> Jsonb,
+        chain_id -> Bytea,
     }
 }
 
@@ -374,11 +413,15 @@ pub fn create_gateway_request(
 pub fn fetch_host_event(
     conn: &mut PgConnection,
     req_id: Uuid,
-) -> Result<BlockchainEvent, diesel::result::Error> {
+) -> Result<BlockchainEvent, Box<dyn std::error::Error>> {
     httpz_host_events::dsl::httpz_host_events
         .find(req_id)
         .first::<BlockchainEventRow>(conn)
-        .map(Into::into)
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        .and_then(|row| {
+            row.try_into()
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        })
 }
 
 pub fn fetch_gateway_request(
@@ -468,7 +511,7 @@ pub struct HTTPInputRegistrationRequest {
     pub contract_address: Address,
     #[serde(rename = "userAddress")]
     pub user_address: Address,
-    #[serde(rename = "ciphertextWithZkpok")]
+    #[serde(rename = "ciphertextWithInputVerification")]
     pub ciphetext_with_zk_proof: Bytes,
 }
 
@@ -492,7 +535,7 @@ pub struct HTTPPrivateDecryptionRequest {
     pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
     #[serde(rename = "requestValidity")]
     pub request_validity: RequestValidity,
-    #[serde(rename = "contractsAddress")]
+    #[serde(rename = "contractsAddresses")]
     pub contract_addresses: Vec<Address>,
     #[serde(rename = "userAddress")]
     pub user_address: Address,
@@ -610,6 +653,12 @@ macro_rules! impl_event {
                 $event_id
             }
         }
+
+        impl Display for $struct_name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}({})", self.event_name(), self.request_id())
+            }
+        }
     };
 }
 
@@ -632,12 +681,15 @@ impl_event!(HTTPInputRegistrationResponse, 9);
 impl_event!(PrivateDecryptionRequest, 10);
 impl_event!(PrivateDecryptionResponse, 11);
 
+impl_event!(HTTPPrivateDecryptionRequest, 12);
+impl_event!(HTTPPrivateDecryptionResponse, 13);
+
 // TODO: Make more generic and accept any message that is Serializable
 pub async fn send_message_to_sqs_queue<T>(
     check_queue_exists: bool,
     sqs_client: &aws_sdk_sqs::Client,
     queue_url: &String,
-    message: T,
+    message: &T,
 ) -> std::result::Result<aws_sdk_sqs::operation::send_message::SendMessageOutput, std::string::String>
 where
     T: serde::Serialize,

@@ -38,7 +38,7 @@ export const VALIDATE_ADDRESS = 'VALIDATE_ADDRESS'
 export class ValidateAddress implements IValidateAddress {
   private readonly logger = new Logger(ValidateAddress.name)
 
-  constructor(@Inject(PRODUCER) private readonly producer: IProducer) {}
+  constructor(@Inject(PRODUCER) private readonly producer: IProducer) { }
 
   execute = (
     input: ValidateAddressInput,
@@ -109,9 +109,9 @@ export class ValidateAddressWithSync implements IValidateAddress {
                     return data.type === 'back:address:validation:confirmed'
                       ? Task.of({ check: true })
                       : Task.of({
-                          check: false,
-                          message: data.payload.reason,
-                        })
+                        check: false,
+                        message: data.payload.reason,
+                      })
                   }
                   this.logger.warn(
                     `invalid event received: ${JSON.stringify(data)}`,

@@ -39,6 +39,7 @@ diesel::table! {
     httpz_host_events (request_id) {
         request_id -> Uuid,
         event_log -> Jsonb,
+        chain_id -> Bytea,
     }
 }
 

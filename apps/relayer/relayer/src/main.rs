@@ -1,3 +1,9 @@
+// TODO: fix competing relayers
+// Oracle contract should only allow callback calls from pre-defined wallets
+// With both FHEVM and CONSOLE relayers running a competition starts
+
+// TODO: does the oracle emit an event once the callback is fulfilled ???
+
 use alloy::signers::Signer;
 use alloy::{primitives::Address, signers::local::PrivateKeySigner};
 use clap::Parser;
@@ -249,11 +255,12 @@ async fn main() {
     let settings = match RelayerConfiguration::new(args.config_file) {
         Ok(value) => value,
         Err(error) => {
-            error!(
+            let error_msg = format!(
                 "Unrecoverable error parsing relayer configuration: {:?}",
                 error
             );
-            panic!("Error: {:?}", error)
+            error!(error_msg);
+            panic!("{:?}", error_msg)
         }
     };
 
@@ -278,9 +285,16 @@ async fn main() {
             SignerConfig::Local(signer_config) => {
                 // TODO: catch NotPresent errors and show a better custom error
                 let mut signer: PrivateKeySigner = std::env::var(&signer_config.private_key_env)
-                    .unwrap()
+                    .unwrap_or_else(|_| {
+                        panic!("Couldn't find {} env-var.", signer_config.private_key_env)
+                    })
                     .parse()
-                    .unwrap();
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "Couldn't parse Private Key from env-var: {}",
+                            signer_config.private_key_env
+                        )
+                    });
                 signer.set_chain_id(Some(settings.gateway_chain.chain_config.chain_id));
                 Arc::new(signer)
             }
@@ -322,9 +336,16 @@ async fn main() {
             SignerConfig::Local(signer_config) => {
                 // TODO: catch NotPresent errors and show a better custom error
                 let mut signer: PrivateKeySigner = std::env::var(&signer_config.private_key_env)
-                    .unwrap()
+                    .unwrap_or_else(|_| {
+                        panic!("Couldn't find {} env-var.", signer_config.private_key_env)
+                    })
                     .parse()
-                    .unwrap();
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "Couldn't parse Private Key from env-var: {}",
+                            signer_config.private_key_env
+                        )
+                    });
                 signer.set_chain_id(Some(host_chain.chain_config.chain_id));
                 Arc::new(signer)
             }
@@ -362,6 +383,8 @@ async fn main() {
             Arc::clone(&orchestrator),
             settings.gateway_chain.zkpok_manager,
             settings.gateway_chain.decryption_manager,
+            settings.gateway_chain.chain_config.chain_id,
+            settings.gateway_chain.chain_config.http_url,
         )
         .await,
     );
@@ -406,6 +429,7 @@ async fn main() {
     // This is for testing purposes only
     if let Some(key_url) = settings.key_url {
         warn!("MOCKING CONSOLE! DEVELOPMENT PURPOSES ONLY");
+
         // Authorization handler
         let console_handler: Arc<dyn EventHandler<ZwsRelayerEvent>> =
             Arc::new(ZWSConsoleMockHandler::new(settings.queues.relayer_queue.to_owned()).await);
@@ -415,12 +439,26 @@ async fn main() {
         );
 
         // HTTP listener
+        // This one will from time to time listen to
         tokio::spawn(http_listener(
             sqs_client.clone(),
             settings.queues.relayer_queue.to_string(),
-            settings.queues.console_queue.to_string(),
             key_url,
             Arc::clone(&orchestrator),
+        ));
+
+        // Console SQS event listener
+        tokio::spawn(sqs_listener(
+            sqs_client.clone(),
+            settings.queues.console_queue,
+            Some(1000),
+            Arc::clone(&orchestrator),
+            // Some(|value: &ZwsRelayerEvent| {
+            //     matches!(value, ZwsRelayerEvent::OracleAuthorizationRequest(_))
+            // }),
+            None::<fn(&ZwsRelayerEvent) -> bool>,
+            Some("Console Mock Listener"),
+            0,
         ));
     }
 
@@ -429,6 +467,7 @@ async fn main() {
         tokio::spawn(blockchain_event_listener(
             ChainName::Httpz,
             host_chain.chain_config.ws_url,
+            host_chain.chain_config.chain_id,
             vec![host_chain.decryption_oracle],
             Some(1000),
             Arc::clone(&orchestrator),
@@ -442,6 +481,9 @@ async fn main() {
         settings.queues.relayer_queue,
         Some(1000),
         Arc::clone(&orchestrator),
+        None::<fn(&ZwsRelayerEvent) -> bool>,
+        Some("Relayer SQS queue listener"),
+        30,
     ));
 
     // TX-Manager SQS event listener
@@ -450,12 +492,16 @@ async fn main() {
         settings.queues.transaction_queue,
         Some(1000),
         Arc::clone(&orchestrator),
+        None::<fn(&ZwsRelayerEvent) -> bool>,
+        Some("Transaction SQS queue listener"),
+        30,
     ));
 
     // Blockchain event listener
     tokio::spawn(blockchain_event_listener(
         ChainName::Gateway,
         settings.gateway_chain.chain_config.ws_url,
+        settings.gateway_chain.chain_config.chain_id,
         vec![
             settings.gateway_chain.zkpok_manager,
             settings.gateway_chain.decryption_manager,

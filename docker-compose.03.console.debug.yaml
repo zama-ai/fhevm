@@ -1,0 +1,11 @@
+# Run commands for the console services
+name: console
+services:
+  relayer:
+    environment:
+      - RELAYER_KEY_URL__FHE_PUBLIC_KEY__DATA_ID=${RELAYER_KEY_URL__FHE_PUBLIC_KEY__DATA_ID:-fhe-public-key-data-id}
+      - RELAYER_KEY_URL__FHE_PUBLIC_KEY__URL=${RELAYER_KEY_URL__FHE_PUBLIC_KEY__URL:-}
+      - RELAYER_KEY_URL__CRS__DATA_ID=${RELAYER_KEY_URL__CRS__DATA_ID:-crs-data-id}
+      - RELAYER_KEY_URL__CRS__URL=${RELAYER_KEY_URL__CRS__URL:-}
+    ports:
+      - "4324:4324"

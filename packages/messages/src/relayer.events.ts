@@ -1,11 +1,15 @@
 import { z } from 'zod'
-import { chainId, Meta, meta, requestId, web3Address } from './shared.js'
+import { chainId, Meta, meta, requestId, web3Address, requestValidity, ctHandleContractPairs } from './shared.js'
 
-const hexEncoded = z.string().startsWith('0x').and(z.custom<`0x${string}`>())
+// prefixed hex encoded
+// const hexEncoded = z.string().startsWith('0x').and(z.custom<`0x${string}`>())
 
 type EventTypes =
   | 'public-decryption:authorization-request'
   | 'public-decryption:authorization-response'
+  // NOTE: add once spec is ready
+  // | 'public-decryption:operation-request'
+  // | 'public-decryption:operation-response'
   | 'private-decryption:operation-request'
   | 'private-decryption:operation-response'
   | 'input-registration:input-registration-request'
@@ -33,19 +37,24 @@ const schemas = [
     authorized: z.boolean(),
   }),
   genSchema('private-decryption:operation-request', {
-    ctHandles: z.array(hexEncoded),
-    publicKey: hexEncoded,
-    chainId,
+    contractsChainId: chainId,
+    ctHandleContractPairs: z.array(ctHandleContractPairs),
+    requestValidity: requestValidity,
+    contractsAddresses: z.array(web3Address),
+    userAddress: web3Address,
+    signature: z.string(),
+    publicKey: z.string(),
   }),
   genSchema('private-decryption:operation-response', {
-    ctValues: z.array(hexEncoded),
-    signatures: z.array(hexEncoded),
+    gatewayRequestId: z.number(),
+    decryptedValue: z.string(),
+    signatures: z.array(z.string()),
   }),
   genSchema('input-registration:input-registration-request', {
     contractChainId: chainId,
     contractAddress: web3Address,
     userAddress: web3Address,
-    ciphertextWithZkpok: z.string(),
+    ciphertextWithInputVerification: z.string(),
   }),
   genSchema('input-registration:input-registration-response', {
     handles: z.array(z.string()),
@@ -72,7 +81,7 @@ function factory<
     meta?: Meta
   } = Extract<RelayerEvent, { type: `relayer:${K}` }>,
 >(type: K) {
-  return function (payload: Event['payload'], meta?: Meta) {
+  return function(payload: Event['payload'], meta?: Meta) {
     return {
       type: `relayer:${type}`,
       payload,

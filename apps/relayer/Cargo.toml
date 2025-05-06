@@ -33,3 +33,4 @@ futures = { version = "0.3.31" }
 futures-util = { version = "0.3.31" }
 diesel_json = { version = "0.2" }
 config = { version = "0.15" }
+byteorder = { version = "1" }

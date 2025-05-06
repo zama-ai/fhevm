@@ -6,6 +6,8 @@ import {
   requestId,
   web3Address,
   operationEnum,
+  ctHandleContractPairs,
+  requestValidity,
 } from './shared.js'
 
 type EventTypes =
@@ -20,6 +22,8 @@ type EventTypes =
   | 'dapp:stats-available'
   | 'httpz:input-proof:requested'
   | 'httpz:input-proof:completed'
+  | 'httpz:private-decrypt:requested'
+  | 'httpz:private-decrypt:completed'
 
 function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   key: Key,
@@ -86,10 +90,24 @@ const schemas = [
     contractChainId: chainId,
     contractAddress: web3Address,
     userAddress: web3Address,
-    ciphertextWithZkpok: z.string(),
+    ciphertextWithInputVerification: z.string(),
   }),
   genSchema('httpz:input-proof:completed', {
     handles: z.array(z.string()),
+    signatures: z.array(z.string()),
+  }),
+  genSchema('httpz:private-decrypt:requested', {
+    contractsChainId: chainId,
+    ctHandleContractPairs: z.array(ctHandleContractPairs),
+    requestValidity: requestValidity,
+    contractsAddresses: z.array(web3Address),
+    userAddress: web3Address,
+    signature: z.string(),
+    publicKey: z.string(),
+  }),
+  genSchema('httpz:private-decrypt:completed', {
+    gatewayRequestId: z.number(),
+    decryptedValue: z.string(),
     signatures: z.array(z.string()),
   }),
 ] as const
@@ -118,6 +136,8 @@ export const dappStatsRequested = factory('dapp:stats-requested')
 export const dappStatsAvailable = factory('dapp:stats-available')
 export const httpzInputProofRequested = factory('httpz:input-proof:requested')
 export const httpzInputProofCompleted = factory('httpz:input-proof:completed')
+export const httpzPrivateDecryptRequested = factory('httpz:private-decrypt:requested')
+export const httpzPrivateDecryptCompleted = factory('httpz:private-decrypt:completed')
 
 export function isBackEvent(data: unknown): data is BackEvent {
   return schema.safeParse(data).success

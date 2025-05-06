@@ -12,10 +12,11 @@ services:
         condition: service_healthy
       back-migrate:
         condition: service_completed_successfully
-    # These vars will be populated from httpz containers
+    # These vars will be populated from fhevm containers
     environment:
       - CRS_URLS=${CRS_URLS}
       - KEY_URLS=${KEY_URLS}
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
     env_file:
       - ./apps/back/.env.compose
     healthcheck:
@@ -73,6 +74,8 @@ services:
         condition: service_completed_successfully
     env_file:
       - ./apps/orchestrator/.env.compose
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
     # This returns 404 error because it's not implemented yet
     # healthcheck:
     #   test: ["CMD", "wget", "-qO-", "http://localhost:3001"]
@@ -121,7 +124,7 @@ services:
       - "--config-file"
       - "/compose/gateway.toml" 
     networks:
-      - httpz_default
+      - fhevm_default
       - console-net
     volumes:
       - type: bind
@@ -131,7 +134,7 @@ services:
         target: /compose/
         source: ${PWD}/apps/relayer/compose/
     depends_on:
-      # NOTE: we can't provide a dependency on the HTTPZ stack components
+      # NOTE: we can't provide a dependency on the fhevm stack components
       # but the blockchain nodes are required
       local_aws:
         condition: service_healthy
@@ -142,6 +145,6 @@ services:
 networks:
   console-net:
     name: console-net
-  httpz_default:
-    name: httpz_default
+  fhevm_default:
+    name: fhevm_default
     external: true

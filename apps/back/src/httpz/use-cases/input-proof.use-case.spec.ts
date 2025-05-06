@@ -34,7 +34,7 @@ describe('InputProof', () => {
   let contractChainId: string
   let contractAddress: string
   let userAddress: string
-  let ciphertextWithZkpok: string
+  let ciphertextWithInputVerification: string
 
   beforeEach(async () => {
     requestId = faker.string.uuid()
@@ -48,7 +48,7 @@ describe('InputProof', () => {
     contractChainId = faker.string.numeric(5)
     contractAddress = faker.string.hexadecimal({ length: 40 })
     userAddress = faker.string.hexadecimal({ length: 40 })
-    ciphertextWithZkpok = faker.string.hexadecimal({
+    ciphertextWithInputVerification = faker.string.hexadecimal({
       length: { min: 40, max: 100 },
     })
 
@@ -66,7 +66,7 @@ describe('InputProof', () => {
           contractChainId,
           contractAddress,
           userAddress,
-          ciphertextWithZkpok,
+          ciphertextWithInputVerification,
         },
         { requestId },
       )
@@ -103,7 +103,7 @@ describe('InputProof', () => {
               contractChainId,
               contractAddress,
               userAddress,
-              ciphertextWithZkpok,
+              ciphertextWithInputVerification,
             },
             {
               requestId,
@@ -124,7 +124,7 @@ describe('InputProofWithSync', () => {
   let contractChainId: string
   let contractAddress: string
   let userAddress: string
-  let ciphertextWithZkpok: string
+  let ciphertextWithInputVerification: string
 
   beforeEach(async () => {
     const { unit, unitRef } =
@@ -141,7 +141,7 @@ describe('InputProofWithSync', () => {
     contractChainId = faker.string.numeric(5)
     contractAddress = faker.string.hexadecimal({ length: 40 })
     userAddress = faker.string.hexadecimal({ length: 40 })
-    ciphertextWithZkpok = faker.string.hexadecimal({
+    ciphertextWithInputVerification = faker.string.hexadecimal({
       length: { min: 40, max: 100 },
     })
   })
@@ -181,7 +181,7 @@ describe('InputProofWithSync', () => {
           contractChainId,
           contractAddress,
           userAddress,
-          ciphertextWithZkpok,
+          ciphertextWithInputVerification,
         })
         .toPromise()
       expect(result).toEqual({ handles, signatures })
@@ -205,7 +205,7 @@ describe('InputProofWithSync', () => {
             contractChainId,
             contractAddress,
             userAddress,
-            ciphertextWithZkpok,
+            ciphertextWithInputVerification,
           })
           .toPromise(),
       ).rejects.toThrowError(/timeout/i)
@@ -230,7 +230,7 @@ describe('InputProofWithSync', () => {
             contractChainId,
             contractAddress,
             userAddress,
-            ciphertextWithZkpok,
+            ciphertextWithInputVerification,
           })
           .toPromise(),
       ).rejects.toThrowError(message)
@@ -246,7 +246,7 @@ describe('InputProofWithApiKey', () => {
   let contractChainId: string
   let contractAddress: string
   let userAddress: string
-  let ciphertextWithZkpok: string
+  let ciphertextWithInputVerification: string
 
   beforeEach(async () => {
     const { unit, unitRef } =
@@ -264,7 +264,7 @@ describe('InputProofWithApiKey', () => {
     contractChainId = faker.string.numeric(5)
     contractAddress = faker.string.hexadecimal({ length: 40 })
     userAddress = faker.string.hexadecimal({ length: 40 })
-    ciphertextWithZkpok = faker.string.hexadecimal({
+    ciphertextWithInputVerification = faker.string.hexadecimal({
       length: { min: 40, max: 100 },
     })
   })
@@ -280,12 +280,12 @@ describe('InputProofWithApiKey', () => {
     beforeEach(() => {
       handles = [faker.string.hexadecimal({ length: 40 })]
       signatures = [faker.string.hexadecimal({ length: 40 })]
-      ;(
-        apiKeyAllowsRequest.execute as Mock<IApiKeyAllowsRequest['execute']>
-      ).mockReturnValue(Task.of(void 0))
-      ;(inputProof.execute as Mock<IInputProof['execute']>).mockReturnValue(
-        Task.of({ handles, signatures }),
-      )
+        ; (
+          apiKeyAllowsRequest.execute as Mock<IApiKeyAllowsRequest['execute']>
+        ).mockReturnValue(Task.of(void 0))
+        ; (inputProof.execute as Mock<IInputProof['execute']>).mockReturnValue(
+          Task.of({ handles, signatures }),
+        )
     })
     test('should call the input proof use case', async () => {
       await useCase
@@ -294,7 +294,7 @@ describe('InputProofWithApiKey', () => {
             contractChainId,
             contractAddress,
             userAddress,
-            ciphertextWithZkpok,
+            ciphertextWithInputVerification,
           },
           {},
         )
@@ -304,7 +304,7 @@ describe('InputProofWithApiKey', () => {
           contractChainId,
           contractAddress,
           userAddress,
-          ciphertextWithZkpok,
+          ciphertextWithInputVerification,
         },
         expect.anything(),
       )
@@ -316,7 +316,7 @@ describe('InputProofWithApiKey', () => {
           contractChainId,
           contractAddress,
           userAddress,
-          ciphertextWithZkpok,
+          ciphertextWithInputVerification,
         })
         .toPromise()
       expect(result).toEqual({ handles, signatures })
@@ -325,7 +325,7 @@ describe('InputProofWithApiKey', () => {
 
   describe('when request is not allowed', () => {
     beforeEach(() => {
-      ;(
+      ; (
         apiKeyAllowsRequest.execute as Mock<IApiKeyAllowsRequest['execute']>
       ).mockReturnValue(Task.reject(unauthorizedError()))
     })
@@ -337,7 +337,7 @@ describe('InputProofWithApiKey', () => {
             contractChainId,
             contractAddress,
             userAddress,
-            ciphertextWithZkpok,
+            ciphertextWithInputVerification,
           })
           .toPromise(),
       ).rejects.toThrowError(/unauthorized/i)
@@ -350,7 +350,7 @@ describe('InputProofWithApiKey', () => {
             contractChainId,
             contractAddress,
             userAddress,
-            ciphertextWithZkpok,
+            ciphertextWithInputVerification,
           })
           .toPromise()
         expect.fail('should have failed')

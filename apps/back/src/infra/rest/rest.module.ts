@@ -43,4 +43,4 @@ import {
     uc.GetKeyUrl,
   ],
 })
-export class RestModule {}
+export class RestModule { }

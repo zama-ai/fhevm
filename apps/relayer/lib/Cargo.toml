@@ -25,6 +25,8 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 diesel = { workspace = true }
 diesel_json = { workspace = true }
+reqwest = { workspace = true }
+byteorder = { workspace = true }
 
 [lib]
 name = "zws_relayer_lib"

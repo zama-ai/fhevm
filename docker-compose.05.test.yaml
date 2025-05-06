@@ -1,17 +1,15 @@
 services:
   tests-e2e-debug:
     container_name: console-tests-e2e-debug
-    image: ghcr.io/zama-ai/fhevm-e2e-test:${TESTS_VERSION:-6ff6eed}
+    image: ghcr.io/zama-ai/fhevm-test-suite/e2e-new:${TESTS_VERSION:-8c8de11}
     env_file:
-      - ./external/httpz-test-suite/httpz/env/staging/.env.tests.local
+      - ./external/httpz-test-suite/fhevm/env/staging/.env.tests.local
     environment:
       - RELAYER_URL=${RELAYER_URL:-http://console-back:3005}
     command:
-      - /bin/bash
-      - -c
       - tail -f /dev/null
     networks:
-      - httpz_default
+      - fhevm_default
       - console-net
 
 
@@ -19,7 +17,7 @@ networks:
   console-net:
     name: console-net
     external: true
-  httpz_default:
-    name: httpz_default
+  fhevm_default:
+    name: fhevm_default
     external: true
 

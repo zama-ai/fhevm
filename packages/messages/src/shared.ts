@@ -66,6 +66,16 @@ export const web3Address = z
   .string()
   .regex(/^0x[\da-f]{40}$/i, 'Address should be an hex string of length 42')
 
+export const ctHandleContractPairs = z.object({
+  ctHandle: z.string(),
+  contractAddress: z.string(),
+})
+
+export const requestValidity = z.object({
+  startTimestamp: z.string(),
+  durationDays: z.string(),
+})
+
 export const requestId = z.string().uuid()
 export function generateRequestId() {
   return uuid()
@@ -87,7 +97,7 @@ export function metaFactory<
       meta: Meta
     } = Extract<Events, { type: `${Prefix}:${Key}` }>,
   >(key: Key) {
-    return function (payload: Event['payload'], meta: Event['meta']) {
+    return function(payload: Event['payload'], meta: Event['meta']) {
       return {
         type: `${prefix}:${key}`,
         payload,

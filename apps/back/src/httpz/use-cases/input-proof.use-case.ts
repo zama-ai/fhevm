@@ -26,7 +26,7 @@ type Input = {
   contractChainId: string | number
   contractAddress: string
   userAddress: string
-  ciphertextWithZkpok: string
+  ciphertextWithInputVerification: string
 }
 
 type Output = {
@@ -44,7 +44,7 @@ export class InputProof implements IInputProof {
   constructor(
     @Inject(PRODUCER)
     private readonly producer: IProducer,
-  ) {}
+  ) { }
 
   execute = (
     input: Input,
@@ -74,7 +74,7 @@ export class InputProof implements IInputProof {
                 contractChainId: contractChainId.value,
                 contractAddress: contractAddress.value,
                 userAddress: userAddress.value,
-                ciphertextWithZkpok: input.ciphertextWithZkpok,
+                ciphertextWithInputVerification: input.ciphertextWithInputVerification,
               },
               {
                 correlationId: randomUUID(),
@@ -150,7 +150,7 @@ export class InputProofWithApiKey implements IInputProof {
     private readonly inputProof: InputProofWithSync,
     @Inject(API_KEY_ALLOWS_REQUEST)
     private readonly apiKeyAllowsRequest: IApiKeyAllowsRequest,
-  ) {}
+  ) { }
 
   execute(input: Input, context?: Record<string, any>): Task<Output, AppError> {
     return this.apiKeyAllowsRequest

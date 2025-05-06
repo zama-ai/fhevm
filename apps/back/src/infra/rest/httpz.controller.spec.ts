@@ -100,7 +100,7 @@ describe('HttpzController', () => {
         contractChainId: faker.string.hexadecimal({ length: 3 }),
         contractAddress: faker.string.hexadecimal({ length: 40 }),
         userAddress: faker.string.hexadecimal({ length: 40 }),
-        ciphertextWithZkpok: faker.string.hexadecimal({ length: 40 }),
+        ciphertextWithInputVerification: faker.string.hexadecimal({ length: 40 }),
       })
       expect(inputProof.execute).toHaveBeenCalledOnce()
     })
@@ -110,7 +110,7 @@ describe('HttpzController', () => {
         contractChainId: faker.string.hexadecimal({ length: 3 }),
         contractAddress: faker.string.hexadecimal({ length: 40 }),
         userAddress: faker.string.hexadecimal({ length: 40 }),
-        ciphertextWithZkpok: faker.string.hexadecimal({ length: 40 }),
+        ciphertextWithInputVerification: faker.string.hexadecimal({ length: 40 }),
       })
       expect(response).toEqual({ response: { handles, signatures } })
     })

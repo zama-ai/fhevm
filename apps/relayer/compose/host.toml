@@ -2,9 +2,9 @@
 decryption_oracle = "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
 [host_chains.chain_config]
 chain_id = 12345
-ws_url = "ws://httpz-host-node:8545"
-http_url = "http://httpz-host-node:8545"
+ws_url = "ws://fhevm-host-node:8545"
+http_url = "http://fhevm-host-node:8545"
 [host_chains.chain_config.signer_config]
 type = "LOCAL"
-private_key_env = "HTTPZ_PRIVATE_KEY"
+private_key_env = "FHEVM_PRIVATE_KEY"
 

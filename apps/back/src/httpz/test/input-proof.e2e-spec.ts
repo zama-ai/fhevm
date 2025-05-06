@@ -92,14 +92,14 @@ describe('input proof', () => {
       describe('when they request for an input proof', () => {
         let contractChainId: string
         let userAddress: string
-        let ciphertextWithZkpok: string
+        let ciphertextWithInputVerification: string
         let handles: string[]
         let signatures: string[]
 
         beforeEach(() => {
           contractChainId = faker.string.numeric(5)
           userAddress = faker.string.hexadecimal({ length: 40 })
-          ciphertextWithZkpok = faker.string.hexadecimal({
+          ciphertextWithInputVerification = faker.string.hexadecimal({
             length: { min: 40, max: 100 },
             prefix: '',
           })
@@ -115,7 +115,7 @@ describe('input proof', () => {
                 contractChainId,
                 contractAddress: address,
                 userAddress,
-                ciphertextWithZkpok,
+                ciphertextWithInputVerification,
               })
               .set('Content-Type', 'application/json')
               .set('Accept', 'application/json')
@@ -170,7 +170,7 @@ describe('input proof', () => {
         let contractChainId: string
         let contractAddress: string
         let userAddress: string
-        let ciphertextWithZkpok: string
+        let ciphertextWithInputVerification: string
         let handles: string[]
         let signatures: string[]
 
@@ -178,7 +178,7 @@ describe('input proof', () => {
           contractChainId = faker.string.numeric(5)
           contractAddress = faker.string.hexadecimal({ length: 40 })
           userAddress = faker.string.hexadecimal({ length: 40 })
-          ciphertextWithZkpok = faker.string.hexadecimal({
+          ciphertextWithInputVerification = faker.string.hexadecimal({
             length: { min: 40, max: 100 },
             prefix: '',
           })
@@ -194,7 +194,7 @@ describe('input proof', () => {
                 contractChainId,
                 contractAddress,
                 userAddress,
-                ciphertextWithZkpok,
+                ciphertextWithInputVerification,
               })
               .set('Content-Type', 'application/json')
               .set('Accept', 'application/json')

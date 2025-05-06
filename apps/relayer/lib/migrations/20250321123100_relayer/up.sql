@@ -12,7 +12,8 @@ CREATE TABLE "gateway_requests" (
 
 CREATE TABLE "httpz_host_events"(
 	"request_id" UUID NOT NULL PRIMARY KEY,
-	"event_log" JSONB NOT NULL
+	"event_log" JSONB NOT NULL,
+	"chain_id" BYTEA NOT NULL
 );
 
 -- Gateway events aka gateway responses

@@ -61,7 +61,7 @@ describe(ProcessInputProof, () => {
         contractChainId: faker.string.numeric(),
         contractAddress: faker.string.hexadecimal({ length: 40 }),
         userAddress: faker.string.hexadecimal({ length: 40 }),
-        ciphertextWithZkpok: faker.string.hexadecimal({
+        ciphertextWithInputVerification: faker.string.hexadecimal({
           length: { min: 50, max: 100 },
           prefix: '',
         }),

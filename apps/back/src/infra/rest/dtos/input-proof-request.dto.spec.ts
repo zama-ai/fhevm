@@ -9,7 +9,7 @@ describe('InputProofRequest', () => {
       contractChainId: faker.string.hexadecimal({ length: 3 }),
       contractAddress: faker.string.hexadecimal({ length: 40 }),
       userAddress: faker.string.hexadecimal({ length: 40 }),
-      ciphertextWithZkpok: faker.string.hexadecimal({ length: 40, prefix: '' }),
+      ciphertextWithInputVerification: faker.string.hexadecimal({ length: 40, prefix: '' }),
     }
   })
 

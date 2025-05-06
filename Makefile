@@ -33,21 +33,26 @@ publish-web3-fhe-event-requested:
 		--region eu-central-1 \
 		--message-body '{"type": "web3:fhe-event:detected", "payload": {"chainId": "123456", "address": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}, "meta": {"correlationId": "ea0ca1c2-3fde-4f80-8abb-08aecee4107c"}}'
 	
-# HTTPZ
-httpz-up:
-	bash scripts/httpz-up.sh
-httpz-down:
-	bash scripts/httpz-down.sh
+# fhevm
+.PHONY: fhevm-up fhevm-down
+fhevm-up:
+	bash scripts/fhevm-up.sh
+fhevm-down:
+	bash scripts/fhevm-down.sh
 	
-# HTTPZ Tests
-httpz-test-public-decrypt:
-	bash scripts/httpz-test-public-decrypt.sh
-httpz-test-private-decrypt:
-	bash scripts/httpz-test-private-decrypt.sh
-httpz-test-input:
-	bash scripts/httpz-test-input.sh
+# fhevm Tests
+.PHONY: fhevm-test-public-decrypt fhevm-test-private-decrypt fhevm-test-input
+fhevm-test-public-decrypt:
+	bash scripts/fhevm-test-public-decrypt.sh
+
+fhevm-test-private-decrypt:
+	bash scripts/fhevm-test-private-decrypt.sh
+
+fhevm-test-input:
+	bash scripts/fhevm-test-input.sh
 
 # Console + Docker
+.PHONY: console-build console-up console-down console-infra-up console-infra-down console-build-service console-up-service
 console-build:
 	docker compose -f ./docker-compose.02.console.build.yaml -f ./docker-compose.04.console.ghcr.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml build
 
@@ -55,21 +60,54 @@ console-up:
 	bash scripts/console-up.sh
 
 console-down:
-	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.03.console.run.yaml down --volumes --remove-orphans
+	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.03.console.run.yaml -p console down --volumes --remove-orphans
 
 console-infra-up:
-	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml up -d --wait
+	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml -p console up -d --wait
 
 console-infra-down:
-	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml down --volumes --remove-orphans
+	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml -p console down --volumes --remove-orphans
+
+console-build-service:
+	docker compose -f ./docker-compose.02.console.build.yaml -f ./docker-compose.04.console.ghcr.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml build $(service-name)
+
+console-up-service:
+	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.03.console.run.yaml -f docker-compose.04.console.ghcr.yaml -f docker-compose.04.console.migrate.ghcr.yaml -p console up -d --wait --remove-orphans $(service-name)
 
 # Relayer
+.PHONY: relayer-run relayer-build relayer-run-debug relayer-lint
 relayer-run:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer
 
 relayer-build:
 	cd $(TOP)apps/relayer && cargo build --bin zws-relayer
 
+relayer-lint:
+	cd $(TOP)apps/relayer && cargo clippy --all-targets --all-features --workspace --exclude fhevm-relayer -- -D warnings
+
 relayer-run-debug:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer -- --config-file debug.toml
+
+.PHONY: down
+down: fhevm-down console-down
+
+.PHONY: build-and-up
+build-and-up: console-build down
+	$(MAKE) fhevm-up
+	$(MAKE) console-up
+
+.PHONY: test
+test:
+	$(MAKE) fhevm-test-input
+	$(MAKE) fhevm-test-private-decrypt
+	$(MAKE) fhevm-test-public-decrypt
+
+all: 
+	$(MAKE) build-and-up
+	echo "Waiting to make sure that everything is ready (all healthcheck are not implemented in the Console stack)"
+	sleep 10
+	$(MAKE) test
+
+
+
 
