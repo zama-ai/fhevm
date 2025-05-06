@@ -45,9 +45,10 @@ task("task:setContractAddress")
     }
 
     const solidityFilePath = path.join(ADDRESSES_DIR, `${name}Address.sol`);
-    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear\n
-    pragma solidity ^0.8.24;\n
-    address constant ${pascalCaseToCamelCase(name)}Address = ${address};\n`;
+    const solidityTemplate =
+      `// SPDX-License-Identifier: BSD-3-Clause-Clear\n\n` +
+      `pragma solidity ^0.8.24;\n\n` +
+      `address constant ${pascalCaseToCamelCase(name)}Address = ${address};\n`;
 
     // Write the contract's address in its addresses/xxxAddress.sol file
     try {
