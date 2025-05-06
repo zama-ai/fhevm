@@ -99,6 +99,8 @@ async fn main() -> eyre::Result<()> {
     orchestrator.register_handler(5, Arc::clone(&gateway_processors_handler));
     // Event type UserDecryptionEventData::EventLogRequestFromGw
     orchestrator.register_handler(4, Arc::clone(&gateway_processors_handler));
+    // Event type PublicDecryptionEventData::EventLogRequestFromGw
+    orchestrator.register_handler(3, Arc::clone(&gateway_processors_handler));
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
 

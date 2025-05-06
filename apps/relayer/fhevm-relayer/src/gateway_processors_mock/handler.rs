@@ -64,7 +64,7 @@ impl GatewayProcessorsHandler {
     }
 
     /// Process the InputRequest event and prepare response
-    async fn process_input_request(
+    async fn process_input_proof_request(
         &self,
         event: &GatewayProcessorsEvent,
     ) -> Result<(), EventProcessingError> {
@@ -126,7 +126,7 @@ impl GatewayProcessorsHandler {
                     let signature = signer.sign_hash(&signing_hash).await.unwrap();
                     println!("Signature: 0x{}", hex::encode(signature.as_bytes()));
 
-                    self.send_input_response(
+                    self.send_input_proof_response(
                         request_event.zkProofId,
                         handles,
                         signature.as_bytes().to_vec(),
@@ -148,7 +148,7 @@ impl GatewayProcessorsHandler {
     }
 
     /// Send InputResponse transaction
-    async fn send_input_response(
+    async fn send_input_proof_response(
         &self,
         input_verification_id: U256,
         handles: Vec<[u8; 32]>,
@@ -177,7 +177,7 @@ impl GatewayProcessorsHandler {
     }
 
     /// Send InputResponse transaction
-    async fn send_decryption_response(
+    async fn send_public_decryption_response(
         &self,
         req: PublicDecryptionRequest,
     ) -> Result<(), EventProcessingError> {
@@ -266,7 +266,7 @@ impl GatewayProcessorsHandler {
                         "Processing PublicDecryptRequest event"
                     );
 
-                    match self.send_decryption_response(req).await {
+                    match self.send_public_decryption_response(req).await {
                         Ok(()) => {
                             info!("Public decryption response sent successfully!");
                             return Ok(());
@@ -359,7 +359,7 @@ impl EventHandler<GatewayProcessorsEvent> for GatewayProcessorsHandler {
             GatewayProcessorsEventData::KmsInput(input_event) => match input_event {
                 GatewayProcessorsInputEventData::EventLogRequestFromGw { .. } => {
                     info!("Received input event log from Gateway");
-                    match self.process_input_request(&event).await {
+                    match self.process_input_proof_request(&event).await {
                         Ok(()) => {
                             info!("Input request processing succesfull!");
                         }

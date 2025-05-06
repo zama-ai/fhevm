@@ -139,6 +139,12 @@ impl GatewayHandler {
         let mut retries = 0;
         let mut should_retry = true;
 
+        if let Some(retry_config) = &self.tx_helper.tx_config.retry_config {
+            if retry_config.mock_mode {
+                should_retry = false;
+            }
+        }
+
         while should_retry && retries < max_retries {
             should_retry = false;
 

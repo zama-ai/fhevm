@@ -14,14 +14,14 @@ run_test() {
   local command=$2
   local endpoint=$3
   local pattern=$4
-  
+
   echo "Testing $test_name endpoint: $endpoint"
-  
+
   # Run the test and capture output
   echo "$ $command"
   RESPONSE=$(eval $command | tail -n 1)
   echo "Received: $RESPONSE"
-  
+
   # Validate response against pattern
   if echo "$RESPONSE" | grep -q "$pattern"; then
     echo "✅ $test_name test passed!"
@@ -31,13 +31,20 @@ run_test() {
     echo "Got: $RESPONSE"
     return 1
   fi
-  
+
   return 0
 }
 
 # Test user-decrypt endpoint
 if ! run_test "user-decrypt" "make run-test-user-decrypt" \
     "http://localhost:3000/v1/user-decrypt" \
+    '{"response":\[.*\]}'; then
+  failed=1
+fi
+
+echo ""  # Add spacing between tests
+if ! run_test "public-decrypt-http" "make run-test-public-decrypt-http" \
+    "http://localhost:3000/v1/public-decrypt" \
     '{"response":\[.*\]}'; then
   failed=1
 fi
@@ -50,6 +57,7 @@ if ! run_test "input-proof" "make run-test-input-proof" \
     '{"response":{"handles":\[.*\],"signatures":\[.*\]}}'; then
   failed=1
 fi
+
 
 # Report final status
 echo ""

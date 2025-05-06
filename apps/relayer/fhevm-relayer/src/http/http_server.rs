@@ -2,6 +2,7 @@ use crate::config::settings::Settings;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::http::input_http_listener::{InputProofHandler, InputProofRequestJson};
 use crate::http::keyurl_http_listener::KeyUrlResponseJson;
+use crate::http::public_decrypt_http_listener::{PublicDecryptHandler, PublicDecryptRequestJson};
 use crate::http::userdecrypt_http_listener::{UserDecryptHandler, UserDecryptRequestJson};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
@@ -23,7 +24,12 @@ where
         orchestrator.clone(),
         api_version.clone(),
     ));
-    let user_decrypt_handler = Arc::new(UserDecryptHandler::new(orchestrator, api_version.clone()));
+    let user_decrypt_handler = Arc::new(UserDecryptHandler::new(
+        Arc::clone(&orchestrator),
+        api_version.clone(),
+    ));
+    let public_decrypt_handler =
+        Arc::new(PublicDecryptHandler::new(orchestrator, api_version.clone()));
     let app =
         Router::new()
             .route(
@@ -32,6 +38,16 @@ where
                     info!("Enabling handler for POST request to '/input-proof'");
                     let handler = Arc::new(input_proof_handler);
                     move |payload: Json<InputProofRequestJson>| async move {
+                        handler.handle(payload).await
+                    }
+                }),
+            )
+            .route(
+                format!("/{}/public-decrypt", api_version).as_str(),
+                post({
+                    info!("Enabling handler for POST request to '/public-decrypt'");
+                    let handler = Arc::new(public_decrypt_handler);
+                    move |payload: Json<PublicDecryptRequestJson>| async move {
                         handler.handle(payload).await
                     }
                 }),
