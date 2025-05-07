@@ -70,14 +70,13 @@ impl<P: Provider + Clone> EventProcessor<P> {
 
             let mut ciphertext_retrieved = false;
             for s3_url in s3_urls {
-                match s3::call_s3_ciphertext_retrieval(
+                match s3::retrieve_s3_ciphertext(
                     s3_url.clone(),
                     extracted_sns_ciphertext_digest.clone(),
-                    s3_config.clone(),
                 )
                 .await
                 {
-                    Some(ciphertext) => {
+                    Ok(ciphertext) => {
                         info!(
                             "Successfully retrieved ciphertext for digest {} from S3 URL {}",
                             alloy::hex::encode(&extracted_sns_ciphertext_digest),
@@ -87,12 +86,13 @@ impl<P: Provider + Clone> EventProcessor<P> {
                         ciphertext_retrieved = true;
                         break; // We want to stop as soon as ciphertext corresponding to extracted_sns_ciphertext_digest is retrieved
                     }
-                    None => {
+                    Err(error) => {
                         // Log warning but continue trying other URLs
                         warn!(
-                            "Failed to retrieve ciphertext for digest {} from S3 URL {}",
+                            "Failed to retrieve ciphertext for digest {} from S3 URL {}: {}",
                             alloy::hex::encode(&extracted_sns_ciphertext_digest),
-                            s3_url
+                            s3_url,
+                            error
                         );
                         // Continue to the next URL
                     }
