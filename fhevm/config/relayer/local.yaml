@@ -3,27 +3,8 @@ environment: development
 inputproof:
   url: "0.0.0.0:3000"
 
-keyurl:
-  fhe_public_key:
-    data_id: "fhe-public-key-data-id"
-    url: "http://minio:9000/kms-public/PUB/PublicKey/bdef3ae02c2a49472724c9f0caee201eb8ede7e29b9408f3b819eeb0082a9709"
-  crs:
-    data_id: "crs-data-id"
-    url: "http://minio:9000/kms-public/PUB/CRS/d76cca547619b54696469dfa08839fb1c94c0af017145bd85fb4208efeda9769"
 
-networks:
-  fhevm:
-    ws_url: "ws://host-node:8545"
-    http_url: "http://host-node:8545"
-    chain_id: 12345
-    retry_delay: 1000
-    max_reconnection_attempts: 3
-  gateway:
-    ws_url: "ws://gateway-node:8546"
-    http_url: "http://gateway-node:8546"
-    chain_id: 54321
-    retry_delay: 1000
-    max_reconnection_attempts: 3
+
 
 transaction:
   private_key_fhevm_env: FHEVM_PRIVATE_KEY
@@ -42,11 +23,7 @@ transaction:
     max_attempts: 75
     base_delay_secs: 3
     max_delay_secs: 225
-contracts:
-  # Example local contract addresses - Update these after deployment
-  decryption_oracle_address: 0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d
-  decryption_address: 0xc9bAE822fE6793e3B456144AdB776D5A318CB71e
-  input_verification_address: 0x35760912360E875DA50D40a74305575c23D55783
+
 
 log:
   # Set log level for development

@@ -25,6 +25,7 @@ BASE_URL="http://localhost:9000/kms-public/PUB/VerfAddress"
 ENV_HOST="${SCRIPT_DIR}/../env/staging/.env.host.local"
 ENV_GATEWAY="${SCRIPT_DIR}/../env/staging/.env.gateway.local"
 ENV_COPROCESSOR="${SCRIPT_DIR}/../env/staging/.env.coprocessor.local"
+ENV_RELAYER="${SCRIPT_DIR}/../env/staging/.env.relayer.local"
 LOCAL_YAML="${SCRIPT_DIR}/../config/relayer/local.yaml.local"
 KEY_SIGNER_ID=$(docker logs kms-core | grep "Successfully stored public server signing key under the handle" | sed 's/.*handle \([^ ]*\).*/\1/')
 SIGNER_ADDRESS_URL="$BASE_URL/$KEY_SIGNER_ID"
@@ -97,11 +98,24 @@ SNS_KEY_URL="$BASE_URL/SnsKey/$KEY_GEN_ID"
 CRS_KEY_URL="$BASE_URL/CRS/$CRS_GEN_ID"
 
 ## RELAYER
-log_info "Updating $LOCAL_YAML..."
-cat $LOCAL_YAML | sed "s|url: \"http://minio:9000/kms-public/PUB/PublicKey/[^\"]*\"|url: \"$PUBLIC_KEY_URL\"|g" | \
-                    sed "s|url: \"http://minio:9000/kms-public/PUB/CRS/[^\"]*\"|url: \"$CRS_KEY_URL\"|g" > /tmp/local.yaml.new
-cat /tmp/local.yaml.new > "$LOCAL_YAML"
-log_info "KMS keys successfully updated in $LOCAL_YAML"
+log_info "Updating $ENV_RELAYER..."
+log_info "PUBLIC_KEY_URL: $PUBLIC_KEY_URL"
+log_info "CRS_KEY_URL: $CRS_KEY_URL"
+cat "$ENV_RELAYER" | \
+    sed "s|^APP_KEYURL__FHE_PUBLIC_KEY__URL=.*|APP_KEYURL__FHE_PUBLIC_KEY__URL=$PUBLIC_KEY_URL|g" | \
+    sed "s|^APP_KEYURL__CRS__URL=.*|APP_KEYURL__CRS__URL=$CRS_KEY_URL|g" > /tmp/env.relayer.new
+
+# Verify all changes were made
+if grep -q "APP_KEYURL__FHE_PUBLIC_KEY__URL=$PUBLIC_KEY_URL" /tmp/env.relayer.new && \
+   grep -q "APP_KEYURL__CRS__URL=$CRS_KEY_URL" /tmp/env.relayer.new; then
+    cat /tmp/env.relayer.new > "$ENV_RELAYER"
+    log_info "KMS keys successfully updated in $ENV_RELAYER"
+else
+    log_warn "Failed to update some KMS keys in relayer environment. Please verify the format and update manually."
+    log_info "Values that should be set:"
+    log_info "APP_KEYURL__FHE_PUBLIC_KEY__URL: $PUBLIC_KEY_URL"
+    log_info "APP_KEYURL__CRS__URL: $CRS_KEY_URL"
+fi
 
 ## COPROCESSOR
 log_info "Updating $ENV_COPROCESSOR..."
