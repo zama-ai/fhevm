@@ -119,6 +119,45 @@ describe("GatewayConfig", function () {
       ]);
     });
 
+    it("Should revert because the pauser is the null address", async function () {
+      const nullPauser = hre.ethers.ZeroAddress;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initialize",
+            args: [nullPauser, protocolMetadata, kmsThreshold, kmsNodes, coprocessors],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullPauser");
+    });
+
+    it("Should revert because the KMS nodes list is empty", async function () {
+      const emptyKmsNodes: KmsNodeStruct[] = [];
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initialize",
+            args: [pauser.address, protocolMetadata, kmsThreshold, emptyKmsNodes, coprocessors],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, "EmptyKmsNodes");
+    });
+
+    it("Should revert because the coprocessors list is empty", async function () {
+      const emptyCoprocessors: CoprocessorStruct[] = [];
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initialize",
+            args: [pauser.address, protocolMetadata, kmsThreshold, kmsNodes, emptyCoprocessors],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, "EmptyCoprocessors");
+    });
+
     it("Should revert because the KMS threshold is too high", async function () {
       // The KMS threshold must be between 0 and the number of KMS nodes
       const highKmsThreshold = nKmsNodes + 1;
@@ -258,9 +297,9 @@ describe("GatewayConfig", function () {
       });
 
       it("Should revert because the pauser is the null address", async function () {
-        const nullAddress = hre.ethers.ZeroAddress;
+        const nullPauser = hre.ethers.ZeroAddress;
 
-        await expect(gatewayConfig.connect(owner).updatePauser(nullAddress)).to.be.revertedWithCustomError(
+        await expect(gatewayConfig.connect(owner).updatePauser(nullPauser)).to.be.revertedWithCustomError(
           gatewayConfig,
           "InvalidNullPauser",
         );
