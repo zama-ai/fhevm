@@ -165,8 +165,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheAdd(lhsType, scalar);
         result = _binaryOp(Operators.fheAdd, lhs, rhs, scalar, lhsType);
@@ -185,8 +184,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheSub(lhsType, scalar);
         result = _binaryOp(Operators.fheSub, lhs, rhs, scalar, lhsType);
@@ -205,8 +203,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheMul(lhsType, scalar);
         result = _binaryOp(Operators.fheMul, lhs, rhs, scalar, lhsType);
@@ -227,8 +224,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheDiv(lhsType, scalar);
         result = _binaryOp(Operators.fheDiv, lhs, rhs, scalar, lhsType);
@@ -249,8 +245,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheRem(lhsType, scalar);
         result = _binaryOp(Operators.fheRem, lhs, rhs, scalar, lhsType);
@@ -271,8 +266,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheBitAnd(lhsType, scalar);
         result = _binaryOp(Operators.fheBitAnd, lhs, rhs, scalar, lhsType);
@@ -293,8 +287,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheBitOr(lhsType, scalar);
         result = _binaryOp(Operators.fheBitOr, lhs, rhs, scalar, lhsType);
@@ -315,8 +308,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheBitXor(lhsType, scalar);
         result = _binaryOp(Operators.fheBitXor, lhs, rhs, scalar, lhsType);
@@ -336,8 +328,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheShl(lhsType, scalar);
         result = _binaryOp(Operators.fheShl, lhs, rhs, scalar, lhsType);
@@ -357,8 +348,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheShr(lhsType, scalar);
         result = _binaryOp(Operators.fheShr, lhs, rhs, scalar, lhsType);
@@ -378,8 +368,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheRotl(lhsType, scalar);
         result = _binaryOp(Operators.fheRotl, lhs, rhs, scalar, lhsType);
@@ -399,8 +388,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheRotr(lhsType, scalar);
         result = _binaryOp(Operators.fheRotr, lhs, rhs, scalar, lhsType);
@@ -425,9 +413,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint512)) +
             (1 << uint8(FheType.Uint1024)) +
             (1 << uint8(FheType.Uint2048));
-
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         if (scalar == 0x01 && uint8(lhsType) > 8) revert IsScalar();
 
@@ -446,8 +432,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 supportedTypes = (1 << uint8(FheType.Uint512)) +
             (1 << uint8(FheType.Uint1024)) +
             (1 << uint8(FheType.Uint2048));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
 
         if (scalar != 0x01) revert SecondOperandIsNotScalar();
@@ -480,9 +465,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint512)) +
             (1 << uint8(FheType.Uint1024)) +
             (1 << uint8(FheType.Uint2048));
-
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         if (scalar == 0x01 && uint8(lhsType) > 8) revert IsScalar();
 
@@ -501,8 +484,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 supportedTypes = (1 << uint8(FheType.Uint512)) +
             (1 << uint8(FheType.Uint1024)) +
             (1 << uint8(FheType.Uint2048));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
 
         if (scalar != 0x01) revert SecondOperandIsNotScalar();
@@ -527,8 +509,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheGe(lhsType, scalar);
         result = _binaryOp(Operators.fheGe, lhs, rhs, scalar, FheType.Bool);
@@ -547,8 +528,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheGt(lhsType, scalar);
         result = _binaryOp(Operators.fheGt, lhs, rhs, scalar, FheType.Bool);
@@ -567,8 +547,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheLe(lhsType, scalar);
         result = _binaryOp(Operators.fheLe, lhs, rhs, scalar, FheType.Bool);
@@ -587,8 +566,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheLt(lhsType, scalar);
         result = _binaryOp(Operators.fheLt, lhs, rhs, scalar, FheType.Bool);
@@ -607,8 +585,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheMin(lhsType, scalar);
         result = _binaryOp(Operators.fheMin, lhs, rhs, scalar, lhsType);
@@ -627,8 +604,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        _requireType(lhs, supportedTypes);
-        FheType lhsType = _typeOf(lhs);
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         fheGasLimit.payForFheMax(lhsType, scalar);
         result = _binaryOp(Operators.fheMax, lhs, rhs, scalar, lhsType);
@@ -646,8 +622,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
-        _requireType(ct, supportedTypes);
-        FheType typeCt = _typeOf(ct);
+        FheType typeCt = _verifyAndReturnType(ct, supportedTypes);
         fheGasLimit.payForFheNeg(typeCt);
         result = _unaryOp(Operators.fheNeg, ct);
     }
@@ -665,8 +640,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
-        _requireType(ct, supportedTypes);
-        FheType typeCt = _typeOf(ct);
+        FheType typeCt = _verifyAndReturnType(ct, supportedTypes);
         fheGasLimit.payForFheNot(typeCt);
         result = _unaryOp(Operators.fheNot, ct);
     }
@@ -690,8 +664,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint512)) +
             (1 << uint8(FheType.Uint1024)) +
             (1 << uint8(FheType.Uint2048));
-        _requireType(ifTrue, supportedTypes);
-        FheType typeCt = _typeOf(ifTrue);
+        FheType typeCt = _verifyAndReturnType(ifTrue, supportedTypes);
         fheGasLimit.payForIfThenElse(typeCt);
         result = _ternaryOp(Operators.fheIfThenElse, control, ifTrue, ifFalse);
     }
@@ -732,7 +705,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
-        _requireType(ct, supportedTypesInput);
+        FheType typeCt = _verifyAndReturnType(ct, supportedTypesInput);
         uint256 supportedTypesOutput = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
             (1 << uint8(FheType.Uint32)) +
@@ -741,7 +714,6 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint256)); // @note: unsupported casting to ebool (use fheNe instead)
         if ((1 << uint8(toType)) & supportedTypesOutput == 0) revert UnsupportedType();
 
-        FheType typeCt = _typeOf(ct);
         /// @dev It must not cast to same type.
         if (typeCt == toType) revert InvalidType();
         fheGasLimit.payForCast(typeCt);
@@ -897,8 +869,11 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
-    function _requireType(bytes32 handle, uint256 supportedTypes) internal pure virtual {
-        FheType typeCt = _typeOf(handle);
+    function _verifyAndReturnType(
+        bytes32 handle,
+        uint256 supportedTypes
+    ) internal pure virtual returns (FheType typeCt) {
+        typeCt = _typeOf(handle);
         if ((1 << uint8(typeCt)) & supportedTypes == 0) revert UnsupportedType();
     }
 
