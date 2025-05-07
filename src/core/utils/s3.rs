@@ -1,6 +1,4 @@
 use alloy::{hex::encode, primitives::Address, providers::Provider, transports::http::reqwest};
-use aws_config::BehaviorVersion;
-use aws_sdk_s3::{Client as S3Client, config::Region};
 use dashmap::DashMap;
 use fhevm_gateway_rust_bindings::gatewayconfig::GatewayConfig;
 use sha3::{Digest, Keccak256};
@@ -33,7 +31,7 @@ fn log_cache_state() {
 }
 
 /// Retrieves the S3 bucket URL for a coprocessor from the GatewayConfig contract
-pub async fn call_gateway_config_to_get_s3_url<P: Provider + Clone>(
+pub async fn get_s3_url_from_gateway_config<P: Provider>(
     coprocessor_address: Address,
     gateway_config_address: Address,
     provider: Arc<P>,
@@ -102,152 +100,6 @@ pub async fn call_gateway_config_to_get_s3_url<P: Provider + Clone>(
     Some(s3_bucket_url)
 }
 
-/// Process an S3 bucket URL to extract the region, endpoint URL, and bucket name
-///
-/// Handles various S3 URL formats:
-/// - Standard AWS URLs: https://bucket-name.s3.region.amazonaws.com
-/// - Path-style URLs: https://s3.region.amazonaws.com/bucket-name
-/// - Custom endpoints: https://custom-endpoint.com/bucket-name
-/// - Custom endpoints with region: https://custom-endpoint.com/s3/region/bucket
-/// - URLs with trailing slashes: https://endpoint:9000/bucket/
-///
-/// Returns Option with tuple of (region, endpoint_url, bucket) or None if extraction fails
-fn process_s3_bucket_url(s3_bucket_url: String) -> Option<(String, String, String)> {
-    info!("Processing S3 bucket URL: {}", s3_bucket_url);
-
-    // Parse the URL
-    let url = match url::Url::parse(&s3_bucket_url) {
-        Ok(url) => url,
-        Err(e) => {
-            warn!(
-                "Failed to parse S3 bucket URL: {} - Error: {}",
-                s3_bucket_url, e
-            );
-            return None;
-        }
-    };
-
-    // Extract hostname
-    let host = match url.host_str() {
-        Some(host) => host,
-        None => {
-            warn!("No host in S3 bucket URL: {}", s3_bucket_url);
-            return None;
-        }
-    };
-
-    // Helper function to create endpoint URL with port if needed
-    let make_endpoint = |host: &str| {
-        if let Some(port) = url.port() {
-            format!("{}://{}:{}", url.scheme(), host, port)
-        } else {
-            format!("{}://{}", url.scheme(), host)
-        }
-    };
-
-    // Check if it's an AWS S3 URL
-    if host.contains("amazonaws.com") {
-        let parts: Vec<&str> = host.split('.').collect();
-
-        // Handle bucket-name.s3.region.amazonaws.com format (virtual-hosted style)
-        if parts.len() >= 4 && parts[1] == "s3" {
-            let bucket = parts[0].to_string();
-            let region = parts[2].to_string();
-            let endpoint = make_endpoint(host);
-
-            info!(
-                "Extracted virtual-hosted style S3 URL - Region: {}, Endpoint: {}, Bucket: {}",
-                region, endpoint, bucket
-            );
-            return Some((region, endpoint, bucket));
-        }
-
-        // Handle s3.region.amazonaws.com/bucket-name format (path-style)
-        if parts.len() >= 3 && parts[0] == "s3" {
-            if let Some(mut path_segments) = url.path_segments() {
-                if let Some(bucket) = path_segments.next().filter(|s| !s.is_empty()) {
-                    let region = parts[1].to_string();
-                    let endpoint = make_endpoint(host);
-
-                    info!(
-                        "Extracted path-style S3 URL - Region: {}, Endpoint: {}, Bucket: {}",
-                        region, endpoint, bucket
-                    );
-                    return Some((region, endpoint, bucket.to_string()));
-                }
-            }
-
-            warn!(
-                "Could not extract bucket from path-style S3 URL: {}",
-                s3_bucket_url
-            );
-            return None;
-        }
-    }
-
-    // For custom endpoints, get path segments
-    let path_segments: Vec<&str> = url.path_segments().map_or(Vec::new(), |segments| {
-        segments
-            .collect::<Vec<&str>>()
-            .into_iter()
-            .filter(|s| !s.is_empty())
-            .collect()
-    });
-
-    // No path segments means there's no bucket in the path
-    if path_segments.is_empty() {
-        warn!("No path segments found in URL: {}", s3_bucket_url);
-        return None;
-    }
-
-    // Handle simple case: http://localhost:9000/bucket
-    if path_segments.len() == 1 {
-        let bucket = path_segments[0].to_string();
-        // Use a default region for simple URLs
-        // Note: This is an assumption, but necessary for simple URLs without region info
-        let region = "us-east-1".to_string();
-        let endpoint = make_endpoint(host);
-
-        info!(
-            "Extracted simple URL - Region: {} (default), Endpoint: {}, Bucket: {}",
-            region, endpoint, bucket
-        );
-        return Some((region, endpoint, bucket));
-    }
-
-    // Check for region in path (some S3-compatible services put region in path)
-    for (i, segment) in path_segments.iter().enumerate() {
-        if *segment == "s3" && i + 1 < path_segments.len() {
-            let region = path_segments[i + 1].to_string();
-
-            // Try to extract bucket from the path
-            if i + 2 < path_segments.len() {
-                let bucket = path_segments[i + 2].to_string();
-                let endpoint = make_endpoint(host);
-
-                info!(
-                    "Extracted custom endpoint S3 URL - Region: {}, Endpoint: {}, Bucket: {}",
-                    region, endpoint, bucket
-                );
-                return Some((region, endpoint, bucket));
-            }
-
-            warn!(
-                "Could extract region '{}' but not bucket from URL: {}",
-                region, s3_bucket_url
-            );
-            return None;
-        }
-    }
-
-    // If we can't determine the region or bucket with confidence, log and return None
-    warn!(
-        "Could not extract region and bucket from S3 URL: {}",
-        s3_bucket_url
-    );
-    None
-}
-
 /// Compute Keccak256 digest of a byte array
 pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
     debug!("Computing Keccak256 digest for {} bytes of data", ct.len());
@@ -259,94 +111,19 @@ pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
 }
 
 /// Retrieves a ciphertext from S3 using the bucket URL and ciphertext digest
-pub async fn call_s3_ciphertext_retrieval(
+pub async fn retrieve_s3_ciphertext(
     s3_bucket_url: String,
     ciphertext_digest: Vec<u8>,
-    s3_config: Option<S3Config>,
-) -> Option<Vec<u8>> {
+) -> Result<Vec<u8>> {
     let digest_hex = encode(&ciphertext_digest);
     info!(
         "S3 RETRIEVAL START: Retrieving ciphertext with digest {} from S3 bucket {}",
         digest_hex, s3_bucket_url
     );
 
-    // Try direct HTTP retrieval first if we have an HTTP endpoint
-    if s3_bucket_url.starts_with("http") {
-        if let Some(data) =
-            try_direct_http_retrieval(&s3_bucket_url, &digest_hex, &ciphertext_digest).await
-        {
-            return Some(data);
-        }
-    }
-
-    // Process S3 bucket URL or use fallback configuration
-    let (region, endpoint, bucket) = get_s3_components(&s3_bucket_url, s3_config.as_ref())?;
-
-    // Fall back to S3 SDK retrieval
-    try_s3_sdk_retrieval(&region, &endpoint, &bucket, &digest_hex, &ciphertext_digest).await
-}
-
-/// Helper function to get S3 components from URL or fallback config
-fn get_s3_components(
-    s3_bucket_url: &str,
-    s3_config: Option<&S3Config>,
-) -> Option<(String, String, String)> {
-    info!("Processing S3 bucket URL to extract components");
-
-    // Try to extract components from URL
-    if let Some((region, endpoint, bucket)) = process_s3_bucket_url(s3_bucket_url.to_string()) {
-        info!(
-            "Successfully extracted S3 components - Region: {}, Endpoint: {}, Bucket: {}",
-            region, endpoint, bucket
-        );
-        return Some((region, endpoint, bucket));
-    }
-
-    // Fall back to provided config if URL processing fails
-    warn!(
-        "URL processing failed. Using fallback configuration for S3 URL: {}",
-        s3_bucket_url
-    );
-
-    let config = s3_config?;
-    let endpoint = config.endpoint.as_ref()?;
-
-    info!(
-        "Using fallback configuration - Region: {}, Endpoint: {}, Bucket: {}",
-        config.region, endpoint, config.bucket
-    );
-
-    Some((
-        config.region.clone(),
-        endpoint.clone(),
-        config.bucket.clone(),
-    ))
-}
-
-/// Try to retrieve ciphertext via direct HTTP
-async fn try_direct_http_retrieval(
-    endpoint: &str,
-    digest_hex: &str,
-    ciphertext_digest: &[u8],
-) -> Option<Vec<u8>> {
-    info!(
-        "Attempting direct HTTP retrieval from endpoint: {}, key: {}",
-        endpoint, digest_hex
-    );
-
-    // Try direct HTTP retrieval
-    let direct_url = format!("{endpoint}/{digest_hex}");
-    let ciphertext = match direct_http_retrieval(&direct_url).await {
-        Ok(data) => data,
-        Err(e) => {
-            warn!(
-                "Direct HTTP retrieval failed, falling back to S3 SDK: {}",
-                e
-            );
-            return None;
-        }
-    };
-
+    // Direct HTTP retrieval
+    let direct_url = format!("{}/{}", s3_bucket_url, digest_hex);
+    let ciphertext = direct_http_retrieval(&direct_url).await?;
     info!(
         "DIRECT HTTP RETRIEVAL SUCCESS: Retrieved {} bytes",
         ciphertext.len()
@@ -365,101 +142,7 @@ async fn try_direct_http_retrieval(
     }
 
     // Return data even with digest mismatch for non-failability
-    Some(ciphertext)
-}
-
-/// Try to retrieve ciphertext via S3 SDK
-async fn try_s3_sdk_retrieval(
-    region: &str,
-    endpoint: &str,
-    bucket: &str,
-    digest_hex: &str,
-    ciphertext_digest: &[u8],
-) -> Option<Vec<u8>> {
-    info!(
-        "Configuring S3 client - Region: {}, Endpoint: {}, Bucket: {}",
-        region, endpoint, bucket
-    );
-
-    // Create S3 client with custom timeout and retry configs
-    let config = aws_config::defaults(BehaviorVersion::latest())
-        .region(Region::new(region.to_string()))
-        .endpoint_url(endpoint)
-        .timeout_config(
-            aws_sdk_s3::config::timeout::TimeoutConfig::builder()
-                .operation_timeout(Duration::from_secs(1))
-                .operation_attempt_timeout(Duration::from_millis(750))
-                .build(),
-        )
-        .retry_config(
-            aws_sdk_s3::config::retry::RetryConfig::standard()
-                .with_max_attempts(2)
-                .with_initial_backoff(Duration::from_millis(50)),
-        )
-        .load()
-        .await;
-
-    let client = S3Client::new(&config);
-    info!(
-        "S3 client configured with region: {}, endpoint: {}, timeouts: 1s/750ms, retries: 2",
-        region, endpoint
-    );
-
-    // Get the object from S3
-    info!("S3 GET REQUEST: bucket={}, key={}", bucket, digest_hex);
-    let resp = match client
-        .get_object()
-        .bucket(bucket)
-        .key(digest_hex)
-        .send()
-        .await
-    {
-        Ok(resp) => resp,
-        Err(e) => {
-            warn!(
-                "S3 GET FAILED: bucket={}, key={}, error={}",
-                bucket, digest_hex, e
-            );
-            return None;
-        }
-    };
-
-    info!(
-        "S3 GET SUCCESS: bucket={}, key={}, content-length={:?}",
-        bucket,
-        digest_hex,
-        resp.content_length()
-    );
-
-    // Read the object body
-    let body = match resp.body.collect().await {
-        Ok(body) => body,
-        Err(e) => {
-            warn!("Failed to read S3 object body: {}", e);
-            return None;
-        }
-    };
-
-    let ciphertext = body.into_bytes().to_vec();
-    info!(
-        "S3 BODY READ COMPLETE: Retrieved {} bytes",
-        ciphertext.len()
-    );
-
-    // Verify digest
-    let calculated_digest = compute_digest(&ciphertext);
-    if calculated_digest != ciphertext_digest {
-        warn!(
-            "S3 DIGEST MISMATCH: Expected: {}, Got: {}",
-            encode(ciphertext_digest),
-            encode(&calculated_digest)
-        );
-    } else {
-        info!("S3 RETRIEVAL COMPLETE: Successfully verified ciphertext digest");
-    }
-
-    // Return data even with digest mismatch for non-failability
-    Some(ciphertext)
+    Ok(ciphertext)
 }
 
 /// Retrieves a file directly via HTTP
@@ -548,7 +231,7 @@ pub async fn prefetch_coprocessor_buckets<P: Provider + Clone>(
             address
         );
 
-        match call_gateway_config_to_get_s3_url(*address, gateway_config_address, provider.clone())
+        match get_s3_url_from_gateway_config(*address, gateway_config_address, provider.clone())
             .await
         {
             Some(s3_url) => {
@@ -616,92 +299,6 @@ mod tests {
     use tracing_subscriber::fmt;
 
     #[test]
-    fn test_process_s3_bucket_url_virtual_hosted() {
-        // Test virtual-hosted style URL (bucket-name.s3.region.amazonaws.com)
-        let url = "https://my-bucket.s3.us-west-2.amazonaws.com".to_string();
-        let result = process_s3_bucket_url(url);
-        assert!(result.is_some());
-        let (region, endpoint, bucket) = result.unwrap();
-        assert_eq!(region, "us-west-2");
-        assert_eq!(endpoint, "https://my-bucket.s3.us-west-2.amazonaws.com");
-        assert_eq!(bucket, "my-bucket");
-    }
-
-    #[test]
-    fn test_process_s3_bucket_url_path_style() {
-        // Test path-style URL (s3.region.amazonaws.com/bucket-name)
-        let url = "https://s3.eu-central-1.amazonaws.com/my-bucket".to_string();
-        let result = process_s3_bucket_url(url);
-        assert!(result.is_some());
-        let (region, endpoint, bucket) = result.unwrap();
-        assert_eq!(region, "eu-central-1");
-        assert_eq!(endpoint, "https://s3.eu-central-1.amazonaws.com");
-        assert_eq!(bucket, "my-bucket");
-    }
-
-    #[test]
-    fn test_process_s3_bucket_url_path_region() {
-        // Test URL with region in path
-        let url = "https://storage.example.com/s3/ap-southeast-1/ct128".to_string();
-        let result = process_s3_bucket_url(url);
-        assert!(result.is_some());
-        let (region, endpoint, bucket) = result.unwrap();
-        assert_eq!(region, "ap-southeast-1");
-        assert_eq!(endpoint, "https://storage.example.com");
-        assert_eq!(bucket, "ct128");
-    }
-
-    #[test]
-    fn test_process_s3_bucket_url_negative_cases() {
-        // Test URLs that should not be parsed successfully
-
-        // URL with no path segments
-        let url1 = "https://storage.example.com".to_string();
-        assert!(process_s3_bucket_url(url1).is_none());
-
-        // URL with multiple path segments but no recognizable pattern
-        let url2 = "https://storage.example.com/bucket/folder".to_string();
-        assert!(process_s3_bucket_url(url2).is_none());
-
-        // Malformed URL
-        let url3 = "not-a-url".to_string();
-        assert!(process_s3_bucket_url(url3).is_none());
-    }
-
-    #[test]
-    fn test_process_s3_bucket_url_simple_format() {
-        // Test simple URL format with just host and bucket in first path segment
-        let url = "http://localhost:9000/bucket-name".to_string();
-        let result = process_s3_bucket_url(url);
-        assert!(result.is_some());
-        let (region, endpoint, bucket) = result.unwrap();
-        assert_eq!(region, "us-east-1"); // Default region for simple URLs
-        assert_eq!(endpoint, "http://localhost:9000");
-        assert_eq!(bucket, "bucket-name");
-
-        // Test with trailing slash
-        let url_with_slash = "http://localhost:9000/bucket-name/".to_string();
-        let result_with_slash = process_s3_bucket_url(url_with_slash);
-        assert!(result_with_slash.is_some());
-        let (region, endpoint, bucket) = result_with_slash.unwrap();
-        assert_eq!(region, "us-east-1");
-        assert_eq!(endpoint, "http://localhost:9000");
-        assert_eq!(bucket, "bucket-name");
-    }
-
-    #[test]
-    fn test_process_s3_bucket_url_custom_endpoint_with_region_path() {
-        // Test URL with custom endpoint and region in path segment
-        let url = "http://minio.fhevm-utils.svc.cluster.local:9000/s3/us-east-1/ct128".to_string();
-        let result = process_s3_bucket_url(url);
-        assert!(result.is_some());
-        let (region, endpoint, bucket) = result.unwrap();
-        assert_eq!(region, "us-east-1");
-        assert_eq!(endpoint, "http://minio.fhevm-utils.svc.cluster.local:9000");
-        assert_eq!(bucket, "ct128");
-    }
-
-    #[test]
     fn test_compute_digest_empty_input() {
         // Test digest calculation for empty input
         let empty_data: Vec<u8> = vec![];
@@ -757,38 +354,7 @@ mod tests {
     // This test requires a running MinIO server
     #[ignore]
     #[tokio::test]
-    async fn test_direct_http_retrieval_minio() {
-        // Initialize tracing for this test
-        let subscriber = fmt()
-            .with_max_level(tracing::Level::INFO)
-            .with_test_writer()
-            .finish();
-        let _guard = tracing::subscriber::set_default(subscriber);
-
-        let minio_url = "http://localhost:9000";
-        let bucket = "ct128";
-        let key = "1c37ba3cfd0151dd03584cd4819c6296d6a8b4d7ac3e31554fb0e842eab8ada9";
-
-        println!(
-            "Testing direct HTTP retrieval from MinIO at URL: {}",
-            minio_url
-        );
-
-        let data = direct_http_retrieval(&format!("{}/{}/{}", minio_url, bucket, key)).await.expect("Failed to retrieve file from MinIO. Make sure MinIO server is running at http://localhost:9000 with a bucket named 'ct128'");
-
-        println!("Successfully retrieved {} bytes from MinIO", data.len());
-
-        let calculated_digest = compute_digest(&data);
-        println!("Retrieved data digest: {}", encode(&calculated_digest));
-
-        assert!(!data.is_empty(), "Retrieved data should not be empty");
-    }
-
-    // TODO: to remove after integration: sanity check
-    // This test requires a running MinIO server
-    #[ignore]
-    #[tokio::test]
-    async fn test_call_s3_ciphertext_retrieval_minio() {
+    async fn test_retrieve_s3_ciphertext_minio() {
         // Initialize tracing for this test
         let subscriber = fmt()
             .with_max_level(tracing::Level::INFO)
@@ -807,17 +373,11 @@ mod tests {
         let digest_hex = "1c37ba3cfd0151dd03584cd4819c6296d6a8b4d7ac3e31554fb0e842eab8ada9";
         let digest_bytes = alloy::hex::decode(digest_hex).expect("Failed to decode hex digest");
 
-        let s3_config = Some(S3Config {
-            region: "us-east-1".to_string(),
-            bucket: bucket.to_string(),
-            endpoint: Some(minio_url.to_string()),
-        });
-
         // Test the full retrieval function
-        let result = call_s3_ciphertext_retrieval(call_url, digest_bytes.clone(), s3_config).await;
+        let result = retrieve_s3_ciphertext(call_url, digest_bytes.clone()).await;
 
         match result {
-            Some(data) => {
+            Ok(data) => {
                 println!(
                     "Successfully retrieved {} bytes from MinIO via call_s3_ciphertext_retrieval",
                     data.len()
@@ -830,9 +390,9 @@ mod tests {
                 println!("Retrieved data digest: {}", calculated_hex);
                 println!("Expected digest: {}", digest_hex);
             }
-            None => {
+            Err(error) => {
                 // This should only happen if both direct HTTP and S3 SDK retrievals fail completely
-                println!("Failed to retrieve ciphertext from MinIO");
+                println!("Failed to retrieve ciphertext from MinIO: {}", error);
                 println!(
                     "This is expected if MinIO is not running or the bucket/object doesn't exist"
                 );
