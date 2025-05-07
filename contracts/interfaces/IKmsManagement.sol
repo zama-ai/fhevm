@@ -304,7 +304,6 @@ interface IKmsManagement {
      */
     function activateKeyRequest(uint256 keyId) external;
 
-    // TODO: Check if this is needed
     /**
      * @notice Handle the response of a key activation.
      * @dev This function can only be called by a coprocessor.

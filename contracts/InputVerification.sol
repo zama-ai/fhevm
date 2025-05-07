@@ -114,7 +114,6 @@ contract InputVerification is
         bytes calldata ciphertextWithZKProof
     ) external virtual onlyRegisteredNetwork(contractChainId) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
-        // TODO(#52): Implement sending service fees to PaymentManager contract
 
         $.zkProofIdCounter++;
         uint256 zkProofId = $.zkProofIdCounter;
@@ -174,7 +173,6 @@ contract InputVerification is
          * check that the ZK proof request has not been rejected yet.
          */
         if (!$.verifiedZKProofs[zkProofId] && _isConsensusReached(currentSignatures.length)) {
-            // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
             $.verifiedZKProofs[zkProofId] = true;
 
             emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
@@ -212,7 +210,6 @@ contract InputVerification is
          * check that the ZK proof request has not been verified yet.
          */
         if (!$.rejectedZKProofs[zkProofId] && _isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
-            // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
             $.rejectedZKProofs[zkProofId] = true;
 
             emit RejectProofResponse(zkProofId);

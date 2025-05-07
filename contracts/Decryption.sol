@@ -238,8 +238,6 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         /// @dev The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[publicDecryptionId] = ctHandles;
 
-        // TODO: Implement sending service fees to PaymentManager contract
-
         emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials);
     }
 
@@ -274,8 +272,6 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         /// @dev This means a "late" response will not be reverted, just ignored
         if (!$.publicDecryptionDone[publicDecryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
             $.publicDecryptionDone[publicDecryptionId] = true;
-
-            // TODO: Implement sending service fees to PaymentManager contract
 
             emit PublicDecryptionResponse(publicDecryptionId, decryptedResult, verifiedSignatures);
         }
@@ -341,8 +337,6 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
-
-        // TODO: Implement sending service fees to PaymentManager contract
 
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey);
     }
@@ -418,8 +412,6 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        // TODO: Implement sending service fees to PaymentManager contract
-
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, delegationAccounts.delegatedAddress, publicKey);
     }
 
@@ -458,8 +450,6 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         /// @dev This means a "late" response will not be reverted, just ignored
         if (!$.userDecryptionDone[userDecryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
             $.userDecryptionDone[userDecryptionId] = true;
-
-            // TODO: Implement sending service fees to PaymentManager contract
 
             emit UserDecryptionResponse(userDecryptionId, $.userDecryptedShares[userDecryptionId], verifiedSignatures);
         }

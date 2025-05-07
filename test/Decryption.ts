@@ -1320,7 +1320,7 @@ describe("Decryption", function () {
         chainId,
         decryptionAddress,
         publicKey,
-        contractAddresses, // TODO: maybe to string
+        contractAddresses,
         delegatorAddress.toString(),
         hostChainId,
         requestValidity.startTimestamp.toString(),
