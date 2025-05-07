@@ -11,8 +11,9 @@ interface IMultichainAcl {
     error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress);
     error AccountNotDelegated(uint256 chainId, DelegationAccounts delegationAccounts, address contractAddress);
     error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
-    error CoprocessorAlreadyAllowed(address coprocessor, bytes32 ctHandle);
-    error CoprocessorAlreadyDelegated(address coprocessor, uint256 chainId, DelegationAccounts delegationAccounts, address[] contractAddresses);
+    error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
+    error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
+    error CoprocessorAlreadyDelegated(uint256 chainId, DelegationAccounts delegationAccounts, address[] contractAddresses, address txSender);
     error EmptyContractAddresses();
     error PublicDecryptNotAllowed(bytes32 ctHandle);
 
@@ -314,17 +315,38 @@ interface IMultichainAcl {
   },
   {
     "type": "error",
-    "name": "CoprocessorAlreadyAllowed",
+    "name": "CoprocessorAlreadyAllowedAccount",
     "inputs": [
-      {
-        "name": "coprocessor",
-        "type": "address",
-        "internalType": "address"
-      },
       {
         "name": "ctHandle",
         "type": "bytes32",
         "internalType": "bytes32"
+      },
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "txSender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CoprocessorAlreadyAllowedPublicDecrypt",
+    "inputs": [
+      {
+        "name": "ctHandle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "txSender",
+        "type": "address",
+        "internalType": "address"
       }
     ]
   },
@@ -332,11 +354,6 @@ interface IMultichainAcl {
     "type": "error",
     "name": "CoprocessorAlreadyDelegated",
     "inputs": [
-      {
-        "name": "coprocessor",
-        "type": "address",
-        "internalType": "address"
-      },
       {
         "name": "chainId",
         "type": "uint256",
@@ -363,6 +380,11 @@ interface IMultichainAcl {
         "name": "contractAddresses",
         "type": "address[]",
         "internalType": "address[]"
+      },
+      {
+        "name": "txSender",
+        "type": "address",
+        "internalType": "address"
       }
     ]
   },
@@ -904,17 +926,19 @@ error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `CoprocessorAlreadyAllowed(address,bytes32)` and selector `0x4763cce2`.
+    /**Custom error with signature `CoprocessorAlreadyAllowedAccount(bytes32,address,address)` and selector `0x6637e32d`.
 ```solidity
-error CoprocessorAlreadyAllowed(address coprocessor, bytes32 ctHandle);
+error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct CoprocessorAlreadyAllowed {
-        #[allow(missing_docs)]
-        pub coprocessor: alloy::sol_types::private::Address,
+    pub struct CoprocessorAlreadyAllowedAccount {
         #[allow(missing_docs)]
         pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub account: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub txSender: alloy::sol_types::private::Address,
     }
     #[allow(
         non_camel_case_types,
@@ -926,13 +950,15 @@ error CoprocessorAlreadyAllowed(address coprocessor, bytes32 ctHandle);
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Address,
             alloy::sol_types::sol_data::FixedBytes<32>,
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Address,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::Address,
             alloy::sol_types::private::FixedBytes<32>,
+            alloy::sol_types::private::Address,
+            alloy::sol_types::private::Address,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -947,31 +973,32 @@ error CoprocessorAlreadyAllowed(address coprocessor, bytes32 ctHandle);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<CoprocessorAlreadyAllowed>
+        impl ::core::convert::From<CoprocessorAlreadyAllowedAccount>
         for UnderlyingRustTuple<'_> {
-            fn from(value: CoprocessorAlreadyAllowed) -> Self {
-                (value.coprocessor, value.ctHandle)
+            fn from(value: CoprocessorAlreadyAllowedAccount) -> Self {
+                (value.ctHandle, value.account, value.txSender)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for CoprocessorAlreadyAllowed {
+        for CoprocessorAlreadyAllowedAccount {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    coprocessor: tuple.0,
-                    ctHandle: tuple.1,
+                    ctHandle: tuple.0,
+                    account: tuple.1,
+                    txSender: tuple.2,
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for CoprocessorAlreadyAllowed {
+        impl alloy_sol_types::SolError for CoprocessorAlreadyAllowedAccount {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "CoprocessorAlreadyAllowed(address,bytes32)";
-            const SELECTOR: [u8; 4] = [71u8, 99u8, 204u8, 226u8];
+            const SIGNATURE: &'static str = "CoprocessorAlreadyAllowedAccount(bytes32,address,address)";
+            const SELECTOR: [u8; 4] = [102u8, 55u8, 227u8, 45u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -981,34 +1008,31 @@ error CoprocessorAlreadyAllowed(address coprocessor, bytes32 ctHandle);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.coprocessor,
-                    ),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.account,
+                    ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.txSender,
+                    ),
                 )
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `CoprocessorAlreadyDelegated(address,uint256,(address,address),address[])` and selector `0x1fe5d458`.
+    /**Custom error with signature `CoprocessorAlreadyAllowedPublicDecrypt(bytes32,address)` and selector `0xa6f04d26`.
 ```solidity
-error CoprocessorAlreadyDelegated(address coprocessor, uint256 chainId, DelegationAccounts delegationAccounts, address[] contractAddresses);
+error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct CoprocessorAlreadyDelegated {
+    pub struct CoprocessorAlreadyAllowedPublicDecrypt {
         #[allow(missing_docs)]
-        pub coprocessor: alloy::sol_types::private::Address,
+        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
-        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub delegationAccounts: <DelegationAccounts as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub contractAddresses: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::Address,
-        >,
+        pub txSender: alloy::sol_types::private::Address,
     }
     #[allow(
         non_camel_case_types,
@@ -1020,17 +1044,111 @@ error CoprocessorAlreadyDelegated(address coprocessor, uint256 chainId, Delegati
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Address,
-            alloy::sol_types::sol_data::Uint<256>,
-            DelegationAccounts,
-            alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::FixedBytes<32>,
             alloy::sol_types::private::Address,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CoprocessorAlreadyAllowedPublicDecrypt>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorAlreadyAllowedPublicDecrypt) -> Self {
+                (value.ctHandle, value.txSender)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CoprocessorAlreadyAllowedPublicDecrypt {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    ctHandle: tuple.0,
+                    txSender: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CoprocessorAlreadyAllowedPublicDecrypt {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CoprocessorAlreadyAllowedPublicDecrypt(bytes32,address)";
+            const SELECTOR: [u8; 4] = [166u8, 240u8, 77u8, 38u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.txSender,
+                    ),
+                )
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CoprocessorAlreadyDelegated(uint256,(address,address),address[],address)` and selector `0x0cc695ad`.
+```solidity
+error CoprocessorAlreadyDelegated(uint256 chainId, DelegationAccounts delegationAccounts, address[] contractAddresses, address txSender);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CoprocessorAlreadyDelegated {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub delegationAccounts: <DelegationAccounts as alloy::sol_types::SolType>::RustType,
+        #[allow(missing_docs)]
+        pub contractAddresses: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::Address,
+        >,
+        #[allow(missing_docs)]
+        pub txSender: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            DelegationAccounts,
+            alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            alloy::sol_types::sol_data::Address,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
             alloy::sol_types::private::primitives::aliases::U256,
             <DelegationAccounts as alloy::sol_types::SolType>::RustType,
             alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            alloy::sol_types::private::Address,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -1049,10 +1167,10 @@ error CoprocessorAlreadyDelegated(address coprocessor, uint256 chainId, Delegati
         for UnderlyingRustTuple<'_> {
             fn from(value: CoprocessorAlreadyDelegated) -> Self {
                 (
-                    value.coprocessor,
                     value.chainId,
                     value.delegationAccounts,
                     value.contractAddresses,
+                    value.txSender,
                 )
             }
         }
@@ -1062,10 +1180,10 @@ error CoprocessorAlreadyDelegated(address coprocessor, uint256 chainId, Delegati
         for CoprocessorAlreadyDelegated {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    coprocessor: tuple.0,
-                    chainId: tuple.1,
-                    delegationAccounts: tuple.2,
-                    contractAddresses: tuple.3,
+                    chainId: tuple.0,
+                    delegationAccounts: tuple.1,
+                    contractAddresses: tuple.2,
+                    txSender: tuple.3,
                 }
             }
         }
@@ -1075,8 +1193,8 @@ error CoprocessorAlreadyDelegated(address coprocessor, uint256 chainId, Delegati
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "CoprocessorAlreadyDelegated(address,uint256,(address,address),address[])";
-            const SELECTOR: [u8; 4] = [31u8, 229u8, 212u8, 88u8];
+            const SIGNATURE: &'static str = "CoprocessorAlreadyDelegated(uint256,(address,address),address[],address)";
+            const SELECTOR: [u8; 4] = [12u8, 198u8, 149u8, 173u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -1086,9 +1204,6 @@ error CoprocessorAlreadyDelegated(address coprocessor, uint256 chainId, Delegati
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.coprocessor,
-                    ),
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.chainId),
@@ -1098,6 +1213,9 @@ error CoprocessorAlreadyDelegated(address coprocessor, uint256 chainId, Delegati
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::Address,
                     > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.txSender,
+                    ),
                 )
             }
         }
@@ -2843,7 +2961,9 @@ function getVersion() external pure returns (string memory);
         #[allow(missing_docs)]
         ContractsMaxLengthExceeded(ContractsMaxLengthExceeded),
         #[allow(missing_docs)]
-        CoprocessorAlreadyAllowed(CoprocessorAlreadyAllowed),
+        CoprocessorAlreadyAllowedAccount(CoprocessorAlreadyAllowedAccount),
+        #[allow(missing_docs)]
+        CoprocessorAlreadyAllowedPublicDecrypt(CoprocessorAlreadyAllowedPublicDecrypt),
         #[allow(missing_docs)]
         CoprocessorAlreadyDelegated(CoprocessorAlreadyDelegated),
         #[allow(missing_docs)]
@@ -2860,12 +2980,13 @@ function getVersion() external pure returns (string memory);
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [12u8, 198u8, 149u8, 173u8],
             [17u8, 108u8, 174u8, 163u8],
             [22u8, 10u8, 43u8, 75u8],
-            [31u8, 229u8, 212u8, 88u8],
             [67u8, 49u8, 168u8, 93u8],
-            [71u8, 99u8, 204u8, 226u8],
             [87u8, 207u8, 162u8, 23u8],
+            [102u8, 55u8, 227u8, 45u8],
+            [166u8, 240u8, 77u8, 38u8],
             [192u8, 164u8, 16u8, 21u8],
         ];
     }
@@ -2873,7 +2994,7 @@ function getVersion() external pure returns (string memory);
     impl alloy_sol_types::SolInterface for IMultichainAclErrors {
         const NAME: &'static str = "IMultichainAclErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 7usize;
+        const COUNT: usize = 8usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -2886,8 +3007,11 @@ function getVersion() external pure returns (string memory);
                 Self::ContractsMaxLengthExceeded(_) => {
                     <ContractsMaxLengthExceeded as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::CoprocessorAlreadyAllowed(_) => {
-                    <CoprocessorAlreadyAllowed as alloy_sol_types::SolError>::SELECTOR
+                Self::CoprocessorAlreadyAllowedAccount(_) => {
+                    <CoprocessorAlreadyAllowedAccount as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::CoprocessorAlreadyAllowedPublicDecrypt(_) => {
+                    <CoprocessorAlreadyAllowedPublicDecrypt as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::CoprocessorAlreadyDelegated(_) => {
                     <CoprocessorAlreadyDelegated as alloy_sol_types::SolError>::SELECTOR
@@ -2920,6 +3044,19 @@ function getVersion() external pure returns (string memory);
                 bool,
             ) -> alloy_sol_types::Result<IMultichainAclErrors>] = &[
                 {
+                    fn CoprocessorAlreadyDelegated(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
+                        <CoprocessorAlreadyDelegated as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IMultichainAclErrors::CoprocessorAlreadyDelegated)
+                    }
+                    CoprocessorAlreadyDelegated
+                },
+                {
                     fn ContractsMaxLengthExceeded(
                         data: &[u8],
                         validate: bool,
@@ -2946,19 +3083,6 @@ function getVersion() external pure returns (string memory);
                     AccountNotAllowedToUseCiphertext
                 },
                 {
-                    fn CoprocessorAlreadyDelegated(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
-                        <CoprocessorAlreadyDelegated as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IMultichainAclErrors::CoprocessorAlreadyDelegated)
-                    }
-                    CoprocessorAlreadyDelegated
-                },
-                {
                     fn PublicDecryptNotAllowed(
                         data: &[u8],
                         validate: bool,
@@ -2972,19 +3096,6 @@ function getVersion() external pure returns (string memory);
                     PublicDecryptNotAllowed
                 },
                 {
-                    fn CoprocessorAlreadyAllowed(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
-                        <CoprocessorAlreadyAllowed as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IMultichainAclErrors::CoprocessorAlreadyAllowed)
-                    }
-                    CoprocessorAlreadyAllowed
-                },
-                {
                     fn EmptyContractAddresses(
                         data: &[u8],
                         validate: bool,
@@ -2996,6 +3107,34 @@ function getVersion() external pure returns (string memory);
                             .map(IMultichainAclErrors::EmptyContractAddresses)
                     }
                     EmptyContractAddresses
+                },
+                {
+                    fn CoprocessorAlreadyAllowedAccount(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
+                        <CoprocessorAlreadyAllowedAccount as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IMultichainAclErrors::CoprocessorAlreadyAllowedAccount)
+                    }
+                    CoprocessorAlreadyAllowedAccount
+                },
+                {
+                    fn CoprocessorAlreadyAllowedPublicDecrypt(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
+                        <CoprocessorAlreadyAllowedPublicDecrypt as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                IMultichainAclErrors::CoprocessorAlreadyAllowedPublicDecrypt,
+                            )
+                    }
+                    CoprocessorAlreadyAllowedPublicDecrypt
                 },
                 {
                     fn AccountNotDelegated(
@@ -3039,8 +3178,13 @@ function getVersion() external pure returns (string memory);
                         inner,
                     )
                 }
-                Self::CoprocessorAlreadyAllowed(inner) => {
-                    <CoprocessorAlreadyAllowed as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::CoprocessorAlreadyAllowedAccount(inner) => {
+                    <CoprocessorAlreadyAllowedAccount as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::CoprocessorAlreadyAllowedPublicDecrypt(inner) => {
+                    <CoprocessorAlreadyAllowedPublicDecrypt as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -3082,8 +3226,14 @@ function getVersion() external pure returns (string memory);
                         out,
                     )
                 }
-                Self::CoprocessorAlreadyAllowed(inner) => {
-                    <CoprocessorAlreadyAllowed as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::CoprocessorAlreadyAllowedAccount(inner) => {
+                    <CoprocessorAlreadyAllowedAccount as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::CoprocessorAlreadyAllowedPublicDecrypt(inner) => {
+                    <CoprocessorAlreadyAllowedPublicDecrypt as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

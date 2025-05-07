@@ -79,7 +79,7 @@ interface IDecryption {
      * @param decryptionRequestId The ID of the public or user decryption request.
      * @param signer The signer address of the KMS node that has already signed.
      */
-    error KmsSignerAlreadySigned(uint256 decryptionRequestId, address signer);
+    error KmsNodeAlreadySigned(uint256 decryptionRequestId, address signer);
 
     /**
      * @notice Error indicating that the given signature for the user decryption request is invalid.
@@ -142,11 +142,15 @@ interface IDecryption {
 
     /**
      * @notice Error indicating that the key IDs in a given SNS ciphertext materials list are not the same.
-     * @param keyId The key ID that is different.
+     * @param firstSnsCtMaterial The first SNS ciphertext material in the list with the expected key ID.
+     * @param invalidSnsCtMaterial The SNS ciphertext material found with a different key ID.
      * @dev This will be removed in the future as multiple keyIds processing is implemented.
      * See https://github.com/zama-ai/fhevm-gateway/issues/104.
      */
-    error DifferentKeyIdsNotAllowed(uint256 keyId);
+    error DifferentKeyIdsNotAllowed(
+        SnsCiphertextMaterial firstSnsCtMaterial,
+        SnsCiphertextMaterial invalidSnsCtMaterial
+    );
 
     /**
      * @notice Error indicating that the public decryption is not done.

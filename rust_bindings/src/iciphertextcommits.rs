@@ -18,9 +18,9 @@ interface ICiphertextCommits {
 
     error CiphertextMaterialNotFound(bytes32 ctHandle);
     error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
-    error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
+    error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
 
-    event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenderAddresses);
+    event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenders);
 
     function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest) external;
     function checkCiphertextMaterial(bytes32 ctHandle) external view;
@@ -192,7 +192,7 @@ interface ICiphertextCommits {
         "internalType": "bytes32"
       },
       {
-        "name": "coprocessorTxSenderAddresses",
+        "name": "coprocessorTxSenders",
         "type": "address[]",
         "indexed": false,
         "internalType": "address[]"
@@ -229,10 +229,15 @@ interface ICiphertextCommits {
   },
   {
     "type": "error",
-    "name": "CoprocessorTxSenderAlreadyAdded",
+    "name": "CoprocessorAlreadyAdded",
     "inputs": [
       {
-        "name": "coprocessorTxSenderAddress",
+        "name": "ctHandle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "txSender",
         "type": "address",
         "internalType": "address"
       }
@@ -1001,15 +1006,17 @@ error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `CoprocessorTxSenderAlreadyAdded(address)` and selector `0x701c7e71`.
+    /**Custom error with signature `CoprocessorAlreadyAdded(bytes32,address)` and selector `0x1dd7250c`.
 ```solidity
-error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
+error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct CoprocessorTxSenderAlreadyAdded {
+    pub struct CoprocessorAlreadyAdded {
         #[allow(missing_docs)]
-        pub coprocessorTxSenderAddress: alloy::sol_types::private::Address,
+        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub txSender: alloy::sol_types::private::Address,
     }
     #[allow(
         non_camel_case_types,
@@ -1020,9 +1027,15 @@ error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::FixedBytes<32>,
+            alloy::sol_types::sol_data::Address,
+        );
         #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::FixedBytes<32>,
+            alloy::sol_types::private::Address,
+        );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
         fn _type_assertion(
@@ -1036,30 +1049,29 @@ error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<CoprocessorTxSenderAlreadyAdded>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: CoprocessorTxSenderAlreadyAdded) -> Self {
-                (value.coprocessorTxSenderAddress,)
+        impl ::core::convert::From<CoprocessorAlreadyAdded> for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorAlreadyAdded) -> Self {
+                (value.ctHandle, value.txSender)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for CoprocessorTxSenderAlreadyAdded {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CoprocessorAlreadyAdded {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    coprocessorTxSenderAddress: tuple.0,
+                    ctHandle: tuple.0,
+                    txSender: tuple.1,
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for CoprocessorTxSenderAlreadyAdded {
+        impl alloy_sol_types::SolError for CoprocessorAlreadyAdded {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "CoprocessorTxSenderAlreadyAdded(address)";
-            const SELECTOR: [u8; 4] = [112u8, 28u8, 126u8, 113u8];
+            const SIGNATURE: &'static str = "CoprocessorAlreadyAdded(bytes32,address)";
+            const SELECTOR: [u8; 4] = [29u8, 215u8, 37u8, 12u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -1069,8 +1081,11 @@ error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.coprocessorTxSenderAddress,
+                        &self.txSender,
                     ),
                 )
             }
@@ -1079,7 +1094,7 @@ error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AddCiphertextMaterial(bytes32,bytes32,bytes32,address[])` and selector `0xcb89ccb347018d7f282bb4c048e135e19bc1d13660fa0f2850e10518422536de`.
 ```solidity
-event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenderAddresses);
+event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenders);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -1096,7 +1111,7 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
         #[allow(missing_docs)]
         pub snsCiphertextDigest: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
-        pub coprocessorTxSenderAddresses: alloy::sol_types::private::Vec<
+        pub coprocessorTxSenders: alloy::sol_types::private::Vec<
             alloy::sol_types::private::Address,
         >,
     }
@@ -1139,7 +1154,7 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
                     ctHandle: topics.1,
                     ciphertextDigest: data.0,
                     snsCiphertextDigest: data.1,
-                    coprocessorTxSenderAddresses: data.2,
+                    coprocessorTxSenders: data.2,
                 }
             }
             #[inline]
@@ -1168,9 +1183,7 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
                     > as alloy_sol_types::SolType>::tokenize(&self.snsCiphertextDigest),
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.coprocessorTxSenderAddresses,
-                    ),
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorTxSenders),
                 )
             }
             #[inline]
@@ -2162,7 +2175,7 @@ function getVersion() external pure returns (string memory);
         #[allow(missing_docs)]
         CiphertextMaterialNotOnNetwork(CiphertextMaterialNotOnNetwork),
         #[allow(missing_docs)]
-        CoprocessorTxSenderAlreadyAdded(CoprocessorTxSenderAlreadyAdded),
+        CoprocessorAlreadyAdded(CoprocessorAlreadyAdded),
     }
     #[automatically_derived]
     impl ICiphertextCommitsErrors {
@@ -2174,8 +2187,8 @@ function getVersion() external pure returns (string memory);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 102u8, 203u8, 223u8],
+            [29u8, 215u8, 37u8, 12u8],
             [64u8, 78u8, 194u8, 233u8],
-            [112u8, 28u8, 126u8, 113u8],
         ];
     }
     #[automatically_derived]
@@ -2192,8 +2205,8 @@ function getVersion() external pure returns (string memory);
                 Self::CiphertextMaterialNotOnNetwork(_) => {
                     <CiphertextMaterialNotOnNetwork as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::CoprocessorTxSenderAlreadyAdded(_) => {
-                    <CoprocessorTxSenderAlreadyAdded as alloy_sol_types::SolError>::SELECTOR
+                Self::CoprocessorAlreadyAdded(_) => {
+                    <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::SELECTOR
                 }
             }
         }
@@ -2230,6 +2243,19 @@ function getVersion() external pure returns (string memory);
                     CiphertextMaterialNotFound
                 },
                 {
+                    fn CoprocessorAlreadyAdded(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
+                        <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(ICiphertextCommitsErrors::CoprocessorAlreadyAdded)
+                    }
+                    CoprocessorAlreadyAdded
+                },
+                {
                     fn CiphertextMaterialNotOnNetwork(
                         data: &[u8],
                         validate: bool,
@@ -2243,21 +2269,6 @@ function getVersion() external pure returns (string memory);
                             )
                     }
                     CiphertextMaterialNotOnNetwork
-                },
-                {
-                    fn CoprocessorTxSenderAlreadyAdded(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
-                        <CoprocessorTxSenderAlreadyAdded as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(
-                                ICiphertextCommitsErrors::CoprocessorTxSenderAlreadyAdded,
-                            )
-                    }
-                    CoprocessorTxSenderAlreadyAdded
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -2283,8 +2294,8 @@ function getVersion() external pure returns (string memory);
                         inner,
                     )
                 }
-                Self::CoprocessorTxSenderAlreadyAdded(inner) => {
-                    <CoprocessorTxSenderAlreadyAdded as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::CoprocessorAlreadyAdded(inner) => {
+                    <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -2305,8 +2316,8 @@ function getVersion() external pure returns (string memory);
                         out,
                     )
                 }
-                Self::CoprocessorTxSenderAlreadyAdded(inner) => {
-                    <CoprocessorTxSenderAlreadyAdded as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::CoprocessorAlreadyAdded(inner) => {
+                    <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

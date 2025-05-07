@@ -174,9 +174,9 @@ describe("KmsManagement", function () {
       await expect(txResponse1).to.not.emit(kmsManagement, "PreprocessKeygenResponse");
 
       // Check that a KMS node cannot respond twice to the same preprocessing keygen request
-      await expect(
-        kmsManagement.connect(kmsTxSenders[0]).preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId),
-      ).to.be.revertedWithCustomError(kmsManagement, "PreprocessKeygenKmsNodeAlreadyResponded");
+      await expect(kmsManagement.connect(kmsTxSenders[0]).preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId))
+        .to.be.revertedWithCustomError(kmsManagement, "PreprocessKeygenKmsNodeAlreadyResponded")
+        .withArgs(preKeyId, kmsTxSenders[0]);
 
       // Trigger a second preprocessing keygen response with the second KMS node, which should reach
       // consensus (4 / 3 + 1 = 2) and thus emit an event
@@ -242,9 +242,9 @@ describe("KmsManagement", function () {
       await expect(txResponse1).to.not.emit(kmsManagement, "KeygenResponse");
 
       // Check that a KMS node cannot respond twice to the same keygen request
-      await expect(
-        kmsManagement.connect(kmsTxSenders[0]).keygenResponse(preKeyId, keyId),
-      ).to.be.revertedWithCustomError(kmsManagement, "KeygenKmsNodeAlreadyResponded");
+      await expect(kmsManagement.connect(kmsTxSenders[0]).keygenResponse(preKeyId, keyId))
+        .to.be.revertedWithCustomError(kmsManagement, "KeygenKmsNodeAlreadyResponded")
+        .withArgs(keyId, kmsTxSenders[0]);
 
       // Trigger a second keygen response with the second KMS node, which should reach
       // consensus (4 / 3 + 1 = 2) and thus emit an event
@@ -311,9 +311,9 @@ describe("KmsManagement", function () {
       await expect(txResponse1).to.not.emit(kmsManagement, "CrsgenResponse");
 
       // Check that a KMS node cannot respond twice to the same CRS generation request
-      await expect(
-        kmsManagement.connect(kmsTxSenders[0]).crsgenResponse(expectedPreCrsId, crsId),
-      ).to.be.revertedWithCustomError(kmsManagement, "CrsgenKmsNodeAlreadyResponded");
+      await expect(kmsManagement.connect(kmsTxSenders[0]).crsgenResponse(expectedPreCrsId, crsId))
+        .to.be.revertedWithCustomError(kmsManagement, "CrsgenKmsNodeAlreadyResponded")
+        .withArgs(crsId, kmsTxSenders[0]);
 
       // Trigger a second CRS generation response with the second KMS node, which should reach
       // consensus (4 / 3 + 1 = 2) and thus emit an event
@@ -404,7 +404,9 @@ describe("KmsManagement", function () {
       // Check that a KMS node cannot respond twice to the same preprocessing KSK generation request
       await expect(
         kmsManagement.connect(kmsTxSenders[0]).preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId),
-      ).to.be.revertedWithCustomError(kmsManagement, "PreprocessKskgenKmsNodeAlreadyResponded");
+      )
+        .to.be.revertedWithCustomError(kmsManagement, "PreprocessKskgenKmsNodeAlreadyResponded")
+        .withArgs(preKskRequestId, kmsTxSenders[0]);
 
       // Trigger a second preprocessing KSK generation response with the second KMS node, which should reach
       // consensus (4 / 3 + 1 = 2) and thus emit an event
@@ -488,9 +490,9 @@ describe("KmsManagement", function () {
       await expect(txResponse1).to.not.emit(kmsManagement, "KskgenResponse");
 
       // Check that a KMS node cannot respond twice to the same KSK generation request
-      await expect(
-        kmsManagement.connect(kmsTxSenders[0]).kskgenResponse(preKskId, kskId),
-      ).to.be.revertedWithCustomError(kmsManagement, "KskgenKmsNodeAlreadyResponded");
+      await expect(kmsManagement.connect(kmsTxSenders[0]).kskgenResponse(preKskId, kskId))
+        .to.be.revertedWithCustomError(kmsManagement, "KskgenKmsNodeAlreadyResponded")
+        .withArgs(kskId, kmsTxSenders[0]);
 
       // Trigger a second KSK generation response with the second KMS node, which should reach
       // consensus (4 / 3 + 1 = 2) and thus emit an event
@@ -553,9 +555,9 @@ describe("KmsManagement", function () {
       await expect(txResponse1).to.not.emit(kmsManagement, "ActivateKeyResponse");
 
       // Check that a coprocessor cannot respond twice to the same key activation request
-      await expect(
-        kmsManagement.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId1),
-      ).to.be.revertedWithCustomError(kmsManagement, "ActivateKeyKmsNodeAlreadyResponded");
+      await expect(kmsManagement.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId1))
+        .to.be.revertedWithCustomError(kmsManagement, "ActivateKeyCoprocessorAlreadyResponded")
+        .withArgs(keyId1, coprocessorTxSenders[0]);
 
       // Trigger a 2nd key activation response with the 2nd coprocessor, which should reach consensus
       // (tests use a total of 3 coprocessors) and thus emit an event
