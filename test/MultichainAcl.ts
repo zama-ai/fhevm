@@ -76,10 +76,10 @@ describe("MultichainAcl", function () {
       await expect(txResponse).to.emit(multichainAcl, "AllowAccount").withArgs(ctHandle, newAccountAddress);
     });
 
-    it("Should revert with CoprocessorAlreadyAllowed", async function () {
+    it("Should revert because coprocessor tries to allow account twice", async function () {
       await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, accountAddress))
-        .revertedWithCustomError(multichainAcl, "CoprocessorAlreadyAllowed")
-        .withArgs(coprocessorTxSenders[0].address, ctHandle);
+        .revertedWithCustomError(multichainAcl, "CoprocessorAlreadyAllowedAccount")
+        .withArgs(ctHandle, accountAddress, coprocessorTxSenders[0].address);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
@@ -128,10 +128,10 @@ describe("MultichainAcl", function () {
       await expect(txResponse).to.emit(multichainAcl, "AllowPublicDecrypt").withArgs(newCtHandle);
     });
 
-    it("Should revert with CoprocessorAlreadyAllowed", async function () {
+    it("Should revert because coprocessor tries to allow public decryption twice", async function () {
       await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandle))
-        .revertedWithCustomError(multichainAcl, "CoprocessorAlreadyAllowed")
-        .withArgs(coprocessorTxSenders[0].address, ctHandle);
+        .revertedWithCustomError(multichainAcl, "CoprocessorAlreadyAllowedPublicDecrypt")
+        .withArgs(ctHandle, coprocessorTxSenders[0].address);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
@@ -195,14 +195,14 @@ describe("MultichainAcl", function () {
         .withArgs(hostChainId, toValues(newDelegationAccounts), allowedContracts);
     });
 
-    it("Should revert with CoprocessorAlreadyDelegated", async function () {
+    it("Should revert because coprocessor tries to delegate account twice", async function () {
       await expect(
         multichainAcl
           .connect(coprocessorTxSenders[0])
           .delegateAccount(hostChainId, delegationAccounts, allowedContracts),
       )
         .revertedWithCustomError(multichainAcl, "CoprocessorAlreadyDelegated")
-        .withArgs(coprocessorTxSenders[0].address, hostChainId, toValues(delegationAccounts), allowedContracts);
+        .withArgs(hostChainId, toValues(delegationAccounts), allowedContracts, coprocessorTxSenders[0].address);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {

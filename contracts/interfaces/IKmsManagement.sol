@@ -122,14 +122,16 @@ interface IKmsManagement {
     /**
      * @notice Error thrown when a KMS node has already responded to a key generation preprocessing step.
      * @param preKeyId The ID of the preprocessed key that has already been responded.
+     * @param kmsTxSender The transaction sender address of the KMS node that has already responded.
      */
-    error PreprocessKeygenKmsNodeAlreadyResponded(uint256 preKeyId);
+    error PreprocessKeygenKmsNodeAlreadyResponded(uint256 preKeyId, address kmsTxSender);
 
     /**
      * @notice Error thrown when a KMS node has already responded to a KSK generation preprocessing step.
      * @param preKskId The ID of the preprocessed KSK that has already been responded.
+     * @param kmsTxSender The transaction sender address of the KMS node that has already responded.
      */
-    error PreprocessKskgenKmsNodeAlreadyResponded(uint256 preKskId);
+    error PreprocessKskgenKmsNodeAlreadyResponded(uint256 preKskId, address kmsTxSender);
 
     /**
      * @notice Error thrown when a key generation request has already been sent.
@@ -146,14 +148,16 @@ interface IKmsManagement {
     /**
      * @notice Error thrown when a KMS node has already responded to a key generation step.
      * @param keyId The ID of the key that has already been responded.
+     * @param kmsTxSender The transaction sender address of the KMS node that has already responded.
      */
-    error KeygenKmsNodeAlreadyResponded(uint256 keyId);
+    error KeygenKmsNodeAlreadyResponded(uint256 keyId, address kmsTxSender);
 
     /**
      * @notice Error thrown when a KMS node has already responded to a CRS generation step.
      * @param crsId The ID of the CRS that has already been responded.
+     * @param kmsTxSender The transaction sender address of the KMS node that has already responded.
      */
-    error CrsgenKmsNodeAlreadyResponded(uint256 crsId);
+    error CrsgenKmsNodeAlreadyResponded(uint256 crsId, address kmsTxSender);
 
     /**
      * @notice Error thrown when a KSK generation request has already been sent.
@@ -189,8 +193,9 @@ interface IKmsManagement {
     /**
      * @notice Error thrown when a KMS node has already responded to a KSK generation step.
      * @param kskId The ID of the KSK that has already been responded.
+     * @param kmsTxSender The transaction sender address of the KMS node that has already responded.
      */
-    error KskgenKmsNodeAlreadyResponded(uint256 kskId);
+    error KskgenKmsNodeAlreadyResponded(uint256 kskId, address kmsTxSender);
 
     /**
      * @notice Error thrown when a key activation request has already been sent.
@@ -213,10 +218,11 @@ interface IKmsManagement {
     error ActivateKeyRequiresKskgen(uint256 currentKeyId, uint256 keyId);
 
     /**
-     * @notice Error thrown when a KMS node has already responded to a key activation step.
+     * @notice Error thrown when a coprocessor has already responded to a key activation step.
      * @param keyId The ID of the key that has already been responded.
+     * @param coprocessorTxSender The transaction sender address of the coprocessor that has already responded.
      */
-    error ActivateKeyKmsNodeAlreadyResponded(uint256 keyId);
+    error ActivateKeyCoprocessorAlreadyResponded(uint256 keyId, address coprocessorTxSender);
 
     /**
      * @notice Error thrown when the FHE params are already initialized.

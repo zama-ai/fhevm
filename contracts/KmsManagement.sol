@@ -163,7 +163,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
         /// @dev A KMS node can only respond once
         if ($._preKeygenResponses[preKeyId][msg.sender]) {
-            revert PreprocessKeygenKmsNodeAlreadyResponded(preKeyId);
+            revert PreprocessKeygenKmsNodeAlreadyResponded(preKeyId, msg.sender);
         }
 
         $._preKeygenResponses[preKeyId][msg.sender] = true;
@@ -209,7 +209,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
         /// @dev A KMS node can only respond once
         if ($._preKskgenResponses[preKskId][msg.sender]) {
-            revert PreprocessKskgenKmsNodeAlreadyResponded(preKskId);
+            revert PreprocessKskgenKmsNodeAlreadyResponded(preKskId, msg.sender);
         }
 
         $._preKskgenResponses[preKskId][msg.sender] = true;
@@ -253,7 +253,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
         /// @dev A KMS node can only respond once
         if ($._keygenResponses[keyId][msg.sender]) {
-            revert KeygenKmsNodeAlreadyResponded(keyId);
+            revert KeygenKmsNodeAlreadyResponded(keyId, msg.sender);
         }
 
         $._keygenResponses[keyId][msg.sender] = true;
@@ -298,7 +298,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
         /// @dev A KMS node can only respond once
         if ($._crsgenResponses[crsId][msg.sender]) {
-            revert CrsgenKmsNodeAlreadyResponded(crsId);
+            revert CrsgenKmsNodeAlreadyResponded(crsId, msg.sender);
         }
 
         $._crsgenResponses[crsId][msg.sender] = true;
@@ -361,7 +361,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
         /// @dev A KMS node can only respond once
         if ($._kskgenResponses[kskId][msg.sender]) {
-            revert KskgenKmsNodeAlreadyResponded(kskId);
+            revert KskgenKmsNodeAlreadyResponded(kskId, msg.sender);
         }
 
         $._kskgenResponses[kskId][msg.sender] = true;
@@ -416,7 +416,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
         /// @dev A coprocessor can only respond once
         if ($._activateKeyResponses[keyId][msg.sender]) {
-            revert ActivateKeyKmsNodeAlreadyResponded(keyId);
+            revert ActivateKeyCoprocessorAlreadyResponded(keyId, msg.sender);
         }
 
         $._activateKeyResponses[keyId][msg.sender] = true;

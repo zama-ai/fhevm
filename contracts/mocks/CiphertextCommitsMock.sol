@@ -7,7 +7,7 @@ contract CiphertextCommitsMock {
         bytes32 indexed ctHandle,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest,
-        address[] coprocessorTxSenderAddresses
+        address[] coprocessorTxSenders
     );
 
     function addCiphertextMaterial(
@@ -19,7 +19,7 @@ contract CiphertextCommitsMock {
         bytes32 ctHandle;
         bytes32 ciphertextDigest;
         bytes32 snsCiphertextDigest;
-        address[] memory coprocessorTxSenderAddresses = new address[](1);
-        emit AddCiphertextMaterial(ctHandle, ciphertextDigest, snsCiphertextDigest, coprocessorTxSenderAddresses);
+        address[] memory coprocessorTxSenders = new address[](1);
+        emit AddCiphertextMaterial(ctHandle, ciphertextDigest, snsCiphertextDigest, coprocessorTxSenders);
     }
 }

@@ -30,24 +30,32 @@ interface IMultichainAcl {
     event DelegateAccount(uint256 indexed chainId, DelegationAccounts delegationAccounts, address[] contractAddresses);
 
     /**
-     * @notice Error indicating that the coprocessor has already allowed access to the ciphertext.
-     * @param coprocessor The address of the coprocessor that has already allowed access.
+     * @notice Error indicating that the coprocessor has already allowed public decryption to the ciphertext.
      * @param ctHandle The ciphertext handle that the coprocessor has already allowed access to.
+     * @param txSender The transaction sender address of the coprocessor that has already allowed access.
      */
-    error CoprocessorAlreadyAllowed(address coprocessor, bytes32 ctHandle);
+    error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
+
+    /**
+     * @notice Error indicating that the coprocessor has already allowed the account to use the ciphertext handle.
+     * @param ctHandle The ciphertext handle that the coprocessor has already allowed access to.
+     * @param account The address of the account that has already been allowed access.
+     * @param txSender The transaction sender address of the coprocessor that has already allowed access.
+     */
+    error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
 
     /**
      * @notice Error indicating that the coprocessor has already delegated access to another account.
-     * @param coprocessor The address of the coprocessor that has already confirm delegation.
      * @param chainId The ID of the contracts' host chain.
      * @param delegationAccounts The delegator and the delegated addresses.
      * @param contractAddresses The addresses of the contracts that the coprocessor has already delegated.
+     * @param txSender The transaction sender address of the coprocessor that has already confirmed delegation.
      */
     error CoprocessorAlreadyDelegated(
-        address coprocessor,
         uint256 chainId,
         DelegationAccounts delegationAccounts,
-        address[] contractAddresses
+        address[] contractAddresses,
+        address txSender
     );
 
     /**

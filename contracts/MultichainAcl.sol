@@ -92,7 +92,7 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
          * the same ctHandle for different chainIds, hence the chainId is not included in the mapping.
          */
         if ($._allowPublicDecryptCoprocessors[ctHandle][msg.sender]) {
-            revert CoprocessorAlreadyAllowed(msg.sender, ctHandle);
+            revert CoprocessorAlreadyAllowedPublicDecrypt(ctHandle, msg.sender);
         }
         $._allowPublicDecryptCounters[ctHandle]++;
         $._allowPublicDecryptCoprocessors[ctHandle][msg.sender] = true;
@@ -119,7 +119,7 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
          * the same ctHandle for different chainIds, hence the chainId is not included in the mapping.
          */
         if ($._allowAccountCoprocessors[ctHandle][accountAddress][msg.sender]) {
-            revert CoprocessorAlreadyAllowed(msg.sender, ctHandle);
+            revert CoprocessorAlreadyAllowedAccount(ctHandle, accountAddress, msg.sender);
         }
         $._allowAccountCounters[ctHandle][accountAddress]++;
         $._allowAccountCoprocessors[ctHandle][accountAddress][msg.sender] = true;
@@ -160,8 +160,9 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
             delegateAccountHash
         ];
 
+        /// @dev Check if the coprocessor has already delegated the account.
         if (alreadyDelegatedCoprocessors[msg.sender]) {
-            revert CoprocessorAlreadyDelegated(msg.sender, chainId, delegationAccounts, contractAddresses);
+            revert CoprocessorAlreadyDelegated(chainId, delegationAccounts, contractAddresses, msg.sender);
         }
 
         $._delegateAccountHashCounters[delegateAccountHash]++;

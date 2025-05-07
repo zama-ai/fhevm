@@ -409,7 +409,7 @@ describe("Decryption", function () {
           .connect(kmsTxSenders[0])
           .publicDecryptionResponse(publicDecryptionId, decryptedResult, kmsSignatures[0]),
       )
-        .to.be.revertedWithCustomError(decryption, "KmsSignerAlreadySigned")
+        .to.be.revertedWithCustomError(decryption, "KmsNodeAlreadySigned")
         .withArgs(publicDecryptionId, kmsSigners[0].address);
     });
 
@@ -438,7 +438,17 @@ describe("Decryption", function () {
       const requestTx = decryption.publicDecryptionRequest([...ctHandles, newCtHandle]);
 
       // Check that different key IDs are not allowed for batched public decryption
-      await expect(requestTx).to.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed").withArgs(keyId2);
+      await expect(requestTx)
+        .to.be.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed")
+        .withArgs(
+          toValues(snsCiphertextMaterials[0]),
+          toValues({
+            ctHandle: newCtHandle,
+            keyId: keyId2,
+            snsCiphertextDigest,
+            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+          }),
+        );
     });
 
     it("Should reach consensus with 2 valid responses", async function () {
@@ -1097,7 +1107,17 @@ describe("Decryption", function () {
       );
 
       // Check that different key IDs are not allowed for batched user decryption
-      await expect(requestTx).to.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed").withArgs(keyId2);
+      await expect(requestTx)
+        .to.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed")
+        .withArgs(
+          toValues(snsCiphertextMaterials[0]),
+          toValues({
+            ctHandle: newCtHandle,
+            keyId: keyId2,
+            snsCiphertextDigest,
+            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+          }),
+        );
     });
 
     it("Should revert because of two responses with same signature", async function () {
@@ -1123,7 +1143,7 @@ describe("Decryption", function () {
           .connect(kmsTxSenders[0])
           .userDecryptionResponse(userDecryptionId, userDecryptedShare, kmsSignatures[0]),
       )
-        .to.be.revertedWithCustomError(decryption, "KmsSignerAlreadySigned")
+        .to.be.revertedWithCustomError(decryption, "KmsNodeAlreadySigned")
         .withArgs(userDecryptionId, kmsSigners[0].address);
     });
 
@@ -1804,7 +1824,17 @@ describe("Decryption", function () {
       );
 
       // Check that different key IDs are not allowed for batched user decryption
-      await expect(requestTx).to.be.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed").withArgs(keyId2);
+      await expect(requestTx)
+        .to.be.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed")
+        .withArgs(
+          toValues(snsCiphertextMaterials[0]),
+          toValues({
+            ctHandle: newCtHandle,
+            keyId: keyId2,
+            snsCiphertextDigest,
+            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+          }),
+        );
     });
 
     it("Should reach consensus with 3 valid responses", async function () {

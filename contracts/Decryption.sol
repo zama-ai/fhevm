@@ -554,7 +554,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
         /// @dev Check that the signer has not already responded to the public decryption request.
         if ($._alreadyPublicDecryptResponded[publicDecryptionId][signer]) {
-            revert KmsSignerAlreadySigned(publicDecryptionId, signer);
+            revert KmsNodeAlreadySigned(publicDecryptionId, signer);
         }
 
         $._alreadyPublicDecryptResponded[publicDecryptionId][signer] = true;
@@ -577,7 +577,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
         /// @dev Check that the signer has not already responded to the user decryption request.
         if ($._alreadyUserDecryptResponded[userDecryptionId][signer]) {
-            revert KmsSignerAlreadySigned(userDecryptionId, signer);
+            revert KmsNodeAlreadySigned(userDecryptionId, signer);
         }
 
         $._alreadyUserDecryptResponded[userDecryptionId][signer] = true;
@@ -851,7 +851,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         uint256 firstKeyId = snsCtMaterials[0].keyId;
         for (uint256 i = 1; i < snsCtMaterials.length; i++) {
             if (snsCtMaterials[i].keyId != firstKeyId) {
-                revert DifferentKeyIdsNotAllowed(snsCtMaterials[i].keyId);
+                revert DifferentKeyIdsNotAllowed(snsCtMaterials[0], snsCtMaterials[i]);
             }
         }
     }

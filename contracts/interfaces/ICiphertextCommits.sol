@@ -13,21 +13,22 @@ interface ICiphertextCommits {
      * @param ctHandle The handle of the added ciphertext material.
      * @param ciphertextDigest The digest of the regular ciphertext.
      * @param snsCiphertextDigest The digest of the SNS ciphertext.
-     * @param coprocessorTxSenderAddresses The list of coprocessor transaction sender addresses
+     * @param coprocessorTxSenders The list of coprocessor transaction sender addresses
      * that were part of the consensus when adding the ciphertext material.
      */
     event AddCiphertextMaterial(
         bytes32 indexed ctHandle,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest,
-        address[] coprocessorTxSenderAddresses
+        address[] coprocessorTxSenders
     );
 
     /**
      * @notice Error indicating that the given coprocessor transaction sender has already added the handle.
-     * @param coprocessorTxSenderAddress The address of the coprocessor transaction sender that has already added the handle.
+     * @param ctHandle The handle of the already added ciphertext.
+     * @param txSender The transaction sender address of the coprocessor that has already added the handle.
      */
-    error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
+    error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
 
     /**
      * @notice Error indicating that the given ciphertext material represented by the given handle has not

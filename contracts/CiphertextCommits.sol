@@ -95,7 +95,7 @@ contract CiphertextCommits is ICiphertextCommits, Ownable2StepUpgradeable, UUPSU
          * two different networks.
          */
         if ($._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender]) {
-            revert CoprocessorTxSenderAlreadyAdded(msg.sender);
+            revert CoprocessorAlreadyAdded(ctHandle, msg.sender);
         }
 
         /// @dev Check if the received key ID is the latest activated.

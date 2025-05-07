@@ -25,12 +25,12 @@ interface IDecryption {
     error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
     error ContractNotInContractAddresses(address contractAddress, address[] contractAddresses);
     error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
-    error DifferentKeyIdsNotAllowed(uint256 keyId);
+    error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCiphertextMaterial invalidSnsCtMaterial);
     error EmptyCtHandleContractPairs();
     error EmptyCtHandles();
     error InvalidNullDurationDays();
     error InvalidUserSignature(bytes signature);
-    error KmsSignerAlreadySigned(uint256 decryptionRequestId, address signer);
+    error KmsNodeAlreadySigned(uint256 decryptionRequestId, address signer);
     error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
     error PublicDecryptionNotDone(uint256 publicDecryptionId);
@@ -597,9 +597,58 @@ interface IDecryption {
     "name": "DifferentKeyIdsNotAllowed",
     "inputs": [
       {
-        "name": "keyId",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "firstSnsCtMaterial",
+        "type": "tuple",
+        "internalType": "struct SnsCiphertextMaterial",
+        "components": [
+          {
+            "name": "ctHandle",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "keyId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "snsCiphertextDigest",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "coprocessorTxSenderAddresses",
+            "type": "address[]",
+            "internalType": "address[]"
+          }
+        ]
+      },
+      {
+        "name": "invalidSnsCtMaterial",
+        "type": "tuple",
+        "internalType": "struct SnsCiphertextMaterial",
+        "components": [
+          {
+            "name": "ctHandle",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "keyId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "snsCiphertextDigest",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "coprocessorTxSenderAddresses",
+            "type": "address[]",
+            "internalType": "address[]"
+          }
+        ]
       }
     ]
   },
@@ -631,7 +680,7 @@ interface IDecryption {
   },
   {
     "type": "error",
-    "name": "KmsSignerAlreadySigned",
+    "name": "KmsNodeAlreadySigned",
     "inputs": [
       {
         "name": "decryptionRequestId",
@@ -2015,15 +2064,17 @@ error DelegatorAddressInContractAddresses(address delegatorAddress, address[] co
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `DifferentKeyIdsNotAllowed(uint256)` and selector `0xf90bc7f5`.
+    /**Custom error with signature `DifferentKeyIdsNotAllowed((bytes32,uint256,bytes32,address[]),(bytes32,uint256,bytes32,address[]))` and selector `0xcfae921f`.
 ```solidity
-error DifferentKeyIdsNotAllowed(uint256 keyId);
+error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCiphertextMaterial invalidSnsCtMaterial);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct DifferentKeyIdsNotAllowed {
         #[allow(missing_docs)]
-        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
+        pub firstSnsCtMaterial: <SnsCiphertextMaterial as alloy::sol_types::SolType>::RustType,
+        #[allow(missing_docs)]
+        pub invalidSnsCtMaterial: <SnsCiphertextMaterial as alloy::sol_types::SolType>::RustType,
     }
     #[allow(
         non_camel_case_types,
@@ -2034,10 +2085,11 @@ error DifferentKeyIdsNotAllowed(uint256 keyId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        type UnderlyingSolTuple<'a> = (SnsCiphertextMaterial, SnsCiphertextMaterial);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
+            <SnsCiphertextMaterial as alloy::sol_types::SolType>::RustType,
+            <SnsCiphertextMaterial as alloy::sol_types::SolType>::RustType,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -2055,7 +2107,7 @@ error DifferentKeyIdsNotAllowed(uint256 keyId);
         impl ::core::convert::From<DifferentKeyIdsNotAllowed>
         for UnderlyingRustTuple<'_> {
             fn from(value: DifferentKeyIdsNotAllowed) -> Self {
-                (value.keyId,)
+                (value.firstSnsCtMaterial, value.invalidSnsCtMaterial)
             }
         }
         #[automatically_derived]
@@ -2063,7 +2115,10 @@ error DifferentKeyIdsNotAllowed(uint256 keyId);
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
         for DifferentKeyIdsNotAllowed {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { keyId: tuple.0 }
+                Self {
+                    firstSnsCtMaterial: tuple.0,
+                    invalidSnsCtMaterial: tuple.1,
+                }
             }
         }
         #[automatically_derived]
@@ -2072,8 +2127,8 @@ error DifferentKeyIdsNotAllowed(uint256 keyId);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "DifferentKeyIdsNotAllowed(uint256)";
-            const SELECTOR: [u8; 4] = [249u8, 11u8, 199u8, 245u8];
+            const SIGNATURE: &'static str = "DifferentKeyIdsNotAllowed((bytes32,uint256,bytes32,address[]),(bytes32,uint256,bytes32,address[]))";
+            const SELECTOR: [u8; 4] = [207u8, 174u8, 146u8, 31u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2083,9 +2138,12 @@ error DifferentKeyIdsNotAllowed(uint256 keyId);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
+                    <SnsCiphertextMaterial as alloy_sol_types::SolType>::tokenize(
+                        &self.firstSnsCtMaterial,
+                    ),
+                    <SnsCiphertextMaterial as alloy_sol_types::SolType>::tokenize(
+                        &self.invalidSnsCtMaterial,
+                    ),
                 )
             }
         }
@@ -2360,13 +2418,13 @@ error InvalidUserSignature(bytes signature);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `KmsSignerAlreadySigned(uint256,address)` and selector `0x4a576524`.
+    /**Custom error with signature `KmsNodeAlreadySigned(uint256,address)` and selector `0x99ec48d9`.
 ```solidity
-error KmsSignerAlreadySigned(uint256 decryptionRequestId, address signer);
+error KmsNodeAlreadySigned(uint256 decryptionRequestId, address signer);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct KmsSignerAlreadySigned {
+    pub struct KmsNodeAlreadySigned {
         #[allow(missing_docs)]
         pub decryptionRequestId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -2403,14 +2461,14 @@ error KmsSignerAlreadySigned(uint256 decryptionRequestId, address signer);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<KmsSignerAlreadySigned> for UnderlyingRustTuple<'_> {
-            fn from(value: KmsSignerAlreadySigned) -> Self {
+        impl ::core::convert::From<KmsNodeAlreadySigned> for UnderlyingRustTuple<'_> {
+            fn from(value: KmsNodeAlreadySigned) -> Self {
                 (value.decryptionRequestId, value.signer)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsSignerAlreadySigned {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsNodeAlreadySigned {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     decryptionRequestId: tuple.0,
@@ -2419,13 +2477,13 @@ error KmsSignerAlreadySigned(uint256 decryptionRequestId, address signer);
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for KmsSignerAlreadySigned {
+        impl alloy_sol_types::SolError for KmsNodeAlreadySigned {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "KmsSignerAlreadySigned(uint256,address)";
-            const SELECTOR: [u8; 4] = [74u8, 87u8, 101u8, 36u8];
+            const SIGNATURE: &'static str = "KmsNodeAlreadySigned(uint256,address)";
+            const SELECTOR: [u8; 4] = [153u8, 236u8, 72u8, 217u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -5669,7 +5727,7 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
         #[allow(missing_docs)]
         InvalidUserSignature(InvalidUserSignature),
         #[allow(missing_docs)]
-        KmsSignerAlreadySigned(KmsSignerAlreadySigned),
+        KmsNodeAlreadySigned(KmsNodeAlreadySigned),
         #[allow(missing_docs)]
         MaxDecryptionRequestBitSizeExceeded(MaxDecryptionRequestBitSizeExceeded),
         #[allow(missing_docs)]
@@ -5699,17 +5757,17 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
             [45u8, 231u8, 84u8, 56u8],
             [48u8, 52u8, 128u8, 64u8],
             [50u8, 149u8, 24u8, 99u8],
-            [74u8, 87u8, 101u8, 36u8],
             [112u8, 92u8, 59u8, 169u8],
+            [153u8, 236u8, 72u8, 217u8],
             [164u8, 195u8, 3u8, 145u8],
             [166u8, 166u8, 203u8, 33u8],
             [195u8, 68u8, 106u8, 199u8],
             [197u8, 171u8, 70u8, 126u8],
+            [207u8, 174u8, 146u8, 31u8],
             [220u8, 77u8, 120u8, 177u8],
             [222u8, 40u8, 89u8, 193u8],
             [231u8, 244u8, 137u8, 93u8],
             [242u8, 76u8, 8u8, 135u8],
-            [249u8, 11u8, 199u8, 245u8],
         ];
     }
     #[automatically_derived]
@@ -5744,8 +5802,8 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                 Self::InvalidUserSignature(_) => {
                     <InvalidUserSignature as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::KmsSignerAlreadySigned(_) => {
-                    <KmsSignerAlreadySigned as alloy_sol_types::SolError>::SELECTOR
+                Self::KmsNodeAlreadySigned(_) => {
+                    <KmsNodeAlreadySigned as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::MaxDecryptionRequestBitSizeExceeded(_) => {
                     <MaxDecryptionRequestBitSizeExceeded as alloy_sol_types::SolError>::SELECTOR
@@ -5855,19 +5913,6 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                     MaxDurationDaysExceeded
                 },
                 {
-                    fn KmsSignerAlreadySigned(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
-                        <KmsSignerAlreadySigned as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IDecryptionErrors::KmsSignerAlreadySigned)
-                    }
-                    KmsSignerAlreadySigned
-                },
-                {
                     fn UserDecryptionNotDone(
                         data: &[u8],
                         validate: bool,
@@ -5879,6 +5924,19 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                             .map(IDecryptionErrors::UserDecryptionNotDone)
                     }
                     UserDecryptionNotDone
+                },
+                {
+                    fn KmsNodeAlreadySigned(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <KmsNodeAlreadySigned as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionErrors::KmsNodeAlreadySigned)
+                    }
+                    KmsNodeAlreadySigned
                 },
                 {
                     fn ContractNotInContractAddresses(
@@ -5933,6 +5991,19 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                     ContractAddressesMaxLengthExceeded
                 },
                 {
+                    fn DifferentKeyIdsNotAllowed(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionErrors::DifferentKeyIdsNotAllowed)
+                    }
+                    DifferentKeyIdsNotAllowed
+                },
+                {
                     fn UserAddressInContractAddresses(
                         data: &[u8],
                         validate: bool,
@@ -5983,19 +6054,6 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                             .map(IDecryptionErrors::StartTimestampInFuture)
                     }
                     StartTimestampInFuture
-                },
-                {
-                    fn DifferentKeyIdsNotAllowed(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
-                        <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IDecryptionErrors::DifferentKeyIdsNotAllowed)
-                    }
-                    DifferentKeyIdsNotAllowed
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -6051,8 +6109,8 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                         inner,
                     )
                 }
-                Self::KmsSignerAlreadySigned(inner) => {
-                    <KmsSignerAlreadySigned as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::KmsNodeAlreadySigned(inner) => {
+                    <KmsNodeAlreadySigned as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -6144,8 +6202,8 @@ function userDecryptionResponse(uint256 userDecryptionId, bytes memory userDecry
                         out,
                     )
                 }
-                Self::KmsSignerAlreadySigned(inner) => {
-                    <KmsSignerAlreadySigned as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::KmsNodeAlreadySigned(inner) => {
+                    <KmsNodeAlreadySigned as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

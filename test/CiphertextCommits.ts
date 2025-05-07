@@ -128,7 +128,9 @@ describe("CiphertextCommits", function () {
         ciphertextCommits
           .connect(coprocessorTxSenders[0])
           .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
-      ).revertedWithCustomError(ciphertextCommits, "CoprocessorTxSenderAlreadyAdded");
+      )
+        .revertedWithCustomError(ciphertextCommits, "CoprocessorAlreadyAdded")
+        .withArgs(ctHandle, coprocessorTxSenders[0]);
     });
 
     // TODO: Add test checking `checkCurrentKeyId` once keys are generated through the Gateway
