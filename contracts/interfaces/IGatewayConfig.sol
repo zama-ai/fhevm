@@ -56,6 +56,12 @@ interface IGatewayConfig {
     /// @notice Error emitted when the pauser address is the null address.
     error InvalidNullPauser();
 
+    /// @notice Error emitted when the KMS nodes list is empty.
+    error EmptyKmsNodes();
+
+    /// @notice Error emitted when the coprocessors list is empty.
+    error EmptyCoprocessors();
+
     /**
      * @notice Error emitted when the KMS threshold is too high with respect to the number of KMS nodes.
      * For a set of `n` KMS nodes, the threshold `t` must verify `0 <= t <= n`.

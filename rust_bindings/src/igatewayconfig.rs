@@ -26,6 +26,8 @@ interface IGatewayConfig {
     }
 
     error ChainIdNotUint64(uint256 chainId);
+    error EmptyCoprocessors();
+    error EmptyKmsNodes();
     error InvalidNullChainId();
     error InvalidNullPauser();
     error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
@@ -674,6 +676,16 @@ interface IGatewayConfig {
         "internalType": "uint256"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "EmptyCoprocessors",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyKmsNodes",
+    "inputs": []
   },
   {
     "type": "error",
@@ -1862,6 +1874,136 @@ error ChainIdNotUint64(uint256 chainId);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                 )
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `EmptyCoprocessors()` and selector `0x8af082ef`.
+```solidity
+error EmptyCoprocessors();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EmptyCoprocessors {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EmptyCoprocessors> for UnderlyingRustTuple<'_> {
+            fn from(value: EmptyCoprocessors) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptyCoprocessors {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {}
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EmptyCoprocessors {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EmptyCoprocessors()";
+            const SELECTOR: [u8; 4] = [138u8, 240u8, 130u8, 239u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `EmptyKmsNodes()` and selector `0x068c8d40`.
+```solidity
+error EmptyKmsNodes();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EmptyKmsNodes {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EmptyKmsNodes> for UnderlyingRustTuple<'_> {
+            fn from(value: EmptyKmsNodes) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptyKmsNodes {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {}
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EmptyKmsNodes {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EmptyKmsNodes()";
+            const SELECTOR: [u8; 4] = [6u8, 140u8, 141u8, 64u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
             }
         }
     };
@@ -6736,6 +6878,10 @@ function updatePauser(address newPauser) external;
         #[allow(missing_docs)]
         ChainIdNotUint64(ChainIdNotUint64),
         #[allow(missing_docs)]
+        EmptyCoprocessors(EmptyCoprocessors),
+        #[allow(missing_docs)]
+        EmptyKmsNodes(EmptyKmsNodes),
+        #[allow(missing_docs)]
         InvalidNullChainId(InvalidNullChainId),
         #[allow(missing_docs)]
         InvalidNullPauser(InvalidNullPauser),
@@ -6765,6 +6911,7 @@ function updatePauser(address newPauser) external;
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [6u8, 140u8, 141u8, 64u8],
             [32u8, 106u8, 52u8, 110u8],
             [34u8, 247u8, 63u8, 234u8],
             [38u8, 205u8, 117u8, 220u8],
@@ -6774,6 +6921,7 @@ function updatePauser(address newPauser) external;
             [72u8, 103u8, 111u8, 224u8],
             [82u8, 215u8, 37u8, 245u8],
             [109u8, 246u8, 254u8, 137u8],
+            [138u8, 240u8, 130u8, 239u8],
             [174u8, 232u8, 99u8, 35u8],
             [177u8, 130u8, 92u8, 94u8],
         ];
@@ -6782,12 +6930,18 @@ function updatePauser(address newPauser) external;
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 11usize;
+        const COUNT: usize = 13usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::ChainIdNotUint64(_) => {
                     <ChainIdNotUint64 as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::EmptyCoprocessors(_) => {
+                    <EmptyCoprocessors as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::EmptyKmsNodes(_) => {
+                    <EmptyKmsNodes as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidNullChainId(_) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::SELECTOR
@@ -6838,6 +6992,19 @@ function updatePauser(address newPauser) external;
                 &[u8],
                 bool,
             ) -> alloy_sol_types::Result<IGatewayConfigErrors>] = &[
+                {
+                    fn EmptyKmsNodes(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <EmptyKmsNodes as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigErrors::EmptyKmsNodes)
+                    }
+                    EmptyKmsNodes
+                },
                 {
                     fn NotPauser(
                         data: &[u8],
@@ -6956,6 +7123,19 @@ function updatePauser(address newPauser) external;
                     NetworkNotRegistered
                 },
                 {
+                    fn EmptyCoprocessors(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <EmptyCoprocessors as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigErrors::EmptyCoprocessors)
+                    }
+                    EmptyCoprocessors
+                },
+                {
                     fn NotKmsTxSender(
                         data: &[u8],
                         validate: bool,
@@ -6999,6 +7179,14 @@ function updatePauser(address newPauser) external;
                     <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
+                }
+                Self::EmptyCoprocessors(inner) => {
+                    <EmptyCoprocessors as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::EmptyKmsNodes(inner) => {
+                    <EmptyKmsNodes as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::InvalidNullChainId(inner) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::abi_encoded_size(
@@ -7053,6 +7241,18 @@ function updatePauser(address newPauser) external;
             match self {
                 Self::ChainIdNotUint64(inner) => {
                     <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::EmptyCoprocessors(inner) => {
+                    <EmptyCoprocessors as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::EmptyKmsNodes(inner) => {
+                    <EmptyKmsNodes as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

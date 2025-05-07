@@ -87,6 +87,18 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     ) public virtual reinitializer(2) {
         __Ownable_init(owner());
 
+        if (initialPauser == address(0)) {
+            revert InvalidNullPauser();
+        }
+
+        if (initialKmsNodes.length == 0) {
+            revert EmptyKmsNodes();
+        }
+
+        if (initialCoprocessors.length == 0) {
+            revert EmptyCoprocessors();
+        }
+
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         $.protocolMetadata = initialMetadata;
 
