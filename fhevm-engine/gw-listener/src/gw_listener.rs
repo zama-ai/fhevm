@@ -41,7 +41,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        info!(target: LOG_TARGET, "Starting Gateway Listener with: {:?}, InputVerification: {}", self.conf, self.input_verification_address);
+        info!(
+            "Starting Gateway Listener with: {:?}, InputVerification: {}",
+            self.conf, self.input_verification_address
+        );
         let db_pool = PgPoolOptions::new()
             .max_connections(self.conf.database_pool_size)
             .connect(&self.conf.database_url)
@@ -50,14 +53,17 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         let mut sleep_duration = self.conf.error_sleep_initial_secs as u64;
         loop {
             if self.cancel_token.is_cancelled() {
-                info!(target: LOG_TARGET, "Stopping");
+                info!("Stopping");
                 break;
             }
 
             match self.run_loop(&db_pool, &mut sleep_duration).await {
                 Ok(_) => {}
                 Err(e) => {
-                    error!(target: LOG_TARGET, "Encountered an error: {:?}, retrying in {} seconds", e, sleep_duration);
+                    error!(
+                        "Encountered an error: {:?}, retrying in {} seconds",
+                        e, sleep_duration
+                    );
                     self.sleep_with_backoff(&mut sleep_duration).await;
                 }
             }
@@ -78,7 +84,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .from_block(from_block)
             .subscribe()
             .await?;
-        info!(target: LOG_TARGET, "Subscribed to InputVerification.VerifyProofRequest events");
+        info!("Subscribed to InputVerification.VerifyProofRequest events");
         let mut stream = filter.into_stream().fuse();
         loop {
             tokio::select! {
@@ -87,22 +93,22 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 }
                 item = stream.next() => {
                     if item.is_none() {
-                        error!(target: LOG_TARGET, "Event stream closed");
+                        error!( "Event stream closed");
                         return Err(anyhow::anyhow!("Event stream closed"))
                     }
                     let (request, log) = item.unwrap()?;
-                    info!(target: LOG_TARGET, "Received event for ZK proof request ID: {}", request.zkProofId);
+                    info!( "Received event for ZK proof request ID: {}", request.zkProofId);
                     match log.block_number {
                         Some(event_block_num) => {
                             match from_block {
                                 BlockNumberOrTag::Latest => {
-                                    info!(target: LOG_TARGET, "Updating from block from latest to {}", event_block_num);
+                                    info!( "Updating from block from latest to {}", event_block_num);
                                     from_block = BlockNumberOrTag::Number(event_block_num);
                                     self.update_last_block_num(db_pool, Some(event_block_num)).await?;
                                 }
                                 BlockNumberOrTag::Number(from_block_num) => {
                                     if from_block_num < event_block_num {
-                                        info!(target: LOG_TARGET, "Updating from block from {} to {}", from_block_num, event_block_num);
+                                        info!( "Updating from block from {} to {}", from_block_num, event_block_num);
                                         from_block = BlockNumberOrTag::Number(event_block_num);
                                         self.update_last_block_num(db_pool, Some(event_block_num)).await?;
                                     }
@@ -111,7 +117,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                             }
                         }
                         None => {
-                            error!(target: LOG_TARGET, "Received an event without a block number, updating from block to latest");
+                            error!( "Received an event without a block number, updating from block to latest");
                             from_block = BlockNumberOrTag::Latest;
                             self.update_last_block_num(db_pool, None).await?;
                         }
@@ -182,7 +188,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         db_pool: &Pool<Postgres>,
         block_num: Option<u64>,
     ) -> anyhow::Result<()> {
-        info!(target: LOG_TARGET, "Updating last block number to: {:?}", block_num);
+        info!("Updating last block number to: {:?}", block_num);
         sqlx::query!(
             "INSERT into gw_listener_last_block (dummy_id, last_block_num)
             VALUES (true, $1)

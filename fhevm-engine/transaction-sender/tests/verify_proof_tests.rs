@@ -29,13 +29,13 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -155,13 +155,13 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -283,13 +283,13 @@ async fn reject_proof_response_success() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -388,13 +388,13 @@ async fn verify_proof_response_reversal_already_verified() -> anyhow::Result<()>
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -481,13 +481,13 @@ async fn reject_proof_response_reversal_already_rejected() -> anyhow::Result<()>
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -573,13 +573,13 @@ async fn verify_proof_response_other_reversal() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -667,13 +667,13 @@ async fn reject_proof_response_other_reversal() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -757,13 +757,13 @@ async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -850,13 +850,13 @@ async fn reject_proof_response_other_reversal_gas_estimation() -> anyhow::Result
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -945,13 +945,13 @@ async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
     env.conf.verify_proof_resp_max_retries = 2;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -1030,13 +1030,13 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
     env.conf.verify_proof_resp_max_retries = 2;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );

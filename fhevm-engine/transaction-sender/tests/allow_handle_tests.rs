@@ -10,7 +10,9 @@ use sqlx::PgPool;
 use std::time::Duration;
 use test_harness::db_utils::insert_random_tenant;
 use tokio::time::sleep;
-use transaction_sender::{FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender};
+use transaction_sender::{
+    ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
+};
 
 mod common;
 
@@ -41,13 +43,13 @@ async fn allow_call(event_type: AllowEvents, already_allowed_revert: bool) -> an
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -72,11 +74,11 @@ async fn allow_call(event_type: AllowEvents, already_allowed_revert: bool) -> an
     // Record initial transaction count.
     let initial_tx_count = provider.get_transaction_count(env.signer.address()).await?;
 
-    let handle = random::<[u8; 32]>().to_vec();
+    let handle = random::<[u8; 32]>();
     insert_allowed_handle(
         &env.db_pool,
         tenant_id,
-        handle.clone(),
+        &handle,
         PrivateKeySigner::random().address(),
         event_type,
     )
@@ -96,11 +98,11 @@ async fn allow_call(event_type: AllowEvents, already_allowed_revert: bool) -> an
             "SELECT txn_is_sent
              FROM allowed_handles
              WHERE handle = $1",
-            handle,
+            &handle,
         )
         .fetch_one(&env.db_pool)
         .await?;
-        if rows.txn_is_sent.unwrap_or_default() {
+        if rows.txn_is_sent {
             break;
         }
 
@@ -130,10 +132,104 @@ async fn allow_call(event_type: AllowEvents, already_allowed_revert: bool) -> an
     Ok(())
 }
 
+#[tokio::test]
+#[serial(db)]
+async fn retry_on_transport_error() -> anyhow::Result<()> {
+    let conf = ConfigSettings {
+        allow_handle_max_retries: 2,
+        ..Default::default()
+    };
+
+    let mut env = TestEnvironment::new_with_config(conf.clone()).await?;
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
+    let already_allowed_revert = false;
+    let multichain_acl = MultichainAcl::deploy(&provider_deploy, already_allowed_revert).await?;
+
+    let txn_sender = TransactionSender::new(
+        PrivateKeySigner::random().address(),
+        PrivateKeySigner::random().address(),
+        *multichain_acl.address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+
+    // Simulate a transport error by stopping the anvil instance.
+    env.drop_anvil();
+
+    let handle = random::<[u8; 32]>();
+    insert_allowed_handle(
+        &env.db_pool,
+        tenant_id,
+        &handle,
+        PrivateKeySigner::random().address(),
+        AllowEvents::AllowedAccount,
+    )
+    .await?;
+
+    sqlx::query!(
+        "
+        SELECT pg_notify($1, '')",
+        env.conf.allow_handle_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    // Make sure the digest is not sent, the retry count is 0 and the transport retry count is greater than the txn max retry count.
+    loop {
+        let rows = sqlx::query!(
+            "SELECT txn_is_sent, txn_retry_count, txn_transport_retry_count
+             FROM allowed_handles
+             WHERE handle = $1",
+            &handle,
+        )
+        .fetch_one(&env.db_pool)
+        .await?;
+        if !rows.txn_is_sent
+            && rows.txn_retry_count == 0
+            && rows.txn_transport_retry_count > conf.allow_handle_max_retries as i32
+        {
+            break;
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
+    sqlx::query!(
+        "
+        delete from tenants where tenant_id = $1",
+        tenant_id
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    env.cancel_token.cancel();
+    run_handle.await??;
+
+    Ok(())
+}
+
 async fn insert_allowed_handle(
     pool: &PgPool,
     tenant_id: i32,
-    handle: Vec<u8>,
+    handle: &[u8; 32],
     account_address: Address,
     event_type: AllowEvents,
 ) -> Result<(), sqlx::Error> {

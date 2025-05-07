@@ -4,9 +4,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{
-    nonce_managed_provider::NonceManagedProvider, ops::common::try_into_array, ALLOW_HANDLES_TARGET,
-};
+use crate::{nonce_managed_provider::NonceManagedProvider, ops::common::try_into_array, REVIEW};
 
 use super::TransactionOperation;
 use alloy::{
@@ -15,6 +13,7 @@ use alloy::{
     providers::Provider,
     rpc::types::TransactionRequest,
     sol,
+    transports::{RpcError, TransportErrorKind},
 };
 use anyhow::bail;
 use async_trait::async_trait;
@@ -67,34 +66,53 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         &self,
         key: &Key,
         txn_request: impl Into<TransactionRequest>,
+        current_retry_count: i32,
+        current_transport_retry_count: i32,
     ) -> anyhow::Result<()> {
         let h = compact_hex(&key.handle);
 
-        info!(target: ALLOW_HANDLES_TARGET, "Processing transaction, handle: {}", h);
+        info!("Processing transaction, handle: {}", h);
 
         let txn_req = txn_request.into();
         let transaction = match self.provider.send_transaction(txn_req.clone()).await {
             Ok(txn) => txn,
+            Err(e) if self.already_allowed_error(&e).is_some() => {
+                warn!(
+                    "Coprocessor {} has already added the ACL entry for handle: {}",
+                    self.already_allowed_error(&e).unwrap(),
+                    h
+                );
+                self.set_txn_is_sent(key).await?;
+                return Ok(());
+            }
+            Err(RpcError::Transport(e))
+                if e.is_retry_err() || matches!(e, TransportErrorKind::BackendGone) =>
+            {
+                warn!(
+                    "Transaction {:?} sending failed with transport error: {}, handle: {}",
+                    txn_req, e, h
+                );
+                self.increment_transport_txn_retry_count(
+                    key,
+                    &e.to_string(),
+                    current_transport_retry_count,
+                )
+                .await?;
+                bail!("Transaction sending failed with transport error: {}", e);
+            }
             Err(e) => {
-                if let Some(MultichainAclErrors::CoprocessorAlreadyAllowed(_)) = e
-                    .as_error_resp()
-                    .and_then(|payload| payload.as_decoded_error::<MultichainAclErrors>(true))
-                {
-                    warn!(target: ALLOW_HANDLES_TARGET, "Coprocessor has already added the ACL entry for handle: {}", h);
-                    self.set_txn_is_sent(key).await?;
-                    return Ok(());
-                }
-
-                error!(target: ALLOW_HANDLES_TARGET,
+                warn!(
                     "Transaction {:?} sending failed with error: {}, handle: {}",
                     txn_req, e, h
                 );
-
-                self.increment_db_retry(key, &e.to_string()).await?;
+                self.increment_txn_retry_count(key, &e.to_string(), current_retry_count)
+                    .await?;
                 bail!("Transaction sending failed with error: {}", e);
             }
         };
 
+        // We assume that if we were able to send the transaction, we will be able to get a receipt, eventually. If there is a transport
+        // error in-between, we rely on the retry logic to handle it.
         let receipt = match transaction
             .with_timeout(Some(Duration::from_secs(
                 self.conf.txn_receipt_timeout_secs as u64,
@@ -105,8 +123,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         {
             Ok(receipt) => receipt,
             Err(e) => {
-                error!(target: ALLOW_HANDLES_TARGET, "Getting receipt failed with error: {}", e);
-                self.increment_db_retry(key, &e.to_string()).await?;
+                error!("Getting receipt failed with error: {}", e);
+                self.increment_txn_retry_count(key, &e.to_string(), current_retry_count)
+                    .await?;
                 return Err(anyhow::Error::new(e));
             }
         };
@@ -114,16 +133,16 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         if receipt.status() {
             self.set_txn_is_sent(key).await?;
 
-            info!(target: ALLOW_HANDLES_TARGET, "Allow txn: {} succeeded, {}", receipt.transaction_hash, key,);
+            info!("Allow txn: {} succeeded, {}", receipt.transaction_hash, key,);
         } else {
-            error!(target: ALLOW_HANDLES_TARGET,
+            error!(
                 "allowAccount txn: {} failed with status {}, handle: {}",
                 receipt.transaction_hash,
                 receipt.status(),
                 h
             );
 
-            self.increment_db_retry(key, "receipt status = false")
+            self.increment_txn_retry_count(key, "receipt status = false", current_retry_count)
                 .await?;
 
             return Err(anyhow::anyhow!(
@@ -134,6 +153,15 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
             ));
         }
         Ok(())
+    }
+
+    fn already_allowed_error(&self, err: &RpcError<TransportErrorKind>) -> Option<Address> {
+        let validate = true;
+        err.as_error_resp()
+            .and_then(|payload| payload.as_decoded_error::<MultichainAclErrors>(validate))
+            .map(|error| match error {
+                MultichainAclErrors::CoprocessorAlreadyAllowed(c) => c.coprocessor,
+            })
     }
 
     async fn set_txn_is_sent(&self, key: &Key) -> anyhow::Result<()> {
@@ -161,7 +189,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         gas: Option<u64>,
         db_pool: Pool<Postgres>,
     ) -> Self {
-        info!(target: ALLOW_HANDLES_TARGET,
+        info!(
             "Creating MultichainAclOperation with gas: {} and MultichainAcl address: {}",
             gas.unwrap_or(0),
             multichain_acl_address,
@@ -176,13 +204,71 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         }
     }
 
-    async fn increment_db_retry(&self, key: &Key, err: &str) -> anyhow::Result<()> {
-        debug!(target: ALLOW_HANDLES_TARGET, "Updating retry count, {}", &key);
+    async fn increment_txn_retry_count(
+        &self,
+        key: &Key,
+        err: &str,
+        current_retry_count: i32,
+    ) -> anyhow::Result<()> {
+        debug!("Updating retry count for key {}", key);
+
+        if current_retry_count == (self.conf.allow_handle_max_retries as i32) - 1 {
+            error!(
+                action = REVIEW,
+                "Max ({}) retries reached for key {}", key, self.conf.allow_handle_max_retries
+            );
+        } else {
+            warn!(
+                "Updating retry count to {} for key {}",
+                current_retry_count + 1,
+                key
+            );
+        }
 
         sqlx::query!(
             "UPDATE allowed_handles
             SET
             txn_retry_count = txn_retry_count + 1,
+            txn_last_error = $1,
+            txn_last_error_at = NOW()
+            WHERE handle = $2
+            AND account_address = $3
+            AND tenant_id = $4",
+            err,
+            key.handle,
+            key.account_addr,
+            key.tenant_id
+        )
+        .execute(&self.db_pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn increment_transport_txn_retry_count(
+        &self,
+        key: &Key,
+        err: &str,
+        current_transport_retry_count: i32,
+    ) -> anyhow::Result<()> {
+        debug!("Updating transport retry count, {}", key);
+
+        if current_transport_retry_count == (self.conf.review_after_transport_retries as i32) - 1 {
+            error!(
+                action = REVIEW,
+                "{} transport retries reached for key {}", current_transport_retry_count, key
+            );
+        } else {
+            warn!(
+                "Updating transport retry count to {}, key {}",
+                current_transport_retry_count + 1,
+                key
+            );
+        }
+
+        sqlx::query!(
+            "UPDATE allowed_handles
+            SET
+            txn_transport_retry_count = txn_transport_retry_count + 1,
             txn_last_error = $1,
             txn_last_error_at = NOW()
             WHERE handle = $2
@@ -211,7 +297,7 @@ where
     async fn execute(&self) -> anyhow::Result<bool> {
         let rows = sqlx::query!(
             "
-            SELECT handle, tenant_id, account_address, event_type 
+            SELECT handle, tenant_id, account_address, event_type, txn_retry_count, txn_transport_retry_count
             FROM allowed_handles 
             WHERE txn_is_sent = false 
             AND txn_retry_count < $1
@@ -226,7 +312,7 @@ where
         let multichain_acl: MultichainAcl::MultichainAclInstance<(), &P> =
             MultichainAcl::new(self.multichain_acl_address, self.provider.inner());
 
-        info!(target: ALLOW_HANDLES_TARGET, "Selected {} rows to process", rows.len());
+        info!("Selected {} rows to process", rows.len());
 
         let maybe_has_more_work = rows.len() == self.conf.allow_handle_batch_limit as usize;
 
@@ -235,7 +321,7 @@ where
             let tenant = match query_tenant_info(&self.db_pool, row.tenant_id).await {
                 Ok(res) => res,
                 Err(_) => {
-                    error!(target: ALLOW_HANDLES_TARGET,
+                    error!(
                         "Failed to get chain_id for tenant
                     id: {}",
                         row.tenant_id
@@ -245,12 +331,12 @@ where
             };
 
             let chain_id = tenant.chain_id;
-            let handle: Vec<u8> = row.handle.clone();
+            let handle = row.handle.clone();
             let h_as_hex = compact_hex(&handle);
             let event_type = match AllowEvents::try_from(row.event_type) {
                 Ok(event_type) => event_type,
                 Err(_) => {
-                    error!(target: ALLOW_HANDLES_TARGET,
+                    error!(
                         "Invalid event_type: {} for tenant_id: {}",
                         row.event_type, row.tenant_id
                     );
@@ -259,7 +345,7 @@ where
             };
 
             let account_addr = row.account_address;
-            info!(target: ALLOW_HANDLES_TARGET,
+            info!(
                 "Allow handle: {}, event_type: {:?}, account: {:?}, chain_id: {},",
                 h_as_hex, event_type, account_addr, chain_id,
             );
@@ -283,7 +369,7 @@ where
                     let address = if let Ok(addr) = Address::from_str(&account_addr) {
                         addr
                     } else {
-                        error!(target: ALLOW_HANDLES_TARGET,
+                        error!(
                             "Invalid account address: {:?} for tenant_id: {}",
                             account_addr, row.tenant_id
                         );
@@ -306,13 +392,22 @@ where
 
             let key = Key {
                 handle,
-                account_addr,
+                account_addr: account_addr.to_string(),
                 tenant_id: row.tenant_id,
                 event_type,
             };
 
             let operation = self.clone();
-            join_set.spawn(async move { operation.send_transaction(&key, txn_request).await });
+            join_set.spawn(async move {
+                operation
+                    .send_transaction(
+                        &key,
+                        txn_request,
+                        row.txn_retry_count,
+                        row.txn_transport_retry_count,
+                    )
+                    .await
+            });
         }
 
         while let Some(res) = join_set.join_next().await {

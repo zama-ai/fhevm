@@ -8,7 +8,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use crate::{nonce_managed_provider::NonceManagedProvider, ops, ConfigSettings, TXN_SENDER_TARGET};
+use crate::{nonce_managed_provider::NonceManagedProvider, ops, ConfigSettings};
 
 #[derive(Clone)]
 pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
@@ -77,7 +77,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        info!(target: TXN_SENDER_TARGET, "Starting Transaction Sender with: {:?}, InputVerification: {}, CiphertextCommits: {}, MultichainAcl: {}",
+        info!( "Starting Transaction Sender with: {:?}, InputVerification: {}, CiphertextCommits: {}, MultichainAcl: {}",
             self.conf, self.input_verification_address, self.ciphertext_commits_address, self.multichain_acl_address);
 
         let mut join_set = JoinSet::new();
@@ -88,20 +88,20 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             let db_polling_interval_secs = self.conf.db_polling_interval_secs;
             join_set.spawn({
                 let sender = self.clone();
-                info!(target: TXN_SENDER_TARGET, "Spawning operation loop {}", op_channel);
+                info!( "Spawning operation loop {}", op_channel);
                 async move {
                     let mut sleep_duration = sender.conf.error_sleep_initial_secs as u64;
                     let mut listener = PgListener::connect_with(&sender.db_pool).await?;
                     listener.listen(&op_channel).await?;
                     loop {
                         if token.is_cancelled() {
-                            info!(target: TXN_SENDER_TARGET, "Operation {} stopping", op_channel);
+                            info!( "Operation {} stopping", op_channel);
                             break;
                         }
 
                         match op.execute().await {
                             Err(e) => {
-                                error!(target: TXN_SENDER_TARGET,
+                                error!(
                                     "Operation {} error: {}. Retrying after {} seconds",
                                     op_channel, e, sleep_duration);
                                 sender.sleep_with_backoff(&mut sleep_duration).await;
@@ -120,23 +120,23 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                                 let notification = listener.try_recv().fuse();
                                 tokio::select! {
                                     _ = token.cancelled() => {
-                                        info!(target: TXN_SENDER_TARGET, "Operation {} stopping", op_channel);
+                                        info!( "Operation {} stopping", op_channel);
                                         break;
                                     }
                                     n = notification => {
                                         match n {
                                             Ok(Some(_)) => {
-                                                debug!(target: TXN_SENDER_TARGET,
+                                                debug!(
                                                     "Operation {} received notification, rechecking for work", op_channel);
                                             },
                                             Ok(None) => {
-                                                debug!(target: TXN_SENDER_TARGET,
+                                                debug!(
                                                     "Operation {} received empty notification, sleeping for {} seconds",
                                                     op_channel, sleep_duration);
                                                 sender.sleep_with_backoff(&mut sleep_duration).await;
                                             }
                                             Err(e) => {
-                                                error!(target: TXN_SENDER_TARGET,
+                                                error!(
                                                     "Operation {} notification error: {}, sleeping for {} seconds",
                                                     op_channel, e, sleep_duration);
                                                 sender.sleep_with_backoff(&mut sleep_duration).await;
@@ -144,7 +144,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                                         }
                                     }
                                     _ = tokio::time::sleep(Duration::from_secs(db_polling_interval_secs.into())) => {
-                                        debug!(target: TXN_SENDER_TARGET,
+                                        debug!(
                                             "Operation {} timeout reached, rechecking for work", op_channel);
                                     }
                                 }

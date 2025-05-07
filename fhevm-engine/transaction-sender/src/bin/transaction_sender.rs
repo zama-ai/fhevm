@@ -53,7 +53,7 @@ struct Conf {
     #[arg(long, default_value = "128")]
     verify_proof_resp_batch_limit: u32,
 
-    #[arg(long, default_value = "15")]
+    #[arg(long, default_value = "3")]
     verify_proof_resp_max_retries: u32,
 
     #[arg(long, default_value = "true")]
@@ -82,6 +82,9 @@ struct Conf {
 
     #[arg(long, default_value = "0")]
     required_txn_confirmations: u16,
+
+    #[arg(long, default_value = "30")]
+    review_after_transport_retries: u16,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -141,6 +144,7 @@ async fn main() -> anyhow::Result<()> {
             allow_handle_max_retries: conf.allow_handle_max_retries,
             txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
             required_txn_confirmations: conf.required_txn_confirmations,
+            review_after_transport_retries: conf.review_after_transport_retries,
         },
         None,
     )

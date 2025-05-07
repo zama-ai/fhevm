@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT handle, tenant_id, account_address, event_type \n            FROM allowed_handles \n            WHERE txn_is_sent = false \n            AND txn_retry_count < $1\n            LIMIT $2;\n            ",
+  "query": "\n            SELECT handle, tenant_id, account_address, event_type, txn_retry_count, txn_transport_retry_count\n            FROM allowed_handles \n            WHERE txn_is_sent = false \n            AND txn_retry_count < $1\n            LIMIT $2;\n            ",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,16 @@
         "ordinal": 3,
         "name": "event_type",
         "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "txn_retry_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "txn_transport_retry_count",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
@@ -34,8 +44,10 @@
       false,
       false,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "8584e548598060b558cb81e3a7d0e382b17b01c5e1f2c617f5ff387d540007e5"
+  "hash": "797a33d6de9bfef9d2d0ad6452f4517023344eb6c52c897f047442a8c33f246e"
 }

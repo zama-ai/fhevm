@@ -1,3 +1,5 @@
+mod common;
+
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
 use common::{CiphertextCommits, TestEnvironment};
@@ -12,21 +14,19 @@ use transaction_sender::{
     ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
-mod common;
-
 #[tokio::test]
 #[serial(db)]
 async fn add_ciphertext_digests() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -51,7 +51,7 @@ async fn add_ciphertext_digests() -> anyhow::Result<()> {
     let tenant_id = insert_random_tenant(&env.db_pool).await?;
 
     //  Add a ciphertext digest to database
-    let handle = random::<[u8; 32]>().to_vec();
+    let handle = random::<[u8; 32]>();
     // Record initial transaction count.
     let initial_tx_count = provider.get_transaction_count(env.signer.address()).await?;
 
@@ -59,9 +59,9 @@ async fn add_ciphertext_digests() -> anyhow::Result<()> {
     insert_ciphertext_digest(
         &env.db_pool,
         tenant_id,
-        handle.clone(),
-        random::<[u8; 32]>().to_vec(),
-        random::<[u8; 32]>().to_vec(),
+        &handle,
+        &random::<[u8; 32]>(),
+        &random::<[u8; 32]>(),
         1,
     )
     .await?;
@@ -80,11 +80,11 @@ async fn add_ciphertext_digests() -> anyhow::Result<()> {
             "SELECT txn_is_sent
              FROM ciphertext_digest
              WHERE handle = $1",
-            handle,
+            &handle,
         )
         .fetch_one(&env.db_pool)
         .await?;
-        if rows.txn_is_sent.unwrap_or_default() {
+        if rows.txn_is_sent {
             break;
         }
 
@@ -117,13 +117,13 @@ async fn ciphertext_digest_already_added() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -148,15 +148,15 @@ async fn ciphertext_digest_already_added() -> anyhow::Result<()> {
     let tenant_id = insert_random_tenant(&env.db_pool).await?;
 
     //  Add a ciphertext digest to database
-    let handle = random::<[u8; 32]>().to_vec();
+    let handle = random::<[u8; 32]>();
 
     // Insert a ciphertext digest into the database.
     insert_ciphertext_digest(
         &env.db_pool,
         tenant_id,
-        handle.clone(),
-        random::<[u8; 32]>().to_vec(),
-        random::<[u8; 32]>().to_vec(),
+        &handle,
+        &random::<[u8; 32]>(),
+        &random::<[u8; 32]>(),
         1,
     )
     .await?;
@@ -175,11 +175,196 @@ async fn ciphertext_digest_already_added() -> anyhow::Result<()> {
             "SELECT txn_is_sent
              FROM ciphertext_digest
              WHERE handle = $1",
-            handle,
+            &handle,
         )
         .fetch_one(&env.db_pool)
         .await?;
-        if rows.txn_is_sent.unwrap_or_default() {
+        if rows.txn_is_sent {
+            break;
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+    sqlx::query!(
+        "
+        delete from tenants where tenant_id = $1",
+        tenant_id
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    env.cancel_token.cancel();
+    run_handle.await??;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn recover_from_transport_error() -> anyhow::Result<()> {
+    let mut env = TestEnvironment::new().await?;
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
+
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
+    let txn_sender = TransactionSender::new(
+        PrivateKeySigner::random().address(),
+        *ciphertext_commits.address(),
+        PrivateKeySigner::random().address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+
+    // Record a transaction count, to make sure the provider is connected before the transport error.
+    let _ = provider.get_transaction_count(env.signer.address()).await?;
+
+    // Simulate a transport error by recreating the anvil instance.
+    env.recreate_anvil()?;
+
+    // Insert a ciphertext digest into the database.
+    let handle = random::<[u8; 32]>();
+    insert_ciphertext_digest(
+        &env.db_pool,
+        tenant_id,
+        &handle,
+        &random::<[u8; 32]>(),
+        &random::<[u8; 32]>(),
+        1,
+    )
+    .await?;
+
+    sqlx::query!(
+        "
+        SELECT pg_notify($1, '')",
+        env.conf.add_ciphertexts_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    // Make sure the digest was tagged as sent.
+    loop {
+        let rows = sqlx::query!(
+            "SELECT txn_is_sent
+             FROM ciphertext_digest
+             WHERE handle = $1",
+            &handle,
+        )
+        .fetch_one(&env.db_pool)
+        .await?;
+        if rows.txn_is_sent {
+            break;
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+    sqlx::query!(
+        "
+        delete from tenants where tenant_id = $1",
+        tenant_id
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    env.cancel_token.cancel();
+    run_handle.await??;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn retry_on_transport_error() -> anyhow::Result<()> {
+    let conf = ConfigSettings {
+        add_ciphertexts_max_retries: 2,
+        ..Default::default()
+    };
+
+    let mut env = TestEnvironment::new_with_config(conf.clone()).await?;
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
+
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
+    let txn_sender = TransactionSender::new(
+        PrivateKeySigner::random().address(),
+        *ciphertext_commits.address(),
+        PrivateKeySigner::random().address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+
+    // Simulate a transport error by stopping the anvil instance.
+    env.drop_anvil();
+
+    // Insert a ciphertext digest into the database.
+    let handle = random::<[u8; 32]>();
+    insert_ciphertext_digest(
+        &env.db_pool,
+        tenant_id,
+        &handle,
+        &random::<[u8; 32]>(),
+        &random::<[u8; 32]>(),
+        0,
+    )
+    .await?;
+
+    sqlx::query!(
+        "
+        SELECT pg_notify($1, '')",
+        env.conf.add_ciphertexts_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    // Make sure the digest is not sent, the retry count is 0 and the transport retry count is greater than the txn max retry count.
+    loop {
+        let rows = sqlx::query!(
+            "SELECT txn_is_sent, txn_retry_count, txn_transport_retry_count
+             FROM ciphertext_digest
+             WHERE handle = $1",
+            &handle,
+        )
+        .fetch_one(&env.db_pool)
+        .await?;
+        if !rows.txn_is_sent
+            && rows.txn_retry_count == 0
+            && rows.txn_transport_retry_count > conf.add_ciphertexts_max_retries as i32
+        {
             break;
         }
         sleep(Duration::from_millis(500)).await;
@@ -210,7 +395,7 @@ async fn retry_mechanism() -> anyhow::Result<()> {
     // Create a provider without a wallet.
     let provider = NonceManagedProvider::new(
         ProviderBuilder::new()
-            .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .on_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         None,
     );
@@ -231,15 +416,15 @@ async fn retry_mechanism() -> anyhow::Result<()> {
     let tenant_id = insert_random_tenant(&env.db_pool).await?;
 
     let mut rng = rand::rng();
-    let handle = rng.random::<[u8; 32]>().to_vec();
+    let handle = rng.random::<[u8; 32]>();
 
     // Insert a ciphertext digest into the database.
     insert_ciphertext_digest(
         &env.db_pool,
         tenant_id,
-        handle.clone(),
-        random::<[u8; 32]>().to_vec(),
-        random::<[u8; 32]>().to_vec(),
+        &handle,
+        &random::<[u8; 32]>(),
+        &random::<[u8; 32]>(),
         1,
     )
     .await?;
@@ -259,26 +444,19 @@ async fn retry_mechanism() -> anyhow::Result<()> {
             "SELECT txn_is_sent, txn_retry_count
              FROM ciphertext_digest
              WHERE handle = $1",
-            handle,
+            &handle,
         )
         .fetch_one(&env.db_pool)
         .await?;
 
-        match rows.txn_is_sent {
-            Some(true) => panic!("Expected txn_is_sent to be false"),
-            Some(false) => {
-                print!(
-                    "txn_retry_count: {:?}",
-                    rows.txn_retry_count.unwrap_or_default()
-                );
-                if rows.txn_retry_count.unwrap_or_default()
-                    == env.conf.add_ciphertexts_max_retries as i32 - 1
-                {
-                    valid_retries_count = true;
-                    break;
-                }
+        if rows.txn_is_sent {
+            panic!("Expected txn_is_sent to be false");
+        } else {
+            println!("txn_retry_count: {}", rows.txn_retry_count);
+            if rows.txn_retry_count == env.conf.add_ciphertexts_max_retries as i32 - 1 {
+                valid_retries_count = true;
+                break;
             }
-            None => {}
         }
 
         sleep(Duration::from_millis(500)).await;
@@ -305,9 +483,9 @@ async fn retry_mechanism() -> anyhow::Result<()> {
 async fn insert_ciphertext_digest(
     pool: &PgPool,
     tenant_id: i32,
-    handle: Vec<u8>,
-    ciphertext: Vec<u8>,
-    ciphertext128: Vec<u8>,
+    handle: &[u8; 32],
+    ciphertext: &[u8],
+    ciphertext128: &[u8],
     txn_retry_count: i32,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(

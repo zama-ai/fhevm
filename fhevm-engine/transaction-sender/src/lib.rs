@@ -29,6 +29,8 @@ pub struct ConfigSettings {
     pub txn_receipt_timeout_secs: u16,
 
     pub required_txn_confirmations: u16,
+
+    pub review_after_transport_retries: u16,
 }
 
 impl Default for ConfigSettings {
@@ -41,7 +43,7 @@ impl Default for ConfigSettings {
             add_ciphertexts_db_channel: "add_ciphertexts".to_owned(),
             allow_handle_db_channel: "event_allowed_handle".to_owned(),
             verify_proof_resp_batch_limit: 128,
-            verify_proof_resp_max_retries: 15,
+            verify_proof_resp_max_retries: 3,
             verify_proof_remove_after_max_retries: true,
             db_polling_interval_secs: 5,
             error_sleep_initial_secs: 1,
@@ -52,6 +54,7 @@ impl Default for ConfigSettings {
             allow_handle_max_retries: 10,
             txn_receipt_timeout_secs: 10,
             required_txn_confirmations: 0,
+            review_after_transport_retries: 30,
         }
     }
 }
@@ -60,7 +63,4 @@ pub use nonce_managed_provider::FillersWithoutNonceManagement;
 pub use nonce_managed_provider::NonceManagedProvider;
 pub use transaction_sender::TransactionSender;
 
-pub const TXN_SENDER_TARGET: &str = "txn_sender";
-pub const VERIFY_PROOFS_TARGET: &str = "verify_proofs";
-pub const ADD_CIPHERTEXTS_TARGET: &str = "add_ciphertext_commits";
-pub const ALLOW_HANDLES_TARGET: &str = "allow_handles";
+pub const REVIEW: &str = "review";
