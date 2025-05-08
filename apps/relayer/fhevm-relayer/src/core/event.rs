@@ -619,13 +619,7 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
 }
 
 fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
-    if chain_id == "1e240" {
-        info!("Special case detected: contractChainId is 1e240, using hardcoded value 123456");
-        Ok(123456u64)
-    } else if chain_id == "3039" {
-        info!("Special case detected: contractChainId is 3039, using hardcoded value 12345");
-        Ok(12345u64)
-    } else if let Some(stripped) = chain_id.strip_prefix("0x") {
+    if let Some(stripped) = chain_id.strip_prefix("0x") {
         // Parse as hex if it starts with 0x
         u64::from_str_radix(stripped, 16)
     } else {
