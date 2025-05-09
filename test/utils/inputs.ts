@@ -13,6 +13,11 @@ export function createBytes32(): string {
   return createByteInput(32);
 }
 
+// Create a list of bytes32
+export function createBytes32s(length: number): string[] {
+  return Array.from({ length }, () => createBytes32());
+}
+
 // Create a ctHandle (bytes32) with a given chainId (uint64) and fheType (uint8)
 // A ctHandle has the following format:
 // [21 first random bytes from hashing] | index_21 | chainID_22...29 | fheType_30 | version_31
