@@ -12,11 +12,11 @@ describe(FetchStatsProcessor, () => {
   let pubsub: IPubSub<back.BackEvent | web3.Web3Event>
   let processor: FetchStatsProcessor
   let job: MockProxy<Job>
-  let chainId: string
+  let chainId: number
 
   beforeEach(async () => {
     pubsub = new PubSub()
-    chainId = faker.string.numeric(5)
+    chainId = faker.number.int({ min: 1, max: 100_000 })
     job = mock({
       name: 'test',
       data: { chainId },

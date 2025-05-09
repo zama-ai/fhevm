@@ -3,7 +3,7 @@ import { config } from 'dotenv'
 config()
 
 const genConfig: CodegenConfig = {
-  schema: process.env.VITE_BACK_HTTP_URL,
+  schema: '../back/src/infra/graphql/schema.gql', // process.env.VITE_BACK_HTTP_URL,
   documents: [
     'src/**/*.tsx',
     'src/queries.ts',

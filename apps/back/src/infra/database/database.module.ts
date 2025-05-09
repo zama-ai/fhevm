@@ -59,6 +59,7 @@ import { PrismaUOW } from './prisma.uow.js'
     },
   ],
   exports: [
+    PrismaService,
     UserRepository,
     TeamRepository,
     InvitationRepository,

@@ -10,13 +10,7 @@ import { IProducer } from '#shared/services/producer.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
 import { back, generateRequestId } from 'messages'
-import {
-  AppError,
-  LOCAL_FHEVM_CHAIN_ID,
-  Task,
-  UseCase,
-  validationError,
-} from 'utils'
+import { AppError, Task, UseCase, validationError } from 'utils'
 
 type Input = {
   dappId: string
@@ -34,9 +28,9 @@ export class GetDappRawStatsUseCase implements UseCase<Input, Output> {
     @Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository,
   ) {}
 
-  execute(input: Input): Task<Output, AppError> {
+  execute = (input: Input): Task<Output, AppError> => {
     this.logger.debug(`requested stats for dappId=${input.dappId}`)
-    return DAppId.fromString(input.dappId)
+    return DAppId.from(input.dappId)
       .asyncChain(dappId =>
         Task.all<AppError, DAppStat[], void>([
           this.repo.findAllStats(dappId).tap(stats => {
@@ -51,32 +45,30 @@ export class GetDappRawStatsUseCase implements UseCase<Input, Output> {
             )
             .chain<void>(dapp => {
               this.logger.debug(
-                `publishing dappStatsRequested for dappId=${dappId}`,
+                `publishing dappStatsRequested for dappId=${dappId} on chainId=${dapp.chainId} and address=${dapp.address}`,
               )
-              this.logger.verbose(
-                `publishing dappStatsRequested for dappId=${dappId} on chain ${LOCAL_FHEVM_CHAIN_ID}`,
-              )
-              return this.producer
-                .publish(
-                  back.dappStatsRequested(
-                    {
-                      // TODO: retrieve the `requestId` from the adapter
-                      requestId: generateRequestId(),
-                      dAppId: dappId.value,
-                      // Note: We should store the chainId in the DApp entity
-                      chainId: LOCAL_FHEVM_CHAIN_ID,
-                      address: dapp.address!,
-                    },
-                    {
-                      correlationId: randomUUID(),
-                    },
-                  ),
-                )
-                .orElse(() => {
-                  this.logger.warn(
-                    `failed to publish dappStatsRequested for dappId=${dappId}`,
-                  )
-                })
+              return dapp.chainId.isSome() && dapp.address.isSome()
+                ? this.producer
+                    .publish(
+                      back.dappStatsRequested(
+                        {
+                          // TODO: retrieve the `requestId` from the adapter
+                          requestId: generateRequestId(),
+                          dAppId: dappId.value,
+                          chainId: dapp.chainId.unwrap().value,
+                          address: dapp.address.unwrap().value,
+                        },
+                        {
+                          correlationId: randomUUID(),
+                        },
+                      ),
+                    )
+                    .orElse(() => {
+                      this.logger.warn(
+                        `failed to publish dappStatsRequested for dappId=${dappId}`,
+                      )
+                    })
+                : Task.of(void 0)
             }),
         ]),
       )

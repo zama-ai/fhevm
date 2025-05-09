@@ -26,7 +26,7 @@ describe('ValidateAddress', () => {
   })
 
   test('it should publish the message', async () => {
-    const chainId = faker.string.numeric(5)
+    const chainId = faker.number.int({ min: 1, max: 100_000 })
     const address = faker.string.hexadecimal({ length: 40 })
     producer.publish.mockReturnValue(Task.of(void 0))
 
@@ -56,7 +56,7 @@ describe('ValidateAddress', () => {
       await expect(
         useCase
           .execute({
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           })
           .toPromise(),
@@ -71,7 +71,7 @@ describe('ValidateAddressWithSync', () => {
   let syncService: Mocked<SyncService>
   let syncInstances: Mocked<SyncInstances>
 
-  let chainId: string
+  let chainId: number
   let address: string
 
   beforeEach(async () => {
@@ -89,7 +89,7 @@ describe('ValidateAddressWithSync', () => {
     ) as unknown as Mocked<SyncInstances>
     syncInstances.listenToEvent.mockReturnValue(void 0)
 
-    chainId = faker.string.numeric(5)
+    chainId = faker.number.int({ min: 1, max: 100_000 })
     address = faker.string.hexadecimal({ length: 40 })
   })
 
@@ -120,11 +120,10 @@ describe('ValidateAddressWithSync', () => {
 
   describe('when synchronization completes', () => {
     describe('and the address is valid', () => {
-      let chainId: string
+      let chainId: number
       let address: string
       beforeEach(() => {
-        // requestId = faker.string.uuid()
-        chainId = faker.string.numeric(5)
+        chainId = faker.number.int({ min: 1, max: 100_000 })
         address = faker.string.hexadecimal({ length: 40 })
         validateAddress.execute.mockReturnValue(Task.of({ check: true }))
         syncService.waitForResponse.mockImplementation((requestId, cb) => {
@@ -146,12 +145,12 @@ describe('ValidateAddressWithSync', () => {
     })
 
     describe('and the address is invalid', () => {
-      let chainId: string
+      let chainId: number
       let address: string
       let reason: string
 
       beforeEach(() => {
-        chainId = faker.string.numeric(5)
+        chainId = faker.number.int({ min: 1, max: 100_000 })
         address = faker.string.hexadecimal({ length: 40 })
         reason = faker.lorem.paragraph()
         validateAddress.execute.mockReturnValue(Task.of({ check: true }))

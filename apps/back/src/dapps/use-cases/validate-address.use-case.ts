@@ -1,6 +1,6 @@
+import { ChainId } from '#chains/domain/entities/value-objects.js'
 import { PRODUCER } from '#constants.js'
 import { Address } from '#dapps/domain/entities/value-objects.js'
-import { ChainId } from '#shared/entities/value-objects/chain-id.js'
 import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
@@ -19,7 +19,7 @@ import { SyncInstances } from '../../shared/use-cases/sync-instances.use-case.js
 import { IProducer } from '#shared/services/producer.js'
 
 export type ValidateAddressInput = {
-  chainId: string
+  chainId: number
   address: string
 }
 
@@ -38,7 +38,7 @@ export const VALIDATE_ADDRESS = 'VALIDATE_ADDRESS'
 export class ValidateAddress implements IValidateAddress {
   private readonly logger = new Logger(ValidateAddress.name)
 
-  constructor(@Inject(PRODUCER) private readonly producer: IProducer) { }
+  constructor(@Inject(PRODUCER) private readonly producer: IProducer) {}
 
   execute = (
     input: ValidateAddressInput,
@@ -49,8 +49,8 @@ export class ValidateAddress implements IValidateAddress {
         fromNullable(context?.requestId).orElse(() => generateRequestId()),
         () => validationError('missing requestId'),
       ),
-      ChainId.parse(input.chainId),
-      Address.fromString(input.address),
+      ChainId.from(input.chainId),
+      Address.from(input.address),
     ])
       .asyncChain(([requestId, chainId, address]) => {
         this.logger.verbose(
@@ -109,9 +109,9 @@ export class ValidateAddressWithSync implements IValidateAddress {
                     return data.type === 'back:address:validation:confirmed'
                       ? Task.of({ check: true })
                       : Task.of({
-                        check: false,
-                        message: data.payload.reason,
-                      })
+                          check: false,
+                          message: data.payload.reason,
+                        })
                   }
                   this.logger.warn(
                     `invalid event received: ${JSON.stringify(data)}`,

@@ -1,4 +1,4 @@
-import type { AppError, Result } from 'utils'
+import type { AppError, Result, Unbrand } from 'utils'
 import { Entity, fail, ok, validationError } from 'utils'
 import { z } from 'zod'
 import { ExpiresAt, InvitationId, Token } from './value-objects.js'
@@ -12,7 +12,7 @@ const schema = z.object({
   usedAt: z.date().nullable().optional(),
 })
 
-export type InvitationProps = z.infer<typeof schema>
+export type InvitationProps = Unbrand<z.infer<typeof schema>>
 
 export class Invitation
   extends Entity<InvitationProps>

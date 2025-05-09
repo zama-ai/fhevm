@@ -10,7 +10,7 @@ import { TeamId } from '../domain/entities/value-objects.js'
 export class GetTeamById implements UseCase<TeamId, TeamProps> {
   constructor(private readonly teamRepository: TeamRepository) {}
 
-  execute(id: TeamId): Task<TeamProps, AppError> {
+  execute = (id: TeamId): Task<TeamProps, AppError> => {
     return this.teamRepository.findOneById(id).map(team => team.toJSON())
   }
 }

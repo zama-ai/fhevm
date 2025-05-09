@@ -96,11 +96,7 @@ export class EtherscanContractService implements ContractService {
         .then(data =>
           data.status === '1'
             ? resolve(
-                some(
-                  Web3Address.fromString(
-                    data.result[0].contractAddress,
-                  ).unwrap(),
-                ),
+                some(Web3Address.from(data.result[0].contractAddress).unwrap()),
               )
             : reject(notFoundError('Contract not found')),
         )

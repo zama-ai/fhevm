@@ -95,6 +95,9 @@ type Dapp {
   id: ID!
   name: String!
   status: DappStatus!
+
+  """Chain ID"""
+  chainId: Int
   address: String
   teamId: String! @deprecated(reason: "Do not use this, it shall go away when I find a way to make it disappear")
   team: Team!
@@ -108,6 +111,7 @@ type Dapp {
   """DApp usage statistics"""
   rawStats: [RawStats!]!
   apiKeys: [ApiKey!]!
+  chain: Chain
 }
 
 enum DappStatus {
@@ -127,6 +131,17 @@ enum DappStatus {
 type ValidateAddress {
   check: Boolean!
   message: String
+}
+
+type Chain {
+  """Chain ID"""
+  id: ID!
+
+  """Chain name"""
+  name: String!
+
+  """Chain description"""
+  description: String
 }
 
 type User {
@@ -156,6 +171,12 @@ type Query {
   dapp(input: QueryDappInput!): Dapp!
   validateAddress(input: ValidateAddressInput!): ValidateAddress!
   apiKey(input: QueryApiKeyInput!): ApiKey!
+
+  """Get all chains"""
+  chains: [Chain!]!
+
+  """Get chain by ID"""
+  chain(input: QueryChainInput!): Chain!
 }
 
 input QueryDappInput {
@@ -163,13 +184,18 @@ input QueryDappInput {
 }
 
 input ValidateAddressInput {
-  """"1" for eth mainnet "11155111" for sepolia, etc"""
-  chainId: String!
+  """1 for eth mainnet, 11155111 for sepolia, etc"""
+  chainId: Int!
   address: String!
 }
 
 input QueryApiKeyInput {
   """API key ID"""
+  id: ID!
+}
+
+input QueryChainInput {
+  """Chain ID"""
   id: ID!
 }
 
@@ -215,6 +241,9 @@ input CreateDappInput {
   name: String!
   teamId: String!
 
+  """Your smart contract chain ID"""
+  chainId: Int
+
   """
   Your smart contract address, it should start with 0x and have 42 characters
   """
@@ -224,6 +253,9 @@ input CreateDappInput {
 input UpdateDappInput {
   id: ID!
   name: String
+
+  """Your smart contract chain ID"""
+  chainId: Int
 
   """
   Your smart contract address, it should start with 0x and have 42 characters

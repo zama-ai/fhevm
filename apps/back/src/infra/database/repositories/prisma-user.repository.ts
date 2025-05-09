@@ -50,7 +50,10 @@ export class PrismaUserRepository extends UserRepository {
     }).chain(props => User.parse(props).async())
   }
 
-  update(id: UserId, data: Partial<Omit<User, 'id'>>): Task<User, AppError> {
+  update = (
+    id: UserId,
+    data: Partial<Omit<User, 'id'>>,
+  ): Task<User, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.user
         .update({

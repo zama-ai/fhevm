@@ -17,6 +17,7 @@ import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import { TestBed } from '@suites/unit'
 import { Mocked } from '@suites/doubles.vitest'
 import { PrismaService } from '../prisma.service.js'
+import { ChainId } from '#chains/domain/entities/value-objects.js'
 
 vi.mock('../prisma.service.js')
 
@@ -175,6 +176,9 @@ describe('PrismaDappRepository', () => {
           id: dappId.value,
           name: faker.string.alphanumeric(10),
           status: 'LIVE',
+          chainId: ChainId.from(
+            faker.number.int({ min: 1, max: 100_000 }),
+          ).unwrap().value,
           address: faker.string.hexadecimal({ length: 40 }),
           teamId: TeamId.random().value,
           updatedAt: faker.date.past(),
@@ -245,6 +249,9 @@ describe('PrismaDappRepository', () => {
           id: dappId.value,
           name: faker.string.alphanumeric(10),
           status: 'LIVE' as DappStatus,
+          chainId: ChainId.from(
+            faker.number.int({ min: 1, max: 100_000 }),
+          ).unwrap().value,
           address: faker.string.hexadecimal({ length: 40 }),
           teamId: TeamId.random().value,
           updatedAt: faker.date.past(),
@@ -339,6 +346,9 @@ describe('PrismaDappRepository', () => {
           id: dappId.value,
           name: faker.string.alphanumeric(10),
           status: 'LIVE' as DappStatus,
+          chainId: ChainId.from(
+            faker.number.int({ min: 1, max: 100_000 }),
+          ).unwrap().value,
           address: faker.string.hexadecimal({ length: 40 }),
           teamId: TeamId.random().value,
           updatedAt: faker.date.past(),

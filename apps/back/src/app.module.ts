@@ -15,6 +15,7 @@ import commonConfig from '#config/common.config.js'
 import { MS_NAME } from '#constants.js'
 import { RestModule } from '#infra/rest/rest.module.js'
 import httpzConfig from '#config/httpz.config.js'
+import { ChainsModule } from '#chains/infra/chains.module.js'
 import { RedisModule } from '#infra/redis/redis.module.js'
 import { FeatureFlagModule } from '#feature-flag/feature-flag.module.js'
 import { EnvFeatureFlagHandler } from '#infra/env-feature-flag.handler.js'
@@ -65,6 +66,7 @@ export const configModule = ConfigModule.forRoot({
     RestModule,
     SqsConsumerModule,
     SqsProducerModule,
+    ChainsModule,
     RedisModule,
     FeatureFlagModule.register({
       global: true,

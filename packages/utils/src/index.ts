@@ -3,6 +3,7 @@ export type { IPubSub, ISubscriber } from './pubsub.js'
 export type { Fail, Ok, Result } from './result.js'
 export type { UseCase } from './use-case.js'
 export type { UnitOfWork } from './unit-of-work.js'
+export type { Unbrand } from './unbrand.js'
 
 export {
   AppError,

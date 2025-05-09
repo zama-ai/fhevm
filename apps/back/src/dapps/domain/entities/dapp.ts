@@ -1,8 +1,10 @@
 import { z } from 'zod'
-import type { AppError, Result } from 'utils'
-import { Entity, ok, fail, validationError } from 'utils'
+import type { AppError, Option, Result, Unbrand } from 'utils'
+import { Entity, ok, fail, validationError, some, none } from 'utils'
 import { DAppId } from './value-objects.js'
 import { TeamId } from '#users/domain/entities/value-objects.js'
+import { ChainId } from '#chains/domain/entities/value-objects.js'
+import { Web3Address } from '#shared/entities/value-objects/web3-address.js'
 
 const status = z.enum([
   'DRAFT',
@@ -18,23 +20,27 @@ const schema = z.object({
   name: z.string(),
   status,
   teamId: TeamId.schema,
-  address: z
-    .string()
-    .length(42, 'sepolia address must be exactly 42 charaxters long')
-    .startsWith('0x', 'sepolia address must start with 0x')
-    .optional()
-    .nullable(),
+  chainId: ChainId.schema.nullish(),
+  address: Web3Address.schema.nullish(),
   createdAt: z
     .date()
     .refine(date => date <= new Date(), 'CreatedAt should be in the past'),
 })
 
-export type DAppProps = z.infer<typeof schema>
+export type DAppProps = Unbrand<z.infer<typeof schema>>
 export type DAppStatus = z.infer<typeof status>
 
 export class DApp
   extends Entity<DAppProps>
-  implements Readonly<Omit<DAppProps, 'id'> & { id: DAppId }>
+  implements
+    Readonly<
+      Omit<DAppProps, 'id' | 'teamId' | 'chainId' | 'address'> & {
+        id: DAppId
+        teamId: TeamId
+        chainId: Option<ChainId>
+        address: Option<Web3Address>
+      }
+    >
 {
   static parse(data: unknown): Result<DApp, AppError> {
     if (!data) return fail(validationError('data is undefined'))
@@ -47,10 +53,12 @@ export class DApp
   static create({
     teamId,
     name,
+    chainId,
     address,
   }: {
     teamId: string
     name: string
+    chainId?: number
     address?: string
   }): Result<DApp, AppError> {
     return DApp.parse({
@@ -58,6 +66,7 @@ export class DApp
       name,
       status: 'DRAFT',
       teamId,
+      chainId,
       address,
       createdAt: new Date(),
     })
@@ -76,11 +85,17 @@ export class DApp
   }
 
   get teamId() {
-    return this.get('teamId')
+    return new TeamId(this.get('teamId'))
   }
 
-  get address() {
-    return this.get('address')
+  get chainId(): Option<ChainId> {
+    const chainId = this.get('chainId')
+    return chainId ? some(new ChainId(chainId)) : none()
+  }
+
+  get address(): Option<Web3Address> {
+    const address = this.get('address')
+    return address ? some(new Web3Address(address)) : none()
   }
 
   get createdAt() {

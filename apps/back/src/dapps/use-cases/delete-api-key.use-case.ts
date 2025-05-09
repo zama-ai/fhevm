@@ -20,12 +20,15 @@ export class DeleteApiKey implements UseCase<Input, Output> {
     @Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository,
   ) {}
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  execute(input: Input, context?: Record<string, any>): Task<Output, AppError> {
+  execute = (
+    input: Input,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    context?: Record<string, unknown>,
+  ): Task<Output, AppError> => {
     this.logger.debug(`Deleting API Key ${input.apiKeyId}`)
     // TODO: implement authorization
     return this.uow.exec(
-      ApiKeyId.fromString(input.apiKeyId).asyncChain(this.repo.deleteApiKey),
+      ApiKeyId.from(input.apiKeyId).asyncChain(this.repo.deleteApiKey),
     )
   }
 }

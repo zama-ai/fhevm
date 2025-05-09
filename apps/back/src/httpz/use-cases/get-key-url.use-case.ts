@@ -17,7 +17,7 @@ export class GetKeyUrl implements UseCase<void, Output> {
     @Inject(KEY_URL_SERVICE) private readonly keyUrlService: KeyUrlService,
   ) {}
 
-  execute(): Task<Output, AppError> {
+  execute = (): Task<Output, AppError> => {
     return Task.all<AppError, FHEPublicKey[], Record<string, CRS>>([
       this.keyUrlService.getFHEPublicKey(),
       this.keyUrlService.getCRS(),

@@ -1,7 +1,6 @@
 import { IntegrationManager } from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
 import { back } from 'messages'
-import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
 import {
   afterAll,
   afterEach,
@@ -62,12 +61,21 @@ describe('store-dapp-stats', () => {
       let timestamp: string
       beforeEach(async () => {
         timestamp = faker.date.past().toISOString()
+        const chainId = faker.number.int({ min: 1, max: 100_000 })
+        // TODO: move to a GraphQL endpoint when implemented
+        await manager.prismaClient.chain.create({
+          data: {
+            id: chainId,
+            name: faker.string.alphanumeric(10),
+            enabled: true,
+          },
+        })
         await manager.sendMessage(
           JSON.stringify(
             back.dappStatsAvailable(
               {
                 requestId: faker.string.uuid(),
-                chainId: LOCAL_FHEVM_CHAIN_ID,
+                chainId,
                 address,
                 events: [
                   {

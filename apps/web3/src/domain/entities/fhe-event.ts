@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { ChainId, FheEventId, Web3Address } from './value-objects.js'
-import { AppError, Entity, fail, ok, Result } from 'utils'
+import { AppError, Entity, fail, ok, Result, Unbrand } from 'utils'
 import { operationEnum } from 'messages'
 import { fromZodError } from 'utils/dist/src/app-error.js'
 
@@ -14,7 +14,7 @@ const schema = z.object({
   timestamp: z.date(),
 })
 
-type FheEventProps = z.infer<typeof schema>
+type FheEventProps = Unbrand<z.infer<typeof schema>>
 
 export class FheEvent
   extends Entity<FheEventProps>
@@ -32,7 +32,7 @@ export class FheEvent
       : fail(fromZodError(check.error))
   }
   get chainId() {
-    return ChainId.from(this.get('chainId'))
+    return new ChainId(this.get('chainId'))
   }
 
   get id() {
@@ -44,7 +44,7 @@ export class FheEvent
   }
 
   get callerAddress() {
-    return Web3Address.from(this.get('callerAddress'))
+    return new Web3Address(this.get('callerAddress'))
   }
 
   get blockNumber() {

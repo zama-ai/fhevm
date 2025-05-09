@@ -41,6 +41,37 @@ describe('validate-address', () => {
     })
 
     describe('when the address is valid', () => {
+      // let validateAddress: ValidateAddress | undefined
+      // let chainId: number
+      // let address: string
+
+      // beforeEach(async () => {
+      //   chainId = faker.number.int({ min: 1, max: 100_000 })
+      //   address = faker.string.hexadecimal({ length: 40 })
+      //   const [result] = await Promise.all([
+      //     manager.dapp.valiateAddress({
+      //       token,
+      //       chainId,
+      //       address,
+      //     }),
+      //     manager.sendMessage(
+      //       JSON.stringify(
+      //         back.addressValidationConfirmed(
+      //           {
+      //             requestId: faker.string.uuid(),
+      //             chainId,
+      //             address,
+      //           },
+      //           { correlationId: faker.string.uuid() },
+      //         ),
+      //       ),
+      //     ),
+      //   ])
+      //   if (result.success) {
+      //     validateAddress = result.data
+      //   }
+      // })
+
       test('then it returns true', async () => {
         const validateAddress = await sendValidateAddressRequest(
           manager,
@@ -63,6 +94,41 @@ describe('validate-address', () => {
     })
 
     describe('when the address is invalid', { timeout: 30_000 }, () => {
+      // let validateAddress: ValidateAddress | undefined
+      // let chainId: number
+      // let address: string
+
+      // beforeEach(async () => {
+      //   chainId = faker.number.int({ min: 1, max: 100_000 })
+      //   address = faker.string.hexadecimal({ length: 40 })
+      //   const [result] = await Promise.all([
+      //     manager.dapp.valiateAddress({
+      //       token,
+      //       chainId,
+      //       address,
+      //     }),
+      //     manager.sendMessage(
+      //       JSON.stringify(
+      //         back.addressValidationFailed(
+      //           {
+      //             requestId: faker.string.uuid(),
+      //             chainId,
+      //             address,
+      //             reason: `${address} not valid`,
+      //           },
+      //           { correlationId: faker.string.uuid() },
+      //         ),
+      //       ),
+      //     ),
+      //   ])
+      //   if (result.success) {
+      //     validateAddress = result.data
+      //   } else {
+      //     console.log(`validateAddress: ${JSON.stringify(result)}`)
+      //     expect(result.success).toBe(true)
+      //   }
+      // })
+
       test('then it returns false', async () => {
         const validateAddress = await sendValidateAddressRequest(
           manager,
@@ -91,7 +157,7 @@ async function sendValidateAddressRequest(
   token: string,
   success: boolean,
 ) {
-  const chainId = faker.string.numeric(5)
+  const chainId = faker.number.int({ min: 1, max: 100_000 })
   const address = faker.string.hexadecimal({ length: 40 })
 
   const promise = manager.dapp.valiateAddress({

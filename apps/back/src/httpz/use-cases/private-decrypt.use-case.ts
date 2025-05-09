@@ -1,6 +1,6 @@
+import { ChainId } from '#chains/domain/entities/value-objects.js'
 import { PRODUCER } from '#constants.js'
 import { ApiKeyAllowsRequest } from '#dapps/use-cases/api-key-allows-request.use-case.js'
-import { ChainId } from '#shared/entities/value-objects/chain-id.js'
 import { Web3Address } from '#shared/entities/value-objects/web3-address.js'
 import { IProducer } from '#shared/services/producer.js'
 import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
@@ -21,13 +21,13 @@ type CtHandleContractPair = {
 }
 
 type Input = {
-  contractsChainId: string | number
+  contractsChainId: string
   ctHandleContractPairs: CtHandleContractPair[]
   requestValidity: RequestValidity
   contractsAddresses: string[]
-  userAddress: string,
-  signature: string,
-  publicKey: string,
+  userAddress: string
+  signature: string
+  publicKey: string
 }
 
 type Output = {
@@ -63,14 +63,21 @@ export class PrivateDecrypt implements UseCase<Input, Output> {
   ): Task<Output, AppError> => {
     this.logger.debug(`input=${JSON.stringify(input)}`)
 
-    return this.apiKeyAllowsRequest
-      .execute({
-        apiKey: context.apiKey,
-        // FIXME: change this to consider all couples chain-id, contract-address
-        // TODO: add input verification that both attributes have the same length
-        chainId: input.contractsChainId,
-        address: input.contractsAddresses[0],
-      })
+    return every([
+      ChainId.fromHex(input.contractsChainId),
+      Web3Address.from(input.contractsAddresses[0]),
+    ])
+      .asyncChain(([chainId, address]) =>
+        this.apiKeyAllowsRequest.execute(
+          {
+            // FIXME: change this to consider all couples chain-id, contract-address
+            // TODO: add input verification that both attributes have the same length
+            chainId,
+            address,
+          },
+          context,
+        ),
+      )
       .tap(() => {
         this.logger.debug(`apiKey=${context.apiKey}}`)
       })
@@ -89,7 +96,10 @@ export class PrivateDecrypt implements UseCase<Input, Output> {
               back.httpzPrivateDecryptRequested(
                 {
                   requestId,
-                  ...input
+                  ...input,
+                  contractsChainId: ChainId.fromHex(
+                    input.contractsChainId,
+                  ).unwrap().value,
                 },
                 {
                   correlationId: randomUUID(),
@@ -100,7 +110,7 @@ export class PrivateDecrypt implements UseCase<Input, Output> {
               this.syncService.waitForResponse<Output>(requestId, data => {
                 if (back.isBackEvent(data) && isPrivateDecryptResult(data)) {
                   return Task.of<Output, AppError>({
-                    ...data.payload
+                    ...data.payload,
                   })
                 }
                 return Task.reject(unknownError('Invalid evnet received'))
@@ -119,6 +129,8 @@ type PrivateDecryptResult = Extract<
   { type: 'back:httpz:private-decrypt:completed' }
 >
 
-function isPrivateDecryptResult(event: back.BackEvent): event is PrivateDecryptResult {
+function isPrivateDecryptResult(
+  event: back.BackEvent,
+): event is PrivateDecryptResult {
   return event.type === 'back:httpz:private-decrypt:completed'
 }

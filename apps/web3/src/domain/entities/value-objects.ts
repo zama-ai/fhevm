@@ -1,3 +1,4 @@
+import { chainId, web3Address } from 'messages'
 import { AppError, fail, ok, Result, validationError, ValueObject } from 'utils'
 import { fromZodError } from 'utils/dist/src/app-error.js'
 import { z } from 'zod'
@@ -12,11 +13,8 @@ export class FheEventId extends ValueObject(
   }
 }
 
-export class Web3Address extends ValueObject(
-  'Address',
-  z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Address'),
-) {
-  static fromString(data: string): Result<Web3Address, AppError> {
+export class Web3Address extends ValueObject('Address', web3Address) {
+  static from(data: unknown): Result<Web3Address, AppError> {
     const props = Web3Address.schema.safeParse(data)
     return props.success
       ? ok(new Web3Address(props.data))
@@ -24,17 +22,11 @@ export class Web3Address extends ValueObject(
   }
 }
 
-export class ChainId extends ValueObject(
-  'ChainId',
-  z.string().refine(v => {
-    const n = Number(v)
-    return !isNaN(n) && n > 0
-  }, 'Invalid Chain Id'),
-) {
-  static fromString(value: string | number): Result<ChainId, AppError> {
+export class ChainId extends ValueObject('ChainId', chainId) {
+  static from(value: unknown): Result<ChainId, AppError> {
     const parsed = ChainId.schema.safeParse(value)
     return parsed.success
-      ? ok(ChainId.from(parsed.data))
+      ? ok(new ChainId(parsed.data))
       : fail(fromZodError(parsed.error))
   }
 }

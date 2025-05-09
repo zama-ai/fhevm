@@ -1,5 +1,5 @@
 import { TeamType } from '#users/infra/types/team.type.js'
-import { Field, ID, ObjectType, registerEnumType } from '@nestjs/graphql'
+import { Field, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql'
 import { ApiKeyType } from './api-key.type.js'
 import { DappStatsType } from './stat.type.js'
 
@@ -55,6 +55,9 @@ export class DappType {
 
   @Field(() => DappStatus, { nullable: false })
   status: DappStatus
+
+  @Field(() => Int, { nullable: true, description: 'Chain ID' })
+  chainId: number | null
 
   @Field({ nullable: true })
   address: string

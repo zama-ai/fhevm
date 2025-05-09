@@ -42,12 +42,12 @@ export class AppDeployment implements UseCase<Input, void> {
       : Task.of(void 0)
   }
 
-  execute({ event }: Input): Task<void, AppError> {
+  execute = ({ event }: Input): Task<void, AppError> => {
     return this.uow
       .exec(
-        this.repo.update(DAppId.from(event.payload.dAppId), {
-          status: getDAppStatus(event),
-        }),
+        DAppId.from(event.payload.dAppId).asyncChain(dAppId =>
+          this.repo.update(dAppId, { status: getDAppStatus(event) }),
+        ),
       )
       .match({
         ok: dapp => {

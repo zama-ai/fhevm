@@ -27,12 +27,6 @@ export class IntegrationManager {
     return this.setup.get<TInput, TResult>(typeOrToken)
   }
 
-  get<TInput = any, TResult = TInput>(
-    typeOrToken: Type<TInput> | string | symbol,
-  ): TResult {
-    return this.setup.get<TInput, TResult>(typeOrToken)
-  }
-
   get httpServer() {
     return this.setup.httpServer
   }

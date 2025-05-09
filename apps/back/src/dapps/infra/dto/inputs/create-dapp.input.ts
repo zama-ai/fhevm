@@ -1,4 +1,4 @@
-import { Field, InputType } from '@nestjs/graphql'
+import { Field, InputType, Int } from '@nestjs/graphql'
 
 @InputType()
 export class CreateDappInput {
@@ -7,6 +7,12 @@ export class CreateDappInput {
 
   @Field()
   teamId: string
+
+  @Field(() => Int, {
+    description: 'Your smart contract chain ID',
+    nullable: true,
+  })
+  chainId: number
 
   @Field({
     description:

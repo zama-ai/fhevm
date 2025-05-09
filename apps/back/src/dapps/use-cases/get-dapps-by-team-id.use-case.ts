@@ -13,7 +13,7 @@ export class GetDappsByTeamId implements UseCase<TeamId, DApp[]> {
   constructor(
     @Inject(DAPP_REPOSITORY) private readonly dappRepository: DAppRepository,
   ) {}
-  execute(teamId: TeamId): Task<DApp[], AppError> {
-    return this.dappRepository.findAllByTeamId(teamId.value)
+  execute = (teamId: TeamId): Task<DApp[], AppError> => {
+    return this.dappRepository.findAllByTeamId(teamId)
   }
 }

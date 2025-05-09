@@ -26,17 +26,20 @@ export class UpdateUser implements UseCase<Input, User> {
     private readonly userRepository: UserRepository,
   ) {}
 
-  execute({ newUser, user }: Input): Task<User, AppError> {
+  execute = ({ newUser, user }: Input): Task<User, AppError> => {
     return this.uow.exec(
-      this.userRepository
-        .findById(user.id)
-        .chain(user => {
-          if (user && user.id === UserId.from(newUser.id)) {
-            return Task.of(user)
-          } else {
-            return Task.reject<never, AppError>(unknownError('User not found'))
-          }
-        })
+      UserId.from(newUser.id)
+        .asyncChain(newUserId =>
+          this.userRepository.findById(user.id).chain(user => {
+            if (newUserId.equals(user.id)) {
+              return Task.of(user)
+            } else {
+              return Task.reject<never, AppError>(
+                unknownError('User not found'),
+              )
+            }
+          }),
+        )
         .chain(() => {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { id, ...userProps } = user.toJSON()

@@ -28,7 +28,7 @@ describe('SqsConsumer', () => {
           payload: {
             requestId: faker.string.uuid(),
             dAppId: faker.string.uuid(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           meta: {

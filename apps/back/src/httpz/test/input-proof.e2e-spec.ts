@@ -40,9 +40,11 @@ describe('input proof', () => {
     describe('given a user has a valid API key', () => {
       let apiKey: string
       let dappId: string
+      let chainId: number
       let address: string
 
       beforeEach(async () => {
+        chainId = faker.number.int({ min: 1, max: 100_000 })
         address = faker.string.hexadecimal({ length: 40 })
 
         const signup = await manager.auth.signup(
@@ -63,10 +65,20 @@ describe('input proof', () => {
           console.log(`failed to signup: ${JSON.stringify(signup)}`)
           expect(signup.success).toBe(true)
         }
+
+        // TODO: move to a GraphQL endpoint when implemented
+        await manager.prismaClient.chain.create({
+          data: {
+            id: chainId,
+            name: faker.string.alphanumeric(10),
+            enabled: true,
+          },
+        })
         const createDapp = await manager.dapp.createDApp({
           token,
           teamId,
           name: faker.string.alphanumeric(10),
+          chainId,
           address,
         })
         if (createDapp.success) {
@@ -97,7 +109,7 @@ describe('input proof', () => {
         let signatures: string[]
 
         beforeEach(() => {
-          contractChainId = faker.string.numeric(5)
+          contractChainId = `0x${chainId.toString(16)}`
           userAddress = faker.string.hexadecimal({ length: 40 })
           ciphertextWithInputVerification = faker.string.hexadecimal({
             length: { min: 40, max: 100 },
@@ -175,7 +187,9 @@ describe('input proof', () => {
         let signatures: string[]
 
         beforeEach(() => {
-          contractChainId = faker.string.numeric(5)
+          contractChainId = `0x${faker.number
+            .int({ min: 1, max: 100_000 })
+            .toString(16)}`
           contractAddress = faker.string.hexadecimal({ length: 40 })
           userAddress = faker.string.hexadecimal({ length: 40 })
           ciphertextWithInputVerification = faker.string.hexadecimal({

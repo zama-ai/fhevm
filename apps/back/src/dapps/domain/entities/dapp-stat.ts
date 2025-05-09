@@ -1,6 +1,14 @@
 import { z } from 'zod'
 import { DAppId, DAppStatId } from './value-objects.js'
-import { AppError, Entity, fail, ok, Result, validationError } from 'utils'
+import {
+  AppError,
+  Entity,
+  fail,
+  ok,
+  Result,
+  Unbrand,
+  validationError,
+} from 'utils'
 import { fromZodError } from 'utils/dist/src/app-error.js'
 import { operationEnum } from 'messages'
 
@@ -16,7 +24,7 @@ const schema = z.object({
   externalRef: z.string(),
 })
 
-export type DAppStatProps = z.infer<typeof schema>
+export type DAppStatProps = Unbrand<z.infer<typeof schema>>
 
 export class DAppStat
   extends Entity<DAppStatProps>
@@ -37,7 +45,7 @@ export class DAppStat
   }
 
   get id() {
-    return DAppStatId.fromString(this.get('id')).unwrap()
+    return DAppStatId.from(this.get('id')).unwrap()
   }
 
   get name() {
@@ -49,7 +57,7 @@ export class DAppStat
   }
 
   get dappId() {
-    return DAppId.fromString(this.get('dappId')).unwrap()
+    return DAppId.from(this.get('dappId')).unwrap()
   }
 
   get type() {

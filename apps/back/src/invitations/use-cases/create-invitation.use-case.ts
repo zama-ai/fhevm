@@ -28,7 +28,7 @@ export class CreateInvitation implements UseCase<Input, Invitation> {
       : ok(void 0)
   }
 
-  execute(input: Input): Task<Invitation, AppError> {
+  execute = (input: Input): Task<Invitation, AppError> => {
     // Note: using a private function save me from a lot of explicit types
     return this.checkSecret(input.secret)
       .chain(() =>

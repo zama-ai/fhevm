@@ -28,7 +28,7 @@ export class FetchFHEEvents implements UseCase<Input, FheEvent[]> {
     event,
   ): Task<void, AppError> => {
     this.logger.log(`received ${event.type}: ${JSON.stringify(event.payload)}`)
-    return ChainId.fromString(event.payload.chainId)
+    return ChainId.from(event.payload.chainId)
       .asyncChain(chainId =>
         this.execute({ requestId: event.payload.requestId, chainId }),
       )

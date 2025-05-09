@@ -15,7 +15,7 @@ datasource db {
 }
 
 model FheEvent {
-  chainId       String
+  chainId       Int
   id            String   @id
   name          String
   callerAddress String

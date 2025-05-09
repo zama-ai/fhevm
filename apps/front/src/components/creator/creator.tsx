@@ -1,5 +1,12 @@
-import { useEffect, useState } from 'react'
-import { Fieldset, Input, Stack, createListCollection } from '@chakra-ui/react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Fieldset,
+  Input,
+  SelectItemText,
+  Span,
+  Stack,
+  createListCollection,
+} from '@chakra-ui/react'
 import { useFormik } from 'formik'
 
 import {
@@ -19,6 +26,7 @@ import { toFormikValidate } from '@/lib/zod-schema-validator.js'
 import { CreatorFormSchema, AddressSchema } from './validations.js'
 import { InputGroup } from '../ui/input-group.js'
 import { InputGroupDot } from '../input-group-dot/input-group-dot.js'
+import { useChains } from './use-chains.js'
 
 type OwnProps = {
   onSubmit: (values: { name: string; address: string }) => void
@@ -26,7 +34,7 @@ type OwnProps = {
     chainId,
     address,
   }: {
-    chainId: string
+    chainId: number
     address: string
   }) => void
   onUpdateTitle: (title: string) => void
@@ -35,10 +43,6 @@ type OwnProps = {
   loading: boolean
   errorMessage?: string
 }
-
-const chains = createListCollection({
-  items: [{ label: 'Sepolia', value: '11155111' }],
-})
 
 export function CreatorForm({
   onSubmit,
@@ -53,9 +57,23 @@ export function CreatorForm({
     null,
   )
 
+  const { chains } = useChains()
+  const chainOptions = useMemo(
+    () =>
+      createListCollection({
+        items: chains.map(c => ({
+          label: c.name,
+          value: c.id.toString(),
+          description: c.description,
+        })),
+      }),
+    [chains],
+  )
+
   const formik = useFormik({
     initialValues: {
       name: '',
+      chainId: '',
       address: '',
     },
     onSubmit,
@@ -107,11 +125,11 @@ export function CreatorForm({
           <Fieldset.Content w={{ base: 'full', md: '1/2' }}>
             <Field label="Chain">
               <SelectRoot
-                collection={chains}
+                collection={chainOptions}
                 size="sm"
                 width="320px"
-                value={['11155111']}
-                disabled
+                value={[formik.values.chainId]}
+                onValueChange={e => formik.setFieldValue('chainId', e.value[0])}
               >
                 <SelectLabel>
                   Select a chain on which your dApp is deployed
@@ -120,9 +138,14 @@ export function CreatorForm({
                   <SelectValueText placeholder="Select a chain" />
                 </SelectTrigger>
                 <SelectContent>
-                  {chains.items.map(chain => (
+                  {chainOptions.items.map(chain => (
                     <SelectItem item={chain} key={chain.value}>
-                      {chain.label}
+                      <Stack gap="0">
+                        <SelectItemText>{chain.label}</SelectItemText>
+                        <Span color="fg.muted" textStyle="xs">
+                          {chain.description}
+                        </Span>
+                      </Stack>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -147,7 +170,7 @@ export function CreatorForm({
             >
               <InputGroup w="full" flex="1" endElement={getDot()}>
                 <Input
-                  disabled={loading}
+                  disabled={formik.values.chainId === '' || loading}
                   name="address"
                   type="text"
                   placeholder="0x1234567890abcdef"
@@ -162,7 +185,7 @@ export function CreatorForm({
 
                     if (isValid) {
                       onValidateAddress({
-                        chainId: '11155111',
+                        chainId: parseInt(formik.values.chainId, 10),
                         address: ev.target.value,
                       })
                     }

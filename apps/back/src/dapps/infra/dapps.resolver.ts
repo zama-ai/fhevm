@@ -32,6 +32,9 @@ import { ValidateAddressInput } from './dto/inputs/validate-address.input.js'
 import { AppErrorFilter } from '#auth/infra/filters/app-error.filter.js'
 import { ApiKeyType } from './types/api-key.type.js'
 import { DappStatsType } from './types/stat.type.js'
+import { ChainType } from '#chains/infra/graphql/types/chain.type.js'
+import { ChainProps } from '#chains/domain/entities/chain.js'
+import { GetChainById } from '#chains/use-cases/get-chain-by-id.use-case.js'
 
 @UseFilters(AppErrorFilter)
 @Resolver(() => DappType)
@@ -49,6 +52,9 @@ export class DappsResolver {
   @Inject(uc.GetAllApiKeys)
   private readonly getAllApiKeysUC: uc.GetAllApiKeys
 
+  @Inject(GetChainById)
+  private readonly getChainByIdUC: GetChainById
+
   @Inject(uc.VALIDATE_ADDRESS)
   private readonly validateAddressUC: uc.IValidateAddress
 
@@ -56,8 +62,10 @@ export class DappsResolver {
   @UseGuards(JwtAuthGuard)
   dapp(@Args('input') input: QueryDappInput, @CurrentUser() user: User) {
     this.logger.verbose(`resolving dapp ${input.id}`)
-    return this.getDappByIdUC
-      .execute({ dappId: DAppId.from(input.id), userId: user.id })
+    return DAppId.from(input.id)
+      .asyncChain(dappId =>
+        this.getDappByIdUC.execute({ dappId, userId: user.id }),
+      )
       .toPromise()
   }
 
@@ -75,8 +83,10 @@ export class DappsResolver {
       `updating dapp ${input.id} with ${JSON.stringify(input)}`,
     )
     const { id, ...props } = input
-    return this.updateDappUC
-      .execute({ dapp: { id: DAppId.from(id), ...props }, user })
+    return DAppId.from(id)
+      .asyncChain(dappId =>
+        this.updateDappUC.execute({ dapp: { id: dappId, ...props }, user }),
+      )
       .toPromise()
   }
 
@@ -84,8 +94,8 @@ export class DappsResolver {
   @UseGuards(JwtAuthGuard)
   deployDapp(@Args('input') input: DeployDAppInput, @CurrentUser() user: User) {
     this.logger.verbose(`deploying dapp ${input.dappId}`)
-    return this.deployDappUC
-      .execute({ dappId: DAppId.from(input.dappId), user })
+    return DAppId.from(input.dappId)
+      .asyncChain(dappId => this.deployDappUC.execute({ dappId, user }))
       .toPromise()
   }
 
@@ -111,11 +121,23 @@ export class DappsResolver {
       .toPromise()
   }
 
+  @ResolveField(() => ChainType, { name: 'chain', nullable: true })
+  async getDappChain(@Parent() dapp: DappType): Promise<ChainProps | null> {
+    return dapp.chainId
+      ? this.getChainByIdUC
+          .execute({ id: dapp.chainId })
+          .map(chain => chain.toJSON())
+          .toPromise()
+      : null
+  }
+
   @ResolveField(() => TeamType, { name: 'team' })
   async team(@Parent() dapp: DappType): Promise<TeamProps> {
     const { teamId } = dapp
     this.logger.verbose(`resolving team field for dappId=${dapp.id}`)
-    return this.getTeamByIdUC.execute(TeamId.from(teamId)).toPromise()
+    return TeamId.from(teamId)
+      .asyncChain(this.getTeamByIdUC.execute)
+      .toPromise()
   }
 
   @ResolveField(() => [RawStatsType], { name: 'rawStats' })

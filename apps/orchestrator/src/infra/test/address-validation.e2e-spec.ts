@@ -37,7 +37,7 @@ describe('address validation', () => {
         back.addressValidationRequested(
           {
             requestId: faker.string.uuid(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },
@@ -62,7 +62,7 @@ describe('address validation', () => {
         web3.contractValidationSuccess(
           {
             requestId: faker.string.uuid(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },
@@ -87,7 +87,7 @@ describe('address validation', () => {
         web3.contractValidationFailure(
           {
             requestId: faker.string.uuid(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },

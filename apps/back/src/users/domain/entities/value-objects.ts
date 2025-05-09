@@ -4,6 +4,7 @@ import { validateNanoId } from 'utils/dist/src/validation.js'
 import bcrypt from 'bcryptjs'
 import { z, ZodError } from 'zod'
 import { nanoid } from 'nanoid'
+import { fromZodError } from 'utils/dist/src/app-error.js'
 
 export class Password extends ValueObject('Password', z.string()) {
   /**
@@ -13,9 +14,14 @@ export class Password extends ValueObject('Password', z.string()) {
    * @returns an hashed password
    */
   static hash(password: ValidatedPassword) {
-    return Password.from(
-      bcrypt.hashSync(password.value, bcrypt.genSaltSync(10)),
-    )
+    return new Password(bcrypt.hashSync(password.value, bcrypt.genSaltSync(10)))
+  }
+
+  static from(value: unknown): Result<Password, AppError> {
+    const check = this.schema.safeParse(value)
+    return check.success
+      ? ok(new Password(check.data))
+      : fail(fromZodError(check.error))
   }
 
   /**
@@ -46,10 +52,10 @@ export class ValidatedPassword extends ValueObject(
     // TODO: investigate the reason and try to solve it.
   ): Result<ValidatedPassword, AppError> {
     try {
-      return ok(ValidatedPassword.from(password))
+      return ok(new ValidatedPassword(password))
     } catch (error) {
       if (error instanceof ZodError) {
-        return fail(validationError(error.message))
+        return fail(fromZodError(error))
       }
       return fail(validationError(String(error)))
     }
@@ -65,7 +71,14 @@ export class TeamId extends ValueObject(
     .refine(validateNanoId(10, 'team_'), 'Invalid Team ID'),
 ) {
   static random() {
-    return TeamId.from(`team_${nanoid(10)}`)
+    return new TeamId(`team_${nanoid(10)}`)
+  }
+
+  static from(value: unknown): Result<TeamId, AppError> {
+    const check = this.schema.safeParse(value)
+    return check.success
+      ? ok(new TeamId(check.data))
+      : fail(fromZodError(check.error))
   }
 }
 
@@ -78,6 +91,13 @@ export class UserId extends ValueObject(
     .refine(validateNanoId(10, 'user_'), 'Invalid User ID'),
 ) {
   static random() {
-    return UserId.from(`user_${nanoid(10)}`)
+    return new UserId(`user_${nanoid(10)}`)
+  }
+
+  static from(value: unknown): Result<UserId, AppError> {
+    const check = this.schema.safeParse(value)
+    return check.success
+      ? ok(new UserId(check.data))
+      : fail(fromZodError(check.error))
   }
 }

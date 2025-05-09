@@ -44,7 +44,7 @@ export class ViemContractService implements ContractService {
             })
               .read.owner()
               .then(owner => {
-                resolve(some(Web3Address.fromString(owner as Address).unwrap()))
+                resolve(some(Web3Address.from(owner as Address).unwrap()))
               })
               .catch((err: unknown) => {
                 this.logger.warn(`failed to get owner: ${err}`)

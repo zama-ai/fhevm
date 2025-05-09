@@ -33,7 +33,9 @@ export class UsersResolver {
   @ResolveField()
   async teams(@Parent() user: UserType) {
     const { id } = user
-    return this.getTeamsByUserIdUC.execute(UserId.from(id)).toPromise()
+    return UserId.from(id)
+      .asyncChain(this.getTeamsByUserIdUC.execute)
+      .toPromise()
   }
 
   @Mutation(() => UserType, { name: 'updateUser' })

@@ -2,7 +2,6 @@ import { User } from '#users/domain/entities/user.js'
 import {
   type AppError,
   IPubSub,
-  SEPOLIA_CHAIN_ID,
   Task,
   UnitOfWork,
   type UseCase,
@@ -21,7 +20,9 @@ import { DAppId } from '../domain/entities/value-objects.js'
 import { back, generateRequestId } from 'messages'
 
 interface Input {
+  // TODO: move it into context
   user: User // to check if they can deploy
+  // TODO: should I change it to string?
   dappId: DAppId
 }
 
@@ -35,7 +36,7 @@ export class DeployDApp implements UseCase<Input, DAppProps> {
     private readonly updateDappUC: UpdateDapp,
   ) {}
 
-  execute({ user, dappId }: Input): Task<DAppProps, AppError> {
+  execute = ({ user, dappId }: Input): Task<DAppProps, AppError> => {
     this.logger.debug(`[${user.email}] deploying dapp: ${dappId}`)
 
     // check if the user can deploy by checking if the user belongs to the team that owns the dapp
@@ -47,10 +48,11 @@ export class DeployDApp implements UseCase<Input, DAppProps> {
             this.logger.debug(`dapp: ${dapp}`)
           })
           .chain(dapp =>
-            dapp.address
+            // I need to check both `chainId` and `address` are defined
+            dapp.chainId.isSome() && dapp.address.isSome()
               ? Task.of(dapp)
               : Task.reject<DApp, AppError>(
-                  validationError('missing dApp address'),
+                  validationError(`missing dApp's chainId and address`),
                 ),
           )
           .chain(dapp =>
@@ -62,8 +64,8 @@ export class DeployDApp implements UseCase<Input, DAppProps> {
                       // TODO: Retrieve the `requestId` from the adapter
                       requestId: generateRequestId(),
                       dAppId: dappId.value,
-                      chainId: SEPOLIA_CHAIN_ID, // change it
-                      address: dapp.address!,
+                      chainId: dapp.chainId.unwrap().value,
+                      address: dapp.address.unwrap().value,
                     },
                     {
                       correlationId: randomUUID(),

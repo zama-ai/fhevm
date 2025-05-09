@@ -13,6 +13,8 @@ export class TeamsResolver {
 
   @ResolveField(() => [DappType], { name: 'dapps' })
   async dapps(@Parent() team: TeamType) {
-    return this.getDappsByTeamUC.execute(TeamId.from(team.id)).toPromise()
+    return TeamId.from(team.id)
+      .asyncChain(this.getDappsByTeamUC.execute)
+      .toPromise()
   }
 }

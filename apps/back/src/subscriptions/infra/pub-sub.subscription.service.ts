@@ -41,7 +41,7 @@ export class PubSubSubscriptionService
   ): Promise<SubscriptionId> {
     const subId = await this.#pubSub.subscribe(topic, callback)
     this.logger.debug(`${subId} subscribed to topic ${topic}`)
-    return SubscriptionId.from(subId)
+    return SubscriptionId.from(subId).unwrap()
   }
 
   unsubscribe(id: SubscriptionId): void {

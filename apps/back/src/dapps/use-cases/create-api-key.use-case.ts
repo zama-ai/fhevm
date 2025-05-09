@@ -25,14 +25,17 @@ export class CreateApiKey implements UseCase<Input, Output> {
     @Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository,
   ) {}
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  execute(input: Input, context?: Record<string, any>): Task<ApiKey, AppError> {
+  execute = (
+    input: Input,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    context?: Record<string, unknown>,
+  ): Task<ApiKey, AppError> => {
     // TODO: implement authorization:
     // 1. retrieve the user from the context
     // 2. check if the user is the owner of the dapp
     // 3. reject if not
     return this.uow.exec(
-      DAppId.fromString(input.dappId)
+      DAppId.from(input.dappId)
         .asyncChain(this.repo.findById)
         .chain(dapp =>
           ApiKey.create({

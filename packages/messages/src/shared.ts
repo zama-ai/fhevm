@@ -50,17 +50,10 @@ export const meta = z.record(z.string(), z.union([z.string(), z.number()])).and(
 
 export type Meta = z.infer<typeof meta>
 
-export const chainId = z.union(
-  [
-    z.string().regex(/^0x[\da-f]+$/i),
-    z
-      .string()
-      .regex(/^[\d]+$/i)
-      .refine(v => parseInt(v, 10) > 0),
-    z.number().int().positive(),
-  ],
-  { message: 'Chain ID should be a string, an integer or a hex string' },
-)
+export const chainId = z
+  .number()
+  .int()
+  .positive({ message: 'Chain ID should be a positive integer' })
 
 export const web3Address = z
   .string()

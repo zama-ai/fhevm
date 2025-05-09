@@ -11,7 +11,7 @@ export const FETCH_STATS_CRON_QUEUE = 'fetch-stats-cron-queue'
 const ZERO = '0x' + new Array(40).fill('0').join('')
 
 export type FetchStats = {
-  chainId: string
+  chainId: number
 }
 
 @Processor(FETCH_STATS_CRON_QUEUE)

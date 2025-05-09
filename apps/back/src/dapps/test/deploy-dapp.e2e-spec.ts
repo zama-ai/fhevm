@@ -74,7 +74,9 @@ describe('deploy-dapp', () => {
         if (!result.success) {
           expect(result.errors, 'should returns a list of errors').toBeDefined()
           expect(result.errors.length).toBeGreaterThan(0)
-          expect(result.errors[0].message).contain('missing dApp address')
+          expect(result.errors[0].message).contain(
+            `missing dApp's chainId and address`,
+          )
         }
       })
     })
@@ -83,19 +85,36 @@ describe('deploy-dapp', () => {
       let status: DAppStatus
 
       beforeEach(async () => {
-        const dappResult = await manager.dapp.updateDApp({
+        const chainId = faker.number.int({ min: 1, max: 100_000 })
+
+        // TODO: move to a GraphQL when implemented
+        await manager.prismaClient.chain.create({
+          data: {
+            id: chainId,
+            name: faker.string.alphanumeric(10),
+            description: faker.lorem.words(5),
+          },
+        })
+
+        const updateDApp = await manager.dapp.updateDApp({
           token,
           dappId,
+          chainId,
           address: faker.string.hexadecimal({ length: 40 }),
         })
-        expect(dappResult.success, 'Failed to update dApp address').toBe(true)
-        const result = await manager.dapp.deployDApp({
+        if (!updateDApp.success) {
+          console.log(`updateDApp: ${JSON.stringify(updateDApp)}`)
+          expect(updateDApp.success, 'Failed to update dApp address').toBe(true)
+        }
+        const deployDapp = await manager.dapp.deployDApp({
           token,
           dappId,
         })
-        expect(result.success).toBe(true)
-        if (result.success) {
-          status = result.data.status
+        if (!deployDapp.success) {
+          console.log(`deployDapp: ${JSON.stringify(deployDapp)}`)
+          expect(deployDapp.success).toBe(true)
+        } else {
+          status = deployDapp.data.status
         }
       })
 
@@ -109,39 +128,51 @@ describe('deploy-dapp', () => {
     let token: string
     let teamId: string
     let dappId = ''
+    // NOTE: I need to use faker here because I'm using `describe.each` later
+    const chainId = faker.number.int({ min: 1, max: 100_000 })
 
     beforeEach(async () => {
-      const result = await manager.auth.login(
+      const login = await manager.auth.login(
         { email: faker.internet.email(), password: faker.internet.password() },
         { signup: true },
       )
-      if (result.success) {
-        token = result.data.token
-        teamId = result.data.user.teams[0].id
+      if (login.success) {
+        token = login.data.token
+        teamId = login.data.user.teams[0].id
 
-        const dappResult = await manager.dapp.createDApp({
+        // TODO: move to a GraphQL when implemented
+        await manager.prismaClient.chain.create({
+          data: {
+            id: chainId,
+            name: faker.string.alphanumeric(10),
+            enabled: true,
+          },
+        })
+
+        const createDapp = await manager.dapp.createDApp({
           token,
           teamId,
           name: faker.string.alphanumeric(10),
+          chainId,
           address: faker.string.hexadecimal({ length: 40 }),
         })
-        if (dappResult.success) {
-          dappId = dappResult.data.id
-          const result = await manager.dapp.deployDApp({
+        if (createDapp.success) {
+          dappId = createDapp.data.id
+          const deployDapp = await manager.dapp.deployDApp({
             token,
             dappId,
           })
-          if (!result.success) {
-            console.log(`result: ${JSON.stringify(result)}`)
-            expect(result.success).toBe(true)
+          if (!deployDapp.success) {
+            console.log(`deployDapp: ${JSON.stringify(deployDapp)}`)
+            expect(deployDapp.success).toBe(true)
           }
         } else {
-          console.log(`dappResult: ${JSON.stringify(dappResult)}`)
-          expect(dappResult.success).toBe(true)
+          console.log(`createDapp: ${JSON.stringify(createDapp)}`)
+          expect(createDapp.success).toBe(true)
         }
       } else {
-        console.log(`failed to login: ${JSON.stringify(result)}`)
-        expect(result.success, 'Failed to login the user').toBe(true)
+        console.log(`failed to login: ${JSON.stringify(login)}`)
+        expect(login.success, 'Failed to login the user').toBe(true)
       }
     })
 
@@ -151,7 +182,7 @@ describe('deploy-dapp', () => {
           {
             requestId: faker.string.uuid(),
             dAppId: '',
-            chainId: '1',
+            chainId,
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },

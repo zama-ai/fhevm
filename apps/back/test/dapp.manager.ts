@@ -89,9 +89,11 @@ export class DappManager {
     token,
     teamId,
     name,
+    chainId,
     address,
   }: ({ token: string; teamId: string } | { token?: never; teamId?: never }) & {
     name: string
+    chainId?: number
     address?: string
   }): Promise<GraphQlResponse<DApp>> {
     if (!token) {
@@ -112,10 +114,15 @@ export class DappManager {
 
     return GraphQl.request<
       { createDapp: DApp },
-      { teamId: string; name: string; address: string | undefined }
+      {
+        teamId: string
+        name: string
+        chainId?: number
+        address: string | undefined
+      }
     >(this.httpServer)
       .auth(token)
-      .mutate(CREATE_DAPP, { teamId: teamId!, name, address })
+      .mutate(CREATE_DAPP, { teamId: teamId!, name, chainId, address })
       .exec('createDapp')
   }
 
@@ -136,19 +143,21 @@ export class DappManager {
     token,
     dappId,
     name,
+    chainId,
     address,
   }: {
     token: string
     dappId: string
     name?: string
+    chainId?: number
     address?: string
   }) {
     return GraphQl.request<
       { updateDapp: DApp },
-      { appId: string; name?: string; address?: string }
+      { appId: string; name?: string; chainId?: number; address?: string }
     >(this.httpServer)
       .auth(token)
-      .mutate(UPDATE_DAPP, { appId: dappId, name, address })
+      .mutate(UPDATE_DAPP, { appId: dappId, name, chainId, address })
       .exec('updateDapp')
   }
 
@@ -183,12 +192,12 @@ export class DappManager {
     address,
   }: {
     token: string
-    chainId: string
+    chainId: number
     address: string
   }): Promise<GraphQlResponse<ValidateAddress>> {
     return GraphQl.request<
       { validateAddress: ValidateAddress },
-      { chainId: string; address: string }
+      { chainId: number; address: string }
     >(this.httpServer)
       .auth(token)
       .query(VALIDATE_ADDRESS, { chainId, address })
@@ -212,10 +221,11 @@ export class DappManager {
 }
 
 const CREATE_DAPP = `
-  mutation createDApp($teamId: String!, $name: String!, $address: String) {
-    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {
+  mutation createDApp($teamId: String!, $name: String!, $chainId: Int, $address: String) {
+    createDapp(input: { teamId: $teamId, name: $name, chainId: $chainId, address: $address }) {
       id
       name
+      chainId
       address
       status
       team {
@@ -242,10 +252,11 @@ const GET_DAPP = `
 `
 
 const UPDATE_DAPP = `
-  mutation updateApp($appId: ID!, $name: String, $address: String) {
-    updateDapp(input: { id: $appId, name: $name, address: $address }) {
+  mutation updateApp($appId: ID!, $name: String, $chainId: Int, $address: String) {
+    updateDapp(input: { id: $appId, name: $name, chainId: $chainId, address: $address }) {
       id
       name
+      chainId
       address
       status
       team {
@@ -281,7 +292,7 @@ const GET_DAPP_RAW_STATS = `
 `
 
 const VALIDATE_ADDRESS = `
-  query ValidateAddress($chainId: String!, $address: String!) {
+  query ValidateAddress($chainId: Int!, $address: String!) {
     validateAddress(input: {chainId: $chainId, address: $address}) {
       check
       message

@@ -31,13 +31,17 @@ export class UpdateDapp implements UseCase<Input, DAppProps> {
     @Inject(SUBSCRIPTION_SERVICE)
     private readonly subscriptions: SubscriptionService,
   ) {}
-  execute({ dapp: { id, ...data }, user }: Input): Task<DAppProps, AppError> {
+  execute = ({
+    dapp: { id, ...data },
+    user,
+  }: Input): Task<DAppProps, AppError> => {
     return this.uow.exec(
       this.dappRepository
         .findOneByIdAndUserId(id, user.id)
         .mapError<AppError>(err =>
           err._tag === 'NotFoundError' ? forbiddenError() : err,
         )
+        // TODO: I need to check if chainId exists
         .chain(() => this.dappRepository.update(id, data))
         .map(dapp => dapp.toJSON())
         // TODO: use internal events here https://github.com/zama-zws/console/issues/120

@@ -13,6 +13,12 @@ export const CreatorFormSchema = z.object({
     .string()
     .min(2, 'Name must be at least 2 characters long')
     .max(128, 'Name should be at most 128 characters long'),
+  chainId: z
+    .string()
+    .refine(
+      val => parseInt(val, 10) > 0,
+      'Chain ID should be a positive integer',
+    ),
   address: AddressSchema,
 })
 

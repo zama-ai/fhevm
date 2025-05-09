@@ -1,5 +1,4 @@
 import { z, ZodType, type ZodBranded, type ZodTypeAny } from 'zod'
-import { fromZodError } from './app-error.js'
 
 type TPlain<TSchemaBranded> =
   TSchemaBranded extends ZodBranded<infer TSchema, infer _TBrand> // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -23,16 +22,8 @@ export function ValueObject<TType extends string, TSchema extends ZodUnbranded>(
     static readonly type = type
     #value: Value
 
-    protected constructor(value: Value) {
+    protected constructor(value: UnbrandedValue) {
       this.#value = value
-    }
-
-    static from(value: UnbrandedValue) {
-      const parsed = schema.safeParse(value)
-      if (!parsed.success) {
-        throw fromZodError(parsed.error)
-      }
-      return new this(parsed.data)
     }
 
     toPlainValue(): TPlain<TSchema> {

@@ -23,13 +23,14 @@ export class GetApiKeyByToken implements UseCase<Input, Output> {
     @Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository,
   ) {}
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  execute(input: Input, context?: Record<string, any>): Task<Output, AppError> {
+  execute = (
+    input: Input,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    context?: Record<string, unknown>,
+  ): Task<Output, AppError> => {
     this.logger.debug(`input: ${JSON.stringify(input)}`)
     return this.uow
-      .exec(
-        Token.fromString(input.token).asyncChain(this.repo.findApiKeyByToken),
-      )
+      .exec(Token.from(input.token).asyncChain(this.repo.findApiKeyByToken))
       .tapError(error => {
         this.logger.warn(`failed: ${error._tag}/${error.message}`)
       })

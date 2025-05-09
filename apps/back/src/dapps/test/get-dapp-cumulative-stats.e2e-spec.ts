@@ -1,7 +1,6 @@
 import { IntegrationManager } from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
 import { back, operationName } from 'messages'
-import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
 import {
   afterAll,
   afterEach,
@@ -118,6 +117,7 @@ describe('get-dapp-cumulative-stats', () => {
     let dappId: string
     let token: string
     let teamId: string
+    let chainId: number
     let address: string
 
     beforeEach(async () => {
@@ -131,11 +131,21 @@ describe('get-dapp-cumulative-stats', () => {
         teamId = result.data.user.teams[0].id
       }
 
+      chainId = faker.number.int({ min: 1, max: 100_000 })
+      // TODO: move to a GraphQL endpoint when implemented
+      await manager.prismaClient.chain.create({
+        data: {
+          id: chainId,
+          name: faker.string.alphanumeric(10),
+          enabled: true,
+        },
+      })
       address = faker.string.hexadecimal({ length: 40 })
       const createDappResult = await manager.dapp.createDApp({
         token,
         teamId,
         name: faker.string.alphanumeric(10),
+        chainId,
         address,
       })
       expect(createDappResult.success).toBe(true)
@@ -150,7 +160,7 @@ describe('get-dapp-cumulative-stats', () => {
       ) => ({
         payload: {
           requestId: faker.string.uuid(),
-          chainId: LOCAL_FHEVM_CHAIN_ID,
+          chainId,
           address,
           events: [
             {
@@ -256,10 +266,21 @@ describe('get-dapp-cumulative-stats', () => {
         teamId = result.data.user.teams[0].id
       }
 
+      const chainId = faker.number.int({ min: 1, max: 100_000 })
+      // TODO: move to a GraphQL endpoint when implemented
+      await manager.prismaClient.chain.create({
+        data: {
+          id: chainId,
+          name: faker.string.alphanumeric(10),
+          enabled: true,
+        },
+      })
+
       const createDappResult = await manager.dapp.createDApp({
         token,
         teamId,
         name: faker.string.alphanumeric(10),
+        chainId,
         address: faker.string.hexadecimal({ length: 40 }),
       })
       if (createDappResult.success) {

@@ -21,9 +21,9 @@ export class GetDappCumulativeStatsUseCase
     @Inject(DAPP_REPOSITORY) private readonly dappRepository: DAppRepository,
   ) {}
 
-  execute(input: Input): Task<CumulativeStats, AppError> {
+  execute = (input: Input): Task<CumulativeStats, AppError> => {
     this.logger.debug(`Calculating cumulative stats for dappId=${input.dappId}`)
-    return DAppId.fromString(input.dappId).asyncChain(dappId =>
+    return DAppId.from(input.dappId).asyncChain(dappId =>
       this.dappRepository.findCumulativeStats(dappId),
     )
   }

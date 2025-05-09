@@ -33,7 +33,7 @@ export class DiscoverContract implements UseCase<Input, void> {
     payload: { requestId, chainId, address },
     meta,
   }: Input): Task<void, AppError> => {
-    return Web3Address.fromString(address)
+    return Web3Address.from(address)
       .asyncChain(address => this.service.isSmartContract(chainId, address))
       .chain<
         | { isSmartContract: true; owner: Web3Address | undefined }
@@ -41,7 +41,7 @@ export class DiscoverContract implements UseCase<Input, void> {
       >(isSmartContract =>
         isSmartContract
           ? this.service
-              .getOwner(chainId, Web3Address.fromString(address).unwrap())
+              .getOwner(chainId, Web3Address.from(address).unwrap())
               .map(owner => ({
                 isSmartContract,
                 owner: owner.isSome() ? owner.value : undefined,

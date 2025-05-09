@@ -43,7 +43,7 @@ describe('fhe stats', () => {
           {
             requestId,
             dAppId: faker.string.uuid(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId },
@@ -85,7 +85,7 @@ describe('fhe stats', () => {
       const message = web3.fheDetected(
         {
           requestId,
-          chainId: faker.string.numeric(5),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
           address: faker.string.hexadecimal({ length: 40 }),
           events: [
             {

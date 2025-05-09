@@ -19,10 +19,10 @@ export class LogIn
     private readonly jwtService: JwtService,
   ) {}
 
-  execute(input: {
+  execute = (input: {
     email: string
     password: string
-  }): Task<{ user: UserProps; token: string }, AppError> {
+  }): Task<{ user: UserProps; token: string }, AppError> => {
     return (
       this.userRepository
         .findByEmail(input.email)

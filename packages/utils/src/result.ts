@@ -116,6 +116,10 @@ class OkImpl<T, E> implements Ok<T, E> {
   match<E, R1, R2 = R1>(matchers: Matchers<T, E, R1, R2>) {
     return matchers.ok(this.value)
   }
+
+  toString(): string {
+    return `Ok(${typeof this.value === 'object' ? JSON.stringify(this.value) : this.value})`
+  }
 }
 
 /***
@@ -163,6 +167,10 @@ class FailImpl<T, E> implements Fail<T, E> {
   match<T, R1, R2 = R1>(matchers: Matchers<T, E, R1, R2>) {
     return matchers.fail(this.error)
   }
+
+  toString(): string {
+    return `Fail(${typeof this.error === 'object' ? JSON.stringify(this.error) : this.error})`
+  }
 }
 
 /***
@@ -196,6 +204,19 @@ export function match<R1, R2, T, E>(matchers: Matchers<T, E, R1, R2>) {
   }
 }
 
+/**
+ * @description
+ * Given an array of Result values, returns a single Result that is a failure if any of the values in the array are failures,
+ * or a success if all values are successes.
+ * @example
+ * // returns a failure if any of the results are failures
+ * every([ok(1), fail('error'), ok(3)])
+ * // returns a success if all values are successes
+ * every([ok(1), ok(2), ok(3)])
+ * @param values an array of Result values
+ * @returns a single Result value that is a failure if any of the values in the array are failures,
+ * or a success if all values are successes
+ */
 export function every<T1, T2, E>(
   values: [Result<T1, E>, Result<T2, E>],
 ): Result<[T1, T2], E>

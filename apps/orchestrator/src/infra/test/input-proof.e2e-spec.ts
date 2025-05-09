@@ -37,7 +37,7 @@ describe('input proof', () => {
         back.httpzInputProofRequested(
           {
             requestId: faker.string.uuid(),
-            contractChainId: faker.string.numeric(5),
+            contractChainId: faker.number.int({ min: 1, max: 100_000 }),
             contractAddress: faker.string.hexadecimal({ length: 40 }),
             userAddress: faker.string.hexadecimal({ length: 40 }),
             ciphertextWithInputVerification: faker.string.hexadecimal({

@@ -38,13 +38,13 @@ export default registerAs('ether', () => {
 })
 
 export class EtherConfigFactory {
-  static getEtherConfig(chainId: string): EtherConfig | null {
+  static getEtherConfig(chainId: number): EtherConfig | null {
     const config = configs[chainId]
     return config
       ? {
           ...config,
           // Note: if I found a config it should be safe to unwrap
-          chainId: ChainId.fromString(chainId).unwrap(),
+          chainId: ChainId.from(chainId).unwrap(),
           apiKey: config.apiKey(),
         }
       : null

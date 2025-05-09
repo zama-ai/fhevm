@@ -25,7 +25,7 @@ export class GetDappDailyStatsUseCase implements UseCase<Input, Output> {
   constructor(@Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository) {}
 
   execute = (input: Input): Task<Output, AppError> => {
-    return DAppId.fromString(input.dappId)
+    return DAppId.from(input.dappId)
       .asyncChain(this.repo.findDailyStats)
       .tapError(error => {
         this.logger.warn(`failed to fetch daily stats: ${error.message}`)

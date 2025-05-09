@@ -3,7 +3,7 @@ import {
   IInputProof,
   INPUT_PROOF,
 } from '#httpz/use-cases/input-proof.use-case.js'
-import { IPrivateDecrypt, PRIVATE_DECRYPT, PrivateDecrypt } from '#httpz/use-cases/private-decrypt.use-case.js'
+// import { IPrivateDecrypt, PRIVATE_DECRYPT, PrivateDecrypt } from '#httpz/use-cases/private-decrypt.use-case.js'
 import {
   Body,
   Controller,
@@ -31,7 +31,7 @@ export class HttpzController {
     private readonly getKeyUrlUC: GetKeyUrl,
     @Inject(INPUT_PROOF) private readonly inputProofUC: IInputProof,
     // @Inject(PRIVATE_DECRYPT) private readonly privateDecryptUC: IPrivateDecrypt,
-  ) { }
+  ) {}
 
   @Get('/healthcheck')
   healthcheck() {

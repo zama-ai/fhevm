@@ -17,7 +17,7 @@ import { GET_ME } from '@/queries.js'
 // https://codesandbox.io/p/sandbox/apollo-3-playground-3-5-x-ryhg3x?file=%2Fsrc%2FApp.js%3A26%2C9-26%2C19
 
 const VALIDATE_ADDRESS = graphql(`
-  query ValidateAddress($chainId: String!, $address: String!) {
+  query ValidateAddress($chainId: Int!, $address: String!) {
     validateAddress(input: { chainId: $chainId, address: $address }) {
       check
       message
@@ -26,16 +26,30 @@ const VALIDATE_ADDRESS = graphql(`
 `)
 
 const CREATE_DAPP = graphql(`
-  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {
-    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {
+  mutation CreateDapp(
+    $teamId: String!
+    $name: String!
+    $chainId: Int!
+    $address: String!
+  ) {
+    createDapp(
+      input: {
+        teamId: $teamId
+        name: $name
+        chainId: $chainId
+        address: $address
+      }
+    ) {
       id
       name
+      chainId
       address
       status
     }
   }
 `)
 
+// TODO: rename it to CreateDAppPage
 export function CreatePage() {
   const { teamId } = useParams()
 

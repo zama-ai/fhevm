@@ -12,7 +12,7 @@ export class GetTeamsByUserId implements UseCase<UserId, TeamProps[]> {
     private readonly teamRepository: TeamRepository,
   ) {}
 
-  execute(userId: UserId): Task<TeamProps[], AppError> {
+  execute = (userId: UserId): Task<TeamProps[], AppError> => {
     return this.uow.exec(
       this.teamRepository
         .findManyByUserId(userId)

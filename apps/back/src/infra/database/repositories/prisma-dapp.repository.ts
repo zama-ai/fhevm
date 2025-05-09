@@ -21,7 +21,7 @@ import {
   DAppId,
   Token,
 } from '#dapps/domain/entities/value-objects.js'
-import { UserId } from '#users/domain/entities/value-objects.js'
+import { TeamId, UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import { Computation } from '#dapps/domain/utilities/computation.js'
@@ -35,7 +35,21 @@ export class PrismaDAppRepository implements DAppRepository {
   create = (data: DApp): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
-        .create({ data: data.toJSON() })
+        .create({
+          data: {
+            id: data.id.value,
+            name: data.name,
+            status: data.status,
+            teamId: data.teamId.value,
+            chainId: data.chainId
+              .map<number | null>(chain => chain.value)
+              .unwrapOr(null),
+            address: data.address
+              .map<string | null>(address => address.value)
+              .unwrapOr(null),
+            createdAt: data.createdAt,
+          },
+        })
         .then(resolve)
         .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => DApp.parse(props).async())
@@ -71,7 +85,7 @@ export class PrismaDAppRepository implements DAppRepository {
     id: DAppId,
     data: Partial<Omit<DAppProps, 'id'>>,
   ): Task<DApp, AppError> => {
-    this.logger.debug(`update: ${id} ${JSON.stringify(data)}`)
+    this.logger.debug(`update dapp ${id.value} with ${JSON.stringify(data)}`)
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
         .findUnique({ where: { id: id.value, deletedAt: null } })
@@ -144,11 +158,11 @@ export class PrismaDAppRepository implements DAppRepository {
     }).chain(props => DApp.parse(props).async())
   }
 
-  findAllByTeamId = (teamId: string): Task<DApp[], AppError> => {
+  findAllByTeamId = (teamId: TeamId): Task<DApp[], AppError> => {
     return new Task<unknown[], AppError>((resolve, reject) => {
       this.db.dapp
         .findMany({
-          where: { teamId, deletedAt: null },
+          where: { teamId: teamId.value, deletedAt: null },
           orderBy: { createdAt: 'desc' },
         })
         .then(resolve)

@@ -16,8 +16,8 @@ export interface FheConfig {
 
 const configs: Record<string, () => FheConfig> = {
   [LOCAL_FHEVM_CHAIN_ID]: () => ({
-    chainId: ChainId.fromString(LOCAL_FHEVM_CHAIN_ID).unwrap(),
-    contractAddress: Web3Address.fromString(
+    chainId: ChainId.from(LOCAL_FHEVM_CHAIN_ID).unwrap(),
+    contractAddress: Web3Address.from(
       process.env.LOCAL_TFHE_EXECUTOR_CONTRACT_ADDRESS!,
     ).unwrap(),
     // providerUrl: 'ws://localhost:8756',

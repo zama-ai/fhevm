@@ -7,7 +7,12 @@ describe('InputProofRequest', () => {
   beforeEach(() => {
     privateDecryptRequest = {
       contractsChainId: faker.string.hexadecimal({ length: 3 }),
-      ctHandleContractPairs: [{ ctHandle: faker.string.hexadecimal({ length: 40, prefix: '' }), contractAddress: faker.string.hexadecimal({ length: 40, prefix: '' }) }],
+      ctHandleContractPairs: [
+        {
+          ctHandle: faker.string.hexadecimal({ length: 40, prefix: '' }),
+          contractAddress: faker.string.hexadecimal({ length: 40, prefix: '' }),
+        },
+      ],
       requestValidity: {
         startTimestamp: faker.string.numeric({ length: 3 }),
         durationDays: faker.string.numeric({ length: 3 }),
@@ -32,25 +37,6 @@ describe('InputProofRequest', () => {
         ...privateDecryptRequest,
         contractsChainId: faker.string.hexadecimal({ length: 3 }),
       })
-      expect(result.success).toBe(true)
-    })
-
-    test('should be a numeric string', () => {
-      const result = schema.safeParse({
-        ...privateDecryptRequest,
-        contractsChainId: faker.string.numeric(5),
-      })
-      expect(result.success).toBe(true)
-    })
-
-    test('should be a positive integer', () => {
-      const result = schema.safeParse({
-        ...privateDecryptRequest,
-        contractsChainId: faker.number.int({ min: 1 }),
-      })
-      if (!result.success) {
-        console.log(`failed: ${JSON.stringify(result)}`)
-      }
       expect(result.success).toBe(true)
     })
 

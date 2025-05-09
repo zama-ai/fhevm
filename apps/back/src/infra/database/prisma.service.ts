@@ -54,4 +54,8 @@ export class PrismaService implements OnModuleInit {
   get apiKey() {
     return this.client.apiKey
   }
+
+  get chain() {
+    return this.client.chain
+  }
 }

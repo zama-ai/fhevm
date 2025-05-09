@@ -42,11 +42,11 @@ export interface None {
   /*** Returns true if the Option does not contain a value, false otherwise. */
   isNone<T>(this: Option<T>): this is None
   /*** Calls the provided function with the value and wrap its returned value in an Option. */
-  map: <T, U>(fn: (value: T) => U) => Option<U>
+  map: <U>(fn: (value: never) => U) => Option<U>
   /*** Calls the provided function with the value and returns its returned Option. */
-  flatMap: <T, U>(fn: (value: T) => Option<U>) => Option<U>
+  flatMap: <U>(fn: (value: never) => Option<U>) => Option<U>
   /*** Calls the `none` matcher because None does not contains a value.*/
-  match<T, R1, R2 = R1>(matchers: Matchers<T, R1, R2>): R1 | R2
+  match<R1, R2 = R1>(matchers: Matchers<never, R1, R2>): R1 | R2
 }
 export type Option<T> = Some<T> | None
 
@@ -103,6 +103,10 @@ class SomeImpl<T> implements Some<T> {
   match<R1, R2 = R1>(matchers: Matchers<T, R1, R2>): R1 | R2 {
     return matchers.some(this.value)
   }
+
+  toString() {
+    return `Some(${this.value})`
+  }
 }
 
 /**
@@ -146,6 +150,10 @@ class NoneImpl implements None {
   }
   match<T, R1, R2 = R1>(matchers: Matchers<T, R1, R2>): R1 | R2 {
     return matchers.none()
+  }
+
+  toString() {
+    return 'None'
   }
 }
 /**

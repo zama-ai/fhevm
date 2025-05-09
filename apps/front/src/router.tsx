@@ -7,6 +7,7 @@ import { DefaultPage } from './pages/default.page.js'
 import { ErrorPage } from './pages/error.page.js'
 import { PrivateErrorPage } from './pages/private.error.page.js'
 
+// TODO: use lazy loading and code splitting
 // public pages
 import { SigninPage } from './pages/signin.page.js'
 import { SignupPage } from './pages/signup.page.js'

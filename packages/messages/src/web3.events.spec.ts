@@ -11,7 +11,7 @@ describe('web3', () => {
         event: web3.contractValidationFailure(
           {
             requestId: generateRequestId(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },
@@ -21,7 +21,7 @@ describe('web3', () => {
         event: web3.contractValidationRequested(
           {
             requestId: generateRequestId(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },
@@ -31,7 +31,7 @@ describe('web3', () => {
         event: web3.contractValidationSuccess(
           {
             requestId: generateRequestId(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },
@@ -41,7 +41,7 @@ describe('web3', () => {
         event: web3.fheDetected(
           {
             requestId: generateRequestId(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
             events: [
               {
@@ -63,7 +63,7 @@ describe('web3', () => {
         event: web3.fheRequested(
           {
             requestId: generateRequestId(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },

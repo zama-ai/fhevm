@@ -9,23 +9,26 @@ describe('relayer', () => {
         event: relayer.privateDecryptionOperationRequest(
           {
             requestId: generateRequestId(),
-            contractsChainId: faker.string.numeric(5),
+            contractsChainId: faker.number.int({ min: 1, max: 100_000 }),
             requestValidity: {
               startTimestamp: faker.string.numeric(5),
               durationDays: faker.string.numeric(5),
             },
-            contractsAddresses: [faker.string.hexadecimal({
-              length: 40,
-            }) as `0x${string}`],
-            ctHandleContractPairs: [{
-              ctHandle:
-                faker.string.hexadecimal({
-                  length: { min: 10, max: 50 },
-                }) as `0x${string}`,
-              contractAddress: faker.string.hexadecimal({
+            contractsAddresses: [
+              faker.string.hexadecimal({
                 length: 40,
               }) as `0x${string}`,
-            }],
+            ],
+            ctHandleContractPairs: [
+              {
+                ctHandle: faker.string.hexadecimal({
+                  length: { min: 10, max: 50 },
+                }) as `0x${string}`,
+                contractAddress: faker.string.hexadecimal({
+                  length: 40,
+                }) as `0x${string}`,
+              },
+            ],
             userAddress: faker.string.hexadecimal({
               length: 40,
             }) as `0x${string}`,

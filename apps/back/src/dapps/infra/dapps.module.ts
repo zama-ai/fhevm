@@ -9,6 +9,7 @@ import { SharedModule } from '#shared/shared.module.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
 import { ApiKeyResolver } from './api-key.resolver.js'
 import { StatsResolver } from './stats.resolver.js'
+import { ChainsModule } from '#chains/infra/chains.module.js'
 import {
   FEATURE_FLAGS_SERVICE,
   FeatureFlagHandler,
@@ -17,7 +18,7 @@ import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
 import { SyncInstances } from '#shared/use-cases/sync-instances.use-case.js'
 
 @Module({
-  imports: [DatabaseModule, SharedModule, SubscriptionsModule],
+  imports: [DatabaseModule, SharedModule, SubscriptionsModule, ChainsModule],
   providers: [
     DappsResolver,
     ApiKeyResolver,

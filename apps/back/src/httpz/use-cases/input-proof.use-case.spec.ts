@@ -45,7 +45,7 @@ describe('InputProof', () => {
 
     producer = unitRef.get(PRODUCER) as unknown as Mocked<IProducer>
 
-    contractChainId = faker.string.numeric(5)
+    contractChainId = faker.string.hexadecimal({ length: { min: 3, max: 5 } })
     contractAddress = faker.string.hexadecimal({ length: 40 })
     userAddress = faker.string.hexadecimal({ length: 40 })
     ciphertextWithInputVerification = faker.string.hexadecimal({
@@ -280,12 +280,12 @@ describe('InputProofWithApiKey', () => {
     beforeEach(() => {
       handles = [faker.string.hexadecimal({ length: 40 })]
       signatures = [faker.string.hexadecimal({ length: 40 })]
-        ; (
-          apiKeyAllowsRequest.execute as Mock<IApiKeyAllowsRequest['execute']>
-        ).mockReturnValue(Task.of(void 0))
-        ; (inputProof.execute as Mock<IInputProof['execute']>).mockReturnValue(
-          Task.of({ handles, signatures }),
-        )
+      ;(
+        apiKeyAllowsRequest.execute as Mock<IApiKeyAllowsRequest['execute']>
+      ).mockReturnValue(Task.of(void 0))
+      ;(inputProof.execute as Mock<IInputProof['execute']>).mockReturnValue(
+        Task.of({ handles, signatures }),
+      )
     })
     test('should call the input proof use case', async () => {
       await useCase
@@ -325,7 +325,7 @@ describe('InputProofWithApiKey', () => {
 
   describe('when request is not allowed', () => {
     beforeEach(() => {
-      ; (
+      ;(
         apiKeyAllowsRequest.execute as Mock<IApiKeyAllowsRequest['execute']>
       ).mockReturnValue(Task.reject(unauthorizedError()))
     })

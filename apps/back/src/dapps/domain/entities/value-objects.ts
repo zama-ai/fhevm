@@ -14,14 +14,14 @@ export class DAppId extends ValueObject(
     .refine(validateNanoId(12, 'dapp_'), 'Invalid DAppId'),
 ) {
   static random(): DAppId {
-    return DAppId.from(`dapp_${nanoid(12)}`)
+    return new DAppId(`dapp_${nanoid(12)}`)
   }
 
-  static fromString(id: string): Result<DAppId, AppError> {
-    const result = DAppId.schema.safeParse(id)
-    return result.success
-      ? ok(DAppId.from(id))
-      : fail(fromZodError(result.error))
+  static from(value: unknown): Result<DAppId, AppError> {
+    const check = this.schema.safeParse(value)
+    return check.success
+      ? ok(new DAppId(check.data))
+      : fail(fromZodError(check.error))
   }
 }
 
@@ -30,23 +30,23 @@ export class DAppStatId extends ValueObject(
   z.string().startsWith('stat_').length(22).refine(validateNanoId(17, 'stat_')),
 ) {
   static random(): DAppStatId {
-    return DAppStatId.from(`stat_${nanoid(17)}`)
+    return new DAppStatId(`stat_${nanoid(17)}`)
   }
 
-  static fromString(id: string): Result<DAppStatId, AppError> {
-    const result = DAppStatId.schema.safeParse(id)
-    return result.success
-      ? ok(DAppStatId.from(id))
-      : fail(fromZodError(result.error))
+  static from(value: unknown): Result<DAppStatId, AppError> {
+    const check = this.schema.safeParse(value)
+    return check.success
+      ? ok(new DAppStatId(check.data))
+      : fail(fromZodError(check.error))
   }
 }
 
 export class Address extends ValueObject('Address', web3Address) {
-  static fromString(address: string): Result<Address, AppError> {
-    const result = Address.schema.safeParse(address)
-    return result.success
-      ? ok(Address.from(address))
-      : fail(fromZodError(result.error))
+  static from(value: unknown): Result<Address, AppError> {
+    const check = this.schema.safeParse(value)
+    return check.success
+      ? ok(new Address(check.data))
+      : fail(fromZodError(check.error))
   }
 }
 
@@ -55,14 +55,14 @@ export class ApiKeyId extends ValueObject(
   z.string().startsWith('api_').length(22).refine(validateNanoId(18, 'api_')),
 ) {
   static random(): ApiKeyId {
-    return ApiKeyId.from(`api_${nanoid(18)}`)
+    return new ApiKeyId(`api_${nanoid(18)}`)
   }
 
-  static fromString(id: string): Result<ApiKeyId, AppError> {
-    const result = ApiKeyId.schema.safeParse(id)
-    return result.success
-      ? ok(ApiKeyId.from(id))
-      : fail(fromZodError(result.error))
+  static from(value: unknown): Result<ApiKeyId, AppError> {
+    const check = this.schema.safeParse(value)
+    return check.success
+      ? ok(new ApiKeyId(check.data))
+      : fail(fromZodError(check.error))
   }
 }
 
@@ -71,13 +71,13 @@ export class Token extends ValueObject(
   z.string().startsWith('pk_').length(23).refine(validateNanoId(20, 'pk_')),
 ) {
   static random(): Token {
-    return Token.from(`pk_${nanoid(20)}`)
+    return new Token(`pk_${nanoid(20)}`)
   }
 
-  static fromString(token: string): Result<Token, AppError> {
-    const result = Token.schema.safeParse(token)
-    return result.success
-      ? ok(Token.from(token))
-      : fail(fromZodError(result.error))
+  static from(value: unknown): Result<Token, AppError> {
+    const check = this.schema.safeParse(value)
+    return check.success
+      ? ok(new Token(check.data))
+      : fail(fromZodError(check.error))
   }
 }

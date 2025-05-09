@@ -10,9 +10,9 @@ import { THFEExecutor } from './assets/THFEExecutor.js'
 
 export class ViemFheEventService implements FheEventService {
   private readonly logger = new Logger(ViemFheEventService.name)
-  #implementations = new Map<string, ViemFheEventServiceImpl>()
+  #implementations = new Map<number, ViemFheEventServiceImpl>()
 
-  constructor(private readonly config: Map<string, FheConfig>) {}
+  constructor(private readonly config: Map<number, FheConfig>) {}
 
   fetchEvents(chainId: ChainId, fromBlock: number): Task<FheEvent[], AppError> {
     this.logger.debug(

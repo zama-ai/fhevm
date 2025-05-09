@@ -23,9 +23,12 @@ export class GetAllApiKeys implements UseCase<Input, Output> {
     @Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository,
   ) {}
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  execute(input: Input, context?: Record<string, any>): Task<Output, AppError> {
-    return DAppId.fromString(input.dappId)
+  execute = (
+    input: Input,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    context?: Record<string, unknown>,
+  ): Task<Output, AppError> => {
+    return DAppId.from(input.dappId)
       .asyncChain(dappId => this.repo.findAllApiKeys(dappId))
       .map(apiKeys => apiKeys.map(apiKey => apiKey.toJSON()))
       .tapError(error => {

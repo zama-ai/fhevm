@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { AppError, Result } from 'utils'
+import type { AppError, Result, Unbrand } from 'utils'
 import { ok, fail, Entity, validationError } from 'utils'
 import { TeamId } from './value-objects.js'
 
@@ -8,7 +8,7 @@ const schema = z.object({
   name: z.string(),
 })
 
-export type TeamProps = z.infer<typeof schema>
+export type TeamProps = Unbrand<z.infer<typeof schema>>
 
 export class Team
   extends Entity<TeamProps>

@@ -11,7 +11,7 @@ describe('back', () => {
         event: back.addressValidationRequested(
           {
             requestId: generateRequestId(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },
@@ -21,7 +21,7 @@ describe('back', () => {
         event: back.addressValidationConfirmed(
           {
             requestId: generateRequestId(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },
@@ -31,7 +31,7 @@ describe('back', () => {
         event: back.addressValidationFailed(
           {
             requestId: generateRequestId(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
             reason: faker.lorem.paragraph(),
           },
@@ -52,7 +52,7 @@ describe('back', () => {
           {
             requestId: generateRequestId(),
             dAppId: faker.string.alphanumeric(10),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },
@@ -83,7 +83,7 @@ describe('back', () => {
           {
             requestId: generateRequestId(),
             dAppId: faker.string.alphanumeric(10),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },
@@ -93,7 +93,7 @@ describe('back', () => {
         event: back.dappStatsAvailable(
           {
             requestId: generateRequestId(),
-            chainId: faker.string.numeric(5),
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
             events: [
               {

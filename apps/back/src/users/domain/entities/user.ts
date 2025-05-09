@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { AppError, Result } from 'utils'
+import type { AppError, Result, Unbrand } from 'utils'
 import { Entity, ok, fail, unauthorizedError, validationError } from 'utils'
 import { Password, UserId, ValidatedPassword } from './value-objects.js'
 
@@ -10,7 +10,7 @@ const schema = z.object({
   name: z.string(),
 })
 
-export type UserProps = z.infer<typeof schema>
+export type UserProps = Unbrand<z.infer<typeof schema>>
 
 export class User
   extends Entity<UserProps>

@@ -1,9 +1,9 @@
+import { ChainId } from '#chains/domain/entities/value-objects.js'
 import { PRODUCER } from '#constants.js'
 import {
   API_KEY_ALLOWS_REQUEST,
   type IApiKeyAllowsRequest,
 } from '#dapps/use-cases/api-key-allows-request.use-case.js'
-import { ChainId } from '#shared/entities/value-objects/chain-id.js'
 import { Web3Address } from '#shared/entities/value-objects/web3-address.js'
 import { IProducer } from '#shared/services/producer.js'
 import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
@@ -23,7 +23,7 @@ import {
 } from 'utils'
 
 type Input = {
-  contractChainId: string | number
+  contractChainId: string
   contractAddress: string
   userAddress: string
   ciphertextWithInputVerification: string
@@ -44,7 +44,7 @@ export class InputProof implements IInputProof {
   constructor(
     @Inject(PRODUCER)
     private readonly producer: IProducer,
-  ) { }
+  ) {}
 
   execute = (
     input: Input,
@@ -59,9 +59,9 @@ export class InputProof implements IInputProof {
         ),
         () => validationError('missing requestId'),
       ),
-      ChainId.parse(input.contractChainId),
-      Web3Address.parse(input.contractAddress),
-      Web3Address.parse(input.userAddress),
+      ChainId.fromHex(input.contractChainId),
+      Web3Address.from(input.contractAddress),
+      Web3Address.from(input.userAddress),
     ]).asyncChain(
       ([requestId, contractChainId, contractAddress, userAddress]) => {
         this.logger.verbose(`executing for ${context?.requestId}`)
@@ -74,7 +74,8 @@ export class InputProof implements IInputProof {
                 contractChainId: contractChainId.value,
                 contractAddress: contractAddress.value,
                 userAddress: userAddress.value,
-                ciphertextWithInputVerification: input.ciphertextWithInputVerification,
+                ciphertextWithInputVerification:
+                  input.ciphertextWithInputVerification,
               },
               {
                 correlationId: randomUUID(),
@@ -150,15 +151,16 @@ export class InputProofWithApiKey implements IInputProof {
     private readonly inputProof: InputProofWithSync,
     @Inject(API_KEY_ALLOWS_REQUEST)
     private readonly apiKeyAllowsRequest: IApiKeyAllowsRequest,
-  ) { }
+  ) {}
 
   execute(input: Input, context?: Record<string, any>): Task<Output, AppError> {
-    return this.apiKeyAllowsRequest
-      .execute({
-        apiKey: context?.apiKey,
-        chainId: input.contractChainId,
-        address: input.contractAddress,
-      })
+    return every([
+      ChainId.fromHex(input.contractChainId),
+      Web3Address.from(input.contractAddress),
+    ])
+      .asyncChain(([chainId, address]) =>
+        this.apiKeyAllowsRequest.execute({ chainId, address }, context),
+      )
       .tap(() => {
         this.logger.debug(`apiKey=${context?.apiKey}}`)
       })

@@ -16,6 +16,7 @@ interface Input {
   dapp: {
     teamId: string
     name: string
+    chainId?: number
     address?: string
   }
   user: User
@@ -28,14 +29,18 @@ export class CreateDapp implements UseCase<Input, DAppProps> {
     @Inject(DAPP_REPOSITORY) private readonly dappRepository: DAppRepository,
     private readonly teamRepository: TeamRepository,
   ) {}
-  execute(input: Input): Task<DAppProps, AppError> {
+  execute = (input: Input): Task<DAppProps, AppError> => {
     return this.uow.exec(
-      this.teamRepository
-        .findOneByIdAndUserId(TeamId.from(input.dapp.teamId), input.user.id) // this can throw with a "Team not found" error, it should throw an unthorized error
+      TeamId.from(input.dapp.teamId)
+        .asyncChain(teamId =>
+          this.teamRepository.findOneByIdAndUserId(teamId, input.user.id),
+        ) // this can throw with a "Team not found" error, it should throw an unthorized error
         .chain(team =>
           DApp.create({
             name: input.dapp.name,
             teamId: team.id.value,
+            // TODO: I need to check chainId exists
+            chainId: input.dapp.chainId,
             address: input.dapp.address,
           })
             .asyncChain(this.dappRepository.create)

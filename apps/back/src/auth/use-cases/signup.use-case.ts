@@ -31,9 +31,9 @@ export class SignUp
     private readonly jwtService: JwtService,
   ) {}
 
-  execute(
+  execute = (
     input: SignupInput,
-  ): Task<{ user: UserProps; token: string }, AppError> {
+  ): Task<{ user: UserProps; token: string }, AppError> => {
     return this.uow.exec(
       Task.all<AppError, Invitation, ValidatedPassword>([
         // Note: we check the invitation token and validate the password at
@@ -70,8 +70,8 @@ export class SignUp
   }
 
   private validateInvitation(token: string): Task<Invitation, AppError> {
-    return this.invitationRepository
-      .findByToken(Token.from(token))
+    return Token.from(token)
+      .asyncChain(this.invitationRepository.findByToken)
       .chain<Invitation>(invitation =>
         invitation.isValid
           ? Task.of(invitation)

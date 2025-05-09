@@ -1,6 +1,14 @@
 import { z } from 'zod'
 import { ApiKeyId, DAppId, Token } from './value-objects.js'
-import { AppError, Entity, fail, ok, Result, validationError } from 'utils'
+import {
+  AppError,
+  Entity,
+  fail,
+  ok,
+  Result,
+  Unbrand,
+  validationError,
+} from 'utils'
 import { fromZodError } from 'utils/dist/src/app-error.js'
 
 const schema = z.object({
@@ -14,12 +22,15 @@ const schema = z.object({
     .refine(date => date <= new Date(), 'CreatedAt should be in the past'),
 })
 
-export type ApiKeyProps = z.infer<typeof schema>
+export type ApiKeyProps = Unbrand<z.infer<typeof schema>>
 
 export class ApiKey
   extends Entity<ApiKeyProps>
   implements Readonly<Omit<ApiKeyProps, 'id' | 'dappId' | 'token'>>
 {
+  static isApiKey(data: unknown): data is ApiKey {
+    return data instanceof ApiKey
+  }
   static create(
     data: Omit<ApiKeyProps, 'id' | 'token'>,
   ): Result<ApiKey, AppError> {

@@ -101,7 +101,7 @@ export const configModule = ConfigModule.forRoot({
       useFactory: (config: ConfigService) => {
         const map = config
           .get<string[]>('ether.chainIds')!
-          .map(ChainId.fromString)
+          .map(ChainId.from)
           .filter(isOk)
           .map(r => r.unwrap())
           .reduce(function (acc, chainId) {
@@ -127,14 +127,14 @@ export const configModule = ConfigModule.forRoot({
       useFactory: (config: ConfigService) => {
         const map = config
           .get<string[]>('fhe.chainIds')!
-          .map(ChainId.fromString)
+          .map(ChainId.from)
           .filter(isOk)
           .map(r => r.unwrap())
           .map(FheConfigFactory.getFheConfig)
           .filter(c => c !== null)
           .reduce(
             (map, cfg) => map.set(cfg.chainId.value, cfg),
-            new Map<string, FheConfig>(),
+            new Map<number, FheConfig>(),
           )
         return new ViemFheEventService(map)
       },

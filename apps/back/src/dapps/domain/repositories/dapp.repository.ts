@@ -2,7 +2,7 @@ import { DApp, DAppProps } from '../entities/dapp.js'
 import type { AppError } from 'utils'
 import { Task } from 'utils'
 import { ApiKeyId, DAppId, Token } from '../entities/value-objects.js'
-import { UserId } from '#users/domain/entities/value-objects.js'
+import { TeamId, UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '../entities/dapp-stat.js'
 import { ApiKey } from '../entities/api-key.js'
 
@@ -27,7 +27,7 @@ export interface DAppRepository {
   findById(id: DAppId): Task<DApp, AppError>
   findByAddress(chainId: string | number, address: string): Task<DApp, AppError>
   findOneByIdAndUserId(id: DAppId, userId: UserId): Task<DApp, AppError>
-  findAllByTeamId(teamId: string): Task<DApp[], AppError>
+  findAllByTeamId(teamId: TeamId): Task<DApp[], AppError>
 
   createStat(id: DAppId, props: DAppStatProps): Task<DAppStat, AppError>
   findAllStats(id: DAppId): Task<DAppStat[], AppError>

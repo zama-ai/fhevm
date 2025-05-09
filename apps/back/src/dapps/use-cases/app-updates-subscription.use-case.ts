@@ -27,10 +27,13 @@ export class AppUpdatesSubscription implements UseCase<Input, Output> {
     @Inject(SUBSCRIPTION_SERVICE)
     private readonly subscriptions: SubscriptionService,
   ) {}
-  execute({ dappId, user }: Input): Task<Output, AppError> {
+
+  execute = ({ dappId, user }: Input): Task<Output, AppError> => {
     this.logger.verbose(`subscribing to dapp updates for dappId=${dappId}`)
-    return this.dappRepository
-      .findOneByIdAndUserId(DAppId.from(dappId), user.id)
+    return DAppId.from(dappId)
+      .asyncChain(dAppId =>
+        this.dappRepository.findOneByIdAndUserId(dAppId, user.id),
+      )
       .tap(dapp => {
         this.logger.debug(`${user.id} subscribed to ${dapp.id}`)
       })
