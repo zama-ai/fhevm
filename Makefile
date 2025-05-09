@@ -77,3 +77,13 @@ check-licenses:
 		printf '%s\n' "$$output"; \
 		exit $$status; \
 	fi
+
+# Bump the prerelease version of the Gateway and its rust bindings crate
+# This command : 
+# - Bumps the npm version of the Gateway, creates a new commit and tag
+# - Updates the rust bindings and aligns the version with the npm version
+# - Adds these changes to the above commit
+prerelease:
+	npm version prerelease
+	$(MAKE) update-bindings
+	git add ./rust_bindings && git commit --amend --no-edit

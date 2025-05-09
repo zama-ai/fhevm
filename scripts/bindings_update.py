@@ -53,7 +53,7 @@ def main():
     bindings_updater = BindingsUpdater()
 
     if args.command == "check":
-        bindings_updater.check_versions()
+        bindings_updater.check_version()
         bindings_updater.check_bindings_up_to_date()
     elif args.command == "update":
         bindings_updater.update_crate_version()
@@ -155,43 +155,38 @@ class BindingsUpdater:
 
         log_success("The Gateway contracts' bindings are now up-to-date!")
 
-    def check_versions(self):
+    def check_version(self):
         """
-        Checks versions of the Gateway and the crate match the latest git tag
-        on main.
+        Checks that the version of the crate matches the version of the Gateway.
         """
-        log_info(
-            "Checking the latest git tag on main match the Gateway version..."
-        )
-        latest_git_tag = get_latest_tag_on_main()
-
-        if (
-            len(latest_git_tag) > 0
-            and self.gateway_repo_version != latest_git_tag[1:]
-        ):
-            log_warning(
-                "WARNING: `package.json` version doesn't match main branch's "
-                "tag!"
-            )
-            log_warning(
-                f"Main branch tag is '{latest_git_tag}', so `package.json` "
-                f"version should be '{latest_git_tag[1:]}' instead"
-                f" of '{self.gateway_repo_version}'"
-            )
-
         log_info(
             "Checking that the crate's version match the Gateway version..."
         )
         with open(f"{GW_CRATE_DIR}/Cargo.toml", "r") as cargo_toml_fd:
             cargo_toml_content = cargo_toml_fd.read()
-            cargo_toml_version = re.findall(
-                'version = "([\\d.]+)"',
+            
+            # Find the version in the Cargo.toml
+            # Here, we want to find the version in the [package] section to avoid catching versions
+            # from dependencies. The `re.DOTALL` flag is used to allow the dot to match newlines.
+            # There is only one captured group: the version found within the quotes
+            matches = re.search(
+                r'\[package\].*?version\s*=\s*"([^"]+)"',
                 cargo_toml_content,
-            )[0]
+                flags=re.DOTALL,
+            )
+
+            if not matches:
+                log_error("Could not find version in Cargo.toml")
+                sys.exit(1)
+            
+            # Extract the version from the matches: the first (and only) captured group from the regex.
+            cargo_toml_version = matches.group(1)
 
         if self.gateway_repo_version != cargo_toml_version:
             log_error(
                 "ERROR: Cargo.toml version does not match Gateway version!\n"
+                f"Gateway version: {self.gateway_repo_version}\n"
+                f"Cargo.toml version: {cargo_toml_version}\n"
             )
             log_info(
                 "Run `./bindings_update.py update` to update the crate's "
@@ -199,7 +194,7 @@ class BindingsUpdater:
             )
             sys.exit(ExitStatus.CRATE_VERSION_NOT_UP_TO_DATE.value)
         log_success(
-            "The version of the crate match with the Gateway version!\n"
+            f"The version of the crate match with the Gateway version: {self.gateway_repo_version}!\n"
         )
 
     def update_crate_version(self):
@@ -209,26 +204,30 @@ class BindingsUpdater:
         with open(f"{GW_CRATE_DIR}/Cargo.toml", "r") as cargo_toml_fd:
             cargo_toml_content = cargo_toml_fd.read()
 
+        # Replace the version in the Cargo.toml
+        # Similar to the check_version function, we use a regex to find the version in the [package] 
+        # section to avoid changing the version of any dependency. The `count=1` argument ensures that
+        # only the first occurrence is replaced as we only expect one version. The `re.DOTALL` flag is
+        # used to allow the dot to match newlines. There are two captured groups:
+        # - The first one is the [package] section up until the first quote of the version.
+        # - The second one is the ending quote of the version.
+        # We then only replace the version by inserting it between both captured groups. This is to
+        # make sure we do not alter the original format of the Cargo.toml.
         cargo_toml_content = re.sub(
-            'version = "([\\d.]+)"',
-            f'version = "{self.gateway_repo_version}"',
+            r'(\[package\].*?version\s*=\s*")[^"]+(")',
+            lambda m: m.group(1) + self.gateway_repo_version + m.group(2),
             cargo_toml_content,
             count=1,
+            flags=re.DOTALL
         )
 
         with open(f"{GW_CRATE_DIR}/Cargo.toml", "w") as cargo_toml_fd:
             cargo_toml_fd.write(cargo_toml_content)
 
-        log_success("The crate's version has been successfully updated!\n")
-
-
-def get_latest_tag_on_main():
-    """Returns the latest tag on the main branch of the repo."""
-    git_tag_result = subprocess.run(
-        "git tag --merged main | tail -n 1", shell=True, stdout=subprocess.PIPE
-    )
-    return git_tag_result.stdout.decode().strip()
-
+        log_success(
+            f"The crate's version has been successfully updated to "
+            f"{self.gateway_repo_version}!\n"
+        )
 
 BRED = "\033[91m\033[1m"
 BGREEN = "\033[92m\033[1m"
