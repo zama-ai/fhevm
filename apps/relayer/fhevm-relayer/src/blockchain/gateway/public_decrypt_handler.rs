@@ -17,12 +17,13 @@ use crate::{
 use std::{str::FromStr, time::Duration};
 
 use alloy::{
+    network::{AnyReceiptEnvelope, AnyTransactionReceipt, ReceiptResponse},
     primitives::{Address, FixedBytes, U256},
     providers::ProviderBuilder,
-    rpc::types::TransactionReceipt,
+    rpc::types::{Log, TransactionReceipt},
 };
 
-use alloy_sol_types::SolEvent;
+use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use reqwest::Url;
 use std::sync::Arc;
@@ -37,7 +38,10 @@ struct PublicDecryptionRequestProcessor {
 impl ReceiptProcessor for PublicDecryptionRequestProcessor {
     type Output = U256;
 
-    fn process(&self, receipt: &TransactionReceipt) -> Result<Self::Output, EventProcessingError> {
+    fn process(
+        &self,
+        receipt: &AnyTransactionReceipt,
+    ) -> Result<Self::Output, EventProcessingError> {
         self.handler
             .extract_public_decryption_id_from_receipt(receipt)
     }
@@ -115,7 +119,7 @@ impl GatewayHandler {
         };
 
         let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
+            .network::<alloy::network::AnyNetwork>()
             .on_http(url);
 
         let decryption_address = match Address::from_str(&self.contracts.decryption_address) {
@@ -363,14 +367,15 @@ impl GatewayHandler {
 
     fn extract_public_decryption_id_from_receipt(
         &self,
-        receipt: &TransactionReceipt,
+        receipt: &AnyTransactionReceipt,
     ) -> Result<U256, EventProcessingError> {
         let target_topic = Decryption::PublicDecryptionRequest::SIGNATURE_HASH;
-
         info!(
             "Looking for topic: {}",
             Decryption::PublicDecryptionRequest::SIGNATURE
         );
+
+        let receipt: TransactionReceipt<AnyReceiptEnvelope<Log>> = receipt.inner.clone();
 
         debug!(
             "Receipt details for public decryption:\n\

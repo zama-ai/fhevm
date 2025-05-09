@@ -1,23 +1,29 @@
 use crate::core::errors::{EventProcessingError, TransactionServiceError};
 use crate::transaction::{TransactionService, TxConfig};
+use alloy::network::{AnyTransactionReceipt, ReceiptResponse};
 use alloy::primitives::{Address, Bytes, B256};
-use alloy::rpc::types::TransactionReceipt;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::info;
 
 pub trait ReceiptProcessor {
     type Output;
-    fn process(&self, receipt: &TransactionReceipt) -> Result<Self::Output, EventProcessingError>;
+    fn process(
+        &self,
+        receipt: &AnyTransactionReceipt,
+    ) -> Result<Self::Output, EventProcessingError>;
 }
 
 // Default processor that just returns the receipt
 pub struct DefaultProcessor;
 
 impl ReceiptProcessor for DefaultProcessor {
-    type Output = TransactionReceipt;
+    type Output = AnyTransactionReceipt;
 
-    fn process(&self, receipt: &TransactionReceipt) -> Result<Self::Output, EventProcessingError> {
+    fn process(
+        &self,
+        receipt: &AnyTransactionReceipt,
+    ) -> Result<Self::Output, EventProcessingError> {
         Ok(receipt.clone())
     }
 }
@@ -128,7 +134,7 @@ impl TransactionHelper {
         &self,
         tx_hash: B256,
         operation_name: &str,
-    ) -> Result<TransactionReceipt, EventProcessingError> {
+    ) -> Result<AnyTransactionReceipt, EventProcessingError> {
         let timeout = Duration::from_secs(self.tx_config.timeout_secs.unwrap_or(60));
 
         info!(

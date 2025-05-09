@@ -17,11 +17,12 @@ use crate::{
 use std::str::FromStr;
 
 use alloy::{
+    network::{AnyReceiptEnvelope, AnyTransactionReceipt, ReceiptResponse},
     primitives::{Address, Bytes, FixedBytes, U256},
-    rpc::types::TransactionReceipt,
+    rpc::types::{Log, TransactionReceipt},
 };
 
-use alloy_sol_types::SolEvent;
+use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -34,7 +35,10 @@ struct InputRequestProcessor {
 impl ReceiptProcessor for InputRequestProcessor {
     type Output = U256;
 
-    fn process(&self, receipt: &TransactionReceipt) -> Result<Self::Output, EventProcessingError> {
+    fn process(
+        &self,
+        receipt: &AnyTransactionReceipt,
+    ) -> Result<Self::Output, EventProcessingError> {
         self.handler
             .extract_input_verification_id_from_receipt(receipt)
     }
@@ -167,8 +171,10 @@ impl GatewayHandler {
     /// * `Err(`[`EventProcessingError`]`)` - If event is not found or decoding fails
     fn extract_input_verification_id_from_receipt(
         &self,
-        receipt: &TransactionReceipt,
+        receipt: &AnyTransactionReceipt,
     ) -> Result<U256, EventProcessingError> {
+        let receipt: TransactionReceipt<AnyReceiptEnvelope<Log>> = receipt.inner.clone();
+
         debug!(
             "Receipt details:\n\
              Hash: {:?}\n\
@@ -603,6 +609,7 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
                 .await
             {
                 Ok(receipt) => {
+                    let receipt: TransactionReceipt<AnyReceiptEnvelope<Log>> = receipt.inner;
                     println!("\n✅ TRANSACTION SUCCESSFUL!");
                     println!("Transaction hash: {:#x}", receipt.transaction_hash);
                     println!("Block number: {}", receipt.block_number.unwrap_or_default());
@@ -618,6 +625,7 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
 
                     // Look for the VerifyProofRequest event
                     println!("\nEvent logs ({}):", receipt.inner.logs().len());
+                    // println!("\nEvent logs ({}):", receipt.logs().len());
 
                     for (i, log) in receipt.inner.logs().iter().enumerate() {
                         println!("Log #{}:", i + 1);

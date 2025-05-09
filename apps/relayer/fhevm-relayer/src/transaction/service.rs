@@ -1,6 +1,6 @@
 use alloy::{
+    network::{AnyTransactionReceipt, ReceiptResponse},
     primitives::{Address, Bytes, B256},
-    rpc::types::TransactionReceipt,
     signers::Signer,
 };
 use dashmap::DashMap;
@@ -27,7 +27,7 @@ pub enum TransactionState {
     },
 
     /// Success state: Transaction has been confirmed
-    Confirmed { receipt: Arc<TransactionReceipt> },
+    Confirmed { receipt: Arc<AnyTransactionReceipt> },
 
     /// Failure state: Transaction has failed
     Failed { reason: String },
@@ -207,7 +207,7 @@ impl TransactionService {
     pub async fn get_transaction_receipt(
         &self,
         tx_hash: B256,
-    ) -> Result<TransactionReceipt, TransactionServiceError> {
+    ) -> Result<AnyTransactionReceipt, TransactionServiceError> {
         // First check if we already have this receipt in our records
         for record in self.transactions.iter() {
             match &record.state {
@@ -436,7 +436,7 @@ impl TransactionService {
         target: Address,
         calldata: Bytes,
         config: TxConfig,
-    ) -> Result<TransactionReceipt, TransactionServiceError> {
+    ) -> Result<AnyTransactionReceipt, TransactionServiceError> {
         info!("Submit_and_wait");
         let tx_hash = self
             .submit_transaction(target, calldata, config.clone())
@@ -452,7 +452,7 @@ impl TransactionService {
         &self,
         tx_hash: B256,
         timeout: Duration,
-    ) -> Result<TransactionReceipt, TransactionServiceError> {
+    ) -> Result<AnyTransactionReceipt, TransactionServiceError> {
         let start = Instant::now();
         let base_delay = Duration::from_millis(200); // Start with 200ms
         let max_delay = Duration::from_secs(10); // Cap at 10 seconds
@@ -561,7 +561,7 @@ impl TransactionService {
         &self,
         tx_hash: B256,
         config: &TxConfig,
-    ) -> Result<TransactionReceipt, TransactionServiceError> {
+    ) -> Result<AnyTransactionReceipt, TransactionServiceError> {
         match self.manager.wait_for_receipt(tx_hash, config).await {
             Ok(receipt) => Ok(receipt),
             Err(e) => Err(match e {

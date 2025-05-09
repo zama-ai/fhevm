@@ -1,6 +1,7 @@
 use crate::{config::settings::AppConfigError, transaction::sender::TransactionError};
 use alloy::{primitives::Address, transports::TransportError};
 use eyre::Report;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -18,7 +19,7 @@ pub enum Error {
 #[derive(Error, Debug)]
 pub enum EventProcessingError {
     #[error("Failed to decode event: {0}")]
-    DecodingError(#[from] alloy_sol_types::Error),
+    DecodingError(#[from] alloy::sol_types::Error),
 
     #[error("Missing event topic")]
     MissingTopic,
@@ -155,6 +156,9 @@ impl From<TransactionError> for EventProcessingError {
             TransactionError::NetworkError(msg) => {
                 Self::TransactionError(Report::msg(format!("Network error: {}", msg)))
             }
+            TransactionError::TransportError(e) => {
+                Self::TransactionError(Report::msg(format!("Transport Error: {}", e)))
+            }
         }
     }
 }
@@ -183,6 +187,7 @@ impl From<TransactionError> for TransactionServiceError {
                 ))
             }
             TransactionError::NetworkError(msg) => Self::Network(msg),
+            TransactionError::TransportError(e) => Self::Network(e.to_string()),
         }
     }
 }

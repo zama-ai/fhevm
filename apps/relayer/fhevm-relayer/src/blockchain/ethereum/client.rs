@@ -1,8 +1,8 @@
 use crate::blockchain::ethereum::ContractAndTopicsFilter;
 use crate::core::errors::Error;
 use alloy::{
+    network::AnyNetwork,
     providers::{Provider, ProviderBuilder, WsConnect},
-    pubsub::PubSubFrontend,
     rpc::types::{BlockNumberOrTag, Log as RpcLog},
 };
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ pub enum ChainName {
 
 pub struct EthereumJsonRPCWsClient {
     chain_name: ChainName,
-    provider: Arc<dyn Provider<PubSubFrontend> + Send + Sync>,
+    provider: Arc<dyn Provider<AnyNetwork> + Send + Sync>,
 }
 
 unsafe impl Send for EthereumJsonRPCWsClient {}
@@ -29,13 +29,16 @@ impl EthereumJsonRPCWsClient {
     pub async fn new(chain_name: ChainName, ws_url: &str) -> Result<Self, Error> {
         let ws = WsConnect::new(ws_url);
         let provider = ProviderBuilder::new()
+            .network::<alloy::network::AnyNetwork>()
             .on_ws(ws)
             .await
             .map_err(Error::Transport)?;
 
+        let provider = Arc::new(provider);
+
         Ok(EthereumJsonRPCWsClient {
             chain_name,
-            provider: Arc::new(provider),
+            provider,
         })
     }
 

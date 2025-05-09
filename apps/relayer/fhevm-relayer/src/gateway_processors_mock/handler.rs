@@ -22,11 +22,11 @@ use std::str::FromStr;
 
 use alloy::primitives::{Address, FixedBytes, U256};
 use alloy::signers::{local::PrivateKeySigner, Signer};
+use alloy::sol_types::SolEvent;
 use alloy::{
     sol,
     sol_types::{eip712_domain, SolStruct},
 };
-use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};

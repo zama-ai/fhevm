@@ -31,12 +31,13 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use alloy::{
+    network::{AnyReceiptEnvelope, AnyTransactionReceipt, ReceiptResponse},
     primitives::{Address, FixedBytes, U256},
     providers::ProviderBuilder,
-    rpc::types::TransactionReceipt,
+    rpc::types::{Log, TransactionReceipt},
 };
 
-use alloy_sol_types::SolEvent;
+use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::task;
@@ -50,7 +51,10 @@ struct UserDecryptionRequestProcessor {
 impl ReceiptProcessor for UserDecryptionRequestProcessor {
     type Output = U256;
 
-    fn process(&self, receipt: &TransactionReceipt) -> Result<Self::Output, EventProcessingError> {
+    fn process(
+        &self,
+        receipt: &AnyTransactionReceipt,
+    ) -> Result<Self::Output, EventProcessingError> {
         self.handler
             .extract_user_decryption_id_from_receipt(receipt)
     }
@@ -287,13 +291,14 @@ impl GatewayHandler {
 
     fn extract_user_decryption_id_from_receipt(
         &self,
-        receipt: &TransactionReceipt,
+        receipt: &AnyTransactionReceipt,
     ) -> Result<U256, EventProcessingError> {
         // Get the event signature for UserDecryptionRequest with the correct parameters
         let target_topic = UserDecryptionRequest::SIGNATURE_HASH;
 
         info!("Looking for topic: {}", UserDecryptionRequest::SIGNATURE);
 
+        let receipt: TransactionReceipt<AnyReceiptEnvelope<Log>> = receipt.inner.clone();
         debug!(
             "Receipt details for user decryption:\n\
              Hash: {:?}\n\
@@ -357,7 +362,7 @@ impl GatewayHandler {
         let url = Url::parse(&self.gateway_http_url).unwrap();
 
         let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
+            .network::<alloy::network::AnyNetwork>()
             .on_http(url);
 
         let decryption_address =
@@ -585,6 +590,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
         .await
     {
         Ok(receipt) => {
+            let receipt: TransactionReceipt<AnyReceiptEnvelope<Log>> = receipt.inner;
             println!("Receipt status: {}", receipt.status());
             println!("Gas used: {}", receipt.gas_used);
 

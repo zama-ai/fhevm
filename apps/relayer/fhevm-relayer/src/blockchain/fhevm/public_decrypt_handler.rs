@@ -24,7 +24,7 @@ use tokio::task;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
-use alloy_sol_types::SolEvent;
+use alloy::sol_types::SolEvent;
 
 /// Contains the context data for a decryption request from fhevm.
 ///

@@ -1,4 +1,4 @@
-use alloy_sol_types::SolEvent;
+use alloy::sol_types::SolEvent;
 use tracing::{error, info};
 
 use crate::blockchain::ethereum::bindings::{Decryption, InputVerification};

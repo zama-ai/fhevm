@@ -39,7 +39,7 @@ sol! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_sol_types::SolEvent;
+    use alloy::sol_types::SolEvent;
 
     #[test]
     fn test_decryption() {

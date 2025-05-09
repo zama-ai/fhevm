@@ -1,11 +1,13 @@
 use alloy::{
-    network::TransactionBuilder,
-    // network::{EthereumWallet, TransactionBuilder},
+    network::{AnyNetwork, AnyTransactionReceipt, ReceiptResponse, TransactionBuilder},
     primitives::{Address, Bytes, B256, U256},
-    providers::{fillers::CachedNonceManager, fillers::NonceFiller, Provider, ProviderBuilder},
-    rpc::types::{TransactionReceipt, TransactionRequest},
+    providers::{
+        fillers::{CachedNonceManager, GasFiller, NonceFiller},
+        Provider, ProviderBuilder,
+    },
+    rpc::types::TransactionRequest,
+    serde::WithOtherFields,
     signers::Signer,
-    transports::http::{Client, Http},
 };
 
 use eyre::Result;
@@ -91,6 +93,9 @@ pub enum TransactionError {
 
     #[error("Network connectivity error: {0}")]
     NetworkError(String),
+
+    #[error("Transport error: {0}")]
+    TransportError(#[from] alloy::transports::TransportError),
 }
 
 impl From<TransactionConfig> for TxConfig {
@@ -133,7 +138,7 @@ impl Default for TxConfig {
 }
 
 pub struct TransactionManager {
-    pub provider: Arc<dyn Provider<Http<Client>>>,
+    pub provider: Arc<dyn Provider<AnyNetwork> + Send + Sync>,
     signer: Arc<dyn Signer + Sync + Send>,
 }
 
@@ -162,10 +167,12 @@ impl TransactionManager {
             .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {}", e)))?;
 
         let provider = ProviderBuilder::new()
+            .network::<AnyNetwork>()
             .filler(NonceFiller::new(CachedNonceManager::default()))
-            .filler(alloy::providers::fillers::GasFiller)
+            .filler(GasFiller)
             .on_http(url);
 
+        let provider = Arc::new(provider);
         // let wallet = EthereumWallet::from(signer);
 
         info!(
@@ -174,13 +181,10 @@ impl TransactionManager {
             "Initialized TransactionManager"
         );
 
-        Ok(Self {
-            provider: Arc::new(provider),
-            signer,
-        })
+        Ok(Self { provider, signer })
     }
 
-    pub fn provider(&self) -> &Arc<dyn Provider<Http<Client>>> {
+    pub fn provider(&self) -> &Arc<dyn Provider<AnyNetwork> + Send + Sync> {
         &self.provider
     }
 
@@ -201,10 +205,11 @@ impl TransactionManager {
             .with_to(target)
             .with_input(calldata)
             .with_value(config.value.unwrap_or_default());
+        let request = WithOtherFields::new(request);
 
         let gas = self
             .provider
-            .estimate_gas(&request)
+            .estimate_gas(request)
             .await
             .map_err(|e| TransactionServiceError::GasEstimation(e.to_string()))?;
 
@@ -219,10 +224,11 @@ impl TransactionManager {
             .with_from(self.sender_address())
             .with_to(target)
             .with_input(calldata);
+        let request = WithOtherFields::new(request);
 
         let result = self
             .provider
-            .call(&request)
+            .call(request)
             .await
             .map_err(|e| TransactionError::RpcError(e.to_string()))?;
 
@@ -271,8 +277,9 @@ impl TransactionManager {
             .with_to(target)
             .with_input(calldata.clone())
             .with_value(config.value.unwrap_or_default());
+        let request = WithOtherFields::new(request);
 
-        match self.provider.call(&request).await {
+        match self.provider.call(request).await {
             Ok(_) => {
                 debug!("\n✅ Call simulation succeeded");
                 Ok(())
@@ -334,6 +341,7 @@ impl TransactionManager {
             .with_to(target)
             .with_input(calldata)
             .with_value(config.value.unwrap_or_default());
+        let request = WithOtherFields::new(request);
 
         let pending_tx = self
             .provider
@@ -355,6 +363,7 @@ impl TransactionManager {
             .with_from(self.sender_address())
             .with_input(bytecode)
             .with_value(config.value.unwrap_or_default());
+        let request = WithOtherFields::new(request);
 
         let timeout_duration = Duration::from_secs(config.timeout_secs.unwrap_or(60));
 
@@ -430,7 +439,7 @@ impl TransactionManager {
         &self,
         tx_hash: B256,
         config: &TxConfig,
-    ) -> Result<TransactionReceipt, TransactionError> {
+    ) -> Result<AnyTransactionReceipt, TransactionError> {
         let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(60));
         let start = Instant::now();
         let mut interval = tokio::time::interval(Duration::from_millis(500));
@@ -504,7 +513,7 @@ impl TransactionManager {
         target: Address,
         calldata: Bytes,
         config: Option<TxConfig>,
-    ) -> Result<TransactionReceipt, TransactionError> {
+    ) -> Result<AnyTransactionReceipt, TransactionError> {
         let config = config.unwrap_or_default();
         let tx_hash = self
             .send_transaction(target, calldata, Some(config.clone()))
