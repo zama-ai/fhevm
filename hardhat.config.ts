@@ -2,6 +2,7 @@ import "@nomicfoundation/hardhat-chai-matchers";
 import "@nomicfoundation/hardhat-network-helpers";
 import "@nomicfoundation/hardhat-verify";
 import "@openzeppelin/hardhat-upgrades";
+import "@typechain/hardhat";
 import dotenv from "dotenv";
 import "hardhat-ignore-warnings";
 import { HardhatUserConfig, task } from "hardhat/config";
