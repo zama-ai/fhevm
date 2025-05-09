@@ -11,7 +11,7 @@ on:
       connector_version:
         description: "Connector Version"
         required: false
-        default: "v0.1.0-rc3"
+        default: "v0.1.0-rc4"
         type: string
       coprocessor_version:
         description: "Coprocessor Image Version"
@@ -36,7 +36,7 @@ on:
       relayer_version:
         description: "Relayer Image Version"
         required: false
-        default: "6573721"
+        default: "d19b6a4"
         type: string
       tests_version:
         description: "E2E Tests Image Version"
