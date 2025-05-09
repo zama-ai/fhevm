@@ -147,14 +147,9 @@ After analyzing the codebase, it is recommended to implement a brand new connect
 
 4. **Event-Driven Architecture Requirements**:
 
-    - **New**: Asynchronous event handling with MPSC-based orchestration for multiple contract events. It's suggested to have an improved version of shared Orchestrator component as developed by GW team.
+    - **New**: Asynchronous event handling with MPSC-based orchestration for multiple contract events.
 
-## **Recommended Solution**
-
-1. Create new crate `kms-connector/`
-2. Implement new architecture from scratch (see images bellow)
-3. Keep both (Old/New) connectors code in the kms-core repo during transition
-4. Deprecate Old connector once migration is complete
+## **Implemented Solution**
 
 This is a KMS Connector-focused extract from the general system diagram as presented here (but with corrections for L2 storage) [SEE IMAGE HERE](https://github.com/zama-ai/fhevm-relayer/blob/main/out/design-docs/full-architecture-highe-level-interactions/gateway-external-connections.svg)
 
@@ -173,7 +168,6 @@ package "Gateway" {
     component "Access Control" as gateway_accessControl
     component "RPC" as gateway_rpc
     () "WebSocket" as gateway_ws
-    () "HTTP" as gateway_http
 }
 
 package "Kms Core" as kmsCore {
@@ -186,8 +180,8 @@ package "Kms Core" as kmsCore {
 
 package "KMS connector" #PaleGoldenRod {
     package "Gateway Adapter" {
-        component "Event Listener" as connector_eventListener
-        component "Tx Sender" as connector_txSender
+        component "EventAdapter" as connector_eventAdapter
+        component "alloy::Provider" as connector_provider
     }
 
     package "Kms Core Adapter" {
@@ -198,7 +192,6 @@ package "KMS connector" #PaleGoldenRod {
 }
 
 ' Internal Gateway connections
-gateway_rpc --- gateway_http
 gateway_rpc --- gateway_ws
 gateway_decryption --- gateway_rpc
 gateway_config --- gateway_rpc
@@ -211,22 +204,22 @@ kmsCore_crsgen -- kmsCore_api
 kmsCore_decryption -- kmsCore_api
 
 ' KMS Connector to Gateway connections
-connector_eventListener ..> gateway_ws: Listen for events
-connector_txSender --> gateway_http: Send transactions
+connector_eventAdapter ..> gateway_ws: Listen for events
+connector_provider --> gateway_ws: Send transactions
 
 ' KMS Connector to KMS Core connections
 connector_decrypt --> kmsCore_grpc: Decrypt requests
 connector_keygen --> kmsCore_grpc: Key generation
 connector_crsgen --> kmsCore_grpc: CRS generation
 
-note right of connector_eventListener
+note right of connector_eventAdapter
   Listens for:
   - Decryption requests
   - Key generation events
   - CRS generation events
 end note
 
-note right of connector_txSender
+note right of connector_provider
   Sends:
   - Operation results
   - Key generation results
@@ -245,7 +238,7 @@ end note
 
 ```
 
-Detailed KMS Connector diagram reflecting current L2 smart-contract interfaces (pls note that `reencryption` is renamed to `userDecryption`) Also IGatewayConfig SC interface is about to be finalized... so I put my vision to be clarified once finalization is done
+Detailed KMS Connector diagram reflecting current smart-contract interfaces (pls note that `reencryption` is renamed to `userDecryption`). 
 
 ```plantuml
 
