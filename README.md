@@ -1,20 +1,22 @@
 # KMS Connector
 
-KMS Connector is a Rust-based service that connects the KMS Core with the fhevm Gateway (Arbitrum) smart contracts, handling decryption requests and key management operations.
+KMS Connector is a Rust-based service that connects the KMS Core with the fhevm Gateway smart contracts, handling decryption requests and key management operations.
 
 ## Features
 
 - Event-driven architecture with MPSC orchestration
 - Support for public/user decryption operations
-- Key generation with extended finality support
-- CRS generation and management
-- Operation status notifications
-- Arbitrum-specific finality rules
 - CLI interface for configuration management and validation
 - S3 ciphertext retrieval with configurable endpoint support
-- Non-failable S3 URL processing with graceful fallbacks
 - Optional S3 configuration for flexible deployment scenarios
 - Multiple wallet initialization options (AWS KMS, private key)
+
+### Upcoming
+
+- Key generation with extended finality support
+- CRS generation and management
+- Arbitrum-specific finality rules
+- Operation status notifications
 
 ## CLI Usage
 
@@ -144,14 +146,14 @@ The KMS Connector supports flexible configuration through both TOML files and en
    > **Note on Nested Configuration**: For nested configuration structures like `s3_config` and `aws_kms_config`, use double underscores (`__`) in environment variables to represent the nesting. For example, `s3_config.region` in TOML becomes `KMS_CONNECTOR_S3_CONFIG__REGION` as an environment variable.
 
    # Start the connector without a config file
-   cargo run --bin kms-connector start
+   cargo run -- start
    ```
 
 2. **Config File Only**
 
    ```bash
    # Use a TOML config file
-   cargo run --bin kms-connector start --config ./config/environments/config-base.toml
+   cargo run -- start --config ./config/environments/config-base.toml
    ```
 
 3. **Combined Configuration**
@@ -162,7 +164,7 @@ The KMS Connector supports flexible configuration through both TOML files and en
    export KMS_CONNECTOR_CHAIN_ID="31337"
 
    # Use config file for other values
-   cargo run --bin kms-connector start --config ./config/environments/config-base.toml
+   cargo run -- start --config ./config/environments/config-base.toml
    ```
 
 ### Configuration Precedence
@@ -249,24 +251,7 @@ endpoint = "http://localhost:9876"
 
 ### S3 URL Processing
 
-The connector supports multiple S3 URL formats:
-
-1. **Virtual-hosted style**: `bucket-name.s3.region.amazonaws.com`
-2. **Path-style**: `s3.region.amazonaws.com/bucket-name`
-3. **Custom endpoints**: with region and bucket in path segments
-
-The system will extract the region, endpoint URL, and bucket name directly from the URL when possible. If URL parsing fails, it will gracefully fall back to the configured values.
-
-### Non-Failable Design
-
-The S3 URL processing is designed to be non-failable:
-
-- Returns `Option<(String, String, String)>` instead of `Result`
-- Uses warning logs instead of errors for non-critical issues
-- Gracefully falls back to provided configuration values
-- Continues processing other URLs even when one fails
-
-This approach ensures that temporary issues with S3 URL formats don't disrupt the high-frequency operation of the KMS Connector.
+The connector relies on the S3 URLs provided by the Gateway's events being properly formatted. If no URLs are provided, it will fall back to the optional S3 configured values.
 
 ### Optional Configuration
 
@@ -348,7 +333,7 @@ The connector uses a two-layer architecture to separate Gateway interaction from
          └─────────┬───────────────┘
                    │
                    ▼
-        [Arbitrum Gateway Contracts]
+           [Gateway Contracts]
         Decryption, GatewayConfig
 ```
 
@@ -397,6 +382,7 @@ impl<P: Provider> DecryptionAdapter<P> {
             .await
     }
 }
+```
 
 ## Key Points
 
@@ -427,7 +413,7 @@ See [CHANGELOG.md](./changelog.md) for current implementation status.
 ### Prerequisites
 
 - Rust 1.86+
-- Access to Arbitrum L2 node
+- Access to a node of the Gateway's chain
 - KMS Core instance
 
 ### Building
