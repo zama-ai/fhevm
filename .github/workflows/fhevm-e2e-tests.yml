@@ -11,7 +11,7 @@ on:
       connector_version:
         description: "Connector Version"
         required: false
-        default: "v0.1.0-rc4"
+        default: "v0.1.0-rc5"
         type: string
       coprocessor_version:
         description: "Coprocessor Image Version"
