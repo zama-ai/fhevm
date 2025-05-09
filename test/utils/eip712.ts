@@ -304,15 +304,19 @@ export function createEIP712ResponseUserDecrypt(
 
 // Get signatures from signers using the EIP712 message response for user decryption
 export async function getSignaturesUserDecryptResponse(
-  eip712: EIP712,
+  eip712s: EIP712[],
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
 ): Promise<string[]> {
+  if (eip712s.length !== signers.length) {
+    throw new Error("The number of EIP712 messages must match the number of signers.");
+  }
+
   return Promise.all(
-    signers.map((signer) =>
+    signers.map((signer, index) =>
       signer.signTypedData(
-        eip712.domain,
-        { UserDecryptResponseVerification: eip712.types.UserDecryptResponseVerification },
-        eip712.message,
+        eip712s[index].domain,
+        { UserDecryptResponseVerification: eip712s[index].types.UserDecryptResponseVerification },
+        eip712s[index].message,
       ),
     ),
   );

@@ -179,9 +179,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
                 _alreadyUserDecryptResponded;
         // prettier-ignore
         /// @notice Verified signatures for a user decryption.
-        mapping(uint256 userDecryptionId =>
-            mapping(bytes32 digest => bytes[] verifiedSignatures))
-                _verifiedUserDecryptSignatures;
+        mapping(uint256 userDecryptionId => bytes[] verifiedSignatures) _verifiedUserDecryptSignatures;
         /// @notice The decryption payloads stored during user decryption requests.
         mapping(uint256 userDecryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
         /// @notice Whether a user decryption has been done
@@ -264,8 +262,12 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         /// @dev has not already signed.
         _validatePublicDecryptEIP712Signature(publicDecryptionId, digest, signature);
 
+        /// @dev Store the signature for the public decryption response.
+        /// @dev This list is then used to check the consensus. Important: the mapping considers
+        /// @dev the digest (contrary to the user decryption case) as the decrypted result is expected
+        /// @dev to be the same for all KMS nodes. This allows to filter out results from malicious
+        /// @dev KMS nodes.
         bytes[] storage verifiedSignatures = $._verifiedPublicDecryptSignatures[publicDecryptionId][digest];
-
         verifiedSignatures.push(signature);
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
@@ -440,7 +442,11 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         /// @dev has not already signed.
         _validateUserDecryptResponseEIP712Signature(userDecryptionId, digest, signature);
 
-        bytes[] storage verifiedSignatures = $._verifiedUserDecryptSignatures[userDecryptionId][digest];
+        /// @dev Store the signature for the user decryption response.
+        /// @dev This list is then used to check the consensus. Important: the mapping should not
+        /// @dev consider the digest (contrary to the public decryption case) as shares are expected
+        /// @dev to be different for each KMS node.
+        bytes[] storage verifiedSignatures = $._verifiedUserDecryptSignatures[userDecryptionId];
         verifiedSignatures.push(signature);
 
         /// @dev Store the user decrypted share for the user decryption response.
