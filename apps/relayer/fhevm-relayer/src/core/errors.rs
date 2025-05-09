@@ -159,6 +159,9 @@ impl From<TransactionError> for EventProcessingError {
             TransactionError::TransportError(e) => {
                 Self::TransactionError(Report::msg(format!("Transport Error: {}", e)))
             }
+            TransactionError::InvalidChainId(msg) => {
+                Self::TransactionError(Report::msg(format!("Chain-id error: {}", msg)))
+            }
         }
     }
 }
@@ -188,6 +191,7 @@ impl From<TransactionError> for TransactionServiceError {
             }
             TransactionError::NetworkError(msg) => Self::Network(msg),
             TransactionError::TransportError(e) => Self::Network(e.to_string()),
+            TransactionError::InvalidChainId(msg) => Self::Failed(msg),
         }
     }
 }

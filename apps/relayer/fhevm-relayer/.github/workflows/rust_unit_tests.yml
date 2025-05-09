@@ -13,6 +13,8 @@ concurrency:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: 1
 
     steps:
 

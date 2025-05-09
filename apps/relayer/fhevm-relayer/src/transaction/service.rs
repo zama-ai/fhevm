@@ -1,7 +1,6 @@
 use alloy::{
     network::{AnyTransactionReceipt, ReceiptResponse},
     primitives::{Address, Bytes, B256},
-    signers::Signer,
 };
 use dashmap::DashMap;
 use rand::Rng;
@@ -10,7 +9,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use super::sender::{TransactionError, TransactionManager, TxConfig};
+use super::sender::{SignerCombined, TransactionError, TransactionManager, TxConfig};
 use crate::core::errors::TransactionServiceError;
 
 /// Represents the current state of a transaction
@@ -69,7 +68,7 @@ impl TransactionService {
     pub async fn new(
         rpc_url: &str,
         // private_key_env: &str,
-        signer: Arc<dyn Signer + Send + Sync>,
+        signer: Arc<dyn SignerCombined>,
     ) -> Result<Arc<Self>, TransactionServiceError> {
         let manager = TransactionManager::new(rpc_url, signer)
             .await

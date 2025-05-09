@@ -1,8 +1,11 @@
 use alloy::{
-    network::{AnyNetwork, AnyTransactionReceipt, ReceiptResponse, TransactionBuilder},
-    primitives::{Address, Bytes, B256, U256},
+    network::{
+        AnyNetwork, AnyTransactionReceipt, EthereumWallet, ReceiptResponse, TransactionBuilder,
+        TxSigner,
+    },
+    primitives::{Address, Bytes, PrimitiveSignature, B256, U256},
     providers::{
-        fillers::{CachedNonceManager, GasFiller, NonceFiller},
+        fillers::{CachedNonceManager, ChainIdFiller, GasFiller, NonceFiller, WalletFiller},
         Provider, ProviderBuilder,
     },
     rpc::types::TransactionRequest,
@@ -22,6 +25,11 @@ use crate::{
     config::settings::{RetrySettings, TransactionConfig},
     core::errors::TransactionServiceError,
 };
+
+pub trait SignerCombined: TxSigner<PrimitiveSignature> + Signer + Send + Sync {}
+
+// Automatically implement SignerCombined for any type that satisfies all the required traits
+impl<T: TxSigner<PrimitiveSignature> + Signer + Send + Sync> SignerCombined for T {}
 
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
@@ -96,6 +104,8 @@ pub enum TransactionError {
 
     #[error("Transport error: {0}")]
     TransportError(#[from] alloy::transports::TransportError),
+    #[error("Invalid chain-id: {0}")]
+    InvalidChainId(String),
 }
 
 impl From<TransactionConfig> for TxConfig {
@@ -139,41 +149,38 @@ impl Default for TxConfig {
 
 pub struct TransactionManager {
     pub provider: Arc<dyn Provider<AnyNetwork> + Send + Sync>,
-    signer: Arc<dyn Signer + Sync + Send>,
+    signer: Arc<dyn SignerCombined>,
 }
 
 impl fmt::Debug for TransactionManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TransactionManager")
-            .field("chain_id", &self.signer.chain_id())
             .field("wallet_address", &self.signer.address())
             .field("provider", &"<provider>") // Skip detailed provider debug
             .finish()
     }
 }
 
-// Diagnostics:
-// 1. expected a type, found a trait [E0782]
-// 2. use a new generic type parameter, constrained by `Signer`: `T`, `<T: Signer>` [E0782]
-// 3. you can also use an opaque type, but users won't be able to specify the type parameter when calling the `fn`, having to rely exclusively on type inference: `impl ` [E0782]
-// 4. alternatively, use a trait object to accept any type that implements `Signer`, accessing its methods at runtime using dynamic dispatch: `&dyn ` [E0782]
 impl TransactionManager {
     pub async fn new(
         rpc_url: &str,
         // private_key: &str,
-        signer: Arc<dyn Signer + Sync + Send>,
+        signer: Arc<dyn SignerCombined>,
     ) -> Result<Self, TransactionError> {
         let url = Url::parse(rpc_url)
             .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {}", e)))?;
+
+        let wallet = EthereumWallet::from(signer.clone());
 
         let provider = ProviderBuilder::new()
             .network::<AnyNetwork>()
             .filler(NonceFiller::new(CachedNonceManager::default()))
             .filler(GasFiller)
+            .filler(ChainIdFiller::new(signer.chain_id()))
+            .filler(WalletFiller::new(wallet))
             .on_http(url);
 
         let provider = Arc::new(provider);
-        // let wallet = EthereumWallet::from(signer);
 
         info!(
             address = ?signer.address(),
@@ -361,7 +368,7 @@ impl TransactionManager {
 
         let request = TransactionRequest::default()
             .with_from(self.sender_address())
-            .with_input(bytecode)
+            .with_deploy_code(bytecode)
             .with_value(config.value.unwrap_or_default());
         let request = WithOtherFields::new(request);
 
