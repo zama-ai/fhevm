@@ -4,11 +4,11 @@ This document explains how to enable encrypted computations in your smart contra
 
 ## Core configuration setup
 
-To utilize encrypted computations in Solidity contracts, you must configure the **TFHE library** and **Gateway addresses**. The `fhevm` package simplifies this process with prebuilt configuration contracts, allowing you to focus on developing your contract’s logic without handling the underlying cryptographic setup.
+To utilize encrypted computations in Solidity contracts, you must configure the **FHE library** and **Gateway addresses**. The `fhevm` package simplifies this process with prebuilt configuration contracts, allowing you to focus on developing your contract’s logic without handling the underlying cryptographic setup.
 
 ## Key components configured automatically
 
-1. **TFHE library**: Sets up encryption parameters and cryptographic keys.
+1. **FHE library**: Sets up encryption parameters and cryptographic keys.
 2. **Gateway**: Manages secure cryptographic operations, including reencryption and decryption.
 3. **Network-specific settings**: Adapts to local testing, testnets (Sepolia for example), or mainnet deployment.
 
@@ -64,7 +64,7 @@ import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 **Example: Configuring the gateway with Sepolia settings**
 
 ```solidity
-import "fhevm/lib/TFHE.sol";
+import "fhevm/lib/FHE.sol";
 import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 import "fhevm/gateway/GatewayCaller.sol";
@@ -94,7 +94,7 @@ function isInitialized(T v) internal pure returns (bool)
 **Example: Initialization Check for Encrypted Counter**
 
 ```solidity
-require(TFHE.isInitialized(counter), "Counter not initialized!");
+require(FHE.isInitialized(counter), "Counter not initialized!");
 ```
 
 ## Summary

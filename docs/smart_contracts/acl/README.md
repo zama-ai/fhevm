@@ -19,18 +19,18 @@ Encrypted data in fhevm is entirely confidential, meaning that without proper ac
 ### Types of access
 
 - **Permanent allowance**:
-  - Configured using `TFHE.allow(ciphertext, address)`.
+  - Configured using `FHE.allow(ciphertext, address)`.
   - Grants long-term access to the ciphertext for a specific address.
   - Stored in a dedicated contract for persistent storage.
 - **Transient allowance**:
-  - Configured using `TFHE.allowTransient(ciphertext, address)`.
+  - Configured using `FHE.allowTransient(ciphertext, address)`.
   - Grants access to the ciphertext only for the duration of the current transaction.
   - Stored in transient storage, reducing gas costs.
   - Ideal for temporary operations like passing ciphertexts to external functions.
 
 **Syntactic sugar**:
 
-- `TFHE.allowThis(ciphertext)` is shorthand for `TFHE.allow(ciphertext, address(this))`. It authorizes the current contract to reuse a ciphertext handle in future transactions.
+- `FHE.allowThis(ciphertext)` is shorthand for `FHE.allow(ciphertext, address(this))`. It authorizes the current contract to reuse a ciphertext handle in future transactions.
 
 ### Transient vs. permanent allowance
 

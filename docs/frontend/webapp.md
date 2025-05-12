@@ -108,7 +108,7 @@ Once the WASM is loaded, you can now create an instance. An instance receives an
 import { initFhevm, createInstance } from "@fhevm/sdk/bundle";
 
 const init = async () => {
-  await initFhevm(); // Load TFHE
+  await initFhevm(); // Load FHE
   return createInstance({
     kmsContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
     aclContractAddress: "0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5",

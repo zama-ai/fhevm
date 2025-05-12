@@ -30,10 +30,10 @@ For more information see [use of encrypted types](types.md).
 
 fhevm provides functions to cast between encrypted types:
 
-- **Casting between encrypted types**: `TFHE.asEbool` converts encrypted integers to encrypted booleans
-- **Casting to encrypted types**: `TFHE.asEuintX` converts plaintext values to encrypted types
-- **Casting to encrypted addresses**: `TFHE.asEaddress` converts plaintext addresses to encrypted addresses
-- **Casting to encrypted bytes**: `TFHE.asEbytesX` converts plaintext bytes to encrypted bytes
+- **Casting between encrypted types**: `FHE.asEbool` converts encrypted integers to encrypted booleans
+- **Casting to encrypted types**: `FHE.asEuintX` converts plaintext values to encrypted types
+- **Casting to encrypted addresses**: `FHE.asEaddress` converts plaintext addresses to encrypted addresses
+- **Casting to encrypted bytes**: `FHE.asEbytesX` converts plaintext bytes to encrypted bytes
 
 For more information see [use of encrypted types](types.md).
 
@@ -41,11 +41,11 @@ For more information see [use of encrypted types](types.md).
 
 fhevm enables symbolic execution of encrypted operations, supporting:
 
-- **Arithmetic:** `TFHE.add`, `TFHE.sub`, `TFHE.mul`, `TFHE.min`, `TFHE.max`, `TFHE.neg`, `TFHE.div`, `TFHE.rem`
+- **Arithmetic:** `FHE.add`, `FHE.sub`, `FHE.mul`, `FHE.min`, `FHE.max`, `FHE.neg`, `FHE.div`, `FHE.rem`
   - Note: `div` and `rem` operations are supported only with plaintext divisors
-- **Bitwise:** `TFHE.and`, `TFHE.or`, `TFHE.xor`, `TFHE.not`, `TFHE.shl`, `TFHE.shr`, `TFHE.rotl`, `TFHE.rotr`
-- **Comparison:** `TFHE.eq`, `TFHE.ne`, `TFHE.lt`, `TFHE.le`, `TFHE.gt`, `TFHE.ge`
-- **Advanced:** `TFHE.select` for branching on encrypted conditions, `TFHE.randEuintX` for on-chain randomness.
+- **Bitwise:** `FHE.and`, `FHE.or`, `FHE.xor`, `FHE.not`, `FHE.shl`, `FHE.shr`, `FHE.rotl`, `FHE.rotr`
+- **Comparison:** `FHE.eq`, `FHE.ne`, `FHE.lt`, `FHE.le`, `FHE.gt`, `FHE.ge`
+- **Advanced:** `FHE.select` for branching on encrypted conditions, `FHE.randEuintX` for on-chain randomness.
 
 For more information on operations, see [Operations on encrypted types](operations.md).&#x20;
 
@@ -57,8 +57,8 @@ For more information on random number generation, see [Generate Random Encrypted
 
 fhevm enforces access control with a blockchain-based Access Control List (ACL):
 
-- **Persistent access**: `TFHE.allow`, `TFHE.allowThis` grants permanent permissions for ciphertexts.
-- **Transient access**: `TFHE.allowTransient` provides temporary access for specific transactions.
-- **Validation**: `TFHE.isSenderAllowed` ensures that only authorized entities can interact with ciphertexts.
+- **Persistent access**: `FHE.allow`, `FHE.allowThis` grants permanent permissions for ciphertexts.
+- **Transient access**: `FHE.allowTransient` provides temporary access for specific transactions.
+- **Validation**: `FHE.isSenderAllowed` ensures that only authorized entities can interact with ciphertexts.
 
 For more information see [ACL](acl).

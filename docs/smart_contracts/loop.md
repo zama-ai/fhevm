@@ -7,27 +7,27 @@ This document explains how to handle branches, loops or conditions when working 
 ❌ In FHE, it is not possible to break a loop based on an encrypted condition. For example, this would not work:
 
 ```solidity
-euint8 maxValue = TFHE.asEuint(6); // Could be a value between 0 and 10
-euint8 x = TFHE.asEuint(0);
+euint8 maxValue = FHE.asEuint(6); // Could be a value between 0 and 10
+euint8 x = FHE.asEuint(0);
 // some code
-while(TFHE.lt(x, maxValue)){
-    x = TFHE.add(x, 2);
+while(FHE.lt(x, maxValue)){
+    x = FHE.add(x, 2);
 }
 ```
 
-If your code logic requires looping on an encrypted boolean condition, we highly suggest to try to replace it by a finite loop with an appropriate constant maximum number of steps and use `TFHE.select` inside the loop.
+If your code logic requires looping on an encrypted boolean condition, we highly suggest to try to replace it by a finite loop with an appropriate constant maximum number of steps and use `FHE.select` inside the loop.
 
 ## Suggested approach
 
 ✅ For example, the previous code could maybe be replaced by the following snippet:
 
 ```solidity
-euint8 maxValue = TFHE.asEuint(6); // Could be a value between 0 and 10
+euint8 maxValue = FHE.asEuint(6); // Could be a value between 0 and 10
 euint8 x;
 // some code
 for (uint32 i = 0; i < 10; i++) {
-    euint8 toAdd = TFHE.select(TFHE.lt(x, maxValue), 2, 0);
-    x = TFHE.add(x, toAdd);
+    euint8 toAdd = FHE.select(FHE.lt(x, maxValue), 2, 0);
+    x = FHE.add(x, toAdd);
 }
 ```
 
@@ -37,7 +37,7 @@ In this snippet, we perform 10 iterations, adding 4 to `x` in each iteration as 
 
 ### Obfuscate branching
 
-The previous paragraph emphasized that branch logic should rely as much as possible on `TFHE.select` instead of decryptions. It hides effectively which branch has been executed.
+The previous paragraph emphasized that branch logic should rely as much as possible on `FHE.select` instead of decryptions. It hides effectively which branch has been executed.
 
 However, this is sometimes not enough. Enhancing the privacy of smart contracts often requires revisiting your application's logic.
 
@@ -49,22 +49,22 @@ For example, if implementing a simple AMM for two encrypted ERC20 tokens based o
 // typically either encryptedAmountAIn or encryptedAmountBIn is an encrypted null value
 // ideally, the user already owns some amounts of both tokens and has pre-approved the AMM on both tokens
 function swapTokensForTokens(einput encryptedAmountAIn, einput encryptedAmountBIn, bytes calldata inputProof) external {
-  euint32 encryptedAmountA = TFHE.asEuint32(encryptedAmountAIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
-  euint32 encryptedAmountB = TFHE.asEuint32(encryptedAmountBIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
+  euint32 encryptedAmountA = FHE.asEuint32(encryptedAmountAIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
+  euint32 encryptedAmountB = FHE.asEuint32(encryptedAmountBIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
 
   // send tokens from user to AMM contract
-  TFHE.allowTransient(encryptedAmountA, tokenA);
+  FHE.allowTransient(encryptedAmountA, tokenA);
   IConfidentialERC20(tokenA).transferFrom(msg.sender, address(this), encryptedAmountA);
 
-  TFHE.allowTransient(encryptedAmountB, tokenB);
+  FHE.allowTransient(encryptedAmountB, tokenB);
   IConfidentialERC20(tokenB).transferFrom(msg.sender, address(this), encryptedAmountB);
 
   // send tokens from AMM contract to user
   // Price of tokenA in tokenB is constant and equal to 1, so we just swap the encrypted amounts here
-  TFHE.allowTransient(encryptedAmountB, tokenA);
+  FHE.allowTransient(encryptedAmountB, tokenA);
   IConfidentialERC20(tokenA).transfer(msg.sender, encryptedAmountB);
 
-  TFHE.allowTransient(encryptedAmountA, tokenB);
+  FHE.allowTransient(encryptedAmountA, tokenB);
   IConfidentialERC20(tokenB).transferFrom(msg.sender, address(this), encryptedAmountA);
 }
 ```
@@ -88,11 +88,11 @@ euint32 x;
 euint32[] encArray;
 
 function setXwithEncryptedIndex(einput encryptedIndex, bytes calldata inputProof) public {
-    euint32 index = TFHE.asEuint32(encryptedIndex, inputProof);
+    euint32 index = FHE.asEuint32(encryptedIndex, inputProof);
     for (uint32 i = 0; i < encArray.length; i++) {
-        ebool isEqual = TFHE.eq(index, i);
-        x = TFHE.select(isEqual, encArray[i], x);
+        ebool isEqual = FHE.eq(index, i);
+        x = FHE.select(isEqual, encArray[i], x);
     }
-    TFHE.allowThis(x);
+    FHE.allowThis(x);
 }
 ```

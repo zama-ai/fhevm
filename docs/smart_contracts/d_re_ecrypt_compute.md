@@ -94,7 +94,7 @@ Re-encryption enables encrypted data to be securely shared or reused under a dif
 
 #### Client-side implementation
 
-Re-encryption is initiated on the client side via the **Gateway service** using the [`@fhevm/sdk`](https://github.com/zama-ai/fhevmjs/) library. Here’s the general workflow:
+Re-encryption is initiated on the client side via the **Gateway service** using the [`@fhevm/sdk`](https://github.com/zama-ai/fhevm-js/) library. Here’s the general workflow:
 
 1. **Retrieve the ciphertext**:
    - The dApp calls a view function (e.g., `balanceOf`) on the smart contract to get the handle of the ciphertext to be re-encrypted.

@@ -1,6 +1,6 @@
 # Generate random numbers
 
-This document explains how to generate cryptographically secure random encrypted numbers fully on-chain using the `TFHE` library in fhevm. These numbers are encrypted and remain confidential, enabling privacy-preserving smart contract logic.
+This document explains how to generate cryptographically secure random encrypted numbers fully on-chain using the `FHE` library in fhevm. These numbers are encrypted and remain confidential, enabling privacy-preserving smart contract logic.
 
 ## **Key notes on random number generation**
 
@@ -13,24 +13,24 @@ Random number generation must be performed during transactions, as it requires t
 
 ## **Basic usage**
 
-The `TFHE` library allows you to generate random encrypted numbers of various bit sizes. Below is a list of supported types and their usage:
+The `FHE` library allows you to generate random encrypted numbers of various bit sizes. Below is a list of supported types and their usage:
 
 ```solidity
 // Generate random encrypted numbers
-ebool rb = TFHE.randEbool();       // Random encrypted boolean
-euint8 r8 = TFHE.randEuint8();     // Random 8-bit number
-euint16 r16 = TFHE.randEuint16();  // Random 16-bit number
-euint32 r32 = TFHE.randEuint32();  // Random 32-bit number
-euint64 r64 = TFHE.randEuint64();  // Random 64-bit number
-euint128 r128 = TFHE.randEuint128(); // Random 128-bit number
-euint256 r256 = TFHE.randEuint256(); // Random 256-bit number
+ebool rb = FHE.randEbool();       // Random encrypted boolean
+euint8 r8 = FHE.randEuint8();     // Random 8-bit number
+euint16 r16 = FHE.randEuint16();  // Random 16-bit number
+euint32 r32 = FHE.randEuint32();  // Random 32-bit number
+euint64 r64 = FHE.randEuint64();  // Random 64-bit number
+euint128 r128 = FHE.randEuint128(); // Random 128-bit number
+euint256 r256 = FHE.randEuint256(); // Random 256-bit number
 ```
 
 ### **Example: Random Boolean**
 
 ```solidity
 function randomBoolean() public returns (ebool) {
-  return TFHE.randEbool();
+  return FHE.randEbool();
 }
 ```
 
@@ -40,16 +40,16 @@ To generate random numbers within a specific range, you can specify an **upper b
 
 ```solidity
 // Generate random numbers with upper bounds
-euint8 r8 = TFHE.randEuint8(100);      // Random number between 0-99
-euint16 r16 = TFHE.randEuint16(1000);  // Random number between 0-999
-euint32 r32 = TFHE.randEuint32(1000000); // Random number between 0-999999
+euint8 r8 = FHE.randEuint8(100);      // Random number between 0-99
+euint16 r16 = FHE.randEuint16(1000);  // Random number between 0-999
+euint32 r32 = FHE.randEuint32(1000000); // Random number between 0-999999
 ```
 
 ### **Example: Random bumber with upper bound**
 
 ```solidity
 function randomBoundedNumber(uint16 upperBound) public returns (euint16) {
-  return TFHE.randEuint16(upperBound);
+  return FHE.randEuint16(upperBound);
 }
 ```
 
@@ -59,16 +59,16 @@ To generate larger random values, you can use encrypted bytes. These are ideal f
 
 ```solidity
 // Generate random encrypted bytes
-ebytes64 rb64 = TFHE.randEbytes64();    // 64 bytes (512 bits)
-ebytes128 rb128 = TFHE.randEbytes128(); // 128 bytes (1024 bits)
-ebytes256 rb256 = TFHE.randEbytes256(); // 256 bytes (2048 bits)
+ebytes64 rb64 = FHE.randEbytes64();    // 64 bytes (512 bits)
+ebytes128 rb128 = FHE.randEbytes128(); // 128 bytes (1024 bits)
+ebytes256 rb256 = FHE.randEbytes256(); // 256 bytes (2048 bits)
 ```
 
 ### **Example: Random Bytes**
 
 ```solidity
 function randomBytes256() public returns (ebytes256) {
-  return TFHE.randEbytes256();
+  return FHE.randEbytes256();
 }
 ```
 

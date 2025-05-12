@@ -2,7 +2,7 @@
 
 ## Solidity smart contracts templates - `fhevm-contracts`
 
-The [fhevm-contracts repository](https://github.com/zama-ai/fhevm-contracts) provides a comprehensive collection of secure, pre-tested Solidity templates optimized for fhevm development. These templates leverage the TFHE library to enable encrypted computations while maintaining security and extensibility.
+The [fhevm-contracts repository](https://github.com/zama-ai/fhevm-contracts) provides a comprehensive collection of secure, pre-tested Solidity templates optimized for fhevm development. These templates leverage the FHE library to enable encrypted computations while maintaining security and extensibility.
 
 The library includes templates for common use cases like tokens and governance, allowing developers to quickly build confidential smart contracts with battle-tested components. For detailed implementation guidance and best practices, refer to the [contracts standard library guide](../smart_contracts/contracts.md).
 

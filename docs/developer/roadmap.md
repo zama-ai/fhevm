@@ -10,16 +10,16 @@ This document gives a preview of the upcoming features of fhevm. In addition to 
 
 ## Operations
 
-| Name                  | Function name      | Type               | ETA         |
-| --------------------- | ------------------ | ------------------ | ----------- |
-| Signed Integers       | `eintX`            |                    | Coming soon |
-| Add w/ overflow check | `TFHE.safeAdd`     | Binary, Decryption | Coming soon |
-| Sub w/ overflow check | `TFHE.safeSub`     | Binary, Decryption | Coming soon |
-| Mul w/ overflow check | `TFHE.safeMul`     | Binary, Decryption | Coming soon |
-| Random signed int     | `TFHE.randEintX()` | Random             | -           |
-| Div                   | `TFHE.div`         | Binary             | -           |
-| Rem                   | `TFHE.rem`         | Binary             | -           |
-| Set inclusion         | `TFHE.isIn()`      | Binary             | -           |
+| Name                  | Function name     | Type               | ETA         |
+| --------------------- | ----------------- | ------------------ | ----------- |
+| Signed Integers       | `eintX`           |                    | Coming soon |
+| Add w/ overflow check | `FHE.safeAdd`     | Binary, Decryption | Coming soon |
+| Sub w/ overflow check | `FHE.safeSub`     | Binary, Decryption | Coming soon |
+| Mul w/ overflow check | `FHE.safeMul`     | Binary, Decryption | Coming soon |
+| Random signed int     | `FHE.randEintX()` | Random             | -           |
+| Div                   | `FHE.div`         | Binary             | -           |
+| Rem                   | `FHE.rem`         | Binary             | -           |
+| Set inclusion         | `FHE.isIn()`      | Binary             | -           |
 
 {% hint style="info" %}
 Random encrypted integers that are generated fully on-chain. Currently, implemented as a mockup by using a PRNG in the plain. Not for use in production!

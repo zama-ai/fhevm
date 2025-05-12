@@ -33,7 +33,7 @@ Copy the following code in the `MyConfidentialERC20.sol` that you just created:
 
 pragma solidity ^0.8.24;
 
-import "fhevm/lib/TFHE.sol";
+import "fhevm/lib/FHE.sol";
 import "fhevm/config/ZamaFHEVMConfig.sol";
 
 contract MyConfidentialERC20 is SepoliaZamaFHEVMConfig {}
@@ -45,7 +45,7 @@ It should appear as follows:
 
 Remix automatically saves any changes as you type. Upon saving, it imports the following libraries:
 
-- **`TFHE.sol`**: The core Solidity library of fhevm. It enables encrypted data type like `euint64`, secures encrypted operations, such as addition and comparison and allows access control.
+- **`FHE.sol`**: The core Solidity library of fhevm. It enables encrypted data type like `euint64`, secures encrypted operations, such as addition and comparison and allows access control.
 - **`SepoliaZamaFHEVMConfig`**: A configuration contract that automatically sets up the required configurations for real-time encrypted operations on the Sepolia testnet.
 
 ### Step 2.2 Enhancing the functionality
@@ -77,7 +77,7 @@ To use `ConfidentialERC20Mintable` contract, simply update your `MyConfidentialE
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "fhevm/lib/TFHE.sol";
+import "fhevm/lib/FHE.sol";
 import "fhevm/config/ZamaFHEVMConfig.sol";
 import "fhevm-contracts/contracts/token/ERC20/extensions/ConfidentialERC20Mintable.sol";
 

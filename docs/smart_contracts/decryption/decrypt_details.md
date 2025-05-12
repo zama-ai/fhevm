@@ -108,7 +108,7 @@ For example, see this snippet where we add two `uint256`s during the request cal
 ```solidity
 pragma solidity ^0.8.24;
 
-import "fhevm/lib/TFHE.sol";
+import "fhevm/lib/FHE.sol";
 import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 import "fhevm/gateway/GatewayCaller.sol";
@@ -118,8 +118,8 @@ contract TestAsyncDecrypt is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, G
   uint32 public yUint32;
 
   constructor() {
-      xUint32 = TFHE.asEuint32(32);
-      TFHE.allowThis(xUint32);
+      xUint32 = FHE.asEuint32(32);
+      FHE.allowThis(xUint32);
   }
 
   function requestUint32(uint32 input1, uint32 input2) public {

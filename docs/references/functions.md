@@ -1,10 +1,10 @@
 # Smart contracts - fhevm API
 
-This document provides an overview of the functions available in the `TFHE` Solidity library. The TFHE library provides functionality for working with encrypted types and performing operations on them. It implements fully homomorphic encryption (FHE) operations in Solidity.
+This document provides an overview of the functions available in the `FHE` Solidity library. The FHE library provides functionality for working with encrypted types and performing operations on them. It implements fully homomorphic encryption (FHE) operations in Solidity.
 
 ## Overview
 
-The `TFHE` Solidity library provides essential functionality for working with encrypted data types and performing fully homomorphic encryption (FHE) operations in smart contracts. It is designed to streamline the developer experience while maintaining flexibility and performance.
+The `FHE` Solidity library provides essential functionality for working with encrypted data types and performing fully homomorphic encryption (FHE) operations in smart contracts. It is designed to streamline the developer experience while maintaining flexibility and performance.
 
 ### **Core Functionality**
 
@@ -52,10 +52,10 @@ The library ensures that all operations on encrypted data follow the constraints
 
 ### Casting Types
 
-- **Casting between encrypted types**: `TFHE.asEbool` converts encrypted integers to encrypted booleans
-- **Casting to encrypted types**: `TFHE.asEuintX` converts plaintext values to encrypted types
-- **Casting to encrypted addresses**: `TFHE.asEaddress` converts plaintext addresses to encrypted addresses
-- **Casting to encrypted bytes**: `TFHE.asEbytesX` converts plaintext bytes to encrypted bytes
+- **Casting between encrypted types**: `FHE.asEbool` converts encrypted integers to encrypted booleans
+- **Casting to encrypted types**: `FHE.asEuintX` converts plaintext values to encrypted types
+- **Casting to encrypted addresses**: `FHE.asEaddress` converts plaintext addresses to encrypted addresses
+- **Casting to encrypted bytes**: `FHE.asEbytesX` converts plaintext bytes to encrypted bytes
 
 #### `asEuint`
 
@@ -114,7 +114,7 @@ function sub(T a, T b) internal returns (T)
 function mul(T a, T b) internal returns (T)
 ```
 
-- Arithmetic: `TFHE.add`, `TFHE.sub`, `TFHE.mul`, `TFHE.min`, `TFHE.max`, `TFHE.neg`, `TFHE.div`, `TFHE.rem`
+- Arithmetic: `FHE.add`, `FHE.sub`, `FHE.mul`, `FHE.min`, `FHE.max`, `FHE.neg`, `FHE.div`, `FHE.rem`
   - Note: `div` and `rem` operations are supported only with plaintext divisors
 
 #### Arithmetic operations (`add`, `sub`, `mul`, `div`, `rem`)
@@ -168,11 +168,11 @@ More information about the behavior of these operators can be found at the [TFHE
 
 ### Bitwise operations
 
-- Bitwise: `TFHE.and`, `TFHE.or`, `TFHE.xor`, `TFHE.not`, `TFHE.shl`, `TFHE.shr`, `TFHE.rotl`, `TFHE.rotr`
+- Bitwise: `FHE.and`, `FHE.or`, `FHE.xor`, `FHE.not`, `FHE.shl`, `FHE.shr`, `FHE.rotl`, `FHE.rotr`
 
 #### Bitwise operations (`AND`, `OR`, `XOR`)
 
-Unlike other binary operations, bitwise operations do not natively accept a mix of ciphertext and plaintext inputs. To ease developer experience, the `TFHE` library adds function overloads for these operations. Such overloads implicitely do a trivial encryption before actually calling the operation function, as shown in the examples below.
+Unlike other binary operations, bitwise operations do not natively accept a mix of ciphertext and plaintext inputs. To ease developer experience, the `FHE` library adds function overloads for these operations. Such overloads implicitely do a trivial encryption before actually calling the operation function, as shown in the examples below.
 
 Available for euint\* types:
 
@@ -268,7 +268,7 @@ This operator takes three inputs. The first input `b` is of type `ebool` and the
 ```solidity
 // if (b == true) return val1 else return val2
 function select(ebool b, euint8 val1, euint8 val2) internal view returns (euint8) {
-  return TFHE.select(b, val1, val2);
+  return FHE.select(b, val1, val2);
 }
 ```
 
@@ -282,12 +282,12 @@ That can only be done during transactions and not on an `eth_call` RPC method, b
 
 ```solidity
 // Generate a random encrypted unsigned integer `r`.
-euint32 r = TFHE.randEuint32();
+euint32 r = FHE.randEuint32();
 ```
 
 ## Access control functions
 
-The `TFHE` library provides a robust set of access control functions for managing permissions on encrypted values. These functions ensure that encrypted data can only be accessed or manipulated by authorized accounts or contracts.
+The `FHE` library provides a robust set of access control functions for managing permissions on encrypted values. These functions ensure that encrypted data can only be accessed or manipulated by authorized accounts or contracts.
 
 ### Permission management
 
@@ -313,16 +313,16 @@ The `allow` and `allowTransient` functions enable fine-grained control over who 
 
 ```solidity
 // Store an encrypted value.
-euint32 r = TFHE.asEuint32(94);
+euint32 r = FHE.asEuint32(94);
 
 // Grant permanent access to the current contract.
-TFHE.allowThis(r);
+FHE.allowThis(r);
 
 // Grant permanent access to the caller.
-TFHE.allow(r, msg.sender);
+FHE.allow(r, msg.sender);
 
 // Grant temporary access to an external account.
-TFHE.allowTransient(r, 0x1234567890abcdef1234567890abcdef12345678);
+FHE.allowTransient(r, 0x1234567890abcdef1234567890abcdef12345678);
 ```
 
 ### Permission checks
@@ -351,13 +351,13 @@ These functions help ensure that only authorized accounts or contracts can acces
 
 ```solidity
 // Store an encrypted value.
-euint32 r = TFHE.asEuint32(94);
+euint32 r = FHE.asEuint32(94);
 
 // Verify if the current contract is allowed to access the value.
-bool isContractAllowed = TFHE.isAllowed(r, address(this)); // returns true
+bool isContractAllowed = FHE.isAllowed(r, address(this)); // returns true
 
 // Verify if the caller has access to the value.
-bool isCallerAllowed = TFHE.isSenderAllowed(r); // depends on msg.sender
+bool isCallerAllowed = FHE.isSenderAllowed(r); // depends on msg.sender
 ```
 
 ## Storage Management
@@ -380,7 +380,7 @@ function finalize() public {
   // Perform operations...
 
   // Clean up transient storage.
-  TFHE.cleanTransientStorage();
+  FHE.cleanTransientStorage();
 }
 ```
 

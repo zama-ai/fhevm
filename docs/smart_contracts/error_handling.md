@@ -33,8 +33,8 @@ euint8 internal NO_ERROR;
 euint8 internal NOT_ENOUGH_FUNDS;
 
 constructor() {
-  NO_ERROR = TFHE.asEuint8(0);           // Code 0: No error
-  NOT_ENOUGH_FUNDS = TFHE.asEuint8(1);   // Code 1: Insufficient funds
+  NO_ERROR = FHE.asEuint8(0);           // Code 0: No error
+  NOT_ENOUGH_FUNDS = FHE.asEuint8(1);   // Code 1: Insufficient funds
 }
 
 // Store the last error for each address
@@ -61,19 +61,19 @@ function setLastError(euint8 error, address addr) private {
  */
 function _transfer(address from, address to, euint32 amount) internal {
   // Check if the sender has enough balance to transfer
-  ebool canTransfer = TFHE.le(amount, balances[from]);
+  ebool canTransfer = FHE.le(amount, balances[from]);
 
   // Log the error state: NO_ERROR or NOT_ENOUGH_FUNDS
-  setLastError(TFHE.select(canTransfer, NO_ERROR, NOT_ENOUGH_FUNDS), msg.sender);
+  setLastError(FHE.select(canTransfer, NO_ERROR, NOT_ENOUGH_FUNDS), msg.sender);
 
   // Perform the transfer operation conditionally
-  balances[to] = TFHE.add(balances[to], TFHE.select(canTransfer, amount, TFHE.asEuint32(0)));
-  TFHE.allowThis(balances[to]);
-  TFHE.allow(balances[to], to);
+  balances[to] = FHE.add(balances[to], FHE.select(canTransfer, amount, FHE.asEuint32(0)));
+  FHE.allowThis(balances[to]);
+  FHE.allow(balances[to], to);
 
-  balances[from] = TFHE.sub(balances[from], TFHE.select(canTransfer, amount, TFHE.asEuint32(0)));
-  TFHE.allowThis(balances[from]);
-  TFHE.allow(balances[from], from);
+  balances[from] = FHE.sub(balances[from], FHE.select(canTransfer, amount, FHE.asEuint32(0)));
+  FHE.allowThis(balances[from]);
+  FHE.allow(balances[from], from);
 }
 ```
 
@@ -86,7 +86,7 @@ function _transfer(address from, address to, euint32 amount) internal {
    - Use the `setLastError` function to log the latest error for a specific address along with the current timestamp.
    - Emit the `ErrorChanged` event to notify external systems (e.g., dApps) about the error state change.
 3. **Conditional updates**:
-   - Use the `TFHE.select` function to update balances and log errors based on the transfer condition (`canTransfer`).
+   - Use the `FHE.select` function to update balances and log errors based on the transfer condition (`canTransfer`).
 4. **Frontend integration**:
    - The dApp can query `_lastErrors` for a user’s most recent error and display appropriate feedback, such as "Insufficient funds" or "Transaction successful."
 

@@ -78,7 +78,7 @@ In this example:
 
 ## Validating encrypted inputs
 
-Smart contracts process encrypted inputs by verifying them against the associated zero-knowledge proof. This is done using the `TFHE.asEuintXX`, `TFHE.asEbool`, or `TFHE.asEaddress` functions, which validate the input and convert it into the appropriate encrypted type.
+Smart contracts process encrypted inputs by verifying them against the associated zero-knowledge proof. This is done using the `FHE.asEuintXX`, `FHE.asEbool`, or `FHE.asEaddress` functions, which validate the input and convert it into the appropriate encrypted type.
 
 ### Example validation that goes along the client-Side implementation
 
@@ -91,14 +91,14 @@ This example demonstrates a function that performs multiple encrypted operations
     bytes calldata inputProof
   ) public {
     // Validate and convert the encrypted inputs
-    euint64 amount = TFHE.asEuint64(encryptedAmount, inputProof);
-    ebool toggleFlag = TFHE.asEbool(encryptedToggle, inputProof);
+    euint64 amount = FHE.asEuint64(encryptedAmount, inputProof);
+    ebool toggleFlag = FHE.asEbool(encryptedToggle, inputProof);
 
     // Update the user's encrypted balance
-    balances[msg.sender] = TFHE.add(balances[msg.sender], amount);
+    balances[msg.sender] = FHE.add(balances[msg.sender], amount);
 
     // Toggle the user's encrypted flag
-    userFlags[msg.sender] = TFHE.not(toggleFlag);
+    userFlags[msg.sender] = FHE.not(toggleFlag);
   }
 
   // Function to retrieve a user's encrypted balance
@@ -124,7 +124,7 @@ function transfer(
   bytes calldata inputProof
 ) public {
   // Verify the provided encrypted amount and convert it into an encrypted uint64
-  euint64 amount = TFHE.asEuint64(encryptedAmount, inputProof);
+  euint64 amount = FHE.asEuint64(encryptedAmount, inputProof);
 
   // Function logic here, such as transferring funds
   ...
@@ -134,7 +134,7 @@ function transfer(
 ### How validation works
 
 1. **Input verification**:\
-   The `TFHE.asEuintXX` function ensures that the input is a valid ciphertext with a corresponding ZKPoK.
+   The `FHE.asEuintXX` function ensures that the input is a valid ciphertext with a corresponding ZKPoK.
 2. **Type conversion**:\
    The function transforms the `einput` into the appropriate encrypted type (`euintXX`, `ebool`, etc.) for further operations within the contract.
 

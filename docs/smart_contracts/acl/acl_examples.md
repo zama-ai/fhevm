@@ -10,21 +10,21 @@ The ACL system allows you to define two types of permissions for accessing ciphe
 
 ### Permanent allowance
 
-- **Function**: `TFHE.allow(ciphertext, address)`
+- **Function**: `FHE.allow(ciphertext, address)`
 - **Purpose**: Grants persistent access to a ciphertext for a specific address.
 - **Storage**: Permissions are saved in a dedicated ACL contract, making them available across transactions.
 
 ### Transient allowance
 
-- **Function**: `TFHE.allowTransient(ciphertext, address)`
+- **Function**: `FHE.allowTransient(ciphertext, address)`
 - **Purpose**: Grants temporary access for the duration of a single transaction.
 - **Storage**: Permissions are stored in transient storage to save gas costs.
 - **Use Case**: Ideal for passing encrypted values between functions or contracts during a transaction.
 
 ### Syntactic sugar
 
-- **Function**: `TFHE.allowThis(ciphertext)`
-- **Equivalent To**: `TFHE.allow(ciphertext, address(this))`
+- **Function**: `FHE.allowThis(ciphertext)`
+- **Equivalent To**: `FHE.allow(ciphertext, address(this))`
 - **Purpose**: Simplifies granting permanent access to the current contract for managing ciphertexts.
 
 ---
@@ -32,7 +32,7 @@ The ACL system allows you to define two types of permissions for accessing ciphe
 ### Example: granting permissions in a multi-contract setup
 
 ```solidity
-import "fhevm/lib/TFHE.sol";
+import "fhevm/lib/FHE.sol";
 import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 
 contract SecretGiver is SepoliaZamaFHEVMConfig {
@@ -44,10 +44,10 @@ contract SecretGiver is SepoliaZamaFHEVMConfig {
 
   function giveMySecret() public {
     // Create my secret - asEuint16 gives automatically transient allowance for the resulting handle (note: an onchain trivial encryption is not secret)
-    euint16 mySecret = TFHE.asEuint16(42);
+    euint16 mySecret = FHE.asEuint16(42);
 
     // Allow temporarily the SecretStore contract to manipulate `mySecret`
-    TFHE.allowTransient(mySecret, address(secretStore));
+    FHE.allowTransient(mySecret, address(secretStore));
 
     // Call `secretStore` with `mySecret`
     secretStore.storeSecret(mySecret);
@@ -61,16 +61,16 @@ contract SecretStore is SepoliaZamaFHEVMConfig {
 
   function storeSecret(euint16 callerSecret) public {
     // Verify that the caller has also access to this ciphertext
-    require(TFHE.isSenderAllowed(callerSecret), "The caller is not authorized to access this secret.");
+    require(FHE.isSenderAllowed(callerSecret), "The caller is not authorized to access this secret.");
 
     // do some FHE computation (result is automatically put in the ACL transient storage)
-    euint16 computationResult = TFHE.add(callerSecret, 3);
+    euint16 computationResult = FHE.add(callerSecret, 3);
 
     // then store the resulting ciphertext handle in the contract storage
     secretResult = computationResult;
 
     // Make the temporary allowance for this ciphertext permanent to let the contract able to reuse it at a later stage or request a decryption of it
-    TFHE.allowThis(secretResult); // this is strictly equivalent to `TFHE.allow(secretResult, address(this));``
+    FHE.allowThis(secretResult); // this is strictly equivalent to `FHE.allow(secretResult, address(this));``
   }
 }
 ```
@@ -82,21 +82,21 @@ contract SecretStore is SepoliaZamaFHEVMConfig {
 Some functions automatically grant transient allowances to the calling contract, simplifying workflow. These include:
 
 - **Type Conversion**:
-  - `TFHE.asEuintXX()`, `TFHE.asEbool()`, `TFHE.asEaddress()`
+  - `FHE.asEuintXX()`, `FHE.asEbool()`, `FHE.asEaddress()`
 - **Random Value Generation**:
-  - `TFHE.randXX()`
+  - `FHE.randXX()`
 - **Computation Results**:
-  - `TFHE.add()`, `TFHE.select()`
+  - `FHE.add()`, `FHE.select()`
 
 ### Example: random value generation
 
 ```solidity
 function randomize() public {
   // Generate a random encrypted value with transient allowance
-  euint64 random = TFHE.randEuint64();
+  euint64 random = FHE.randEuint64();
 
   // Convert the transient allowance into a permanent one
-  TFHE.allowThis(random);
+  FHE.allowThis(random);
 }
 ```
 
@@ -119,7 +119,7 @@ Consider an **Encrypted ERC20 token**. An attacker controlling two accounts, **A
 
 This type of attack allows the attacker to infer private balances without explicit access.
 
-To prevent this, always use the `TFHE.isSenderAllowed()` function to verify that the sender has legitimate access to the encrypted amount being transferred.
+To prevent this, always use the `FHE.isSenderAllowed()` function to verify that the sender has legitimate access to the encrypted amount being transferred.
 
 ---
 
@@ -128,10 +128,10 @@ To prevent this, always use the `TFHE.isSenderAllowed()` function to verify that
 ```solidity
 function transfer(address to, euint64 encryptedAmount, bytes calldata inputProof) public {
   // Ensure the sender is authorized to access the encrypted amount
-  require(TFHE.isSenderAllowed(encryptedAmount), "Unauthorized access to encrypted amount.");
+  require(FHE.isSenderAllowed(encryptedAmount), "Unauthorized access to encrypted amount.");
 
   // Proceed with further logic
-  euint64 amount = TFHE.asEuint64(encryptedAmount);
+  euint64 amount = FHE.asEuint64(encryptedAmount);
   ...
 }
 ```
@@ -148,21 +148,21 @@ Due to the reencryption mechanism, a user signs a public key associated with a s
 
 ```solidity
 function transfer(address to, euint64 encryptedAmount) public {
-  require(TFHE.isSenderAllowed(encryptedAmount), "The caller is not authorized to access this encrypted amount.");
-  euint64 amount = TFHE.asEuint64(encryptedAmount);
-  ebool canTransfer = TFHE.le(amount, balances[msg.sender]);
+  require(FHE.isSenderAllowed(encryptedAmount), "The caller is not authorized to access this encrypted amount.");
+  euint64 amount = FHE.asEuint64(encryptedAmount);
+  ebool canTransfer = FHE.le(amount, balances[msg.sender]);
 
-  euint64 newBalanceTo = TFHE.add(balances[to], TFHE.select(canTransfer, amount, TFHE.asEuint64(0)));
+  euint64 newBalanceTo = FHE.add(balances[to], FHE.select(canTransfer, amount, FHE.asEuint64(0)));
   balances[to] = newBalanceTo;
   // Allow this new balance for both the contract and the owner.
-  TFHE.allowThis(newBalanceTo);
-  TFHE.allow(newBalanceTo, to);
+  FHE.allowThis(newBalanceTo);
+  FHE.allow(newBalanceTo, to);
 
-  euint64 newBalanceFrom = TFHE.sub(balances[from], TFHE.select(canTransfer, amount, TFHE.asEuint64(0)));
+  euint64 newBalanceFrom = FHE.sub(balances[from], FHE.select(canTransfer, amount, FHE.asEuint64(0)));
   balances[from] = newBalanceFrom;
   // Allow this new balance for both the contract and the owner.
-  TFHE.allowThis(newBalanceFrom);
-  TFHE.allow(newBalanceFrom, from);
+  FHE.allowThis(newBalanceFrom);
+  FHE.allow(newBalanceFrom, from);
 }
 ```
 

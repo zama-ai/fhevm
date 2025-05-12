@@ -8,7 +8,7 @@ This system relies on three key types:&#x20;
 - The **private key:** used for decryption and securely managed by the Key Management System or KMS
 - The **evaluation key:** enabling encrypted computations performed by the coprocessor.
 
-The fhevm leverages Zama's TFHE library, integrating seamlessly with blockchain environments to address transparency, composability, and scalability challenges. Its hybrid architecture combines:
+The fhevm leverages Zama's FHE library, integrating seamlessly with blockchain environments to address transparency, composability, and scalability challenges. Its hybrid architecture combines:
 
 - **On-chain smart contracts** for encrypted state management and access controls.
 - **Off-chain coprocessors** for resource-intensive FHE computations.

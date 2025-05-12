@@ -28,7 +28,7 @@ Re-encryption is facilitated by the **Gateway** and the **Key Management System 
 To retrieve the ciphertext that needs to be re-encrypted, you can implement a view function in your smart contract. Below is an example implementation:
 
 ```solidity
-import "fhevm/lib/TFHE.sol";
+import "fhevm/lib/FHE.sol";
 
 contract ConfidentialERC20 {
   ...

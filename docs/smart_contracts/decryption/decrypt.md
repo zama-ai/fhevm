@@ -24,7 +24,7 @@ Here’s an example of how to request decryption in a contract:
 ```solidity
 pragma solidity ^0.8.24;
 
-import "fhevm/lib/TFHE.sol";
+import "fhevm/lib/FHE.sol";
 import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 import "fhevm/gateway/GatewayCaller.sol";
@@ -34,8 +34,8 @@ contract TestAsyncDecrypt is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, G
   bool public yBool;
 
   constructor() {
-      xBool = TFHE.asEbool(true);
-      TFHE.allowThis(xBool);
+      xBool = FHE.asEbool(true);
+      FHE.allowThis(xBool);
   }
 
   function requestBool() public {
