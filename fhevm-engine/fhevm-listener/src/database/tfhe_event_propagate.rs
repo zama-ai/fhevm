@@ -25,10 +25,6 @@ pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
 
-const MAX_RETRIES_FOR_NOTIFY: usize = 5;
-pub const EVENT_PBS_COMPUTATIONS: &str = "event_pbs_computations";
-pub const EVENT_ALLOWED_HANDLE: &str = "event_allowed_handle";
-
 pub fn retry_on_sqlx_error(err: &SqlxError) -> bool {
     match err {
         SqlxError::Io(_)
@@ -347,32 +343,6 @@ impl Database {
         }
     }
 
-    /// Makes attempts to notify a specified DB channel
-    pub async fn notify_database(&mut self, channel: &str) {
-        let query = || sqlx::query!("SELECT pg_notify($1, '')", channel);
-        for i in (0..=MAX_RETRIES_FOR_NOTIFY).rev() {
-            match query().execute(&self.pool).await {
-                Ok(_) => return,
-                Err(err) if retry_on_sqlx_error(&err) => {
-                    eprintln!(
-                        "\tDatabase I/O error: {}, will retry indefinitely",
-                        err
-                    );
-                    self.reconnect().await;
-                }
-                Err(sqlx_err) => {
-                    if i > 0 {
-                        eprintln!(
-                            "\tDatabase logic error: {}, will retry a few time ({i}) just in case",
-                            sqlx_err
-                        );
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                    }
-                }
-            }
-        }
-    }
-
     /// Handles all types of ACL events
     pub async fn handle_acl_event(
         &mut self,
@@ -487,8 +457,6 @@ impl Database {
             }
         }
 
-        self.notify_database(EVENT_PBS_COMPUTATIONS).await;
-
         Ok(())
     }
 
@@ -527,8 +495,6 @@ impl Database {
                 }
             }
         }
-
-        self.notify_database(EVENT_ALLOWED_HANDLE).await;
 
         Ok(())
     }
