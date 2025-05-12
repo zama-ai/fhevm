@@ -25,28 +25,28 @@ interface IDecryption {
 
     /**
      * @notice Emitted when an public decryption request is made.
-     * @param publicDecryptionId The public decryption request's unique ID.
+     * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      */
-    event PublicDecryptionRequest(uint256 indexed publicDecryptionId, SnsCiphertextMaterial[] snsCtMaterials);
+    event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials);
 
     /**
      * @notice Emitted when an public decryption response is made.
-     * @param publicDecryptionId The public decryption request's unique ID associated with the response.
+     * @param decryptionId The decryption request ID associated with the response.
      * @param decryptedResult The decrypted result.
      * @param signatures The signatures of all the KMS connectors that responded.
      */
-    event PublicDecryptionResponse(uint256 indexed publicDecryptionId, bytes decryptedResult, bytes[] signatures);
+    event PublicDecryptionResponse(uint256 indexed decryptionId, bytes decryptedResult, bytes[] signatures);
 
     /**
      * @notice Emitted when a user decryption request is made.
-     * @param userDecryptionId The user decryption request's unique ID.
+     * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      * @param userAddress The user's address.
      * @param publicKey The user's public key for used reencryption.
      */
     event UserDecryptionRequest(
-        uint256 indexed userDecryptionId,
+        uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
         address userAddress,
         bytes publicKey
@@ -54,11 +54,11 @@ interface IDecryption {
 
     /**
      * @notice Emitted when an public decryption response is made.
-     * @param userDecryptionId The user decryption request's unique ID associated with the response.
+     * @param decryptionId The decryption request ID associated with the response.
      * @param userDecryptedShares The list of decryption shares reencrypted with the user's public key.
      * @param signatures The signatures of all the KMS connectors that responded.
      */
-    event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] userDecryptedShares, bytes[] signatures);
+    event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecryptedShares, bytes[] signatures);
 
     /// @notice Error indicating that the input list of handles is empty.
     error EmptyCtHandles();
@@ -76,10 +76,10 @@ interface IDecryption {
 
     /**
      * @notice Error indicating that a KMS node has already signed the decryption response.
-     * @param decryptionRequestId The ID of the public or user decryption request.
+     * @param decryptionId The decryption request ID.
      * @param signer The signer address of the KMS node that has already signed.
      */
-    error KmsNodeAlreadySigned(uint256 decryptionRequestId, address signer);
+    error KmsNodeAlreadySigned(uint256 decryptionId, address signer);
 
     /**
      * @notice Error indicating that the given signature for the user decryption request is invalid.
@@ -153,16 +153,10 @@ interface IDecryption {
     );
 
     /**
-     * @notice Error indicating that the public decryption is not done.
-     * @param publicDecryptionId The public decryption request's unique ID.
+     * @notice Error indicating that the (public, user, delegated user) decryption is not done.
+     * @param decryptionId The decryption request ID.
      */
-    error PublicDecryptionNotDone(uint256 publicDecryptionId);
-
-    /**
-     * @notice Error indicating that the user decryption is not done.
-     * @param userDecryptionId The user decryption request's unique ID.
-     */
-    error UserDecryptionNotDone(uint256 userDecryptionId);
+    error DecryptionNotDone(uint256 decryptionId);
 
     /**
      * @notice Requests a public decryption.
@@ -172,12 +166,12 @@ interface IDecryption {
 
     /**
      * @notice Responds to a public decryption request.
-     * @param publicDecryptionId The public decryption request's unique ID associated with the response.
+     * @param decryptionId The decryption request ID associated with the response.
      * @param decryptedResult The decrypted result.
      * @param signature The signature of the KMS connector that responded.
      */
     function publicDecryptionResponse(
-        uint256 publicDecryptionId,
+        uint256 decryptionId,
         bytes calldata decryptedResult,
         bytes calldata signature
     ) external;
@@ -224,12 +218,12 @@ interface IDecryption {
 
     /**
      * @notice Responds to a user decryption request.
-     * @param userDecryptionId The user decryption request's unique ID associated with the response.
+     * @param decryptionId The decryption request ID associated with the response.
      * @param userDecryptedShare The partial decryption share reencrypted with the user's public key.
      * @param signature The signature of the KMS connector that responded.
      */
     function userDecryptionResponse(
-        uint256 userDecryptionId,
+        uint256 decryptionId,
         bytes calldata userDecryptedShare,
         bytes calldata signature
     ) external;
@@ -265,16 +259,10 @@ interface IDecryption {
     ) external view;
 
     /**
-     * @notice Checks if a public decryption is done.
-     * @param publicDecryptionId The public decryption request's unique ID.
+     * @notice Checks if a (public, user, delegated user) decryption is done.
+     * @param decryptionId The decryption request ID.
      */
-    function checkPublicDecryptionDone(uint256 publicDecryptionId) external view;
-
-    /**
-     * @notice Checks if a user decryption is done.
-     * @param userDecryptionId The user decryption request's unique ID.
-     */
-    function checkUserDecryptionDone(uint256 userDecryptionId) external view;
+    function checkDecryptionDone(uint256 decryptionId) external view;
 
     /**
      * @notice Returns the versions of the Decryption contract in SemVer format.
