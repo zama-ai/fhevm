@@ -490,7 +490,7 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
 
     // Create transaction manager
     println!("Setting up manager with configured private key...");
-    let manager = TransactionManager::new(&gateway_settings.http_url, Arc::new(gateway_signer))
+    let manager = TransactionManager::new(&gateway_settings.ws_url, Arc::new(gateway_signer))
         .await
         .expect("Failed to create transaction manager");
 

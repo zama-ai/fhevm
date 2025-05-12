@@ -6,7 +6,7 @@ use alloy::{
     primitives::{Address, Bytes, PrimitiveSignature, B256, U256},
     providers::{
         fillers::{CachedNonceManager, ChainIdFiller, GasFiller, NonceFiller, WalletFiller},
-        Provider, ProviderBuilder,
+        Provider, ProviderBuilder, WsConnect,
     },
     rpc::types::TransactionRequest,
     serde::WithOtherFields,
@@ -14,6 +14,7 @@ use alloy::{
 };
 
 use eyre::Result;
+use futures::StreamExt;
 use reqwest::Url;
 use std::fmt;
 use std::{sync::Arc, time::Duration};
@@ -163,14 +164,15 @@ impl fmt::Debug for TransactionManager {
 
 impl TransactionManager {
     pub async fn new(
-        rpc_url: &str,
+        ws_rpc_url: &str,
         // private_key: &str,
         signer: Arc<dyn SignerCombined>,
     ) -> Result<Self, TransactionError> {
-        let url = Url::parse(rpc_url)
-            .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {}", e)))?;
-
         let wallet = EthereumWallet::from(signer.clone());
+
+        let ws_rpc_url = Url::parse(ws_rpc_url)
+            .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {}", e)))?;
+        let ws = WsConnect::new(ws_rpc_url);
 
         let provider = ProviderBuilder::new()
             .network::<AnyNetwork>()
@@ -178,7 +180,9 @@ impl TransactionManager {
             .filler(GasFiller)
             .filler(ChainIdFiller::new(signer.chain_id()))
             .filler(WalletFiller::new(wallet))
-            .on_http(url);
+            .on_ws(ws)
+            .await
+            .map_err(TransactionError::TransportError)?;
 
         let provider = Arc::new(provider);
 
@@ -449,67 +453,97 @@ impl TransactionManager {
     ) -> Result<AnyTransactionReceipt, TransactionError> {
         let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(60));
         let start = Instant::now();
-        let mut interval = tokio::time::interval(Duration::from_millis(500));
+        let reconnect_delay = Duration::from_millis(1000);
+
+        let block_subscription = self.provider.subscribe_blocks().await.map_err(|e| {
+            TransactionError::NetworkError(format!("Failed to subscribe for new blocks: {}", e))
+        })?;
+        let mut block_subscription_stream = block_subscription.into_stream();
 
         loop {
-            // Check if we've exceeded timeout
             if start.elapsed() > timeout {
                 return Err(TransactionError::TransactionTimeout(timeout.as_secs()));
             }
 
-            // Try to get receipt
-            match self.provider.get_transaction_receipt(tx_hash).await {
-                Ok(Some(receipt)) => {
-                    // If confirmation checks required
-                    if let Some(required_confirmations) = config.confirmations {
-                        if required_confirmations <= 1 {
+            while (block_subscription_stream.next().await).is_some() {
+                // Check if we've exceeded timeout
+                if start.elapsed() > timeout {
+                    return Err(TransactionError::TransactionTimeout(timeout.as_secs()));
+                }
+
+                // Try to get receipt
+                match self.provider.get_transaction_receipt(tx_hash).await {
+                    Ok(Some(receipt)) => {
+                        // If confirmation checks required
+                        if let Some(required_confirmations) = config.confirmations {
+                            if required_confirmations <= 1 {
+                                return Ok(receipt);
+                            }
+
+                            // Check block confirmations
+                            if let Ok(current_block) = self.provider.get_block_number().await {
+                                if let Some(receipt_block) = receipt.block_number {
+                                    let confirmations =
+                                        current_block.saturating_sub(receipt_block) + 1;
+
+                                    if confirmations >= required_confirmations {
+                                        return Ok(receipt);
+                                    }
+
+                                    info!(
+                                        ?tx_hash,
+                                        ?receipt_block,
+                                        ?current_block,
+                                        ?confirmations,
+                                        required = ?required_confirmations,
+                                        "Waiting for more confirmations"
+                                    );
+                                }
+                            }
+                        } else {
+                            // No confirmations required
                             return Ok(receipt);
                         }
-
-                        // Check block confirmations
-                        if let Ok(current_block) = self.provider.get_block_number().await {
-                            if let Some(receipt_block) = receipt.block_number {
-                                let confirmations = current_block.saturating_sub(receipt_block) + 1;
-
-                                if confirmations >= required_confirmations {
-                                    return Ok(receipt);
-                                }
-
-                                info!(
-                                    ?tx_hash,
-                                    ?receipt_block,
-                                    ?current_block,
-                                    ?confirmations,
-                                    required = ?required_confirmations,
-                                    "Waiting for more confirmations"
-                                );
-                            }
-                        }
-                    } else {
-                        // No confirmations required
-                        return Ok(receipt);
                     }
-                }
-                Ok(None) => {
-                    // No receipt yet
-                    debug!(
-                        ?tx_hash,
-                        elapsed = ?start.elapsed().as_secs(),
-                        "Receipt not available yet, waiting before retry"
-                    );
-                }
-                Err(e) => {
-                    // Error retrieving receipt
-                    warn!(
-                        ?tx_hash,
-                        error = %e,
-                        "Error retrieving receipt, will retry"
-                    );
+                    Ok(None) => {
+                        // No receipt yet
+                        debug!(
+                            ?tx_hash,
+                            elapsed = ?start.elapsed().as_secs(),
+                            "Receipt not available yet, waiting before retry"
+                        );
+                    }
+                    Err(e) => {
+                        // Error retrieving receipt
+                        warn!(
+                            ?tx_hash,
+                            error = %e,
+                            "Error retrieving receipt, will retry"
+                        );
+                    }
                 }
             }
 
-            // Wait with interval before next attempt
-            interval.tick().await;
+            if start.elapsed() > timeout {
+                // If the stream ends unexpectedly, return an error
+                return Err(TransactionError::NetworkError(
+                    "WebSocket stream ended unexpectedly".to_string(),
+                ));
+            } else {
+                // tokio sleep
+                tokio::time::sleep(reconnect_delay).await;
+                match self.provider.subscribe_blocks().await {
+                    Ok(block_subscription) => {
+                        block_subscription_stream = block_subscription.into_stream();
+                    }
+                    Err(e) => {
+                        return Err(TransactionError::NetworkError(format!(
+                            "Failed to subscribe for new blocks: {}",
+                            e
+                        )));
+                    }
+                }
+            }
         }
     }
 
@@ -559,7 +593,7 @@ mod tests {
         let mut signer: PrivateKeySigner = private_key.parse().unwrap();
         signer.set_chain_id(Some(123456));
 
-        let manager = TransactionManager::new("http://localhost:8756", Arc::new(signer))
+        let manager = TransactionManager::new("ws://localhost:8756", Arc::new(signer))
             .await
             .expect("Failed to create transaction manager");
 

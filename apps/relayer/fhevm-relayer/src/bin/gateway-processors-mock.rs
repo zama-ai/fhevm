@@ -55,7 +55,7 @@ async fn main() -> eyre::Result<()> {
 
     // Prepare tx service for gateway
     let tx_service_gateway =
-        TransactionService::new(&gateway_settings.http_url, Arc::new(signer_gateway))
+        TransactionService::new(&gateway_settings.ws_url, Arc::new(signer_gateway))
             .await
             .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 

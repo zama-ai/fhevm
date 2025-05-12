@@ -525,7 +525,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
 
     // Create transaction manager
     println!("Setting up manager with configured private key...");
-    let manager = TransactionManager::new(&gateway_settings.http_url, Arc::new(gateway_signer))
+    let manager = TransactionManager::new(&gateway_settings.ws_url, Arc::new(gateway_signer))
         .await
         .expect("Failed to create transaction manager");
 
@@ -639,7 +639,7 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
     gateway_signer.set_chain_id(Some(gateway_settings.chain_id));
 
     println!("Setting up manager with configured private key...");
-    let manager = TransactionManager::new(&gateway_settings.http_url, Arc::new(gateway_signer))
+    let manager = TransactionManager::new(&gateway_settings.ws_url, Arc::new(gateway_signer))
         .await
         .expect("Failed to create transaction manager");
 

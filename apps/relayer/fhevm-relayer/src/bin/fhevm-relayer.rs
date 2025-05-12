@@ -89,7 +89,7 @@ async fn main() -> eyre::Result<()> {
 
     // Prepare tx service for fhevm
     let tx_service =
-        TransactionService::new(&settings.networks.fhevm.http_url, Arc::new(fhevm_signer))
+        TransactionService::new(&settings.networks.fhevm.ws_url, Arc::new(fhevm_signer))
             .await
             .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
@@ -106,7 +106,7 @@ async fn main() -> eyre::Result<()> {
 
     // Prepare tx service for gateway
     let tx_service_gateway =
-        TransactionService::new(&gateway_settings.http_url, Arc::new(gateway_signer))
+        TransactionService::new(&gateway_settings.ws_url, Arc::new(gateway_signer))
             .await
             .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
