@@ -34,7 +34,7 @@ contract FHEGasLimitTest is Test, SupportedTypesConstants {
     address internal implementation;
     address internal fhevmExecutor;
 
-    uint256 internal FHE_GAS_BLOCKLIMIT = 10_000_000;
+    uint256 internal FHE_GAS_BLOCKLIMIT = 20_000_000;
 
     function _isTypeSupported(FheType fheType, uint256 supportedTypes) internal pure returns (bool) {
         if ((1 << uint8(fheType)) & supportedTypes == 0) {

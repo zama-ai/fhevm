@@ -39,7 +39,7 @@ contract PaymentLimit {
     function aboveBlockFHEGasLimit() external {
         euint64 x = FHE.asEuint64(2);
         euint64 result;
-        for (uint256 i; i < 16; i++) {
+        for (uint256 i; i < 32; i++) {
             result = FHE.mul(result, x);
         }
     }

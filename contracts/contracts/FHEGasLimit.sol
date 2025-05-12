@@ -41,7 +41,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     address private constant fhevmExecutorAddress = fhevmExecutorAdd;
 
     /// @notice Gas block limit for FHEGas operation.
-    uint256 private constant FHE_GAS_BLOCKLIMIT = 10_000_000;
+    uint256 private constant FHE_GAS_BLOCKLIMIT = 20_000_000;
 
     /// @custom:storage-location erc7201:fhevm.storage.FHEGasLimit
     struct FHEGasLimitStorage {
