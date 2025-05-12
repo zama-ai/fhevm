@@ -7,12 +7,9 @@
 - [Quick start](getting_started/quick_start.md)
 - fhEVM
   - fhEVM-native
-    - [geth integration](getting_started/fhevm/native/geth.md)
     - [Executor](getting_started/fhevm/native/executor.md)
     - [Configuration](getting_started/fhevm/native/configuration.md)
   - fhEVM-coprocessor
-    - [Deploy initial contracts](getting_started/fhevm/coprocessor/contracts.md)
-    - [geth integration](getting_started/fhevm/coprocessor/geth.md)
     - [Coprocessor Backend](getting_started/fhevm/coprocessor/coprocessor_backend.md)
     - [Configuration](getting_started/fhevm/coprocessor/configuration.md)
 - Gateway
@@ -64,6 +61,6 @@
 
 - [Contributing](developer/contribute.md)
 - [Development roadmap](developer/roadmap.md)
-- [Release note](https://github.com/zama-ai/fhevm/releases)
-- [Feature request](https://github.com/zama-ai/fhevm/issues/new)
-- [Bug report](https://github.com/zama-ai/fhevm/issues/new)
+- [Release note](https://github.com/zama-ai/fhevm-backend/releases)
+- [Feature request](https://github.com/zama-ai/fhevm-backend/issues/new)
+- [Bug report](https://github.com/zama-ai/fhevm-backend/issues/new)
