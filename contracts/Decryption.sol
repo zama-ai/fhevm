@@ -49,7 +49,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
     /// @dev EIP712_USER_DECRYPT_RESPONSE_TYPE is, but we keep it the same for clarity.
     struct UserDecryptResponseVerification {
-        /// @notice The user's public key used for the share reencryption.
+        /// @notice The user's public key used for the reencryption.
         bytes publicKey;
         /// @notice The handles of the ciphertexts that have been decrypted.
         bytes32[] ctHandles;
@@ -144,48 +144,37 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.Decryption
     struct DecryptionStorage {
-        /// @notice Pending verified signatures for a public/user decryption.
-        mapping(uint256 decryptionId => mapping(bytes32 digest => bytes[] verifiedSignatures)) verifiedSignatures;
+        /// @notice The number of (public, user, delegated user) decryption requests, used to
+        /// @notice generate request IDs (`decryptionId`).
+        uint256 _decryptionRequestCounter;
+        /// @notice Whether a (public, user, delegated user) decryption is done
+        mapping(uint256 decryptionId => bool decryptionDone) decryptionDone;
+        // prettier-ignore
+        /// @notice Whether KMS signer has already responded to a decryption request.
+        mapping(uint256 decryptionId =>
+            mapping(address kmsSigner => bool alreadyResponded))
+                _kmsNodeAlreadySigned;
         // ----------------------------------------------------------------------------------------------
         // Public decryption state variables:
         // ----------------------------------------------------------------------------------------------
-
-        /// @notice The number of public decryptions requested, used to generate the publicDecryptionIds.
-        uint256 _publicDecryptionCounter;
-        // prettier-ignore
-        /// @notice Whether KMS signer has already responded to a public decryption request.
-        mapping(uint256 publicDecryptionId =>
-            mapping(address kmsSigner => bool alreadyResponded))
-                _alreadyPublicDecryptResponded;
         // prettier-ignore
         /// @notice Verified signatures for a public decryption.
-        mapping(uint256 publicDecryptionId =>
+        mapping(uint256 decryptionId =>
             mapping(bytes32 digest => bytes[] verifiedSignatures))
                 _verifiedPublicDecryptSignatures;
         /// @notice Handles of the ciphertexts requested for a public decryption
-        mapping(uint256 publicDecryptionId => bytes32[] ctHandles) publicCtHandles;
-        /// @notice Whether a public decryption has been done
-        mapping(uint256 publicDecryptionId => bool publicDecryptionDone) publicDecryptionDone;
+        mapping(uint256 decryptionId => bytes32[] ctHandles) publicCtHandles;
         // ----------------------------------------------------------------------------------------------
         // User decryption state variables:
         // ----------------------------------------------------------------------------------------------
-
-        /// @notice The number of user decryptions requested, used to generate the userDecryptionIds.
-        uint256 _userDecryptionCounter;
-        // prettier-ignore
-        /// @notice Whether KMS signer has already responded to a user decryption request.
-        mapping(uint256 userDecryptionId =>
-            mapping(address kmsSigner => bool alreadyResponded))
-                _alreadyUserDecryptResponded;
-        // prettier-ignore
         /// @notice Verified signatures for a user decryption.
-        mapping(uint256 userDecryptionId => bytes[] verifiedSignatures) _verifiedUserDecryptSignatures;
+        mapping(uint256 decryptionId => bytes[] verifiedSignatures) _verifiedUserDecryptSignatures;
         /// @notice The decryption payloads stored during user decryption requests.
-        mapping(uint256 userDecryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
+        mapping(uint256 decryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
         /// @notice Whether a user decryption has been done
-        mapping(uint256 userDecryptionId => bool userDecryptionDone) userDecryptionDone;
+        mapping(uint256 decryptionId => bool userDecryptionDone) userDecryptionDone;
         /// @notice The user decrypted shares received from user decryption responses.
-        mapping(uint256 userDecryptionId => bytes[] shares) userDecryptedShares;
+        mapping(uint256 decryptionId => bytes[] shares) userDecryptedShares;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -230,20 +219,26 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
-        $._publicDecryptionCounter++;
-        uint256 publicDecryptionId = $._publicDecryptionCounter;
+
+        // Generate a new request ID
+        // Decryption request IDs are unique across all kinds of decryption request (public, user,
+        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
+        // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
+        // how IDs need to be handled off-chain in case of re-org.
+        $._decryptionRequestCounter++;
+        uint256 decryptionId = $._decryptionRequestCounter;
 
         /// @dev The handles are used during response calls for the EIP712 signature validation.
-        $.publicCtHandles[publicDecryptionId] = ctHandles;
+        $.publicCtHandles[decryptionId] = ctHandles;
 
-        emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials);
+        emit PublicDecryptionRequest(decryptionId, snsCtMaterials);
     }
 
     /// @dev See {IDecryption-publicDecryptionResponse}.
     /// @dev We restrict this call to KMS transaction senders because, in case of reorgs, we need to
     /// @dev prevent anyone else from copying the signature and sending it to trigger a consensus.
     function publicDecryptionResponse(
-        uint256 publicDecryptionId,
+        uint256 decryptionId,
         bytes calldata decryptedResult,
         bytes calldata signature
     ) external virtual onlyKmsTxSender {
@@ -251,31 +246,31 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
 
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
         PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
-            $.publicCtHandles[publicDecryptionId],
+            $.publicCtHandles[decryptionId],
             decryptedResult
         );
 
         /// @dev Compute the digest of the PublicDecryptVerification structure.
         bytes32 digest = _hashPublicDecryptVerification(publicDecryptVerification);
 
-        /// @dev Recover the signer address from the signature and validate that is a KMS node that
-        /// @dev has not already signed.
-        _validatePublicDecryptEIP712Signature(publicDecryptionId, digest, signature);
+        /// @dev Recover the signer address from the signature and validate that corresponds to a
+        /// @dev KMS node that has not already signed.
+        _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
 
         /// @dev Store the signature for the public decryption response.
         /// @dev This list is then used to check the consensus. Important: the mapping considers
         /// @dev the digest (contrary to the user decryption case) as the decrypted result is expected
         /// @dev to be the same for all KMS nodes. This allows to filter out results from malicious
         /// @dev KMS nodes.
-        bytes[] storage verifiedSignatures = $._verifiedPublicDecryptSignatures[publicDecryptionId][digest];
+        bytes[] storage verifiedSignatures = $._verifiedPublicDecryptSignatures[decryptionId][digest];
         verifiedSignatures.push(signature);
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!$.publicDecryptionDone[publicDecryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
-            $.publicDecryptionDone[publicDecryptionId] = true;
+        if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
+            $.decryptionDone[decryptionId] = true;
 
-            emit PublicDecryptionResponse(publicDecryptionId, decryptedResult, verifiedSignatures);
+            emit PublicDecryptionResponse(decryptionId, decryptedResult, verifiedSignatures);
         }
     }
 
@@ -334,13 +329,19 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
-        $._userDecryptionCounter++;
-        uint256 userDecryptionId = $._userDecryptionCounter;
+
+        // Generate a new request ID
+        // Decryption request IDs are unique across all kinds of decryption request (public, user,
+        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
+        // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
+        // how IDs need to be handled off-chain in case of re-org.
+        $._decryptionRequestCounter++;
+        uint256 decryptionId = $._decryptionRequestCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey);
+        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey);
     }
 
     /// @dev See {IDecryption-userDecryptionWithDelegationRequest}.
@@ -408,25 +409,30 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
-        $._userDecryptionCounter++;
-        uint256 userDecryptionId = $._userDecryptionCounter;
+        // Generate a new request ID
+        // Decryption request IDs are unique across all kinds of decryption request (public, user,
+        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
+        // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
+        // how IDs need to be handled off-chain in case of re-org.
+        $._decryptionRequestCounter++;
+        uint256 decryptionId = $._decryptionRequestCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, delegationAccounts.delegatedAddress, publicKey);
+        emit UserDecryptionRequest(decryptionId, snsCtMaterials, delegationAccounts.delegatedAddress, publicKey);
     }
 
     /// @dev See {IDecryption-userDecryptionResponse}.
     /// @dev We restrict this call to KMS transaction senders because, in case of reorgs, we need to
     /// @dev prevent anyone else from copying the signature and sending it to trigger a consensus.
     function userDecryptionResponse(
-        uint256 userDecryptionId,
+        uint256 decryptionId,
         bytes calldata userDecryptedShare,
         bytes calldata signature
     ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
-        UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[userDecryptionId];
+        UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
 
         /// @dev Initialize the UserDecryptResponseVerification structure for the signature validation.
         UserDecryptResponseVerification memory userDecryptResponseVerification = UserDecryptResponseVerification(
@@ -438,26 +444,26 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         /// @dev Compute the digest of the UserDecryptResponseVerification structure.
         bytes32 digest = _hashUserDecryptResponseVerification(userDecryptResponseVerification);
 
-        /// @dev Recover the signer address from the signature and validate that is a KMS node that
-        /// @dev has not already signed.
-        _validateUserDecryptResponseEIP712Signature(userDecryptionId, digest, signature);
+        /// @dev Recover the signer address from the signature and validate that it corresponds to a
+        /// @dev KMS node that has not already signed.
+        _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
 
         /// @dev Store the signature for the user decryption response.
         /// @dev This list is then used to check the consensus. Important: the mapping should not
         /// @dev consider the digest (contrary to the public decryption case) as shares are expected
         /// @dev to be different for each KMS node.
-        bytes[] storage verifiedSignatures = $._verifiedUserDecryptSignatures[userDecryptionId];
+        bytes[] storage verifiedSignatures = $._verifiedUserDecryptSignatures[decryptionId];
         verifiedSignatures.push(signature);
 
         /// @dev Store the user decrypted share for the user decryption response.
-        $.userDecryptedShares[userDecryptionId].push(userDecryptedShare);
+        $.userDecryptedShares[decryptionId].push(userDecryptedShare);
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!$.userDecryptionDone[userDecryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
-            $.userDecryptionDone[userDecryptionId] = true;
+        if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
+            $.decryptionDone[decryptionId] = true;
 
-            emit UserDecryptionResponse(userDecryptionId, $.userDecryptedShares[userDecryptionId], verifiedSignatures);
+            emit UserDecryptionResponse(decryptionId, $.userDecryptedShares[decryptionId], verifiedSignatures);
         }
     }
 
@@ -511,19 +517,11 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         }
     }
 
-    /// @dev See {IDecryption-checkPublicDecryptionDone}.
-    function checkPublicDecryptionDone(uint256 publicDecryptionId) external view virtual {
+    /// @dev See {IDecryption-checkDecryptionDone}.
+    function checkDecryptionDone(uint256 decryptionId) external view virtual {
         DecryptionStorage storage $ = _getDecryptionStorage();
-        if (!$.publicDecryptionDone[publicDecryptionId]) {
-            revert PublicDecryptionNotDone(publicDecryptionId);
-        }
-    }
-
-    /// @dev See {IDecryption-checkUserDecryptionDone}.
-    function checkUserDecryptionDone(uint256 userDecryptionId) external view virtual {
-        DecryptionStorage storage $ = _getDecryptionStorage();
-        if (!$.userDecryptionDone[userDecryptionId]) {
-            revert UserDecryptionNotDone(userDecryptionId);
+        if (!$.decryptionDone[decryptionId]) {
+            revert DecryptionNotDone(decryptionId);
         }
     }
 
@@ -543,35 +541,12 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
             );
     }
 
-    /// @notice Validates the EIP712 signature for a given public decryption.
-    /// @param publicDecryptionId The ID of the public decryption request.
-    /// @param digest The hash of the PublicDecryptVerification structure.
-    /// @param signature The signature to be validated.
-    function _validatePublicDecryptEIP712Signature(
-        uint256 publicDecryptionId,
-        bytes32 digest,
-        bytes calldata signature
-    ) internal virtual {
-        DecryptionStorage storage $ = _getDecryptionStorage();
-        address signer = ECDSA.recover(digest, signature);
-
-        /// @dev Check that the signer is a KMS signer
-        GATEWAY_CONFIG.checkIsKmsSigner(signer);
-
-        /// @dev Check that the signer has not already responded to the public decryption request.
-        if ($._alreadyPublicDecryptResponded[publicDecryptionId][signer]) {
-            revert KmsNodeAlreadySigned(publicDecryptionId, signer);
-        }
-
-        $._alreadyPublicDecryptResponded[publicDecryptionId][signer] = true;
-    }
-
-    /// @notice Validates the EIP712 signature for a given user decryption response.
-    /// @param userDecryptionId The ID of the user decryption request.
-    /// @param digest The hash of the UserDecryptResponseVerification structure.
-    /// @param signature The signature to be validated.
-    function _validateUserDecryptResponseEIP712Signature(
-        uint256 userDecryptionId,
+    /// @notice Validates the EIP712 signature for a given decryption response.
+    /// @param decryptionId The decryption request ID.
+    /// @param digest The hashed EIP712 struct.
+    /// @param signature The signature to validate.
+    function _validateDecryptionResponseEIP712Signature(
+        uint256 decryptionId,
         bytes32 digest,
         bytes calldata signature
     ) internal virtual {
@@ -582,11 +557,11 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         GATEWAY_CONFIG.checkIsKmsSigner(signer);
 
         /// @dev Check that the signer has not already responded to the user decryption request.
-        if ($._alreadyUserDecryptResponded[userDecryptionId][signer]) {
-            revert KmsNodeAlreadySigned(userDecryptionId, signer);
+        if ($._kmsNodeAlreadySigned[decryptionId][signer]) {
+            revert KmsNodeAlreadySigned(decryptionId, signer);
         }
 
-        $._alreadyUserDecryptResponded[userDecryptionId][signer] = true;
+        $._kmsNodeAlreadySigned[decryptionId][signer] = true;
     }
 
     /**
