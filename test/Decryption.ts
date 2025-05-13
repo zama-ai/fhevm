@@ -690,13 +690,9 @@ describe("Decryption", function () {
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
-      // Create dummy input data for the user decryption request
-      const emptyCtHandleContractPairs: CtHandleContractPairStruct[] = [];
-
-      // Check that the request fails because the list of ctHandleContractPairs is empty
       await expect(
         decryption.userDecryptionRequest(
-          emptyCtHandleContractPairs,
+          [],
           requestValidity,
           hostChainId,
           contractAddresses,
@@ -707,11 +703,24 @@ describe("Decryption", function () {
       ).to.be.revertedWithCustomError(decryption, "EmptyCtHandleContractPairs");
     });
 
+    it("Should revert because contract addresses is empty", async function () {
+      await expect(
+        decryption.userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          hostChainId,
+          [],
+          user.address,
+          publicKey,
+          userSignature,
+        ),
+      ).to.be.revertedWithCustomError(decryption, "EmptyContractAddresses");
+    });
+
     it("Should revert because contract addresses exceeds maximum length allowed", async function () {
       // Create a list of contract addresses exceeding the maximum length allowed
       const largeContractAddresses = createRandomAddresses(15);
 
-      // Check that the request fails because the given contract addresses exceeds the maximum length allowed
       await expect(
         decryption.userDecryptionRequest(
           ctHandleContractPairs,
@@ -1428,13 +1437,9 @@ describe("Decryption", function () {
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
-      // Create dummy input data for the user decryption request
-      const emptyCtHandleContractPairs: CtHandleContractPairStruct[] = [];
-
-      // Check that the request fails because the list of ctHandleContractPairs is empty
       await expect(
         decryption.delegatedUserDecryptionRequest(
-          emptyCtHandleContractPairs,
+          [],
           requestValidity,
           delegationAccounts,
           hostChainId,
@@ -1445,11 +1450,24 @@ describe("Decryption", function () {
       ).to.be.revertedWithCustomError(decryption, "EmptyCtHandleContractPairs");
     });
 
+    it("Should revert because contract addresses is empty", async function () {
+      await expect(
+        decryption.delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          delegationAccounts,
+          hostChainId,
+          [],
+          publicKey,
+          delegatedSignature,
+        ),
+      ).to.be.revertedWithCustomError(decryption, "EmptyContractAddresses");
+    });
+
     it("Should revert because contract addresses exceeds maximum length allowed", async function () {
       // Create a list of contract addresses exceeding the maximum length allowed
       const largeContractAddresses = createRandomAddresses(15);
 
-      // Check that the request fails because the given contract addresses exceeds the maximum length allowed
       await expect(
         decryption.delegatedUserDecryptionRequest(
           ctHandleContractPairs,

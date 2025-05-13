@@ -88,6 +88,11 @@ interface IDecryption {
     error InvalidUserSignature(bytes signature);
 
     /**
+     * @notice Error indicating that the list of contract addresses is empty.
+     */
+    error EmptyContractAddresses();
+
+    /**
      * @notice Error indicating that the number of contract addresses exceeds the maximum allowed.
      * @param maxLength The maximum number of contract addresses allowed.
      * @param actualLength The actual number of contract addresses provided.
