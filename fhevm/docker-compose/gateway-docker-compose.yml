@@ -38,7 +38,7 @@ services:
     env_file:
       - ../env/staging/.env.gateway.local
     command:
-      - npx hardhat task:addNetworksToGatewayConfig
+      - npx hardhat task:addHostChainsToGatewayConfig
     depends_on:
       gateway-node:
         condition: service_started
