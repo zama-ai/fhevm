@@ -83,13 +83,13 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IMultichainAcl-allowPublicDecrypt}.
     function allowPublicDecrypt(
         bytes32 ctHandle
-    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredNetwork(ctHandle) {
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         /**
          * @dev Check if the coprocessor has already allowed the ciphertext handle for public decryption.
          * A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
-         * the same ctHandle for different chainIds, hence the chainId is not included in the mapping.
+         * the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
          */
         if ($._allowPublicDecryptCoprocessors[ctHandle][msg.sender]) {
             revert CoprocessorAlreadyAllowedPublicDecrypt(ctHandle, msg.sender);
@@ -110,13 +110,13 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
     function allowAccount(
         bytes32 ctHandle,
         address accountAddress
-    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredNetwork(ctHandle) {
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         /**
          * @dev Check if the coprocessor has already allowed the account to use the ciphertext handle.
          * A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
-         * the same ctHandle for different chainIds, hence the chainId is not included in the mapping.
+         * the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
          */
         if ($._allowAccountCoprocessors[ctHandle][accountAddress][msg.sender]) {
             revert CoprocessorAlreadyAllowedAccount(ctHandle, accountAddress, msg.sender);

@@ -29,17 +29,17 @@ struct Coprocessor {
     string s3BucketUrl;
 }
 
-/// @notice Struct that represents a network
-struct Network {
-    /// @notice Chain ID of the network (unique identifier)
+/// @notice Struct that represents a host chain
+struct HostChain {
+    /// @notice Chain ID of the host chain (unique identifier)
     uint256 chainId;
     /// @notice Address where the Fhevm library contract is deployed
     address fhevmExecutorAddress;
     /// @notice Address where the ACL contract is deployed
     address aclAddress;
-    /// @notice Name of the network
+    /// @notice Name of the host chain
     string name;
-    /// @notice Website of the network
+    /// @notice Website of the host chain
     string website;
 }
 

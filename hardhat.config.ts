@@ -9,7 +9,7 @@ import { HardhatUserConfig, task } from "hardhat/config";
 import { resolve } from "path";
 
 import "./tasks/accounts";
-import "./tasks/addNetworks";
+import "./tasks/addHostChains";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
@@ -54,7 +54,7 @@ task("test", async (_taskArgs, hre, runSuper) => {
   await hre.run("task:deployAllGatewayContracts");
   // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory
   // for local testing
-  await hre.run("task:addNetworksToGatewayConfig", { useInternalGatewayConfigAddress: true });
+  await hre.run("task:addHostChainsToGatewayConfig", { useInternalGatewayConfigAddress: true });
   await runSuper();
 });
 

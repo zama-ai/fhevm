@@ -10,11 +10,11 @@ import "../shared/Structs.sol";
  * @dev The GatewayConfig contract contains:
  * - the list of KMS nodes used exclusively by this Fhevm Gateway
  * - the list of coprocessors used exclusively by this Fhevm Gateway
- * - the list of networks using this Fhevm Gateway
+ * - the list of host chains using this Fhevm Gateway
  *
  * The GatewayConfig contract has an owner and a pauser.
  * The owner can call some restricted functions, such as adding or removing KMS nodes, coprocessors
- * and networks.
+ * and host chains.
  * The pauser can pause all contracts.
  * Some view functions are accessible to everyone (ex: getting the number of KMS nodes).
  */
@@ -48,10 +48,10 @@ interface IGatewayConfig {
     event UpdateKmsThreshold(uint256 newKmsThreshold);
 
     /**
-     * @notice Emitted when a new network has been registered.
-     * @param network The new network metadata.
+     * @notice Emitted when a new host chain has been registered.
+     * @param hostChain The new host chain metadata.
      */
-    event AddNetwork(Network network);
+    event AddHostChain(HostChain hostChain);
 
     /// @notice Error emitted when the pauser address is the null address.
     error InvalidNullPauser();
@@ -101,23 +101,23 @@ interface IGatewayConfig {
     error NotCoprocessorSigner(address signerAddress);
 
     /**
-     * @notice Error emitted when a network is not registered.
-     * @param chainId The chain ID of the network.
+     * @notice Error emitted when a host chain is not registered.
+     * @param chainId The host chain's chain ID.
      */
-    error NetworkNotRegistered(uint256 chainId);
+    error HostChainNotRegistered(uint256 chainId);
 
     /**
-     * @notice Error emitted when trying to add a network that is already registered.
-     * @param chainId The ID of the network that is already registered.
+     * @notice Error emitted when trying to add a host chain that is already registered.
+     * @param chainId The host chain's chain ID that is already registered.
      */
-    error NetworkAlreadyRegistered(uint256 chainId);
+    error HostChainAlreadyRegistered(uint256 chainId);
 
     /// @notice Error indicating that a null chain ID is not allowed.
     error InvalidNullChainId();
 
     /**
      * @notice Error indicating that a chain ID is not represented by a uint64.
-     * @param chainId The ID of the network that is not a valid uint64.
+     * @param chainId The ID of the host chain that is not a valid uint64.
      */
     error ChainIdNotUint64(uint256 chainId);
 
@@ -128,11 +128,11 @@ interface IGatewayConfig {
     function updatePauser(address newPauser) external;
 
     /**
-     * @notice Add a new network metadata to the GatewayConfig contract.
+     * @notice Add a new host chain metadata to the GatewayConfig contract.
      * @dev The associated chain ID must be non-zero and representable by a uint64.
-     * @param network The new network metadata to include.
+     * @param hostChain The new host chain metadata to include.
      */
-    function addNetwork(Network calldata network) external;
+    function addHostChain(HostChain calldata hostChain) external;
 
     /**
      * @notice Update the KMS threshold.
@@ -172,10 +172,10 @@ interface IGatewayConfig {
     function checkIsCoprocessorSigner(address signerAddress) external view;
 
     /**
-     * @notice Check if a chain ID corresponds to a registered network.
+     * @notice Check if a chain ID corresponds to a registered host chain.
      * @param chainId The chain ID to check.
      */
-    function checkNetworkIsRegistered(uint256 chainId) external view;
+    function checkHostChainIsRegistered(uint256 chainId) external view;
 
     /**
      * @notice Get the protocol's metadata.
@@ -244,16 +244,16 @@ interface IGatewayConfig {
     function getCoprocessorSigners() external view returns (address[] memory);
 
     /**
-     * @notice Get the metadata of the network with the given index.
-     * @return The network's metadata.
+     * @notice Get the metadata of the host chain with the given index.
+     * @return The host chain's metadata.
      */
-    function getNetwork(uint256 index) external view returns (Network memory);
+    function getHostChain(uint256 index) external view returns (HostChain memory);
 
     /**
-     * @notice Get the metadata of all the registered networks.
-     * @return The networks' metadata.
+     * @notice Get the metadata of all the registered host chains.
+     * @return The host chains' metadata.
      */
-    function getNetworks() external view returns (Network[] memory);
+    function getHostChains() external view returns (HostChain[] memory);
 
     /**
      * @notice Returns the versions of the GatewayConfig contract in SemVer format.

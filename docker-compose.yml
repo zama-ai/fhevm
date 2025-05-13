@@ -40,8 +40,8 @@ services:
       anvil-node:
         condition: service_started
 
-  add-host-networks:
-    container_name: add-host-networks
+  add-host-chains:
+    container_name: add-host-chains
     build:
       context: .
       dockerfile: Dockerfile
@@ -52,7 +52,7 @@ services:
       - CHAIN_ID_GATEWAY=54321
       - RPC_URL=http://anvil-node:8546
     command:
-      - npx hardhat task:addNetworksToGatewayConfig
+      - npx hardhat task:addHostChainsToGatewayConfig
     depends_on:
       anvil-node:
         condition: service_started

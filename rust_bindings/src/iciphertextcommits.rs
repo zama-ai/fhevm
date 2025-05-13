@@ -17,7 +17,7 @@ interface ICiphertextCommits {
     }
 
     error CiphertextMaterialNotFound(bytes32 ctHandle);
-    error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
+    error CiphertextMaterialNotOnHostChain(bytes32 ctHandle, uint256 chainId);
     error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
 
     event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenders);
@@ -213,7 +213,7 @@ interface ICiphertextCommits {
   },
   {
     "type": "error",
-    "name": "CiphertextMaterialNotOnNetwork",
+    "name": "CiphertextMaterialNotOnHostChain",
     "inputs": [
       {
         "name": "ctHandle",
@@ -918,13 +918,13 @@ error CiphertextMaterialNotFound(bytes32 ctHandle);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `CiphertextMaterialNotOnNetwork(bytes32,uint256)` and selector `0x404ec2e9`.
+    /**Custom error with signature `CiphertextMaterialNotOnHostChain(bytes32,uint256)` and selector `0x071f391e`.
 ```solidity
-error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
+error CiphertextMaterialNotOnHostChain(bytes32 ctHandle, uint256 chainId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct CiphertextMaterialNotOnNetwork {
+    pub struct CiphertextMaterialNotOnHostChain {
         #[allow(missing_docs)]
         pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
@@ -961,16 +961,16 @@ error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<CiphertextMaterialNotOnNetwork>
+        impl ::core::convert::From<CiphertextMaterialNotOnHostChain>
         for UnderlyingRustTuple<'_> {
-            fn from(value: CiphertextMaterialNotOnNetwork) -> Self {
+            fn from(value: CiphertextMaterialNotOnHostChain) -> Self {
                 (value.ctHandle, value.chainId)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for CiphertextMaterialNotOnNetwork {
+        for CiphertextMaterialNotOnHostChain {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     ctHandle: tuple.0,
@@ -979,13 +979,13 @@ error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for CiphertextMaterialNotOnNetwork {
+        impl alloy_sol_types::SolError for CiphertextMaterialNotOnHostChain {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "CiphertextMaterialNotOnNetwork(bytes32,uint256)";
-            const SELECTOR: [u8; 4] = [64u8, 78u8, 194u8, 233u8];
+            const SIGNATURE: &'static str = "CiphertextMaterialNotOnHostChain(bytes32,uint256)";
+            const SELECTOR: [u8; 4] = [7u8, 31u8, 57u8, 30u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2173,7 +2173,7 @@ function getVersion() external pure returns (string memory);
         #[allow(missing_docs)]
         CiphertextMaterialNotFound(CiphertextMaterialNotFound),
         #[allow(missing_docs)]
-        CiphertextMaterialNotOnNetwork(CiphertextMaterialNotOnNetwork),
+        CiphertextMaterialNotOnHostChain(CiphertextMaterialNotOnHostChain),
         #[allow(missing_docs)]
         CoprocessorAlreadyAdded(CoprocessorAlreadyAdded),
     }
@@ -2187,8 +2187,8 @@ function getVersion() external pure returns (string memory);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 102u8, 203u8, 223u8],
+            [7u8, 31u8, 57u8, 30u8],
             [29u8, 215u8, 37u8, 12u8],
-            [64u8, 78u8, 194u8, 233u8],
         ];
     }
     #[automatically_derived]
@@ -2202,8 +2202,8 @@ function getVersion() external pure returns (string memory);
                 Self::CiphertextMaterialNotFound(_) => {
                     <CiphertextMaterialNotFound as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::CiphertextMaterialNotOnNetwork(_) => {
-                    <CiphertextMaterialNotOnNetwork as alloy_sol_types::SolError>::SELECTOR
+                Self::CiphertextMaterialNotOnHostChain(_) => {
+                    <CiphertextMaterialNotOnHostChain as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::CoprocessorAlreadyAdded(_) => {
                     <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::SELECTOR
@@ -2243,6 +2243,21 @@ function getVersion() external pure returns (string memory);
                     CiphertextMaterialNotFound
                 },
                 {
+                    fn CiphertextMaterialNotOnHostChain(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
+                        <CiphertextMaterialNotOnHostChain as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                ICiphertextCommitsErrors::CiphertextMaterialNotOnHostChain,
+                            )
+                    }
+                    CiphertextMaterialNotOnHostChain
+                },
+                {
                     fn CoprocessorAlreadyAdded(
                         data: &[u8],
                         validate: bool,
@@ -2254,21 +2269,6 @@ function getVersion() external pure returns (string memory);
                             .map(ICiphertextCommitsErrors::CoprocessorAlreadyAdded)
                     }
                     CoprocessorAlreadyAdded
-                },
-                {
-                    fn CiphertextMaterialNotOnNetwork(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
-                        <CiphertextMaterialNotOnNetwork as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(
-                                ICiphertextCommitsErrors::CiphertextMaterialNotOnNetwork,
-                            )
-                    }
-                    CiphertextMaterialNotOnNetwork
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -2289,8 +2289,8 @@ function getVersion() external pure returns (string memory);
                         inner,
                     )
                 }
-                Self::CiphertextMaterialNotOnNetwork(inner) => {
-                    <CiphertextMaterialNotOnNetwork as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::CiphertextMaterialNotOnHostChain(inner) => {
+                    <CiphertextMaterialNotOnHostChain as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -2310,8 +2310,8 @@ function getVersion() external pure returns (string memory);
                         out,
                     )
                 }
-                Self::CiphertextMaterialNotOnNetwork(inner) => {
-                    <CiphertextMaterialNotOnNetwork as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::CiphertextMaterialNotOnHostChain(inner) => {
+                    <CiphertextMaterialNotOnHostChain as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

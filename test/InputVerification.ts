@@ -31,7 +31,7 @@ describe("InputVerification", function () {
   const newCtHandles = createCtHandles(3);
 
   // Define fake values
-  const fakeChainId = 123;
+  const fakeHostChainId = 123;
   const fakeTxSender = createRandomWallet();
   const fakeSigner = createRandomWallet();
   const fakeZkProofId = 2;
@@ -56,19 +56,17 @@ describe("InputVerification", function () {
         ciphertextWithZKProof,
       );
 
-      // Check that the event is emitted
       await expect(txResponse)
         .to.emit(inputVerification, "VerifyProofRequest")
         .withArgs(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     });
 
-    it("Should revert because the chainId is not registered in the GatewayConfig contract", async function () {
-      // Check that sending a proof verification request with a fake chain ID reverts
+    it("Should revert because the contract's chain ID does not correspond to a registered host chain", async function () {
       await expect(
-        inputVerification.verifyProofRequest(fakeChainId, contractAddress, userAddress, ciphertextWithZKProof),
+        inputVerification.verifyProofRequest(fakeHostChainId, contractAddress, userAddress, ciphertextWithZKProof),
       )
-        .revertedWithCustomError(gatewayConfig, "NetworkNotRegistered")
-        .withArgs(fakeChainId);
+        .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
+        .withArgs(fakeHostChainId);
     });
   });
 

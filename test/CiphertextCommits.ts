@@ -8,13 +8,13 @@ import {
   createCtHandle,
   createCtHandles,
   createRandomWallet,
-  loadChainIds,
+  loadHostChainIds,
   loadTestVariablesFixture,
 } from "./utils";
 
 describe("CiphertextCommits", function () {
-  // Define the host chainId(s)
-  const hostChainIds = loadChainIds();
+  // Define the host chains' chain IDs
+  const hostChainIds = loadHostChainIds();
   const hostChainId = hostChainIds[0];
 
   // Create a ctHandle with the host chain ID (it will be added by default)
@@ -66,14 +66,14 @@ describe("CiphertextCommits", function () {
   });
 
   describe("Add ciphertext material", async function () {
-    it("Should revert because the hostChainId is not registered in the GatewayConfig contract", async function () {
+    it("Should revert because the chain ID does not correspond to a registered host chain", async function () {
       // Check that adding a ciphertext material on a fake chain ID reverts
       await expect(
         ciphertextCommits
           .connect(coprocessorTxSenders[0])
           .addCiphertextMaterial(ctHandleFakeChainId, keyId, ciphertextDigest, snsCiphertextDigest),
       )
-        .revertedWithCustomError(gatewayConfig, "NetworkNotRegistered")
+        .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 

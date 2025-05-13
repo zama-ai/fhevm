@@ -84,15 +84,15 @@ contract CiphertextCommits is ICiphertextCommits, Ownable2StepUpgradeable, UUPSU
         /// @dev Extract the chainId from the ciphertext handle
         uint256 chainId = HandleOps.extractChainId(ctHandle);
 
-        /// @dev Check that the associated network is registered
-        GATEWAY_CONFIG.checkNetworkIsRegistered(chainId);
+        /// @dev Check that the associated host chain is registered
+        GATEWAY_CONFIG.checkHostChainIsRegistered(chainId);
 
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
 
         /**
          * @dev Check if the coprocessor transaction sender has already added the ciphertext handle.
          * Note that a coprocessor transaction sender cannot add the same ciphertext material on
-         * two different networks.
+         * two different host chains.
          */
         if ($._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender]) {
             revert CoprocessorAlreadyAdded(ctHandle, msg.sender);

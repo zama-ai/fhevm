@@ -50,20 +50,20 @@ jobs:
             echo "Deployment completed successfully with expected completion message"
           fi
 
-          ## Check Network Registration
-          timeout 300s bash -c 'while docker ps --filter "name=add-host-networks" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
-          docker compose logs add-host-networks > network_registration_logs.txt
-          EXIT_CODE_NETWORK=$(docker inspect --format='{{.State.ExitCode}}' add-host-networks)
+          ## Check Host Chain Registration
+          timeout 300s bash -c 'while docker ps --filter "name=add-host-chains" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
+          docker compose logs add-host-chains > host_chain_registration_logs.txt
+          EXIT_CODE_HOST_CHAIN=$(docker inspect --format='{{.State.ExitCode}}' add-host-chains)
           # display logs for debugging
-          # cat network_registration_logs.txt
-          if [ "$EXIT_CODE_NETWORK" -ne 0 ]; then
-            echo "Network registration failed with exit code $EXIT_CODE_NETWORK"
+          # cat host_chain_registration_logs.txt
+          if [ "$EXIT_CODE_HOST_CHAIN" -ne 0 ]; then
+            echo "Host chain registration failed with exit code $EXIT_CODE_HOST_CHAIN"
             exit 1
-          elif ! grep -q "Networks registration done!" network_registration_logs.txt; then
-            echo "Network registration did not complete successfully - 'Networks registration done!' message not found in logs"
+          elif ! grep -q "Host chains registration done!" host_chain_registration_logs.txt; then
+            echo "Host chain registration did not complete successfully - 'Host chains registration done!' message not found in logs"
             exit 1
           else
-            echo "Network registration completed successfully with expected completion message"
+            echo "Host chain registration completed successfully with expected completion message"
           fi
 
       - name: Clean up

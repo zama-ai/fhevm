@@ -50,7 +50,7 @@ describe("Mock contracts", function () {
     s3BucketUrl: DefaultString,
   };
 
-  const DefaultNetwork = {
+  const DefaultHostChain = {
     chainId: DefaultUint256,
     fhevmExecutorAddress: DefaultAddress,
     aclAddress: DefaultAddress,
@@ -203,10 +203,10 @@ describe("Mock contracts", function () {
         .withArgs(DefaultUint256);
     });
 
-    it("Should emit AddNetwork event on add network call", async function () {
-      await expect(gatewayConfigMock.addNetwork(DefaultNetwork))
-        .to.emit(gatewayConfigMock, "AddNetwork")
-        .withArgs(toValues(DefaultNetwork));
+    it("Should emit AddHostChain event on add host chain call", async function () {
+      await expect(gatewayConfigMock.addHostChain(DefaultHostChain))
+        .to.emit(gatewayConfigMock, "AddHostChain")
+        .withArgs(toValues(DefaultHostChain));
     });
   });
 

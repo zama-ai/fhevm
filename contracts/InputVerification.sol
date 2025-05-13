@@ -34,7 +34,7 @@ contract InputVerification is
         address userAddress;
         /// @notice The address of the dapp requiring the ZK Proof verification.
         address contractAddress;
-        /// @notice The chainId of the contract requiring the ZK Proof verification.
+        /// @notice The host chain's chain ID of the contract requiring the ZK Proof verification.
         uint256 contractChainId;
     }
 
@@ -112,7 +112,7 @@ contract InputVerification is
         address contractAddress,
         address userAddress,
         bytes calldata ciphertextWithZKProof
-    ) external virtual onlyRegisteredNetwork(contractChainId) {
+    ) external virtual onlyRegisteredHostChain(contractChainId) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         $.zkProofIdCounter++;
