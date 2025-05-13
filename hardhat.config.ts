@@ -27,6 +27,7 @@ const chainIds = {
   localGateway: 123456,
   staging: 54321,
   zwsDev: 412346,
+  testnet: 16039,
 };
 
 // If the mnemonic is not set, use a default one
@@ -95,10 +96,23 @@ const config: HardhatUserConfig = {
       chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.zwsDev,
       url: rpcUrl,
     },
+    testnet: {
+      accounts: {
+        count: NUM_ACCOUNTS,
+        mnemonic,
+        path: "m/44'/60'/0'/0",
+      },
+      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.testnet,
+      url: rpcUrl,
+    },
+  },
+  sourcify: {
+    enabled: false,
   },
   etherscan: {
     apiKey: {
       zwsDev: "empty",
+      testnet: "empty",
     },
     customChains: [
       {
@@ -107,6 +121,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: "http://l2-blockscout-zws-dev-blockscout-stack-blockscout-svc/api",
           browserURL: "https://l2-explorer-zws-dev.diplodocus-boa.ts.net",
+        },
+      },
+      {
+        network: "testnet",
+        chainId: chainIds.testnet,
+        urls: {
+          apiURL: "https://explorer-zama-testnet-v1-zkkw1kf0rf.t.conduit.xyz/api",
+          browserURL: "https://explorer-zama-testnet-v1-zkkw1kf0rf.t.conduit.xyz/",
         },
       },
     ],
