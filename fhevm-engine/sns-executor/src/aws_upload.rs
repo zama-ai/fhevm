@@ -2,13 +2,14 @@ use crate::{Config, ExecutionError, HandleItem, S3Config};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client;
 use bytesize::ByteSize;
+use fhevm_engine_common::telemetry::{self};
 use fhevm_engine_common::utils::compact_hex;
 use sha3::{Digest, Keccak256};
 
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
 use tokio::{join, select};
 use tokio_util::sync::CancellationToken;
@@ -57,10 +58,10 @@ pub(crate) async fn process_s3_uploads(
 /// buckets. If successful, it stores their digests in the database.
 ///
 /// Guarantees:
-/// - If the upload of the 128-bit ciphertext fails, the function will not
-///   store its digest in the database.
-/// - If the upload of the regular ciphertext fails, the function will not
-///   store its digest in the database.
+/// - If the upload of the 128-bit ciphertext fails, the function will not store
+///   its digest in the database.
+/// - If the upload of the regular ciphertext fails, the function will not store
+///   its digest in the database.
 async fn upload_ciphertexts(
     task: HandleItem,
     client: &Client,
@@ -77,8 +78,10 @@ async fn upload_ciphertexts(
         }
     };
 
+    let s = task.otel.child_span("compute_digest");
     let ct128_digest = compute_digest(&ct128_bytes);
     let ct64_digest = compute_digest(&task.ct64_compressed);
+    telemetry::end_span(s);
 
     info!(
         "Start uploading task, handle: {}, tenant_id: {}, ct128_len: {}, ct64_compressed_len: {}",
@@ -88,6 +91,7 @@ async fn upload_ciphertexts(
         ByteSize::b(task.ct64_compressed.len() as u64)
     );
 
+    let s = task.otel.child_span("s3_upload");
     let (up1, up2) = join!(
         tokio::time::timeout(
             3 * UPLOAD_TIMEOUT_DURATION,
@@ -108,6 +112,8 @@ async fn upload_ciphertexts(
                 .send(),
         )
     );
+
+    let upload_finish_time = SystemTime::now();
 
     let mut trx = pool.begin().await?;
 
@@ -136,7 +142,8 @@ async fn upload_ciphertexts(
             .await?;
 
             // Reset ciphertext128 as the ct128 has been successfully uploaded to S3
-            // NB: For reclaiming the disk-space in DB, we rely on auto vacuuming in Postgres
+            // NB: For reclaiming the disk-space in DB, we rely on auto vacuuming in
+            // Postgres
             sqlx::query!(
                 "UPDATE ciphertexts
                      SET ciphertext128 = NULL
@@ -201,6 +208,15 @@ async fn upload_ciphertexts(
             handle_as_hex,
             compact_hex(&ct64_digest),
             compact_hex(&ct128_digest)
+        );
+        telemetry::end_span_with_timestamp(s, upload_finish_time);
+    } else {
+        telemetry::end_span_with_err(
+            s,
+            format!(
+                "Upload failed ct128: {}, ct64: {}",
+                ct128_uploaded, ct64_uploaded
+            ),
         );
     }
 

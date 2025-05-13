@@ -1,10 +1,11 @@
+use fhevm_engine_common::telemetry;
 use sns_executor::{
     compute_128bit_ct, process_s3_uploads, Config, DBConfig, HandleItem, S3Config,
     UPLOAD_QUEUE_SIZE,
 };
 use tokio::{signal::unix, spawn, sync::mpsc};
 use tokio_util::sync::CancellationToken;
-use tracing::Level;
+use tracing::{error, Level};
 mod utils;
 
 fn handle_sigint(token: CancellationToken) {
@@ -25,6 +26,7 @@ fn construct_config() -> Config {
 
     Config {
         tenant_api_key: args.tenant_api_key,
+        service_name: args.service_name,
         db: DBConfig {
             url: db_url,
             listen_channels: args.pg_listen_channels,
@@ -60,14 +62,18 @@ async fn main() {
     let config = conf.clone();
     let token = parent.child_token();
 
+    if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
+        panic!("Error while initializing tracing: {:?}", err);
+    }
+
     spawn(async move {
         if let Err(err) = process_s3_uploads(&config, uploads_rx, token).await {
-            tracing::error!("Failed to run the upload-worker : {:?}", err);
+            error!("Failed to run the upload-worker : {:?}", err);
         }
     });
 
     // Start the SnS worker
     if let Err(err) = compute_128bit_ct(&conf, uploads_tx, parent.child_token()).await {
-        tracing::error!("SnS worker failed: {:?}", err);
+        error!("SnS worker failed: {:?}", err);
     }
 }

@@ -27,6 +27,12 @@ paste = "1.0.15"
 rand_chacha = "0.3.1"
 strum = { version = "0.26", features = ["derive"] }
 
+# opentelemetry support
+opentelemetry = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
+
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu"]

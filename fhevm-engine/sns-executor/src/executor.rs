@@ -3,11 +3,13 @@ use crate::squash_noise::SquashNoiseCiphertext;
 use crate::HandleItem;
 use crate::KeySet;
 use crate::{Config, DBConfig, ExecutionError};
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::compact_hex;
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::PgListener;
 use sqlx::{Acquire, PgPool, Postgres, Transaction};
 use std::time::Duration;
+use std::time::SystemTime;
 use tfhe::set_server_key;
 use tokio::select;
 use tokio::sync::mpsc::Sender;
@@ -33,18 +35,27 @@ pub(crate) async fn run_loop(
     let tenant_api_key = &conf.tenant_api_key;
     let conf = &conf.db;
 
+    let t = telemetry::tracer("init_service");
+    let s = t.child_span("pg_connect");
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(conf.max_connections)
         .connect(&conf.url)
         .await?;
+    telemetry::end_span(s);
 
     let mut listener = PgListener::connect_with(&pool).await?;
+
+    info!(target: "worker", "Connected to PostgresDB");
 
     listener
         .listen_all(conf.listen_channels.iter().map(|v| v.as_str()))
         .await?;
 
+    let s = t.child_span("fetch_keyset");
     let keys: KeySet = fetch_keyset(&pool, tenant_api_key).await?;
+    telemetry::end_span(s);
+
+    t.end();
 
     loop {
         let mut conn: PoolConnection<Postgres> =
@@ -150,6 +161,7 @@ async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     limit: u32,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
+    let start_time = SystemTime::now();
     let records = sqlx::query!(
         " 
         SELECT a.*, c.ciphertext
@@ -173,13 +185,18 @@ async fn query_sns_tasks(
         return Ok(None);
     }
 
+    let t = telemetry::tracer_with_start_time("db_fetch_tasks", start_time);
+    t.set_attribute("count", records.len().to_string());
+    t.end();
+
     let tasks = records
         .into_iter()
         .map(|record| HandleItem {
             tenant_id: record.tenant_id,
-            handle: record.handle,
+            handle: record.handle.clone(),
             ct64_compressed: record.ciphertext,
             ct128_uncompressed: None,
+            otel: telemetry::tracer_with_handle("task", record.handle),
         })
         .collect();
 
@@ -223,12 +240,17 @@ fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), Executio
     set_server_key(keys.server_key.clone());
 
     for task in tasks.iter_mut() {
+        let s = task.otel.child_span("decompress_ct64");
         let ct = decompress_ct(&task.handle, &task.ct64_compressed)?;
+        telemetry::end_span(s);
 
         let handle = compact_hex(&task.handle);
         info!(target: "sns",  { handle }, "Converting ciphertext");
+
+        let span = task.otel.child_span("squash_noise");
         match ct.squash_noise_and_serialize() {
             Ok(squashed_noise_serialized) => {
+                telemetry::end_span(span);
                 info!(target: "sns", { handle }, "Ciphertext converted, length: {}", squashed_noise_serialized.len());
 
                 // Optional: Decrypt and log for debugging
@@ -246,6 +268,7 @@ fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), Executio
                 task.ct128_uncompressed = Some(squashed_noise_serialized);
             }
             Err(err) => {
+                telemetry::end_span_with_err(span, err.to_string());
                 error!(target: "sns", { handle }, "Failed to convert ct: {err}");
             }
         };
@@ -257,17 +280,20 @@ fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), Executio
 /// Updates the database with the computed large ciphertexts.
 ///
 /// The ct128 is temporarily stored in PostgresDB to ensure reliability.
-/// After the AWS uploader successfully uploads the ct128 to S3, the ct128 blob is deleted from Postgres.
+/// After the AWS uploader successfully uploads the ct128 to S3, the ct128 blob
+/// is deleted from Postgres.
 ///
-/// The assumption for now is that the DB insertion is faster and more reliable than the S3 upload.
-/// Later on, the DB insertion of ct128 might be removed completely.
+/// The assumption for now is that the DB insertion is faster and more reliable
+/// than the S3 upload. Later on, the DB insertion of ct128 might be removed
+/// completely.
 async fn update_ciphertext128(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks {
         if let Some(ciphertext128) = &task.ct128_uncompressed {
-            sqlx::query!(
+            let s = task.otel.child_span("ct128_db_insert");
+            let res = sqlx::query!(
                 "
                 UPDATE ciphertexts
                 SET ciphertext128 = $1
@@ -276,7 +302,18 @@ async fn update_ciphertext128(
                 task.handle
             )
             .execute(db_txn.as_mut())
-            .await?;
+            .await;
+
+            match res {
+                Ok(_) => {
+                    debug!(target: "worker", handle = ?task.handle, "Inserted ct128 in DB");
+                    telemetry::end_span(s);
+                }
+                Err(err) => {
+                    error!(target: "worker", handle = ?task.handle, "Failed to insert ct128 in DB: {err}");
+                    telemetry::end_span_with_err(s, err.to_string());
+                }
+            }
 
             // Notify add_ciphertexts
         } else {

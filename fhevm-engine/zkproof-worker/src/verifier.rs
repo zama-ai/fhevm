@@ -1,10 +1,11 @@
 use alloy_primitives::Address;
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tenant_keys::TfheTenantKeys;
 use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
-use fhevm_engine_common::utils::safe_deserialize;
+use fhevm_engine_common::utils::{compact_hex, safe_deserialize};
 use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
@@ -47,6 +48,9 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
     // Each worker needs at least 3 pg connections
     let pool_connections = std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
 
+    let t = telemetry::tracer("init_service");
+    let s = t.child_span("pg_connect");
+
     // DB Connection pool is shared amongst all workers
     let pool = PgPoolOptions::new()
         .max_connections(pool_connections)
@@ -54,6 +58,10 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
         .await
         .expect("valid db pool");
 
+    telemetry::end_span(s);
+
+    let mut s = t.child_span("start_workers");
+    telemetry::attribute(&mut s, "count", conf.worker_thread_count.to_string());
     let mut task_set = JoinSet::new();
 
     for _ in 0..conf.worker_thread_count {
@@ -69,6 +77,8 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
             }
         });
     }
+
+    telemetry::end_span(s);
 
     // Wait for all tasks to complete
     while let Some(result) = task_set.join_next().await {
@@ -153,9 +163,14 @@ async fn execute_verify_proof_routine(
             input_len = format!("{}", input.len()),
         );
 
+        let t = telemetry::tracer("verify_task");
+        t.set_attribute("request_id", request_id.to_string());
+
+        let s = t.child_span("fetch_keys");
         let keys = tenant_keys::fetch_tenant_server_key(chain_id, pool, tenant_key_cache, false)
             .await
             .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
+        telemetry::end_span(s);
 
         let tenant_id = keys.tenant_id;
         info!(message = "Keys retrieved", request_id, chain_id);
@@ -168,9 +183,12 @@ async fn execute_verify_proof_routine(
                 acl_contract_address: keys.acl_contract_address.clone(),
             };
 
-            verify_proof(request_id, &keys, &aux_data, &input)
+            verify_proof(request_id, &keys, &aux_data, &input, t)
         })
         .await?;
+
+        let t = telemetry::tracer("db_insert");
+        t.set_attribute("request_id", request_id.to_string());
 
         let mut verified = false;
         let mut handles_bytes = vec![];
@@ -187,10 +205,11 @@ async fn execute_verify_proof_routine(
                     acc
                 });
                 verified = true;
-
+                let count = cts.len();
                 insert_ciphertexts(pool, tenant_id, cts, blob_hash).await?;
 
                 info!(message = "Ciphertexts inserted", request_id);
+                t.set_attribute("count", count.to_string());
             }
             Err(err) => {
                 error!(
@@ -200,6 +219,8 @@ async fn execute_verify_proof_routine(
                 );
             }
         }
+
+        t.set_attribute("valid", verified.to_string());
 
         // Mark as verified=true/false and set handles, if computed
         sqlx::query(
@@ -231,11 +252,25 @@ pub(crate) fn verify_proof(
     keys: &FetchTenantKeyResult,
     aux_data: &auxiliary::ZkData,
     raw_ct: &[u8],
+    t: telemetry::OtelTracer,
 ) -> Result<(Vec<Ciphertext>, Vec<u8>), ExecutionError> {
     set_server_key(keys.server_key.clone());
 
-    let cts: Vec<SupportedFheCiphertexts> =
-        try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data)?;
+    let mut s = t.child_span("verify_and_expand");
+    let cts = match try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data) {
+        Ok(cts) => {
+            telemetry::attribute(&mut s, "count", cts.len().to_string());
+            telemetry::end_span(s);
+            info!(message = "Ciphertext list expanded", request_id);
+            cts
+        }
+        Err(err) => {
+            telemetry::end_span_with_err(s, err.to_string());
+            return Err(err);
+        }
+    };
+
+    let _s = t.child_span("create_ciphertext");
 
     let mut h = Keccak256::new();
     h.update(raw_ct);
@@ -244,7 +279,7 @@ pub(crate) fn verify_proof(
     let cts = cts
         .iter()
         .enumerate()
-        .map(|(idx, ct)| create_ciphertext(&blob_hash, idx, ct, aux_data))
+        .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data))
         .collect();
 
     Ok((cts, blob_hash))
@@ -271,6 +306,7 @@ fn try_verify_and_expand_ciphertext_list(
 
 /// Creates a ciphertext
 fn create_ciphertext(
+    request_id: i64,
     blob_hash: &[u8],
     ct_idx: usize,
     the_ct: &SupportedFheCiphertexts,
@@ -300,6 +336,22 @@ fn create_ciphertext(
     handle[22..30].copy_from_slice(&(aux_data.chain_id as u64).to_be_bytes());
     handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
+
+    let t = telemetry::tracer("new_handle");
+    t.set_attribute("request_id", request_id.to_string());
+    t.set_attribute("handle", hex::encode(handle.clone()));
+    t.set_attribute("chain_id", aux_data.chain_id.to_string());
+    t.set_attribute("ct_idx", ct_idx.to_string());
+    t.set_attribute("user_address", aux_data.user_address.clone());
+    t.set_attribute("contract_address", aux_data.user_address.clone());
+    t.set_attribute("version", current_ciphertext_version().to_string());
+    t.set_attribute("type", serialized_type.to_string());
+    t.set_attribute(
+        "acl_contract_address",
+        aux_data.acl_contract_address.clone(),
+    );
+
+    info!("Create new handle: {:?}", compact_hex(&handle));
 
     Ciphertext {
         handle,

@@ -100,6 +100,7 @@ async fn setup() -> anyhow::Result<(
             max_connections: 5,
         },
         s3: crate::S3Config::default(),
+        service_name: "test-sns-worker".to_owned(),
     };
 
     let pool = sqlx::postgres::PgPoolOptions::new()

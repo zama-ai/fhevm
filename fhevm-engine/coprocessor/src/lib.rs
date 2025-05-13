@@ -1,5 +1,6 @@
 use ::tracing::{error, info};
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
+use fhevm_engine_common::telemetry;
 use std::sync::Once;
 use tokio::task::JoinSet;
 
@@ -10,7 +11,6 @@ pub mod server;
 #[cfg(test)]
 mod tests;
 pub mod tfhe_worker;
-pub mod tracing;
 pub mod types;
 mod utils;
 
@@ -56,7 +56,7 @@ pub async fn async_main(
 
     info!(target: "async_main", "Starting runtime with args: {:?}", args);
 
-    if let Err(err) = tracing::setup_tracing(&args.service_name) {
+    if let Err(err) = telemetry::setup_otlp(&args.service_name) {
         panic!("Error while initializing tracing: {:?}", err);
     }
 

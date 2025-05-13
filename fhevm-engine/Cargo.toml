@@ -31,6 +31,11 @@ tracing = "=0.1.41"
 tracing-subscriber = { version = "=0.3.19", features = ["fmt", "json"] }
 hex = "0.4"
 
+# opentelemetry support
+opentelemetry = "0.25.0"
+opentelemetry-otlp = "0.25.0"
+opentelemetry_sdk = { version = "0.25.0", features = ["rt-tokio"] }
+opentelemetry-semantic-conventions = "0.27.0"
 
 [profile.dev.package.tfhe]
 overflow-checks = false

@@ -36,7 +36,7 @@ pub struct Args {
     #[arg(long)]
     pub keys_file_path: Option<String>,
 
-    /// sns-executor service name in OTLP traces (not implemented)
+    /// sns-executor service name in OTLP traces
     #[arg(long, default_value = "sns-executor")]
     pub service_name: String,
 

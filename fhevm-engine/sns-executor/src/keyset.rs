@@ -27,7 +27,8 @@ pub(crate) async fn fetch_keyset(
 /// The ServerKey is stored in a large object (LOB) in the database.
 /// ServerKey must be generated with enable_noise_squashing option.
 ///
-/// The ClientKey is stored in a bytea column and is optional. It's used only for decrypting on testing.
+/// The ClientKey is stored in a bytea column and is optional. It's used only
+/// for decrypting on testing.
 pub async fn fetch_keys(
     pool: &PgPool,
     tenant_api_key: &String,

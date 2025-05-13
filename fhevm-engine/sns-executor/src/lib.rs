@@ -6,7 +6,7 @@ mod squash_noise;
 #[cfg(test)]
 mod tests;
 
-use fhevm_engine_common::types::FhevmError;
+use fhevm_engine_common::{telemetry::OtelTracer, types::FhevmError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::mpsc::{self, Sender};
@@ -41,6 +41,7 @@ pub struct S3Config {
 #[derive(Clone)]
 pub struct Config {
     pub tenant_api_key: String,
+    pub service_name: String,
     pub db: DBConfig,
     pub s3: S3Config,
 }
@@ -56,12 +57,12 @@ impl std::fmt::Display for Config {
     }
 }
 
-#[derive(Clone)]
 pub struct HandleItem {
     pub tenant_id: i32,
     pub handle: Vec<u8>,
     pub ct64_compressed: Vec<u8>,
     pub ct128_uncompressed: Option<Vec<u8>>,
+    pub otel: OtelTracer,
 }
 
 #[derive(Error, Debug)]

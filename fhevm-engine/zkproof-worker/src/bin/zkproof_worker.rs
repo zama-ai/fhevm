@@ -1,4 +1,5 @@
 use clap::{command, Parser};
+use fhevm_engine_common::telemetry;
 use tracing::error;
 
 #[derive(Parser, Debug, Clone)]
@@ -28,6 +29,10 @@ pub struct Args {
     /// Number of zkproof workers to process proofs in parallel
     #[arg(long, default_value_t = 8)]
     pub worker_thread_count: u32,
+
+    /// Zkproof-worker service name in OTLP traces
+    #[arg(long, default_value = "zkproof-worker")]
+    pub service_name: String,
 }
 
 pub fn parse_args() -> Args {
@@ -52,6 +57,10 @@ async fn main() {
         pg_polling_interval: args.pg_polling_interval,
         worker_thread_count: args.worker_thread_count,
     };
+
+    if let Err(err) = telemetry::setup_otlp(&args.service_name) {
+        panic!("Error while initializing tracing: {:?}", err);
+    }
 
     println!("Starting zkProof worker...");
     if let Err(err) = zkproof_worker::verifier::execute_verify_proofs_loop(&conf).await {
