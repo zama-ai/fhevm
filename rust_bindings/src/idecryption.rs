@@ -27,6 +27,7 @@ interface IDecryption {
     error DecryptionNotDone(uint256 decryptionId);
     error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
     error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCiphertextMaterial invalidSnsCtMaterial);
+    error EmptyContractAddresses();
     error EmptyCtHandleContractPairs();
     error EmptyCtHandles();
     error InvalidNullDurationDays();
@@ -647,6 +648,11 @@ interface IDecryption {
         ]
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "EmptyContractAddresses",
+    "inputs": []
   },
   {
     "type": "error",
@@ -2193,6 +2199,71 @@ error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCip
                         &self.invalidSnsCtMaterial,
                     ),
                 )
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `EmptyContractAddresses()` and selector `0x57cfa217`.
+```solidity
+error EmptyContractAddresses();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EmptyContractAddresses {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EmptyContractAddresses> for UnderlyingRustTuple<'_> {
+            fn from(value: EmptyContractAddresses) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptyContractAddresses {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {}
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EmptyContractAddresses {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EmptyContractAddresses()";
+            const SELECTOR: [u8; 4] = [87u8, 207u8, 162u8, 23u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
             }
         }
     };
@@ -5453,6 +5524,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         DifferentKeyIdsNotAllowed(DifferentKeyIdsNotAllowed),
         #[allow(missing_docs)]
+        EmptyContractAddresses(EmptyContractAddresses),
+        #[allow(missing_docs)]
         EmptyCtHandleContractPairs(EmptyCtHandleContractPairs),
         #[allow(missing_docs)]
         EmptyCtHandles(EmptyCtHandles),
@@ -5487,6 +5560,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [45u8, 231u8, 84u8, 56u8],
             [48u8, 52u8, 128u8, 64u8],
             [50u8, 149u8, 24u8, 99u8],
+            [87u8, 207u8, 162u8, 23u8],
             [153u8, 236u8, 72u8, 217u8],
             [164u8, 195u8, 3u8, 145u8],
             [166u8, 166u8, 203u8, 33u8],
@@ -5503,7 +5577,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for IDecryptionErrors {
         const NAME: &'static str = "IDecryptionErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 15usize;
+        const COUNT: usize = 16usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5521,6 +5595,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::DifferentKeyIdsNotAllowed(_) => {
                     <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::EmptyContractAddresses(_) => {
+                    <EmptyContractAddresses as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::EmptyCtHandleContractPairs(_) => {
                     <EmptyCtHandleContractPairs as alloy_sol_types::SolError>::SELECTOR
@@ -5637,6 +5714,19 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionErrors::MaxDurationDaysExceeded)
                     }
                     MaxDurationDaysExceeded
+                },
+                {
+                    fn EmptyContractAddresses(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <EmptyContractAddresses as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionErrors::EmptyContractAddresses)
+                    }
+                    EmptyContractAddresses
                 },
                 {
                     fn KmsNodeAlreadySigned(
@@ -5807,6 +5897,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         inner,
                     )
                 }
+                Self::EmptyContractAddresses(inner) => {
+                    <EmptyContractAddresses as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::EmptyCtHandleContractPairs(inner) => {
                     <EmptyCtHandleContractPairs as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -5888,6 +5983,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::DifferentKeyIdsNotAllowed(inner) => {
                     <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::EmptyContractAddresses(inner) => {
+                    <EmptyContractAddresses as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

@@ -284,7 +284,9 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         bytes calldata publicKey,
         bytes calldata signature
     ) external virtual {
-        /// @dev Check the number of contractAddresses does not exceed the maximum allowed.
+        if (contractAddresses.length == 0) {
+            revert EmptyContractAddresses();
+        }
         if (contractAddresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
             revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
         }
@@ -354,7 +356,9 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         bytes calldata publicKey,
         bytes calldata signature
     ) external virtual {
-        /// @dev Check the number of contractAddresses does not exceed the maximum allowed.
+        if (contractAddresses.length == 0) {
+            revert EmptyContractAddresses();
+        }
         if (contractAddresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
             revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
         }
