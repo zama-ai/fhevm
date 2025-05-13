@@ -15,7 +15,7 @@ contract GatewayConfigMock {
 
     event UpdateKmsThreshold(uint256 newKmsThreshold);
 
-    event AddNetwork(Network network);
+    event AddHostChain(HostChain hostChain);
 
     function initialize(
         address initialPauser,
@@ -42,8 +42,8 @@ contract GatewayConfigMock {
         emit UpdateKmsThreshold(newKmsThreshold);
     }
 
-    function addNetwork(Network calldata network) external {
-        Network memory network;
-        emit AddNetwork(network);
+    function addHostChain(HostChain calldata hostChain) external {
+        HostChain memory hostChain;
+        emit AddHostChain(hostChain);
     }
 }

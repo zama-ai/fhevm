@@ -8,17 +8,17 @@ interface IGatewayConfig {
         address signerAddress;
         string s3BucketUrl;
     }
-    struct KmsNode {
-        address txSenderAddress;
-        address signerAddress;
-        string ipAddress;
-    }
-    struct Network {
+    struct HostChain {
         uint256 chainId;
         address fhevmExecutorAddress;
         address aclAddress;
         string name;
         string website;
+    }
+    struct KmsNode {
+        address txSenderAddress;
+        address signerAddress;
+        string ipAddress;
     }
     struct ProtocolMetadata {
         string name;
@@ -28,41 +28,41 @@ interface IGatewayConfig {
     error ChainIdNotUint64(uint256 chainId);
     error EmptyCoprocessors();
     error EmptyKmsNodes();
+    error HostChainAlreadyRegistered(uint256 chainId);
+    error HostChainNotRegistered(uint256 chainId);
     error InvalidNullChainId();
     error InvalidNullPauser();
     error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
-    error NetworkAlreadyRegistered(uint256 chainId);
-    error NetworkNotRegistered(uint256 chainId);
     error NotCoprocessorSigner(address signerAddress);
     error NotCoprocessorTxSender(address txSenderAddress);
     error NotKmsSigner(address signerAddress);
     error NotKmsTxSender(address txSenderAddress);
     error NotPauser(address pauserAddress);
 
-    event AddNetwork(Network network);
+    event AddHostChain(HostChain hostChain);
     event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
     event UpdateKmsThreshold(uint256 newKmsThreshold);
     event UpdatePauser(address newPauser);
 
-    function addNetwork(Network memory network) external;
+    function addHostChain(HostChain memory hostChain) external;
+    function checkHostChainIsRegistered(uint256 chainId) external view;
     function checkIsCoprocessorSigner(address signerAddress) external view;
     function checkIsCoprocessorTxSender(address coprocessorTxSenderAddress) external view;
     function checkIsKmsSigner(address signerAddress) external view;
     function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
     function checkIsPauser(address pauserAddress) external view;
-    function checkNetworkIsRegistered(uint256 chainId) external view;
     function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
     function getCoprocessorMajorityThreshold() external view returns (uint256);
     function getCoprocessorSigners() external view returns (address[] memory);
     function getCoprocessorTxSenders() external view returns (address[] memory);
+    function getHostChain(uint256 index) external view returns (HostChain memory);
+    function getHostChains() external view returns (HostChain[] memory);
     function getKmsMajorityThreshold() external view returns (uint256);
     function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
     function getKmsReconstructionThreshold() external view returns (uint256);
     function getKmsSigners() external view returns (address[] memory);
     function getKmsThreshold() external view returns (uint256);
     function getKmsTxSenders() external view returns (address[] memory);
-    function getNetwork(uint256 index) external view returns (Network memory);
-    function getNetworks() external view returns (Network[] memory);
     function getProtocolMetadata() external view returns (ProtocolMetadata memory);
     function getVersion() external pure returns (string memory);
     function updateKmsThreshold(uint256 newKmsThreshold) external;
@@ -75,12 +75,12 @@ interface IGatewayConfig {
 [
   {
     "type": "function",
-    "name": "addNetwork",
+    "name": "addHostChain",
     "inputs": [
       {
-        "name": "network",
+        "name": "hostChain",
         "type": "tuple",
-        "internalType": "struct Network",
+        "internalType": "struct HostChain",
         "components": [
           {
             "name": "chainId",
@@ -112,6 +112,19 @@ interface IGatewayConfig {
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHostChainIsRegistered",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -173,19 +186,6 @@ interface IGatewayConfig {
         "name": "pauserAddress",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "checkNetworkIsRegistered",
-    "inputs": [
-      {
-        "name": "chainId",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -262,6 +262,92 @@ interface IGatewayConfig {
         "name": "",
         "type": "address[]",
         "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getHostChain",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct HostChain",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "fhevmExecutorAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "aclAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "website",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getHostChains",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct HostChain[]",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "fhevmExecutorAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "aclAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "website",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
       }
     ],
     "stateMutability": "view"
@@ -369,92 +455,6 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
-    "name": "getNetwork",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct Network",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "fhevmExecutorAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "aclAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "name",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "website",
-            "type": "string",
-            "internalType": "string"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getNetworks",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple[]",
-        "internalType": "struct Network[]",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "fhevmExecutorAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "aclAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "name",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "website",
-            "type": "string",
-            "internalType": "string"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getProtocolMetadata",
     "inputs": [],
     "outputs": [
@@ -519,13 +519,13 @@ interface IGatewayConfig {
   },
   {
     "type": "event",
-    "name": "AddNetwork",
+    "name": "AddHostChain",
     "inputs": [
       {
-        "name": "network",
+        "name": "hostChain",
         "type": "tuple",
         "indexed": false,
-        "internalType": "struct Network",
+        "internalType": "struct HostChain",
         "components": [
           {
             "name": "chainId",
@@ -689,6 +689,28 @@ interface IGatewayConfig {
   },
   {
     "type": "error",
+    "name": "HostChainAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "HostChainNotRegistered",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidNullChainId",
     "inputs": []
   },
@@ -708,28 +730,6 @@ interface IGatewayConfig {
       },
       {
         "name": "nParties",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NetworkAlreadyRegistered",
-    "inputs": [
-      {
-        "name": "chainId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NetworkNotRegistered",
-    "inputs": [
-      {
-        "name": "chainId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1062,6 +1062,292 @@ struct Coprocessor { address txSenderAddress; address signerAddress; string s3Bu
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
+struct HostChain { uint256 chainId; address fhevmExecutorAddress; address aclAddress; string name; string website; }
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct HostChain {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub fhevmExecutorAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub aclAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub name: alloy::sol_types::private::String,
+        #[allow(missing_docs)]
+        pub website: alloy::sol_types::private::String,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::String,
+            alloy::sol_types::sol_data::String,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::Address,
+            alloy::sol_types::private::Address,
+            alloy::sol_types::private::String,
+            alloy::sol_types::private::String,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<HostChain> for UnderlyingRustTuple<'_> {
+            fn from(value: HostChain) -> Self {
+                (
+                    value.chainId,
+                    value.fhevmExecutorAddress,
+                    value.aclAddress,
+                    value.name,
+                    value.website,
+                )
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HostChain {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    chainId: tuple.0,
+                    fhevmExecutorAddress: tuple.1,
+                    aclAddress: tuple.2,
+                    name: tuple.3,
+                    website: tuple.4,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolValue for HostChain {
+            type SolType = Self;
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::SolTypeValue<Self> for HostChain {
+            #[inline]
+            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.fhevmExecutorAddress,
+                    ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.aclAddress,
+                    ),
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.name,
+                    ),
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.website,
+                    ),
+                )
+            }
+            #[inline]
+            fn stv_abi_encoded_size(&self) -> usize {
+                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
+                    return size;
+                }
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
+            }
+            #[inline]
+            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
+                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
+            }
+            #[inline]
+            fn stv_abi_encode_packed_to(
+                &self,
+                out: &mut alloy_sol_types::private::Vec<u8>,
+            ) {
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
+            }
+            #[inline]
+            fn stv_abi_packed_encoded_size(&self) -> usize {
+                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
+                    return size;
+                }
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolType for HostChain {
+            type RustType = Self;
+            type Token<'a> = <UnderlyingSolTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
+            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
+            #[inline]
+            fn valid_token(token: &Self::Token<'_>) -> bool {
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
+            }
+            #[inline]
+            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
+                let tuple = <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::detokenize(token);
+                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolStruct for HostChain {
+            const NAME: &'static str = "HostChain";
+            #[inline]
+            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
+                alloy_sol_types::private::Cow::Borrowed(
+                    "HostChain(uint256 chainId,address fhevmExecutorAddress,address aclAddress,string name,string website)",
+                )
+            }
+            #[inline]
+            fn eip712_components() -> alloy_sol_types::private::Vec<
+                alloy_sol_types::private::Cow<'static, str>,
+            > {
+                alloy_sol_types::private::Vec::new()
+            }
+            #[inline]
+            fn eip712_encode_type() -> alloy_sol_types::private::Cow<'static, str> {
+                <Self as alloy_sol_types::SolStruct>::eip712_root_type()
+            }
+            #[inline]
+            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
+                [
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::eip712_data_word(&self.chainId)
+                        .0,
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.fhevmExecutorAddress,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.aclAddress,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.name,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.website,
+                        )
+                        .0,
+                ]
+                    .concat()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::EventTopic for HostChain {
+            #[inline]
+            fn topic_preimage_length(rust: &Self::RustType) -> usize {
+                0usize
+                    + <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.chainId,
+                    )
+                    + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.fhevmExecutorAddress,
+                    )
+                    + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.aclAddress,
+                    )
+                    + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.name,
+                    )
+                    + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.website,
+                    )
+            }
+            #[inline]
+            fn encode_topic_preimage(
+                rust: &Self::RustType,
+                out: &mut alloy_sol_types::private::Vec<u8>,
+            ) {
+                out.reserve(
+                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.chainId,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.fhevmExecutorAddress,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.aclAddress,
+                    out,
+                );
+                <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.name,
+                    out,
+                );
+                <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.website,
+                    out,
+                );
+            }
+            #[inline]
+            fn encode_topic(
+                rust: &Self::RustType,
+            ) -> alloy_sol_types::abi::token::WordToken {
+                let mut out = alloy_sol_types::private::Vec::new();
+                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    rust,
+                    &mut out,
+                );
+                alloy_sol_types::abi::token::WordToken(
+                    alloy_sol_types::private::keccak256(out),
+                )
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**```solidity
 struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -1280,292 +1566,6 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                 );
                 <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.ipAddress,
-                    out,
-                );
-            }
-            #[inline]
-            fn encode_topic(
-                rust: &Self::RustType,
-            ) -> alloy_sol_types::abi::token::WordToken {
-                let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    rust,
-                    &mut out,
-                );
-                alloy_sol_types::abi::token::WordToken(
-                    alloy_sol_types::private::keccak256(out),
-                )
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**```solidity
-struct Network { uint256 chainId; address fhevmExecutorAddress; address aclAddress; string name; string website; }
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct Network {
-        #[allow(missing_docs)]
-        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub fhevmExecutorAddress: alloy::sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub aclAddress: alloy::sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub name: alloy::sol_types::private::String,
-        #[allow(missing_docs)]
-        pub website: alloy::sol_types::private::String,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Uint<256>,
-            alloy::sol_types::sol_data::Address,
-            alloy::sol_types::sol_data::Address,
-            alloy::sol_types::sol_data::String,
-            alloy::sol_types::sol_data::String,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-            alloy::sol_types::private::Address,
-            alloy::sol_types::private::Address,
-            alloy::sol_types::private::String,
-            alloy::sol_types::private::String,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<Network> for UnderlyingRustTuple<'_> {
-            fn from(value: Network) -> Self {
-                (
-                    value.chainId,
-                    value.fhevmExecutorAddress,
-                    value.aclAddress,
-                    value.name,
-                    value.website,
-                )
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for Network {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    chainId: tuple.0,
-                    fhevmExecutorAddress: tuple.1,
-                    aclAddress: tuple.2,
-                    name: tuple.3,
-                    website: tuple.4,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolValue for Network {
-            type SolType = Self;
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::SolTypeValue<Self> for Network {
-            #[inline]
-            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.fhevmExecutorAddress,
-                    ),
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.aclAddress,
-                    ),
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        &self.name,
-                    ),
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        &self.website,
-                    ),
-                )
-            }
-            #[inline]
-            fn stv_abi_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
-                    return size;
-                }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
-            }
-            #[inline]
-            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
-            }
-            #[inline]
-            fn stv_abi_encode_packed_to(
-                &self,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
-            }
-            #[inline]
-            fn stv_abi_packed_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
-                    return size;
-                }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolType for Network {
-            type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
-            #[inline]
-            fn valid_token(token: &Self::Token<'_>) -> bool {
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
-            }
-            #[inline]
-            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::detokenize(token);
-                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolStruct for Network {
-            const NAME: &'static str = "Network";
-            #[inline]
-            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "Network(uint256 chainId,address fhevmExecutorAddress,address aclAddress,string name,string website)",
-                )
-            }
-            #[inline]
-            fn eip712_components() -> alloy_sol_types::private::Vec<
-                alloy_sol_types::private::Cow<'static, str>,
-            > {
-                alloy_sol_types::private::Vec::new()
-            }
-            #[inline]
-            fn eip712_encode_type() -> alloy_sol_types::private::Cow<'static, str> {
-                <Self as alloy_sol_types::SolStruct>::eip712_root_type()
-            }
-            #[inline]
-            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
-                [
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.chainId)
-                        .0,
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.fhevmExecutorAddress,
-                        )
-                        .0,
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.aclAddress,
-                        )
-                        .0,
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.name,
-                        )
-                        .0,
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.website,
-                        )
-                        .0,
-                ]
-                    .concat()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::EventTopic for Network {
-            #[inline]
-            fn topic_preimage_length(rust: &Self::RustType) -> usize {
-                0usize
-                    + <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.chainId,
-                    )
-                    + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.fhevmExecutorAddress,
-                    )
-                    + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.aclAddress,
-                    )
-                    + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.name,
-                    )
-                    + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.website,
-                    )
-            }
-            #[inline]
-            fn encode_topic_preimage(
-                rust: &Self::RustType,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                out.reserve(
-                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
-                );
-                <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.chainId,
-                    out,
-                );
-                <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.fhevmExecutorAddress,
-                    out,
-                );
-                <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.aclAddress,
-                    out,
-                );
-                <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.name,
-                    out,
-                );
-                <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.website,
                     out,
                 );
             }
@@ -2008,6 +2008,156 @@ error EmptyKmsNodes();
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `HostChainAlreadyRegistered(uint256)` and selector `0x96a56828`.
+```solidity
+error HostChainAlreadyRegistered(uint256 chainId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct HostChainAlreadyRegistered {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<HostChainAlreadyRegistered>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: HostChainAlreadyRegistered) -> Self {
+                (value.chainId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for HostChainAlreadyRegistered {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { chainId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for HostChainAlreadyRegistered {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "HostChainAlreadyRegistered(uint256)";
+            const SELECTOR: [u8; 4] = [150u8, 165u8, 104u8, 40u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                )
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `HostChainNotRegistered(uint256)` and selector `0xb6679c3b`.
+```solidity
+error HostChainNotRegistered(uint256 chainId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct HostChainNotRegistered {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<HostChainNotRegistered> for UnderlyingRustTuple<'_> {
+            fn from(value: HostChainNotRegistered) -> Self {
+                (value.chainId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HostChainNotRegistered {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { chainId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for HostChainNotRegistered {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "HostChainNotRegistered(uint256)";
+            const SELECTOR: [u8; 4] = [182u8, 103u8, 156u8, 59u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                )
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidNullChainId()` and selector `0x22f73fea`.
 ```solidity
 error InvalidNullChainId();
@@ -2219,156 +2369,6 @@ error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.nParties),
-                )
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NetworkAlreadyRegistered(uint256)` and selector `0xb1825c5e`.
-```solidity
-error NetworkAlreadyRegistered(uint256 chainId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NetworkAlreadyRegistered {
-        #[allow(missing_docs)]
-        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NetworkAlreadyRegistered>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: NetworkAlreadyRegistered) -> Self {
-                (value.chainId,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for NetworkAlreadyRegistered {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { chainId: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NetworkAlreadyRegistered {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NetworkAlreadyRegistered(uint256)";
-            const SELECTOR: [u8; 4] = [177u8, 130u8, 92u8, 94u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
-                )
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NetworkNotRegistered(uint256)` and selector `0x6df6fe89`.
-```solidity
-error NetworkNotRegistered(uint256 chainId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NetworkNotRegistered {
-        #[allow(missing_docs)]
-        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NetworkNotRegistered> for UnderlyingRustTuple<'_> {
-            fn from(value: NetworkNotRegistered) -> Self {
-                (value.chainId,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NetworkNotRegistered {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { chainId: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NetworkNotRegistered {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NetworkNotRegistered(uint256)";
-            const SELECTOR: [u8; 4] = [109u8, 246u8, 254u8, 137u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                 )
             }
         }
@@ -2734,9 +2734,9 @@ error NotPauser(address pauserAddress);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `AddNetwork((uint256,address,address,string,string))` and selector `0xb8207b5bb791730ae8f0534fa4c7be7da49dd75d701f9c7acf51c94b8ace96b2`.
+    /**Event with signature `AddHostChain((uint256,address,address,string,string))` and selector `0x66769341effd268fc4e9a9c8f27bfc968507b519b0ddb9b4ad3ded5f03016837`.
 ```solidity
-event AddNetwork(Network network);
+event AddHostChain(HostChain hostChain);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -2745,9 +2745,9 @@ event AddNetwork(Network network);
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct AddNetwork {
+    pub struct AddHostChain {
         #[allow(missing_docs)]
-        pub network: <Network as alloy::sol_types::SolType>::RustType,
+        pub hostChain: <HostChain as alloy::sol_types::SolType>::RustType,
     }
     #[allow(
         non_camel_case_types,
@@ -2758,17 +2758,17 @@ event AddNetwork(Network network);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for AddNetwork {
-            type DataTuple<'a> = (Network,);
+        impl alloy_sol_types::SolEvent for AddHostChain {
+            type DataTuple<'a> = (HostChain,);
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "AddNetwork((uint256,address,address,string,string))";
+            const SIGNATURE: &'static str = "AddHostChain((uint256,address,address,string,string))";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                184u8, 32u8, 123u8, 91u8, 183u8, 145u8, 115u8, 10u8, 232u8, 240u8, 83u8,
-                79u8, 164u8, 199u8, 190u8, 125u8, 164u8, 157u8, 215u8, 93u8, 112u8, 31u8,
-                156u8, 122u8, 207u8, 81u8, 201u8, 75u8, 138u8, 206u8, 150u8, 178u8,
+                102u8, 118u8, 147u8, 65u8, 239u8, 253u8, 38u8, 143u8, 196u8, 233u8,
+                169u8, 200u8, 242u8, 123u8, 252u8, 150u8, 133u8, 7u8, 181u8, 25u8, 176u8,
+                221u8, 185u8, 180u8, 173u8, 61u8, 237u8, 95u8, 3u8, 1u8, 104u8, 55u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -2777,7 +2777,7 @@ event AddNetwork(Network network);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { network: data.0 }
+                Self { hostChain: data.0 }
             }
             #[inline]
             fn check_signature(
@@ -2796,7 +2796,7 @@ event AddNetwork(Network network);
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (<Network as alloy_sol_types::SolType>::tokenize(&self.network),)
+                (<HostChain as alloy_sol_types::SolType>::tokenize(&self.hostChain),)
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
@@ -2817,7 +2817,7 @@ event AddNetwork(Network network);
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for AddNetwork {
+        impl alloy_sol_types::private::IntoLogData for AddHostChain {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -2826,9 +2826,9 @@ event AddNetwork(Network network);
             }
         }
         #[automatically_derived]
-        impl From<&AddNetwork> for alloy_sol_types::private::LogData {
+        impl From<&AddHostChain> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &AddNetwork) -> alloy_sol_types::private::LogData {
+            fn from(this: &AddHostChain) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -3182,20 +3182,20 @@ event UpdatePauser(address newPauser);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `addNetwork((uint256,address,address,string,string))` and selector `0x70cc9a3c`.
+    /**Function with signature `addHostChain((uint256,address,address,string,string))` and selector `0xc80b33ca`.
 ```solidity
-function addNetwork(Network memory network) external;
+function addHostChain(HostChain memory hostChain) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct addNetworkCall {
+    pub struct addHostChainCall {
         #[allow(missing_docs)]
-        pub network: <Network as alloy::sol_types::SolType>::RustType,
+        pub hostChain: <HostChain as alloy::sol_types::SolType>::RustType,
     }
-    ///Container type for the return parameters of the [`addNetwork((uint256,address,address,string,string))`](addNetworkCall) function.
+    ///Container type for the return parameters of the [`addHostChain((uint256,address,address,string,string))`](addHostChainCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct addNetworkReturn {}
+    pub struct addHostChainReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3206,10 +3206,10 @@ function addNetwork(Network memory network) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (Network,);
+            type UnderlyingSolTuple<'a> = (HostChain,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
-                <Network as alloy::sol_types::SolType>::RustType,
+                <HostChain as alloy::sol_types::SolType>::RustType,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
@@ -3224,16 +3224,16 @@ function addNetwork(Network memory network) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<addNetworkCall> for UnderlyingRustTuple<'_> {
-                fn from(value: addNetworkCall) -> Self {
-                    (value.network,)
+            impl ::core::convert::From<addHostChainCall> for UnderlyingRustTuple<'_> {
+                fn from(value: addHostChainCall) -> Self {
+                    (value.hostChain,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for addNetworkCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for addHostChainCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { network: tuple.0 }
+                    Self { hostChain: tuple.0 }
                 }
             }
         }
@@ -3255,32 +3255,32 @@ function addNetwork(Network memory network) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<addNetworkReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: addNetworkReturn) -> Self {
+            impl ::core::convert::From<addHostChainReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: addHostChainReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for addNetworkReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for addHostChainReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for addNetworkCall {
-            type Parameters<'a> = (Network,);
+        impl alloy_sol_types::SolCall for addHostChainCall {
+            type Parameters<'a> = (HostChain,);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = addNetworkReturn;
+            type Return = addHostChainReturn;
             type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "addNetwork((uint256,address,address,string,string))";
-            const SELECTOR: [u8; 4] = [112u8, 204u8, 154u8, 60u8];
+            const SIGNATURE: &'static str = "addHostChain((uint256,address,address,string,string))";
+            const SELECTOR: [u8; 4] = [200u8, 11u8, 51u8, 202u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -3289,7 +3289,137 @@ function addNetwork(Network memory network) external;
             }
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
-                (<Network as alloy_sol_types::SolType>::tokenize(&self.network),)
+                (<HostChain as alloy_sol_types::SolType>::tokenize(&self.hostChain),)
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `checkHostChainIsRegistered(uint256)` and selector `0x86fa2139`.
+```solidity
+function checkHostChainIsRegistered(uint256 chainId) external view;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct checkHostChainIsRegisteredCall {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    ///Container type for the return parameters of the [`checkHostChainIsRegistered(uint256)`](checkHostChainIsRegisteredCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct checkHostChainIsRegisteredReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<checkHostChainIsRegisteredCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: checkHostChainIsRegisteredCall) -> Self {
+                    (value.chainId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for checkHostChainIsRegisteredCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { chainId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<checkHostChainIsRegisteredReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: checkHostChainIsRegisteredReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for checkHostChainIsRegisteredReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for checkHostChainIsRegisteredCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = checkHostChainIsRegisteredReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "checkHostChainIsRegistered(uint256)";
+            const SELECTOR: [u8; 4] = [134u8, 250u8, 33u8, 57u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                )
             }
             #[inline]
             fn abi_decode_returns(
@@ -3944,136 +4074,6 @@ function checkIsPauser(address pauserAddress) external view;
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `checkNetworkIsRegistered(uint256)` and selector `0xc6b3024d`.
-```solidity
-function checkNetworkIsRegistered(uint256 chainId) external view;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkNetworkIsRegisteredCall {
-        #[allow(missing_docs)]
-        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    ///Container type for the return parameters of the [`checkNetworkIsRegistered(uint256)`](checkNetworkIsRegisteredCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkNetworkIsRegisteredReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkNetworkIsRegisteredCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkNetworkIsRegisteredCall) -> Self {
-                    (value.chainId,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkNetworkIsRegisteredCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { chainId: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkNetworkIsRegisteredReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkNetworkIsRegisteredReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkNetworkIsRegisteredReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for checkNetworkIsRegisteredCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = checkNetworkIsRegisteredReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkNetworkIsRegistered(uint256)";
-            const SELECTOR: [u8; 4] = [198u8, 179u8, 2u8, 77u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCoprocessor(address)` and selector `0xef6997f9`.
 ```solidity
 function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
@@ -4574,6 +4574,267 @@ function getCoprocessorTxSenders() external view returns (address[] memory);
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getCoprocessorTxSenders()";
             const SELECTOR: [u8; 4] = [30u8, 165u8, 189u8, 66u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getHostChain(uint256)` and selector `0xd10f7ff9`.
+```solidity
+function getHostChain(uint256 index) external view returns (HostChain memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getHostChainCall {
+        #[allow(missing_docs)]
+        pub index: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getHostChain(uint256)`](getHostChainCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getHostChainReturn {
+        #[allow(missing_docs)]
+        pub _0: <HostChain as alloy::sol_types::SolType>::RustType,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getHostChainCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getHostChainCall) -> Self {
+                    (value.index,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getHostChainCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { index: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (HostChain,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                <HostChain as alloy::sol_types::SolType>::RustType,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getHostChainReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getHostChainReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getHostChainReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getHostChainCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getHostChainReturn;
+            type ReturnTuple<'a> = (HostChain,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getHostChain(uint256)";
+            const SELECTOR: [u8; 4] = [209u8, 15u8, 127u8, 249u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.index),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getHostChains()` and selector `0x2585bb65`.
+```solidity
+function getHostChains() external view returns (HostChain[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getHostChainsCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getHostChains()`](getHostChainsCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getHostChainsReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<
+            <HostChain as alloy::sol_types::SolType>::RustType,
+        >,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getHostChainsCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getHostChainsCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getHostChainsCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<HostChain>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<
+                    <HostChain as alloy::sol_types::SolType>::RustType,
+                >,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getHostChainsReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getHostChainsReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getHostChainsReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getHostChainsCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getHostChainsReturn;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Array<HostChain>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getHostChains()";
+            const SELECTOR: [u8; 4] = [37u8, 133u8, 187u8, 101u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -5364,265 +5625,6 @@ function getKmsTxSenders() external view returns (address[] memory);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getNetwork(uint256)` and selector `0x95ea5717`.
-```solidity
-function getNetwork(uint256 index) external view returns (Network memory);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getNetworkCall {
-        #[allow(missing_docs)]
-        pub index: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getNetwork(uint256)`](getNetworkCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getNetworkReturn {
-        #[allow(missing_docs)]
-        pub _0: <Network as alloy::sol_types::SolType>::RustType,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getNetworkCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getNetworkCall) -> Self {
-                    (value.index,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getNetworkCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { index: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (Network,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                <Network as alloy::sol_types::SolType>::RustType,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getNetworkReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: getNetworkReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getNetworkReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getNetworkCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getNetworkReturn;
-            type ReturnTuple<'a> = (Network,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getNetwork(uint256)";
-            const SELECTOR: [u8; 4] = [149u8, 234u8, 87u8, 23u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.index),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getNetworks()` and selector `0x01a20520`.
-```solidity
-function getNetworks() external view returns (Network[] memory);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getNetworksCall {}
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getNetworks()`](getNetworksCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getNetworksReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::Vec<
-            <Network as alloy::sol_types::SolType>::RustType,
-        >,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getNetworksCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getNetworksCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getNetworksCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Array<Network>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::Vec<
-                    <Network as alloy::sol_types::SolType>::RustType,
-                >,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getNetworksReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: getNetworksReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getNetworksReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getNetworksCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getNetworksReturn;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Array<Network>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getNetworks()";
-            const SELECTOR: [u8; 4] = [1u8, 162u8, 5u8, 32u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getProtocolMetadata()` and selector `0x48144c61`.
 ```solidity
 function getProtocolMetadata() external view returns (ProtocolMetadata memory);
@@ -6128,7 +6130,9 @@ function updatePauser(address newPauser) external;
     #[derive()]
     pub enum IGatewayConfigCalls {
         #[allow(missing_docs)]
-        addNetwork(addNetworkCall),
+        addHostChain(addHostChainCall),
+        #[allow(missing_docs)]
+        checkHostChainIsRegistered(checkHostChainIsRegisteredCall),
         #[allow(missing_docs)]
         checkIsCoprocessorSigner(checkIsCoprocessorSignerCall),
         #[allow(missing_docs)]
@@ -6140,8 +6144,6 @@ function updatePauser(address newPauser) external;
         #[allow(missing_docs)]
         checkIsPauser(checkIsPauserCall),
         #[allow(missing_docs)]
-        checkNetworkIsRegistered(checkNetworkIsRegisteredCall),
-        #[allow(missing_docs)]
         getCoprocessor(getCoprocessorCall),
         #[allow(missing_docs)]
         getCoprocessorMajorityThreshold(getCoprocessorMajorityThresholdCall),
@@ -6149,6 +6151,10 @@ function updatePauser(address newPauser) external;
         getCoprocessorSigners(getCoprocessorSignersCall),
         #[allow(missing_docs)]
         getCoprocessorTxSenders(getCoprocessorTxSendersCall),
+        #[allow(missing_docs)]
+        getHostChain(getHostChainCall),
+        #[allow(missing_docs)]
+        getHostChains(getHostChainsCall),
         #[allow(missing_docs)]
         getKmsMajorityThreshold(getKmsMajorityThresholdCall),
         #[allow(missing_docs)]
@@ -6161,10 +6167,6 @@ function updatePauser(address newPauser) external;
         getKmsThreshold(getKmsThresholdCall),
         #[allow(missing_docs)]
         getKmsTxSenders(getKmsTxSendersCall),
-        #[allow(missing_docs)]
-        getNetwork(getNetworkCall),
-        #[allow(missing_docs)]
-        getNetworks(getNetworksCall),
         #[allow(missing_docs)]
         getProtocolMetadata(getProtocolMetadataCall),
         #[allow(missing_docs)]
@@ -6183,11 +6185,11 @@ function updatePauser(address newPauser) external;
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [1u8, 162u8, 5u8, 32u8],
             [2u8, 25u8, 21u8, 15u8],
             [13u8, 142u8, 110u8, 44u8],
             [25u8, 90u8, 253u8, 230u8],
             [30u8, 165u8, 189u8, 66u8],
+            [37u8, 133u8, 187u8, 101u8],
             [71u8, 205u8, 75u8, 62u8],
             [72u8, 20u8, 76u8, 97u8],
             [73u8, 4u8, 19u8, 170u8],
@@ -6195,15 +6197,15 @@ function updatePauser(address newPauser) external;
             [85u8, 75u8, 171u8, 60u8],
             [103u8, 153u8, 239u8, 82u8],
             [108u8, 136u8, 235u8, 67u8],
-            [112u8, 204u8, 154u8, 60u8],
             [116u8, 32u8, 243u8, 212u8],
             [126u8, 170u8, 200u8, 242u8],
+            [134u8, 250u8, 33u8, 57u8],
             [145u8, 100u8, 208u8, 174u8],
-            [149u8, 234u8, 87u8, 23u8],
             [198u8, 39u8, 82u8, 88u8],
-            [198u8, 179u8, 2u8, 77u8],
+            [200u8, 11u8, 51u8, 202u8],
             [203u8, 102u8, 23u8, 85u8],
             [205u8, 180u8, 194u8, 185u8],
+            [209u8, 15u8, 127u8, 249u8],
             [227u8, 178u8, 168u8, 116u8],
             [239u8, 105u8, 151u8, 249u8],
         ];
@@ -6216,8 +6218,11 @@ function updatePauser(address newPauser) external;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::addNetwork(_) => {
-                    <addNetworkCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::addHostChain(_) => {
+                    <addHostChainCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::checkHostChainIsRegistered(_) => {
+                    <checkHostChainIsRegisteredCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::checkIsCoprocessorSigner(_) => {
                     <checkIsCoprocessorSignerCall as alloy_sol_types::SolCall>::SELECTOR
@@ -6234,9 +6239,6 @@ function updatePauser(address newPauser) external;
                 Self::checkIsPauser(_) => {
                     <checkIsPauserCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::checkNetworkIsRegistered(_) => {
-                    <checkNetworkIsRegisteredCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::getCoprocessor(_) => {
                     <getCoprocessorCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -6248,6 +6250,12 @@ function updatePauser(address newPauser) external;
                 }
                 Self::getCoprocessorTxSenders(_) => {
                     <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getHostChain(_) => {
+                    <getHostChainCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getHostChains(_) => {
+                    <getHostChainsCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getKmsMajorityThreshold(_) => {
                     <getKmsMajorityThresholdCall as alloy_sol_types::SolCall>::SELECTOR
@@ -6266,12 +6274,6 @@ function updatePauser(address newPauser) external;
                 }
                 Self::getKmsTxSenders(_) => {
                     <getKmsTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getNetwork(_) => {
-                    <getNetworkCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getNetworks(_) => {
-                    <getNetworksCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getProtocolMetadata(_) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::SELECTOR
@@ -6306,19 +6308,6 @@ function updatePauser(address newPauser) external;
                 &[u8],
                 bool,
             ) -> alloy_sol_types::Result<IGatewayConfigCalls>] = &[
-                {
-                    fn getNetworks(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getNetworksCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigCalls::getNetworks)
-                    }
-                    getNetworks
-                },
                 {
                     fn updateKmsThreshold(
                         data: &[u8],
@@ -6370,6 +6359,19 @@ function updatePauser(address newPauser) external;
                             .map(IGatewayConfigCalls::getCoprocessorTxSenders)
                     }
                     getCoprocessorTxSenders
+                },
+                {
+                    fn getHostChains(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getHostChainsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigCalls::getHostChains)
+                    }
+                    getHostChains
                 },
                 {
                     fn getKmsMajorityThreshold(
@@ -6463,19 +6465,6 @@ function updatePauser(address newPauser) external;
                     checkIsKmsSigner
                 },
                 {
-                    fn addNetwork(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <addNetworkCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigCalls::addNetwork)
-                    }
-                    addNetwork
-                },
-                {
                     fn getKmsTxSenders(
                         data: &[u8],
                         validate: bool,
@@ -6502,6 +6491,19 @@ function updatePauser(address newPauser) external;
                     getKmsSigners
                 },
                 {
+                    fn checkHostChainIsRegistered(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <checkHostChainIsRegisteredCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigCalls::checkHostChainIsRegistered)
+                    }
+                    checkHostChainIsRegistered
+                },
+                {
                     fn getCoprocessorSigners(
                         data: &[u8],
                         validate: bool,
@@ -6513,19 +6515,6 @@ function updatePauser(address newPauser) external;
                             .map(IGatewayConfigCalls::getCoprocessorSigners)
                     }
                     getCoprocessorSigners
-                },
-                {
-                    fn getNetwork(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getNetworkCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigCalls::getNetwork)
-                    }
-                    getNetwork
                 },
                 {
                     fn checkIsKmsTxSender(
@@ -6541,17 +6530,17 @@ function updatePauser(address newPauser) external;
                     checkIsKmsTxSender
                 },
                 {
-                    fn checkNetworkIsRegistered(
+                    fn addHostChain(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <checkNetworkIsRegisteredCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <addHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                                 validate,
                             )
-                            .map(IGatewayConfigCalls::checkNetworkIsRegistered)
+                            .map(IGatewayConfigCalls::addHostChain)
                     }
-                    checkNetworkIsRegistered
+                    addHostChain
                 },
                 {
                     fn checkIsCoprocessorTxSender(
@@ -6578,6 +6567,19 @@ function updatePauser(address newPauser) external;
                             .map(IGatewayConfigCalls::checkIsCoprocessorSigner)
                     }
                     checkIsCoprocessorSigner
+                },
+                {
+                    fn getHostChain(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigCalls::getHostChain)
+                    }
+                    getHostChain
                 },
                 {
                     fn getKmsNode(
@@ -6619,8 +6621,15 @@ function updatePauser(address newPauser) external;
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
-                Self::addNetwork(inner) => {
-                    <addNetworkCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                Self::addHostChain(inner) => {
+                    <addHostChainCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::checkHostChainIsRegistered(inner) => {
+                    <checkHostChainIsRegisteredCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::checkIsCoprocessorSigner(inner) => {
                     <checkIsCoprocessorSignerCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -6647,11 +6656,6 @@ function updatePauser(address newPauser) external;
                         inner,
                     )
                 }
-                Self::checkNetworkIsRegistered(inner) => {
-                    <checkNetworkIsRegisteredCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::getCoprocessor(inner) => {
                     <getCoprocessorCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -6669,6 +6673,16 @@ function updatePauser(address newPauser) external;
                 }
                 Self::getCoprocessorTxSenders(inner) => {
                     <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getHostChain(inner) => {
+                    <getHostChainCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getHostChains(inner) => {
+                    <getHostChainsCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -6700,14 +6714,6 @@ function updatePauser(address newPauser) external;
                         inner,
                     )
                 }
-                Self::getNetwork(inner) => {
-                    <getNetworkCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::getNetworks(inner) => {
-                    <getNetworksCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::getProtocolMetadata(inner) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -6731,8 +6737,14 @@ function updatePauser(address newPauser) external;
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
-                Self::addNetwork(inner) => {
-                    <addNetworkCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::addHostChain(inner) => {
+                    <addHostChainCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::checkHostChainIsRegistered(inner) => {
+                    <checkHostChainIsRegisteredCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6767,12 +6779,6 @@ function updatePauser(address newPauser) external;
                         out,
                     )
                 }
-                Self::checkNetworkIsRegistered(inner) => {
-                    <checkNetworkIsRegisteredCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::getCoprocessor(inner) => {
                     <getCoprocessorCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -6793,6 +6799,18 @@ function updatePauser(address newPauser) external;
                 }
                 Self::getCoprocessorTxSenders(inner) => {
                     <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getHostChain(inner) => {
+                    <getHostChainCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getHostChains(inner) => {
+                    <getHostChainsCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6829,18 +6847,6 @@ function updatePauser(address newPauser) external;
                 }
                 Self::getKmsTxSenders(inner) => {
                     <getKmsTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::getNetwork(inner) => {
-                    <getNetworkCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::getNetworks(inner) => {
-                    <getNetworksCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6882,15 +6888,15 @@ function updatePauser(address newPauser) external;
         #[allow(missing_docs)]
         EmptyKmsNodes(EmptyKmsNodes),
         #[allow(missing_docs)]
+        HostChainAlreadyRegistered(HostChainAlreadyRegistered),
+        #[allow(missing_docs)]
+        HostChainNotRegistered(HostChainNotRegistered),
+        #[allow(missing_docs)]
         InvalidNullChainId(InvalidNullChainId),
         #[allow(missing_docs)]
         InvalidNullPauser(InvalidNullPauser),
         #[allow(missing_docs)]
         KmsThresholdTooHigh(KmsThresholdTooHigh),
-        #[allow(missing_docs)]
-        NetworkAlreadyRegistered(NetworkAlreadyRegistered),
-        #[allow(missing_docs)]
-        NetworkNotRegistered(NetworkNotRegistered),
         #[allow(missing_docs)]
         NotCoprocessorSigner(NotCoprocessorSigner),
         #[allow(missing_docs)]
@@ -6920,10 +6926,10 @@ function updatePauser(address newPauser) external;
             [65u8, 120u8, 222u8, 66u8],
             [72u8, 103u8, 111u8, 224u8],
             [82u8, 215u8, 37u8, 245u8],
-            [109u8, 246u8, 254u8, 137u8],
             [138u8, 240u8, 130u8, 239u8],
+            [150u8, 165u8, 104u8, 40u8],
             [174u8, 232u8, 99u8, 35u8],
-            [177u8, 130u8, 92u8, 94u8],
+            [182u8, 103u8, 156u8, 59u8],
         ];
     }
     #[automatically_derived]
@@ -6943,6 +6949,12 @@ function updatePauser(address newPauser) external;
                 Self::EmptyKmsNodes(_) => {
                     <EmptyKmsNodes as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::HostChainAlreadyRegistered(_) => {
+                    <HostChainAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::HostChainNotRegistered(_) => {
+                    <HostChainNotRegistered as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::InvalidNullChainId(_) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -6951,12 +6963,6 @@ function updatePauser(address newPauser) external;
                 }
                 Self::KmsThresholdTooHigh(_) => {
                     <KmsThresholdTooHigh as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NetworkAlreadyRegistered(_) => {
-                    <NetworkAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NetworkNotRegistered(_) => {
-                    <NetworkNotRegistered as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotCoprocessorSigner(_) => {
                     <NotCoprocessorSigner as alloy_sol_types::SolError>::SELECTOR
@@ -7110,19 +7116,6 @@ function updatePauser(address newPauser) external;
                     NotCoprocessorTxSender
                 },
                 {
-                    fn NetworkNotRegistered(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <NetworkNotRegistered as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigErrors::NetworkNotRegistered)
-                    }
-                    NetworkNotRegistered
-                },
-                {
                     fn EmptyCoprocessors(
                         data: &[u8],
                         validate: bool,
@@ -7134,6 +7127,19 @@ function updatePauser(address newPauser) external;
                             .map(IGatewayConfigErrors::EmptyCoprocessors)
                     }
                     EmptyCoprocessors
+                },
+                {
+                    fn HostChainAlreadyRegistered(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <HostChainAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigErrors::HostChainAlreadyRegistered)
+                    }
+                    HostChainAlreadyRegistered
                 },
                 {
                     fn NotKmsTxSender(
@@ -7149,17 +7155,17 @@ function updatePauser(address newPauser) external;
                     NotKmsTxSender
                 },
                 {
-                    fn NetworkAlreadyRegistered(
+                    fn HostChainNotRegistered(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <NetworkAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                        <HostChainNotRegistered as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
                                 validate,
                             )
-                            .map(IGatewayConfigErrors::NetworkAlreadyRegistered)
+                            .map(IGatewayConfigErrors::HostChainNotRegistered)
                     }
-                    NetworkAlreadyRegistered
+                    HostChainNotRegistered
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -7188,6 +7194,16 @@ function updatePauser(address newPauser) external;
                 Self::EmptyKmsNodes(inner) => {
                     <EmptyKmsNodes as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
+                Self::HostChainAlreadyRegistered(inner) => {
+                    <HostChainAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::HostChainNotRegistered(inner) => {
+                    <HostChainNotRegistered as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::InvalidNullChainId(inner) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -7200,16 +7216,6 @@ function updatePauser(address newPauser) external;
                 }
                 Self::KmsThresholdTooHigh(inner) => {
                     <KmsThresholdTooHigh as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::NetworkAlreadyRegistered(inner) => {
-                    <NetworkAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::NetworkNotRegistered(inner) => {
-                    <NetworkNotRegistered as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -7257,6 +7263,18 @@ function updatePauser(address newPauser) external;
                         out,
                     )
                 }
+                Self::HostChainAlreadyRegistered(inner) => {
+                    <HostChainAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::HostChainNotRegistered(inner) => {
+                    <HostChainNotRegistered as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::InvalidNullChainId(inner) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -7271,18 +7289,6 @@ function updatePauser(address newPauser) external;
                 }
                 Self::KmsThresholdTooHigh(inner) => {
                     <KmsThresholdTooHigh as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NetworkAlreadyRegistered(inner) => {
-                    <NetworkAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NetworkNotRegistered(inner) => {
-                    <NetworkNotRegistered as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -7321,7 +7327,7 @@ function updatePauser(address newPauser) external;
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IGatewayConfigEvents {
         #[allow(missing_docs)]
-        AddNetwork(AddNetwork),
+        AddHostChain(AddHostChain),
         #[allow(missing_docs)]
         Initialization(Initialization),
         #[allow(missing_docs)]
@@ -7339,14 +7345,14 @@ function updatePauser(address newPauser) external;
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
+                102u8, 118u8, 147u8, 65u8, 239u8, 253u8, 38u8, 143u8, 196u8, 233u8,
+                169u8, 200u8, 242u8, 123u8, 252u8, 150u8, 133u8, 7u8, 181u8, 25u8, 176u8,
+                221u8, 185u8, 180u8, 173u8, 61u8, 237u8, 95u8, 3u8, 1u8, 104u8, 55u8,
+            ],
+            [
                 166u8, 144u8, 102u8, 140u8, 36u8, 210u8, 119u8, 36u8, 63u8, 246u8, 250u8,
                 101u8, 13u8, 63u8, 214u8, 227u8, 211u8, 49u8, 169u8, 156u8, 160u8, 168u8,
                 133u8, 124u8, 130u8, 231u8, 248u8, 148u8, 82u8, 252u8, 102u8, 93u8,
-            ],
-            [
-                184u8, 32u8, 123u8, 91u8, 183u8, 145u8, 115u8, 10u8, 232u8, 240u8, 83u8,
-                79u8, 164u8, 199u8, 190u8, 125u8, 164u8, 157u8, 215u8, 93u8, 112u8, 31u8,
-                156u8, 122u8, 207u8, 81u8, 201u8, 75u8, 138u8, 206u8, 150u8, 178u8,
             ],
             [
                 234u8, 108u8, 101u8, 33u8, 188u8, 73u8, 87u8, 49u8, 8u8, 46u8, 35u8,
@@ -7370,13 +7376,13 @@ function updatePauser(address newPauser) external;
             validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
-                Some(<AddNetwork as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <AddNetwork as alloy_sol_types::SolEvent>::decode_raw_log(
+                Some(<AddHostChain as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <AddHostChain as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                             validate,
                         )
-                        .map(Self::AddNetwork)
+                        .map(Self::AddHostChain)
                 }
                 Some(<Initialization as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <Initialization as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -7422,7 +7428,7 @@ function updatePauser(address newPauser) external;
     impl alloy_sol_types::private::IntoLogData for IGatewayConfigEvents {
         fn to_log_data(&self) -> alloy_sol_types::private::LogData {
             match self {
-                Self::AddNetwork(inner) => {
+                Self::AddHostChain(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::Initialization(inner) => {
@@ -7438,7 +7444,7 @@ function updatePauser(address newPauser) external;
         }
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
             match self {
-                Self::AddNetwork(inner) => {
+                Self::AddHostChain(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::Initialization(inner) => {
@@ -7617,12 +7623,23 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<T, &P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
-        ///Creates a new call builder for the [`addNetwork`] function.
-        pub fn addNetwork(
+        ///Creates a new call builder for the [`addHostChain`] function.
+        pub fn addHostChain(
             &self,
-            network: <Network as alloy::sol_types::SolType>::RustType,
-        ) -> alloy_contract::SolCallBuilder<T, &P, addNetworkCall, N> {
-            self.call_builder(&addNetworkCall { network })
+            hostChain: <HostChain as alloy::sol_types::SolType>::RustType,
+        ) -> alloy_contract::SolCallBuilder<T, &P, addHostChainCall, N> {
+            self.call_builder(&addHostChainCall { hostChain })
+        }
+        ///Creates a new call builder for the [`checkHostChainIsRegistered`] function.
+        pub fn checkHostChainIsRegistered(
+            &self,
+            chainId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<T, &P, checkHostChainIsRegisteredCall, N> {
+            self.call_builder(
+                &checkHostChainIsRegisteredCall {
+                    chainId,
+                },
+            )
         }
         ///Creates a new call builder for the [`checkIsCoprocessorSigner`] function.
         pub fn checkIsCoprocessorSigner(
@@ -7675,17 +7692,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<T, &P, checkIsPauserCall, N> {
             self.call_builder(&checkIsPauserCall { pauserAddress })
         }
-        ///Creates a new call builder for the [`checkNetworkIsRegistered`] function.
-        pub fn checkNetworkIsRegistered(
-            &self,
-            chainId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkNetworkIsRegisteredCall, N> {
-            self.call_builder(
-                &checkNetworkIsRegisteredCall {
-                    chainId,
-                },
-            )
-        }
         ///Creates a new call builder for the [`getCoprocessor`] function.
         pub fn getCoprocessor(
             &self,
@@ -7722,6 +7728,19 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::SolCallBuilder<T, &P, getCoprocessorTxSendersCall, N> {
             self.call_builder(&getCoprocessorTxSendersCall {})
+        }
+        ///Creates a new call builder for the [`getHostChain`] function.
+        pub fn getHostChain(
+            &self,
+            index: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getHostChainCall, N> {
+            self.call_builder(&getHostChainCall { index })
+        }
+        ///Creates a new call builder for the [`getHostChains`] function.
+        pub fn getHostChains(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getHostChainsCall, N> {
+            self.call_builder(&getHostChainsCall {})
         }
         ///Creates a new call builder for the [`getKmsMajorityThreshold`] function.
         pub fn getKmsMajorityThreshold(
@@ -7772,19 +7791,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<T, &P, getKmsTxSendersCall, N> {
             self.call_builder(&getKmsTxSendersCall {})
         }
-        ///Creates a new call builder for the [`getNetwork`] function.
-        pub fn getNetwork(
-            &self,
-            index: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, getNetworkCall, N> {
-            self.call_builder(&getNetworkCall { index })
-        }
-        ///Creates a new call builder for the [`getNetworks`] function.
-        pub fn getNetworks(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, getNetworksCall, N> {
-            self.call_builder(&getNetworksCall {})
-        }
         ///Creates a new call builder for the [`getProtocolMetadata`] function.
         pub fn getProtocolMetadata(
             &self,
@@ -7832,9 +7838,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<T, &P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
-        ///Creates a new event filter for the [`AddNetwork`] event.
-        pub fn AddNetwork_filter(&self) -> alloy_contract::Event<T, &P, AddNetwork, N> {
-            self.event_filter::<AddNetwork>()
+        ///Creates a new event filter for the [`AddHostChain`] event.
+        pub fn AddHostChain_filter(
+            &self,
+        ) -> alloy_contract::Event<T, &P, AddHostChain, N> {
+            self.event_filter::<AddHostChain>()
         }
         ///Creates a new event filter for the [`Initialization`] event.
         pub fn Initialization_filter(

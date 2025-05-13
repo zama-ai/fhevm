@@ -11,7 +11,7 @@ import {
   createRandomAddress,
   createRandomAddresses,
   createRandomWallet,
-  loadChainIds,
+  loadHostChainIds,
   loadTestVariablesFixture,
   toValues,
 } from "./utils";
@@ -19,8 +19,8 @@ import {
 const MAX_CONTRACT_ADDRESSES = 10;
 
 describe("MultichainAcl", function () {
-  // Define the host chainId(s)
-  const hostChainIds = loadChainIds();
+  // Define the host chains' chain IDs
+  const hostChainIds = loadHostChainIds();
   const hostChainId = hostChainIds[0];
 
   // Define the ctHandle (it will be allowed for public decryption or account access by default)
@@ -63,7 +63,7 @@ describe("MultichainAcl", function () {
     it("Should revert because the hostChainId is not registered in the GatewayConfig contract", async function () {
       // Check that allowing an account to use a ciphertext on a fake chain ID reverts
       await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandleFakeChainId, newAccountAddress))
-        .revertedWithCustomError(gatewayConfig, "NetworkNotRegistered")
+        .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
@@ -115,7 +115,7 @@ describe("MultichainAcl", function () {
 
     it("Should revert because the hostChainId is not registered in the GatewayConfig contract", async function () {
       await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandleFakeChainId))
-        .revertedWithCustomError(gatewayConfig, "NetworkNotRegistered")
+        .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 

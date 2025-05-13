@@ -23,7 +23,7 @@ interface IMultichainAcl {
 
     /**
      * @notice Emitted when an account delegates its access to another account.
-     * @param chainId The contracts' host chainId.
+     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
      * @param delegationAccounts The delegator and the delegated addresses.
      * @param contractAddresses The addresses of the delegated contracts.
      */
@@ -46,7 +46,7 @@ interface IMultichainAcl {
 
     /**
      * @notice Error indicating that the coprocessor has already delegated access to another account.
-     * @param chainId The ID of the contracts' host chain.
+     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
      * @param delegationAccounts The delegator and the delegated addresses.
      * @param contractAddresses The addresses of the contracts that the coprocessor has already delegated.
      * @param txSender The transaction sender address of the coprocessor that has already confirmed delegation.
@@ -83,7 +83,7 @@ interface IMultichainAcl {
 
     /**
      * @notice Error indicating that the account has not been fully delegated.
-     * @param chainId The ID of the contracts's host chain.
+     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
      * @param delegationAccounts The delegator and the delegated addresses.
      * @param contractAddress The address of the delegated contract.
      */
@@ -104,7 +104,7 @@ interface IMultichainAcl {
 
     /**
      * @notice Delegates the access to the delegated and contract addresses.
-     * @param chainId The ID of the contracts' host chain.
+     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
      * @param delegationAccounts The delegator and the delegated addresses.
      * @param contractAddresses The contract addresses to delegate access to.
      */
@@ -129,7 +129,7 @@ interface IMultichainAcl {
 
     /**
      * @notice Checks that the delegator has delegated access to the delegate and contracts addresses.
-     * @param chainId The ID of the contracts' host chain.
+     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
      * @param delegationAccounts The delegator and the delegated addresses.
      * @param contractAddresses The delegated contract addresses.
      */

@@ -41,9 +41,9 @@ interface ICiphertextCommits {
      * @notice Error indicating that the given ciphertext material represented by the given handle is not
      * associated with the given chain ID.
      * @param ctHandle The handle of the ciphertext.
-     * @param chainId The ID of the network where the ciphertext is not associated.
+     * @param chainId The chain ID of the host chain associated to the ciphertext.
      */
-    error CiphertextMaterialNotOnNetwork(bytes32 ctHandle, uint256 chainId);
+    error CiphertextMaterialNotOnHostChain(bytes32 ctHandle, uint256 chainId);
 
     /**
      * @notice Adds a new ciphertext digest to the state. Also include its Switch and Squash (SNS)

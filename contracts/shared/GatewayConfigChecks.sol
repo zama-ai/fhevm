@@ -31,15 +31,15 @@ abstract contract GatewayConfigChecks {
         _;
     }
 
-    /// @dev Check that the network has been registered.
-    modifier onlyRegisteredNetwork(uint256 chainId) {
-        _GATEWAY_CONFIG.checkNetworkIsRegistered(chainId);
+    /// @dev Check that the chain ID corresponds to a registered host chain.
+    modifier onlyRegisteredHostChain(uint256 chainId) {
+        _GATEWAY_CONFIG.checkHostChainIsRegistered(chainId);
         _;
     }
 
-    /// @dev Check that the network associated with the handle has been registered.
-    modifier onlyHandleFromRegisteredNetwork(bytes32 handle) {
-        _GATEWAY_CONFIG.checkNetworkIsRegistered(HandleOps.extractChainId(handle));
+    /// @dev Check that the chain ID extracted from the handle corresponds to a registered host chain.
+    modifier onlyHandleFromRegisteredHostChain(bytes32 handle) {
+        _GATEWAY_CONFIG.checkHostChainIsRegistered(HandleOps.extractChainId(handle));
         _;
     }
 }

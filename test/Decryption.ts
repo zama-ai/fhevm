@@ -36,7 +36,7 @@ import {
   getSignaturesPublicDecrypt,
   getSignaturesUserDecryptRequest,
   getSignaturesUserDecryptResponse,
-  loadChainIds,
+  loadHostChainIds,
   loadTestVariablesFixture,
   toValues,
 } from "./utils";
@@ -125,12 +125,12 @@ async function createAndRotateKey(
 }
 
 describe("Decryption", function () {
-  // Get the registered host chainId(s)
-  const hostChainIds = loadChainIds();
+  // Get the registered host chains' chain IDs
+  const hostChainIds = loadHostChainIds();
   const hostChainId = hostChainIds[0];
 
-  // Get the gateway chain ID
-  const chainId = hre.network.config.chainId!;
+  // Get the gateway's chain ID
+  const gatewayChainId = hre.network.config.chainId!;
 
   // Expected decryption request ID (after a first request) for each kind of decryption request
   // The IDs won't increase between requests made in different "describe" sections as the blockchain
@@ -263,7 +263,12 @@ describe("Decryption", function () {
 
       // Create EIP712 messages
       const decryptionAddress = await decryption.getAddress();
-      const eip712Message = createEIP712ResponsePublicDecrypt(chainId, decryptionAddress, ctHandles, decryptedResult);
+      const eip712Message = createEIP712ResponsePublicDecrypt(
+        gatewayChainId,
+        decryptionAddress,
+        ctHandles,
+        decryptedResult,
+      );
 
       // Sign the message with all KMS signers
       const kmsSignatures = await getSignaturesPublicDecrypt(eip712Message, kmsSigners);
@@ -591,7 +596,7 @@ describe("Decryption", function () {
       // Create EIP712 messages
       const decryptionAddress = await decryption.getAddress();
       const eip712RequestMessage = createEIP712RequestUserDecrypt(
-        chainId,
+        gatewayChainId,
         decryptionAddress,
         publicKey,
         contractAddresses,
@@ -606,7 +611,7 @@ describe("Decryption", function () {
       const userDecryptedShares = createBytes32s(kmsSigners.length);
 
       const eip712ResponseMessages = userDecryptedShares.map((userDecryptedShare) =>
-        createEIP712ResponseUserDecrypt(chainId, decryptionAddress, publicKey, ctHandles, userDecryptedShare),
+        createEIP712ResponseUserDecrypt(gatewayChainId, decryptionAddress, publicKey, ctHandles, userDecryptedShare),
       );
 
       // Sign the message with all KMS signers
@@ -1041,7 +1046,7 @@ describe("Decryption", function () {
       // Create EIP712 message using the fake contract address list
       const decryptionAddress = await decryption.getAddress();
       const fakeEip712RequestMessage = createEIP712RequestUserDecrypt(
-        chainId,
+        gatewayChainId,
         decryptionAddress,
         publicKey,
         fakeContractAddresses,
@@ -1324,7 +1329,7 @@ describe("Decryption", function () {
       // Create EIP712 messages
       const decryptionAddress = await decryption.getAddress();
       const eip712RequestMessage = createEIP712RequestDelegatedUserDecrypt(
-        chainId,
+        gatewayChainId,
         decryptionAddress,
         publicKey,
         contractAddresses,
@@ -1343,7 +1348,7 @@ describe("Decryption", function () {
 
       const eip712ResponseMessages: EIP712[] = userDecryptedShares.map((userDecryptedShare) =>
         createEIP712ResponseUserDecrypt(
-          chainId,
+          gatewayChainId,
           decryptionAddress,
           publicKey,
           ctHandleContractPairs.map((pair) => pair.ctHandle.toString()),

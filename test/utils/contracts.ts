@@ -7,10 +7,11 @@ import hre from "hardhat";
 import { getRequiredEnvVar } from "../../tasks/utils/loadVariables";
 import { fund } from "./wallets";
 
-export function loadChainIds() {
-  const nNetwork = parseInt(getRequiredEnvVar("NUM_NETWORKS"));
-  return [...Array(nNetwork)].map((_, i) => {
-    return parseInt(getRequiredEnvVar(`NETWORK_CHAIN_ID_${i}`));
+// Loads the host chains' chain IDs
+export function loadHostChainIds() {
+  const nHostChain = parseInt(getRequiredEnvVar("NUM_HOST_CHAINS"));
+  return [...Array(nHostChain)].map((_, i) => {
+    return parseInt(getRequiredEnvVar(`HOST_CHAIN_CHAIN_ID_${i}`));
   });
 }
 
@@ -78,8 +79,8 @@ export async function loadTestVariablesFixture() {
   const nKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
   const nCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
 
-  // Load the networks' chain IDs
-  const chainIds = loadChainIds();
+  // Load the host chains' chain IDs
+  const chainIds = loadHostChainIds();
 
   // Load the transaction senders and signers
   const fixtureData = await initTestingWallets(nKmsNodes, nCoprocessors);

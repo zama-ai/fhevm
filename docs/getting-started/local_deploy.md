@@ -16,10 +16,10 @@ npm install
 - pauser address
 - kms nodes
 - coprocessors
-- host network(s) infos
+- host chain(s) infos
 
-The number of KMS nodes, coprocessors and networks set in the `.env.example` file should be lower or equal to the number
-of metadata set along each, and differentiated by indexes (starting from 1).
+The number of KMS nodes, coprocessors and host chains set in the `.env.example` file should be lower or equal to the
+number of metadata set along each, and differentiated by indexes (starting from 1).
 
 Note: to get the different accounts (with their private and public keys), run
 

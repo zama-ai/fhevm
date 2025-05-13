@@ -41,13 +41,13 @@ task("task:getCoprocessorSigners")
     );
   });
 
-task("task:getNetworks")
+task("task:getHostChains")
   .addOptionalParam(
     "customGatewayConfigAddress",
     "Use a custom address for the GatewayConfig contract instead of the default one - ie stored inside .env.gateway_config",
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const gatewayConfig = await loadGatewayConfigContract(taskArguments.customGatewayConfigAddress, ethers);
-    const listCurrentNetworks = await gatewayConfig.getNetworks();
-    console.log("The list of current Networks stored inside GatewayConfig contract is: ", listCurrentNetworks);
+    const listCurrentHostChains = await gatewayConfig.getHostChains();
+    console.log("The list of current host chains stored inside GatewayConfig contract is: ", listCurrentHostChains);
   });

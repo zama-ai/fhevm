@@ -8,11 +8,11 @@ import { EmptyUUPSProxy, GatewayConfig } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
 import { CoprocessorStruct, KmsNodeStruct } from "../typechain-types/contracts/interfaces/IGatewayConfig";
-import { UINT64_MAX, createRandomWallet, loadChainIds, loadTestVariablesFixture, toValues } from "./utils";
+import { UINT64_MAX, createRandomWallet, loadHostChainIds, loadTestVariablesFixture, toValues } from "./utils";
 
 describe("GatewayConfig", function () {
-  // Get the registered host chainId(s)
-  const hostChainIds = loadChainIds();
+  // Get the registered host chains' chainIds
+  const hostChainIds = loadHostChainIds();
 
   // Define input values
   const protocolMetadata = { name: "Protocol", website: "https://protocol.com" };
@@ -214,9 +214,9 @@ describe("GatewayConfig", function () {
         }
       });
 
-      it("Should be registered as networks", async function () {
+      it("Should be registered as host chains", async function () {
         for (const hostChainId of hostChainIds) {
-          await expect(gatewayConfig.checkNetworkIsRegistered(hostChainId)).to.not.be.reverted;
+          await expect(gatewayConfig.checkHostChainIsRegistered(hostChainId)).to.not.be.reverted;
         }
       });
 
@@ -268,15 +268,15 @@ describe("GatewayConfig", function () {
         }
       });
 
-      it("Should get all networks' metadata", async function () {
-        const networks = await gatewayConfig.getNetworks();
+      it("Should get all host chains' metadata", async function () {
+        const hostChains = await gatewayConfig.getHostChains();
 
-        // Check that the number of networks is correct
-        expect(networks.length).to.equal(hostChainIds.length);
+        // Check that the number of host chains is correct
+        expect(hostChains.length).to.equal(hostChainIds.length);
 
-        // Check that all networks' chainIds are in the list
-        for (const network of networks) {
-          expect(hostChainIds).to.include(Number(network.chainId));
+        // Check that all host chains' chainIds are in the list
+        for (const hostChain of hostChains) {
+          expect(hostChainIds).to.include(Number(hostChain.chainId));
         }
       });
     });
@@ -335,39 +335,40 @@ describe("GatewayConfig", function () {
       });
     });
 
-    describe("Add network", function () {
-      // Define a new chainId that is not already registered (since the GatewayConfig contract has already
-      // been deployed and networks have been registered)
-      const newChainId = Math.max(...hostChainIds) + 1;
+    describe("Add host chain", function () {
+      // Define a new chain ID that does not correspond to an already registered host chain
+      // (since the GatewayConfig contract has already been deployed and host chains have been
+      // registered)
+      const newHostChainId = Math.max(...hostChainIds) + 1;
 
       const fhevmExecutorAddress = hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678");
       const aclAddress = hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12");
-      const name = "Network";
-      const website = "https://network.com";
+      const name = "Host chain";
+      const website = "https://host-chain-test.com";
 
-      const newNetwork = {
-        chainId: newChainId,
+      const newHostChain = {
+        chainId: newHostChainId,
         fhevmExecutorAddress,
         aclAddress,
         name,
         website,
       };
 
-      it("Should add a new network", async function () {
-        const txResponse = gatewayConfig.connect(owner).addNetwork(newNetwork);
+      it("Should add a new host chain", async function () {
+        const txResponse = gatewayConfig.connect(owner).addHostChain(newHostChain);
 
-        await expect(txResponse).to.emit(gatewayConfig, "AddNetwork").withArgs(toValues(newNetwork));
+        await expect(txResponse).to.emit(gatewayConfig, "AddHostChain").withArgs(toValues(newHostChain));
       });
 
       it("Should revert because the sender is not the owner", async function () {
-        await expect(gatewayConfig.connect(fakeOwner).addNetwork(newNetwork)).to.revertedWithCustomError(
+        await expect(gatewayConfig.connect(fakeOwner).addHostChain(newHostChain)).to.revertedWithCustomError(
           gatewayConfig,
           "OwnableUnauthorizedAccount",
         );
       });
 
-      it("Should revert because the network's chainId is null", async function () {
-        const nullChainIdNetwork = {
+      it("Should revert because the host chain's chain ID is null", async function () {
+        const nullChainIdHostChain = {
           chainId: 0,
           fhevmExecutorAddress,
           aclAddress,
@@ -375,17 +376,17 @@ describe("GatewayConfig", function () {
           website,
         };
 
-        await expect(gatewayConfig.connect(owner).addNetwork(nullChainIdNetwork)).to.revertedWithCustomError(
+        await expect(gatewayConfig.connect(owner).addHostChain(nullChainIdHostChain)).to.revertedWithCustomError(
           gatewayConfig,
           "InvalidNullChainId",
         );
       });
 
-      it("Should revert because the network's chainId is not representable by a uint64", async function () {
-        // Define a chainId that is not representable by a uint64
+      it("Should revert because the host chain's chain ID is not representable by a uint64", async function () {
+        // Define a chain ID that is not representable by a uint64
         const chainIdTooLarge = UINT64_MAX + 1n;
 
-        const chainIdTooLargeNetwork = {
+        const chainIdTooLargeHostChain = {
           chainId: chainIdTooLarge,
           fhevmExecutorAddress,
           aclAddress,
@@ -393,16 +394,16 @@ describe("GatewayConfig", function () {
           website,
         };
 
-        await expect(gatewayConfig.connect(owner).addNetwork(chainIdTooLargeNetwork))
+        await expect(gatewayConfig.connect(owner).addHostChain(chainIdTooLargeHostChain))
           .to.revertedWithCustomError(gatewayConfig, "ChainIdNotUint64")
           .withArgs(chainIdTooLarge);
       });
 
-      it("Should revert because another network with the same chainId already has been registered", async function () {
-        // Get the first host chainId that has already been registered
+      it("Should revert because another host chain with the same chain ID already has been registered", async function () {
+        // Get the first host chain ID that has already been registered
         const alreadyAddedHostChainId = hostChainIds[0];
 
-        const alreadyAddedNetwork = {
+        const alreadyAddedHostChain = {
           chainId: alreadyAddedHostChainId,
           fhevmExecutorAddress,
           aclAddress,
@@ -410,8 +411,8 @@ describe("GatewayConfig", function () {
           website,
         };
 
-        await expect(gatewayConfig.connect(owner).addNetwork(alreadyAddedNetwork))
-          .to.revertedWithCustomError(gatewayConfig, "NetworkAlreadyRegistered")
+        await expect(gatewayConfig.connect(owner).addHostChain(alreadyAddedHostChain))
+          .to.revertedWithCustomError(gatewayConfig, "HostChainAlreadyRegistered")
           .withArgs(alreadyAddedHostChainId);
       });
     });

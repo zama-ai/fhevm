@@ -9,7 +9,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 /**
  * @title GatewayConfig contract
  * @dev See {IGatewayConfig}.
- * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and networks.
+ * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and host chains.
  * @dev See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
 contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeable {
@@ -37,8 +37,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender) _isCoprocessorTxSender;
         /// @notice The coprocessors' signer addresses
         mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner;
-        /// @notice The networks' registered status
-        mapping(uint256 chainId => bool isRegistered) _isNetworkRegistered;
+        /// @notice The host chains' registered status
+        mapping(uint256 chainId => bool isRegistered) _isHostChainRegistered;
         /// @notice The protocol's metadata
         ProtocolMetadata protocolMetadata;
         /// @notice The KMS nodes' metadata
@@ -56,8 +56,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         address[] coprocessorTxSenderAddresses;
         /// @notice The coprocessors' signer address list
         address[] coprocessorSignerAddresses;
-        /// @notice The networks' metadata
-        Network[] networks;
+        /// @notice The host chains' metadata
+        HostChain[] hostChains;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -158,23 +158,23 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         emit UpdateKmsThreshold(newKmsThreshold);
     }
 
-    /// @dev See {IGatewayConfig-addNetwork}.
-    function addNetwork(Network calldata network) external virtual onlyOwner {
-        if (network.chainId == 0) {
+    /// @dev See {IGatewayConfig-addHostChain}.
+    function addHostChain(HostChain calldata hostChain) external virtual onlyOwner {
+        if (hostChain.chainId == 0) {
             revert InvalidNullChainId();
         }
-        if (network.chainId > MAX_CHAIN_ID) {
-            revert ChainIdNotUint64(network.chainId);
+        if (hostChain.chainId > MAX_CHAIN_ID) {
+            revert ChainIdNotUint64(hostChain.chainId);
         }
 
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if ($._isNetworkRegistered[network.chainId]) {
-            revert NetworkAlreadyRegistered(network.chainId);
+        if ($._isHostChainRegistered[hostChain.chainId]) {
+            revert HostChainAlreadyRegistered(hostChain.chainId);
         }
 
-        $.networks.push(network);
-        $._isNetworkRegistered[network.chainId] = true;
-        emit AddNetwork(network);
+        $.hostChains.push(hostChain);
+        $._isHostChainRegistered[hostChain.chainId] = true;
+        emit AddHostChain(hostChain);
     }
 
     /// @dev See {IGatewayConfig-checkIsPauser}.
@@ -217,11 +217,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
     }
 
-    /// @dev See {IGatewayConfig-checkNetworkIsRegistered}.
-    function checkNetworkIsRegistered(uint256 chainId) external view virtual {
+    /// @dev See {IGatewayConfig-checkHostChainIsRegistered}.
+    function checkHostChainIsRegistered(uint256 chainId) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$._isNetworkRegistered[chainId]) {
-            revert NetworkNotRegistered(chainId);
+        if (!$._isHostChainRegistered[chainId]) {
+            revert HostChainNotRegistered(chainId);
         }
     }
 
@@ -291,16 +291,16 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         return $.coprocessorSignerAddresses;
     }
 
-    /// @dev See {IGatewayConfig-getNetwork}.
-    function getNetwork(uint256 index) external view virtual returns (Network memory) {
+    /// @dev See {IGatewayConfig-getHostChain}.
+    function getHostChain(uint256 index) external view virtual returns (HostChain memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.networks[index];
+        return $.hostChains[index];
     }
 
-    /// @dev See {IGatewayConfig-getNetworks}.
-    function getNetworks() external view virtual returns (Network[] memory) {
+    /// @dev See {IGatewayConfig-getHostChains}.
+    function getHostChains() external view virtual returns (HostChain[] memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.networks;
+        return $.hostChains;
     }
 
     /// @dev See {IGatewayConfig-getVersion}.
