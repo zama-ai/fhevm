@@ -317,7 +317,7 @@ pub struct PublicDecryptRequest {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UserDecryptRequest {
-    pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
+    pub ct_handle_contract_pairs: Vec<HandleContractPair>,
     pub request_validity: RequestValidity,
     pub contracts_chain_id: u64,
     pub contract_addresses: Vec<Address>,
@@ -328,7 +328,7 @@ pub struct UserDecryptRequest {
 
 #[allow(non_snake_case)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CtHandleContractPair {
+pub struct HandleContractPair {
     pub ct_handle: U256,
     pub contract_address: Address,
 }
@@ -361,19 +361,19 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
         info!("Converting UserDecryptRequestJson to UserDecryptRequest");
 
         let mut ct_handle_contract_pairs = Vec::new();
-        for json_data in &value.ctHandleContractPairs {
-            let ct_handle = if json_data.ctHandle.starts_with("0x") {
+        for json_data in &value.handleContractPairs {
+            let ct_handle = if json_data.handle.starts_with("0x") {
                 // Remove the 0x prefix before parsing
-                U256::from_str_radix(&json_data.ctHandle[2..], 16)
+                U256::from_str_radix(&json_data.handle[2..], 16)
             } else {
-                U256::from_str_radix(&json_data.ctHandle, 16)
+                U256::from_str_radix(&json_data.handle, 16)
             }
             .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
 
             let contract_address = Address::from_str(&json_data.contractAddress)
                 .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
 
-            ct_handle_contract_pairs.push(CtHandleContractPair {
+            ct_handle_contract_pairs.push(HandleContractPair {
                 ct_handle,
                 contract_address,
             });

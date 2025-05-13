@@ -7,7 +7,7 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            CtHandleContractPair, GenericEventData, RelayerEvent, RelayerEventData,
+            GenericEventData, HandleContractPair, RelayerEvent, RelayerEventData,
             UserDecryptEventData, UserDecryptRequest, UserDecryptResponse,
         },
     },
@@ -18,8 +18,8 @@ use crate::{
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
 };
 
-impl From<&CtHandleContractPair> for Decryption::CtHandleContractPair {
-    fn from(pair: &CtHandleContractPair) -> Self {
+impl From<&HandleContractPair> for Decryption::CtHandleContractPair {
+    fn from(pair: &HandleContractPair) -> Self {
         Self {
             ctHandle: pair.ct_handle.into(),
             contractAddress: pair.contract_address,
@@ -499,7 +499,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
 async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>> {
     use crate::blockchain::ethereum::ComputeCalldata;
     use crate::config::settings::Settings;
-    use crate::core::event::{CtHandleContractPair, RequestValidity};
+    use crate::core::event::{HandleContractPair, RequestValidity};
     use crate::transaction::sender::TransactionManager;
     use crate::transaction::TxConfig;
     use alloy::primitives::{Address, Bytes, U256};
@@ -549,7 +549,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
 
     let simple_handle = U256::from(123); // Random handle
     let contract_addresses = vec![decryption_address];
-    let ct_handle_contract_pairs = vec![CtHandleContractPair {
+    let ct_handle_contract_pairs = vec![HandleContractPair {
         ct_handle: simple_handle,
         contract_address: decryption_address,
     }];

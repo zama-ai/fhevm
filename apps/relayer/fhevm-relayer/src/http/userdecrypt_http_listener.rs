@@ -17,7 +17,7 @@ use tracing::info;
 #[derive(Debug, Deserialize, Clone, Serialize)]
 #[allow(non_snake_case)]
 pub struct UserDecryptRequestJson {
-    pub ctHandleContractPairs: Vec<CtHandleContractPairJson>,
+    pub handleContractPairs: Vec<HandleContractPairJson>,
     pub requestValidity: RequestValidityJson,
     pub contractsChainId: String,
     pub contractAddresses: Vec<String>,
@@ -28,8 +28,8 @@ pub struct UserDecryptRequestJson {
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
 #[allow(non_snake_case)]
-pub struct CtHandleContractPairJson {
-    pub ctHandle: String,
+pub struct HandleContractPairJson {
+    pub handle: String,
     pub contractAddress: String,
 }
 
