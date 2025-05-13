@@ -31,7 +31,7 @@ on:
       gateway_version:
         description: "Gateway Image Version"
         required: false
-        default: "v0.1.0-rc14"
+        default: "4d418fa"
         type: string
       relayer_version:
         description: "Relayer Image Version"
