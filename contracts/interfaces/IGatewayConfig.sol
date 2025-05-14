@@ -62,13 +62,17 @@ interface IGatewayConfig {
     /// @notice Error emitted when the coprocessors list is empty.
     error EmptyCoprocessors();
 
+    /// @notice Error emitted when the KMS threshold is null.
+    error InvalidNullKmsThreshold();
+
     /**
-     * @notice Error emitted when the KMS threshold is too high with respect to the number of KMS nodes.
-     * For a set of `n` KMS nodes, the threshold `t` must verify `0 <= t <= n`.
-     * @param threshold The threshold.
+     * @notice Error emitted when the KMS threshold `t` is too high. It must verify:
+     * - `t >= 1`
+     * - `2*(t-1) + 1 <= n`, with `n` the number of KMS nodes.
+     * @param kmsThreshold The KMS threshold.
      * @param nParties The number of KMS nodes.
      */
-    error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
+    error InvalidHighKmsThreshold(uint256 kmsThreshold, uint256 nParties);
 
     /**
      * @notice Error emitted when an address is not the pauser.
