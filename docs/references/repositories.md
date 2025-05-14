@@ -12,7 +12,6 @@ Quickly set up your development environment with these ready-to-use templates:
 | [fhevm-hardhat-template](https://github.com/zama-ai/fhevm-hardhat-template) | Hardhat template for FHE smart contract development |
 | [fhevm-react-template](https://github.com/zama-ai/fhevm-react-template)     | React.js template for building FHE dApps            |
 | [fhevm-next-template](https://github.com/zama-ai/fhevm-next-template)       | Next.js template for FHE-enabled dApps              |
-| [fhevm-vue-template](https://github.com/zama-ai/fhevm-vue-template)         | Vue.js template for developing FHE dApps            |
 
 ## **IDE plugins**
 

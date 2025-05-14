@@ -14,7 +14,7 @@ The fhevm Protocol provides a **`FHE` Solidity library** for building confidenti
 
 #### Frontend development
 
-<table><thead><tr><th width="252">Repository</th><th>Description</th></tr></thead><tbody><tr><td><a href="https://github.com/zama-ai/fhevm-js/">@fhevm/sdk</a></td><td>JavaScript library for client‐side FHE, enabling encryption, decryption, and data handling.</td></tr><tr><td><a href="https://github.com/zama-ai/fhevm-react-template">fhevm-react-template</a></td><td>React.js template to quickly spin up FHE‐enabled dApps.</td></tr><tr><td><a href="https://github.com/zama-ai/fhevm-next-template">fhevm-next-template</a></td><td>Next.js template for integrating FHE in server‐side rendered or hybrid web apps.</td></tr><tr><td><a href="https://github.com/zama-ai/fhevm-vue-template">fhevm-vue-template</a></td><td>Vue.js template for creating privacy‐preserving dApps with encrypted data</td></tr></tbody></table>
+<table><thead><tr><th width="252">Repository</th><th>Description</th></tr></thead><tbody><tr><td><a href="https://github.com/zama-ai/fhevm-js/">@fhevm/sdk</a></td><td>JavaScript library for client‐side FHE, enabling encryption, decryption, and data handling.</td></tr><tr><td><a href="https://github.com/zama-ai/fhevm-react-template">fhevm-react-template</a></td><td>React.js template to quickly spin up FHE‐enabled dApps.</td></tr><tr><td><a href="https://github.com/zama-ai/fhevm-next-template">fhevm-next-template</a></td><td>Next.js template for integrating FHE in server‐side rendered or hybrid web apps.</td></tr></tbody></table>
 
 #### Examples & Resources
 
