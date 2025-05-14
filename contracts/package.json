@@ -1,6 +1,6 @@
 {
   "name": "@fhevm/core-contracts",
-  "version": "0.7.0-8",
+  "version": "0.7.0-9",
   "description": "fhevm backend contracts",
   "repository": {
     "type": "git",
@@ -29,7 +29,7 @@
     "@openzeppelin/foundry-upgrades": "^0.3.6",
     "@openzeppelin/hardhat-upgrades": "3.5.0",
     "@trivago/prettier-plugin-sort-imports": "^4.0.0",
-    "@zama-fhe/oracle-solidity": "^0.0.3",
+    "@zama-fhe/oracle-solidity": "^0.0.4-0",
     "bigint-buffer": "^1.1.5",
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",
