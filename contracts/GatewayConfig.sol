@@ -47,8 +47,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         address[] kmsTxSenderAddresses;
         /// @notice The KMS nodes' signer address list
         address[] kmsSignerAddresses;
-        /// @notice The KMS' threshold to consider for majority vote or reconstruction. For a set ot `n`
-        /// @notice KMS nodes, the threshold `t` must verify `3t < n`.
+        /// @notice The KMS threshold parameter to consider for decryption consensus
         uint256 kmsThreshold;
         /// @notice The coprocessors' metadata
         mapping(address coprocessorTxSenderAddress => Coprocessor coprocessor) coprocessors;
@@ -75,7 +74,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
     /// @param initialPauser Pauser address
     /// @param initialMetadata Metadata of the protocol
-    /// @param initialKmsThreshold The KMS threshold. Must verify `3t < n` for `n` KMS nodes.
+    /// @param initialKmsThreshold The KMS threshold parameter
     /// @param initialKmsNodes List of KMS nodes
     /// @param initialCoprocessors List of coprocessors
     function initialize(
@@ -105,25 +104,19 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @dev Register the pauser
         $.pauser = initialPauser;
 
-        uint256 nParties = initialKmsNodes.length;
-
-        /// @dev Check that this KMS node's threshold is valid. For a set of `n` KMS nodes, the
-        /// @dev threshold `t` must verify `0 <= t <= n`.
-        if (initialKmsThreshold > nParties) {
-            revert KmsThresholdTooHigh(initialKmsThreshold, nParties);
-        }
-
-        /// @dev Set the KMS threshold.
-        $.kmsThreshold = initialKmsThreshold;
-
         /// @dev Register the KMS nodes
-        for (uint256 i = 0; i < nParties; i++) {
+        for (uint256 i = 0; i < initialKmsNodes.length; i++) {
             $._isKmsTxSender[initialKmsNodes[i].txSenderAddress] = true;
             $.kmsNodes[initialKmsNodes[i].txSenderAddress] = initialKmsNodes[i];
             $.kmsTxSenderAddresses.push(initialKmsNodes[i].txSenderAddress);
             $._isKmsSigner[initialKmsNodes[i].signerAddress] = true;
             $.kmsSignerAddresses.push(initialKmsNodes[i].signerAddress);
         }
+
+        /// @dev Set the KMS threshold.
+        /// @dev This should be done after the KMS nodes have been registered as the function reads
+        /// @dev the `kmsSignerAddresses` array.
+        _setKmsThreshold(initialKmsThreshold);
 
         /// @dev Register the coprocessors
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
@@ -149,12 +142,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /// @dev See {IGatewayConfig-updateKmsThreshold}.
     function updateKmsThreshold(uint256 newKmsThreshold) external virtual onlyOwner {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (newKmsThreshold > $.kmsTxSenderAddresses.length) {
-            revert KmsThresholdTooHigh(newKmsThreshold, $.kmsTxSenderAddresses.length);
-        }
-
-        $.kmsThreshold = newKmsThreshold;
+        _setKmsThreshold(newKmsThreshold);
         emit UpdateKmsThreshold(newKmsThreshold);
     }
 
@@ -240,13 +228,13 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IGatewayConfig-getKmsMajorityThreshold}.
     function getKmsMajorityThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsThreshold + 1;
+        return $.kmsThreshold;
     }
 
     /// @dev See {IGatewayConfig-getKmsReconstructionThreshold}.
     function getKmsReconstructionThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return 2 * $.kmsThreshold + 1;
+        return 2 * ($.kmsThreshold - 1) + 1;
     }
 
     /// @dev See {IGatewayConfig-getCoprocessorMajorityThreshold}.
@@ -317,6 +305,28 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
                     Strings.toString(PATCH_VERSION)
                 )
             );
+    }
+
+    /**
+     * @dev Sets the KMS threshold.
+     * @param newKmsThreshold The new KMS threshold.
+     */
+    function _setKmsThreshold(uint256 newKmsThreshold) internal virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        uint256 nKmsNodes = $.kmsSignerAddresses.length;
+
+        /// @dev Check that the KMS threshold `t` is valid. It must verify:
+        /// @dev - `t > 0` : at least one vote should be required for any decryption response consensus
+        /// @dev - `2*(t - 1) + 1 <= n` : the response consensus should not require more than `n` votes,
+        /// @dev with `n` being the number of registered KMS nodes
+        if (newKmsThreshold == 0) {
+            revert InvalidNullKmsThreshold();
+        }
+        if (2 * (newKmsThreshold - 1) + 1 > nKmsNodes) {
+            revert InvalidHighKmsThreshold(newKmsThreshold, nKmsNodes);
+        }
+
+        $.kmsThreshold = newKmsThreshold;
     }
 
     /**
