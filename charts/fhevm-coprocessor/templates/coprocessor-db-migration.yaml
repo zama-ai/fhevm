@@ -40,11 +40,11 @@ spec:
           - -c
           - |
             set -ex
-            wget {{ .Values.dbMigration.insertInitContainer.pksURL }} -O /fhevm-keys/pks
+            wget $PKS_URL -O /fhevm-keys/pks
             sha256sum /fhevm-keys/pks
-            wget {{ .Values.dbMigration.insertInitContainer.sksURL }} -O /fhevm-keys/sns_pk
+            wget $SKS_URL -O /fhevm-keys/sns_pk
             sha256sum /fhevm-keys/sns_pk
-            wget {{ .Values.dbMigration.insertInitContainer.publicParamsURL }} -O /fhevm-keys/pp
+            wget $PP_URL -O /fhevm-keys/pp
             sha256sum /fhevm-keys/pp
         env:
 {{ toYaml .Values.dbMigration.env | nindent 12 }}
