@@ -31,7 +31,7 @@ on:
       gateway_version:
         description: "Gateway Image Version"
         required: false
-        default: "ef7114b"
+        default: "04a6b38"
         type: string
       relayer_version:
         description: "Relayer Image Version"
