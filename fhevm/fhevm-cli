@@ -19,8 +19,8 @@ PROJECT="fhevm"
 
 export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc11"}
 export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.1.0-rc5"}
-export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"v0.7.0-rc6"}
-export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc6"}
+export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"d6a535f"}
+export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"e256eb8"}
 export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc6"}
 export GATEWAY_VERSION=${GATEWAY_VERSION:-"ef7114b"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"d05900d"}
@@ -148,12 +148,12 @@ case $COMMAND in
           docker_args+=("-g" "test user input uint64")
           ;;
         user-decryption)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION (ebool)${RESET}"
-          docker_args+=("-g" "test user decrypt ebool")
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
+          docker_args+=("-g" "test user decrypt")
           ;;
         public-decryption)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION (euint64)${RESET}"
-          docker_args+=("-g" "test async decrypt uint64")
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
+          docker_args+=("-g" "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)")
           ;;
         public-decryption-ebytes256)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION (ebytes256)${RESET}"
