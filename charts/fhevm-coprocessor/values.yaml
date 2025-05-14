@@ -49,11 +49,13 @@ dbMigration:
         secretKeyRef:
           name: coprocessor-api-key
           key: coprocessor-api-key
+    - name: PKS_URL
+      value: "http://minio:9000/kms-public/kms/PUB/PublicKey/d74037feb1394aec0eb724afc4a690e16a0203eb1dc868de08179f2e4828f335"
+    - name: SKS_URL
+      value: "http://minio:9000/kms-public/kms/PUB/ServerKey/812b602c11693dda4bfa68db78269849972b6f1920a725a98fc78cf619a6ab5f"
+    - name: PP_URL
+      value: "http://minio:9000/kms-public/kms/PUB/CRS/e4e3f0deef6492bde2fac3f2c698112ace878d4a3656b272197ed332391c48fa"
   serviceAccountName:
-  insertInitContainer:
-    pksURL: http://minio:9000/kms-public/kms/PUB/PublicKey/d74037feb1394aec0eb724afc4a690e16a0203eb1dc868de08179f2e4828f335
-    sksURL: http://minio:9000/kms-public/kms/PUB/ServerKey/812b602c11693dda4bfa68db78269849972b6f1920a725a98fc78cf619a6ab5f
-    publicParamsURL: http://minio:9000/kms-public/kms/PUB/CRS/e4e3f0deef6492bde2fac3f2c698112ace878d4a3656b272197ed332391c48fa
   storage:
     size: 2Gi
   resources:
