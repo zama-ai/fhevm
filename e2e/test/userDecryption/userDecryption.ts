@@ -4,6 +4,7 @@ import { ethers } from "hardhat";
 import { createInstances } from "../instance";
 import { getSigners, initSigners } from "../signers";
 import { userDecryptSingleHandle } from "../utils";
+import { assert } from "chai";
 
 describe("User decryption", function () {
   before(async function () {
@@ -29,7 +30,7 @@ describe("User decryption", function () {
       privateKey,
       publicKey
     );
-    expect(decryptedValue).to.equal(1n);
+    expect(decryptedValue).to.equal(true);
 
     // on the other hand, Bob should be unable to read Alice's handle
     try {
@@ -54,9 +55,9 @@ describe("User decryption", function () {
 
     // and should be impossible to call userDecrypt if contractAddress is in list of userAddresses
     try {
-      const ctHandleContractPairs = [
+      const handleContractPairs = [
         {
-          ctHandle: handle,
+          handle: handle,
           contractAddress: this.signers.alice.address, // this should be impossible, as expected by this test
         },
       ];
@@ -83,7 +84,7 @@ describe("User decryption", function () {
       );
 
       await this.instances.alice.userDecrypt(
-        ctHandleContractPairs,
+        handleContractPairs,
         privateKey,
         publicKey,
         signature.replace("0x", ""),
@@ -185,7 +186,7 @@ describe("User decryption", function () {
       publicKey
     );
     expect(decryptedValue).to.equal(
-      BigInt("0x8ba1f109551bD432803012645Ac136ddd64DBA72")
+      "0x8ba1f109551bD432803012645Ac136ddd64DBA72"
     );
   });
 
@@ -217,10 +218,67 @@ describe("User decryption", function () {
       publicKey
     );
     expect(decryptedValue).to.equal(
-      BigInt(
-        "0x19d179e0cc7e816dc944582ed4f5652f5951900098fc2e0a15a7ea4dc8cfa4e3b6c54beea5ee95e56b728762f659347ce1d4aa1b05fcc5"
-      )
+      "0x" +
+        "19d179e0cc7e816dc944582ed4f5652f5951900098fc2e0a15a7ea4dc8cfa4e3b6c54beea5ee95e56b728762f659347ce1d4aa1b05fcc5".padStart(
+          128,
+          "0"
+        )
     );
+  });
+
+  it("test user decrypt mixed ebytes64 and euint16", async function () {
+    const handleBytes64 = await this.contract.yBytes64();
+    const handleUint16 = await this.contract.xUint16();
+    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+
+    const HandleContractPairs = [
+      {
+        handle: handleBytes64,
+        contractAddress: this.contractAddress,
+      },
+      {
+        handle: handleUint16,
+        contractAddress: this.contractAddress,
+      },
+    ];
+    const startTimeStamp = Math.floor(Date.now() / 1000).toString();
+    const durationDays = "10"; // String for consistency
+    const contractAddresses = [this.contractAddress];
+
+    // Use the new createEIP712 function
+    const eip712 = this.instances.alice.createEIP712(
+      publicKey,
+      contractAddresses,
+      startTimeStamp,
+      durationDays
+    );
+
+    // Update the signing to match the new primaryType
+    const signature = await this.signers.alice.signTypedData(
+      eip712.domain,
+      {
+        UserDecryptRequestVerification:
+          eip712.types.UserDecryptRequestVerification,
+      },
+      eip712.message
+    );
+
+    const results = await this.instances.alice.userDecrypt(
+      HandleContractPairs,
+      privateKey,
+      publicKey,
+      signature.replace("0x", ""),
+      contractAddresses,
+      this.signers.alice.address,
+      startTimeStamp,
+      durationDays
+    );
+
+    assert.deepEqual(results, {
+      "0xcbce6b7f398671314f6063cb14cfd53fb9aa2f4478ff00000000000030390900":
+        "0x00000000000000000019d179e0cc7e816dc944582ed4f5652f5951900098fc2e0a15a7ea4dc8cfa4e3b6c54beea5ee95e56b728762f659347ce1d4aa1b05fcc5",
+      "0x5aef7dda8ea8394fabe4f99d579f7e4387d2f6e9b6ff00000000000030390300": 16n,
+    });
   });
 
   it("test user decrypt ebytes128", async function () {
@@ -235,9 +293,11 @@ describe("User decryption", function () {
       publicKey
     );
     expect(decryptedValue).to.equal(
-      BigInt(
-        "0x13e7819123de6e2870c7e83bb764508e22d7c3ab8a5aee6bdfb26355ef0d3f1977d651b83bf5f78634fa360aa14debdc3daa6a587b5c2fb1710ab4d6677e62a8577f2d9fecc190ad8b11c9f0a5ec3138b27da1f055437af8c90a9495dad230"
-      )
+      "0x" +
+        "13e7819123de6e2870c7e83bb764508e22d7c3ab8a5aee6bdfb26355ef0d3f1977d651b83bf5f78634fa360aa14debdc3daa6a587b5c2fb1710ab4d6677e62a8577f2d9fecc190ad8b11c9f0a5ec3138b27da1f055437af8c90a9495dad230".padStart(
+          256,
+          "0"
+        )
     );
   });
 
@@ -253,9 +313,122 @@ describe("User decryption", function () {
       publicKey
     );
     expect(decryptedValue).to.equal(
-      BigInt(
-        "0xd179e0cc7e816dc944582ed4f5652f5951900098fc2e0a15a7ea4dc8cfa4e3b6c54beea5ee95e56b728762f659347ce1d4aa1b05fcc513e7819123de6e2870c7e83bb764508e22d7c3ab8a5aee6bdfb26355ef0d3f1977d651b83bf5f78634fa360aa14debdc3daa6a587b5c2fb1710ab4d6677e62a8577f2d9fecc190ad8b11c9f0a5ec3138b27da1f055437af8c90a9495dad230"
-      )
+      "0x" +
+        "d179e0cc7e816dc944582ed4f5652f5951900098fc2e0a15a7ea4dc8cfa4e3b6c54beea5ee95e56b728762f659347ce1d4aa1b05fcc513e7819123de6e2870c7e83bb764508e22d7c3ab8a5aee6bdfb26355ef0d3f1977d651b83bf5f78634fa360aa14debdc3daa6a587b5c2fb1710ab4d6677e62a8577f2d9fecc190ad8b11c9f0a5ec3138b27da1f055437af8c90a9495dad230".padStart(
+          512,
+          "0"
+        )
     );
+  });
+
+  it("test user decrypt mixed above limit", async function () {
+    const handleBytes256 = await this.contract.yBytes256();
+    const handleBool = await this.contract.xBool();
+    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+
+    const HandleContractPairs = [
+      {
+        handle: handleBytes256,
+        contractAddress: this.contractAddress,
+      },
+      {
+        handle: handleBool,
+        contractAddress: this.contractAddress,
+      },
+    ];
+    const startTimeStamp = Math.floor(Date.now() / 1000).toString();
+    const durationDays = "10"; // String for consistency
+    const contractAddresses = [this.contractAddress];
+
+    // Use the new createEIP712 function
+    const eip712 = this.instances.alice.createEIP712(
+      publicKey,
+      contractAddresses,
+      startTimeStamp,
+      durationDays
+    );
+
+    // Update the signing to match the new primaryType
+    const signature = await this.signers.alice.signTypedData(
+      eip712.domain,
+      {
+        UserDecryptRequestVerification:
+          eip712.types.UserDecryptRequestVerification,
+      },
+      eip712.message
+    );
+
+    try {
+      await this.instances.alice.userDecrypt(
+        HandleContractPairs,
+        privateKey,
+        publicKey,
+        signature.replace("0x", ""),
+        contractAddresses,
+        this.signers.alice.address,
+        startTimeStamp,
+        durationDays
+      );
+      expect.fail(
+        "Expected an error to be thrown - Bob should not be able to user decrypt Alice balance"
+      );
+    } catch (error) {
+      expect(error.message).to.equal(
+        "Cannot decrypt more than 2048 encrypted bits in a single request"
+      );
+    }
+  });
+
+  it("test user decrypt request expired", async function () {
+    const handle = await this.contract.xBool();
+    const HandleContractPairs = [
+      {
+        handle: handle,
+        contractAddress: this.contractAddress,
+      },
+    ];
+    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+    const startTimeStamp = (
+      BigInt(Math.floor(Date.now() / 1000)) -
+      20n * 86400n
+    ).toString();
+    const durationDays = "10"; // String for consistency
+    const contractAddresses = [this.contractAddress];
+
+    // Use the new createEIP712 function
+    const eip712 = this.instances.alice.createEIP712(
+      publicKey,
+      contractAddresses,
+      startTimeStamp,
+      durationDays
+    );
+
+    // Update the signing to match the new primaryType
+    const signature = await this.signers.alice.signTypedData(
+      eip712.domain,
+      {
+        UserDecryptRequestVerification:
+          eip712.types.UserDecryptRequestVerification,
+      },
+      eip712.message
+    );
+
+    try {
+      await this.instances.alice.userDecrypt(
+        HandleContractPairs,
+        privateKey,
+        publicKey,
+        signature.replace("0x", ""),
+        contractAddresses,
+        this.signers.alice.address,
+        startTimeStamp,
+        durationDays
+      );
+      expect.fail(
+        "Expected an error to be thrown - Bob should not be able to user decrypt Alice balance"
+      );
+    } catch (error) {
+      expect(error.message).to.equal("User decrypt request has expired");
+    }
   });
 });

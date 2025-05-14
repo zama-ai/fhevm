@@ -5,7 +5,6 @@ import { task } from "hardhat/config";
 import type { NetworkUserConfig } from "hardhat/types";
 import { resolve } from "path";
 
-
 const NUM_ACCOUNTS = 15;
 
 task("compile:specific", "Compiles only the specified contract")
@@ -103,19 +102,25 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
     case "staging":
       jsonRpcUrl = process.env.RPC_URL || defaultRpcUrl;
       if (jsonRpcUrl === defaultRpcUrl && !process.env.RPC_URL) {
-        console.warn(`WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
+        console.warn(
+          `WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`
+        );
       }
       break;
     case "zwsDev":
       jsonRpcUrl = process.env.RPC_URL || defaultRpcUrl;
       if (jsonRpcUrl === defaultRpcUrl && !process.env.RPC_URL) {
-        console.warn(`WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
+        console.warn(
+          `WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`
+        );
       }
       break;
     case "sepolia":
       jsonRpcUrl = process.env.RPC_URL || defaultRpcUrl;
       if (jsonRpcUrl === defaultRpcUrl && !process.env.RPC_URL) {
-        console.warn(`WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
+        console.warn(
+          `WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`
+        );
       }
       break;
     case "localCoprocessor":
@@ -155,7 +160,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 
 const config: HardhatUserConfig = {
   mocha: {
-    timeout: 120000,
+    timeout: 300000,
   },
   gasReporter: {
     currency: "USD",

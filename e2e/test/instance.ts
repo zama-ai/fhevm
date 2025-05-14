@@ -17,8 +17,11 @@ let clientKey: Uint8Array | undefined;
 
 const kmsAdd = process.env.KMS_VERIFIER_CONTRACT_ADDRESS;
 const aclAdd = process.env.ACL_CONTRACT_ADDRESS;
+const inputAdd = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS;
 const gatewayChainID = +process.env.CHAIN_ID_GATEWAY!;
-const verifyingContract = process.env.DECRYPTION_ADDRESS!;
+const verifyingContractAddressDecryption = process.env.DECRYPTION_ADDRESS!;
+const verifyingContractAddressInputVerification =
+  process.env.INPUT_VERIFICATION_ADDRESS!;
 const relayerUrl = process.env.RELAYER_URL!;
 
 export const createInstances = async (
@@ -37,8 +40,11 @@ export const createInstances = async (
 export const createInstance = async () => {
   console.log("relayer url given to create instance", relayerUrl);
   const instance = await createFhevmInstance({
-    verifyingContractAddress: verifyingContract,
+    verifyingContractAddressDecryption: verifyingContractAddressDecryption,
+    verifyingContractAddressInputVerification:
+      verifyingContractAddressInputVerification,
     kmsContractAddress: kmsAdd,
+    inputVerifierContractAddress: inputAdd,
     aclContractAddress: aclAdd,
     network: network.config.url,
     relayerUrl: relayerUrl,

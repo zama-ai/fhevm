@@ -135,10 +135,10 @@ export const userDecryptSingleHandle = async (
   signer: Signer,
   privateKey: string,
   publicKey: string
-): Promise<bigint> => {
-  const ctHandleContractPairs = [
+): Promise<bigint | boolean | string> => {
+  const HandleContractPairs = [
     {
-      ctHandle: handle,
+      handle: handle,
       contractAddress: contractAddress,
     },
   ];
@@ -164,18 +164,18 @@ export const userDecryptSingleHandle = async (
     eip712.message
   );
 
-  const decryptedValue = (
-    await instance.userDecrypt(
-      ctHandleContractPairs,
-      privateKey,
-      publicKey,
-      signature.replace("0x", ""),
-      contractAddresses,
-      signer.address,
-      startTimeStamp,
-      durationDays
-    )
-  )[0];
+  const result = await instance.userDecrypt(
+    HandleContractPairs,
+    privateKey,
+    publicKey,
+    signature.replace("0x", ""),
+    contractAddresses,
+    signer.address,
+    startTimeStamp,
+    durationDays
+  );
+
+  const decryptedValue = result[handle];
   return decryptedValue;
 };
 
