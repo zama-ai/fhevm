@@ -49,6 +49,10 @@ pub struct Args {
     /// See also: general purpose buckets naming rules
     #[arg(long, default_value = "ct64")]
     pub bucket_name_ct64: String,
+
+    /// Maximum number of concurrent uploads to S3
+    #[arg(long, default_value_t = 100)]
+    pub max_concurrent_uploads: u32,
 }
 
 pub fn parse_args() -> Args {

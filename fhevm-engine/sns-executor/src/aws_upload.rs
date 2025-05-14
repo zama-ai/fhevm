@@ -10,10 +10,11 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
+use tokio::task::JoinHandle;
 use tokio::{join, select};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 // TODO: Use a config TOML to set these values
 pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
@@ -25,15 +26,22 @@ pub(crate) async fn process_s3_uploads(
     mut tasks: mpsc::Receiver<HandleItem>,
     token: CancellationToken,
 ) -> Result<(), ExecutionError> {
+    // Client construction is expensive due to connection thread pool initialization, and should
+    // be done once at application start-up.
     let sdk_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-
     let client = Arc::new(aws_sdk_s3::Client::new(&sdk_config));
+
     let pool = Arc::new(
         PgPoolOptions::new()
             .max_connections(conf.db.max_connections)
             .connect(&conf.db.url)
             .await?,
     );
+
+    let conf = &conf.s3;
+    let max_concurrent_uploads = conf.max_concurrent_uploads as usize;
+    let semaphore = Arc::new(Semaphore::new(max_concurrent_uploads));
+    let mut upload_jobs: Vec<JoinHandle<()>> = Vec::new();
 
     loop {
         select! {
@@ -43,13 +51,52 @@ pub(crate) async fn process_s3_uploads(
                     None => return Ok(()),
                 };
 
-                if let Err(err) = upload_ciphertexts(task, &client, &pool, &conf.s3).await {
-                    error!("Failed to upload ciphertexts: {}", err);
-                    // TODO: Implement retry-mechanism.
-                    // For now, just log the error
+                // Cleanup completed tasks
+                upload_jobs.retain(|h| !h.is_finished());
+
+                // Check if we have reached the max concurrent uploads
+                if upload_jobs.len() >= max_concurrent_uploads {
+                    warn!({target = "worker", action = "review"},
+                        "Max concurrent uploads reached: {}, waiting for a slot ...",
+                        max_concurrent_uploads
+                    );
+                } else {
+                    debug!(
+                        "Available upload slots: {}",
+                        max_concurrent_uploads - upload_jobs.len(),
+                    );
                 }
+
+                // Acquire a permit for an upload
+                let permit = semaphore.clone().acquire_owned().await.expect("Failed to acquire semaphore permit");
+                let client = client.clone();
+                let pool = pool.clone();
+                let conf = conf.clone();
+
+                // Spawn a new task to upload the ciphertexts
+                let h = tokio::spawn(async move {
+                        if let Err(err) = upload_ciphertexts(task, &client, &pool, &conf).await {
+                            error!("Failed to upload ciphertexts: {}", err);
+                            // TODO: Implement retry-mechanism.
+                        }
+                        drop(permit);
+                });
+
+                upload_jobs.push(h);
             },
-            _ = token.cancelled() => return Ok(()),
+            _ = token.cancelled() => {
+                // Cleanup completed tasks
+                upload_jobs.retain(|h| !h.is_finished());
+
+                info!("Waiting for all uploads to finish ..");
+                for handle in upload_jobs {
+                    if let Err(err) = handle.await {
+                        error!("Failed to join upload task: {}", err);
+                    }
+                }
+
+                return Ok(())
+            },
         }
     }
 }

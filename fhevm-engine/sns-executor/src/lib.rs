@@ -36,6 +36,7 @@ pub struct DBConfig {
 pub struct S3Config {
     pub bucket_ct128: String,
     pub bucket_ct64: String,
+    pub max_concurrent_uploads: u32,
 }
 
 #[derive(Clone)]
@@ -57,6 +58,7 @@ impl std::fmt::Display for Config {
     }
 }
 
+#[derive(Clone)]
 pub struct HandleItem {
     pub tenant_id: i32,
     pub handle: Vec<u8>,

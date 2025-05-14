@@ -1,8 +1,5 @@
 use fhevm_engine_common::telemetry;
-use sns_executor::{
-    compute_128bit_ct, process_s3_uploads, Config, DBConfig, HandleItem, S3Config,
-    UPLOAD_QUEUE_SIZE,
-};
+use sns_executor::{compute_128bit_ct, process_s3_uploads, Config, DBConfig, HandleItem, S3Config};
 use tokio::{signal::unix, spawn, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, Level};
@@ -38,6 +35,7 @@ fn construct_config() -> Config {
         s3: S3Config {
             bucket_ct128: args.bucket_name_ct128,
             bucket_ct64: args.bucket_name_ct64,
+            max_concurrent_uploads: args.max_concurrent_uploads,
         },
     }
 }
@@ -56,8 +54,11 @@ async fn main() {
     // Handle SIGINIT signals
     handle_sigint(parent.clone());
 
-    // Queue of tasks to upload ciphertexts
-    let (uploads_tx, uploads_rx) = mpsc::channel::<HandleItem>(UPLOAD_QUEUE_SIZE);
+    // Queue of tasks to upload ciphertexts is 10 times the number of concurrent uploads
+    // to avoid blocking the worker
+    // and to allow for some burst of uploads
+    let (uploads_tx, uploads_rx) =
+        mpsc::channel::<HandleItem>(10 * conf.s3.max_concurrent_uploads as usize);
 
     let config = conf.clone();
     let token = parent.child_token();

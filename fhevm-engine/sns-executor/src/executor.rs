@@ -121,18 +121,11 @@ async fn fetch_and_execute_sns_tasks(
     };
 
     if let Some(mut tasks) = query_sns_tasks(&mut db_txn, conf.batch_limit).await? {
-        process_tasks(&mut tasks, keys)?;
+        process_tasks(&mut tasks, keys, tx)?;
         update_computations_status(&mut db_txn, &tasks).await?;
         update_ciphertext128(&mut db_txn, &tasks).await?;
         notify_ciphertext128_ready(&mut db_txn, &conf.notify_channel).await?;
         db_txn.commit().await?;
-
-        // Submits ciphertexts to the upload worker for processing.
-        for task in tasks {
-            tx.send(task)
-                .await
-                .map_err(|_| ExecutionError::RecvFailure)?;
-        }
     } else {
         db_txn.rollback().await?;
     }
@@ -236,7 +229,11 @@ async fn get_remaining_tasks(
 }
 
 /// Processes the tasks by decompressing and transforming ciphertexts.
-fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), ExecutionError> {
+fn process_tasks(
+    tasks: &mut [HandleItem],
+    keys: &KeySet,
+    tx: &Sender<HandleItem>,
+) -> Result<(), ExecutionError> {
     set_server_key(keys.server_key.clone());
 
     for task in tasks.iter_mut() {
@@ -272,6 +269,25 @@ fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), Executio
                 error!(target: "sns", { handle }, "Failed to convert ct: {err}");
             }
         };
+
+        // Start uploading the ciphertexts sooner than later
+        //
+        // The service must continue running the squashed noise algorithm,
+        // regardless of the availability of the upload worker.
+        if let Err(err) = tx.try_send(task.clone()) {
+            // This could happen if either we are experiencing a burst of tasks
+            // or the upload worker cannot recover the connection to AWS S3
+            //
+            // In this case, we should log the error and rely on the retry mechanism.
+            //
+            // There are three levels of task buffering:
+            // 1. The spawned uploading tasks (size: conf.max_concurrent_uploads)
+            // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
+            // 3. The PostgresDB (size: unlimited)
+
+            error!({targe = "worker", action = "review"},  "Failed to send task to upload worker: {err}");
+            telemetry::end_span_with_err(task.otel.child_span("send_task"), err.to_string());
+        }
     }
 
     Ok(())

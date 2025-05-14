@@ -4,7 +4,7 @@ use opentelemetry::{
     Context, KeyValue,
 };
 use opentelemetry_sdk::Resource;
-use std::time::SystemTime;
+use std::{sync::Arc, time::SystemTime};
 
 use crate::utils::compact_hex;
 
@@ -28,9 +28,10 @@ pub fn setup_otlp(
     Ok(())
 }
 
+#[derive(Clone)]
 pub struct OtelTracer {
     ctx: opentelemetry::Context,
-    tracer: BoxedTracer,
+    tracer: Arc<BoxedTracer>,
 }
 
 impl OtelTracer {
@@ -61,7 +62,10 @@ pub fn tracer_with_handle(span_name: &'static str, handle: Vec<u8>) -> OtelTrace
 
     if handle.is_empty() {
         let ctx = Context::default().with_span(root_span);
-        OtelTracer { ctx, tracer }
+        OtelTracer {
+            ctx,
+            tracer: Arc::new(tracer),
+        }
     } else {
         // Add a short hex of the handle to the context
         let ctx = Context::default()
@@ -75,7 +79,10 @@ pub fn tracer_with_handle(span_name: &'static str, handle: Vec<u8>) -> OtelTrace
 
         ctx.span().set_attribute(KeyValue::new("handle", handle));
 
-        OtelTracer { ctx, tracer }
+        OtelTracer {
+            ctx,
+            tracer: Arc::new(tracer),
+        }
     }
 }
 
@@ -84,7 +91,10 @@ pub fn tracer_with_start_time(span_name: &'static str, start_time: SystemTime) -
     let tracer = opentelemetry::global::tracer(span_name);
     let root_span = tracer.build(SpanBuilder::from_name(span_name).with_start_time(start_time));
     let ctx = opentelemetry::Context::default().with_span(root_span);
-    OtelTracer { ctx, tracer }
+    OtelTracer {
+        ctx,
+        tracer: Arc::new(tracer),
+    }
 }
 
 pub fn tracer(span_name: &'static str) -> OtelTracer {
