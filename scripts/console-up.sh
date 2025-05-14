@@ -61,10 +61,12 @@ private_key_env = \"GATEWAY_PRIVATE_KEY\"
 if [ "${DEBUG:-0}" = "1" ]; then
   CRS_URLS=$CRS_URLS \
     KEY_URLS=$KEY_URLS \
-    RELAYER_KEY_URL__FHE_PUBLIC_KEY__DATA_ID="fhe-public-key-data-id" \
-    RELAYER_KEY_URL__FHE_PUBLIC_KEY__URL=$KEY_URLS \
-    RELAYER_KEY_URL__CRS__DATA_ID="crs-data-id" \
-    RELAYER_KEY_URL__CRS__URL=$CRS_URLS \
+    RELAYER_STANDALONE_RELAYER_CONFIGURATION__KEY_URL__FHE_PUBLIC_KEY__DATA_ID="fhe-public-key-data-id" \
+    RELAYER_STANDALONE_RELAYER_CONFIGURATION__KEY_URL__FHE_PUBLIC_KEY__URL=$KEY_URLS \
+    RELAYER_STANDALONE_RELAYER_CONFIGURATION__KEY_URL__CRS__DATA_ID="crs-data-id" \
+    RELAYER_STANDALONE_RELAYER_CONFIGURATION__KEY_URL__CRS__URL=$CRS_URLS \
+    RELAYER_STANDALONE_RELAYER_CONFIGURATION__HTTP_PORT=4324 \
+    RELAYER_STANDALONE_RELAYER_CONFIGURATION__HTTP_HOSTNAME="0.0.0.0" \
     docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.03.console.run.yaml -f ./docker-compose.03.console.debug.yaml -f docker-compose.04.console.ghcr.yaml -f docker-compose.04.console.migrate.ghcr.yaml -p console up -d --wait --remove-orphans
   # To avoid having the back and the orchestrator consume messages before the relayer
     docker kill console-orchestrator

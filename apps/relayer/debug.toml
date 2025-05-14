@@ -1,29 +1,32 @@
 # NOTE: Needs to be updated each time we re-gen the public material (i.e. relaunch docker compose locally)
-[key_url]
-[key_url.fhe_public_key]
+[standalone_relayer_configuration]
+http_port = 4325
+http_hostname = "0.0.0.0"
+[standalone_relayer_configuration.key_url]
+[standalone_relayer_configuration.key_url.fhe_public_key]
 data_id = "fhe-public-key-data-id"
-url = "http://0.0.0.0:9000/kms-public/PUB/PublicKey/5c587d9a331bdbd1b0cedd5483bb847bf38a011da879392f931f10f2b8481885"
-[key_url.crs]
+url = "https://zama-zws-dev-tkms-with-enclave-8q42s.s3.eu-west-1.amazonaws.com/PUB-p1/PublicKey/cefc84745eefa9de4921f01136ecaeda7f758c455dafc1e65319e9881466d2cb"
+[standalone_relayer_configuration.key_url.crs]
 data_id = "crs-data-id"
-url = "http://0.0.0.0:9000/kms-public/PUB/CRS/fd15d4f6e82d3596b8f50469cb192e8ac370a09e8bc3f03830cce8256d24dd7b"
+url = "https://zama-zws-dev-tkms-with-enclave-8q42s.s3.eu-west-1.amazonaws.com/PUB-p1/CRS/dfec718bf5f455338a2e9678114be33936a3bb25b4b3d8d60674d283c2f530fe"
+
+[gateway_chain]
+zkpok_manager = "0xa77cd73b724CfAEa184Ab499c368D5F15cBd1806"
+decryption_manager = "0x97E01362D5e602099190C2DCD4178ceA3022De72"
+[gateway_chain.chain_config]
+chain_id = 412346
+ws_url = "wss://l2-gateway-node-zws-dev-wss.diplodocus-boa.ts.net"
+http_url = "https://l2-gateway-node-zws-dev-https.diplodocus-boa.ts.net"
 
 [[host_chains]]
 decryption_oracle = "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
 [host_chains.chain_config]
-chain_id = 12345
-ws_url = "ws://localhost:8546"
-http_url = "http://localhost:8546"
+chain_id = 1337
+ws_url = "wss://l1-eth-node-zws-dev-wss.diplodocus-boa.ts.net"
+http_url = "https://l1-eth-node-zws-dev-https.diplodocus-boa.ts.net"
 [host_chains.chain_config.signer_config]
 type = "LOCAL"
 private_key_env = "HTTPZ_PRIVATE_KEY"
-
-[gateway_chain]
-zkpok_manager = "0x35760912360E875DA50D40a74305575c23D55783"
-decryption_manager = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
-[gateway_chain.chain_config]
-chain_id = 54321
-ws_url = "ws://localhost:8546"
-http_url = "http://localhost:8546"
 
 [gateway_chain.chain_config.signer_config]
 type = "LOCAL"

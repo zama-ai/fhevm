@@ -108,6 +108,9 @@ all:
 	sleep 10
 	$(MAKE) test
 
+all-relayer-debug:
+	DEBUG=1 RELAYER_URL=http://console-relayer:4324 $(MAKE) all
 
-
+all-test-debug:
+	DEBUG=1 RELAYER_URL=http://console-relayer:4324 $(MAKE) test
 

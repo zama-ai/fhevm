@@ -29,6 +29,8 @@ diesel = { workspace = true }
 bip39 = { workspace = true }
 rand = { workspace = true }
 config = { workspace = true }
+rustls = { workspace = true }
+tokio-tungstenite = { workspace = true }
 
 [[bin]]
 name = "zws-relayer"

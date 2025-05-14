@@ -10,6 +10,7 @@ use axum::{
 use fhevm_relayer::blockchain::ethereum::{
     ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
 };
+
 use fhevm_relayer::core::utils::OnceHandler;
 use fhevm_relayer::{
     config::settings::KeyUrl,
@@ -20,7 +21,7 @@ use fhevm_relayer::{
             InputProofResponsePayloadJson,
         },
         keyurl_http_listener,
-        publicdecrypt_http_listener::PublicDecryptErrorResponseJson,
+        public_decrypt_http_listener::PublicDecryptErrorResponseJson,
         userdecrypt_http_listener::{
             UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
         },
@@ -30,6 +31,7 @@ use fhevm_relayer::{
         Orchestrator, TokioEventDispatcher,
     },
 };
+use futures::future::{self, Either};
 use futures_util::StreamExt;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -119,6 +121,11 @@ pub async fn private_decryption_handler(
         request_id,
         PrivateDecryptionResponse::event_id(),
     );
+    let error_rx = register_once_handler(
+        Arc::clone(&listener_state.orchestrator),
+        request_id,
+        UnrecoverableError::event_id(),
+    );
 
     match send_message_to_sqs_queue(
         true,
@@ -139,7 +146,12 @@ pub async fn private_decryption_handler(
         }
     }
 
-    match rx.await.await {
+    let result = match future::select(rx.await, error_rx.await).await {
+        Either::Left((result, _)) => result,
+        Either::Right((result, _)) => result,
+    };
+
+    match result {
         Ok(event) => {
             match event {
                 ZwsRelayerEvent::HTTPPrivateDecryptionResponse(value) => {
@@ -151,6 +163,16 @@ pub async fn private_decryption_handler(
                         }),
                     )
                         .into_response()
+                }
+                ZwsRelayerEvent::UnrecoverableError(value) => {
+                    error!(
+                        "Unrecoverable error return value in http handler: {} from {}",
+                        value, value.event,
+                    );
+                    let error_response = InputProofErrorResponseJson {
+                        message: "Failed to handle input registration.".to_string(),
+                    };
+                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
                 }
                 // Should be unreachable
                 _ => {
@@ -207,6 +229,11 @@ pub async fn input_registration_handler(
         request_id,
         HTTPInputRegistrationResponse::event_id(),
     );
+    let error_rx = register_once_handler(
+        Arc::clone(&listener_state.orchestrator),
+        request_id,
+        UnrecoverableError::event_id(),
+    );
 
     match send_message_to_sqs_queue(
         true,
@@ -227,7 +254,12 @@ pub async fn input_registration_handler(
         }
     }
 
-    match rx.await.await {
+    let result = match future::select(rx.await, error_rx.await).await {
+        Either::Left((result, _)) => result,
+        Either::Right((result, _)) => result,
+    };
+
+    match result {
         Ok(event) => {
             match event {
                 ZwsRelayerEvent::HTTPInputRegistrationResponse(value) => {
@@ -247,6 +279,16 @@ pub async fn input_registration_handler(
                     )
                         .into_response()
                 }
+                ZwsRelayerEvent::UnrecoverableError(value) => {
+                    error!(
+                        "Unrecoverable error return value in http handler: {} from {}",
+                        value, value.event,
+                    );
+                    let error_response = InputProofErrorResponseJson {
+                        message: "Failed to handle input registration.".to_string(),
+                    };
+                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                }
                 // Should be unreachable
                 _ => {
                     let error_response = InputProofErrorResponseJson {
@@ -265,6 +307,7 @@ pub async fn input_registration_handler(
 }
 
 pub fn key_url_route(key_url: KeyUrl) -> keyurl_http_listener::KeyUrlResponseJson {
+    debug!("{} {}", key_url.fhe_public_key.url, key_url.crs.url);
     keyurl_http_listener::KeyUrlResponseJson {
         response: keyurl_http_listener::Response {
             fhe_key_info: vec![keyurl_http_listener::FheKeyInfo {
@@ -294,6 +337,8 @@ pub async fn http_listener(
     relayer_queue_url: String,
     key_url: KeyUrl,
     orchestrator: Arc<Orchestrator<TokioEventDispatcher<ZwsRelayerEvent>, ZwsRelayerEvent>>,
+    port: u64,
+    host: String,
 ) {
     let app = Router::new()
         // Input registration
@@ -337,8 +382,7 @@ pub async fn http_listener(
     // .with_state(Arc::new(KeyUrlState { key_url }));
 
     // Define the socket address for the server to listen on.
-    let host = "0.0.0.0";
-    let port = 4324;
+    // TODO: set this as a config parameter
     let addr: SocketAddr = format!("{}:{}", host, port)
         .parse()
         .expect("Invalid address");

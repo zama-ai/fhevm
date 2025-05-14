@@ -1,8 +1,8 @@
 [submodule "apps/relayer/fhevm-relayer"]
 	path = apps/relayer/fhevm-relayer
 	url = git@github.com:zama-ai/fhevm-relayer.git
-	tag = v0.1.0-rc7
+	commit = d8e93177649472c3547aa29fea9e7cffc5d19410
 [submodule "external/httpz-test-suite"]
 	path = external/httpz-test-suite
 	url = git@github.com:zama-ai/httpz-test-suite.git
-	commit = 8804c051c9521264012e428d59f396bd789e9458
+	commit = 06e6d402a8e3c9adebf7f57b427d30dcc9580191

@@ -11,9 +11,10 @@ serde = { version = "1", features = ["derive"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
 dotenvy = { version = "^0.15.0" }
 diesel = { version = "2.2.0", features = ["postgres", "extras", "serde_json"] }
-alloy-sol-types = { version = "0.8.18" }
-alloy = { version = "^0.9.2", features = ["full", "signer-aws"] }
+alloy-sol-types = { version = "1.0.0" }
+alloy = { version = "0.13.0", features = ["full", "signer-aws"] }
 tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls"] }
 bip39 = { version = "2" }
 rand = { version = "0.9" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -34,3 +35,6 @@ futures-util = { version = "0.3.31" }
 diesel_json = { version = "0.2" }
 config = { version = "0.15" }
 byteorder = { version = "1" }
+rustls = { version = "0.23", features = [
+  "aws-lc-rs",
+], default-features = false } #, features = ["ring", "aws-lc-rs", "std", "tls12"]

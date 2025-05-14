@@ -1,6 +1,5 @@
 // TODO: fix competing relayers
-// Oracle contract should only allow callback calls from pre-defined wallets
-// With both FHEVM and CONSOLE relayers running a competition starts
+// Oracle contract should only allow callback calls from pre-defined wallets With both FHEVM and CONSOLE relayers running a competition starts
 
 // TODO: does the oracle emit an event once the callback is fulfilled ???
 
@@ -19,7 +18,7 @@ use fhevm_relayer::{
         traits::{EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
-    transaction::TransactionService,
+    transaction::{sender::SignerCombined, TransactionService},
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -94,7 +93,14 @@ pub struct RelayerConfiguration {
     pub host_chains: Vec<HostChainConfig>,
     pub gateway_chain: GatewayChainConfig,
     pub queues: SQSConfiguration,
-    pub key_url: Option<KeyUrl>, // Optional because only require in debug mode
+    pub standalone_relayer_configuration: Option<StandaloneRelayerConfiguration>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct StandaloneRelayerConfiguration {
+    pub key_url: KeyUrl,
+    pub http_port: u64,
+    pub http_hostname: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -216,8 +222,15 @@ impl RelayerConfiguration {
 /// - We push the response to tx-manager SNS topic
 /// - wait for fulfilled or error
 ///
+///
 #[tokio::main]
 async fn main() {
+    // Then before establishing the WebSocket connection:
+    //
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install AWS-LC crypto provider");
+
     // Load .env if it exists, tracing not setup yet so println log
     match from_path(Path::new(".env")).ok() {
         Some(_) => {
@@ -280,51 +293,46 @@ async fn main() {
     // Transaction services
     let mut tx_services = HashMap::new();
 
-    let signer: Arc<dyn Signer + Send + Sync> =
-        match settings.gateway_chain.chain_config.signer_config {
-            SignerConfig::Local(signer_config) => {
-                // TODO: catch NotPresent errors and show a better custom error
-                let mut signer: PrivateKeySigner = std::env::var(&signer_config.private_key_env)
-                    .unwrap_or_else(|_| {
-                        panic!("Couldn't find {} env-var.", signer_config.private_key_env)
-                    })
-                    .parse()
-                    .unwrap_or_else(|_| {
-                        panic!(
-                            "Couldn't parse Private Key from env-var: {}",
-                            signer_config.private_key_env
-                        )
-                    });
-                signer.set_chain_id(Some(settings.gateway_chain.chain_config.chain_id));
-                Arc::new(signer)
-            }
-            SignerConfig::AWSKMS(signer_config) => {
-                let signer = alloy::signers::aws::AwsSigner::new(
-                    kms_client.clone(),
-                    signer_config.key_id,
-                    Some(settings.gateway_chain.chain_config.chain_id),
-                )
-                .await
-                .unwrap();
-                Arc::new(signer)
-            }
-        };
-    let gateway_tx_service = match TransactionService::new(
-        &settings.gateway_chain.chain_config.http_url,
-        signer,
-    )
-    .await
-    {
-        Ok(value) => value,
-        Err(error) => {
-            let err_msg = format!(
-                "Couldn't initialize gateway transaction service: {:?}",
-                error
-            );
-            error!(err_msg);
-            panic!("{}", err_msg);
+    let signer: Arc<dyn SignerCombined> = match settings.gateway_chain.chain_config.signer_config {
+        SignerConfig::Local(signer_config) => {
+            // TODO: catch NotPresent errors and show a better custom error
+            let mut signer: PrivateKeySigner = std::env::var(&signer_config.private_key_env)
+                .unwrap_or_else(|_| {
+                    panic!("Couldn't find {} env-var.", signer_config.private_key_env)
+                })
+                .parse()
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "Couldn't parse Private Key from env-var: {}",
+                        signer_config.private_key_env
+                    )
+                });
+            signer.set_chain_id(Some(settings.gateway_chain.chain_config.chain_id));
+            Arc::new(signer)
+        }
+        SignerConfig::AWSKMS(signer_config) => {
+            let signer = alloy::signers::aws::AwsSigner::new(
+                kms_client.clone(),
+                signer_config.key_id,
+                Some(settings.gateway_chain.chain_config.chain_id),
+            )
+            .await
+            .unwrap();
+            Arc::new(signer)
         }
     };
+    let gateway_tx_service =
+        match TransactionService::new(&settings.gateway_chain.chain_config.ws_url, signer).await {
+            Ok(value) => value,
+            Err(error) => {
+                let err_msg = format!(
+                    "Couldn't initialize gateway transaction service: {:?}",
+                    error
+                );
+                error!(err_msg);
+                panic!("{}", err_msg);
+            }
+        };
 
     tx_services.insert(
         settings.gateway_chain.chain_config.chain_id,
@@ -332,7 +340,7 @@ async fn main() {
     );
 
     for host_chain in settings.host_chains.clone() {
-        let signer: Arc<dyn Signer + Send + Sync> = match host_chain.chain_config.signer_config {
+        let signer: Arc<dyn SignerCombined> = match host_chain.chain_config.signer_config {
             SignerConfig::Local(signer_config) => {
                 // TODO: catch NotPresent errors and show a better custom error
                 let mut signer: PrivateKeySigner = std::env::var(&signer_config.private_key_env)
@@ -360,18 +368,16 @@ async fn main() {
                 Arc::new(signer)
             }
         };
-        let tx_service =
-            match TransactionService::new(&host_chain.chain_config.http_url, signer).await {
-                Ok(value) => value,
-                Err(error) => {
-                    let err_msg = format!(
-                        "Couldn't initialize gateway transaction service: {:?}",
-                        error
-                    );
-                    error!(err_msg);
-                    panic!("{}", err_msg);
-                }
-            };
+        let tx_service = match TransactionService::new(&host_chain.chain_config.ws_url, signer)
+            .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                let err_msg = format!("Couldn't initialize host transaction service: {:?}", error);
+                error!(err_msg);
+                panic!("{}", err_msg);
+            }
+        };
         tx_services.insert(host_chain.chain_config.chain_id, tx_service);
     }
 
@@ -427,7 +433,8 @@ async fn main() {
 
     // Optional Console Mock
     // This is for testing purposes only
-    if let Some(key_url) = settings.key_url {
+
+    if let Some(standalone) = settings.standalone_relayer_configuration {
         warn!("MOCKING CONSOLE! DEVELOPMENT PURPOSES ONLY");
 
         // Authorization handler
@@ -443,8 +450,10 @@ async fn main() {
         tokio::spawn(http_listener(
             sqs_client.clone(),
             settings.queues.relayer_queue.to_string(),
-            key_url,
+            standalone.key_url,
             Arc::clone(&orchestrator),
+            standalone.http_port,
+            standalone.http_hostname,
         ));
 
         // Console SQS event listener
@@ -465,7 +474,7 @@ async fn main() {
     // Initialize EVM Host adapters
     for host_chain in settings.host_chains.clone() {
         tokio::spawn(blockchain_event_listener(
-            ChainName::Httpz,
+            ChainName::Fhevm,
             host_chain.chain_config.ws_url,
             host_chain.chain_config.chain_id,
             vec![host_chain.decryption_oracle],

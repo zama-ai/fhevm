@@ -1,4 +1,3 @@
-// TODO: wait for ct to be available for priv-dec
 // TODO: handle response happening before receipt for pub-dec
 // TODO: any unexpected failure on http request should return a message to the orchestrator queue
 // TODO: any unexpected failure should be put in a specific table
@@ -15,16 +14,25 @@
 //  - ???
 // And for each define mitigation/recovery mechanism
 // TODO: add tracing based on request-id
+// TODO: if an error occurs then return an error to the console-queue
+// with context of the event that failed
+// TODO: We make the assumption that all events come from an EVM chain
+// we should split host and gateway events, and probably have the events be parsed in
+// the listeners instead of the handler such that the handler is agnostic of the
+// chains and the listeners are specialized.
+// Such that each listener implements chain-specific logic to parse the input
 
+use crate::events::*;
 use alloy::{
     primitives::{Address, FixedBytes, LogData},
     providers::ProviderBuilder,
+    sol_types::SolEvent,
 };
-use alloy_sol_types::SolEvent;
+// use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
 use diesel::{Connection, PgConnection};
 use fhevm_relayer::blockchain::ethereum::bindings::Decryption::{self, CtHandleContractPair};
-use fhevm_relayer::blockchain::public_decrypt_handler::DecryptionRequestData;
+use fhevm_relayer::blockchain::PublicDecryptFhevmRequestData;
 use fhevm_relayer::http::userdecrypt_http_listener::UserDecryptResponsePayloadJson;
 use fhevm_relayer::orchestrator::traits::EventDispatcher;
 use fhevm_relayer::orchestrator::{Orchestrator, TokioEventDispatcher};
@@ -32,6 +40,7 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
+use std::fmt::Display;
 use std::sync::Arc;
 
 use fhevm_relayer::{
@@ -50,8 +59,6 @@ use fhevm_relayer::{
     transaction::{sender::RetryConfig, TransactionService, TxConfig},
 };
 use tracing::{debug, error, info, instrument, warn};
-
-use crate::events::*;
 
 /// Mock handler for Transaction Manager
 #[derive(Debug)]
@@ -91,9 +98,7 @@ pub async fn wait_for_ct_priv_dec_availability(
             return Err(format!("Invalid URL {} : {}", gateway_http_url, e).to_string());
         }
     };
-    let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
-        .on_http(url);
+    let provider = ProviderBuilder::new().on_http(url);
     let decryption = Decryption::new(decryption_address, provider.clone());
     let max_retries = 120;
     let retry_interval = core::time::Duration::from_millis(1000);
@@ -143,6 +148,12 @@ pub async fn wait_for_ct_priv_dec_availability(
     Ok(())
 }
 
+/// Wait for public decryption ciphertexts to be available
+///
+/// This function returns an error if the number of max-retries is reached before the ciphertexts
+/// are available for public decryption.
+/// TODO: parametrize wait-time and retry
+/// btw retry mechanisms with timeouts is something that could probably be factorized
 pub async fn wait_for_ct_pub_dec_availability(
     handles: Vec<FixedBytes<32>>,
     decryption_address: Address,
@@ -154,9 +165,7 @@ pub async fn wait_for_ct_pub_dec_availability(
             return Err(format!("Invalid URL {} : {}", gateway_http_url, e).to_string());
         }
     };
-    let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
-        .on_http(url);
+    let provider = ProviderBuilder::new().on_http(url);
     let decryption = Decryption::new(decryption_address, provider.clone());
     let max_retries = 120;
     let retry_interval = core::time::Duration::from_millis(1000);
@@ -230,6 +239,7 @@ impl EventHandler<ZwsRelayerEvent> for ZWSTransactionManagerMockHandler {
                     transaction_request.chain_id, transaction_request.address,
                 );
 
+                // TODO: parametrize Transaction Manager
                 let tx_config = TxConfig {
                     gas_limit: Some(150000000),
                     max_priority_fee: Some(2000000000),
@@ -238,10 +248,12 @@ impl EventHandler<ZwsRelayerEvent> for ZWSTransactionManagerMockHandler {
                     confirmations: Some(1),
                     timeout_secs: Some(60),
                     // retry_config: Some(RetryConfig::default()),
+                    // TODO: this appears to not be used anywhere
                     retry_config: Some(RetryConfig {
                         max_attempts: 10,
                         base_delay: core::time::Duration::from_secs(1),
                         max_delay: core::time::Duration::from_secs(60),
+                        mock_mode: false,
                     }),
                 };
 
@@ -277,21 +289,16 @@ impl EventHandler<ZwsRelayerEvent> for ZWSTransactionManagerMockHandler {
                 // TODO: check tx-request-response logic
                 let message = ZwsRelayerEvent::TransactionResponse(Box::new(TransactionResponse {
                     request_id: transaction_request.request_id(),
-                    receipt: tx_receipt,
+                    receipt: tx_receipt.inner,
                 }));
-                match send_message_to_sqs_queue(true, &self.sqs_client, &self.queue_url, &message)
-                    .await
-                {
-                    Ok(_) => {
-                        debug!("Successfuly sent {} to {:?}", &message, self.queue_url,)
-                    }
-                    Err(error) => {
-                        error!(
-                            "Error sending SQSRelayerTransactionResponse to {:?}: {:?}",
-                            self.queue_url, error
-                        )
-                    }
-                }
+
+                let _ = send_message_to_sqs_queue_empty(
+                    true,
+                    &self.sqs_client,
+                    &self.queue_url,
+                    &message,
+                )
+                .await;
             }
             _ => {
                 warn!(
@@ -348,19 +355,13 @@ impl EventHandler<ZwsRelayerEvent> for ZWSConsoleMockHandler {
                     });
 
                 // SQS
-                match send_message_to_sqs_queue(true, &self.sqs_client, &self.queue_url, &message)
-                    .await
-                {
-                    Ok(_) => {
-                        debug!("Successfuly sent {} to {}", &message, &self.queue_url)
-                    }
-                    Err(error) => {
-                        error!(
-                            "Error sending SQSRelayerOracleAuthorizationResponse to {:?}: {:?}",
-                            self.queue_url, error
-                        )
-                    }
-                }
+                let _ = send_message_to_sqs_queue_empty(
+                    true,
+                    &self.sqs_client,
+                    &self.queue_url,
+                    &message,
+                )
+                .await;
             }
             _ => {
                 warn!(
@@ -424,6 +425,35 @@ pub enum SupportedBlockchainEvent {
     PublicDecryptionRequest(PublicDecryptionRequest),
 }
 
+// TODO: add decoded ciphertext handles, addresses, ...
+impl Display for SupportedBlockchainEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SupportedBlockchainEvent::DecryptionRequest(_) => {
+                write!(f, "DecryptionRequest")
+            }
+            SupportedBlockchainEvent::PublicDecryptionRequest(_) => {
+                write!(f, "PublicDecryptionRequest")
+            }
+            SupportedBlockchainEvent::UserDecryptionRequest(_) => {
+                write!(f, "DecryptionRequest")
+            }
+            SupportedBlockchainEvent::VerifyProofRequest(_) => {
+                write!(f, "VerifyProofRequest")
+            }
+            SupportedBlockchainEvent::PublicDecryptionResponse(_) => {
+                write!(f, "PublicDecryptionResponse")
+            }
+            SupportedBlockchainEvent::UserDecryptionResponse(_) => {
+                write!(f, "DecryptionResponse")
+            }
+            SupportedBlockchainEvent::VerifyProofResponse(_) => {
+                write!(f, "VerifyProofResponse")
+            }
+        }
+    }
+}
+
 impl SupportedBlockchainEvent {
     pub fn decode_log_data(
         log: &LogData,
@@ -456,6 +486,66 @@ impl SupportedBlockchainEvent {
 
 // NOTE: add debug handler that allows any PaymentOracleAuthorizationRequest to mock the Console behavior
 // this could be activated with an env var flag
+//
+fn fetch_or_store_request_from_response(
+    on_chain_req_id: Vec<u8>,
+    op_type: GatewayOperation,
+    db_connection: &mut PgConnection,
+    event: BlockchainEvent,
+) -> Result<std::option::Option<uuid::Uuid>, String> {
+    match fetch_gateway_request_chain_id(db_connection, on_chain_req_id.clone(), op_type) {
+        Ok(rows) => match rows.first() {
+            Some(value) => Ok(Some(value.request_id)),
+            None => {
+                debug!("Couldn't find request in db, storing in db.");
+                debug!("Storing response in db (in case of race-condition with request receipt)");
+                let insertion_result = create_gateway_response(
+                    db_connection,
+                    NewGatewayResponseRow {
+                        on_chain_request_id: on_chain_req_id,
+                        event_log: diesel_json::Json(event.event_log),
+                        op: op_type,
+                    },
+                );
+                match insertion_result {
+                    Ok(_) => {
+                        debug!("Insertion success");
+                        Ok(None)
+                    }
+                    Err(error) => {
+                        let msg = format!("Insertion failure: {:?}", error);
+                        Err(msg.to_string())
+                    }
+                }
+            }
+        },
+        Err(error) => {
+            debug!(
+                "Failed to find request in db because of an error: {:?}",
+                error
+            );
+            debug!("Storing response in db (in case of race-condition with request receipt)");
+            let insertion_result = create_gateway_response(
+                db_connection,
+                NewGatewayResponseRow {
+                    on_chain_request_id: on_chain_req_id,
+                    event_log: diesel_json::Json(event.event_log),
+                    op: op_type,
+                },
+            );
+            match insertion_result {
+                Ok(_) => {
+                    debug!("Insertion success");
+                    Ok(None)
+                }
+                Err(error) => {
+                    let msg = format!("Insertion failure: {:?}", error);
+                    Err(msg.to_string())
+                }
+            }
+        }
+    }
+}
 
 impl ZWSRelayerHandler {
     #[instrument(skip(self, db_connection), fields(event=%response))]
@@ -490,53 +580,14 @@ impl ZWSRelayerHandler {
                 SupportedBlockchainEvent::VerifyProofRequest(sub_value) => {
                     // Store on-chain-request-id + update operation status in db
                     let on_chain_id = sub_value.zkProofId.to_be_bytes_vec();
-                    match update_gateway_request_onchain_id(
-                        &mut db_connection,
-                        response.request_id,
-                        GatewayOperationStatus::TXFulfilled,
-                        Some(on_chain_id.clone()),
-                    ) {
-                        Ok(value) => {
-                            info!("insertion successful: {:?}", value);
-                        }
-                        Err(error) => {
-                            error!("insertion error: {:?}", error);
-                        }
-                    };
                     (on_chain_id, GatewayOperation::InputRegistration)
                 }
                 SupportedBlockchainEvent::UserDecryptionRequest(sub_value) => {
                     let on_chain_id = sub_value.userDecryptionId.to_be_bytes_vec();
-                    match update_gateway_request_onchain_id(
-                        &mut db_connection,
-                        response.request_id,
-                        GatewayOperationStatus::TXFulfilled,
-                        Some(on_chain_id.clone()),
-                    ) {
-                        Ok(value) => {
-                            info!("insertion successful: {:?}", value);
-                        }
-                        Err(error) => {
-                            error!("insertion error: {:?}", error);
-                        }
-                    };
                     (on_chain_id, GatewayOperation::PrivateDecryption)
                 }
                 SupportedBlockchainEvent::PublicDecryptionRequest(sub_value) => {
                     let on_chain_id = sub_value.publicDecryptionId.to_be_bytes_vec();
-                    match update_gateway_request_onchain_id(
-                        &mut db_connection,
-                        response.request_id,
-                        GatewayOperationStatus::TXFulfilled,
-                        Some(on_chain_id.clone()),
-                    ) {
-                        Ok(value) => {
-                            info!("insertion successful: {:?}", value);
-                        }
-                        Err(error) => {
-                            error!("insertion error: {:?}", error);
-                        }
-                    };
                     (on_chain_id, GatewayOperation::PublicDecryption)
                 }
                 _ => {
@@ -550,11 +601,22 @@ impl ZWSRelayerHandler {
             }
         };
 
-        // Check if response is already present
-        let check_response = fetch_gateway_response(&mut db_connection, on_chain_id, op_type);
+        match update_gateway_request_onchain_id(
+            &mut db_connection,
+            response.request_id,
+            GatewayOperationStatus::TXFulfilled,
+            Some(on_chain_id.clone()),
+        ) {
+            Ok(value) => {
+                info!("Insertion successful: {:?}", value);
+            }
+            Err(error) => {
+                error!("Insertion error: {:?}", error);
+            }
+        };
 
-        // If so then re-emit event for processing
-        match check_response {
+        // Check if response is already present
+        match fetch_gateway_response(&mut db_connection, on_chain_id, op_type) {
             Ok(db_response) => match db_response.first() {
                 Some(elt) => {
                     let new_event = ZwsRelayerEvent::BlockchainEvent(BlockchainEvent {
@@ -585,35 +647,46 @@ impl ZWSRelayerHandler {
         event: BlockchainEvent,
         mut db_connection: PgConnection,
     ) {
-        // NOTE: store event-log for further use
-        // - When asking for the operation to be handled on the L2
-        // - When responding with callback
+        // NOTE: There is a potential race condition between the result being posted
+        // on-chain and the receipt of the transaction being obtained.
+        // As such we need to store all on-chain events in a database for further
+        // use even if they don't match a known request yet.
+        // We should add a date and a block-number to expire responses.
 
         match SupportedBlockchainEvent::decode_log_data(event.event_log.data(), true) {
             Ok(decoded_event) => {
+                debug!("Successfuly decoded event: {}", decoded_event);
+
                 match decoded_event {
                     SupportedBlockchainEvent::DecryptionRequest(decryption_request) => {
                         match create_host_event(&mut db_connection, event.clone()) {
                             Ok(_) => {
-                                debug!("Host event pushed to postgres");
+                                debug!("Host event pushed to db");
                             }
                             Err(error) => {
-                                error!("Failed to push event to postgres: {error}");
+                                error!("Failed to push event to db: {error}");
+
+                                // Publish authorization request to SQS
+                                let message =
+                                    ZwsRelayerEvent::UnrecoverableError(UnrecoverableError {
+                                        request_id: event.request_id(),
+                                        event: RelayerEventNoError::BlockchainEvent(event),
+                                    });
+                                let _ = send_message_to_sqs_queue_empty(
+                                    true,
+                                    &self.sqs_client,
+                                    &self.console_queue_url,
+                                    &message,
+                                )
+                                .await;
                                 return;
                             }
                         }
 
                         // Match and decode host decryption request event
-                        // pub counter: Uint<256, 4>,
-                        // pub requestID: Uint<256, 4>,
-                        // pub cts: Vec<Uint<256, 4>>,
-                        // pub contractCaller: Address,
-                        // pub callbackSelector: FixedBytes<4>,
                         info!("Decryption request: {:?}", decryption_request);
-                        info!(
-                                            "Decryption event log received from listener: block number: {:?}, ethereum_request_id: {:?}, selector {:?}",
-                                            event.event_log.block_number, decryption_request.requestID, decryption_request.callbackSelector
-                                        );
+                        info!("Decryption event log received from listener: block number: {:?}, ethereum_request_id: {:?}, selector {:?}",
+                            event.event_log.block_number, decryption_request.requestID, decryption_request.callbackSelector);
                         let mut ct_handles: Vec<[u8; 32]> = Vec::new();
                         for ct_handle in &decryption_request.cts {
                             ct_handles.push((*ct_handle).into());
@@ -627,110 +700,49 @@ impl ZWSRelayerHandler {
                                 caller_address: contract_caller,
                             },
                         );
-                        // TODO: factor this in a function
-                        match send_message_to_sqs_queue(
+                        let _ = send_message_to_sqs_queue_empty(
                             true,
                             &self.sqs_client,
                             &self.console_queue_url,
                             &message,
                         )
-                        .await
-                        {
-                            Ok(_) => {
-                                debug!(
-                                    "Successfuly sent {} for {:?} to {}",
-                                    &message, decryption_request, &self.console_queue_url
-                                )
-                            }
-                            Err(error) => {
-                                error!(
-                                    "Error {error:?} trying to send for {message} to {:?}",
-                                    self.console_queue_url,
-                                )
-                            }
-                        }
+                        .await;
                     }
                     SupportedBlockchainEvent::VerifyProofResponse(verification_response) => {
                         // Check if on-chain request-id in db, if-not store response on-chain-request-id
                         // in db with how to retrieve it.
                         let zkpokid = verification_response.zkProofId.to_be_bytes_vec();
-                        let source_request_id = match fetch_gateway_request_chain_id(
-                            &mut db_connection,
+                        match fetch_or_store_request_from_response(
                             zkpokid.clone(),
                             GatewayOperation::InputRegistration,
+                            &mut db_connection,
+                            event.clone(),
                         ) {
-                            Ok(rows) => match rows.first() {
-                                Some(value) => value.request_id,
-                                None => {
-                                    let insertion_result = create_gateway_response(
-                                        &mut db_connection,
-                                        NewGatewayResponseRow {
-                                            on_chain_request_id: zkpokid,
-                                            event_log: diesel_json::Json(event.event_log),
-                                            op: GatewayOperation::InputRegistration,
+                            Ok(value) => match value {
+                                Some(source_request_id) => {
+                                    let message = ZwsRelayerEvent::HTTPInputRegistrationResponse(
+                                        HTTPInputRegistrationResponse {
+                                            request_id: source_request_id,
+                                            handles: verification_response.ctHandles,
+                                            signatures: verification_response.signatures,
                                         },
                                     );
-                                    debug!("Couldn't find request in db, storing in db.");
-                                    match insertion_result {
-                                        Ok(_) => {
-                                            debug!("insertion success");
-                                        }
-                                        Err(error) => {
-                                            debug!("insertion failure: {:?}", error);
-                                        }
-                                    }
-                                    return;
-                                }
-                            },
-                            Err(error) => {
-                                // TODO: store in db
-                                let insertion_result = create_gateway_response(
-                                    &mut db_connection,
-                                    NewGatewayResponseRow {
-                                        on_chain_request_id: zkpokid,
-                                        event_log: diesel_json::Json(event.event_log),
-                                        op: GatewayOperation::InputRegistration,
-                                    },
-                                );
-                                debug!("failed to fetch from db {:?}", error);
-                                match insertion_result {
-                                    Ok(_) => {
-                                        debug!("insertion success");
-                                    }
-                                    Err(error) => {
-                                        debug!("insertion failure: {:?}", error);
-                                    }
-                                }
-                                return;
-                            }
-                        };
 
-                        let response = ZwsRelayerEvent::HTTPInputRegistrationResponse(
-                            HTTPInputRegistrationResponse {
-                                request_id: source_request_id,
-                                handles: verification_response.ctHandles,
-                                signatures: verification_response.signatures,
+                                    let _ = send_message_to_sqs_queue_empty(
+                                        true,
+                                        &self.sqs_client,
+                                        &self.console_queue_url,
+                                        &message,
+                                    )
+                                    .await;
+                                }
+                                None => {
+                                    debug!("Couldnt' find request-id from response-id");
+                                }
                             },
-                        );
-                        match send_message_to_sqs_queue(
-                            true,
-                            &self.sqs_client,
-                            &self.console_queue_url,
-                            &response,
-                        )
-                        .await
-                        {
-                            Ok(_) => {
-                                debug!(
-                                    "Successfuly sent {} to {:?}",
-                                    response, self.console_queue_url
-                                )
-                            }
                             Err(error) => {
-                                error!(
-                                    "Error sending SQSRelayerHTTPInputRegistrationResponse to {:?}: {:?}",
-                                    self.console_queue_url, error
-                                )
+                                error!(error);
+                                return;
                             }
                         }
                     }
@@ -742,104 +754,54 @@ impl ZWSRelayerHandler {
                         let private_decryption_id = private_decryption_response
                             .userDecryptionId
                             .to_be_bytes_vec();
-                        let source_request_id = match fetch_gateway_request_chain_id(
-                            &mut db_connection,
+                        match fetch_or_store_request_from_response(
                             private_decryption_id.clone(),
                             GatewayOperation::PrivateDecryption,
+                            &mut db_connection,
+                            event.clone(),
                         ) {
-                            Ok(rows) => match rows.first() {
-                                Some(value) => value.request_id,
-                                None => {
-                                    let insertion_result = create_gateway_response(
-                                        &mut db_connection,
-                                        NewGatewayResponseRow {
-                                            on_chain_request_id: private_decryption_id,
-                                            event_log: diesel_json::Json(event.event_log),
-                                            op: GatewayOperation::PrivateDecryption,
+                            Ok(value) => match value {
+                                Some(source_request_id) => {
+                                    let responses: Vec<UserDecryptResponsePayloadJson> =
+                                        private_decryption_response
+                                            .reencryptedShares
+                                            .iter()
+                                            .zip(private_decryption_response.signatures.iter())
+                                            .map(|(payload, signature)| {
+                                                UserDecryptResponsePayloadJson {
+                                                    payload: payload.clone(),
+                                                    signature: signature.clone(),
+                                                }
+                                            })
+                                            .collect();
+                                    let message = ZwsRelayerEvent::HTTPPrivateDecryptionResponse(
+                                        PrivateDecryptionResponse {
+                                            request_id: source_request_id,
+                                            responses,
                                         },
                                     );
-                                    debug!("Couldn't find request in db, storing in db.");
-                                    match insertion_result {
-                                        Ok(_) => {
-                                            debug!("insertion success");
-                                        }
-                                        Err(error) => {
-                                            debug!("insertion failure: {:?}", error);
-                                        }
-                                    }
-                                    return;
+                                    let _ = send_message_to_sqs_queue_empty(
+                                        true,
+                                        &self.sqs_client,
+                                        &self.console_queue_url,
+                                        &message,
+                                    )
+                                    .await;
+                                }
+                                None => {
+                                    debug!("Couldnt' find request-id from response-id");
                                 }
                             },
                             Err(error) => {
-                                // TODO: store in db
-                                let insertion_result = create_gateway_response(
-                                    &mut db_connection,
-                                    NewGatewayResponseRow {
-                                        on_chain_request_id: private_decryption_id,
-                                        event_log: diesel_json::Json(event.event_log),
-                                        op: GatewayOperation::PrivateDecryption,
-                                    },
-                                );
-                                debug!("failed to fetch from db {:?}", error);
-                                match insertion_result {
-                                    Ok(_) => {
-                                        debug!("insertion success");
-                                    }
-                                    Err(error) => {
-                                        debug!("insertion failure: {:?}", error);
-                                    }
-                                }
+                                error!(error);
                                 return;
-                            }
-                        };
-
-                        let responses: Vec<UserDecryptResponsePayloadJson> =
-                            private_decryption_response
-                                .reencryptedShares
-                                .iter()
-                                .zip(private_decryption_response.signatures.iter())
-                                .map(|(payload, signature)| UserDecryptResponsePayloadJson {
-                                    payload: payload.clone(),
-                                    signature: signature.clone(),
-                                })
-                                .collect();
-                        let response = ZwsRelayerEvent::HTTPPrivateDecryptionResponse(
-                            PrivateDecryptionResponse {
-                                request_id: source_request_id,
-                                responses,
-                            },
-                        );
-                        match send_message_to_sqs_queue(
-                            true,
-                            &self.sqs_client,
-                            &self.console_queue_url,
-                            &response,
-                        )
-                        .await
-                        {
-                            Ok(_) => {
-                                debug!(
-                                    "Successfuly sent {} to {:?}: {:?}",
-                                    &response, self.console_queue_url, response
-                                )
-                            }
-                            Err(error) => {
-                                error!(
-                                    "Error sending {} to {:?}: {:?}",
-                                    &response, self.console_queue_url, error
-                                )
                             }
                         }
                     }
                     SupportedBlockchainEvent::PublicDecryptionResponse(
                         public_decryption_response,
                     ) => {
-                        // There is a potential race condition between the result being posted
-                        // on-chain and the receipt of the transaction being obtained.
-                        // As such we need to store all on-chain events in a database for further
-                        // use even if they don't match a known request yet.
-
-                        // NOTE: we could add an expiration date to events to avoid storing
+                        // NOTE: we should add an expiration date to events to avoid storing
                         // un-used/old events
 
                         // 1. Check if on-chain request-id in db:
@@ -847,90 +809,42 @@ impl ZWSRelayerHandler {
                         //   later.
                         // 1.2. if-so fetch request from db and process callback
 
-                        let response_id = public_decryption_response
+                        let public_decryption_id = public_decryption_response
                             .publicDecryptionId
                             .to_be_bytes_vec();
-                        let op_type = GatewayOperation::PublicDecryption;
-                        // TODO: if the insertion fails then the callback is never executed.
-                        // We should probably be fault tolerant to db insertions
 
-                        let source_request_id = match fetch_gateway_request_chain_id(
+                        match fetch_or_store_request_from_response(
+                            public_decryption_id.clone(),
+                            GatewayOperation::PublicDecryption,
                             &mut db_connection,
-                            response_id.clone(),
-                            op_type.clone(),
+                            event.clone(),
                         ) {
-                            // Matching request was found in db
-                            Ok(rows) => match rows.first() {
-                                Some(value) => value.request_id,
-                                None => {
-                                    let insertion_result = create_gateway_response(
+                            Ok(value) => match value {
+                                Some(source_request_id) => {
+                                    // Fetch request using source-request-id
+                                    let response = match fetch_host_event(
                                         &mut db_connection,
-                                        NewGatewayResponseRow {
-                                            on_chain_request_id: response_id,
-                                            event_log: diesel_json::Json(event.event_log),
-                                            op: op_type,
-                                        },
-                                    );
-                                    debug!("Couldn't find request in db, storing in db.");
-                                    match insertion_result {
-                                        Ok(_) => {
-                                            debug!("insertion success");
-                                        }
+                                        source_request_id,
+                                    ) {
+                                        Ok(value) => value,
                                         Err(error) => {
-                                            debug!("insertion failure: {:?}", error);
-                                        }
-                                    }
-                                    return;
-                                }
-                            },
-
-                            // Request receipt wasn't found so we store the response for potential
-                            // further use
-                            Err(error) => {
-                                // TODO: store in db
-                                let insertion_result = create_gateway_response(
-                                    &mut db_connection,
-                                    NewGatewayResponseRow {
-                                        on_chain_request_id: response_id,
-                                        event_log: diesel_json::Json(event.event_log),
-                                        op: op_type,
-                                    },
-                                );
-                                debug!("failed to fetch from db {:?}", error);
-                                match insertion_result {
-                                    Ok(_) => {
-                                        debug!("insertion success");
-                                    }
-                                    Err(error) => {
-                                        debug!("insertion failure: {:?}", error);
-                                    }
-                                }
-                                return;
-                            }
-                        };
-
-                        // Fetch request using source-request-id
-                        let response = match fetch_host_event(&mut db_connection, source_request_id)
-                        {
-                            Ok(value) => value,
-                            Err(error) => {
-                                error!(
-                                    "Error fetching host event from DB for request-id: {:?} {:?}",
+                                            error!(
+                                    "Couldn't find host event in DB for request-id: {:?} {:?}",
                                     source_request_id, error
                                 );
-                                return;
-                            }
-                        };
+                                            return;
+                                        }
+                                    };
 
-                        debug!("DB Fetch Response: {:?}", response);
-                        // Craft callback
-                        match SupportedBlockchainEvent::decode_log_data(
-                            response.event_log.data(),
-                            true,
-                        ) {
-                            Ok(event) => match event {
-                                SupportedBlockchainEvent::DecryptionRequest(value) => {
-                                    let public_decrypt_response: PublicDecryptionResponse =
+                                    debug!("DB Fetch Response: {:?}", response);
+                                    // Craft callback
+                                    match SupportedBlockchainEvent::decode_log_data(
+                                        response.event_log.data(),
+                                        true,
+                                    ) {
+                                        Ok(event) => match event {
+                                            SupportedBlockchainEvent::DecryptionRequest(value) => {
+                                                let public_decrypt_response: PublicDecryptionResponse =
                                         PublicDecryptionResponse {
                                             publicDecryptionId: public_decryption_response
                                                 .publicDecryptionId,
@@ -938,71 +852,69 @@ impl ZWSRelayerHandler {
                                                 .decryptedResult,
                                             signatures: public_decryption_response.signatures,
                                         };
-                                    let public_decrypt_resquest = DecryptionRequestData {
-                                        host_l1_request_id: value.requestID,
-                                        callback_selector: value.callbackSelector,
-                                        contract_caller: value.contractCaller,
-                                    };
+                                                let public_decrypt_resquest =
+                                                    PublicDecryptFhevmRequestData {
+                                                        fhevm_request_id: value.requestID,
+                                                        callback_selector: value.callbackSelector,
+                                                        contract_caller: value.contractCaller,
+                                                    };
 
-                                    let calldata = match ComputeCalldata::callback_req(
-                                        &public_decrypt_resquest,
-                                        public_decrypt_response.clone(),
-                                    ) {
-                                        Ok(result) => result,
-                                        Err(error) => {
-                                            error!("{:?}", error);
-                                            return;
-                                        }
-                                    };
-                                    let message =
-                                        ZwsRelayerEvent::TransactionRequest(TransactionRequest {
-                                            request_id: source_request_id,
-                                            address: value.contractCaller,
-                                            chain_id: response.chain_id,
-                                            calldata,
-                                        });
+                                                let calldata = match ComputeCalldata::callback_req(
+                                                    &public_decrypt_resquest,
+                                                    public_decrypt_response.clone(),
+                                                ) {
+                                                    Ok(result) => result,
+                                                    Err(error) => {
+                                                        error!("{:?}", error);
+                                                        return;
+                                                    }
+                                                };
+                                                let message = ZwsRelayerEvent::TransactionRequest(
+                                                    TransactionRequest {
+                                                        request_id: source_request_id,
+                                                        address: value.contractCaller,
+                                                        chain_id: response.chain_id,
+                                                        calldata,
+                                                    },
+                                                );
 
-                                    // NOTE: adding a name to the tx-request might ease debugging
-                                    debug!("Sending callback tx request");
-                                    match send_message_to_sqs_queue(
-                                        true,
-                                        &self.sqs_client,
-                                        &self.tx_manager_queue_url,
-                                        &message,
-                                    )
-                                    .await
-                                    {
-                                        Ok(_) => {
-                                            debug!(
-                                                "Successfuly sent {} to {:?}",
-                                                &message, self.tx_manager_queue_url,
-                                            )
-                                        }
-                                        Err(error) => {
-                                            error!(
-                                                "Error sending {} to {:?}: {:?}",
-                                                &message, self.tx_manager_queue_url, error,
-                                            )
+                                                // NOTE: adding a name to the tx-request might ease debugging
+                                                debug!("Sending callback tx request");
+                                                let _ = send_message_to_sqs_queue_empty(
+                                                    true,
+                                                    &self.sqs_client,
+                                                    &self.tx_manager_queue_url,
+                                                    &message,
+                                                )
+                                                .await;
+                                            }
+                                            _ => {
+                                                debug!("Not supported")
+                                            }
+                                        },
+                                        _ => {
+                                            debug!("Not supported")
                                         }
                                     }
                                 }
-                                _ => {
-                                    debug!("Not supported")
+                                None => {
+                                    debug!("Couldnt' find request-id from response-id");
                                 }
                             },
-                            _ => {
-                                debug!("Not supported")
+                            Err(error) => {
+                                error!(error);
+                                return;
                             }
                         }
                     }
-
                     _ => {
                         debug!("Nothing to do event")
                     }
                 }
             }
             Err(_e) => {
-                error!("Couldn't decode log data as a supported event");
+                // TODO: add all possible events to SupportedBlockchainEvent to avoid reaching this block
+                warn!("Caught event that couldn't be decoded as a supported event using log data");
             }
         }
     }
@@ -1091,27 +1003,13 @@ impl ZWSRelayerHandler {
                         }
                     };
 
-                    match send_message_to_sqs_queue(
+                    let _ = send_message_to_sqs_queue_empty(
                         true,
                         &self.sqs_client,
                         &self.tx_manager_queue_url,
                         &message,
                     )
-                    .await
-                    {
-                        Ok(_) => {
-                            debug!(
-                                "Successfuly sent {} to {:?}",
-                                &message, self.tx_manager_queue_url,
-                            )
-                        }
-                        Err(error) => {
-                            error!(
-                                "Error sending {} to {:?}: {:?}",
-                                &message, self.tx_manager_queue_url, error,
-                            )
-                        }
-                    }
+                    .await;
                 }
                 _ => {
                     debug!("Not supported")
@@ -1174,27 +1072,13 @@ impl ZWSRelayerHandler {
             gateway_request_insertion_result
         );
 
-        match send_message_to_sqs_queue(
+        let _ = send_message_to_sqs_queue_empty(
             true,
             &self.sqs_client,
             &self.tx_manager_queue_url,
             &message,
         )
-        .await
-        {
-            Ok(_) => {
-                debug!(
-                    "Successfuly sent {} to {:?}",
-                    &message, self.tx_manager_queue_url,
-                )
-            }
-            Err(error) => {
-                error!(
-                    "Error sending {} to {:?}: {:?}",
-                    &message, self.tx_manager_queue_url, error,
-                )
-            }
-        }
+        .await;
     }
 
     // TODO: store request-id, operation
@@ -1268,27 +1152,13 @@ impl ZWSRelayerHandler {
             gateway_request_insertion_result
         );
 
-        match send_message_to_sqs_queue(
+        let _ = send_message_to_sqs_queue_empty(
             true,
             &self.sqs_client,
             &self.tx_manager_queue_url,
             &message,
         )
-        .await
-        {
-            Ok(_) => {
-                debug!(
-                    "Successfuly sent {} to {:?}",
-                    &message, self.tx_manager_queue_url,
-                )
-            }
-            Err(error) => {
-                error!(
-                    "Error sending {} to {:?}: {:?}",
-                    &message, self.tx_manager_queue_url, error,
-                )
-            }
-        }
+        .await;
     }
 }
 
@@ -1308,10 +1178,6 @@ impl EventHandler<ZwsRelayerEvent> for ZWSRelayerHandler {
 
         match event {
             // Any blockchain event
-            // TODO: We make the assumption that all events come from an EVM chain
-            // we should split host and gateway events, and probably have the events be parsed in
-            // the listeners instead of the handler.
-            // Such that each listener implements chain-specific logic to parse the input
             ZwsRelayerEvent::BlockchainEvent(host_event) => {
                 self.handle_blockchain_event(host_event, postgres_connection)
                     .await;
@@ -1329,12 +1195,6 @@ impl EventHandler<ZwsRelayerEvent> for ZWSRelayerHandler {
                     postgres_connection,
                 )
                 .await;
-                // TODO: implement
-                // - No authorization check because query would go through the back so already
-                // approved
-                // - Query tx manager
-                // - Wait for response back
-                // - Send response back
             }
             // Transaction response
             ZwsRelayerEvent::TransactionResponse(transaction_response) => {
