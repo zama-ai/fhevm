@@ -133,7 +133,7 @@ FHE arithmetic operators can overflow. Do not forget to take into account such a
 ❌ For example, if you wanted to create a mint function for an encrypted ERC20 token with an encrypted `totalSupply` state variable, this code is vulnerable to overflows:
 
 ```solidity
-function mint(einput encryptedAmount, bytes calldata inputProof) public {
+function mint(externalEuint32 encryptedAmount, bytes calldata inputProof) public {
   euint32 mintedAmount = FHE.asEuint32(encryptedAmount, inputProof);
   totalSupply = FHE.add(totalSupply, mintedAmount);
   balances[msg.sender] = FHE.add(balances[msg.sender], mintedAmount);
@@ -145,7 +145,7 @@ function mint(einput encryptedAmount, bytes calldata inputProof) public {
 ✅ But you can fix this issue by using `FHE.select` to cancel the mint in case of an overflow:
 
 ```solidity
-function mint(einput encryptedAmount, bytes calldata inputProof) public {
+function mint(externalEuint32 encryptedAmount, bytes calldata inputProof) public {
   euint32 mintedAmount = FHE.asEuint32(encryptedAmount, inputProof);
   euint32 tempTotalSupply = FHE.add(totalSupply, mintedAmount);
   ebool isOverflow = FHE.lt(tempTotalSupply, totalSupply);

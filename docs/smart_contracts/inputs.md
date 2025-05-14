@@ -32,16 +32,16 @@ function myExample(
   address account,
   uint id,
   bool isAllowed,
-  einput param1,
-  einput param2,
-  einput param3,
+  externalEbool param1,
+  externalEuint64 param2,
+  externalEuint8 param3,
   bytes calldata inputProof
 ) public {
   // Function logic here
 }
 ```
 
-In this example, `param1`, `param2`, and `param3` are encrypted inputs, while `inputProof` contains the corresponding ZKPoK to validate their authenticity.
+In this example, `param1`, `param2`, and `param3` are encrypted inputs for `ebool`, `euint64`, and `euint8` while `inputProof` contains the corresponding ZKPoK to validate their authenticity.
 
 ## Client-Side implementation
 
@@ -86,8 +86,8 @@ This example demonstrates a function that performs multiple encrypted operations
 
 ```solidity
   function myExample(
-    einput encryptedAmount,
-    einput encryptedToggle,
+    externalEuint64,
+    externalEbool encryptedToggle,
     bytes calldata inputProof
   ) public {
     // Validate and convert the encrypted inputs
@@ -120,7 +120,7 @@ Here’s an example of a smart contract function that verifies an encrypted inpu
 ```solidity
 function transfer(
   address to,
-  einput encryptedAmount,
+  externalEuint64 encryptedAmount,
   bytes calldata inputProof
 ) public {
   // Verify the provided encrypted amount and convert it into an encrypted uint64

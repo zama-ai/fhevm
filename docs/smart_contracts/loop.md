@@ -48,7 +48,11 @@ For example, if implementing a simple AMM for two encrypted ERC20 tokens based o
 ```solidity
 // typically either encryptedAmountAIn or encryptedAmountBIn is an encrypted null value
 // ideally, the user already owns some amounts of both tokens and has pre-approved the AMM on both tokens
-function swapTokensForTokens(einput encryptedAmountAIn, einput encryptedAmountBIn, bytes calldata inputProof) external {
+function swapTokensForTokens(
+  externalEuint32 encryptedAmountAIn,
+  externalEuint32 encryptedAmountBIn,
+  bytes calldata inputProof
+) external {
   euint32 encryptedAmountA = FHE.asEuint32(encryptedAmountAIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
   euint32 encryptedAmountB = FHE.asEuint32(encryptedAmountBIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
 
@@ -87,7 +91,7 @@ For instance, imagine you have an encrypted array called `encArray` and you want
 euint32 x;
 euint32[] encArray;
 
-function setXwithEncryptedIndex(einput encryptedIndex, bytes calldata inputProof) public {
+function setXwithEncryptedIndex(externalEuint32 encryptedIndex, bytes calldata inputProof) public {
     euint32 index = FHE.asEuint32(encryptedIndex, inputProof);
     for (uint32 i = 0; i < encArray.length; i++) {
         ebool isEqual = FHE.eq(index, i);

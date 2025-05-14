@@ -48,7 +48,17 @@ The library ensures that all operations on encrypted data follow the constraints
 
 #### Special Types
 
-- `einput`: Input type for encrypted operations (bytes32)
+- `externalEbool`: Input type for encrypted boolean value
+- `externalEuint8`: Input type for encrypted 8-bit unsigned integer value
+- `externalEuint16`: Input type for encrypted 16-bit unsigned integer value
+- `externalEuint32`: Input type for encrypted 32-bit unsigned integer value
+- `externalEuint64`: Input type for encrypted 64-bit unsigned integer value
+- `externalEuint128`: Input type for encrypted 128-bit unsigned integer value
+- `externalEuint256`: Input type for encrypted 256-bit unsigned integer value
+- `externalEaddress`: Input type for encrypted Ethereum address
+- `externalEbytes64`: Input type for encrypted 64-byte value
+- `externalEbytes128`: Input type for encrypted 128-byte value
+- `externalEbytes256`: Input type for encrypted 256-byte value
 
 ### Casting Types
 

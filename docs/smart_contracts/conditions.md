@@ -25,7 +25,7 @@ FHE.select(condition, valueIfTrue, valueIfFalse);
 Here's an example of using conditional logic to update the highest winning number in a guessing game:
 
 ```solidity
-function bid(einput encryptedValue, bytes calldata inputProof) external onlyBeforeEnd {
+function bid(externalEuint64 encryptedValue, bytes calldata inputProof) external onlyBeforeEnd {
   // Convert the encrypted input to an encrypted 64-bit integer
   euint64 bid = FHE.asEuint64(encryptedValue, inputProof);
 
