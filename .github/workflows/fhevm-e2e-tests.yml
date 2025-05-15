@@ -44,16 +44,31 @@ on:
         default: "v0.7.2-rc2"
         type: string
   pull_request:
-    paths:
-      - ".github/workflows/fhevm-e2e-tests.yml"
-      - "fhevm/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  check-changes:
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      changes-fhevm: ${{ steps.filter.outputs.fhevm }}
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            fhevm:
+              - 'fhevm/**'
   fhevm-e2e-test:
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' }}
     permissions:
       contents: "read"
       id-token: "write"

@@ -2,15 +2,9 @@ name: "Docker - fhevm E2E Image"
 
 on:
   pull_request:
-    paths:
-      - .github/workflows/docker-e2e-image.yml
-      - e2e/**
   push:
     branches:
       - main
-    paths:
-      - .github/workflows/docker-e2e-image.yml
-      - e2e/**
   release:
     types:
       - published
@@ -20,7 +14,26 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  check-changes:
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      changes-e2e-docker: ${{ steps.filter.outputs.e2e-docker }}
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            e2e-docker:
+              - 'e2e/**'
+              - '.github/workflows/docker-e2e-image.yml'
   docker-e2e-image:
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-e2e-docker == 'true' || github.event_name == 'release' }}
     name: Docker - fhevm E2E Image
     uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
     secrets:
