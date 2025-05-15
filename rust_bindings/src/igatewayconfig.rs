@@ -32,7 +32,6 @@ interface IGatewayConfig {
     error HostChainNotRegistered(uint256 chainId);
     error InvalidHighKmsThreshold(uint256 kmsThreshold, uint256 nParties);
     error InvalidNullChainId();
-    error InvalidNullKmsThreshold();
     error InvalidNullPauser();
     error NotCoprocessorSigner(address signerAddress);
     error NotCoprocessorTxSender(address txSenderAddress);
@@ -729,11 +728,6 @@ interface IGatewayConfig {
   {
     "type": "error",
     "name": "InvalidNullChainId",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidNullKmsThreshold",
     "inputs": []
   },
   {
@@ -2302,71 +2296,6 @@ error InvalidNullChainId();
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InvalidNullChainId()";
             const SELECTOR: [u8; 4] = [34u8, 247u8, 63u8, 234u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InvalidNullKmsThreshold()` and selector `0x114f19a8`.
-```solidity
-error InvalidNullKmsThreshold();
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct InvalidNullKmsThreshold {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = ();
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<InvalidNullKmsThreshold> for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidNullKmsThreshold) -> Self {
-                ()
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidNullKmsThreshold {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidNullKmsThreshold {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidNullKmsThreshold()";
-            const SELECTOR: [u8; 4] = [17u8, 79u8, 25u8, 168u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -6967,8 +6896,6 @@ function updatePauser(address newPauser) external;
         #[allow(missing_docs)]
         InvalidNullChainId(InvalidNullChainId),
         #[allow(missing_docs)]
-        InvalidNullKmsThreshold(InvalidNullKmsThreshold),
-        #[allow(missing_docs)]
         InvalidNullPauser(InvalidNullPauser),
         #[allow(missing_docs)]
         NotCoprocessorSigner(NotCoprocessorSigner),
@@ -6991,7 +6918,6 @@ function updatePauser(address newPauser) external;
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 140u8, 141u8, 64u8],
-            [17u8, 79u8, 25u8, 168u8],
             [32u8, 106u8, 52u8, 110u8],
             [34u8, 247u8, 63u8, 234u8],
             [38u8, 205u8, 117u8, 220u8],
@@ -7010,7 +6936,7 @@ function updatePauser(address newPauser) external;
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 14usize;
+        const COUNT: usize = 13usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -7034,9 +6960,6 @@ function updatePauser(address newPauser) external;
                 }
                 Self::InvalidNullChainId(_) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::InvalidNullKmsThreshold(_) => {
-                    <InvalidNullKmsThreshold as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidNullPauser(_) => {
                     <InvalidNullPauser as alloy_sol_types::SolError>::SELECTOR
@@ -7087,19 +7010,6 @@ function updatePauser(address newPauser) external;
                             .map(IGatewayConfigErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
-                },
-                {
-                    fn InvalidNullKmsThreshold(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullKmsThreshold as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigErrors::InvalidNullKmsThreshold)
-                    }
-                    InvalidNullKmsThreshold
                 },
                 {
                     fn NotPauser(
@@ -7304,11 +7214,6 @@ function updatePauser(address newPauser) external;
                         inner,
                     )
                 }
-                Self::InvalidNullKmsThreshold(inner) => {
-                    <InvalidNullKmsThreshold as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::InvalidNullPauser(inner) => {
                     <InvalidNullPauser as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -7378,12 +7283,6 @@ function updatePauser(address newPauser) external;
                 }
                 Self::InvalidNullChainId(inner) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::InvalidNullKmsThreshold(inner) => {
-                    <InvalidNullKmsThreshold as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

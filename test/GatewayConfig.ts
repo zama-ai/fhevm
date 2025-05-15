@@ -16,7 +16,7 @@ describe("GatewayConfig", function () {
 
   // Define input values
   const protocolMetadata = { name: "Protocol", website: "https://protocol.com" };
-  const kmsThreshold = 2;
+  const kmsThreshold = 1;
 
   // Define fake values
   const fakeOwner = createRandomWallet();
@@ -158,22 +158,8 @@ describe("GatewayConfig", function () {
       ).to.be.revertedWithCustomError(gatewayConfig, "EmptyCoprocessors");
     });
 
-    it("Should revert because the KMS threshold is null", async function () {
-      // The KMS threshold must at least be equal to 1
-      const nullKmsThreshold = 0;
-
-      await expect(
-        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
-          call: {
-            fn: "initialize",
-            args: [pauser.address, protocolMetadata, nullKmsThreshold, kmsNodes, coprocessors],
-          },
-        }),
-      ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullKmsThreshold");
-    });
-
     it("Should revert because the KMS threshold is too high", async function () {
-      // The KMS threshold must verify `2*(t-1) + 1 <= n`, with `n` the number of KMS nodes
+      // The KMS threshold must verify `2t + 1 <= n`, with `n` the number of KMS nodes
       const highKmsThreshold = nKmsNodes;
 
       await expect(
@@ -328,8 +314,7 @@ describe("GatewayConfig", function () {
       });
 
       it("Should update the KMS threshold", async function () {
-        // The KMS threshold must be at least equal to 1
-        const newKmsThreshold = 1;
+        const newKmsThreshold = 0;
 
         const tx = await gatewayConfig.connect(owner).updateKmsThreshold(newKmsThreshold);
 
@@ -339,18 +324,8 @@ describe("GatewayConfig", function () {
         expect(await gatewayConfig.getKmsThreshold()).to.equal(newKmsThreshold);
       });
 
-      it("Should revert because the KMS threshold is null", async function () {
-        // The KMS threshold must at least be equal to 1
-        const nullKmsThreshold = 0;
-
-        await expect(gatewayConfig.connect(owner).updateKmsThreshold(nullKmsThreshold)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "InvalidNullKmsThreshold",
-        );
-      });
-
       it("Should revert because the KMS threshold is too high", async function () {
-        // The KMS threshold must verify `2*(t-1) + 1 <= n`, with `n` the number of KMS nodes
+        // The KMS threshold must verify `2t + 1 <= n`, with `n` the number of KMS nodes
         const highKmsThreshold = nKmsNodes;
 
         await expect(gatewayConfig.connect(owner).updateKmsThreshold(highKmsThreshold))

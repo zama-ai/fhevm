@@ -228,13 +228,13 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IGatewayConfig-getKmsMajorityThreshold}.
     function getKmsMajorityThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsThreshold;
+        return $.kmsThreshold + 1;
     }
 
     /// @dev See {IGatewayConfig-getKmsReconstructionThreshold}.
     function getKmsReconstructionThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return 2 * ($.kmsThreshold - 1) + 1;
+        return 2 * $.kmsThreshold + 1;
     }
 
     /// @dev See {IGatewayConfig-getCoprocessorMajorityThreshold}.
@@ -316,13 +316,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 nKmsNodes = $.kmsSignerAddresses.length;
 
         /// @dev Check that the KMS threshold `t` is valid. It must verify:
-        /// @dev - `t > 0` : at least one vote should be required for any decryption response consensus
-        /// @dev - `2*(t - 1) + 1 <= n` : the response consensus should not require more than `n` votes,
+        /// @dev - `t >= 0` : it is already a uint256 so this is always true
+        /// @dev - `2t + 1 <= n` : the response consensus should not require more than `n` votes,
         /// @dev with `n` being the number of registered KMS nodes
-        if (newKmsThreshold == 0) {
-            revert InvalidNullKmsThreshold();
-        }
-        if (2 * (newKmsThreshold - 1) + 1 > nKmsNodes) {
+        if (2 * newKmsThreshold + 1 > nKmsNodes) {
             revert InvalidHighKmsThreshold(newKmsThreshold, nKmsNodes);
         }
 
