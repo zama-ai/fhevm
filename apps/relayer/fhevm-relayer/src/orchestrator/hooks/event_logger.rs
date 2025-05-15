@@ -1,4 +1,3 @@
-use crate::core::utils::{colorize_event_type, colorize_request_id};
 use crate::orchestrator::traits::{Event, PreDispatchHook};
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -33,4 +32,12 @@ impl<E: Event> PreDispatchHook<E> for EventLoggingHook {
             "{}", self.log_prefix
         );
     }
+}
+
+fn colorize_event_type(event_type: impl Display) -> String {
+    format!("\x1b[36m{}\x1b[0m", event_type) // Cyan for event type
+}
+
+fn colorize_request_id(request_id: impl Display) -> String {
+    format!("\x1b[33m{}\x1b[0m", request_id) // Yellow for request ID
 }

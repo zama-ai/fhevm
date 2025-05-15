@@ -2,15 +2,6 @@ use crate::orchestrator::traits::{Event, EventHandler};
 use async_trait::async_trait;
 use std::sync::Mutex;
 use tokio::sync::oneshot;
-use uuid::Uuid;
-
-pub fn colorize_event_type(event_type: &str) -> String {
-    format!("\x1b[36m{}\x1b[0m", event_type) // Cyan for event type
-}
-
-pub fn colorize_request_id(request_id: &Uuid) -> String {
-    format!("\x1b[33m{}\x1b[0m", request_id) // Yellow for request ID
-}
 
 pub struct OnceHandler<T> {
     tx: Mutex<Option<oneshot::Sender<T>>>,
