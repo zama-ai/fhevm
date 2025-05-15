@@ -26,12 +26,12 @@ on:
       host_version:
         description: "Host Image Version"
         required: false
-        default: "cc7b28d"
+        default: "31c51c3"
         type: string
       gateway_version:
         description: "Gateway Image Version"
         required: false
-        default: "487a735"
+        default: "5d13e72"
         type: string
       relayer_version:
         description: "Relayer Image Version"
