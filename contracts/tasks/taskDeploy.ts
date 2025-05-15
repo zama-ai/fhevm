@@ -115,7 +115,7 @@ task('task:deployKMSVerifier')
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
     const verifyingContractSource = process.env.DECRYPTION_ADDRESS!;
     const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
-    const initialThreshold = +process.env.KMS_THRESHOLD!;
+    const initialThreshold = +process.env.PUBLIC_DECRYPTION_THRESHOLD!;
     let initialSigners: string[] = [];
     const numSigners = getRequiredEnvVar('NUM_KMS_NODES');
     for (let idx = 0; idx < +numSigners; idx++) {
