@@ -16,32 +16,32 @@ on:
       coprocessor_version:
         description: "Coprocessor Image Version"
         required: false
-        default: "v0.7.0-rc6"
+        default: "v0.7.0-rc8"
         type: string
       db_migration_version:
         description: "Coprocessor DB Migration Image Version"
         required: false
-        default: "v0.7.0-rc6"
+        default: "v0.7.0-rc8"
         type: string
       host_version:
         description: "Host Image Version"
         required: false
-        default: "v0.7.0-rc6"
+        default: "cc7b28d"
         type: string
       gateway_version:
         description: "Gateway Image Version"
         required: false
-        default: "04a6b38"
+        default: "487a735"
         type: string
       relayer_version:
         description: "Relayer Image Version"
         required: false
-        default: "d19b6a4"
+        default: "v0.1.0-rc8"
         type: string
       tests_version:
         description: "E2E Tests Image Version"
         required: false
-        default: "02c6691"
+        default: "v0.7.2-rc2"
         type: string
   pull_request:
     paths:
