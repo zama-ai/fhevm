@@ -5,43 +5,43 @@ on:
     inputs:
       core_version:
         description: "KMS Core Version"
-        required: false
-        default: "v0.11.0-rc11"
+        required: true
+        default: ""
         type: string
       connector_version:
         description: "Connector Version"
-        required: false
-        default: "v0.1.0-rc5"
+        required: true
+        default: ""
         type: string
       coprocessor_version:
         description: "Coprocessor Image Version"
-        required: false
-        default: "v0.7.0-rc8"
+        required: true
+        default: ""
         type: string
       db_migration_version:
         description: "Coprocessor DB Migration Image Version"
-        required: false
-        default: "v0.7.0-rc8"
+        required: true
+        default: ""
         type: string
       host_version:
         description: "Host Image Version"
         required: false
-        default: "31c51c3"
+        default: ""
         type: string
       gateway_version:
         description: "Gateway Image Version"
         required: false
-        default: "5d13e72"
+        default: ""
         type: string
       relayer_version:
         description: "Relayer Image Version"
-        required: false
-        default: "v0.1.0-rc8"
+        required: true
+        default: ""
         type: string
       tests_version:
         description: "E2E Tests Image Version"
-        required: false
-        default: "v0.7.2-rc2"
+        required: true
+        default: ""
         type: string
   pull_request:
 
