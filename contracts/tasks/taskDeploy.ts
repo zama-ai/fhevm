@@ -132,7 +132,10 @@ task('task:deployKMSVerifier')
       call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold] },
     });
     console.log('KMSVerifier code set successfully at address:', proxyAddress);
-    console.log(`${numSigners} KMS signers were added to KMSVerifier at initialization`);
+    console.log(
+      `${numSigners} KMS signers were added to KMSVerifier at initialization, list of KMS signers is:`,
+      initialSigners,
+    );
   });
 
 task('task:deployInputVerifier')
@@ -170,6 +173,10 @@ task('task:deployInputVerifier')
       call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource, initialSigners] },
     });
     console.log('InputVerifier code set successfully at address:', proxyAddress);
+    console.log(
+      `${numSigners} Coprocessor signers were added to InputVerifier at initialization, list of Coprocessor signers is:`,
+      initialSigners,
+    );
   });
 
 task('task:deployFHEGasLimit').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
