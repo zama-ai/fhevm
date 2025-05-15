@@ -30,9 +30,13 @@ interface IGatewayConfig {
     error EmptyKmsNodes();
     error HostChainAlreadyRegistered(uint256 chainId);
     error HostChainNotRegistered(uint256 chainId);
-    error InvalidHighKmsThreshold(uint256 kmsThreshold, uint256 nParties);
+    error InvalidHighMpcThreshold(uint256 mpcThreshold, uint256 nKmsNodes);
+    error InvalidHighPublicDecryptionThreshold(uint256 publicDecryptionThreshold, uint256 nKmsNodes);
+    error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
     error InvalidNullChainId();
     error InvalidNullPauser();
+    error InvalidNullPublicDecryptionThreshold();
+    error InvalidNullUserDecryptionThreshold();
     error NotCoprocessorSigner(address signerAddress);
     error NotCoprocessorTxSender(address txSenderAddress);
     error NotKmsSigner(address signerAddress);
@@ -40,9 +44,11 @@ interface IGatewayConfig {
     error NotPauser(address pauserAddress);
 
     event AddHostChain(HostChain hostChain);
-    event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
-    event UpdateKmsThreshold(uint256 newKmsThreshold);
+    event Initialization(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
+    event UpdateMpcThreshold(uint256 newMpcThreshold);
     event UpdatePauser(address newPauser);
+    event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
+    event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
     function addHostChain(HostChain memory hostChain) external;
     function checkHostChainIsRegistered(uint256 chainId) external view;
@@ -57,16 +63,18 @@ interface IGatewayConfig {
     function getCoprocessorTxSenders() external view returns (address[] memory);
     function getHostChain(uint256 index) external view returns (HostChain memory);
     function getHostChains() external view returns (HostChain[] memory);
-    function getKmsMajorityThreshold() external view returns (uint256);
     function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
-    function getKmsReconstructionThreshold() external view returns (uint256);
     function getKmsSigners() external view returns (address[] memory);
-    function getKmsThreshold() external view returns (uint256);
     function getKmsTxSenders() external view returns (address[] memory);
+    function getMpcThreshold() external view returns (uint256);
     function getProtocolMetadata() external view returns (ProtocolMetadata memory);
+    function getPublicDecryptionThreshold() external view returns (uint256);
+    function getUserDecryptionThreshold() external view returns (uint256);
     function getVersion() external pure returns (string memory);
-    function updateKmsThreshold(uint256 newKmsThreshold) external;
+    function updateMpcThreshold(uint256 newMpcThreshold) external;
     function updatePauser(address newPauser) external;
+    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external;
+    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
 }
 ```
 
@@ -354,19 +362,6 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
-    "name": "getKmsMajorityThreshold",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getKmsNode",
     "inputs": [
       {
@@ -403,19 +398,6 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
-    "name": "getKmsReconstructionThreshold",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getKmsSigners",
     "inputs": [],
     "outputs": [
@@ -429,19 +411,6 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
-    "name": "getKmsThreshold",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getKmsTxSenders",
     "inputs": [],
     "outputs": [
@@ -449,6 +418,19 @@ interface IGatewayConfig {
         "name": "",
         "type": "address[]",
         "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getMpcThreshold",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -480,6 +462,32 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
+    "name": "getPublicDecryptionThreshold",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getUserDecryptionThreshold",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getVersion",
     "inputs": [],
     "outputs": [
@@ -493,10 +501,10 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
-    "name": "updateKmsThreshold",
+    "name": "updateMpcThreshold",
     "inputs": [
       {
-        "name": "newKmsThreshold",
+        "name": "newMpcThreshold",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -512,6 +520,32 @@ interface IGatewayConfig {
         "name": "newPauser",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "updatePublicDecryptionThreshold",
+    "inputs": [
+      {
+        "name": "newPublicDecryptionThreshold",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "updateUserDecryptionThreshold",
+    "inputs": [
+      {
+        "name": "newUserDecryptionThreshold",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -586,7 +620,7 @@ interface IGatewayConfig {
         ]
       },
       {
-        "name": "kmsThreshold",
+        "name": "mpcThreshold",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -642,10 +676,10 @@ interface IGatewayConfig {
   },
   {
     "type": "event",
-    "name": "UpdateKmsThreshold",
+    "name": "UpdateMpcThreshold",
     "inputs": [
       {
-        "name": "newKmsThreshold",
+        "name": "newMpcThreshold",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -662,6 +696,32 @@ interface IGatewayConfig {
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UpdatePublicDecryptionThreshold",
+    "inputs": [
+      {
+        "name": "newPublicDecryptionThreshold",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UpdateUserDecryptionThreshold",
+    "inputs": [
+      {
+        "name": "newUserDecryptionThreshold",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -711,15 +771,47 @@ interface IGatewayConfig {
   },
   {
     "type": "error",
-    "name": "InvalidHighKmsThreshold",
+    "name": "InvalidHighMpcThreshold",
     "inputs": [
       {
-        "name": "kmsThreshold",
+        "name": "mpcThreshold",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "nParties",
+        "name": "nKmsNodes",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidHighPublicDecryptionThreshold",
+    "inputs": [
+      {
+        "name": "publicDecryptionThreshold",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "nKmsNodes",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidHighUserDecryptionThreshold",
+    "inputs": [
+      {
+        "name": "userDecryptionThreshold",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "nKmsNodes",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -733,6 +825,16 @@ interface IGatewayConfig {
   {
     "type": "error",
     "name": "InvalidNullPauser",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidNullPublicDecryptionThreshold",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidNullUserDecryptionThreshold",
     "inputs": []
   },
   {
@@ -2158,17 +2260,17 @@ error HostChainNotRegistered(uint256 chainId);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InvalidHighKmsThreshold(uint256,uint256)` and selector `0x8786fb9f`.
+    /**Custom error with signature `InvalidHighMpcThreshold(uint256,uint256)` and selector `0x907e6681`.
 ```solidity
-error InvalidHighKmsThreshold(uint256 kmsThreshold, uint256 nParties);
+error InvalidHighMpcThreshold(uint256 mpcThreshold, uint256 nKmsNodes);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct InvalidHighKmsThreshold {
+    pub struct InvalidHighMpcThreshold {
         #[allow(missing_docs)]
-        pub kmsThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        pub mpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub nParties: alloy::sol_types::private::primitives::aliases::U256,
+        pub nKmsNodes: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -2201,29 +2303,29 @@ error InvalidHighKmsThreshold(uint256 kmsThreshold, uint256 nParties);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<InvalidHighKmsThreshold> for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidHighKmsThreshold) -> Self {
-                (value.kmsThreshold, value.nParties)
+        impl ::core::convert::From<InvalidHighMpcThreshold> for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidHighMpcThreshold) -> Self {
+                (value.mpcThreshold, value.nKmsNodes)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidHighKmsThreshold {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidHighMpcThreshold {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    kmsThreshold: tuple.0,
-                    nParties: tuple.1,
+                    mpcThreshold: tuple.0,
+                    nKmsNodes: tuple.1,
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidHighKmsThreshold {
+        impl alloy_sol_types::SolError for InvalidHighMpcThreshold {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidHighKmsThreshold(uint256,uint256)";
-            const SELECTOR: [u8; 4] = [135u8, 134u8, 251u8, 159u8];
+            const SIGNATURE: &'static str = "InvalidHighMpcThreshold(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [144u8, 126u8, 102u8, 129u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2235,10 +2337,190 @@ error InvalidHighKmsThreshold(uint256 kmsThreshold, uint256 nParties);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsThreshold),
+                    > as alloy_sol_types::SolType>::tokenize(&self.mpcThreshold),
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.nParties),
+                    > as alloy_sol_types::SolType>::tokenize(&self.nKmsNodes),
+                )
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidHighPublicDecryptionThreshold(uint256,uint256)` and selector `0x84208f23`.
+```solidity
+error InvalidHighPublicDecryptionThreshold(uint256 publicDecryptionThreshold, uint256 nKmsNodes);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidHighPublicDecryptionThreshold {
+        #[allow(missing_docs)]
+        pub publicDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub nKmsNodes: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidHighPublicDecryptionThreshold>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidHighPublicDecryptionThreshold) -> Self {
+                (value.publicDecryptionThreshold, value.nKmsNodes)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for InvalidHighPublicDecryptionThreshold {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    publicDecryptionThreshold: tuple.0,
+                    nKmsNodes: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidHighPublicDecryptionThreshold {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidHighPublicDecryptionThreshold(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [132u8, 32u8, 143u8, 35u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.publicDecryptionThreshold,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.nKmsNodes),
+                )
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidHighUserDecryptionThreshold(uint256,uint256)` and selector `0xd2535e11`.
+```solidity
+error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidHighUserDecryptionThreshold {
+        #[allow(missing_docs)]
+        pub userDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub nKmsNodes: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidHighUserDecryptionThreshold>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidHighUserDecryptionThreshold) -> Self {
+                (value.userDecryptionThreshold, value.nKmsNodes)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for InvalidHighUserDecryptionThreshold {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    userDecryptionThreshold: tuple.0,
+                    nKmsNodes: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidHighUserDecryptionThreshold {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidHighUserDecryptionThreshold(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [210u8, 83u8, 94u8, 17u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.userDecryptionThreshold,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.nKmsNodes),
                 )
             }
         }
@@ -2361,6 +2643,140 @@ error InvalidNullPauser();
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InvalidNullPauser()";
             const SELECTOR: [u8; 4] = [53u8, 85u8, 174u8, 209u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidNullPublicDecryptionThreshold()` and selector `0xb1ae92ea`.
+```solidity
+error InvalidNullPublicDecryptionThreshold();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidNullPublicDecryptionThreshold {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidNullPublicDecryptionThreshold>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidNullPublicDecryptionThreshold) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for InvalidNullPublicDecryptionThreshold {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {}
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidNullPublicDecryptionThreshold {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidNullPublicDecryptionThreshold()";
+            const SELECTOR: [u8; 4] = [177u8, 174u8, 146u8, 234u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidNullUserDecryptionThreshold()` and selector `0xe60a7271`.
+```solidity
+error InvalidNullUserDecryptionThreshold();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidNullUserDecryptionThreshold {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidNullUserDecryptionThreshold>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidNullUserDecryptionThreshold) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for InvalidNullUserDecryptionThreshold {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {}
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidNullUserDecryptionThreshold {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidNullUserDecryptionThreshold()";
+            const SELECTOR: [u8; 4] = [230u8, 10u8, 114u8, 113u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2836,7 +3252,7 @@ event AddHostChain(HostChain hostChain);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Initialization(address,(string,string),uint256,(address,address,string)[],(address,address,string)[])` and selector `0xf33d908c4a8b532fe64df20b726f11405c11b9772d31b66f5eef6887a43c3fde`.
 ```solidity
-event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
+event Initialization(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -2851,7 +3267,7 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThres
         #[allow(missing_docs)]
         pub metadata: <ProtocolMetadata as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
-        pub kmsThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        pub mpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub kmsNodes: alloy::sol_types::private::Vec<
             <KmsNode as alloy::sol_types::SolType>::RustType,
@@ -2898,7 +3314,7 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThres
                 Self {
                     pauser: data.0,
                     metadata: data.1,
-                    kmsThreshold: data.2,
+                    mpcThreshold: data.2,
                     kmsNodes: data.3,
                     coprocessors: data.4,
                 }
@@ -2929,7 +3345,7 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThres
                     ),
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsThreshold),
+                    > as alloy_sol_types::SolType>::tokenize(&self.mpcThreshold),
                     <alloy::sol_types::sol_data::Array<
                         KmsNode,
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsNodes),
@@ -2974,9 +3390,9 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 kmsThres
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `UpdateKmsThreshold(uint256)` and selector `0xea6c6521bc495731082e23ad12c7b1207d13ca0bd38d1d511081ab568917cb84`.
+    /**Event with signature `UpdateMpcThreshold(uint256)` and selector `0x3571172a49e72d7724be384cdd59f4f21a216c70352ea59cb02543fc76308437`.
 ```solidity
-event UpdateKmsThreshold(uint256 newKmsThreshold);
+event UpdateMpcThreshold(uint256 newMpcThreshold);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -2985,9 +3401,9 @@ event UpdateKmsThreshold(uint256 newKmsThreshold);
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct UpdateKmsThreshold {
+    pub struct UpdateMpcThreshold {
         #[allow(missing_docs)]
-        pub newKmsThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        pub newMpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -2998,17 +3414,17 @@ event UpdateKmsThreshold(uint256 newKmsThreshold);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for UpdateKmsThreshold {
+        impl alloy_sol_types::SolEvent for UpdateMpcThreshold {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "UpdateKmsThreshold(uint256)";
+            const SIGNATURE: &'static str = "UpdateMpcThreshold(uint256)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                234u8, 108u8, 101u8, 33u8, 188u8, 73u8, 87u8, 49u8, 8u8, 46u8, 35u8,
-                173u8, 18u8, 199u8, 177u8, 32u8, 125u8, 19u8, 202u8, 11u8, 211u8, 141u8,
-                29u8, 81u8, 16u8, 129u8, 171u8, 86u8, 137u8, 23u8, 203u8, 132u8,
+                53u8, 113u8, 23u8, 42u8, 73u8, 231u8, 45u8, 119u8, 36u8, 190u8, 56u8,
+                76u8, 221u8, 89u8, 244u8, 242u8, 26u8, 33u8, 108u8, 112u8, 53u8, 46u8,
+                165u8, 156u8, 176u8, 37u8, 67u8, 252u8, 118u8, 48u8, 132u8, 55u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -3017,7 +3433,7 @@ event UpdateKmsThreshold(uint256 newKmsThreshold);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { newKmsThreshold: data.0 }
+                Self { newMpcThreshold: data.0 }
             }
             #[inline]
             fn check_signature(
@@ -3039,7 +3455,7 @@ event UpdateKmsThreshold(uint256 newKmsThreshold);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.newKmsThreshold),
+                    > as alloy_sol_types::SolType>::tokenize(&self.newMpcThreshold),
                 )
             }
             #[inline]
@@ -3061,7 +3477,7 @@ event UpdateKmsThreshold(uint256 newKmsThreshold);
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for UpdateKmsThreshold {
+        impl alloy_sol_types::private::IntoLogData for UpdateMpcThreshold {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -3070,9 +3486,9 @@ event UpdateKmsThreshold(uint256 newKmsThreshold);
             }
         }
         #[automatically_derived]
-        impl From<&UpdateKmsThreshold> for alloy_sol_types::private::LogData {
+        impl From<&UpdateMpcThreshold> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &UpdateKmsThreshold) -> alloy_sol_types::private::LogData {
+            fn from(this: &UpdateMpcThreshold) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -3177,6 +3593,227 @@ event UpdatePauser(address newPauser);
         impl From<&UpdatePauser> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &UpdatePauser) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `UpdatePublicDecryptionThreshold(uint256)` and selector `0xe41802af725729adcb8c151e2937380a25c69155757e3af5d3979adab5035800`.
+```solidity
+event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct UpdatePublicDecryptionThreshold {
+        #[allow(missing_docs)]
+        pub newPublicDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for UpdatePublicDecryptionThreshold {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
+            const SIGNATURE: &'static str = "UpdatePublicDecryptionThreshold(uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                228u8, 24u8, 2u8, 175u8, 114u8, 87u8, 41u8, 173u8, 203u8, 140u8, 21u8,
+                30u8, 41u8, 55u8, 56u8, 10u8, 37u8, 198u8, 145u8, 85u8, 117u8, 126u8,
+                58u8, 245u8, 211u8, 151u8, 154u8, 218u8, 181u8, 3u8, 88u8, 0u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    newPublicDecryptionThreshold: data.0,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.newPublicDecryptionThreshold,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(),)
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for UpdatePublicDecryptionThreshold {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&UpdatePublicDecryptionThreshold>
+        for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &UpdatePublicDecryptionThreshold,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `UpdateUserDecryptionThreshold(uint256)` and selector `0x837e0a6528dadfa2dc792692c5182e52a9f5bbdeed7b2372927a26c695839613`.
+```solidity
+event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct UpdateUserDecryptionThreshold {
+        #[allow(missing_docs)]
+        pub newUserDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for UpdateUserDecryptionThreshold {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
+            const SIGNATURE: &'static str = "UpdateUserDecryptionThreshold(uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                131u8, 126u8, 10u8, 101u8, 40u8, 218u8, 223u8, 162u8, 220u8, 121u8, 38u8,
+                146u8, 197u8, 24u8, 46u8, 82u8, 169u8, 245u8, 187u8, 222u8, 237u8, 123u8,
+                35u8, 114u8, 146u8, 122u8, 38u8, 198u8, 149u8, 131u8, 150u8, 19u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    newUserDecryptionThreshold: data.0,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.newUserDecryptionThreshold,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(),)
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for UpdateUserDecryptionThreshold {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&UpdateUserDecryptionThreshold> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &UpdateUserDecryptionThreshold,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -4858,133 +5495,6 @@ function getHostChains() external view returns (HostChain[] memory);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getKmsMajorityThreshold()` and selector `0x47cd4b3e`.
-```solidity
-function getKmsMajorityThreshold() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getKmsMajorityThresholdCall {}
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getKmsMajorityThreshold()`](getKmsMajorityThresholdCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getKmsMajorityThresholdReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getKmsMajorityThresholdCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getKmsMajorityThresholdCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getKmsMajorityThresholdCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getKmsMajorityThresholdReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getKmsMajorityThresholdReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getKmsMajorityThresholdReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getKmsMajorityThresholdCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getKmsMajorityThresholdReturn;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getKmsMajorityThreshold()";
-            const SELECTOR: [u8; 4] = [71u8, 205u8, 75u8, 62u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsNode(address)` and selector `0xe3b2a874`.
 ```solidity
 function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
@@ -5117,133 +5627,6 @@ function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode m
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getKmsReconstructionThreshold()` and selector `0x490413aa`.
-```solidity
-function getKmsReconstructionThreshold() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getKmsReconstructionThresholdCall {}
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getKmsReconstructionThreshold()`](getKmsReconstructionThresholdCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getKmsReconstructionThresholdReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getKmsReconstructionThresholdCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getKmsReconstructionThresholdCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getKmsReconstructionThresholdCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getKmsReconstructionThresholdReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getKmsReconstructionThresholdReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getKmsReconstructionThresholdReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getKmsReconstructionThresholdCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getKmsReconstructionThresholdReturn;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getKmsReconstructionThreshold()";
-            const SELECTOR: [u8; 4] = [73u8, 4u8, 19u8, 170u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsSigners()` and selector `0x7eaac8f2`.
 ```solidity
 function getKmsSigners() external view returns (address[] memory);
@@ -5348,131 +5731,6 @@ function getKmsSigners() external view returns (address[] memory);
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getKmsSigners()";
             const SELECTOR: [u8; 4] = [126u8, 170u8, 200u8, 242u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getKmsThreshold()` and selector `0x4921a3bd`.
-```solidity
-function getKmsThreshold() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getKmsThresholdCall {}
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getKmsThreshold()`](getKmsThresholdCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getKmsThresholdReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getKmsThresholdCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getKmsThresholdCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getKmsThresholdCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getKmsThresholdReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getKmsThresholdReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getKmsThresholdReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getKmsThresholdCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getKmsThresholdReturn;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getKmsThreshold()";
-            const SELECTOR: [u8; 4] = [73u8, 33u8, 163u8, 189u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -5625,6 +5883,131 @@ function getKmsTxSenders() external view returns (address[] memory);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getMpcThreshold()` and selector `0x26cf5def`.
+```solidity
+function getMpcThreshold() external view returns (uint256);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getMpcThresholdCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getMpcThreshold()`](getMpcThresholdCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getMpcThresholdReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getMpcThresholdCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getMpcThresholdCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getMpcThresholdCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getMpcThresholdReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getMpcThresholdReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getMpcThresholdReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getMpcThresholdCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getMpcThresholdReturn;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getMpcThreshold()";
+            const SELECTOR: [u8; 4] = [38u8, 207u8, 93u8, 239u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getProtocolMetadata()` and selector `0x48144c61`.
 ```solidity
 function getProtocolMetadata() external view returns (ProtocolMetadata memory);
@@ -5729,6 +6112,260 @@ function getProtocolMetadata() external view returns (ProtocolMetadata memory);
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getProtocolMetadata()";
             const SELECTOR: [u8; 4] = [72u8, 20u8, 76u8, 97u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getPublicDecryptionThreshold()` and selector `0x2a388998`.
+```solidity
+function getPublicDecryptionThreshold() external view returns (uint256);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getPublicDecryptionThresholdCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getPublicDecryptionThreshold()`](getPublicDecryptionThresholdCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getPublicDecryptionThresholdReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getPublicDecryptionThresholdCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getPublicDecryptionThresholdCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getPublicDecryptionThresholdCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getPublicDecryptionThresholdReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getPublicDecryptionThresholdReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getPublicDecryptionThresholdReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getPublicDecryptionThresholdCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getPublicDecryptionThresholdReturn;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getPublicDecryptionThreshold()";
+            const SELECTOR: [u8; 4] = [42u8, 56u8, 137u8, 152u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getUserDecryptionThreshold()` and selector `0xc2b42986`.
+```solidity
+function getUserDecryptionThreshold() external view returns (uint256);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getUserDecryptionThresholdCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getUserDecryptionThreshold()`](getUserDecryptionThresholdCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getUserDecryptionThresholdReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getUserDecryptionThresholdCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getUserDecryptionThresholdCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getUserDecryptionThresholdCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getUserDecryptionThresholdReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getUserDecryptionThresholdReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getUserDecryptionThresholdReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getUserDecryptionThresholdCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getUserDecryptionThresholdReturn;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getUserDecryptionThreshold()";
+            const SELECTOR: [u8; 4] = [194u8, 180u8, 41u8, 134u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -5873,20 +6510,20 @@ function getVersion() external pure returns (string memory);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `updateKmsThreshold(uint256)` and selector `0x0219150f`.
+    /**Function with signature `updateMpcThreshold(uint256)` and selector `0x772d2fe9`.
 ```solidity
-function updateKmsThreshold(uint256 newKmsThreshold) external;
+function updateMpcThreshold(uint256 newMpcThreshold) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct updateKmsThresholdCall {
+    pub struct updateMpcThresholdCall {
         #[allow(missing_docs)]
-        pub newKmsThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        pub newMpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the [`updateKmsThreshold(uint256)`](updateKmsThresholdCall) function.
+    ///Container type for the return parameters of the [`updateMpcThreshold(uint256)`](updateMpcThresholdCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct updateKmsThresholdReturn {}
+    pub struct updateMpcThresholdReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5915,18 +6552,18 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<updateKmsThresholdCall>
+            impl ::core::convert::From<updateMpcThresholdCall>
             for UnderlyingRustTuple<'_> {
-                fn from(value: updateKmsThresholdCall) -> Self {
-                    (value.newKmsThreshold,)
+                fn from(value: updateMpcThresholdCall) -> Self {
+                    (value.newMpcThreshold,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for updateKmsThresholdCall {
+            for updateMpcThresholdCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { newKmsThreshold: tuple.0 }
+                    Self { newMpcThreshold: tuple.0 }
                 }
             }
         }
@@ -5948,34 +6585,34 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<updateKmsThresholdReturn>
+            impl ::core::convert::From<updateMpcThresholdReturn>
             for UnderlyingRustTuple<'_> {
-                fn from(value: updateKmsThresholdReturn) -> Self {
+                fn from(value: updateMpcThresholdReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for updateKmsThresholdReturn {
+            for updateMpcThresholdReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for updateKmsThresholdCall {
+        impl alloy_sol_types::SolCall for updateMpcThresholdCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = updateKmsThresholdReturn;
+            type Return = updateMpcThresholdReturn;
             type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "updateKmsThreshold(uint256)";
-            const SELECTOR: [u8; 4] = [2u8, 25u8, 21u8, 15u8];
+            const SIGNATURE: &'static str = "updateMpcThreshold(uint256)";
+            const SELECTOR: [u8; 4] = [119u8, 45u8, 47u8, 233u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -5987,7 +6624,7 @@ function updateKmsThreshold(uint256 newKmsThreshold) external;
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.newKmsThreshold),
+                    > as alloy_sol_types::SolType>::tokenize(&self.newMpcThreshold),
                 )
             }
             #[inline]
@@ -6126,6 +6763,274 @@ function updatePauser(address newPauser) external;
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `updatePublicDecryptionThreshold(uint256)` and selector `0x2e2d3a82`.
+```solidity
+function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct updatePublicDecryptionThresholdCall {
+        #[allow(missing_docs)]
+        pub newPublicDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    ///Container type for the return parameters of the [`updatePublicDecryptionThreshold(uint256)`](updatePublicDecryptionThresholdCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct updatePublicDecryptionThresholdReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<updatePublicDecryptionThresholdCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: updatePublicDecryptionThresholdCall) -> Self {
+                    (value.newPublicDecryptionThreshold,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for updatePublicDecryptionThresholdCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        newPublicDecryptionThreshold: tuple.0,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<updatePublicDecryptionThresholdReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: updatePublicDecryptionThresholdReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for updatePublicDecryptionThresholdReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for updatePublicDecryptionThresholdCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = updatePublicDecryptionThresholdReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "updatePublicDecryptionThreshold(uint256)";
+            const SELECTOR: [u8; 4] = [46u8, 45u8, 58u8, 130u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.newPublicDecryptionThreshold,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `updateUserDecryptionThreshold(uint256)` and selector `0xeb843cf6`.
+```solidity
+function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct updateUserDecryptionThresholdCall {
+        #[allow(missing_docs)]
+        pub newUserDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    ///Container type for the return parameters of the [`updateUserDecryptionThreshold(uint256)`](updateUserDecryptionThresholdCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct updateUserDecryptionThresholdReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<updateUserDecryptionThresholdCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: updateUserDecryptionThresholdCall) -> Self {
+                    (value.newUserDecryptionThreshold,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for updateUserDecryptionThresholdCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        newUserDecryptionThreshold: tuple.0,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<updateUserDecryptionThresholdReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: updateUserDecryptionThresholdReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for updateUserDecryptionThresholdReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for updateUserDecryptionThresholdCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = updateUserDecryptionThresholdReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "updateUserDecryptionThreshold(uint256)";
+            const SELECTOR: [u8; 4] = [235u8, 132u8, 60u8, 246u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.newUserDecryptionThreshold,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
     ///Container for all the [`IGatewayConfig`](self) function calls.
     #[derive()]
     pub enum IGatewayConfigCalls {
@@ -6156,25 +7061,29 @@ function updatePauser(address newPauser) external;
         #[allow(missing_docs)]
         getHostChains(getHostChainsCall),
         #[allow(missing_docs)]
-        getKmsMajorityThreshold(getKmsMajorityThresholdCall),
-        #[allow(missing_docs)]
         getKmsNode(getKmsNodeCall),
-        #[allow(missing_docs)]
-        getKmsReconstructionThreshold(getKmsReconstructionThresholdCall),
         #[allow(missing_docs)]
         getKmsSigners(getKmsSignersCall),
         #[allow(missing_docs)]
-        getKmsThreshold(getKmsThresholdCall),
-        #[allow(missing_docs)]
         getKmsTxSenders(getKmsTxSendersCall),
+        #[allow(missing_docs)]
+        getMpcThreshold(getMpcThresholdCall),
         #[allow(missing_docs)]
         getProtocolMetadata(getProtocolMetadataCall),
         #[allow(missing_docs)]
+        getPublicDecryptionThreshold(getPublicDecryptionThresholdCall),
+        #[allow(missing_docs)]
+        getUserDecryptionThreshold(getUserDecryptionThresholdCall),
+        #[allow(missing_docs)]
         getVersion(getVersionCall),
         #[allow(missing_docs)]
-        updateKmsThreshold(updateKmsThresholdCall),
+        updateMpcThreshold(updateMpcThresholdCall),
         #[allow(missing_docs)]
         updatePauser(updatePauserCall),
+        #[allow(missing_docs)]
+        updatePublicDecryptionThreshold(updatePublicDecryptionThresholdCall),
+        #[allow(missing_docs)]
+        updateUserDecryptionThreshold(updateUserDecryptionThresholdCall),
     }
     #[automatically_derived]
     impl IGatewayConfigCalls {
@@ -6185,28 +7094,30 @@ function updatePauser(address newPauser) external;
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [2u8, 25u8, 21u8, 15u8],
             [13u8, 142u8, 110u8, 44u8],
             [25u8, 90u8, 253u8, 230u8],
             [30u8, 165u8, 189u8, 66u8],
             [37u8, 133u8, 187u8, 101u8],
-            [71u8, 205u8, 75u8, 62u8],
+            [38u8, 207u8, 93u8, 239u8],
+            [42u8, 56u8, 137u8, 152u8],
+            [46u8, 45u8, 58u8, 130u8],
             [72u8, 20u8, 76u8, 97u8],
-            [73u8, 4u8, 19u8, 170u8],
-            [73u8, 33u8, 163u8, 189u8],
             [85u8, 75u8, 171u8, 60u8],
             [103u8, 153u8, 239u8, 82u8],
             [108u8, 136u8, 235u8, 67u8],
             [116u8, 32u8, 243u8, 212u8],
+            [119u8, 45u8, 47u8, 233u8],
             [126u8, 170u8, 200u8, 242u8],
             [134u8, 250u8, 33u8, 57u8],
             [145u8, 100u8, 208u8, 174u8],
+            [194u8, 180u8, 41u8, 134u8],
             [198u8, 39u8, 82u8, 88u8],
             [200u8, 11u8, 51u8, 202u8],
             [203u8, 102u8, 23u8, 85u8],
             [205u8, 180u8, 194u8, 185u8],
             [209u8, 15u8, 127u8, 249u8],
             [227u8, 178u8, 168u8, 116u8],
+            [235u8, 132u8, 60u8, 246u8],
             [239u8, 105u8, 151u8, 249u8],
         ];
     }
@@ -6214,7 +7125,7 @@ function updatePauser(address newPauser) external;
     impl alloy_sol_types::SolInterface for IGatewayConfigCalls {
         const NAME: &'static str = "IGatewayConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 23usize;
+        const COUNT: usize = 25usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -6257,35 +7168,41 @@ function updatePauser(address newPauser) external;
                 Self::getHostChains(_) => {
                     <getHostChainsCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getKmsMajorityThreshold(_) => {
-                    <getKmsMajorityThresholdCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::getKmsNode(_) => {
                     <getKmsNodeCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getKmsReconstructionThreshold(_) => {
-                    <getKmsReconstructionThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getKmsSigners(_) => {
                     <getKmsSignersCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getKmsThreshold(_) => {
-                    <getKmsThresholdCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::getKmsTxSenders(_) => {
                     <getKmsTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getMpcThreshold(_) => {
+                    <getMpcThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getProtocolMetadata(_) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::getPublicDecryptionThreshold(_) => {
+                    <getPublicDecryptionThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getUserDecryptionThreshold(_) => {
+                    <getUserDecryptionThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getVersion(_) => {
                     <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::updateKmsThreshold(_) => {
-                    <updateKmsThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::updateMpcThreshold(_) => {
+                    <updateMpcThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::updatePauser(_) => {
                     <updatePauserCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::updatePublicDecryptionThreshold(_) => {
+                    <updatePublicDecryptionThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::updateUserDecryptionThreshold(_) => {
+                    <updateUserDecryptionThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
             }
         }
@@ -6308,19 +7225,6 @@ function updatePauser(address newPauser) external;
                 &[u8],
                 bool,
             ) -> alloy_sol_types::Result<IGatewayConfigCalls>] = &[
-                {
-                    fn updateKmsThreshold(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateKmsThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigCalls::updateKmsThreshold)
-                    }
-                    updateKmsThreshold
-                },
                 {
                     fn getVersion(
                         data: &[u8],
@@ -6374,17 +7278,43 @@ function updatePauser(address newPauser) external;
                     getHostChains
                 },
                 {
-                    fn getKmsMajorityThreshold(
+                    fn getMpcThreshold(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsMajorityThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getMpcThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                                 validate,
                             )
-                            .map(IGatewayConfigCalls::getKmsMajorityThreshold)
+                            .map(IGatewayConfigCalls::getMpcThreshold)
                     }
-                    getKmsMajorityThreshold
+                    getMpcThreshold
+                },
+                {
+                    fn getPublicDecryptionThreshold(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getPublicDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigCalls::getPublicDecryptionThreshold)
+                    }
+                    getPublicDecryptionThreshold
+                },
+                {
+                    fn updatePublicDecryptionThreshold(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <updatePublicDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigCalls::updatePublicDecryptionThreshold)
+                    }
+                    updatePublicDecryptionThreshold
                 },
                 {
                     fn getProtocolMetadata(
@@ -6398,32 +7328,6 @@ function updatePauser(address newPauser) external;
                             .map(IGatewayConfigCalls::getProtocolMetadata)
                     }
                     getProtocolMetadata
-                },
-                {
-                    fn getKmsReconstructionThreshold(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsReconstructionThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigCalls::getKmsReconstructionThreshold)
-                    }
-                    getKmsReconstructionThreshold
-                },
-                {
-                    fn getKmsThreshold(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigCalls::getKmsThreshold)
-                    }
-                    getKmsThreshold
                 },
                 {
                     fn updatePauser(
@@ -6478,6 +7382,19 @@ function updatePauser(address newPauser) external;
                     getKmsTxSenders
                 },
                 {
+                    fn updateMpcThreshold(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <updateMpcThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigCalls::updateMpcThreshold)
+                    }
+                    updateMpcThreshold
+                },
+                {
                     fn getKmsSigners(
                         data: &[u8],
                         validate: bool,
@@ -6515,6 +7432,19 @@ function updatePauser(address newPauser) external;
                             .map(IGatewayConfigCalls::getCoprocessorSigners)
                     }
                     getCoprocessorSigners
+                },
+                {
+                    fn getUserDecryptionThreshold(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getUserDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigCalls::getUserDecryptionThreshold)
+                    }
+                    getUserDecryptionThreshold
                 },
                 {
                     fn checkIsKmsTxSender(
@@ -6593,6 +7523,19 @@ function updatePauser(address newPauser) external;
                             .map(IGatewayConfigCalls::getKmsNode)
                     }
                     getKmsNode
+                },
+                {
+                    fn updateUserDecryptionThreshold(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <updateUserDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigCalls::updateUserDecryptionThreshold)
+                    }
+                    updateUserDecryptionThreshold
                 },
                 {
                     fn getCoprocessor(
@@ -6686,26 +7629,11 @@ function updatePauser(address newPauser) external;
                         inner,
                     )
                 }
-                Self::getKmsMajorityThreshold(inner) => {
-                    <getKmsMajorityThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::getKmsNode(inner) => {
                     <getKmsNodeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::getKmsReconstructionThreshold(inner) => {
-                    <getKmsReconstructionThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::getKmsSigners(inner) => {
                     <getKmsSignersCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::getKmsThreshold(inner) => {
-                    <getKmsThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -6714,21 +7642,46 @@ function updatePauser(address newPauser) external;
                         inner,
                     )
                 }
+                Self::getMpcThreshold(inner) => {
+                    <getMpcThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getProtocolMetadata(inner) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getPublicDecryptionThreshold(inner) => {
+                    <getPublicDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getUserDecryptionThreshold(inner) => {
+                    <getUserDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::updateKmsThreshold(inner) => {
-                    <updateKmsThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::updateMpcThreshold(inner) => {
+                    <updateMpcThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
                 Self::updatePauser(inner) => {
                     <updatePauserCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::updatePublicDecryptionThreshold(inner) => {
+                    <updatePublicDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::updateUserDecryptionThreshold(inner) => {
+                    <updateUserDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -6815,20 +7768,8 @@ function updatePauser(address newPauser) external;
                         out,
                     )
                 }
-                Self::getKmsMajorityThreshold(inner) => {
-                    <getKmsMajorityThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::getKmsNode(inner) => {
                     <getKmsNodeCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::getKmsReconstructionThreshold(inner) => {
-                    <getKmsReconstructionThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6839,14 +7780,14 @@ function updatePauser(address newPauser) external;
                         out,
                     )
                 }
-                Self::getKmsThreshold(inner) => {
-                    <getKmsThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::getKmsTxSenders(inner) => {
+                    <getKmsTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
-                Self::getKmsTxSenders(inner) => {
-                    <getKmsTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::getMpcThreshold(inner) => {
+                    <getMpcThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6857,20 +7798,44 @@ function updatePauser(address newPauser) external;
                         out,
                     )
                 }
+                Self::getPublicDecryptionThreshold(inner) => {
+                    <getPublicDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getUserDecryptionThreshold(inner) => {
+                    <getUserDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
-                Self::updateKmsThreshold(inner) => {
-                    <updateKmsThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::updateMpcThreshold(inner) => {
+                    <updateMpcThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
                 Self::updatePauser(inner) => {
                     <updatePauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::updatePublicDecryptionThreshold(inner) => {
+                    <updatePublicDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::updateUserDecryptionThreshold(inner) => {
+                    <updateUserDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6892,11 +7857,19 @@ function updatePauser(address newPauser) external;
         #[allow(missing_docs)]
         HostChainNotRegistered(HostChainNotRegistered),
         #[allow(missing_docs)]
-        InvalidHighKmsThreshold(InvalidHighKmsThreshold),
+        InvalidHighMpcThreshold(InvalidHighMpcThreshold),
+        #[allow(missing_docs)]
+        InvalidHighPublicDecryptionThreshold(InvalidHighPublicDecryptionThreshold),
+        #[allow(missing_docs)]
+        InvalidHighUserDecryptionThreshold(InvalidHighUserDecryptionThreshold),
         #[allow(missing_docs)]
         InvalidNullChainId(InvalidNullChainId),
         #[allow(missing_docs)]
         InvalidNullPauser(InvalidNullPauser),
+        #[allow(missing_docs)]
+        InvalidNullPublicDecryptionThreshold(InvalidNullPublicDecryptionThreshold),
+        #[allow(missing_docs)]
+        InvalidNullUserDecryptionThreshold(InvalidNullUserDecryptionThreshold),
         #[allow(missing_docs)]
         NotCoprocessorSigner(NotCoprocessorSigner),
         #[allow(missing_docs)]
@@ -6925,18 +7898,22 @@ function updatePauser(address newPauser) external;
             [53u8, 85u8, 174u8, 209u8],
             [65u8, 120u8, 222u8, 66u8],
             [82u8, 215u8, 37u8, 245u8],
-            [135u8, 134u8, 251u8, 159u8],
+            [132u8, 32u8, 143u8, 35u8],
             [138u8, 240u8, 130u8, 239u8],
+            [144u8, 126u8, 102u8, 129u8],
             [150u8, 165u8, 104u8, 40u8],
             [174u8, 232u8, 99u8, 35u8],
+            [177u8, 174u8, 146u8, 234u8],
             [182u8, 103u8, 156u8, 59u8],
+            [210u8, 83u8, 94u8, 17u8],
+            [230u8, 10u8, 114u8, 113u8],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 13usize;
+        const COUNT: usize = 17usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -6955,14 +7932,26 @@ function updatePauser(address newPauser) external;
                 Self::HostChainNotRegistered(_) => {
                     <HostChainNotRegistered as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::InvalidHighKmsThreshold(_) => {
-                    <InvalidHighKmsThreshold as alloy_sol_types::SolError>::SELECTOR
+                Self::InvalidHighMpcThreshold(_) => {
+                    <InvalidHighMpcThreshold as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::InvalidHighPublicDecryptionThreshold(_) => {
+                    <InvalidHighPublicDecryptionThreshold as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::InvalidHighUserDecryptionThreshold(_) => {
+                    <InvalidHighUserDecryptionThreshold as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidNullChainId(_) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidNullPauser(_) => {
                     <InvalidNullPauser as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::InvalidNullPublicDecryptionThreshold(_) => {
+                    <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::InvalidNullUserDecryptionThreshold(_) => {
+                    <InvalidNullUserDecryptionThreshold as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotCoprocessorSigner(_) => {
                     <NotCoprocessorSigner as alloy_sol_types::SolError>::SELECTOR
@@ -7103,17 +8092,19 @@ function updatePauser(address newPauser) external;
                     NotCoprocessorTxSender
                 },
                 {
-                    fn InvalidHighKmsThreshold(
+                    fn InvalidHighPublicDecryptionThreshold(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighKmsThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidHighPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
                                 validate,
                             )
-                            .map(IGatewayConfigErrors::InvalidHighKmsThreshold)
+                            .map(
+                                IGatewayConfigErrors::InvalidHighPublicDecryptionThreshold,
+                            )
                     }
-                    InvalidHighKmsThreshold
+                    InvalidHighPublicDecryptionThreshold
                 },
                 {
                     fn EmptyCoprocessors(
@@ -7127,6 +8118,19 @@ function updatePauser(address newPauser) external;
                             .map(IGatewayConfigErrors::EmptyCoprocessors)
                     }
                     EmptyCoprocessors
+                },
+                {
+                    fn InvalidHighMpcThreshold(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidHighMpcThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigErrors::InvalidHighMpcThreshold)
+                    }
+                    InvalidHighMpcThreshold
                 },
                 {
                     fn HostChainAlreadyRegistered(
@@ -7155,6 +8159,21 @@ function updatePauser(address newPauser) external;
                     NotKmsTxSender
                 },
                 {
+                    fn InvalidNullPublicDecryptionThreshold(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                IGatewayConfigErrors::InvalidNullPublicDecryptionThreshold,
+                            )
+                    }
+                    InvalidNullPublicDecryptionThreshold
+                },
+                {
                     fn HostChainNotRegistered(
                         data: &[u8],
                         validate: bool,
@@ -7166,6 +8185,36 @@ function updatePauser(address newPauser) external;
                             .map(IGatewayConfigErrors::HostChainNotRegistered)
                     }
                     HostChainNotRegistered
+                },
+                {
+                    fn InvalidHighUserDecryptionThreshold(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidHighUserDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                IGatewayConfigErrors::InvalidHighUserDecryptionThreshold,
+                            )
+                    }
+                    InvalidHighUserDecryptionThreshold
+                },
+                {
+                    fn InvalidNullUserDecryptionThreshold(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidNullUserDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                IGatewayConfigErrors::InvalidNullUserDecryptionThreshold,
+                            )
+                    }
+                    InvalidNullUserDecryptionThreshold
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -7204,8 +8253,18 @@ function updatePauser(address newPauser) external;
                         inner,
                     )
                 }
-                Self::InvalidHighKmsThreshold(inner) => {
-                    <InvalidHighKmsThreshold as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::InvalidHighMpcThreshold(inner) => {
+                    <InvalidHighMpcThreshold as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::InvalidHighPublicDecryptionThreshold(inner) => {
+                    <InvalidHighPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::InvalidHighUserDecryptionThreshold(inner) => {
+                    <InvalidHighUserDecryptionThreshold as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -7216,6 +8275,16 @@ function updatePauser(address newPauser) external;
                 }
                 Self::InvalidNullPauser(inner) => {
                     <InvalidNullPauser as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::InvalidNullPublicDecryptionThreshold(inner) => {
+                    <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::InvalidNullUserDecryptionThreshold(inner) => {
+                    <InvalidNullUserDecryptionThreshold as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -7275,8 +8344,20 @@ function updatePauser(address newPauser) external;
                         out,
                     )
                 }
-                Self::InvalidHighKmsThreshold(inner) => {
-                    <InvalidHighKmsThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::InvalidHighMpcThreshold(inner) => {
+                    <InvalidHighMpcThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::InvalidHighPublicDecryptionThreshold(inner) => {
+                    <InvalidHighPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::InvalidHighUserDecryptionThreshold(inner) => {
+                    <InvalidHighUserDecryptionThreshold as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -7289,6 +8370,18 @@ function updatePauser(address newPauser) external;
                 }
                 Self::InvalidNullPauser(inner) => {
                     <InvalidNullPauser as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::InvalidNullPublicDecryptionThreshold(inner) => {
+                    <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::InvalidNullUserDecryptionThreshold(inner) => {
+                    <InvalidNullUserDecryptionThreshold as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -7331,9 +8424,13 @@ function updatePauser(address newPauser) external;
         #[allow(missing_docs)]
         Initialization(Initialization),
         #[allow(missing_docs)]
-        UpdateKmsThreshold(UpdateKmsThreshold),
+        UpdateMpcThreshold(UpdateMpcThreshold),
         #[allow(missing_docs)]
         UpdatePauser(UpdatePauser),
+        #[allow(missing_docs)]
+        UpdatePublicDecryptionThreshold(UpdatePublicDecryptionThreshold),
+        #[allow(missing_docs)]
+        UpdateUserDecryptionThreshold(UpdateUserDecryptionThreshold),
     }
     #[automatically_derived]
     impl IGatewayConfigEvents {
@@ -7345,9 +8442,19 @@ function updatePauser(address newPauser) external;
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
+                53u8, 113u8, 23u8, 42u8, 73u8, 231u8, 45u8, 119u8, 36u8, 190u8, 56u8,
+                76u8, 221u8, 89u8, 244u8, 242u8, 26u8, 33u8, 108u8, 112u8, 53u8, 46u8,
+                165u8, 156u8, 176u8, 37u8, 67u8, 252u8, 118u8, 48u8, 132u8, 55u8,
+            ],
+            [
                 102u8, 118u8, 147u8, 65u8, 239u8, 253u8, 38u8, 143u8, 196u8, 233u8,
                 169u8, 200u8, 242u8, 123u8, 252u8, 150u8, 133u8, 7u8, 181u8, 25u8, 176u8,
                 221u8, 185u8, 180u8, 173u8, 61u8, 237u8, 95u8, 3u8, 1u8, 104u8, 55u8,
+            ],
+            [
+                131u8, 126u8, 10u8, 101u8, 40u8, 218u8, 223u8, 162u8, 220u8, 121u8, 38u8,
+                146u8, 197u8, 24u8, 46u8, 82u8, 169u8, 245u8, 187u8, 222u8, 237u8, 123u8,
+                35u8, 114u8, 146u8, 122u8, 38u8, 198u8, 149u8, 131u8, 150u8, 19u8,
             ],
             [
                 166u8, 144u8, 102u8, 140u8, 36u8, 210u8, 119u8, 36u8, 63u8, 246u8, 250u8,
@@ -7355,9 +8462,9 @@ function updatePauser(address newPauser) external;
                 133u8, 124u8, 130u8, 231u8, 248u8, 148u8, 82u8, 252u8, 102u8, 93u8,
             ],
             [
-                234u8, 108u8, 101u8, 33u8, 188u8, 73u8, 87u8, 49u8, 8u8, 46u8, 35u8,
-                173u8, 18u8, 199u8, 177u8, 32u8, 125u8, 19u8, 202u8, 11u8, 211u8, 141u8,
-                29u8, 81u8, 16u8, 129u8, 171u8, 86u8, 137u8, 23u8, 203u8, 132u8,
+                228u8, 24u8, 2u8, 175u8, 114u8, 87u8, 41u8, 173u8, 203u8, 140u8, 21u8,
+                30u8, 41u8, 55u8, 56u8, 10u8, 37u8, 198u8, 145u8, 85u8, 117u8, 126u8,
+                58u8, 245u8, 211u8, 151u8, 154u8, 218u8, 181u8, 3u8, 88u8, 0u8,
             ],
             [
                 243u8, 61u8, 144u8, 140u8, 74u8, 139u8, 83u8, 47u8, 230u8, 77u8, 242u8,
@@ -7369,7 +8476,7 @@ function updatePauser(address newPauser) external;
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IGatewayConfigEvents {
         const NAME: &'static str = "IGatewayConfigEvents";
-        const COUNT: usize = 4usize;
+        const COUNT: usize = 6usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -7393,14 +8500,14 @@ function updatePauser(address newPauser) external;
                         .map(Self::Initialization)
                 }
                 Some(
-                    <UpdateKmsThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                    <UpdateMpcThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
-                    <UpdateKmsThreshold as alloy_sol_types::SolEvent>::decode_raw_log(
+                    <UpdateMpcThreshold as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                             validate,
                         )
-                        .map(Self::UpdateKmsThreshold)
+                        .map(Self::UpdateMpcThreshold)
                 }
                 Some(<UpdatePauser as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <UpdatePauser as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -7409,6 +8516,26 @@ function updatePauser(address newPauser) external;
                             validate,
                         )
                         .map(Self::UpdatePauser)
+                }
+                Some(
+                    <UpdatePublicDecryptionThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <UpdatePublicDecryptionThreshold as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                            validate,
+                        )
+                        .map(Self::UpdatePublicDecryptionThreshold)
+                }
+                Some(
+                    <UpdateUserDecryptionThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <UpdateUserDecryptionThreshold as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                            validate,
+                        )
+                        .map(Self::UpdateUserDecryptionThreshold)
                 }
                 _ => {
                     alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
@@ -7434,10 +8561,16 @@ function updatePauser(address newPauser) external;
                 Self::Initialization(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::UpdateKmsThreshold(inner) => {
+                Self::UpdateMpcThreshold(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::UpdatePauser(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::UpdatePublicDecryptionThreshold(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::UpdateUserDecryptionThreshold(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
             }
@@ -7450,10 +8583,16 @@ function updatePauser(address newPauser) external;
                 Self::Initialization(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::UpdateKmsThreshold(inner) => {
+                Self::UpdateMpcThreshold(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UpdatePauser(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::UpdatePublicDecryptionThreshold(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::UpdateUserDecryptionThreshold(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
             }
@@ -7742,12 +8881,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<T, &P, getHostChainsCall, N> {
             self.call_builder(&getHostChainsCall {})
         }
-        ///Creates a new call builder for the [`getKmsMajorityThreshold`] function.
-        pub fn getKmsMajorityThreshold(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, getKmsMajorityThresholdCall, N> {
-            self.call_builder(&getKmsMajorityThresholdCall {})
-        }
         ///Creates a new call builder for the [`getKmsNode`] function.
         pub fn getKmsNode(
             &self,
@@ -7759,31 +8892,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`getKmsReconstructionThreshold`] function.
-        pub fn getKmsReconstructionThreshold(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<
-            T,
-            &P,
-            getKmsReconstructionThresholdCall,
-            N,
-        > {
-            self.call_builder(
-                &getKmsReconstructionThresholdCall {
-                },
-            )
-        }
         ///Creates a new call builder for the [`getKmsSigners`] function.
         pub fn getKmsSigners(
             &self,
         ) -> alloy_contract::SolCallBuilder<T, &P, getKmsSignersCall, N> {
             self.call_builder(&getKmsSignersCall {})
-        }
-        ///Creates a new call builder for the [`getKmsThreshold`] function.
-        pub fn getKmsThreshold(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, getKmsThresholdCall, N> {
-            self.call_builder(&getKmsThresholdCall {})
         }
         ///Creates a new call builder for the [`getKmsTxSenders`] function.
         pub fn getKmsTxSenders(
@@ -7791,11 +8904,32 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<T, &P, getKmsTxSendersCall, N> {
             self.call_builder(&getKmsTxSendersCall {})
         }
+        ///Creates a new call builder for the [`getMpcThreshold`] function.
+        pub fn getMpcThreshold(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getMpcThresholdCall, N> {
+            self.call_builder(&getMpcThresholdCall {})
+        }
         ///Creates a new call builder for the [`getProtocolMetadata`] function.
         pub fn getProtocolMetadata(
             &self,
         ) -> alloy_contract::SolCallBuilder<T, &P, getProtocolMetadataCall, N> {
             self.call_builder(&getProtocolMetadataCall {})
+        }
+        ///Creates a new call builder for the [`getPublicDecryptionThreshold`] function.
+        pub fn getPublicDecryptionThreshold(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getPublicDecryptionThresholdCall, N> {
+            self.call_builder(
+                &getPublicDecryptionThresholdCall {
+                },
+            )
+        }
+        ///Creates a new call builder for the [`getUserDecryptionThreshold`] function.
+        pub fn getUserDecryptionThreshold(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getUserDecryptionThresholdCall, N> {
+            self.call_builder(&getUserDecryptionThresholdCall {})
         }
         ///Creates a new call builder for the [`getVersion`] function.
         pub fn getVersion(
@@ -7803,14 +8937,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<T, &P, getVersionCall, N> {
             self.call_builder(&getVersionCall {})
         }
-        ///Creates a new call builder for the [`updateKmsThreshold`] function.
-        pub fn updateKmsThreshold(
+        ///Creates a new call builder for the [`updateMpcThreshold`] function.
+        pub fn updateMpcThreshold(
             &self,
-            newKmsThreshold: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, updateKmsThresholdCall, N> {
+            newMpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<T, &P, updateMpcThresholdCall, N> {
             self.call_builder(
-                &updateKmsThresholdCall {
-                    newKmsThreshold,
+                &updateMpcThresholdCall {
+                    newMpcThreshold,
                 },
             )
         }
@@ -7820,6 +8954,38 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             newPauser: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<T, &P, updatePauserCall, N> {
             self.call_builder(&updatePauserCall { newPauser })
+        }
+        ///Creates a new call builder for the [`updatePublicDecryptionThreshold`] function.
+        pub fn updatePublicDecryptionThreshold(
+            &self,
+            newPublicDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<
+            T,
+            &P,
+            updatePublicDecryptionThresholdCall,
+            N,
+        > {
+            self.call_builder(
+                &updatePublicDecryptionThresholdCall {
+                    newPublicDecryptionThreshold,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`updateUserDecryptionThreshold`] function.
+        pub fn updateUserDecryptionThreshold(
+            &self,
+            newUserDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<
+            T,
+            &P,
+            updateUserDecryptionThresholdCall,
+            N,
+        > {
+            self.call_builder(
+                &updateUserDecryptionThresholdCall {
+                    newUserDecryptionThreshold,
+                },
+            )
         }
     }
     /// Event filters.
@@ -7850,17 +9016,29 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<T, &P, Initialization, N> {
             self.event_filter::<Initialization>()
         }
-        ///Creates a new event filter for the [`UpdateKmsThreshold`] event.
-        pub fn UpdateKmsThreshold_filter(
+        ///Creates a new event filter for the [`UpdateMpcThreshold`] event.
+        pub fn UpdateMpcThreshold_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, UpdateKmsThreshold, N> {
-            self.event_filter::<UpdateKmsThreshold>()
+        ) -> alloy_contract::Event<T, &P, UpdateMpcThreshold, N> {
+            self.event_filter::<UpdateMpcThreshold>()
         }
         ///Creates a new event filter for the [`UpdatePauser`] event.
         pub fn UpdatePauser_filter(
             &self,
         ) -> alloy_contract::Event<T, &P, UpdatePauser, N> {
             self.event_filter::<UpdatePauser>()
+        }
+        ///Creates a new event filter for the [`UpdatePublicDecryptionThreshold`] event.
+        pub fn UpdatePublicDecryptionThreshold_filter(
+            &self,
+        ) -> alloy_contract::Event<T, &P, UpdatePublicDecryptionThreshold, N> {
+            self.event_filter::<UpdatePublicDecryptionThreshold>()
+        }
+        ///Creates a new event filter for the [`UpdateUserDecryptionThreshold`] event.
+        pub fn UpdateUserDecryptionThreshold_filter(
+            &self,
+        ) -> alloy_contract::Event<T, &P, UpdateUserDecryptionThreshold, N> {
+            self.event_filter::<UpdateUserDecryptionThreshold>()
         }
     }
 }

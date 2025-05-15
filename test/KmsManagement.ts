@@ -178,27 +178,26 @@ describe("KmsManagement", function () {
         .to.be.revertedWithCustomError(kmsManagement, "PreprocessKeygenKmsNodeAlreadyResponded")
         .withArgs(preKeyId, kmsTxSenders[0]);
 
-      // Trigger a second preprocessing keygen response with the second KMS node, which should reach
-      // consensus (4 / 3 + 1 = 2) and thus emit an event
-      const txResponse2 = await kmsManagement
-        .connect(kmsTxSenders[1])
-        .preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
+      // Trigger a second preprocessing keygen response with the first KMS node
+      await kmsManagement.connect(kmsTxSenders[1]).preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
 
-      // Check event
-      await expect(txResponse2)
-        .to.emit(kmsManagement, "PreprocessKeygenResponse")
-        .withArgs(expectedPreKeyRequestId, preKeyId);
-
-      // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
+      // Trigger a third preprocessing keygen response with the second KMS node, which should reach
+      // consensus (4 / 2 + 1 = 3) and thus emit an event
       const txResponse3 = await kmsManagement
         .connect(kmsTxSenders[2])
         .preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
+
+      // Check event
+      await expect(txResponse3)
+        .to.emit(kmsManagement, "PreprocessKeygenResponse")
+        .withArgs(expectedPreKeyRequestId, preKeyId);
+
+      // The 4th response should be ignored (not reverted) and not emit an event
       const txResponse4 = await kmsManagement
         .connect(kmsTxSenders[3])
         .preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
 
-      // Check that the 3rd and 4th responses do not emit an event
-      await expect(txResponse3).to.not.emit(kmsManagement, "PreprocessKeygenResponse");
+      // Check that the 4th response does not emit an event
       await expect(txResponse4).to.not.emit(kmsManagement, "PreprocessKeygenResponse");
 
       // Check that triggering a new preprocessing keygen request again gives a different preKeyRequestId
@@ -246,19 +245,20 @@ describe("KmsManagement", function () {
         .to.be.revertedWithCustomError(kmsManagement, "KeygenKmsNodeAlreadyResponded")
         .withArgs(keyId, kmsTxSenders[0]);
 
-      // Trigger a second keygen response with the second KMS node, which should reach
-      // consensus (4 / 3 + 1 = 2) and thus emit an event
-      const txResponse2 = await kmsManagement.connect(kmsTxSenders[1]).keygenResponse(preKeyId, keyId);
+      // Trigger a second keygen response
+      await kmsManagement.connect(kmsTxSenders[1]).keygenResponse(preKeyId, keyId);
+
+      // Trigger a third keygen response with the second KMS node, which should reach
+      // consensus (4 / 2 + 1 = 3) and thus emit an event
+      const txResponse3 = await kmsManagement.connect(kmsTxSenders[2]).keygenResponse(preKeyId, keyId);
 
       // Check event
-      await expect(txResponse2).to.emit(kmsManagement, "KeygenResponse").withArgs(preKeyId, keyId, fheParamsDigest);
+      await expect(txResponse3).to.emit(kmsManagement, "KeygenResponse").withArgs(preKeyId, keyId, fheParamsDigest);
 
-      // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
-      const txResponse3 = await kmsManagement.connect(kmsTxSenders[2]).keygenResponse(preKeyId, keyId);
+      // The 4th response should be ignored (not reverted) and not emit an event
       const txResponse4 = await kmsManagement.connect(kmsTxSenders[3]).keygenResponse(preKeyId, keyId);
 
-      // Check that the 3rd and 4th responses do not emit an event
-      await expect(txResponse3).to.not.emit(kmsManagement, "KeygenResponse");
+      // Check that the 4th response does not emit an event
       await expect(txResponse4).to.not.emit(kmsManagement, "KeygenResponse");
     });
   });
@@ -315,21 +315,22 @@ describe("KmsManagement", function () {
         .to.be.revertedWithCustomError(kmsManagement, "CrsgenKmsNodeAlreadyResponded")
         .withArgs(crsId, kmsTxSenders[0]);
 
-      // Trigger a second CRS generation response with the second KMS node, which should reach
-      // consensus (4 / 3 + 1 = 2) and thus emit an event
-      const txResponse2 = await kmsManagement.connect(kmsTxSenders[1]).crsgenResponse(expectedPreCrsId, crsId);
+      // Trigger a second CRS generation response with the first KMS node
+      await kmsManagement.connect(kmsTxSenders[1]).crsgenResponse(expectedPreCrsId, crsId);
+
+      // Trigger a third CRS generation response with the second KMS node, which should reach
+      // consensus (4 / 2 + 1 = 3) and thus emit an event
+      const txResponse3 = await kmsManagement.connect(kmsTxSenders[2]).crsgenResponse(expectedPreCrsId, crsId);
 
       // Check event
-      await expect(txResponse2)
+      await expect(txResponse3)
         .to.emit(kmsManagement, "CrsgenResponse")
         .withArgs(expectedPreCrsId, crsId, fheParamsDigest);
 
-      // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
-      const txResponse3 = await kmsManagement.connect(kmsTxSenders[2]).crsgenResponse(expectedPreCrsId, crsId);
+      // The 4th response should be ignored (not reverted) and not emit an event
       const txResponse4 = await kmsManagement.connect(kmsTxSenders[3]).crsgenResponse(expectedPreCrsId, crsId);
 
-      // Check that the 3rd and 4th responses do not emit an event
-      await expect(txResponse3).to.not.emit(kmsManagement, "CrsgenResponse");
+      // Check that the 4th response does not emit an event
       await expect(txResponse4).to.not.emit(kmsManagement, "CrsgenResponse");
 
       // Check that triggering a new preprocessing keygen request again gives a different preKeyId
@@ -408,27 +409,26 @@ describe("KmsManagement", function () {
         .to.be.revertedWithCustomError(kmsManagement, "PreprocessKskgenKmsNodeAlreadyResponded")
         .withArgs(preKskRequestId, kmsTxSenders[0]);
 
-      // Trigger a second preprocessing KSK generation response with the second KMS node, which should reach
-      // consensus (4 / 3 + 1 = 2) and thus emit an event
-      const txResponse2 = await kmsManagement
-        .connect(kmsTxSenders[1])
-        .preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
+      // Trigger a second preprocessing KSK generation response with the first KMS node
+      await kmsManagement.connect(kmsTxSenders[1]).preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
 
-      // Check event
-      await expect(txResponse2)
-        .to.emit(kmsManagement, "PreprocessKskgenResponse")
-        .withArgs(expectedPreKskRequestId, preKskRequestId);
-
-      // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
+      // Trigger a third preprocessing KSK generation response with the second KMS node, which should reach
+      // consensus (4 / 2 + 1 = 3) and thus emit an event
       const txResponse3 = await kmsManagement
         .connect(kmsTxSenders[2])
         .preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
+
+      // Check event
+      await expect(txResponse3)
+        .to.emit(kmsManagement, "PreprocessKskgenResponse")
+        .withArgs(expectedPreKskRequestId, preKskRequestId);
+
+      // The 4th response should be ignored (not reverted) and not emit an event
       const txResponse4 = await kmsManagement
         .connect(kmsTxSenders[3])
         .preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
 
-      // Check that the 3rd and 4th responses do not emit an event
-      await expect(txResponse3).to.not.emit(kmsManagement, "PreprocessKskgenResponse");
+      // Check that the 4th response does not emit an event
       await expect(txResponse4).to.not.emit(kmsManagement, "PreprocessKskgenResponse");
 
       // Check that triggering a new preprocessing KSK generation request again gives a different preKskRequestId
@@ -494,19 +494,20 @@ describe("KmsManagement", function () {
         .to.be.revertedWithCustomError(kmsManagement, "KskgenKmsNodeAlreadyResponded")
         .withArgs(kskId, kmsTxSenders[0]);
 
-      // Trigger a second KSK generation response with the second KMS node, which should reach
-      // consensus (4 / 3 + 1 = 2) and thus emit an event
-      const txResponse2 = await kmsManagement.connect(kmsTxSenders[1]).kskgenResponse(preKskId, kskId);
+      // Trigger a second KSK generation response with the first KMS node
+      await kmsManagement.connect(kmsTxSenders[1]).kskgenResponse(preKskId, kskId);
+
+      // Trigger a third KSK generation response with the second KMS node, which should reach
+      // consensus (4 / 2 + 1 = 3) and thus emit an event
+      const txResponse3 = await kmsManagement.connect(kmsTxSenders[2]).kskgenResponse(preKskId, kskId);
 
       // Check event
-      await expect(txResponse2).to.emit(kmsManagement, "KskgenResponse").withArgs(preKskId, kskId, fheParamsDigest);
+      await expect(txResponse3).to.emit(kmsManagement, "KskgenResponse").withArgs(preKskId, kskId, fheParamsDigest);
 
-      // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
-      const txResponse3 = await kmsManagement.connect(kmsTxSenders[2]).kskgenResponse(preKskId, kskId);
+      // The 4th response should be ignored (not reverted) and not emit an event
       const txResponse4 = await kmsManagement.connect(kmsTxSenders[3]).kskgenResponse(preKskId, kskId);
 
-      // Check that the 3rd and 4th responses do not emit an event
-      await expect(txResponse3).to.not.emit(kmsManagement, "KskgenResponse");
+      // Check that the 4th response does not emit an event
       await expect(txResponse4).to.not.emit(kmsManagement, "KskgenResponse");
     });
   });

@@ -691,7 +691,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     /// @param kmsCounter The number of KMS nodes that agreed
     /// @return Whether the consensus is reached
     function _isConsensusReachedPublic(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getKmsMajorityThreshold();
+        uint256 consensusThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
         return kmsCounter >= consensusThreshold;
     }
 
@@ -699,7 +699,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     /// @param verifiedSignaturesCount The number of signatures that have been verified for a user decryption.
     /// @return Whether the consensus is reached.
     function _isConsensusReachedUser(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getKmsReconstructionThreshold();
+        uint256 consensusThreshold = GATEWAY_CONFIG.getUserDecryptionThreshold();
         return verifiedSignaturesCount >= consensusThreshold;
     }
 

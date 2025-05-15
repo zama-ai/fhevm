@@ -23,14 +23,14 @@ interface IGatewayConfig {
      * @notice Emitted when the GatewayConfig initialization is completed.
      * @param pauser Pauser address.
      * @param metadata Metadata of the protocol.
-     * @param kmsThreshold The KMS threshold.
+     * @param mpcThreshold The MPC threshold.
      * @param kmsNodes List of KMS nodes.
      * @param coprocessors List of coprocessors.
      */
     event Initialization(
         address pauser,
         ProtocolMetadata metadata,
-        uint256 kmsThreshold,
+        uint256 mpcThreshold,
         KmsNode[] kmsNodes,
         Coprocessor[] coprocessors
     );
@@ -42,10 +42,22 @@ interface IGatewayConfig {
     event UpdatePauser(address newPauser);
 
     /**
-     * @notice Emitted when the KMS threshold has been updated.
-     * @param newKmsThreshold The new KMS threshold.
+     * @notice Emitted when the MPC threshold has been updated.
+     * @param newMpcThreshold The new MPC threshold.
      */
-    event UpdateKmsThreshold(uint256 newKmsThreshold);
+    event UpdateMpcThreshold(uint256 newMpcThreshold);
+
+    /**
+     * @notice Emitted when the public decryption threshold has been updated.
+     * @param newPublicDecryptionThreshold The new public decryption threshold.
+     */
+    event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
+
+    /**
+     * @notice Emitted when the user decryption threshold has been updated.
+     * @param newUserDecryptionThreshold The new user decryption threshold.
+     */
+    event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
     /**
      * @notice Emitted when a new host chain has been registered.
@@ -63,12 +75,27 @@ interface IGatewayConfig {
     error EmptyCoprocessors();
 
     /**
-     * @notice Error emitted when the KMS threshold `t` is too high. It must verify `2t + 1 <= n`,
-     * with `n` the number of KMS nodes.
-     * @param kmsThreshold The KMS threshold.
-     * @param nParties The number of KMS nodes.
+     * @notice Error emitted when the MPC threshold is strictly greater than the number of KMS nodes.
+     * @param mpcThreshold The MPC threshold.
+     * @param nKmsNodes The number of KMS nodes.
      */
-    error InvalidHighKmsThreshold(uint256 kmsThreshold, uint256 nParties);
+    error InvalidHighMpcThreshold(uint256 mpcThreshold, uint256 nKmsNodes);
+
+    /// @notice Error emitted when the public decryption threshold is null.
+    error InvalidNullPublicDecryptionThreshold();
+
+    /// @notice Error emitted when the public decryption threshold is strictly greater than the number of KMS nodes.
+    /// @param publicDecryptionThreshold The public decryption threshold.
+    /// @param nKmsNodes The number of KMS nodes.
+    error InvalidHighPublicDecryptionThreshold(uint256 publicDecryptionThreshold, uint256 nKmsNodes);
+
+    /// @notice Error emitted when the user decryption threshold is null.
+    error InvalidNullUserDecryptionThreshold();
+
+    /// @notice Error emitted when the user decryption threshold is strictly greater than the number of KMS nodes.
+    /// @param userDecryptionThreshold The user decryption threshold.
+    /// @param nKmsNodes The number of KMS nodes.
+    error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
 
     /**
      * @notice Error emitted when an address is not the pauser.
@@ -135,11 +162,25 @@ interface IGatewayConfig {
     function addHostChain(HostChain calldata hostChain) external;
 
     /**
-     * @notice Update the KMS threshold.
+     * @notice Update the MPC threshold.
      * @dev The new threshold must verify `0 <= t <= n`, with `n` the number of KMS nodes currently registered.
-     * @param newKmsThreshold The new KMS threshold.
+     * @param newMpcThreshold The new MPC threshold.
      */
-    function updateKmsThreshold(uint256 newKmsThreshold) external;
+    function updateMpcThreshold(uint256 newMpcThreshold) external;
+
+    /**
+     * @notice Update the public decryption threshold.
+     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes currently registered.
+     * @param newPublicDecryptionThreshold The new public decryption threshold.
+     */
+    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external;
+
+    /**
+     * @notice Update the user decryption threshold.
+     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes currently registered.
+     * @param newUserDecryptionThreshold The new user decryption threshold.
+     */
+    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
 
     /**
      * @notice Check if an address is the pauser.
@@ -184,22 +225,22 @@ interface IGatewayConfig {
     function getProtocolMetadata() external view returns (ProtocolMetadata memory);
 
     /**
-     *  @notice Get the KMS vote threshold.
-     *  @return The KMS vote threshold.
+     *  @notice Get the MPC threshold.
+     *  @return The MPC threshold.
      */
-    function getKmsThreshold() external view returns (uint256);
+    function getMpcThreshold() external view returns (uint256);
 
     /**
-     * @notice Get the KMS majority vote threshold.
-     * @return The KMS majority vote threshold.
+     * @notice Get the public decryption threshold.
+     * @return The public decryption threshold.
      */
-    function getKmsMajorityThreshold() external view returns (uint256);
+    function getPublicDecryptionThreshold() external view returns (uint256);
 
     /**
-     * @notice Get the KMS reconstruction threshold.
-     * @return The KMS reconstruction threshold.
+     * @notice Get the user decryption threshold.
+     * @return The user decryption threshold.
      */
-    function getKmsReconstructionThreshold() external view returns (uint256);
+    function getUserDecryptionThreshold() external view returns (uint256);
 
     /**
      * @notice Get the coprocessor majority threshold.

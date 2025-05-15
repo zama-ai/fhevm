@@ -16,7 +16,9 @@ describe("GatewayConfig", function () {
 
   // Define input values
   const protocolMetadata = { name: "Protocol", website: "https://protocol.com" };
-  const kmsThreshold = 1;
+  const mpcThreshold = 1;
+  const publicDecryptionThreshold = 3;
+  const userDecryptionThreshold = 3;
 
   // Define fake values
   const fakeOwner = createRandomWallet();
@@ -98,7 +100,15 @@ describe("GatewayConfig", function () {
       const upgradeTx = await hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
         call: {
           fn: "initialize",
-          args: [pauser.address, protocolMetadata, kmsThreshold, kmsNodes, coprocessors],
+          args: [
+            pauser.address,
+            protocolMetadata,
+            mpcThreshold,
+            publicDecryptionThreshold,
+            userDecryptionThreshold,
+            kmsNodes,
+            coprocessors,
+          ],
         },
       });
 
@@ -113,7 +123,7 @@ describe("GatewayConfig", function () {
       expect(stringifiedEventArgs).to.deep.equal([
         pauser.address,
         toValues(protocolMetadata).toString(),
-        kmsThreshold,
+        mpcThreshold,
         toValues(kmsNodes).toString(),
         toValues(coprocessors).toString(),
       ]);
@@ -126,7 +136,15 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initialize",
-            args: [nullPauser, protocolMetadata, kmsThreshold, kmsNodes, coprocessors],
+            args: [
+              nullPauser,
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              userDecryptionThreshold,
+              kmsNodes,
+              coprocessors,
+            ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullPauser");
@@ -139,7 +157,15 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initialize",
-            args: [pauser.address, protocolMetadata, kmsThreshold, emptyKmsNodes, coprocessors],
+            args: [
+              pauser.address,
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              userDecryptionThreshold,
+              emptyKmsNodes,
+              coprocessors,
+            ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "EmptyKmsNodes");
@@ -152,26 +178,134 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initialize",
-            args: [pauser.address, protocolMetadata, kmsThreshold, kmsNodes, emptyCoprocessors],
+            args: [
+              pauser.address,
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              userDecryptionThreshold,
+              kmsNodes,
+              emptyCoprocessors,
+            ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "EmptyCoprocessors");
     });
 
-    it("Should revert because the KMS threshold is too high", async function () {
-      // The KMS threshold must verify `2t + 1 <= n`, with `n` the number of KMS nodes
-      const highKmsThreshold = nKmsNodes;
+    it("Should revert because the MPC threshold is too high", async function () {
+      // The MPC threshold must be less than the number of KMS nodes
+      const highMpcThreshold = nKmsNodes + 1;
 
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initialize",
-            args: [pauser.address, protocolMetadata, highKmsThreshold, kmsNodes, coprocessors],
+            args: [
+              pauser.address,
+              protocolMetadata,
+              highMpcThreshold,
+              publicDecryptionThreshold,
+              userDecryptionThreshold,
+              kmsNodes,
+              coprocessors,
+            ],
           },
         }),
       )
-        .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighKmsThreshold")
-        .withArgs(highKmsThreshold, nKmsNodes);
+        .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighMpcThreshold")
+        .withArgs(highMpcThreshold, nKmsNodes);
+    });
+
+    it("Should revert because the public decryption threshold is null", async function () {
+      // The public decryption threshold must be greater than 0
+      const nullPublicDecryptionThreshold = 0;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initialize",
+            args: [
+              pauser.address,
+              protocolMetadata,
+              mpcThreshold,
+              nullPublicDecryptionThreshold,
+              userDecryptionThreshold,
+              kmsNodes,
+              coprocessors,
+            ],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullPublicDecryptionThreshold");
+    });
+
+    it("Should revert because the public decryption threshold is too high", async function () {
+      // The public decryption threshold must be less than the number of KMS nodes
+      const highPublicDecryptionThreshold = nKmsNodes + 1;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initialize",
+            args: [
+              pauser.address,
+              protocolMetadata,
+              mpcThreshold,
+              highPublicDecryptionThreshold,
+              userDecryptionThreshold,
+              kmsNodes,
+              coprocessors,
+            ],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighPublicDecryptionThreshold")
+        .withArgs(highPublicDecryptionThreshold, nKmsNodes);
+    });
+
+    it("Should revert because the user decryption threshold is null", async function () {
+      // The user decryption threshold must be greater than 0
+      const nullUserDecryptionThreshold = 0;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initialize",
+            args: [
+              pauser.address,
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              nullUserDecryptionThreshold,
+              kmsNodes,
+              coprocessors,
+            ],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullUserDecryptionThreshold");
+    });
+
+    it("Should revert because the user decryption threshold is too high", async function () {
+      // The user decryption threshold must be less than the number of KMS nodes
+      const highUserDecryptionThreshold = nKmsNodes + 1;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initialize",
+            args: [
+              pauser.address,
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              highUserDecryptionThreshold,
+              kmsNodes,
+              coprocessors,
+            ],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighUserDecryptionThreshold")
+        .withArgs(highUserDecryptionThreshold, nKmsNodes);
     });
   });
 
@@ -306,31 +440,109 @@ describe("GatewayConfig", function () {
       });
     });
 
-    describe("Update KMS threshold", function () {
+    describe("Update MPC threshold", function () {
       it("Should revert because the sender is not the owner", async function () {
-        await expect(gatewayConfig.connect(fakeOwner).updateKmsThreshold(1))
+        await expect(gatewayConfig.connect(fakeOwner).updateMpcThreshold(1))
           .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
           .withArgs(fakeOwner.address);
       });
 
-      it("Should update the KMS threshold", async function () {
-        const newKmsThreshold = 0;
+      it("Should update the MPC threshold", async function () {
+        const newMpcThreshold = 0;
 
-        const tx = await gatewayConfig.connect(owner).updateKmsThreshold(newKmsThreshold);
+        const tx = await gatewayConfig.connect(owner).updateMpcThreshold(newMpcThreshold);
 
-        await expect(tx).to.emit(gatewayConfig, "UpdateKmsThreshold").withArgs(newKmsThreshold);
+        await expect(tx).to.emit(gatewayConfig, "UpdateMpcThreshold").withArgs(newMpcThreshold);
 
-        // Check that the KMS threshold has been updated
-        expect(await gatewayConfig.getKmsThreshold()).to.equal(newKmsThreshold);
+        // Check that the MPC threshold has been updated
+        expect(await gatewayConfig.getMpcThreshold()).to.equal(newMpcThreshold);
       });
 
-      it("Should revert because the KMS threshold is too high", async function () {
-        // The KMS threshold must verify `2t + 1 <= n`, with `n` the number of KMS nodes
-        const highKmsThreshold = nKmsNodes;
+      it("Should revert because the MPC threshold is too high", async function () {
+        // The MPC threshold must be less than the number of KMS nodes
+        const highMpcThreshold = nKmsNodes + 1;
 
-        await expect(gatewayConfig.connect(owner).updateKmsThreshold(highKmsThreshold))
-          .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighKmsThreshold")
-          .withArgs(highKmsThreshold, nKmsNodes);
+        await expect(gatewayConfig.connect(owner).updateMpcThreshold(highMpcThreshold))
+          .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighMpcThreshold")
+          .withArgs(highMpcThreshold, nKmsNodes);
+      });
+    });
+
+    describe("Update public decryption threshold", function () {
+      it("Should revert because the sender is not the owner", async function () {
+        await expect(gatewayConfig.connect(fakeOwner).updatePublicDecryptionThreshold(1))
+          .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+          .withArgs(fakeOwner.address);
+      });
+
+      it("Should update the public decryption threshold", async function () {
+        // The public decryption threshold must be greater than 0
+        const newPublicDecryptionThreshold = 1;
+
+        const tx = await gatewayConfig.connect(owner).updatePublicDecryptionThreshold(newPublicDecryptionThreshold);
+
+        await expect(tx)
+          .to.emit(gatewayConfig, "UpdatePublicDecryptionThreshold")
+          .withArgs(newPublicDecryptionThreshold);
+
+        // Check that the public decryption threshold has been updated
+        expect(await gatewayConfig.getPublicDecryptionThreshold()).to.equal(newPublicDecryptionThreshold);
+      });
+
+      it("Should revert because the public decryption threshold is null", async function () {
+        // The public decryption threshold must be greater than 0
+        const nullPublicDecryptionThreshold = 0;
+
+        await expect(
+          gatewayConfig.connect(owner).updatePublicDecryptionThreshold(nullPublicDecryptionThreshold),
+        ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullPublicDecryptionThreshold");
+      });
+
+      it("Should revert because the public decryption threshold is too high", async function () {
+        // The public decryption threshold must be less than the number of KMS nodes
+        const highPublicDecryptionThreshold = nKmsNodes + 1;
+
+        await expect(gatewayConfig.connect(owner).updatePublicDecryptionThreshold(highPublicDecryptionThreshold))
+          .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighPublicDecryptionThreshold")
+          .withArgs(highPublicDecryptionThreshold, nKmsNodes);
+      });
+    });
+
+    describe("Update user decryption threshold", function () {
+      it("Should revert because the sender is not the owner", async function () {
+        await expect(gatewayConfig.connect(fakeOwner).updateUserDecryptionThreshold(1))
+          .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+          .withArgs(fakeOwner.address);
+      });
+
+      it("Should update the user decryption threshold", async function () {
+        // The user decryption threshold must be greater than 0
+        const newUserDecryptionThreshold = 1;
+
+        const tx = await gatewayConfig.connect(owner).updateUserDecryptionThreshold(newUserDecryptionThreshold);
+
+        await expect(tx).to.emit(gatewayConfig, "UpdateUserDecryptionThreshold").withArgs(newUserDecryptionThreshold);
+
+        // Check that the user decryption threshold has been updated
+        expect(await gatewayConfig.getUserDecryptionThreshold()).to.equal(newUserDecryptionThreshold);
+      });
+
+      it("Should revert because the user decryption threshold is null", async function () {
+        // The user decryption threshold must be greater than 0
+        const nullUserDecryptionThreshold = 0;
+
+        await expect(
+          gatewayConfig.connect(owner).updateUserDecryptionThreshold(nullUserDecryptionThreshold),
+        ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullUserDecryptionThreshold");
+      });
+
+      it("Should revert because the user decryption threshold is too high", async function () {
+        // The user decryption threshold must be less than the number of KMS nodes
+        const highUserDecryptionThreshold = nKmsNodes + 1;
+
+        await expect(gatewayConfig.connect(owner).updateUserDecryptionThreshold(highUserDecryptionThreshold))
+          .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighUserDecryptionThreshold")
+          .withArgs(highUserDecryptionThreshold, nKmsNodes);
       });
     });
 

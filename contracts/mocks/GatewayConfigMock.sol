@@ -6,30 +6,36 @@ contract GatewayConfigMock {
     event Initialization(
         address pauser,
         ProtocolMetadata metadata,
-        uint256 kmsThreshold,
+        uint256 mpcThreshold,
         KmsNode[] kmsNodes,
         Coprocessor[] coprocessors
     );
 
     event UpdatePauser(address newPauser);
 
-    event UpdateKmsThreshold(uint256 newKmsThreshold);
+    event UpdateMpcThreshold(uint256 newMpcThreshold);
+
+    event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
+
+    event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
     event AddHostChain(HostChain hostChain);
 
     function initialize(
         address initialPauser,
         ProtocolMetadata memory initialMetadata,
-        uint256 initialKmsThreshold,
+        uint256 initialMpcThreshold,
+        uint256 initialPublicDecryptionThreshold,
+        uint256 initialUserDecryptionThreshold,
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors
     ) public {
         address pauser;
         ProtocolMetadata memory metadata;
-        uint256 kmsThreshold;
+        uint256 mpcThreshold;
         KmsNode[] memory kmsNodes = new KmsNode[](1);
         Coprocessor[] memory coprocessors = new Coprocessor[](1);
-        emit Initialization(pauser, metadata, kmsThreshold, kmsNodes, coprocessors);
+        emit Initialization(pauser, metadata, mpcThreshold, kmsNodes, coprocessors);
     }
 
     function updatePauser(address newPauser) external {
@@ -37,9 +43,19 @@ contract GatewayConfigMock {
         emit UpdatePauser(newPauser);
     }
 
-    function updateKmsThreshold(uint256 newKmsThreshold) external {
-        uint256 newKmsThreshold;
-        emit UpdateKmsThreshold(newKmsThreshold);
+    function updateMpcThreshold(uint256 newMpcThreshold) external {
+        uint256 newMpcThreshold;
+        emit UpdateMpcThreshold(newMpcThreshold);
+    }
+
+    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external {
+        uint256 newPublicDecryptionThreshold;
+        emit UpdatePublicDecryptionThreshold(newPublicDecryptionThreshold);
+    }
+
+    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external {
+        uint256 newUserDecryptionThreshold;
+        emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
     }
 
     function addHostChain(HostChain calldata hostChain) external {

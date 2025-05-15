@@ -177,6 +177,8 @@ describe("Mock contracts", function () {
           DefaultAddress,
           DefaultProtocolMetadata,
           DefaultUint256,
+          DefaultUint256,
+          DefaultUint256,
           [DefaultKmsNode],
           [DefaultCoprocessor],
         ),
@@ -197,9 +199,9 @@ describe("Mock contracts", function () {
         .withArgs(DefaultAddress);
     });
 
-    it("Should emit UpdateKmsThreshold event on update KMS threshold call", async function () {
-      await expect(gatewayConfigMock.updateKmsThreshold(DefaultUint256))
-        .to.emit(gatewayConfigMock, "UpdateKmsThreshold")
+    it("Should emit UpdateMpcThreshold event on update MPC threshold call", async function () {
+      await expect(gatewayConfigMock.updateMpcThreshold(DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdateMpcThreshold")
         .withArgs(DefaultUint256);
     });
 
