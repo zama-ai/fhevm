@@ -523,7 +523,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @param kmsCounter The number of KMS nodes that agreed
     /// @return Whether the consensus is reached
     function _isKmsConsensusReached(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getKmsMajorityThreshold();
+        uint256 consensusThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
         return kmsCounter >= consensusThreshold;
     }
 

@@ -47,8 +47,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         address[] kmsTxSenderAddresses;
         /// @notice The KMS nodes' signer address list
         address[] kmsSignerAddresses;
-        /// @notice The KMS threshold parameter to consider for decryption consensus
-        uint256 kmsThreshold;
+        /// @notice The MPC threshold
+        uint256 mpcThreshold;
+        /// @notice The threshold to consider for public decryption consensus
+        uint256 publicDecryptionThreshold;
+        /// @notice The threshold to consider for user decryption consensus
+        uint256 userDecryptionThreshold;
         /// @notice The coprocessors' metadata
         mapping(address coprocessorTxSenderAddress => Coprocessor coprocessor) coprocessors;
         /// @notice The coprocessors' transaction sender address list
@@ -74,13 +78,17 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
     /// @param initialPauser Pauser address
     /// @param initialMetadata Metadata of the protocol
-    /// @param initialKmsThreshold The KMS threshold parameter
+    /// @param initialMpcThreshold The MPC threshold
+    /// @param initialPublicDecryptionThreshold The public decryption threshold
+    /// @param initialUserDecryptionThreshold The user decryption threshold
     /// @param initialKmsNodes List of KMS nodes
     /// @param initialCoprocessors List of coprocessors
     function initialize(
         address initialPauser,
         ProtocolMetadata memory initialMetadata,
-        uint256 initialKmsThreshold,
+        uint256 initialMpcThreshold,
+        uint256 initialPublicDecryptionThreshold,
+        uint256 initialUserDecryptionThreshold,
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors
     ) public virtual reinitializer(2) {
@@ -113,10 +121,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             $.kmsSignerAddresses.push(initialKmsNodes[i].signerAddress);
         }
 
-        /// @dev Set the KMS threshold.
-        /// @dev This should be done after the KMS nodes have been registered as the function reads
-        /// @dev the `kmsSignerAddresses` array.
-        _setKmsThreshold(initialKmsThreshold);
+        /// @dev Setting the threshold should be done after the KMS nodes have been registered as the functions
+        /// @dev reading the `kmsSignerAddresses` array.
+        _setMpcThreshold(initialMpcThreshold);
+        _setPublicDecryptionThreshold(initialPublicDecryptionThreshold);
+        _setUserDecryptionThreshold(initialUserDecryptionThreshold);
 
         /// @dev Register the coprocessors
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
@@ -127,7 +136,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             $.coprocessorSignerAddresses.push(initialCoprocessors[i].signerAddress);
         }
 
-        emit Initialization(initialPauser, initialMetadata, initialKmsThreshold, initialKmsNodes, initialCoprocessors);
+        emit Initialization(initialPauser, initialMetadata, initialMpcThreshold, initialKmsNodes, initialCoprocessors);
     }
 
     /// @dev See {IGatewayConfig-updatePauser}.
@@ -140,10 +149,22 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         emit UpdatePauser(newPauser);
     }
 
-    /// @dev See {IGatewayConfig-updateKmsThreshold}.
-    function updateKmsThreshold(uint256 newKmsThreshold) external virtual onlyOwner {
-        _setKmsThreshold(newKmsThreshold);
-        emit UpdateKmsThreshold(newKmsThreshold);
+    /// @dev See {IGatewayConfig-updateMpcThreshold}.
+    function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner {
+        _setMpcThreshold(newMpcThreshold);
+        emit UpdateMpcThreshold(newMpcThreshold);
+    }
+
+    /// @dev See {IGatewayConfig-updatePublicDecryptionThreshold}.
+    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external virtual onlyOwner {
+        _setPublicDecryptionThreshold(newPublicDecryptionThreshold);
+        emit UpdatePublicDecryptionThreshold(newPublicDecryptionThreshold);
+    }
+
+    /// @dev See {IGatewayConfig-updateUserDecryptionThreshold}.
+    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external virtual onlyOwner {
+        _setUserDecryptionThreshold(newUserDecryptionThreshold);
+        emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
     }
 
     /// @dev See {IGatewayConfig-addHostChain}.
@@ -219,22 +240,22 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         return $.protocolMetadata;
     }
 
-    /// @dev See {IGatewayConfig-getKmsThreshold}.
-    function getKmsThreshold() external view virtual returns (uint256) {
+    /// @dev See {IGatewayConfig-getMpcThreshold}.
+    function getMpcThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsThreshold;
+        return $.mpcThreshold;
     }
 
-    /// @dev See {IGatewayConfig-getKmsMajorityThreshold}.
-    function getKmsMajorityThreshold() external view virtual returns (uint256) {
+    /// @dev See {IGatewayConfig-getPublicDecryptionThreshold}.
+    function getPublicDecryptionThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsThreshold + 1;
+        return $.publicDecryptionThreshold;
     }
 
-    /// @dev See {IGatewayConfig-getKmsReconstructionThreshold}.
-    function getKmsReconstructionThreshold() external view virtual returns (uint256) {
+    /// @dev See {IGatewayConfig-getUserDecryptionThreshold}.
+    function getUserDecryptionThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return 2 * $.kmsThreshold + 1;
+        return $.userDecryptionThreshold;
     }
 
     /// @dev See {IGatewayConfig-getCoprocessorMajorityThreshold}.
@@ -308,22 +329,63 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @dev Sets the KMS threshold.
-     * @param newKmsThreshold The new KMS threshold.
+     * @dev Sets the MPC threshold.
+     * @param newMpcThreshold The new MPC threshold.
      */
-    function _setKmsThreshold(uint256 newKmsThreshold) internal virtual {
+    function _setMpcThreshold(uint256 newMpcThreshold) internal virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         uint256 nKmsNodes = $.kmsSignerAddresses.length;
 
-        /// @dev Check that the KMS threshold `t` is valid. It must verify:
+        /// @dev Check that the MPC threshold `t` is valid. It must verify:
         /// @dev - `t >= 0` : it is already a uint256 so this is always true
-        /// @dev - `2t + 1 <= n` : the response consensus should not require more than `n` votes,
-        /// @dev with `n` being the number of registered KMS nodes
-        if (2 * newKmsThreshold + 1 > nKmsNodes) {
-            revert InvalidHighKmsThreshold(newKmsThreshold, nKmsNodes);
+        /// @dev - `t <= n` : it should be less than the number of registered KMS nodes
+        if (newMpcThreshold > nKmsNodes) {
+            revert InvalidHighMpcThreshold(newMpcThreshold, nKmsNodes);
         }
 
-        $.kmsThreshold = newKmsThreshold;
+        $.mpcThreshold = newMpcThreshold;
+    }
+
+    /**
+     * @dev Sets the public decryption threshold.
+     * @param newPublicDecryptionThreshold The new public decryption threshold.
+     */
+    function _setPublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) internal virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        uint256 nKmsNodes = $.kmsSignerAddresses.length;
+
+        /// @dev Check that the public decryption threshold `t` is valid. It must verify:
+        /// @dev - `t >= 1` : the public decryption consensus should require at least one vote
+        /// @dev - `t <= n` : it should be less than the number of registered KMS nodes
+        if (newPublicDecryptionThreshold == 0) {
+            revert InvalidNullPublicDecryptionThreshold();
+        }
+        if (newPublicDecryptionThreshold > nKmsNodes) {
+            revert InvalidHighPublicDecryptionThreshold(newPublicDecryptionThreshold, nKmsNodes);
+        }
+
+        $.publicDecryptionThreshold = newPublicDecryptionThreshold;
+    }
+
+    /**
+     * @dev Sets the user decryption threshold.
+     * @param newUserDecryptionThreshold The new user decryption threshold.
+     */
+    function _setUserDecryptionThreshold(uint256 newUserDecryptionThreshold) internal virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        uint256 nKmsNodes = $.kmsSignerAddresses.length;
+
+        /// @dev Check that the user decryption threshold `t` is valid. It must verify:
+        /// @dev - `t >= 1` : the user decryption consensus should require at least one vote
+        /// @dev - `t <= n` : it should be less than the number of registered KMS nodes
+        if (newUserDecryptionThreshold == 0) {
+            revert InvalidNullUserDecryptionThreshold();
+        }
+        if (newUserDecryptionThreshold > nKmsNodes) {
+            revert InvalidHighUserDecryptionThreshold(newUserDecryptionThreshold, nKmsNodes);
+        }
+
+        $.userDecryptionThreshold = newUserDecryptionThreshold;
     }
 
     /**

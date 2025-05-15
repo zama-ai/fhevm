@@ -73,8 +73,12 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   // Parse the pauser address
   const pauserAddress = getRequiredEnvVar(`PAUSER_ADDRESS`);
 
-  // Parse the KMS threshold
-  const kmsThreshold = getRequiredEnvVar("KMS_THRESHOLD");
+  // Parse the MPC threshold
+  const mpcThreshold = getRequiredEnvVar("MPC_THRESHOLD");
+
+  // Parse the decryption response thresholds
+  const publicDecryptionThreshold = getRequiredEnvVar("PUBLIC_DECRYPTION_THRESHOLD");
+  const userDecryptionThreshold = getRequiredEnvVar("USER_DECRYPTION_THRESHOLD");
 
   // Parse the KMS nodes
   const numKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
@@ -100,14 +104,18 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
 
   console.log("Pauser address:", pauserAddress);
   console.log("Protocol metadata:", protocolMetadata);
-  console.log("KMS threshold:", kmsThreshold);
+  console.log("MPC threshold:", mpcThreshold);
+  console.log("Public decryption threshold:", publicDecryptionThreshold);
+  console.log("User decryption threshold:", userDecryptionThreshold);
   console.log("KMS nodes:", kmsNodes);
   console.log("Coprocessors:", coprocessors);
 
   await deployContractImplementation("GatewayConfig", hre, [
     pauserAddress,
     protocolMetadata,
-    kmsThreshold,
+    mpcThreshold,
+    publicDecryptionThreshold,
+    userDecryptionThreshold,
     kmsNodes,
     coprocessors,
   ]);

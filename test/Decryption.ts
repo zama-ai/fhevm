@@ -453,24 +453,27 @@ describe("Decryption", function () {
         );
     });
 
-    it("Should reach consensus with 2 valid responses", async function () {
+    it("Should reach consensus with 3 valid responses", async function () {
       // Request public decryption
       await decryption.publicDecryptionRequest(ctHandles);
 
-      // Trigger two valid public decryption responses
+      // Trigger three valid public decryption responses
       await decryption
         .connect(kmsTxSenders[0])
         .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
-
-      const responseTx2 = await decryption
+      await decryption
         .connect(kmsTxSenders[1])
         .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
 
-      // Consensus should be reached at the second response
-      // Check 2nd response event: it should only contain 2 valid signatures
-      await expect(responseTx2)
+      const responseTx3 = await decryption
+        .connect(kmsTxSenders[2])
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
+
+      // Consensus should be reached at the third response
+      // Check 3rd response event: it should only contain 3 valid signatures
+      await expect(responseTx3)
         .to.emit(decryption, "PublicDecryptionResponse")
-        .withArgs(decryptionId, decryptedResult, [kmsSignatures[0], kmsSignatures[1]]);
+        .withArgs(decryptionId, decryptedResult, [kmsSignatures[0], kmsSignatures[1], kmsSignatures[2]]);
 
       // Check that the public decryption is done
       await expect(decryption.checkDecryptionDone(decryptionId)).to.not.be.reverted;
@@ -485,11 +488,11 @@ describe("Decryption", function () {
         .connect(kmsTxSenders[0])
         .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
 
-      await decryption
+      const responseTx2 = await decryption
         .connect(kmsTxSenders[1])
         .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
 
-      const responseTx3 = await decryption
+      await decryption
         .connect(kmsTxSenders[2])
         .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
 
@@ -497,11 +500,11 @@ describe("Decryption", function () {
         .connect(kmsTxSenders[3])
         .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3]);
 
-      // Check that the 1st, 3rd and 4th responses do not emit an event:
-      // - 1st response is ignored because consensus is not reached yet
-      // - 3rd and 4th responses are ignored (not reverted) even though they are late
+      // Check that the 1st, 2nd and 4th responses do not emit an event:
+      // - 1st and 2nd responses are ignored because consensus is not reached yet
+      // - 4th response is ignored (not reverted) even though it is late
       await expect(responseTx1).to.not.emit(decryption, "PublicDecryptionResponse");
-      await expect(responseTx3).to.not.emit(decryption, "PublicDecryptionResponse");
+      await expect(responseTx2).to.not.emit(decryption, "PublicDecryptionResponse");
       await expect(responseTx4).to.not.emit(decryption, "PublicDecryptionResponse");
     });
 
