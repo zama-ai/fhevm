@@ -12,7 +12,7 @@ use diesel::query_builder::QueryId;
 use diesel::serialize::ToSql;
 use diesel::sql_types::SqlType;
 use diesel::{Insertable, Queryable};
-use fhevm_relayer::core::event::{CtHandleContractPair, RequestValidity};
+use fhevm_relayer::core::event::{HandleContractPair, RequestValidity};
 use fhevm_relayer::http::userdecrypt_http_listener::UserDecryptResponsePayloadJson;
 use fhevm_relayer::orchestrator::traits::Event;
 use serde::{Deserialize, Serialize};
@@ -721,7 +721,7 @@ pub struct HTTPPrivateDecryptionRequest {
     #[serde(rename = "contractsChainId")]
     pub contracts_chain_id: u64,
     #[serde(rename = "ctHandleContractPairs")]
-    pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
+    pub ct_handle_contract_pairs: Vec<HandleContractPair>,
     #[serde(rename = "requestValidity")]
     pub request_validity: RequestValidity,
     #[serde(rename = "contractsAddresses")]
@@ -784,7 +784,7 @@ pub struct PrivateDecryptionRequest {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
     #[serde(rename = "ctHandleContractPairs")]
-    pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
+    pub ct_handle_contract_pairs: Vec<HandleContractPair>,
     #[serde(rename = "requestValidity")]
     pub request_validity: RequestValidity,
     #[serde(rename = "contractChainId")]
