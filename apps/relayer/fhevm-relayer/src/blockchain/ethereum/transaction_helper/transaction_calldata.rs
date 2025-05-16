@@ -33,6 +33,7 @@ sol! {
     }
 }
 
+// TODO: why do we need a struct to hold these methods?
 pub struct ComputeCalldata;
 
 impl ComputeCalldata {
@@ -219,6 +220,7 @@ impl ComputeCalldata {
 
             let clear_text = match get_clear_text("hardhat/contracts/sql.db", &handle) {
                 Ok(Some(text)) => text,
+                // TODO: remove?
                 Ok(None) => {
                     error!("No value found for this handle");
                     "65".to_string()

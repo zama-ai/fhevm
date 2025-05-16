@@ -32,6 +32,8 @@ pub trait SignerCombined: TxSigner<PrimitiveSignature> + Signer + Send + Sync {}
 // Automatically implement SignerCombined for any type that satisfies all the required traits
 impl<T: TxSigner<PrimitiveSignature> + Signer + Send + Sync> SignerCombined for T {}
 
+// TODO: it's not used anywhere
+// // should either be used or removed
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
     pub max_attempts: u32,
@@ -224,6 +226,7 @@ impl TransactionManager {
             .await
             .map_err(|e| TransactionServiceError::GasEstimation(e.to_string()))?;
 
+        // NOTE: shouldn't this be exposed as tx-manager configuration?
         // Add 10% buffer to estimated gas
         let gas_with_buffer = (gas as f64 * 1.1) as u64;
 
@@ -290,6 +293,8 @@ impl TransactionManager {
             .with_value(config.value.unwrap_or_default());
         let request = WithOtherFields::new(request);
 
+        // NOTE: this one executes the transaction without publishing it
+        // https://www.alchemy.com/docs/node/ethereum/ethereum-api-endpoints/eth-call
         match self.provider.call(request).await {
             Ok(_) => {
                 debug!("\n✅ Call simulation succeeded");
@@ -320,17 +325,6 @@ impl TransactionManager {
         config: Option<TxConfig>,
     ) -> Result<B256, TransactionError> {
         let config = config.unwrap_or_default();
-
-        // Only run debug if log level is Debug or lower
-        if tracing::enabled!(tracing::Level::DEBUG) {
-            debug!("Starting detailed transaction debug...");
-            if let Err(e) = self
-                .debug_transaction_call(target, &calldata, &config)
-                .await
-            {
-                warn!("Debug simulation failed: {}", e);
-            }
-        }
 
         // Check if contract exists
         info!("Checking contract code at {:#x}", target);
@@ -593,9 +587,12 @@ mod tests {
         let mut signer: PrivateKeySigner = private_key.parse().unwrap();
         signer.set_chain_id(Some(123456));
 
-        let manager = TransactionManager::new("ws://localhost:8756", Arc::new(signer))
+        let chain_ws_url = "ws://localhost:8756";
+        let manager = TransactionManager::new(chain_ws_url, Arc::new(signer))
             .await
-            .expect("Failed to create transaction manager");
+            .unwrap_or_else(|error| panic!(
+                "Failed to create transaction manager. Make sure chain node is running at {chain_ws_url}.\n{error}"
+            ));
 
         println!("Using address: {:?}", manager.sender_address());
 

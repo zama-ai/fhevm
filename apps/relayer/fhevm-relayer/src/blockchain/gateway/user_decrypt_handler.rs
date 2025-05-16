@@ -527,7 +527,9 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     println!("Setting up manager with configured private key...");
     let manager = TransactionManager::new(&gateway_settings.ws_url, Arc::new(gateway_signer))
         .await
-        .expect("Failed to create transaction manager");
+            .unwrap_or_else(|error| panic!(
+                "Failed to create transaction manager. Make sure chain node is running at {}.\n{error}", gateway_settings.ws_url
+            ));
 
     println!("Using address: {:?}", manager.sender_address());
 
@@ -641,7 +643,9 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
     println!("Setting up manager with configured private key...");
     let manager = TransactionManager::new(&gateway_settings.ws_url, Arc::new(gateway_signer))
         .await
-        .expect("Failed to create transaction manager");
+            .unwrap_or_else(|error| panic!(
+                "Failed to create transaction manager. Make sure chain node is running at {}.\n{error}", gateway_settings.ws_url
+            ));
 
     let decryption_address = Address::from_str(&settings.contracts.decryption_address)
         .expect("Invaliddecryption contract address");

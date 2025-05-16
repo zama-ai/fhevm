@@ -175,6 +175,7 @@ pub struct Settings {
     pub contracts: ContractConfig,
     /// Logging configuration
     pub log: LogConfig,
+    /// TODO: rename this
     /// Input proof endpoint address
     pub inputproof: InputProof,
 

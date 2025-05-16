@@ -50,7 +50,7 @@ jobs:
         make config-fhevm-relayer
 
     - name: Run tests
-      run: cargo test
+      run: cargo test --features ci
 
     - name: Build fhevm-relayer
       run: make build-fhevm-relayer

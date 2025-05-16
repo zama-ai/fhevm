@@ -492,7 +492,9 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
     println!("Setting up manager with configured private key...");
     let manager = TransactionManager::new(&gateway_settings.ws_url, Arc::new(gateway_signer))
         .await
-        .expect("Failed to create transaction manager");
+            .unwrap_or_else(|error| panic!(
+                "Failed to create transaction manager. Make sure chain node is running at {}.\n{error}", gateway_settings.ws_url
+            ));
 
     let sender_address = manager.sender_address();
     println!("Sender address: {:#x}", sender_address);
