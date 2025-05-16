@@ -1,6 +1,6 @@
 [submodule "kms-core"]
-	path = kms-core
+	path = kms-connector/kms-core
 	url = git@github.com:zama-ai/kms-core.git
 [submodule "fhevm-gateway"]
-	path = fhevm-gateway
+	path = kms-connector/fhevm-gateway
 	url = git@github.com:zama-ai/fhevm-gateway.git
