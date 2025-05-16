@@ -338,8 +338,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         /// @dev Check that the MPC threshold `t` is valid. It must verify:
         /// @dev - `t >= 0` : it is already a uint256 so this is always true
-        /// @dev - `t <= n` : it should be less than the number of registered KMS nodes
-        if (newMpcThreshold > nKmsNodes) {
+        /// @dev - `t < n` : it should be strictly less than the number of registered KMS nodes
+        if (newMpcThreshold >= nKmsNodes) {
             revert InvalidHighMpcThreshold(newMpcThreshold, nKmsNodes);
         }
 

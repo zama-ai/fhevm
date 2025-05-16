@@ -6,11 +6,11 @@ import "../shared/Structs.sol";
 /**
  * @title Interface for the GatewayConfig contract.
  * @notice The GatewayConfig contract is responsible for being a point of truth for all contracts and
- * components from the Fhevm Gateway.
- * @dev The GatewayConfig contract contains:
- * - the list of KMS nodes used exclusively by this Fhevm Gateway
- * - the list of coprocessors used exclusively by this Fhevm Gateway
- * - the list of host chains using this Fhevm Gateway
+ * components from the fhevm Gateway.
+ * @dev In particular, the GatewayConfig contract contains:
+ * - the list of KMS nodes used exclusively by this fhevm Gateway
+ * - the list of coprocessors used exclusively by this fhevm Gateway
+ * - the list of host chains using this fhevm Gateway
  *
  * The GatewayConfig contract has an owner and a pauser.
  * The owner can call some restricted functions, such as adding or removing KMS nodes, coprocessors
@@ -75,7 +75,7 @@ interface IGatewayConfig {
     error EmptyCoprocessors();
 
     /**
-     * @notice Error emitted when the MPC threshold is strictly greater than the number of KMS nodes.
+     * @notice Error emitted when the MPC threshold is greater or equal to the number of KMS nodes.
      * @param mpcThreshold The MPC threshold.
      * @param nKmsNodes The number of KMS nodes.
      */
@@ -163,7 +163,7 @@ interface IGatewayConfig {
 
     /**
      * @notice Update the MPC threshold.
-     * @dev The new threshold must verify `0 <= t <= n`, with `n` the number of KMS nodes currently registered.
+     * @dev The new threshold must verify `0 <= t < n`, with `n` the number of KMS nodes currently registered.
      * @param newMpcThreshold The new MPC threshold.
      */
     function updateMpcThreshold(uint256 newMpcThreshold) external;

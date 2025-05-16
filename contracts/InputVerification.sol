@@ -166,11 +166,7 @@ contract InputVerification is
          * @dev Send the event if and only if the consensus is reached in the current response call
          * for a proof verification.
          *
-         * This means a "late" response will not be reverted, just ignored
-         *
-         * Note that this considers that the consensus is reached with at least N/2 + 1
-         * coprocessors. If the threshold is updated to below this number, we should also
-         * check that the ZK proof request has not been rejected yet.
+         * This means a "late" response will not be reverted, just ignored.
          */
         if (!$.verifiedZKProofs[zkProofId] && _isConsensusReached(currentSignatures.length)) {
             $.verifiedZKProofs[zkProofId] = true;
@@ -203,11 +199,7 @@ contract InputVerification is
          * @dev Send the event if and only if the consensus is reached in the current response call
          * for a proof rejection.
          *
-         * This means a "late" response will not be reverted, just ignored
-         *
-         * Note that this considers that the consensus is reached with at least N/2 + 1
-         * coprocessors. If the threshold is updated to below this number, we should also
-         * check that the ZK proof request has not been verified yet.
+         * This means a "late" response will not be reverted, just ignored.
          */
         if (!$.rejectedZKProofs[zkProofId] && _isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
             $.rejectedZKProofs[zkProofId] = true;
@@ -309,7 +301,6 @@ contract InputVerification is
 
     /**
      * @notice Checks if the consensus is reached among the coprocessors.
-     * @dev This function calls the GatewayConfig contract to retrieve the consensus threshold.
      * @param coprocessorCounter The number of coprocessors that agreed
      * @return Whether the consensus is reached
      */

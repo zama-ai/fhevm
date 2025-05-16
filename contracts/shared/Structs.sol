@@ -33,7 +33,7 @@ struct Coprocessor {
 struct HostChain {
     /// @notice Chain ID of the host chain (unique identifier)
     uint256 chainId;
-    /// @notice Address where the Fhevm library contract is deployed
+    /// @notice Address where the fhevm library contract is deployed
     address fhevmExecutorAddress;
     /// @notice Address where the ACL contract is deployed
     address aclAddress;

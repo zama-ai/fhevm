@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /**
  * @title Interface for the KmsManagement contract.
  * @notice The KmsManagement contract is responsible for managing the public materials such as FHE keys,
- * CRS (Common Reference String) and KSKs (Key Switching Keys) used by the Fhevm Gateway.
+ * CRS (Common Reference String) and KSKs (Key Switching Keys) used by the fhevm Gateway.
  * @dev The KmsManagement contract contains:
  * - the cryptographic parameters to consider when generating public materials (FHE keys, CRS, KSKs)
  * - the generated public materials (FHE keys, CRS, KSKs) IDs

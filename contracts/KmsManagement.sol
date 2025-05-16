@@ -10,6 +10,8 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./shared/GatewayConfigChecks.sol";
 
 /// @title KMS Management contract
+/// @dev TODO: This contract is neither used nor up-to-date. It will be reworked in the future.
+/// @dev See https://github.com/zama-ai/fhevm-gateway/issues/108
 /// @dev See {IKmsManagement}.
 contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks {
     /// @notice The address of the GatewayConfig contract for protocol state calls.
@@ -519,7 +521,6 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
     /// @notice Checks if the consensus is reached among the KMS nodes.
-    /// @dev This function calls the GatewayConfig contract to retrieve the consensus threshold.
     /// @param kmsCounter The number of KMS nodes that agreed
     /// @return Whether the consensus is reached
     function _isKmsConsensusReached(uint256 kmsCounter) internal view virtual returns (bool) {
@@ -528,7 +529,6 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @notice Checks if the consensus is reached among the Coprocessors.
-    /// @dev This function calls the GatewayConfig contract to retrieve the consensus threshold.
     /// @param coprocessorCounter The number of coprocessors that agreed
     /// @return Whether the consensus is reached
     function _isCoprocessorConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
