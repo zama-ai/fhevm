@@ -60,7 +60,7 @@ on:
         value: "${{ jobs.determine-tag.outputs.docker_tag }}"
 
 env:
-  RUST_IMAGE_VERSION: '1.85.0'
+  RUST_IMAGE_VERSION: '1.86.0'
 
 jobs:
   determine-tag:
