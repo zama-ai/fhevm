@@ -1,6 +1,6 @@
 ---
 description: >-
-  The Fhevm Gateway.
+  The fhevm Gateway.
 layout:
   title:
     visible: true
@@ -14,9 +14,11 @@ layout:
     visible: false
 ---
 
-# Welcome to Fhevm Gateway
+# Welcome to fhevm Gateway
 
 ## Get started
+
+Learn the basics of fhevm Gateway, set it up, and make it run with ease.
 
 ### References
 
@@ -33,15 +35,14 @@ days.
 
 Collaborate with us to advance the FHE spaces and drive innovation together.
 
-- [Contribute to Fhevm Gateway](developer/contribute.md)
-- [Follow the development roadmap](developer/roadmap.md)
 <!-- markdown-link-check-disable -->
+
 - [See the latest test release note](https://github.com/zama-ai/fhevm-gateway/releases)
-- [Request a feature](https://github.com/zama-ai/fhevm-gateway/issues/new)
-- [Report a bug](https://github.com/zama-ai/fhevm-gateway/issues/new)
+- [Request a feature](https://github.com/zama-ai/fhevm-gateway/issues/new/choose)
+- [Report a bug](https://github.com/zama-ai/fhevm-gateway/issues/new/choose)
 <!-- markdown-link-check-enable -->
 
 ---
 
-We value your feedback! [Take a 5-question developer survey](http://zama.ai/developer-survey) to improve the Fhevm
+We value your feedback! [Take a 5-question developer survey](http://zama.ai/developer-survey) to improve the fhevm
 Gateway and the documentation and help other developers use FHE.

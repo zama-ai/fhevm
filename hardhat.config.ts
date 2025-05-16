@@ -5,7 +5,7 @@ import "@openzeppelin/hardhat-upgrades";
 import "@typechain/hardhat";
 import dotenv from "dotenv";
 import "hardhat-ignore-warnings";
-import { HardhatUserConfig, task } from "hardhat/config";
+import { HardhatUserConfig, task, types } from "hardhat/config";
 import { resolve } from "path";
 
 import "./tasks/accounts";
@@ -13,7 +13,6 @@ import "./tasks/addHostChains";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
-import "./tasks/faucet";
 import "./tasks/getters";
 import "./tasks/upgradeProxy";
 
@@ -50,14 +49,19 @@ task("compile:specific", "Compiles only the specified contract")
     await hre.run("compile");
   });
 
-task("test", async (_taskArgs, hre, runSuper) => {
-  await hre.run("task:faucetToPrivate", { privateKey: process.env.DEPLOYER_PRIVATE_KEY });
-  await hre.run("task:deployAllGatewayContracts");
-  // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory
-  // for local testing
-  await hre.run("task:addHostChainsToGatewayConfig", { useInternalGatewayConfigAddress: true });
-  await runSuper();
-});
+task("test", "Runs the test suite, optionally skipping setup tasks")
+  .addOptionalParam("skipSetup", "Set to true to skip setup tasks", false, types.boolean)
+  .setAction(async ({ skipSetup }, hre, runSuper) => {
+    if (!skipSetup) {
+      await hre.run("task:deployAllGatewayContracts");
+      // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory
+      // for local testing
+      await hre.run("task:addHostChainsToGatewayConfig", { useInternalGatewayConfigAddress: true });
+    } else {
+      console.log("Skipping contracts setup.");
+    }
+    await runSuper();
+  });
 
 const config: HardhatUserConfig = {
   networks: {
@@ -76,7 +80,7 @@ const config: HardhatUserConfig = {
         path: "m/44'/60'/0'/0",
       },
       chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.localGateway,
-      url: `http://127.0.0.1:8546`,
+      url: rpcUrl,
     },
     staging: {
       accounts: {
@@ -117,7 +121,7 @@ const config: HardhatUserConfig = {
     customChains: [
       {
         network: "zwsDev",
-        chainId: 412346,
+        chainId: chainIds.zwsDev,
         urls: {
           apiURL: "http://l2-blockscout-zws-dev-blockscout-stack-blockscout-svc/api",
           browserURL: "https://l2-explorer-zws-dev.diplodocus-boa.ts.net",

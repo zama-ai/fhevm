@@ -212,7 +212,6 @@ contract CiphertextCommits is ICiphertextCommits, Ownable2StepUpgradeable, UUPSU
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
     /// @notice Checks if the consensus is reached among the Coprocessors.
-    /// @dev This function calls the GatewayConfig contract to retrieve the consensus threshold.
     /// @param coprocessorCounter The number of coprocessors that agreed
     /// @return Whether the consensus is reached
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {

@@ -583,6 +583,9 @@ describe("Decryption", function () {
       },
     ];
 
+    // Define utility values
+    const tenDaysInSeconds = 10 * 24 * 60 * 60;
+
     // Allow access the the handles for the user and the contract
     async function prepareUserDecryptEIP712Fixture() {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
@@ -785,9 +788,9 @@ describe("Decryption", function () {
     });
 
     it("Should revert because the start timestamp is in the future", async function () {
-      // Create an invalid validity request with a start timestamp in the future by delaying it by 100 seconds
+      // Create an invalid validity request with a start timestamp in the future by delaying it by 10 days
       const futureRequestValidity: IDecryption.RequestValidityStruct = {
-        startTimestamp: startTimestamp + 100,
+        startTimestamp: startTimestamp + tenDaysInSeconds,
         durationDays,
       };
 
@@ -811,7 +814,7 @@ describe("Decryption", function () {
       // Note that we currently allow a past start timestamp. Here, we set it 10 days in the past,
       // but we allow the request for 1 day only
       const expiredRequestValidity: IDecryption.RequestValidityStruct = {
-        startTimestamp: startTimestamp - 10 * 24 * 60 * 60,
+        startTimestamp: startTimestamp - tenDaysInSeconds,
         durationDays: 1,
       };
 
@@ -1320,6 +1323,9 @@ describe("Decryption", function () {
       delegatedAddress,
     };
 
+    // Define utility values
+    const tenDaysInSeconds = 10 * 24 * 60 * 60;
+
     // Allow handles for user decryption
     async function prepareDelegatedUserDecryptEIP712Fixture() {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
@@ -1532,9 +1538,9 @@ describe("Decryption", function () {
     });
 
     it("Should revert because the start timestamp is in the future", async function () {
-      // Create an invalid validity request with a start timestamp in the future by delaying it by 100 seconds
+      // Create an invalid validity request with a start timestamp in the future by delaying it by 10 days
       const futureRequestValidity: IDecryption.RequestValidityStruct = {
-        startTimestamp: startTimestamp + 100,
+        startTimestamp: startTimestamp + tenDaysInSeconds,
         durationDays,
       };
 
@@ -1558,7 +1564,7 @@ describe("Decryption", function () {
       // Note that we currently allow a past start timestamp. Here, we set it 10 days in the past,
       // but we allow the request for 1 day only
       const expiredRequestValidity: IDecryption.RequestValidityStruct = {
-        startTimestamp: startTimestamp - 10 * 24 * 60 * 60,
+        startTimestamp: startTimestamp - tenDaysInSeconds,
         durationDays: 1,
       };
 

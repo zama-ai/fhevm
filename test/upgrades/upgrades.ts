@@ -118,16 +118,24 @@ describe("Upgrades", function () {
   });
 
   it("original owner upgrades the original GatewayConfig and transfer ownership", async function () {
-    const origGatewayConfigAdd = dotenv.parse(fs.readFileSync("addresses/.env.gateway_config")).GATEWAY_CONFIG_ADDRESS;
+    // Create a new gateway contract in order to avoid upgrading the original one and thus break
+    // some tests if it nos re-compiled in the mean time
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.owner.address], {
+      initializer: "initialize",
+      kind: "uups",
+    });
+    const originalGatewayConfig = await upgrades.upgradeProxy(emptyUUPS, this.gatewayConfigFactory);
+    await originalGatewayConfig.waitForDeployment();
+    expect(await originalGatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
+
+    const originalGatewayConfigAddress = await originalGatewayConfig.getAddress();
     const deployer = this.owner;
-    const gatewayConfig = await this.gatewayConfigFactory.attach(origGatewayConfigAdd, deployer);
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
 
     const newGatewayConfigFactoryUpgraded = await ethers.getContractFactory("GatewayConfigUpgradedExample", deployer);
-    const gatewayConfig2 = await upgrades.upgradeProxy(gatewayConfig, newGatewayConfigFactoryUpgraded);
+    const gatewayConfig2 = await upgrades.upgradeProxy(originalGatewayConfig, newGatewayConfigFactoryUpgraded);
     await gatewayConfig2.waitForDeployment();
     expect(await gatewayConfig2.getVersion()).to.equal("GatewayConfig v0.2.0");
-    expect(await gatewayConfig2.getAddress()).to.equal(origGatewayConfigAdd);
+    expect(await gatewayConfig2.getAddress()).to.equal(originalGatewayConfigAddress);
 
     const newSigner = await createAndFundRandomWallet();
     await gatewayConfig2.transferOwnership(newSigner);

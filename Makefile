@@ -21,14 +21,17 @@ test: clean
 get-accounts:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts --num-accounts 20
 
-start-local-node:
-	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat node --port 8546
+start-local-node: clean
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat node --port 8757
 
 deploy-contracts-local:
 	cp $(ENV_PATH) .env
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:faucetToPrivate --private-key $(DEPLOYER_PRIVATE_KEY)
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:deployAllGatewayContracts
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:addHostChainsToGatewayConfig --use-internal-gateway-config-address true
+
+test-local:
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test $(if $(GREP),--grep '$(GREP)',) --network localGateway --skip-setup true
 
 docker-compose-build:
 	cp .env.example .env
@@ -57,14 +60,14 @@ update-mocks:
 # discrepancies between running locally and in the CI. This is because some shell environments 
 # handle exit statuses of pipelines differently.
 check-selectors:
-	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 | diff ./docs/contract_selectors.txt - &> /dev/null || { \
+	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 | diff ./selectors.txt - &> /dev/null || { \
 		echo "Contract selectors are not up-to-date."; \
 		echo "Please run 'make update-selectors' to update them."; \
 		exit 1; \
 	}
 
 update-selectors:
-	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 > ./docs/contract_selectors.txt
+	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 > ./selectors.txt
 
 # Conform to pre-commit checks
 conformance: prettier update-bindings update-mocks update-selectors

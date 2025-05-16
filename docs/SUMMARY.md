@@ -1,7 +1,12 @@
 # Table of contents
 
-- [Welcome to Fhevm Gateway](README.md)
+- [Welcome to fhevm Gateway](README.md)
 
 ## Getting Started
 
-- [Deploy initial contracts locally](getting-started/local_deploy.md)
+- Deployment
+  - [Deploy contracts locally](getting-started/local_deploy.md)
+  - [Deploy contracts in Docker](getting-started/docker_deploy.md)
+- Contracts
+  - [GatewayConfig](contracts/gateway_config.md)
+  - [KmsManagement](contracts/kms_management.md)

@@ -687,7 +687,6 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     }
 
     /// @notice Checks if the consensus is reached among the KMS nodes.
-    /// @dev This function calls the GatewayConfig contract to retrieve the consensus threshold.
     /// @param kmsCounter The number of KMS nodes that agreed
     /// @return Whether the consensus is reached
     function _isConsensusReachedPublic(uint256 kmsCounter) internal view virtual returns (bool) {

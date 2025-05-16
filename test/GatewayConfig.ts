@@ -193,8 +193,8 @@ describe("GatewayConfig", function () {
     });
 
     it("Should revert because the MPC threshold is too high", async function () {
-      // The MPC threshold must be less than the number of KMS nodes
-      const highMpcThreshold = nKmsNodes + 1;
+      // The MPC threshold must be strictly less than the number of KMS nodes
+      const highMpcThreshold = nKmsNodes;
 
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
@@ -239,7 +239,7 @@ describe("GatewayConfig", function () {
     });
 
     it("Should revert because the public decryption threshold is too high", async function () {
-      // The public decryption threshold must be less than the number of KMS nodes
+      // The public decryption threshold must be less or equal to the number of KMS nodes
       const highPublicDecryptionThreshold = nKmsNodes + 1;
 
       await expect(
@@ -285,7 +285,7 @@ describe("GatewayConfig", function () {
     });
 
     it("Should revert because the user decryption threshold is too high", async function () {
-      // The user decryption threshold must be less than the number of KMS nodes
+      // The user decryption threshold must be less or equal to the number of KMS nodes
       const highUserDecryptionThreshold = nKmsNodes + 1;
 
       await expect(
@@ -459,8 +459,8 @@ describe("GatewayConfig", function () {
       });
 
       it("Should revert because the MPC threshold is too high", async function () {
-        // The MPC threshold must be less than the number of KMS nodes
-        const highMpcThreshold = nKmsNodes + 1;
+        // The MPC threshold must be strictly less than the number of KMS nodes
+        const highMpcThreshold = nKmsNodes;
 
         await expect(gatewayConfig.connect(owner).updateMpcThreshold(highMpcThreshold))
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighMpcThreshold")
@@ -499,7 +499,7 @@ describe("GatewayConfig", function () {
       });
 
       it("Should revert because the public decryption threshold is too high", async function () {
-        // The public decryption threshold must be less than the number of KMS nodes
+        // The public decryption threshold must be less or equal to the number of KMS nodes
         const highPublicDecryptionThreshold = nKmsNodes + 1;
 
         await expect(gatewayConfig.connect(owner).updatePublicDecryptionThreshold(highPublicDecryptionThreshold))
@@ -537,7 +537,7 @@ describe("GatewayConfig", function () {
       });
 
       it("Should revert because the user decryption threshold is too high", async function () {
-        // The user decryption threshold must be less than the number of KMS nodes
+        // The user decryption threshold must be less or equal to the number of KMS nodes
         const highUserDecryptionThreshold = nKmsNodes + 1;
 
         await expect(gatewayConfig.connect(owner).updateUserDecryptionThreshold(highUserDecryptionThreshold))
