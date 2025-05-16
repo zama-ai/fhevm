@@ -3,7 +3,7 @@ use opentelemetry::{
     trace::{SpanBuilder, Status, TraceContextExt, Tracer},
     Context, KeyValue,
 };
-use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 use std::{sync::Arc, time::SystemTime};
 
 use crate::utils::compact_hex;
@@ -11,20 +11,24 @@ use crate::utils::compact_hex;
 pub fn setup_otlp(
     service_name: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let otlp_exporter = opentelemetry_otlp::new_exporter().tonic();
+    let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .build()?;
 
-    let trace_provider = opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(otlp_exporter)
-        .with_trace_config(opentelemetry_sdk::trace::Config::default().with_resource(
-            Resource::new(vec![KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME.to_string(),
-                service_name.to_string(),
-            )]),
-        ))
-        .install_batch(opentelemetry_sdk::runtime::Tokio)?;
+    let resource = Resource::builder_empty()
+        .with_attributes(vec![KeyValue::new(
+            opentelemetry_semantic_conventions::resource::SERVICE_NAME.to_string(),
+            service_name.to_string(),
+        )])
+        .build();
+
+    let trace_provider = SdkTracerProvider::builder()
+        .with_resource(resource)
+        .with_batch_exporter(otlp_exporter)
+        .build();
 
     opentelemetry::global::set_tracer_provider(trace_provider);
+
     Ok(())
 }
 

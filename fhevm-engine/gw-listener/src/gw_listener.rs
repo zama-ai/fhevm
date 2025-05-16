@@ -10,8 +10,6 @@ use tracing::{error, info};
 
 use crate::ConfigSettings;
 
-const LOG_TARGET: &str = "gw_listener";
-
 sol!(
     #[sol(rpc)]
     InputVerification,

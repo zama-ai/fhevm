@@ -7,12 +7,16 @@ license.workspace = true
 
 [dependencies]
 # workspace dependencies
+aws-config = { workspace = true }
 bincode = { workspace = true }
 clap = { workspace = true }
+hex = { workspace = true }
 prometheus = { workspace = true }
 prost = { workspace = true }
 rayon = { workspace = true }
+serde_json = { workspace = true }
 sha3 = { workspace = true }
+thiserror = { workspace = true }
 tfhe = { workspace = true}
 tokio = { workspace = true }
 tonic = { workspace = true }
@@ -25,14 +29,10 @@ tfhe-versionable = { workspace = true }
 tokio-util = { workspace = true }
 
 # crates.io dependencies
-hex = "=0.4"
-aligned-vec = "=0.6"
-num-traits = "=0.2.19"
-thiserror = "=2.0"
-serde_json = "=1.0"
-aws-sdk-s3 = "=1.78"
-aws-config = "=1.5"
-bytesize = "=2.0.1"
+aligned-vec = "0.6.4"
+num-traits = "0.2.19"
+aws-sdk-s3 = "1.78.0"
+bytesize = "2.0.1"
 
 
 # local dependencies

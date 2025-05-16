@@ -7,21 +7,21 @@ license.workspace = true
 
 [dependencies]
 # workspace dependencies
+alloy-primitives = { workspace = true }
 clap = { workspace = true }
-tfhe = { workspace = true }
+hex = { workspace = true }
+lru = { workspace = true }
+rand = { workspace = true }
+sha3 = { workspace = true }
 sqlx = { workspace = true }
+tfhe = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 tokio-util = { workspace = true }
 bincode = { workspace = true }
-thiserror = { version = "=2.0" }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-rand = {workspace = true}
-hex = {workspace = true}
-alloy-primitives = "=0.8.23"
-sha3 = "=0.10.8"
-lru = "=0.13"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
