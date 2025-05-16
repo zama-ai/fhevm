@@ -1,4 +1,4 @@
-import type { FhevmInstance } from "@fhevm/sdk";
+import type { FhevmInstance } from "@zama-fhe/relayer-sdk";
 
 import { EncryptedERC20, Rand } from "../types";
 import type { Signers } from "./signers";

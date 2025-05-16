@@ -2,7 +2,7 @@ import {
   clientKeyDecryptor,
   createInstance as createFhevmInstance,
   getCiphertextCallParams,
-} from "@fhevm/sdk";
+} from "@zama-fhe/relayer-sdk";
 import { readFileSync } from "fs";
 import { ethers, ethers as hethers, network } from "hardhat";
 import { homedir } from "os";
