@@ -72,7 +72,7 @@ impl GatewayProcessorsHandler {
                 "Processing log data"
             );
 
-            match InputVerification::VerifyProofRequest::decode_log_data(log.data(), true) {
+            match InputVerification::VerifyProofRequest::decode_log_data(log.data()) {
                 Ok(request_event) => {
                     info!(
                         input_verification_id = ?request_event.zkProofId,
@@ -83,6 +83,7 @@ impl GatewayProcessorsHandler {
                     );
 
                     // Simulate some computation time
+                    // TODO: make it configurable
                     tokio::time::sleep(Duration::from_secs(2)).await;
 
                     // Generate mock handles
@@ -244,7 +245,7 @@ impl GatewayProcessorsHandler {
             PublicDecryptionEventData::EventLogRequestFromGw { log },
         ) = &event.data
         {
-            match PublicDecryptionRequest::decode_log_data(log.data(), true) {
+            match PublicDecryptionRequest::decode_log_data(log.data()) {
                 Ok(req) => {
                     let public_decryption_id = req.publicDecryptionId;
                     info!(?public_decryption_id);
@@ -303,7 +304,7 @@ impl GatewayProcessorsHandler {
             UserDecryptionEventData::EventLogRequestFromGw { log },
         ) = &event.data
         {
-            match UserDecryptionRequest::decode_log_data(log.data(), true) {
+            match UserDecryptionRequest::decode_log_data(log.data()) {
                 Ok(req) => {
                     let user_decryption_id = req.userDecryptionId;
                     info!(?user_decryption_id);

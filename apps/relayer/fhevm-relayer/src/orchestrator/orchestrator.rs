@@ -5,7 +5,7 @@ use crate::orchestrator::traits::{
 use anyhow::Error;
 use async_trait::async_trait;
 use std::sync::{Arc, RwLock};
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 pub struct Orchestrator<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> {
@@ -27,6 +27,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
         Uuid::new_v4()
     }
 
+    #[instrument(skip_all, fields(event_type=%(event.event_name()), request_id=%(event.request_id())))]
     async fn run_pre_dispatch_hooks_sequentially(&self, event: E) {
         // Acquire lock and prepare all hooks as Futures.
         let hooks: Vec<_> = if let Ok(hooks_guard) = self.pre_dispatch_hooks.read() {
@@ -48,6 +49,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
 impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> EventDispatcher<E>
     for Orchestrator<D, E>
 {
+    #[instrument(skip_all, fields(event_type=%(event.event_name()), request_id=%(event.request_id())))]
     async fn dispatch_event(&self, event: E) -> Result<(), Error> {
         self.run_pre_dispatch_hooks_sequentially(event.clone())
             .await;

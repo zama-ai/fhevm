@@ -60,7 +60,10 @@ async fn main() -> eyre::Result<()> {
             .await
             .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
-    Arc::clone(&tx_service_gateway).spawn_maintenance_tasks();
+    Arc::clone(&tx_service_gateway).spawn_maintenance_tasks(
+        tokio::time::Duration::from_secs(5),
+        tokio::time::Duration::from_secs(10),
+    );
 
     info!("Starting mock event handler");
 
@@ -145,14 +148,7 @@ async fn main() -> eyre::Result<()> {
 /// - File and line number display
 /// - Thread ID display
 fn init_tracing(log_config: &LogConfig) -> eyre::Result<()> {
-    let env_filter = match log_config.level.as_str() {
-        "trace" => EnvFilter::new("trace"),
-        "debug" => EnvFilter::new("debug"),
-        "info" => EnvFilter::new("info"),
-        "warn" => EnvFilter::new("warn"),
-        "error" => EnvFilter::new("error"),
-        _ => EnvFilter::from_default_env(), // Fallback to env if invalid level
-    };
+    let env_filter = EnvFilter::from_default_env();
 
     // Build subscriber with common settings
     let builder = SubscriberBuilder::default()
@@ -169,7 +165,6 @@ fn init_tracing(log_config: &LogConfig) -> eyre::Result<()> {
         .map_err(|e| eyre::eyre!("Failed to initialize tracing: {}", e))?;
 
     info!(
-        level = ?log_config.level,
         format = ?log_config.format,
         show_file_line = ?log_config.show_file_line,
         show_thread_ids = ?log_config.show_thread_ids,

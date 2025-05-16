@@ -9,7 +9,7 @@ use crate::{
         },
     },
     orchestrator::{
-        traits::{EventDispatcher, EventHandler},
+        traits::{Event, EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
     },
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
@@ -25,7 +25,7 @@ use alloy::{
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
 struct InputRequestProcessor {
@@ -47,7 +47,7 @@ impl ReceiptProcessor for InputRequestProcessor {
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    input_verification_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
+    input_verification_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
 }
@@ -120,9 +120,13 @@ impl GatewayHandler {
     }
 
     /// Processes a successful input request by storing state and dispatching event.
+    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
     async fn handle_successful_request(&self, event: RelayerEvent, zkproof_id: U256) {
-        self.input_verification_id_to_request_id
-            .insert(zkproof_id, event.request_id);
+        let mut zk_id_to_req_id = self
+            .input_verification_id_to_request_id
+            .entry(zkproof_id)
+            .or_default();
+        zk_id_to_req_id.value_mut().push(event.request_id());
 
         info!(
             ?event.request_id,
@@ -142,6 +146,7 @@ impl GatewayHandler {
     }
 
     /// Handles a failed input request by dispatching error event.
+    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
     async fn handle_failed_request(&self, event: RelayerEvent, error: EventProcessingError) {
         error!(
             error = ?error,
@@ -198,10 +203,8 @@ impl GatewayHandler {
         for log in receipt.inner.logs().iter() {
             if let Some(first_topic) = log.topics().first() {
                 if first_topic == &target_topic {
-                    return match InputVerification::VerifyProofRequest::decode_log_data(
-                        log.data(),
-                        false, // No indexed parameters in this event
-                    ) {
+                    return match InputVerification::VerifyProofRequest::decode_log_data(log.data())
+                    {
                         Ok(event) => {
                             info!(
                                 ?receipt.transaction_hash,
@@ -301,6 +304,8 @@ impl GatewayHandler {
     /// # Events
     /// Dispatches [`RelayerEventData::Input`] with [`InputEventData::RespFromGw`]
     /// containing handles and signatures
+
+    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
     async fn handle_input_reponse_event_log(&self, event: RelayerEvent) {
         info!(
             "Input response received. Return result to user {:?}",
@@ -317,10 +322,7 @@ impl GatewayHandler {
             match log.topic0() {
                 Some(topic) => {
                     if topic == &InputVerification::VerifyProofResponse::SIGNATURE_HASH {
-                        match InputVerification::VerifyProofResponse::decode_log_data(
-                            log.data(),
-                            true,
-                        ) {
+                        match InputVerification::VerifyProofResponse::decode_log_data(log.data()) {
                             Ok(request_event) => {
                                 info!(
                                     input_verification_id = ?request_event.zkProofId,
@@ -336,15 +338,18 @@ impl GatewayHandler {
                                 info!("Please REMOVE this SLEEP when using websocket instead");
                                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
+                                // TODO: we make the assumption that any request will result in a
+                                // unique on-chain-request-id
+
                                 // Use get_key_value to get both key and value, or use remove if you want to clean up
                                 if let Some(entry) = self
                                     .input_verification_id_to_request_id
                                     .get(&request_event.zkProofId)
                                 {
-                                    let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
+                                    let original_request_ids = entry.value(); // Dereference the Ref<Uuid>
 
                                     info!(
-                                        ?original_request_id,
+                                        ?original_request_ids,
                                         ?request_event.zkProofId,
                                         "Found original request ID for input response"
                                     );
@@ -360,13 +365,24 @@ impl GatewayHandler {
                                         );
 
                                     // Now we can use original_request_id directly
-                                    let next_event = RelayerEvent::new(
-                                        original_request_id,
-                                        event.api_version,
-                                        next_event_data,
-                                    );
+                                    let mut dispatch_set = tokio::task::JoinSet::new();
+                                    for original_request_id in original_request_ids {
+                                        let next_event = next_event_data.clone();
+                                        let handler = self.clone();
+                                        let id = *original_request_id;
 
-                                    let _ = self.dispatcher.dispatch_event(next_event).await;
+                                        dispatch_set.spawn(async move {
+                                            let next_event = RelayerEvent::new(
+                                                id,
+                                                event.api_version,
+                                                next_event,
+                                            );
+
+                                            let _ =
+                                                handler.dispatcher.dispatch_event(next_event).await;
+                                        });
+                                    }
+                                    dispatch_set.join_all().await;
                                 } else {
                                     error!(?request_event.zkProofId, "No matching request ID found for zkproof ID");
                                 }
@@ -395,6 +411,7 @@ impl GatewayHandler {
 
 #[async_trait]
 impl EventHandler<RelayerEvent> for GatewayHandler {
+    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
     async fn handle_event(&self, event: RelayerEvent) {
         match &event.data {
             // Borrow event.data instead of moving it

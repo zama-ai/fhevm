@@ -1,3 +1,22 @@
+/// Transaction service
+///
+/// Transaction lifecycle
+///
+/// 1. Calldata is computed
+/// 2. Contract is checked
+/// 3. Gas is estimated
+/// 4. Transaction is submitted to RPC endpoint
+/// 5. RPC Node propagates the tx-request to other nodes
+///    1. Transaction is stuck in the mem-pool
+///       1. The definition of stuck being relative (i.e. how many blocks to wait before
+///          considering it "stuck", or w.r.t. to gas fee evolution)
+///    2. Nonce is too low, transaction is rejected
+///       1. This errors is returned instantly by the RPC endpoint (do we have other errors like
+///          that?)
+///    3. Transaction is included in block and
+///       1. Transaction success
+///       2. Transaction reverted
+///
 use alloy::{
     network::{AnyTransactionReceipt, ReceiptResponse},
     primitives::{Address, Bytes, B256},
@@ -6,7 +25,7 @@ use dashmap::DashMap;
 use rand::Rng;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 use super::sender::{SignerCombined, TransactionError, TransactionManager, TxConfig};
@@ -29,10 +48,15 @@ pub enum TransactionState {
     Confirmed { receipt: Arc<AnyTransactionReceipt> },
 
     /// Failure state: Transaction has failed
+    /// TODO: change this from a string to an enum with policies associated to it
     Failed { reason: String },
 }
 
 /// Records all information about a transaction
+/// NOTE: for now TxConfig is set by us, meaning that unless we want to force a given nonce
+/// the value is None. It would make sense to store the nonce computed by the Nonce filler in there
+/// too. The objective being to be able to cancel a pending transaction or re-emit it with modified
+/// amount of gas-fee.
 #[derive(Debug, Clone)]
 struct TransactionRecord {
     /// Target contract address
@@ -47,6 +71,7 @@ struct TransactionRecord {
     /// When the transaction should be cleaned up (None = not ready)
     cleanup_after: Option<Instant>,
     /// Flag for immediate cleanup
+    /// TODO: doesn't seemed to be used anywhere
     ready_for_cleanup: bool,
 }
 
@@ -59,6 +84,8 @@ pub struct TransactionService {
     transactions: Arc<DashMap<Uuid, TransactionRecord>>,
 }
 
+// TODO: modify to be able to use and external transaction record database to avoid holding
+// tx-state in memory
 impl TransactionService {
     pub fn get_transaction_manager(&self) -> &Arc<TransactionManager> {
         &self.manager
@@ -187,7 +214,12 @@ impl TransactionService {
 
                 Ok(hash)
             }
+            // TODO: define around here a way to retry transactions that failed due to some reason
+            // NOTE: Errors are not convenient to use as struct attributes because they
+            // lack useful traits like Copy and Clone
             Err(e) => {
+                let service_error: TransactionServiceError = (&e).into();
+
                 // Update state to failed
                 self.transactions.entry(request_id).and_modify(|record| {
                     record.state = TransactionState::Failed {
@@ -198,7 +230,7 @@ impl TransactionService {
                     record.cleanup_after = Some(Instant::now() + Duration::from_secs(300));
                 });
 
-                Err(e.into())
+                Err(service_error)
             }
         }
     }
@@ -233,7 +265,34 @@ impl TransactionService {
         }
     }
 
+    pub async fn get_pending_transactions(&self) -> Result<Vec<Uuid>, String> {
+        Ok(self
+            .transactions
+            .iter()
+            .filter_map(|entry| {
+                if let TransactionState::Pending { .. } = entry.value().state {
+                    Some(*entry.key())
+                } else {
+                    None
+                }
+            })
+            .collect())
+    }
+
     /// Maintains transaction states and handles retries
+    ///
+    /// This is launched every tick by the maintainance tokio task.
+    /// It will cleanup transactions marked as ready for cleanup.
+    /// "Handle" pending transactions
+    ///
+    /// NOTE: what's the simplest way to handle stuck transactions?
+    /// - Re-emit with same nonce but re-estimated gas?
+    ///  - More economical but could still block other Tx
+    /// - Cancel tx with old-nonce and re-emit tx with re-estimated gas and current nonce?
+    ///  - More costly but if the transaction is such that no validator wants to pick it, it
+    ///    doesn't block other transactions
+    ///
+    /// TODO: Figure out if this is the place to handle reverted tx
     pub async fn maintain_transactions(&self) -> Result<(), TransactionServiceError> {
         let now = Instant::now();
         let total_transactions = self.transactions.len();
@@ -244,20 +303,17 @@ impl TransactionService {
         self.cleanup_transactions(now);
 
         // Step 2: Process pending transactions
-        let pending_transactions: Vec<_> = self
-            .transactions
-            .iter()
-            .filter_map(|entry| {
-                if let TransactionState::Pending { .. } = entry.value().state {
-                    Some(*entry.key())
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let pending_transactions: Vec<_> = match self.get_pending_transactions().await {
+            Ok(val) => val,
+            Err(error) => {
+                error!("Failed to fetch pending transactions: {}", error);
+                vec![]
+            }
+        };
 
+        // TODO: await all tasks altogether instead of awaiting sequentially
         for request_id in pending_transactions {
-            if let Err(e) = self.check_pending_transaction(request_id).await {
+            if let Err(e) = self.handle_pending_transaction(request_id).await {
                 warn!(?request_id, ?e, "Error checking transaction status");
             }
         }
@@ -265,7 +321,11 @@ impl TransactionService {
         Ok(())
     }
 
-    async fn check_pending_transaction(
+    /// Handle a pending a transaction
+    ///
+    /// Set a time for cleanup in the record if it elapses the record timeout configuration
+    /// Check for tx-receipt (and success/failure)
+    async fn handle_pending_transaction(
         &self,
         request_id: Uuid,
     ) -> Result<(), TransactionServiceError> {
@@ -281,6 +341,14 @@ impl TransactionService {
             attempts,
         } = record.state
         {
+            // TODO: why not just set the cleanup-timeout when the tx is emitted using current-time
+            // + config-timeout
+            // TODO: verify that this timeout config is set per-chain, as it will mostly depend on
+            // the chain slot-time
+            // TODO: if we just drop the transaction we'll block all transactions.
+            // We should either re-emit a "real" tx with the nonce of this specific tx
+            // or emit a cancel tx with same nonce
+
             // Check for timeout
             let elapsed = Instant::now().duration_since(submit_time);
             let timeout_secs = record.config.timeout_secs.unwrap_or(60);
@@ -294,7 +362,7 @@ impl TransactionService {
                             elapsed.as_secs()
                         ),
                     };
-                    record.cleanup_after = Some(Instant::now() + Duration::from_secs(300));
+                    record.cleanup_after = Some(Instant::now());
                 });
 
                 info!(
@@ -309,6 +377,7 @@ impl TransactionService {
             }
 
             // Check for receipt
+            // TODO: check for receipt before setting cleanup timeout
             match self.manager.provider.get_transaction_receipt(hash).await {
                 Ok(Some(receipt)) => {
                     // We have a receipt - update state based on status
@@ -340,8 +409,9 @@ impl TransactionService {
                             );
                         }
 
-                        // Mark for cleanup after 1 minute
-                        record.cleanup_after = Some(Instant::now() + Duration::from_secs(60));
+                        // Mark for cleanup
+                        record.cleanup_after = Some(Instant::now());
+                        record.ready_for_cleanup = true;
                     });
                 }
                 Ok(None) => {
@@ -405,6 +475,10 @@ impl TransactionService {
             .map(|record| record.state.clone())
     }
 
+    // TODO: implement
+    // Need to cancel tx
+
+    #[instrument(skip_all, fields(request_id=%request_id))]
     pub fn cancel_transaction(&self, request_id: Uuid) -> Result<(), TransactionServiceError> {
         if let Some(mut record) = self.transactions.get_mut(&request_id) {
             // We can only cancel transactions that are pending
@@ -430,6 +504,7 @@ impl TransactionService {
         }
     }
 
+    #[instrument(skip_all, fields(target=%target, config=?config))]
     pub async fn submit_and_wait(
         self: &Arc<Self>,
         target: Address,
@@ -576,10 +651,10 @@ impl TransactionService {
         }
     }
 
-    pub fn spawn_maintenance_tasks(self: Arc<Self>) {
+    pub fn spawn_maintenance_tasks(self: Arc<Self>, interval: Duration, error_interval: Duration) {
         // Spawn maintenance task
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(15));
+            let mut interval = tokio::time::interval(interval);
 
             loop {
                 interval.tick().await;
@@ -587,7 +662,7 @@ impl TransactionService {
                 if let Err(e) = self.maintain_transactions().await {
                     error!(error = %e, "Error in maintain_transactions");
                     // Add a small delay after errors to prevent CPU spinning
-                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    tokio::time::sleep(error_interval).await;
                 }
             }
         });
@@ -595,3 +670,5 @@ impl TransactionService {
         info!("Transaction maintenance task spawned");
     }
 }
+
+// TODO: add tests

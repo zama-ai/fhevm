@@ -3,14 +3,15 @@ use alloy::{
         AnyNetwork, AnyTransactionReceipt, EthereumWallet, ReceiptResponse, TransactionBuilder,
         TxSigner,
     },
-    primitives::{Address, Bytes, PrimitiveSignature, B256, U256},
+    primitives::{Address, Bytes, B256, U256},
     providers::{
-        fillers::{CachedNonceManager, ChainIdFiller, GasFiller, NonceFiller, WalletFiller},
-        Provider, ProviderBuilder, WsConnect,
+        fillers::{ChainIdFiller, GasFiller, NonceFiller, WalletFiller},
+        PendingTransactionBuilder, Provider, ProviderBuilder, WsConnect,
     },
     rpc::types::TransactionRequest,
     serde::WithOtherFields,
-    signers::Signer,
+    signers::{Signature, Signer},
+    transports::RpcError,
 };
 
 use eyre::Result;
@@ -20,17 +21,18 @@ use std::fmt;
 use std::{sync::Arc, time::Duration};
 use thiserror::Error;
 use tokio::time::{timeout, Instant};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::{
     config::settings::{RetrySettings, TransactionConfig},
     core::errors::TransactionServiceError,
+    transaction::nonce::CachedNonceManagerWithRefresh,
 };
 
-pub trait SignerCombined: TxSigner<PrimitiveSignature> + Signer + Send + Sync {}
+pub trait SignerCombined: TxSigner<Signature> + Signer + Send + Sync {}
 
 // Automatically implement SignerCombined for any type that satisfies all the required traits
-impl<T: TxSigner<PrimitiveSignature> + Signer + Send + Sync> SignerCombined for T {}
+impl<T: TxSigner<Signature> + Signer + Send + Sync> SignerCombined for T {}
 
 // TODO: it's not used anywhere
 // // should either be used or removed
@@ -152,7 +154,8 @@ impl Default for TxConfig {
 
 pub struct TransactionManager {
     pub provider: Arc<dyn Provider<AnyNetwork> + Send + Sync>,
-    signer: Arc<dyn SignerCombined>,
+    pub signer: Arc<dyn SignerCombined>,
+    pub nonce_manager: Arc<CachedNonceManagerWithRefresh>,
 }
 
 impl fmt::Debug for TransactionManager {
@@ -176,13 +179,15 @@ impl TransactionManager {
             .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {}", e)))?;
         let ws = WsConnect::new(ws_rpc_url);
 
+        // NOTE: nonce-manager that allows for nonce-resync
+        let nonce_manager = CachedNonceManagerWithRefresh::default();
         let provider = ProviderBuilder::new()
             .network::<AnyNetwork>()
-            .filler(NonceFiller::new(CachedNonceManager::default()))
+            .filler(NonceFiller::new(nonce_manager.clone()))
             .filler(GasFiller)
             .filler(ChainIdFiller::new(signer.chain_id()))
             .filler(WalletFiller::new(wallet))
-            .on_ws(ws)
+            .connect_ws(ws)
             .await
             .map_err(TransactionError::TransportError)?;
 
@@ -194,7 +199,11 @@ impl TransactionManager {
             "Initialized TransactionManager"
         );
 
-        Ok(Self { provider, signer })
+        Ok(Self {
+            provider,
+            nonce_manager: Arc::new(nonce_manager),
+            signer,
+        })
     }
 
     pub fn provider(&self) -> &Arc<dyn Provider<AnyNetwork> + Send + Sync> {
@@ -205,6 +214,7 @@ impl TransactionManager {
         self.signer.address()
     }
 
+    // TODO: actually use this method
     pub async fn estimate_gas(
         &self,
         target: Address,
@@ -249,6 +259,7 @@ impl TransactionManager {
         Ok(result)
     }
 
+    /// TODO: hide under a feature flag or remove
     /// Debug a transaction using Anvil's tracing features
     pub async fn debug_transaction_call(
         &self,
@@ -318,6 +329,105 @@ impl TransactionManager {
         }
     }
 
+    pub async fn cancel_transaction(&self, nonce: u64) -> Result<B256, TransactionError> {
+        // Get current account info
+        let address = self.sender_address();
+
+        // Calculate new gas price (e.g., 15% higher)
+        // TODO: double check gas estimation here and what's provided in request
+        let base_fee = self.provider.get_gas_price().await?;
+        let max_priority_fee = self.provider.get_max_priority_fee_per_gas().await?;
+
+        // Build cancellation transaction (send 0 ETH to self)
+        let request = TransactionRequest::default()
+            .with_from(address)
+            .with_to(address)
+            .with_value(U256::ZERO)
+            .with_nonce(nonce)
+            .with_max_fee_per_gas(base_fee)
+            .with_max_priority_fee_per_gas(max_priority_fee);
+
+        let request = WithOtherFields::new(request);
+        let tx = self.send_transaction_with_retry(request).await?;
+        let tx_hash = tx.tx_hash();
+        info!(?tx_hash, "Transaction submitted successfully");
+
+        Ok(*tx_hash)
+    }
+
+    /// Send transaction with retry
+    ///
+    /// This function will send a transaction and detect any retriable compatible error
+    #[instrument(skip_all)]
+    pub async fn send_transaction_with_retry(
+        &self,
+        request: WithOtherFields<TransactionRequest>,
+    ) -> Result<PendingTransactionBuilder<AnyNetwork>, TransactionError> {
+        let pending_tx: PendingTransactionBuilder<AnyNetwork>;
+        // TODO: define different failure modes scopes
+        // i.e. if the transaction is reverted is not the responsability of the TransactionManager
+        // but if the nonce is out-of-sync, it's the TransactionManager's responsability to re-emit
+        // the transaction.
+        // Same for transactions that get stuck
+        // NOTE: imo anything that is not at the application level should be handled here
+        // - Nonce issue
+        //  - Nonce too low (instant failure)
+        //  - Nonce too high (tx is never included)
+        // - Gas issue
+        //  - Tx is stuck because gas-fee is too low
+        // - Connectivity issue
+        //  - Can't reach the RPC endpoint
+        //  - Rate limite in the RPC endpoint
+        // - Funding error
+        //  - Modes:
+        //   - Using a wallet that isn't funded yet
+        //   - Using a wallet that hasn't enough funds
+        //  - Mitigation strategies
+        //   - Retry with another wallet (if we have a pool of signers)
+        //   - Retry with the same wallet (hoping for funding to arrive in the meantime)
+        // Some errors are by nature unrecoverable (c.f. [`RpcError`] enum) and should return a
+        // TransactionError
+        // I don't think the TxConfig should exist as everything that is configured in there should
+        // be the responsability of the [`TransactionManager`]
+        // TODO: checkout [`ErrorPayload`] too (used in [`RpcError`])
+        // TODO: check if it makes sense to keep both [`TransactionManager`] and
+        // [`TransactionService`]
+        loop {
+            match self.provider.send_transaction(request.clone()).await {
+                Ok(value) => {
+                    pending_tx = value;
+                    break;
+                }
+                Err(e) => {
+                    // Any instant recovery mechanism should be implement here
+                    // TODO: we should probably consider the retry mechanism from the TxConfig
+                    // to avoid infinite retries here
+                    let err_msg = e.to_string();
+
+                    // TODO: properly match different response errors and adapt retry mechanism
+                    match e {
+                        RpcError::ErrorResp(response_error) => {
+                            let response_error_string = response_error.to_string();
+                            if response_error_string.contains("nonce too low") {
+                                let _ = self
+                                    .nonce_manager
+                                    .sync_nonce(&self.provider, self.signer.address())
+                                    .await;
+                            } else {
+                                return Err(TransactionError::TransactionFailed(err_msg));
+                            }
+                        }
+                        _ => {
+                            return Err(TransactionError::TransactionFailed(err_msg));
+                        }
+                    }
+                }
+            };
+        }
+        Ok(pending_tx)
+    }
+
+    #[instrument(skip_all, fields(target=%target, config=?config))]
     pub async fn send_transaction(
         &self,
         target: Address,
@@ -348,14 +458,8 @@ impl TransactionManager {
             .with_value(config.value.unwrap_or_default());
         let request = WithOtherFields::new(request);
 
-        let pending_tx = self
-            .provider
-            .send_transaction(request)
-            .await
-            .map_err(|e| TransactionError::TransactionFailed(e.to_string()))?;
-
-        // Get hash immediately
-        let tx_hash = pending_tx.tx_hash();
+        let tx = self.send_transaction_with_retry(request).await?;
+        let tx_hash = tx.tx_hash();
         info!(?tx_hash, "Transaction submitted successfully");
 
         Ok(*tx_hash)
@@ -565,9 +669,11 @@ impl TransactionManager {
     }
 }
 
+// TODO: add test with un-funded wallet
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transaction::nonce::DebugNonceManager;
     use alloy::primitives::{hex, keccak256, U256};
     use alloy::signers::local::PrivateKeySigner;
 
@@ -582,12 +688,13 @@ mod tests {
         let private_key = std::env::var("TEST_PRIVATE_KEY").unwrap_or_else(|_| {
             "34aacca926bab195601bcf5702786d35cab968159b718ae671b226de11b9afee".to_string()
         });
+        let chain_ws_url = "ws://localhost:8756";
+        let chain_id = 123456;
 
         println!("Setting up manager with test private key...");
         let mut signer: PrivateKeySigner = private_key.parse().unwrap();
-        signer.set_chain_id(Some(123456));
+        signer.set_chain_id(Some(chain_id));
 
-        let chain_ws_url = "ws://localhost:8756";
         let manager = TransactionManager::new(chain_ws_url, Arc::new(signer))
             .await
             .unwrap_or_else(|error| panic!(
@@ -619,7 +726,6 @@ mod tests {
             )
             .await
             .expect("Failed to estimate gas");
-
         println!("Estimated deployment gas: {}", estimated_gas);
 
         let config = TxConfig {
@@ -629,12 +735,20 @@ mod tests {
             ..Default::default()
         };
 
+        let current_nonce = DebugNonceManager::current_nonce(
+            manager.nonce_manager.as_ref(),
+            manager.provider(),
+            manager.sender_address(),
+        )
+        .await
+        .expect("Failed to get nonce through Nonce Manager");
+        println!("Nonce {}", current_nonce,);
+
         // Deploy contract
         let tx_hash = manager
             .deploy_contract(Bytes::from(contract_bytecode), Some(config))
             .await
             .expect("Failed to deploy contract");
-
         println!("Deployment transaction hash: 0x{}", hex::encode(tx_hash));
 
         let receipt = manager
@@ -643,6 +757,15 @@ mod tests {
             .await
             .expect("Failed to get receipt")
             .expect("Receipt not found");
+
+        let current_nonce = DebugNonceManager::current_nonce(
+            manager.nonce_manager.as_ref(),
+            manager.provider(),
+            manager.sender_address(),
+        )
+        .await
+        .expect("Failed to get nonce through Nonce Manager");
+        println!("Nonce {}", current_nonce,);
 
         println!("Deployment receipt status: {:?}", receipt.status());
         println!("Gas used: {}", receipt.gas_used);
@@ -664,6 +787,39 @@ mod tests {
         println!("Deployed bytecode length: {}", code.len());
         assert!(!code.is_empty(), "Contract code should not be empty");
 
+        let nonce_after_deploy = DebugNonceManager::current_nonce(
+            manager.nonce_manager.as_ref(),
+            manager.provider(),
+            manager.sender_address(),
+        )
+        .await
+        .expect("Failed to get nonce through Nonce Manager");
+        println!("Nonce: {}", nonce_after_deploy,);
+
+        // Decreasing a nonce < 0 will result in a panic
+        // NOTE: we could probably modify the decrease function to return an error if the current
+        // nonce is at 0
+        assert!(nonce_after_deploy > 0);
+        // NOTE: Manually decrease nonce to create a make sure that our library properly syncs with
+        // RPC node in case of a Nonce-error
+        DebugNonceManager::decrease_nonce(
+            manager.nonce_manager.as_ref(),
+            manager.provider(),
+            manager.sender_address(),
+        )
+        .await
+        .expect("Failed to decrease nonce through Nonce Manager");
+        println!(
+            "Nonce after decrease: {}",
+            DebugNonceManager::current_nonce(
+                manager.nonce_manager.as_ref(),
+                manager.provider(),
+                manager.sender_address(),
+            )
+            .await
+            .expect("Failed to get nonce through Nonce Manager"),
+        );
+
         // Get initial count
         let get_count_calldata =
             TransactionManager::encode_function_call(get_count_selector, vec![]);
@@ -672,6 +828,16 @@ mod tests {
             .call_view(contract_address, get_count_calldata.clone())
             .await
             .expect("Failed to get count");
+        println!(
+            "Nonce after view: {}",
+            DebugNonceManager::current_nonce(
+                manager.nonce_manager.as_ref(),
+                manager.provider(),
+                manager.sender_address(),
+            )
+            .await
+            .expect("Failed to get nonce through Nonce Manager"),
+        );
 
         let initial_count = U256::from_be_slice(count_bytes.as_ref());
         println!("Initial count: {}", initial_count);
@@ -696,11 +862,22 @@ mod tests {
             ..Default::default()
         };
 
+        // NOTE: the nonce here is wrong in the CacheNonceManagerWithRefresh but the sync will be
+        // handled automatically.
         println!("Sending increment transaction...");
         let tx_hash = manager
             .send_transaction(contract_address, increment_calldata, Some(config))
             .await
-            .expect("Failed to send increment transaction");
+            .expect("Couldn't broadcast transaction");
+
+        let nonce_after_increment = DebugNonceManager::current_nonce(
+            manager.nonce_manager.as_ref(),
+            manager.provider(),
+            manager.sender_address(),
+        )
+        .await
+        .expect("Failed to get nonce through Nonce Manager");
+        assert_eq!(nonce_after_increment, nonce_after_deploy + 1);
 
         println!("Increment transaction hash: 0x{}", hex::encode(tx_hash));
 

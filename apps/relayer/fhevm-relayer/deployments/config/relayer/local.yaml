@@ -51,8 +51,6 @@ contracts:
   ciphertext_manager_address: 0x576Ea67208b146E63C5255d0f90104E25e3e04c7
 
 log:
-  # Set log level for development
-  level: "info"
   # Choose format: compact, pretty, or json
   format: "pretty"
   # Show source code location for debugging

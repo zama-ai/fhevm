@@ -9,12 +9,13 @@ name = "fhevm_relayer"
 path = "src/lib.rs"
 
 [features]
+default = ["tracing-chrome"]
+tracing-chrome = ["dep:tracing-chrome"]
 ci = []
-default = []
 
 [dependencies]
-alloy = { version = "0.13.0", features = ["full"] }
-alloy-sol-types = "1.0.0"
+alloy = { version = "1.0.3", features = ["full"] }
+alloy-sol-types = "1.1.0"
 base64ct = "=1.6.0"
 dashmap = "6.1.0"
 eyre = "0.6.12"
@@ -22,21 +23,25 @@ futures = "0.3.31"
 futures-util = "0.3.31"
 hex = "0.4.3"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.68"
 tokio = { version = "1", features = ["full"] }
-tracing = "0.1.41"
+async-trait = "0.1.51"
 zerocopy = "0.8.14"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2.0.11"
 config = "0.15.6"
 anyhow = "1.0.44"
-async-trait = "0.1.51"
 strum_macros = "0.21.0"
 uuid = { version = "1", features = ["serde", "v1", "v4"] }
 reqwest = "0.12.12"
 axum = "0.2.5"
-serde_json = "1.0.68"
 rusqlite = "0.33.0"
 rand = "0.9.0"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-chrome = { version = "0.7.2", optional = true }
+
 
 [dev-dependencies]
 ctor = { version = "0.4" }
+alloy-provider = { version = "1.0.3", features = ["anvil-node"] }
+nix = { version = "0.30.1", features = ["process", "signal"] }

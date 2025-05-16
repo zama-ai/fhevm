@@ -166,6 +166,42 @@ impl From<TransactionError> for EventProcessingError {
     }
 }
 
+impl From<&TransactionError> for TransactionServiceError {
+    fn from(err: &TransactionError) -> Self {
+        match err {
+            TransactionError::InvalidPrivateKey(msg) => {
+                Self::Failed(format!("Invalid private key: {}", msg))
+            }
+            TransactionError::InvalidAddress(msg) => {
+                Self::Failed(format!("Invalid address: {}", msg))
+            }
+            TransactionError::RpcError(msg) => Self::Network(msg.to_string()),
+            TransactionError::TransactionFailed(msg) => {
+                if msg.contains("nonce too low") {
+                    Self::NonceError(msg.to_string())
+                } else {
+                    Self::Failed(msg.to_string())
+                }
+            }
+            TransactionError::TransactionTimeout(secs) => Self::Timeout(*secs),
+            TransactionError::GasEstimationFailed(msg) => Self::GasEstimation(msg.to_string()),
+            TransactionError::MonitoringTimeout(secs) => Self::Timeout(*secs), // Transaction may still succeed but monitoring timed out
+            TransactionError::ReceiptNotFound(attempts) => {
+                Self::Failed(format!("Receipt not found after {} attempts", attempts))
+            }
+            TransactionError::InsufficientConfirmations { required, actual } => {
+                Self::Failed(format!(
+                    "Insufficient confirmations: required {}, got {}",
+                    required, actual
+                ))
+            }
+            TransactionError::NetworkError(msg) => Self::Network(msg.to_string()),
+            TransactionError::TransportError(e) => Self::Network(e.to_string()),
+            TransactionError::InvalidChainId(msg) => Self::Failed(msg.to_string()),
+        }
+    }
+}
+
 impl From<TransactionError> for TransactionServiceError {
     fn from(err: TransactionError) -> Self {
         match err {
@@ -176,7 +212,13 @@ impl From<TransactionError> for TransactionServiceError {
                 Self::Failed(format!("Invalid address: {}", msg))
             }
             TransactionError::RpcError(msg) => Self::Network(msg),
-            TransactionError::TransactionFailed(msg) => Self::Failed(msg),
+            TransactionError::TransactionFailed(msg) => {
+                if msg.contains("nonce too low") {
+                    Self::NonceError(msg)
+                } else {
+                    Self::Failed(msg)
+                }
+            }
             TransactionError::TransactionTimeout(secs) => Self::Timeout(secs),
             TransactionError::GasEstimationFailed(msg) => Self::GasEstimation(msg),
             TransactionError::MonitoringTimeout(secs) => Self::Timeout(secs), // Transaction may still succeed but monitoring timed out

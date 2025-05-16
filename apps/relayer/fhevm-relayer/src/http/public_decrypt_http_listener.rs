@@ -10,8 +10,8 @@ use axum::{extract::Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
-use tracing::error;
 use tracing::info;
+use tracing::{error, instrument, span, Level};
 
 /// Represents the payload coming into the '/input-proof' endpoint.
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -61,6 +61,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         }
     }
 
+    #[instrument(name="handle-public-decrypt", skip_all, fields(handles=?payload.ciphertextHandles))]
     pub async fn handle(&self, Json(payload): Json<PublicDecryptRequestJson>) -> impl IntoResponse {
         info!("Handling public decryption request in http listener");
         // Validate the payload
@@ -87,6 +88,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
 
         // Generate Request ID
         let request_id = self.orchestrator.new_request_id();
+        let _span = span!(Level::INFO, "handle-public-decrypt-req", request_id = %request_id); // Add other relevant top-level details
 
         info!("Validated and assigned request id: {}", request_id);
 
@@ -107,7 +109,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         };
         let event = RelayerEvent::new(
             request_id,
-            self.api_version.clone(),
+            self.api_version,
             RelayerEventData::PublicDecrypt(request_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;

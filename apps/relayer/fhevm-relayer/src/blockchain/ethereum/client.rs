@@ -30,7 +30,7 @@ impl EthereumJsonRPCWsClient {
         let ws = WsConnect::new(ws_url);
         let provider = ProviderBuilder::new()
             .network::<alloy::network::AnyNetwork>()
-            .on_ws(ws)
+            .connect_ws(ws)
             .await
             .map_err(Error::Transport)?;
 

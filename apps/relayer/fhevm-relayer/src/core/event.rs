@@ -92,6 +92,18 @@ pub struct RelayerEvent {
     pub timestamp: u64,
 }
 
+impl Display for RelayerEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}({}, {})",
+            self.event_name(),
+            self.request_id(),
+            self.api_version
+        )
+    }
+}
+
 impl RelayerEvent {
     pub fn new(request_id: Uuid, api_version: ApiVersion, data: RelayerEventData) -> RelayerEvent {
         let timestamp = match SystemTime::now().duration_since(UNIX_EPOCH) {
@@ -185,7 +197,7 @@ impl Event for RelayerEvent {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub struct ApiVersion {
     pub category: ApiCategory,
     pub number: u8,
@@ -209,18 +221,18 @@ impl ApiVersion {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
 /// Api category allows for differentiating between production and experimental
 /// APIs.
+#[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub enum ApiCategory {
     PRODUCTION,
     EXPERIMENTAL,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
 /// Relayer event data represents the different categories of event data, each
 /// representing a specific flow. Generic event data represents the event data
 /// shared between the different flows.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RelayerEventData {
     Generic(GenericEventData),
     PublicDecrypt(PublicDecryptEventData),

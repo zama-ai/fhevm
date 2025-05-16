@@ -2,6 +2,9 @@
 #[cfg(not(feature = "ci"))]
 #[cfg(test)]
 pub mod test_utils {
+    use nix::errno::Errno;
+    use nix::sys::signal::{self, Signal};
+    use nix::unistd::Pid;
     use std::fs;
     use std::path::Path;
     use std::process::{Child, Command};
@@ -16,9 +19,111 @@ pub mod test_utils {
 
     use ctor::{ctor, dtor};
 
+    pub fn kill_gracefully(mut child_process: Child) -> Result<(), String> {
+        let child_pid_raw = child_process.id();
+        let child_pid = Pid::from_raw(child_pid_raw as i32);
+        println!("Child process started with PID: {}", child_pid_raw);
+
+        // 2. Try to send SIGINT for graceful shutdown
+        println!("Sending SIGINT to child process (PID: {})...", child_pid);
+        match signal::kill(child_pid, Signal::SIGINT) {
+            Ok(_) => println!("SIGINT sent successfully."),
+            Err(Errno::ESRCH) => {
+                // ESRCH means "No such process"
+                println!(
+                    "Child process (PID: {}) already exited before SIGINT.",
+                    child_pid
+                );
+                // Process is already gone, no need to do anything else
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!(
+                    "Error sending SIGINT to PID {}: {}. Attempting SIGKILL.",
+                    child_pid, e
+                );
+                // Proceed to SIGKILL if sending SIGINT failed for other reasons
+            }
+        }
+
+        // 3. Wait for a timeout
+        let timeout = Duration::from_secs(5); // Wait 5 seconds for graceful shutdown
+        let start_time = std::time::Instant::now();
+
+        loop {
+            match child_process.try_wait() {
+                Ok(Some(status)) => {
+                    // Process has exited
+                    println!(
+                        "Child process (PID: {}) exited gracefully with status: {}",
+                        child_pid_raw, status
+                    );
+                    return Ok(()); // Successfully terminated
+                }
+                Ok(None) => {
+                    // Process is still running
+                    if start_time.elapsed() > timeout {
+                        println!(
+                            "Child process (PID: {}) did not exit after SIGINT and timeout.",
+                            child_pid_raw
+                        );
+                        break; // Timeout expired, proceed to SIGKILL
+                    }
+                    // Wait a bit before checking again
+                    thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => {
+                    // Error trying to wait (e.g., permissions, or if the PID was reused quickly, though unlikely here)
+                    eprintln!("Error waiting for child process (PID: {}): {}. Assuming it's gone or needs SIGKILL.", child_pid_raw, e);
+                    // It's safer to try SIGKILL if unsure
+                    break;
+                }
+            }
+        }
+
+        // 4. If timeout expired and process is still running (or if SIGINT send failed), send SIGKILL
+        println!(
+            "Sending SIGKILL to child process (PID: {})...",
+            child_pid_raw
+        );
+        match signal::kill(child_pid, Signal::SIGKILL) {
+            Ok(_) => println!("SIGKILL sent successfully to PID {}.", child_pid_raw),
+            Err(Errno::ESRCH) => {
+                // ESRCH means "No such process"
+                println!(
+                    "Child process (PID: {}) already exited before SIGKILL.",
+                    child_pid_raw
+                );
+            }
+            Err(e) => {
+                // This is problematic, as SIGKILL should generally work if the process exists and you have permissions
+                eprintln!("Error sending SIGKILL to PID {}: {}. The process might be unkillable or already gone.", child_pid_raw, e);
+                // You might still want to wait to see if it terminates despite the error
+            }
+        }
+
+        // 5. Wait for the child to exit after SIGKILL (optional, but good practice)
+        //    If SIGKILL was sent, the process should terminate almost immediately.
+        //    `child_process.wait()` will clean up the zombie process.
+        match child_process.wait() {
+            Ok(status) => println!(
+                "Child process (PID: {}) terminated with status after SIGKILL: {}",
+                child_pid_raw, status
+            ),
+            Err(e) => eprintln!(
+                "Error waiting for child process (PID: {}) after SIGKILL: {}",
+                child_pid_raw, e
+            ),
+        }
+        Ok(())
+    }
+
     /// Setup function that starts nodes and runs mock and relayer before testing
     #[ctor]
     pub fn setup() {
+        // TODO: should we init tracing here?
+        // To get proper tracing logs from the library if we want to
+
         INIT.call_once(|| {
             // Start docker compose nodes + smart-contracts
             let project_root = env::var("CARGO_MANIFEST_DIR")
@@ -97,6 +202,11 @@ pub mod test_utils {
             *mock_service_changer = Some(
                 Command::new("cargo")
                     .args(["run", "--bin", "gateway-processors-mock"])
+                    .env(
+                        "RUST_LOG", // NOTE: maybe it would be more appropriate to have a
+                        // specific env-var instead of inheriting from `RUST_LOG`
+                        env::var("RUST_LOG").unwrap_or("info,fhevm_relayer=debug".to_string()),
+                    )
                     .current_dir(&project_root)
                     .spawn()
                     .expect("Failed to start gateway-processors-mock"),
@@ -116,6 +226,10 @@ pub mod test_utils {
                 Command::new("cargo")
                     .args(["run", "--bin", "fhevm-relayer"])
                     .env("APP_TRANSACTION__RETRY__MOCK_MODE", "true")
+                    .env(
+                        "RUST_LOG",
+                        env::var("RUST_LOG").unwrap_or("info,fhevm_relayer=debug".to_string()),
+                    )
                     .current_dir(&project_root)
                     .spawn()
                     .expect("Failed to start relayer-mock"),
@@ -143,16 +257,21 @@ pub mod test_utils {
         }
 
         let mut mock_service_changer = GATEWAY_PROCESSORS_MOCK_SERVICE.lock().unwrap();
-        let mut gateway_kill_result: Option<_> = None;
-        if let Some(mut mock_service) = mock_service_changer.take() {
-            gateway_kill_result = Some(mock_service.kill());
-        } else {
-            println!("Gateway mutex is empty");
+        // let mut gateway_kill_result: Option<_> = None;
+
+        if let Some(mut child) = mock_service_changer.take() {
+            kill_gracefully(child);
         }
-        println!(
-            "Relayer-kill-output: {:?}\nGateway-kill-output{:?}",
-            relayer_kill_result, gateway_kill_result
-        );
+
+        // if let Some(mut mock_service) = mock_service_changer.take() {
+        //     gateway_kill_result = Some(mock_service.kill());
+        // } else {
+        //     println!("Gateway mutex is empty");
+        // }
+        // println!(
+        //     "Relayer-kill-output: {:?}\nGateway-kill-output{:?}",
+        //     relayer_kill_result, gateway_kill_result
+        // );
 
         // Shutdown docker compose
         let project_root = env::var("CARGO_MANIFEST_DIR")

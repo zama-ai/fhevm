@@ -229,7 +229,7 @@ impl GatewayHandler {
         if let RelayerEventData::Generic(GenericEventData::EventLogFromGw { log }) = &event.data {
             if let Some(topic) = log.topic0() {
                 if *topic == Decryption::UserDecryptionResponse::SIGNATURE_HASH {
-                    match Decryption::UserDecryptionResponse::decode_log_data(log.data(), true) {
+                    match Decryption::UserDecryptionResponse::decode_log_data(log.data()) {
                         Ok(req) => {
                             let user_decryption_id = req.userDecryptionId;
                             info!(?user_decryption_id, "User decryption id from event");
@@ -318,10 +318,7 @@ impl GatewayHandler {
         for log in receipt.inner.logs().iter() {
             if let Some(first_topic) = log.topics().first() {
                 if first_topic == &target_topic {
-                    return match Decryption::UserDecryptionRequest::decode_log_data(
-                        log.data(),
-                        true,
-                    ) {
+                    return match Decryption::UserDecryptionRequest::decode_log_data(log.data()) {
                         Ok(event) => {
                             info!(
                                 ?receipt.transaction_hash,
@@ -363,7 +360,7 @@ impl GatewayHandler {
 
         let provider = ProviderBuilder::new()
             .network::<alloy::network::AnyNetwork>()
-            .on_http(url);
+            .connect_http(url);
 
         let decryption_address =
             Address::from_str(&self.contracts.decryption_address).map_err(|_| {

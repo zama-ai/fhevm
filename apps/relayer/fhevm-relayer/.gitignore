@@ -33,3 +33,6 @@ hardhat/contracts/sql.db
 
 # MacOS artifacts
 .DS_Store
+
+rustc-ice*
+trace-*

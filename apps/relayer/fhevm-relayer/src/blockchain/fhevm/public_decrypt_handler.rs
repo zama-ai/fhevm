@@ -21,7 +21,7 @@ use alloy::rpc::types::Log;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::task;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
 use alloy::sol_types::SolEvent;
@@ -68,11 +68,11 @@ impl FhevmHandler {
     /// - `fhevm_request_id`: Original fhevm request ID
     /// - `callback_selector`: Function selector for the callback
     /// - `contract_caller`: [`Address`] of the contract that initiated the request
+    #[instrument(skip_all, fields(event=%event))]
     async fn handle_public_decrypt_event_log(&self, event: RelayerEvent, eth_event_log: Log) {
         info!("Handling public decrypt event log");
         let next_event: RelayerEvent = match DecryptionOracle::DecryptionRequest::decode_log_data(
             eth_event_log.data(),
-            true,
         ) {
             Ok(eth_decryption_request) => {
                 self.context_data.insert(

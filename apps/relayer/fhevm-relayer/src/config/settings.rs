@@ -270,8 +270,6 @@ pub fn get_required_env(key: &str) -> Result<String, AppConfigError> {
 
 #[derive(Debug, Deserialize)]
 pub struct LogConfig {
-    /// Log level: trace, debug, info, warn, or error
-    pub level: String,
     /// Log format: compact, pretty, or json
     pub format: String,
     /// Whether to show file and line information
@@ -289,7 +287,6 @@ pub struct LogConfig {
 impl Default for LogConfig {
     fn default() -> Self {
         Self {
-            level: "info".to_string(),
             format: "compact".to_string(),
             show_file_line: false,
             show_thread_ids: false,

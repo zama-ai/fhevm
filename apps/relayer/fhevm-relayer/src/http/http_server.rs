@@ -20,16 +20,12 @@ where
     let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
 
     // Build our application with the POST endpoint '/input-proof'
-    let input_proof_handler = Arc::new(InputProofHandler::new(
-        orchestrator.clone(),
-        api_version.clone(),
-    ));
+    let input_proof_handler = Arc::new(InputProofHandler::new(orchestrator.clone(), api_version));
     let user_decrypt_handler = Arc::new(UserDecryptHandler::new(
         Arc::clone(&orchestrator),
-        api_version.clone(),
+        api_version,
     ));
-    let public_decrypt_handler =
-        Arc::new(PublicDecryptHandler::new(orchestrator, api_version.clone()));
+    let public_decrypt_handler = Arc::new(PublicDecryptHandler::new(orchestrator, api_version));
     let app =
         Router::new()
             .route(

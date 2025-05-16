@@ -9,7 +9,7 @@ use axum::{extract::Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
-use tracing::info;
+use tracing::{info, instrument, span, Level};
 
 /// Represents the payload coming into the endpoint for input proof.
 #[derive(Debug, Deserialize)]
@@ -66,7 +66,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         }
     }
 
+    ///
+    // pub contractChainId: String, // Hex encoded uint256 string with 0x prefix.
+    // pub contractAddress: String, // Hex encoded address with 0x prefix.
+    // pub userAddress: String,     // Hex encoded address with 0x prefix.
     /// Handles requests to the endpoint for input proof.
+    #[instrument(name="handle-input", skip_all, fields(contract=%payload.contractAddress, contract_chain_id=%payload.contractChainId, userAddress=%payload.userAddress))]
     pub async fn handle(&self, Json(payload): Json<InputProofRequestJson>) -> impl IntoResponse {
         info!("Handling input proof request");
         // Validate the payload
@@ -76,6 +81,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         }
 
         let request_id = self.orchestrator.new_request_id();
+        let _span = span!(Level::INFO, "handle-input-req", request_id = %request_id); // Add other relevant top-level details
 
         info!("Validated and assigned request id: {}", request_id);
 
@@ -104,25 +110,30 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
 
         let event = RelayerEvent::new(
             request_id,
-            self.api_version.clone(),
+            self.api_version,
             RelayerEventData::InputProof(request_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;
         info!("dispatched event to orchestrator to initiate processing");
+        let event = {
+            let _waiting_for_response_span =
+                span!(Level::INFO, "waiting-for-response", request_id = %request_id);
+            info!("waiting for reponse event");
 
-        info!("waiting for reponse event");
-        // Wait for response on the rx of Onshot channel.
-        let event = match rx.await {
-            Ok(event) => {
-                info!("received response event");
-                event
-            }
-            Err(_) => {
-                info!("received errror while waiting for response event");
-                let error_response = InputProofErrorResponseJson {
-                    message: "Failed to receive response from the gateway.".to_string(),
-                };
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response();
+            // Wait for response on the rx of Onshot channel.
+            match rx.await {
+                Ok(event) => {
+                    info!("received response event");
+                    event
+                }
+                Err(_) => {
+                    info!("received errror while waiting for response event");
+                    let error_response = InputProofErrorResponseJson {
+                        message: "Failed to receive response from the gateway.".to_string(),
+                    };
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
+                        .into_response();
+                }
             }
         };
 

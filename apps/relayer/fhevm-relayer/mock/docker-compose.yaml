@@ -1,7 +1,10 @@
+# TODO: make sure that all of this can co-exist with a locally running fhevm stack
+# mainly avoid using the same ports and container names
+# TODO: shouldn't we also deploy httpz contracts (decryption oracle, ...)
 name: anvil
 services:
   anvil-httpz:
-    container_name: anvil-httpz
+    container_name: anvil-httpz-mock
     image: ghcr.io/foundry-rs/foundry:stable
     environment:
       MNEMONIC: ${MNEMONIC}
@@ -25,7 +28,7 @@ services:
       - "8756:8756"
 
   anvil-gateway:
-    container_name: anvil-gateway
+    container_name: anvil-gateway-mock
     image: ghcr.io/foundry-rs/foundry:stable
     environment:
       MNEMONIC: ${MNEMONIC}
@@ -50,8 +53,8 @@ services:
 
 
   gateway-sc-deploy:
-    container_name: fhevm-gateway-sc-deploy
-    image: ghcr.io/zama-ai/fhevm-gateway/contracts:46ce936
+    container_name: fhevm-gateway-sc-deploy-mock
+    image: ghcr.io/zama-ai/fhevm/gateway-contracts:v0.7.0-rc0
     env_file:
       - ./.env.gateway
     command:

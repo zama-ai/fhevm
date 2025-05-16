@@ -56,8 +56,6 @@ contracts:
   input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
 
 log:
-  # Set log level for development
-  level: "info"
   # Choose format: compact, pretty, or json
   format: "pretty"
   # Show source code location for debugging
@@ -66,9 +64,6 @@ log:
   show_thread_ids: false
   # Include timestamps in logs
   show_timestamp: true
-  # Optional: Set specific log levels for different modules
-  
-
 
 # Instructions:
 # 1. Copy this file to local.yaml: cp config/local.yaml.example config/local.yaml

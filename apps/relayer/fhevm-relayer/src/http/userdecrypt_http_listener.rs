@@ -8,10 +8,11 @@ use crate::orchestrator::Orchestrator;
 use alloy::primitives::Bytes;
 use axum::{extract::Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use std::sync::Arc;
 use tokio::sync::oneshot;
-use tracing::error;
 use tracing::info;
+use tracing::{error, instrument, span, Level};
 
 /// Represents the payload coming into the endpoint for user decrypt.
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -31,6 +32,16 @@ pub struct UserDecryptRequestJson {
 pub struct HandleContractPairJson {
     pub handle: String,
     pub contractAddress: String,
+}
+
+impl Display for HandleContractPairJson {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ct-handle: {}, contract-address: {}",
+            self.handle, self.contractAddress
+        )
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -82,6 +93,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
     }
 
     /// Handles requests to the endpoint for user decrypt.
+    #[instrument(name="handle-user-decrypt", skip_all, fields(user_address=%payload.userAddress, cts=?payload.handleContractPairs))]
     pub async fn handle(&self, Json(payload): Json<UserDecryptRequestJson>) -> impl IntoResponse {
         info!("Handling user decryption request in http listener");
         // Validate the payload
@@ -111,6 +123,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         };
 
         let request_id = self.orchestrator.new_request_id();
+        let _span = span!(Level::INFO, "handle-user-decrypt-req", request_id = %request_id); // Add other relevant top-level details
 
         info!("Validated and assigned request id: {}", request_id);
 
@@ -131,7 +144,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         };
         let event = RelayerEvent::new(
             request_id,
-            self.api_version.clone(),
+            self.api_version,
             RelayerEventData::UserDecrypt(request_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;

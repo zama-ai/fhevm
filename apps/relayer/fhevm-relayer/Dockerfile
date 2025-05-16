@@ -7,7 +7,8 @@ WORKDIR /app
 COPY . .
 
 # Build the application
-RUN cargo build --release
+RUN cargo build --release --no-default-features
+
 
 # Stage 2: Runtime
 FROM debian:bullseye-slim

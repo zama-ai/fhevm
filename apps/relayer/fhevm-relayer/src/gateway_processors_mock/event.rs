@@ -5,7 +5,7 @@ use std::fmt::Display;
 use strum_macros::Display;
 use uuid::Uuid;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GatewayProcessorsEvent {
     pub request_id: Uuid,
     pub api_version: ApiVersion,
@@ -80,7 +80,7 @@ impl Event for GatewayProcessorsEvent {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ApiVersion {
     pub category: ApiCategory,
     pub number: u8,
@@ -98,7 +98,7 @@ pub enum ApiCategory {
     EXPERIMENTAL,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum GatewayProcessorsEventData {
     KmsInput(GatewayProcessorsInputEventData),
     UserDecrypt(UserDecryptionEventData),
