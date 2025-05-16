@@ -10,7 +10,7 @@ use crate::{
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
-        TokioEventDispatcher,
+        Orchestrator, TokioEventDispatcher,
     },
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
 };
@@ -49,7 +49,7 @@ impl ReceiptProcessor for PublicDecryptionRequestProcessor {
 
 #[derive(Clone)]
 pub struct GatewayHandler {
-    dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
+    dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     public_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
@@ -59,7 +59,7 @@ pub struct GatewayHandler {
 
 impl GatewayHandler {
     pub fn new(
-        dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
+        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,

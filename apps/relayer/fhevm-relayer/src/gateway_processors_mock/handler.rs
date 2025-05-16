@@ -7,15 +7,12 @@ use crate::{
         ComputeCalldata,
     },
     config::settings::ContractConfig,
-    core::{
-        errors::EventProcessingError,
-        utils::{colorize_event_type, colorize_request_id},
-    },
+    core::errors::EventProcessingError,
     gateway_processors_mock::event::{
         GatewayProcessorsEvent, GatewayProcessorsEventData, GatewayProcessorsInputEventData,
         PublicDecryptionEventData,
     },
-    orchestrator::{traits::EventHandler, TokioEventDispatcher},
+    orchestrator::traits::EventHandler,
     transaction::{TransactionHelper, TransactionService, TxConfig},
 };
 use std::str::FromStr;
@@ -44,20 +41,17 @@ sol! {
 
 #[derive(Clone)]
 pub struct GatewayProcessorsHandler {
-    _dispatcher: Arc<TokioEventDispatcher<GatewayProcessorsEvent>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
 }
 
 impl GatewayProcessorsHandler {
     pub fn new(
-        _dispatcher: Arc<TokioEventDispatcher<GatewayProcessorsEvent>>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,
     ) -> Self {
         Self {
-            _dispatcher,
             tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
             contracts,
         }
@@ -349,12 +343,6 @@ impl GatewayProcessorsHandler {
 #[async_trait]
 impl EventHandler<GatewayProcessorsEvent> for GatewayProcessorsHandler {
     async fn handle_event(&self, event: GatewayProcessorsEvent) {
-        info!(
-            event_type = %colorize_event_type(event.data.as_ref()),
-            request_id = %colorize_request_id(&event.request_id),
-            "Processing event in processors mock"
-        );
-
         match &event.clone().data {
             GatewayProcessorsEventData::KmsInput(input_event) => match input_event {
                 GatewayProcessorsInputEventData::EventLogRequestFromGw { .. } => {

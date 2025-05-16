@@ -17,7 +17,8 @@ use fhevm_relayer::{
         event_listener_gateway, GatewayProcessorsEvent, GatewayProcessorsHandler,
     },
     orchestrator::{
-        traits::{EventHandler, HandlerRegistry},
+        hooks::EventLoggingHook,
+        traits::{EventHandler, HandlerRegistry, HookRegistry},
         Orchestrator, TokioEventDispatcher,
     },
     transaction::{TransactionService, TxConfig},
@@ -79,15 +80,20 @@ async fn main() -> eyre::Result<()> {
 
     // === Intialize the orchestrator.
     let node_id = [0x02, 0x23, 0x45, 0x67, 0x89, 0xab];
-    let dispatcher = Arc::new(TokioEventDispatcher::<GatewayProcessorsEvent>::new());
-    let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
+    let orchestrator = Orchestrator::new(
+        Arc::new(TokioEventDispatcher::<GatewayProcessorsEvent>::new()),
+        &node_id,
+    );
+
+    orchestrator.register_pre_dispatch_hook(EventLoggingHook::new(
+        "Received gateway processor mock event".to_string(),
+    ));
 
     // === Register the event handlers
     let tx_config = TxConfig::from(settings.transaction);
 
     let gateway_processors_handler: Arc<dyn EventHandler<GatewayProcessorsEvent>> =
         Arc::new(GatewayProcessorsHandler::new(
-            Arc::clone(&dispatcher),
             tx_service_gateway.clone(),
             tx_config.clone(),
             settings.contracts,

@@ -1,15 +1,19 @@
 use crate::orchestrator::traits::Event;
-use crate::orchestrator::traits::{EventDispatcher, EventHandler, HandlerRegistry};
+use crate::orchestrator::traits::{
+    EventDispatcher, EventHandler, HandlerRegistry, HookRegistry, PreDispatchHook,
+};
 use anyhow::Error;
 use async_trait::async_trait;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::info;
 use uuid::v1::{Context, Timestamp};
 use uuid::Uuid;
 
 pub struct Orchestrator<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> {
     uuid_generator: Arc<UuidGenerator>,
     event_dispatcher: Arc<D>,
+    pre_dispatch_hooks: Arc<RwLock<Vec<Arc<dyn PreDispatchHook<E>>>>>,
 
     _marker: std::marker::PhantomData<E>,
 }
@@ -22,12 +26,24 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
                 DEFAULT_UUID_CONTEXT_INITIAL_VALUE,
             )),
             event_dispatcher,
+            pre_dispatch_hooks: Arc::new(RwLock::new(Vec::new())),
             _marker: std::marker::PhantomData,
         })
     }
 
     pub fn new_request_id(&self) -> Uuid {
         self.uuid_generator.generate_id()
+    }
+
+    fn run_pre_dispatch_hooks(&self, event: E) {
+        if let Ok(hooks) = self.pre_dispatch_hooks.read() {
+            for hook in hooks.iter() {
+                info!("Running pre-dispatch hook: {}", hook);
+                hook.run(event.clone());
+            }
+        } else {
+            panic!("Failed to acquire read lock on pre-dispatch hooks");
+        }
     }
 }
 
@@ -36,7 +52,18 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> EventDispatcher<E>
     for Orchestrator<D, E>
 {
     async fn dispatch_event(&self, event: E) -> Result<(), Error> {
+        self.run_pre_dispatch_hooks(event.clone());
         self.event_dispatcher.dispatch_event(event).await
+    }
+}
+
+impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HookRegistry<E> for Orchestrator<D, E> {
+    fn register_pre_dispatch_hook(&self, hook: Arc<dyn PreDispatchHook<E>>) {
+        if let Ok(mut hooks) = self.pre_dispatch_hooks.write() {
+            hooks.push(hook);
+        } else {
+            panic!("Failed to acquire write lock on pre-dispatch hooks");
+        }
     }
 }
 

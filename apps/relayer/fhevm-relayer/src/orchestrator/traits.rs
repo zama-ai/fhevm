@@ -1,5 +1,6 @@
 use anyhow::Error;
 use async_trait::async_trait;
+use std::fmt::Display;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -27,4 +28,16 @@ pub trait HandlerRegistry<E: Event> {
         request_id: Uuid,
         handler: Arc<dyn EventHandler<E>>,
     );
+}
+
+pub trait HookRegistry<E: Event> {
+    fn register_pre_dispatch_hook(&self, hook: Arc<dyn PreDispatchHook<E>>);
+}
+
+pub trait HooksRunner<E: Event> {
+    fn run_hooks(&self, event: E);
+}
+
+pub trait PreDispatchHook<E: Event>: Display + Send + Sync {
+    fn run(&self, event: E);
 }

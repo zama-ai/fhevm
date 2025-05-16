@@ -56,7 +56,8 @@ use fhevm_relayer::{
     },
     http::http_server::run_http_server,
     orchestrator::{
-        traits::{EventHandler, HandlerRegistry},
+        hooks::EventLoggingHook,
+        traits::{EventHandler, HandlerRegistry, HookRegistry},
         Orchestrator, TokioEventDispatcher,
     },
     transaction::{TransactionService, TxConfig},
@@ -135,21 +136,27 @@ async fn main() -> eyre::Result<()> {
 
     // === Intialize the orchestrator.
     let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
-    let dispatcher = Arc::new(TokioEventDispatcher::<RelayerEvent>::new());
-    let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
+    let orchestrator = Orchestrator::new(
+        Arc::new(TokioEventDispatcher::<RelayerEvent>::new()),
+        &node_id,
+    );
+
+    // Register event logging hook to capture all events
+    orchestrator
+        .register_pre_dispatch_hook(EventLoggingHook::new("Received relayer event".to_string()));
 
     // === Register the event handlers
     let tx_config = TxConfig::from(settings.transaction.clone());
     let fhevm_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> =
         Arc::new(PublicDecryptFhevmHandler::new(
-            Arc::clone(&dispatcher),
+            Arc::clone(&orchestrator),
             tx_service.clone(),
             tx_config.clone(),
         ));
 
     let input_proof_gw_handler: Arc<dyn EventHandler<RelayerEvent>> =
         Arc::new(InputProofGatewayHandler::new(
-            Arc::clone(&dispatcher),
+            Arc::clone(&orchestrator),
             tx_service_gateway.clone(),
             tx_config.clone(),
             settings.contracts.clone(),
@@ -193,7 +200,7 @@ async fn main() -> eyre::Result<()> {
 
     let public_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =
         Arc::new(PublicDecryptGatewayHandler::new(
-            Arc::clone(&dispatcher),
+            Arc::clone(&orchestrator),
             tx_service_gateway.clone(),
             tx_config.clone(),
             settings.contracts.clone(),
@@ -203,7 +210,7 @@ async fn main() -> eyre::Result<()> {
 
     let user_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =
         Arc::new(UserDecryptGatewayHandler::new(
-            Arc::clone(&dispatcher),
+            Arc::clone(&orchestrator),
             tx_service_gateway,
             tx_config,
             settings.contracts,

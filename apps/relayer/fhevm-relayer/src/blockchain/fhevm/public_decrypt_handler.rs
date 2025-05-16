@@ -12,7 +12,7 @@ use crate::{
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
-        TokioEventDispatcher,
+        Orchestrator, TokioEventDispatcher,
     },
     transaction::{TransactionHelper, TransactionService, TxConfig},
 };
@@ -39,14 +39,14 @@ pub struct DecryptionRequestData {
 
 #[derive(Clone)]
 pub struct FhevmHandler {
-    dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
+    dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     context_data: dashmap::DashMap<Uuid, DecryptionRequestData>,
     tx_helper: Arc<TransactionHelper>,
 }
 
 impl FhevmHandler {
     pub fn new(
-        dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
+        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
     ) -> Self {
