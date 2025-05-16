@@ -69,6 +69,7 @@ env:
   CARGO_INCREMENTAL: 0
   DOCKER_BUILDKIT: 1
   NPM_TAG: ""
+  RUST_IMAGE_VERSION: '1.86.0'
 
 jobs:
   compile-rust-unit-tests:
@@ -135,7 +136,7 @@ jobs:
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@11df97af8e8102fd60b60a77dfbf58d40cd843b8 # v1.10.1
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_IMAGE_VERSION }}
           components: rustfmt, clippy, llvm-tools-preview
           cache: false
 
