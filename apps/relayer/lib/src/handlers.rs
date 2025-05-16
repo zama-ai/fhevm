@@ -28,6 +28,7 @@ use alloy::{
     providers::ProviderBuilder,
     sol_types::SolEvent,
 };
+use std::fmt::Write;
 // use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
 use diesel::{Connection, PgConnection};
@@ -547,6 +548,21 @@ fn fetch_or_store_request_from_response(
     }
 }
 
+fn fixed_bytes_to_hex_string(bytes: &FixedBytes<32>) -> String {
+    // Preallocate a String with appropriate capacity (2 hex chars per byte + "0x" prefix)
+    let mut result = String::with_capacity(2 + 32 * 2);
+
+    // Add "0x" prefix
+    result.push_str("0x");
+
+    // Convert each byte to hex and append to the result
+    for byte in bytes.as_slice() {
+        write!(result, "{:02x}", byte).unwrap();
+    }
+
+    result
+}
+
 impl ZWSRelayerHandler {
     #[instrument(skip(self, db_connection), fields(event=%response))]
     async fn handle_transaction_response(
@@ -720,6 +736,16 @@ impl ZWSRelayerHandler {
                         ) {
                             Ok(value) => match value {
                                 Some(source_request_id) => {
+                                    debug!(
+                                        "request-id: {}, ct-handles: [{:?}]",
+                                        source_request_id,
+                                        verification_response
+                                            .ctHandles
+                                            .iter()
+                                            .map(fixed_bytes_to_hex_string)
+                                            .collect::<Vec<String>>()
+                                            .join(", ")
+                                    );
                                     let message = ZwsRelayerEvent::HTTPInputRegistrationResponse(
                                         HTTPInputRegistrationResponse {
                                             request_id: source_request_id,

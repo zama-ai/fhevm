@@ -44,7 +44,8 @@ jobs:
           # NOTE: Could be set with a matrix when we have multiple RUST services
           cd ${{matrix.folder}}
           RUST_BACKTRACE=full cargo test --workspace --exclude fhevm-relayer
-          cargo install grcov
+          # FIXME: replace by latest version once https://github.com/mozilla/grcov/issues/1351 is fixed
+          cargo install grcov --version ^0.8.20
           mkdir coverage
           ~/.cargo/bin/grcov . --binary-path ./target/debug/deps/ -s . --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o coverage/ -t markdown
           ~/.cargo/bin/grcov . --binary-path ./target/debug/deps/ -s . --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o ./ -t lcov
