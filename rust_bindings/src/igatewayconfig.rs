@@ -67,6 +67,7 @@ interface IGatewayConfig {
     function getKmsSigners() external view returns (address[] memory);
     function getKmsTxSenders() external view returns (address[] memory);
     function getMpcThreshold() external view returns (uint256);
+    function getPauser() external view returns (address);
     function getProtocolMetadata() external view returns (ProtocolMetadata memory);
     function getPublicDecryptionThreshold() external view returns (uint256);
     function getUserDecryptionThreshold() external view returns (uint256);
@@ -431,6 +432,19 @@ interface IGatewayConfig {
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPauser",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -6008,6 +6022,127 @@ function getMpcThreshold() external view returns (uint256);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getPauser()` and selector `0x7008b548`.
+```solidity
+function getPauser() external view returns (address);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getPauserCall {}
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getPauser()`](getPauserCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getPauserReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getPauserCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getPauserCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getPauserCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getPauserReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getPauserReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getPauserReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getPauserCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getPauserReturn;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getPauser()";
+            const SELECTOR: [u8; 4] = [112u8, 8u8, 181u8, 72u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getProtocolMetadata()` and selector `0x48144c61`.
 ```solidity
 function getProtocolMetadata() external view returns (ProtocolMetadata memory);
@@ -7069,6 +7204,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         getMpcThreshold(getMpcThresholdCall),
         #[allow(missing_docs)]
+        getPauser(getPauserCall),
+        #[allow(missing_docs)]
         getProtocolMetadata(getProtocolMetadataCall),
         #[allow(missing_docs)]
         getPublicDecryptionThreshold(getPublicDecryptionThresholdCall),
@@ -7105,6 +7242,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
             [85u8, 75u8, 171u8, 60u8],
             [103u8, 153u8, 239u8, 82u8],
             [108u8, 136u8, 235u8, 67u8],
+            [112u8, 8u8, 181u8, 72u8],
             [116u8, 32u8, 243u8, 212u8],
             [119u8, 45u8, 47u8, 233u8],
             [126u8, 170u8, 200u8, 242u8],
@@ -7125,7 +7263,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     impl alloy_sol_types::SolInterface for IGatewayConfigCalls {
         const NAME: &'static str = "IGatewayConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 25usize;
+        const COUNT: usize = 26usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -7179,6 +7317,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::getMpcThreshold(_) => {
                     <getMpcThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getPauser(_) => {
+                    <getPauserCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getProtocolMetadata(_) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::SELECTOR
@@ -7367,6 +7508,19 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigCalls::checkIsKmsSigner)
                     }
                     checkIsKmsSigner
+                },
+                {
+                    fn getPauser(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getPauserCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigCalls::getPauser)
+                    }
+                    getPauser
                 },
                 {
                     fn getKmsTxSenders(
@@ -7647,6 +7801,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
+                Self::getPauser(inner) => {
+                    <getPauserCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
                 Self::getProtocolMetadata(inner) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -7788,6 +7945,12 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::getMpcThreshold(inner) => {
                     <getMpcThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getPauser(inner) => {
+                    <getPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -8909,6 +9072,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::SolCallBuilder<T, &P, getMpcThresholdCall, N> {
             self.call_builder(&getMpcThresholdCall {})
+        }
+        ///Creates a new call builder for the [`getPauser`] function.
+        pub fn getPauser(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getPauserCall, N> {
+            self.call_builder(&getPauserCall {})
         }
         ///Creates a new call builder for the [`getProtocolMetadata`] function.
         pub fn getProtocolMetadata(

@@ -8,12 +8,13 @@ import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/acc
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./shared/GatewayConfigChecks.sol";
+import "./shared/Pausable.sol";
 
 /// @title KMS Management contract
 /// @dev TODO: This contract is neither used nor up-to-date. It will be reworked in the future.
 /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/108
 /// @dev See {IKmsManagement}.
-contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks {
+contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks, Pausable {
     /// @notice The address of the GatewayConfig contract for protocol state calls.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -122,6 +123,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
     function initialize(string memory fheParamsName, bytes32 fheParamsDigest) public virtual reinitializer(2) {
         __Ownable_init(owner());
+        __Pausable_init();
 
         KmsManagementStorage storage $ = _getKmsManagementStorage();
         $.fheParamsDigests[fheParamsName] = fheParamsDigest;
@@ -140,7 +142,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IKmsManagement-preprocessKeygenRequest}.
     function preprocessKeygenRequest(
         string calldata fheParamsName
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) {
+    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
@@ -160,7 +162,10 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IKmsManagement-preprocessKeygenResponse}.
-    function preprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId) external virtual onlyKmsTxSender {
+    function preprocessKeygenResponse(
+        uint256 preKeygenRequestId,
+        uint256 preKeyId
+    ) external virtual onlyKmsTxSender whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -186,7 +191,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IKmsManagement-preprocessKskgenRequest}.
     function preprocessKskgenRequest(
         string calldata fheParamsName
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) {
+    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
@@ -206,7 +211,10 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IKmsManagement-preprocessKskgenResponse}.
-    function preprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId) external virtual onlyKmsTxSender {
+    function preprocessKskgenResponse(
+        uint256 preKskgenRequestId,
+        uint256 preKskId
+    ) external virtual onlyKmsTxSender whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -230,7 +238,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IKmsManagement-keygenRequest}.
-    function keygenRequest(uint256 preKeyId) external virtual onlyOwner {
+    function keygenRequest(uint256 preKeyId) external virtual onlyOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A key generation request can only be sent once
@@ -250,7 +258,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IKmsManagement-keygenResponse}.
-    function keygenResponse(uint256 preKeyId, uint256 keyId) external virtual onlyKmsTxSender {
+    function keygenResponse(uint256 preKeyId, uint256 keyId) external virtual onlyKmsTxSender whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -279,7 +287,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IKmsManagement-crsgenRequest}.
     function crsgenRequest(
         string calldata fheParamsName
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) {
+    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev Generate a new crsgenRequestId. This is used to link the FHE params sent in the request
@@ -295,7 +303,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IKmsManagement-crsgenResponse}.
-    function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external virtual onlyKmsTxSender {
+    function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external virtual onlyKmsTxSender whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -321,7 +329,11 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IKmsManagement-kskgenRequest}.
-    function kskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId) external virtual onlyOwner {
+    function kskgenRequest(
+        uint256 preKskId,
+        uint256 sourceKeyId,
+        uint256 destKeyId
+    ) external virtual onlyOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KSK generation request can only be sent once
@@ -358,7 +370,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IKmsManagement-kskgenResponse}.
-    function kskgenResponse(uint256 preKskId, uint256 kskId) external virtual onlyKmsTxSender {
+    function kskgenResponse(uint256 preKskId, uint256 kskId) external virtual onlyKmsTxSender whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -386,7 +398,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IKmsManagement-activateKeyRequest}.
-    function activateKeyRequest(uint256 keyId) external virtual onlyOwner {
+    function activateKeyRequest(uint256 keyId) external virtual onlyOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A key activation request can only be sent once
@@ -413,7 +425,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IKmsManagement-activateKeyResponse}.
-    function activateKeyResponse(uint256 keyId) external virtual onlyCoprocessorTxSender {
+    function activateKeyResponse(uint256 keyId) external virtual onlyCoprocessorTxSender whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A coprocessor can only respond once
@@ -439,7 +451,10 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IKmsManagement-setFheParams}.
-    function addFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external virtual onlyOwner {
+    function addFheParams(
+        string calldata fheParamsName,
+        bytes32 fheParamsDigest
+    ) external virtual onlyOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
         if ($._fheParamsInitialized[fheParamsName]) {
             revert FheParamsAlreadyInitialized(fheParamsName);
@@ -455,7 +470,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     function updateFheParams(
         string calldata fheParamsName,
         bytes32 fheParamsDigest
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) {
+    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
         $.fheParamsDigests[fheParamsName] = fheParamsDigest;
 

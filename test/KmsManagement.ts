@@ -1,8 +1,10 @@
+import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
-import { EventLog } from "ethers";
+import { EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
+import { GatewayConfig, KmsManagement } from "../typechain-types";
 import { createRandomWallet, loadTestVariablesFixture } from "./utils";
 
 describe("KmsManagement", function () {
@@ -261,6 +263,38 @@ describe("KmsManagement", function () {
       // Check that the 4th response does not emit an event
       await expect(txResponse4).to.not.emit(kmsManagement, "KeygenResponse");
     });
+
+    it("Should revert because the contract is paused", async function () {
+      const { kmsManagement, owner, kmsTxSenders, preKeyId, fheParamsName } = await loadFixture(
+        prepareKmsManagementPreKeygenFixture,
+      );
+
+      // Pause the contract
+      await kmsManagement.connect(owner).pause();
+
+      // Try calling paused preprocessing keygen request
+      await expect(kmsManagement.connect(owner).preprocessKeygenRequest(fheParamsName)).to.be.revertedWithCustomError(
+        kmsManagement,
+        "EnforcedPause",
+      );
+
+      // Try calling paused preprocessing keygen response
+      await expect(
+        kmsManagement.connect(kmsTxSenders[0]).preprocessKeygenResponse(0, preKeyId),
+      ).to.be.revertedWithCustomError(kmsManagement, "EnforcedPause");
+
+      // Try calling paused keygen request
+      await expect(kmsManagement.connect(owner).keygenRequest(preKeyId)).to.be.revertedWithCustomError(
+        kmsManagement,
+        "EnforcedPause",
+      );
+
+      // Try calling paused keygen response
+      await expect(kmsManagement.connect(kmsTxSenders[0]).keygenResponse(preKeyId, 1)).to.be.revertedWithCustomError(
+        kmsManagement,
+        "EnforcedPause",
+      );
+    });
   });
 
   describe("CRS generation", async function () {
@@ -339,6 +373,25 @@ describe("KmsManagement", function () {
       await expect(txRequest2)
         .to.emit(kmsManagement, "CrsgenRequest")
         .withArgs(expectedPreCrsId + 1, fheParamsDigest);
+    });
+
+    it("Should revert because the contract is paused", async function () {
+      const { kmsManagement, owner, kmsTxSenders, fheParamsName } = await loadFixture(loadTestVariablesFixture);
+
+      // Pause the contract
+      await kmsManagement.connect(owner).pause();
+
+      // Try calling paused crsgen request
+      await expect(kmsManagement.connect(owner).crsgenRequest(fheParamsName)).to.be.revertedWithCustomError(
+        kmsManagement,
+        "EnforcedPause",
+      );
+
+      // Try calling paused crsgen response
+      await expect(kmsManagement.connect(kmsTxSenders[0]).crsgenResponse(0, 0)).to.be.revertedWithCustomError(
+        kmsManagement,
+        "EnforcedPause",
+      );
     });
   });
 
@@ -510,6 +563,38 @@ describe("KmsManagement", function () {
       // Check that the 4th response does not emit an event
       await expect(txResponse4).to.not.emit(kmsManagement, "KskgenResponse");
     });
+
+    it("Should revert because the contract is paused", async function () {
+      const { kmsManagement, owner, kmsTxSenders, keyId1, keyId2, preKskId, fheParamsName } = await loadFixture(
+        prepareKmsManagementPreKskgenFixture,
+      );
+
+      // Pause the contract
+      await kmsManagement.connect(owner).pause();
+
+      // Try calling paused preprocessing kskgen request
+      await expect(kmsManagement.connect(owner).preprocessKskgenRequest(fheParamsName)).to.be.revertedWithCustomError(
+        kmsManagement,
+        "EnforcedPause",
+      );
+
+      // Try calling paused preprocessing kskgen response
+      await expect(
+        kmsManagement.connect(kmsTxSenders[0]).preprocessKskgenResponse(0, preKskId),
+      ).to.be.revertedWithCustomError(kmsManagement, "EnforcedPause");
+
+      // Try calling paused kskgen request
+      await expect(kmsManagement.connect(owner).kskgenRequest(preKskId, keyId1, keyId2)).to.be.revertedWithCustomError(
+        kmsManagement,
+        "EnforcedPause",
+      );
+
+      // Try calling paused kskgen response
+      await expect(kmsManagement.connect(kmsTxSenders[0]).kskgenResponse(preKskId, 1)).to.be.revertedWithCustomError(
+        kmsManagement,
+        "EnforcedPause",
+      );
+    });
   });
 
   describe("Key activation", async function () {
@@ -595,6 +680,26 @@ describe("KmsManagement", function () {
       expect(await kmsManagement.activatedKeyIds(0)).to.be.equal(keyId1);
       expect(await kmsManagement.activatedKeyIds(1)).to.be.equal(keyId2);
     });
+
+    it("Should revert because the contract is paused", async function () {
+      const { kmsManagement, owner, kmsTxSenders, coprocessorTxSenders, keyId1 } = await loadFixture(
+        prepareKmsManagementActivateFixture,
+      );
+
+      // Pause the contract
+      await kmsManagement.connect(owner).pause();
+
+      // Try calling paused activate key request
+      await expect(kmsManagement.connect(owner).activateKeyRequest(keyId1)).to.be.revertedWithCustomError(
+        kmsManagement,
+        "EnforcedPause",
+      );
+
+      // Try calling paused activate key response
+      await expect(
+        kmsManagement.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId1),
+      ).to.be.revertedWithCustomError(kmsManagement, "EnforcedPause");
+    });
   });
 
   describe("FHE parameters", async function () {
@@ -669,6 +774,66 @@ describe("KmsManagement", function () {
       await expect(
         kmsManagement.connect(owner).updateFheParams(fakeFheParamsName, newFheParamsDigest),
       ).to.be.revertedWithCustomError(kmsManagement, "FheParamsNotInitialized");
+    });
+
+    it("Should revert because the contract is paused", async function () {
+      const { kmsManagement, owner, kmsTxSenders, fheParamsName, fheParamsDigest } =
+        await loadFixture(loadTestVariablesFixture);
+
+      // Pause the contract
+      await kmsManagement.connect(owner).pause();
+
+      // Try calling paused add FHE params
+      await expect(
+        kmsManagement.connect(owner).addFheParams(fheParamsName, fheParamsDigest),
+      ).to.be.revertedWithCustomError(kmsManagement, "EnforcedPause");
+
+      // Try calling paused update FHE params
+      await expect(
+        kmsManagement.connect(owner).updateFheParams(fheParamsName, fheParamsDigest),
+      ).to.be.revertedWithCustomError(kmsManagement, "EnforcedPause");
+    });
+  });
+
+  describe("Pause", async function () {
+    let kmsManagement: KmsManagement;
+    let owner: Wallet;
+    let pauser: SignerWithAddress;
+
+    beforeEach(async function () {
+      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      kmsManagement = fixtureData.kmsManagement;
+      owner = fixtureData.owner;
+      pauser = fixtureData.pauser;
+    });
+
+    it("Should pause and unpause contract with owner address", async function () {
+      // Check that the contract is not paused
+      expect(await kmsManagement.paused()).to.be.false;
+
+      // Pause the contract with the owner address
+      await expect(kmsManagement.connect(owner).pause()).to.emit(kmsManagement, "Paused").withArgs(owner);
+      expect(await kmsManagement.paused()).to.be.true;
+
+      // Unpause the contract with the owner address
+      await expect(kmsManagement.connect(owner).unpause()).to.emit(kmsManagement, "Unpaused").withArgs(owner);
+      expect(await kmsManagement.paused()).to.be.false;
+    });
+
+    it("Should pause contract with pauser address", async function () {
+      // Check that the contract is not paused
+      expect(await kmsManagement.paused()).to.be.false;
+
+      // Pause the contract with the pauser address
+      await expect(kmsManagement.connect(pauser).pause()).to.emit(kmsManagement, "Paused").withArgs(pauser);
+      expect(await kmsManagement.paused()).to.be.true;
+    });
+
+    it("Should revert on pause because sender is not owner or pauser address", async function () {
+      const notOwnerOrPauser = createRandomWallet();
+      await expect(kmsManagement.connect(notOwnerOrPauser).pause())
+        .to.be.revertedWithCustomError(kmsManagement, "NotOwnerOrPauser")
+        .withArgs(notOwnerOrPauser.address);
     });
   });
 });

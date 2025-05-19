@@ -219,6 +219,12 @@ interface IGatewayConfig {
     function checkHostChainIsRegistered(uint256 chainId) external view;
 
     /**
+     * @notice Get the pauser's address.
+     * @return The address of the pauser.
+     */
+    function getPauser() external view returns (address);
+
+    /**
      * @notice Get the protocol's metadata.
      * @return The protocol's metadata.
      */

@@ -9,13 +9,20 @@ import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
 import "./interfaces/IKmsManagement.sol";
 import "./shared/GatewayConfigChecks.sol";
+import "./shared/Pausable.sol";
 import "./libraries/HandleOps.sol";
 
 /**
  * @title CiphertextCommits smart contract
  * @dev See {ICiphertextCommits}.
  */
-contract CiphertextCommits is ICiphertextCommits, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks {
+contract CiphertextCommits is
+    ICiphertextCommits,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeable,
+    GatewayConfigChecks,
+    Pausable
+{
     /// @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -71,6 +78,7 @@ contract CiphertextCommits is ICiphertextCommits, Ownable2StepUpgradeable, UUPSU
      */
     function initialize() public virtual reinitializer(2) {
         __Ownable_init(owner());
+        __Pausable_init();
     }
 
     /// @notice See {ICiphertextCommits-addCiphertextMaterial}.
@@ -80,7 +88,7 @@ contract CiphertextCommits is ICiphertextCommits, Ownable2StepUpgradeable, UUPSU
         uint256 keyId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
-    ) external virtual onlyCoprocessorTxSender {
+    ) external virtual onlyCoprocessorTxSender whenNotPaused {
         /// @dev Extract the chainId from the ciphertext handle
         uint256 chainId = HandleOps.extractChainId(ctHandle);
 

@@ -173,6 +173,7 @@ describe("Decryption", function () {
   let ciphertextCommits: CiphertextCommits;
   let decryption: Decryption;
   let owner: Wallet;
+  let pauser: HardhatEthersSigner;
   let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
   let kmsSignatures: string[];
   let kmsTxSenders: HardhatEthersSigner[];
@@ -285,6 +286,7 @@ describe("Decryption", function () {
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
+      pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       kmsSignatures = fixtureData.kmsSignatures;
       kmsTxSenders = fixtureData.kmsTxSenders;
@@ -506,6 +508,22 @@ describe("Decryption", function () {
       await expect(responseTx1).to.not.emit(decryption, "PublicDecryptionResponse");
       await expect(responseTx2).to.not.emit(decryption, "PublicDecryptionResponse");
       await expect(responseTx4).to.not.emit(decryption, "PublicDecryptionResponse");
+    });
+
+    it("Should revert because the contract is paused", async function () {
+      // Pause the contract
+      await decryption.connect(owner).pause();
+
+      // Try calling paused public decryption request
+      await expect(decryption.publicDecryptionRequest(ctHandles)).to.be.revertedWithCustomError(
+        decryption,
+        "EnforcedPause",
+      );
+
+      // Try calling paused public decryption response
+      await expect(
+        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]),
+      ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
     });
 
     describe("Checks", function () {
@@ -1233,6 +1251,31 @@ describe("Decryption", function () {
       await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponse");
     });
 
+    it("Should revert because the contract is paused", async function () {
+      // Pause the contract
+      await decryption.connect(owner).pause();
+
+      // Try calling paused user decryption request
+      await expect(
+        decryption.userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          hostChainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        ),
+      ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
+
+      // Try calling paused user decryption response
+      await expect(
+        decryption
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]),
+      ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
+    });
+
     describe("Checks", function () {
       it("Should not revert because user decryption is ready", async function () {
         await expect(decryption.checkUserDecryptionReady(user.address, ctHandleContractPairs)).to.not.be.reverted;
@@ -1928,6 +1971,24 @@ describe("Decryption", function () {
       await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponse");
     });
 
+    it("Should revert because the contract is paused", async function () {
+      // Pause the contract
+      await decryption.connect(owner).pause();
+
+      // Try calling paused delegated user decryption request
+      await expect(
+        decryption.delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          delegationAccounts,
+          hostChainId,
+          contractAddresses,
+          publicKey,
+          delegatedSignature,
+        ),
+      ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
+    });
+
     describe("Checks", function () {
       it("Should not revert because delegated user decryption is ready", async function () {
         await expect(
@@ -2003,6 +2064,44 @@ describe("Decryption", function () {
           .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
           .withArgs(newCtHandle);
       });
+    });
+  });
+
+  describe("Pause", async function () {
+    beforeEach(async function () {
+      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      decryption = fixtureData.decryption;
+      owner = fixtureData.owner;
+      pauser = fixtureData.pauser;
+    });
+
+    it("Should pause and unpause contract with owner address", async function () {
+      // Check that the contract is not paused
+      expect(await decryption.paused()).to.be.false;
+
+      // Pause the contract with the owner address
+      await expect(decryption.connect(owner).pause()).to.emit(decryption, "Paused").withArgs(owner);
+      expect(await decryption.paused()).to.be.true;
+
+      // Unpause the contract with the owner address
+      await expect(decryption.connect(owner).unpause()).to.emit(decryption, "Unpaused").withArgs(owner);
+      expect(await decryption.paused()).to.be.false;
+    });
+
+    it("Should pause contract with pauser address", async function () {
+      // Check that the contract is not paused
+      expect(await decryption.paused()).to.be.false;
+
+      // Pause the contract with the pauser address
+      await expect(decryption.connect(pauser).pause()).to.emit(decryption, "Paused").withArgs(pauser);
+      expect(await decryption.paused()).to.be.true;
+    });
+
+    it("Should revert on pause because sender is not owner or pauser address", async function () {
+      const notOwnerOrPauser = createRandomWallet();
+      await expect(decryption.connect(notOwnerOrPauser).pause())
+        .to.be.revertedWithCustomError(decryption, "NotOwnerOrPauser")
+        .withArgs(notOwnerOrPauser.address);
     });
   });
 });
