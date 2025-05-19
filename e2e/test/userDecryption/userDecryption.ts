@@ -49,7 +49,7 @@ describe("User decryption", function () {
       );
     } catch (error) {
       expect(error.message).to.equal(
-        "User 0xfCefe53c7012a075b8a711df391100d9c431c468 is not authorized to user decrypt handle 0x826feb7d3125d43475f3710144322d5eeabe22df63ff00000000000030390000!"
+        `User ${this.signers.bob.address} is not authorized to user decrypt handle ${handle}!`
       );
     }
 
@@ -99,7 +99,7 @@ describe("User decryption", function () {
       );
     } catch (error) {
       expect(error.message).to.equal(
-        "userAddress 0xa5e1defb98EFe38EBb2D958CEe052410247F4c80 should not be equal to contractAddress when requesting user decryption!"
+        `userAddress ${this.signers.alice.address} should not be equal to contractAddress when requesting user decryption!`
       );
     }
   });
@@ -275,9 +275,9 @@ describe("User decryption", function () {
     );
 
     assert.deepEqual(results, {
-      "0xcbce6b7f398671314f6063cb14cfd53fb9aa2f4478ff00000000000030390900":
+      [handleBytes64]:
         "0x00000000000000000019d179e0cc7e816dc944582ed4f5652f5951900098fc2e0a15a7ea4dc8cfa4e3b6c54beea5ee95e56b728762f659347ce1d4aa1b05fcc5",
-      "0x5aef7dda8ea8394fabe4f99d579f7e4387d2f6e9b6ff00000000000030390300": 16n,
+      [handleUint16]: 16n,
     });
   });
 
