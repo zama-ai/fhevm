@@ -10,6 +10,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IInputVerification.sol";
 import "./interfaces/IGatewayConfig.sol";
 import "./shared/GatewayConfigChecks.sol";
+import "./shared/Pausable.sol";
 
 /**
  * @title InputVerification smart contract
@@ -20,7 +21,8 @@ contract InputVerification is
     EIP712Upgradeable,
     Ownable2StepUpgradeable,
     UUPSUpgradeable,
-    GatewayConfigChecks
+    GatewayConfigChecks,
+    Pausable
 {
     /**
      * @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
@@ -104,6 +106,7 @@ contract InputVerification is
     function initialize() public virtual reinitializer(2) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
+        __Pausable_init();
     }
 
     /// @dev See {IInputVerification-verifyProofRequest}.
@@ -112,7 +115,7 @@ contract InputVerification is
         address contractAddress,
         address userAddress,
         bytes calldata ciphertextWithZKProof
-    ) external virtual onlyRegisteredHostChain(contractChainId) {
+    ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         $.zkProofIdCounter++;
@@ -133,7 +136,7 @@ contract InputVerification is
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
         bytes calldata signature
-    ) external virtual onlyCoprocessorTxSender {
+    ) external virtual onlyCoprocessorTxSender whenNotPaused {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         /// @dev Retrieve stored ZK Proof verification request inputs.
@@ -176,7 +179,7 @@ contract InputVerification is
     }
 
     /// @dev See {IInputVerification-rejectProofResponse}.
-    function rejectProofResponse(uint256 zkProofId) external virtual onlyCoprocessorTxSender {
+    function rejectProofResponse(uint256 zkProofId) external virtual onlyCoprocessorTxSender whenNotPaused {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         /**

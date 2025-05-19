@@ -14,11 +14,19 @@ import "./interfaces/IMultichainAcl.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/FheType.sol";
+import "./shared/Pausable.sol";
 import "./libraries/FHETypeBitSizes.sol";
 
 /// @title Decryption contract
 /// @dev See {IDecryption}.
-contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks {
+contract Decryption is
+    IDecryption,
+    EIP712Upgradeable,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeable,
+    GatewayConfigChecks,
+    Pausable
+{
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
     /// @dev EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
@@ -194,10 +202,11 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
     function initialize() public virtual reinitializer(2) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
+        __Pausable_init();
     }
 
     /// @dev See {IDecryption-publicDecryptionRequest}.
-    function publicDecryptionRequest(bytes32[] calldata ctHandles) external virtual {
+    function publicDecryptionRequest(bytes32[] calldata ctHandles) external virtual whenNotPaused {
         /// @dev Check that the list of handles is not empty
         if (ctHandles.length == 0) {
             revert EmptyCtHandles();
@@ -241,7 +250,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         uint256 decryptionId,
         bytes calldata decryptedResult,
         bytes calldata signature
-    ) external virtual onlyKmsTxSender {
+    ) external virtual onlyKmsTxSender whenNotPaused {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
@@ -283,7 +292,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         address userAddress,
         bytes calldata publicKey,
         bytes calldata signature
-    ) external virtual {
+    ) external virtual whenNotPaused {
         if (contractAddresses.length == 0) {
             revert EmptyContractAddresses();
         }
@@ -355,7 +364,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         address[] calldata contractAddresses,
         bytes calldata publicKey,
         bytes calldata signature
-    ) external virtual {
+    ) external virtual whenNotPaused {
         if (contractAddresses.length == 0) {
             revert EmptyContractAddresses();
         }
@@ -434,7 +443,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, Ownable2StepUpgradeable, 
         uint256 decryptionId,
         bytes calldata userDecryptedShare,
         bytes calldata signature
-    ) external virtual onlyKmsTxSender {
+    ) external virtual onlyKmsTxSender whenNotPaused {
         DecryptionStorage storage $ = _getDecryptionStorage();
         UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
 

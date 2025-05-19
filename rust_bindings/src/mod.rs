@@ -34,6 +34,8 @@ pub mod r#multichainacl;
 pub mod r#ownable2stepupgradeable;
 pub mod r#ownableupgradeable;
 pub mod r#panic;
+pub mod r#pausable;
+pub mod r#pausableupgradeable;
 pub mod r#safecast;
 pub mod r#signedmath;
 pub mod r#storageslot;

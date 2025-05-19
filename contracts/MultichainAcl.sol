@@ -9,10 +9,11 @@ import "./interfaces/IMultichainAcl.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
 import "./shared/GatewayConfigChecks.sol";
+import "./shared/Pausable.sol";
 
 /// @title MultichainAcl smart contract
 /// @dev See {IMultichainAcl}
-contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks {
+contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks, Pausable {
     /// @notice The address of the GatewayConfig contract for protocol state calls.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -78,12 +79,13 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
     function initialize() public virtual reinitializer(2) {
         __Ownable_init(owner());
+        __Pausable_init();
     }
 
     /// @dev See {IMultichainAcl-allowPublicDecrypt}.
     function allowPublicDecrypt(
         bytes32 ctHandle
-    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         /**
@@ -110,7 +112,7 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
     function allowAccount(
         bytes32 ctHandle,
         address accountAddress
-    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         /**
@@ -141,7 +143,7 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
-    ) external virtual onlyCoprocessorTxSender {
+    ) external virtual onlyCoprocessorTxSender whenNotPaused {
         if (contractAddresses.length == 0) {
             revert EmptyContractAddresses();
         }

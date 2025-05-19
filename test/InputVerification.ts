@@ -1,6 +1,7 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
+import { Wallet } from "ethers";
 import hre from "hardhat";
 
 import { GatewayConfig, InputVerification } from "../typechain-types";
@@ -40,11 +41,14 @@ describe("InputVerification", function () {
     let gatewayConfig: GatewayConfig;
     let inputVerification: InputVerification;
     let contractChainId: number;
+    let owner: Wallet;
+
     before(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
       gatewayConfig = fixture.gatewayConfig;
       inputVerification = fixture.inputVerification;
       contractChainId = fixture.chainIds[0];
+      owner = fixture.owner;
     });
 
     it("Should request a proof verification", async function () {
@@ -68,6 +72,18 @@ describe("InputVerification", function () {
         .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
+
+    it("Should revert because the contract is paused", async function () {
+      // Pause the contract
+      await inputVerification.connect(owner).pause();
+
+      // Try calling paused verify proof request
+      await expect(
+        inputVerification
+          .connect(owner)
+          .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof),
+      ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
+    });
   });
 
   describe("Proof verification response", async function () {
@@ -79,6 +95,7 @@ describe("InputVerification", function () {
     let inputVerificationAddress: string;
     let eip712Message: EIP712;
     let signatures: string[];
+    let owner: Wallet;
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -87,6 +104,7 @@ describe("InputVerification", function () {
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       contractChainId = fixture.chainIds[0];
+      owner = fixture.owner;
 
       inputVerificationAddress = await inputVerification.getAddress();
 
@@ -279,6 +297,16 @@ describe("InputVerification", function () {
         .to.be.revertedWithCustomError(inputVerification, "ProofNotVerified")
         .withArgs(fakeZkProofId);
     });
+
+    it("Should revert because the contract is paused", async function () {
+      // Pause the contract
+      await inputVerification.connect(owner).pause();
+
+      // Try calling paused verify proof response
+      await expect(
+        inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signatures[0]),
+      ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
+    });
   });
 
   describe("Proof rejection response", async function () {
@@ -288,6 +316,7 @@ describe("InputVerification", function () {
     let coprocessorSigners: HardhatEthersSigner[];
     let contractChainId: number;
     let inputVerificationAddress: string;
+    let owner: Wallet;
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -296,6 +325,7 @@ describe("InputVerification", function () {
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       contractChainId = fixture.chainIds[0];
+      owner = fixture.owner;
 
       inputVerificationAddress = await inputVerification.getAddress();
 
@@ -421,6 +451,58 @@ describe("InputVerification", function () {
       await expect(inputVerification.checkProofRejected(fakeZkProofId))
         .to.be.revertedWithCustomError(inputVerification, "ProofNotRejected")
         .withArgs(fakeZkProofId);
+    });
+
+    it("Should revert because the contract is paused", async function () {
+      // Pause the contract
+      await inputVerification.connect(owner).pause();
+
+      // Try calling paused reject proof response
+      await expect(
+        inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId),
+      ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
+    });
+  });
+
+  describe("Pause", async function () {
+    let inputVerification: InputVerification;
+    let owner: Wallet;
+    let pauser: HardhatEthersSigner;
+
+    beforeEach(async function () {
+      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      inputVerification = fixtureData.inputVerification;
+      owner = fixtureData.owner;
+      pauser = fixtureData.pauser;
+    });
+
+    it("Should pause and unpause contract with owner address", async function () {
+      // Check that the contract is not paused
+      expect(await inputVerification.paused()).to.be.false;
+
+      // Pause the contract with the owner address
+      await expect(inputVerification.connect(owner).pause()).to.emit(inputVerification, "Paused").withArgs(owner);
+      expect(await inputVerification.paused()).to.be.true;
+
+      // Unpause the contract with the owner address
+      await expect(inputVerification.connect(owner).unpause()).to.emit(inputVerification, "Unpaused").withArgs(owner);
+      expect(await inputVerification.paused()).to.be.false;
+    });
+
+    it("Should pause contract with pauser address", async function () {
+      // Check that the contract is not paused
+      expect(await inputVerification.paused()).to.be.false;
+
+      // Pause the contract with the pauser address
+      await expect(inputVerification.connect(pauser).pause()).to.emit(inputVerification, "Paused").withArgs(pauser);
+      expect(await inputVerification.paused()).to.be.true;
+    });
+
+    it("Should revert on pause because sender is not owner or pauser address", async function () {
+      const notOwnerOrPauser = createRandomWallet();
+      await expect(inputVerification.connect(notOwnerOrPauser).pause())
+        .to.be.revertedWithCustomError(inputVerification, "NotOwnerOrPauser")
+        .withArgs(notOwnerOrPauser.address);
     });
   });
 });
