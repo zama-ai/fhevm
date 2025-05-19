@@ -1,0 +1,14 @@
+s3_endpoint = "http://minio:9000/kms-public"
+object_folder = ["PUB"]
+core_addresses = ["kms-core:50051"]
+num_majority = 1
+num_reconstruct = 1
+
+# Decryption mode used in user decryption reconstruction.
+# Options are NoiseFloodSmall and BitDecSmall.
+# Must match the deployed core/service setting!
+# Only relevant for threshold.
+decryption_mode = "NoiseFloodSmall"
+
+# fhe_params = "Test" # Uncomment for testing purposes
+fhe_params = "Default"

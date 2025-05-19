@@ -1,0 +1,6 @@
+# Actionlint.yaml config file is automatically detected by cilint.yaml job
+# and contains the label of zama runners
+self-hosted-runner:
+  labels:
+    - large_ubuntu_16
+    - large_ubuntu_32

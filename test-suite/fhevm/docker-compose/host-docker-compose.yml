@@ -1,0 +1,33 @@
+services:
+  host-node:
+    container_name: fhevm-host-node
+    image: ghcr.io/foundry-rs/foundry:stable
+    env_file:
+      - ../env/staging/.env.host.local
+    entrypoint:
+      - anvil
+      - --block-time
+      - "1"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8545"
+      - --chain-id
+      - "12345"
+      - --accounts
+      - "20"
+      - --mnemonic
+      - "${MNEMONIC}"
+    ports:
+      - "8545:8545"
+
+  host-sc-deploy:
+    container_name: fhevm-host-sc-deploy
+    image: ghcr.io/zama-ai/fhevm-backend/contracts:${HOST_VERSION}
+    env_file:
+      - ../env/staging/.env.host.local
+    command:
+      - npx hardhat task:deployAllHostContracts
+    depends_on:
+      host-node:
+        condition: service_started

@@ -1,0 +1,154 @@
+name: fhevm E2E Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_version:
+        description: "KMS Core Version"
+        required: true
+        default: ""
+        type: string
+      connector_version:
+        description: "Connector Version"
+        required: true
+        default: ""
+        type: string
+      coprocessor_version:
+        description: "Coprocessor Image Version"
+        required: true
+        default: ""
+        type: string
+      db_migration_version:
+        description: "Coprocessor DB Migration Image Version"
+        required: true
+        default: ""
+        type: string
+      host_version:
+        description: "Host Image Version"
+        required: false
+        default: ""
+        type: string
+      gateway_version:
+        description: "Gateway Image Version"
+        required: false
+        default: ""
+        type: string
+      relayer_version:
+        description: "Relayer Image Version"
+        required: true
+        default: ""
+        type: string
+      tests_version:
+        description: "E2E Tests Image Version"
+        required: true
+        default: ""
+        type: string
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check-changes:
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      changes-fhevm: ${{ steps.filter.outputs.fhevm }}
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            fhevm:
+              - 'fhevm/**'
+  fhevm-e2e-test:
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' }}
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "read"
+
+    runs-on: large_ubuntu_32
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Docker
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_READ_TOKEN }}
+
+      - name: Deploy fhevm Stack
+        working-directory: fhevm
+        env:
+          CORE_VERSION: ${{ inputs.core_version }}
+          CONNECTOR_VERSION: ${{ inputs.connector_version }}
+          COPROCESSOR_VERSION: ${{ inputs.coprocessor_version }}
+          DB_MIGRATION_VERSION: ${{ inputs.db_migration_version }}
+          HOST_VERSION: ${{ inputs.host_version }}
+          GATEWAY_VERSION: ${{ inputs.gateway_version }}
+          RELAYER_VERSION: ${{ inputs.relayer_version }}
+          TESTS_VERSION: ${{ inputs.tests_version }}
+        run: |
+          ./fhevm-cli deploy
+
+      - name: Input proof test (uint64)
+        working-directory: fhevm
+        run: |
+          ./fhevm-cli test input-proof
+
+      - name: Public Decryption test
+        working-directory: fhevm
+        run: |
+          ./fhevm-cli test public-decryption
+
+      - name: User Decryption test
+        working-directory: fhevm
+        run: |
+          ./fhevm-cli test user-decryption
+
+      - name: ERC20 test
+        working-directory: fhevm
+        run: |
+          ./fhevm-cli test erc20
+
+      - name: Public Decryption HTTP endpoint test (ebool)
+        working-directory: fhevm
+        run: |
+          ./fhevm-cli test public-decrypt-http-ebool
+
+      - name: Public Decryption HTTP endpoint test (mixed)
+        working-directory: fhevm
+        run: |
+          ./fhevm-cli test public-decrypt-http-mixed
+
+      - name: Show logs on test failure
+        working-directory: fhevm
+        if: always()
+        run: |
+          echo "::group::Relayer Logs"
+          ./fhevm-cli logs relayer
+          echo "::endgroup::"
+          echo "::group::SNS Worker Logs"
+          ./fhevm-cli logs sns-worker | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+          echo "::group::Transaction Sender Logs (filtered)"
+          ./fhevm-cli logs transaction-sender | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+
+      - name: Cleanup
+        working-directory: fhevm
+        if: always()
+        run: |
+          ./fhevm-cli clean

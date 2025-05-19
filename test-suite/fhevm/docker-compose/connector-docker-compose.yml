@@ -1,0 +1,18 @@
+services:
+
+  kms-connector:
+    container_name: kms-connector
+    image: ghcr.io/zama-ai/kms-connector:${CONNECTOR_VERSION}
+    env_file:
+      - ../env/staging/.env.connector.local
+    volumes:
+      - ../config/connector/config.toml:/var/lib/kms-connector/config.toml
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo '=================VALIDATING KMS CONFIG================='
+        kms-connector validate -c /var/lib/kms-connector/config.toml
+        echo '=================STARTING KMS CONNECTOR================='
+        kms-connector start -c /var/lib/kms-connector/config.toml
