@@ -118,8 +118,8 @@ impl InfiniteLogIter {
 
     async fn get_chain_id_or_panic(&self) -> ChainId {
         let ws = WsConnect::new(&self.url);
-        let provider = ProviderBuilder::new().on_ws(ws).await.unwrap();
-        provider.get_chain_id().await.unwrap()
+        let provider = ProviderBuilder::new().on_ws(ws).await.expect("Cannot connect to host chain");
+        provider.get_chain_id().await.expect("Cannot retrieve chain id")
     }
 
     async fn catchup_block_from(&self, provider: &RProvider) -> BlockNumberOrTag {
