@@ -44,18 +44,20 @@ jobs:
         password: ${{ secrets.GHCR_READ_TOKEN }}
 
     - name: Create .env file
+      working-directory: host-contracts
       run: |
-        cp host-contracts/.env.example host-contracts/.env
+        cp .env.example .env
 
     - name: Build and start Docker services
+      working-directory: host-contracts
       run: |
-        cd host-contracts
         docker compose build
         docker compose up -d
 
     - name: Check smart contract deployment
+      working-directory: host-contracts
       run: |
-        cd host-contracts
+
         # Wait for the deployment container to finish (timeout after reasonable time)
         timeout 300s bash -c 'while docker ps --filter "name=fhevm-sc-deploy" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
 
@@ -80,9 +82,9 @@ jobs:
         fi
 
     - name: Clean up
+      working-directory: host-contracts
       if: always()
       run: |
-        cd host-contracts
         docker compose down -v --remove-orphans
 
 permissions:
