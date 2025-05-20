@@ -46,6 +46,7 @@ jobs:
     - name: Create .env file
       run: |
         cp host-contracts/.env.example host-contracts/.env
+
     - name: Build and start Docker services
       run: |
         cd host-contracts
