@@ -1,0 +1,16 @@
+{{- if .Values.fhevmListener.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-fhevm-listener
+    app.kubernetes.io/name: {{ include "fhevmListenerName" . }}
+  name: {{ include "fhevmListenerName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-fhevm-listener
+      app.kubernetes.io/name: {{ include "fhevmListenerName" . }}
+  endpoints:
+  - port: metrics
+{{- end -}}

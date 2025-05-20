@@ -1,0 +1,77 @@
+repositories:
+  - name: bitnami
+    url: https://charts.bitnami.com/bitnami
+
+releases:
+  # S3 - MINIO
+  # temporiraly we set our own minio - this should run first + copy keys then run other releases
+  - name: minio
+    namespace: fhevm
+    chart: bitnami/minio
+    version: 15.0.3
+    values:
+      - minio-values.yaml
+
+  # fhevm postgresql    
+  - name: fhevm-postgresql
+    namespace: fhevm
+    chart: bitnami/postgresql
+    version: 13.0.0
+    values:
+      - postgresql-values.yaml
+
+  # fhevm host-node
+  - name: host
+    namespace: fhevm
+    chart: "../../charts/anvil-node"
+    values:
+      - host-node-values.yaml
+
+  - name: host-sc
+    namespace: fhevm
+    chart: "../../charts/fhevm-sc-deploy"
+    values:
+      - host-sc-deploy-values.yaml
+    needs:
+      - host
+
+  - name: gateway
+    namespace: fhevm
+    chart: "../../charts/anvil-node"
+    values:
+      - gateway-node-values.yaml
+
+  - name: gateway-sc
+    namespace: fhevm
+    chart: "../../charts/fhevm-sc-deploy"
+    values:
+      - gateway-sc-deploy-values.yaml
+    needs:
+      - gateway
+
+  # fhevm coprocessor
+  - name: fhevm-coprocessor
+    namespace: fhevm
+    chart: "../../charts/fhevm-coprocessor"
+    values:
+      - coprocessor-values.yaml
+    needs:
+      - fhevm/minio
+      - fhevm-postgresql
+      - host
+      - gateway
+      - host-sc
+      - gateway-sc
+
+  ## fhevm relayer
+  - name: fhevm-relayer
+    namespace: fhevm
+    chart: "../../charts/fhevm-relayer"
+    values:
+      - relayer-values.yaml
+    needs:
+      - fhevm/minio
+      - host
+      - gateway
+      - host-sc
+      - gateway-sc

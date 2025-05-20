@@ -1,0 +1,5 @@
+.idea/
+.DS_Store
+.vscode/
+*.iml
+.local

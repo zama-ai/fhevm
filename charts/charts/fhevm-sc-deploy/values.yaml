@@ -1,0 +1,46 @@
+scDeploy:
+  enabled: true
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-gateway/sc-bundle
+    tag: v0.1.0-rc11
+  configmap:
+    name: "gateway-sc-addresses"
+    annotations:
+  env:
+    - name: MNEMONIC
+      value: "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
+    - name: DEPLOYER_ADDRESS
+      value: "0xCf28E90D4A6dB23c34E1881aEF5fd9fF2e478634"
+    - name: DEPLOYER_PRIVATE_KEY
+      value: "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
+    - name: RPC_URL
+      value: "http://gateway-node:8546"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10001
+
+scDebug:
+  enabled: false
+  nameOverride:
+
+persistence:
+  enabled: true
+  volumeClaim:
+    name: ""
+    create: true
+    storageClassName: ""
+    storageCapacity: 1Gi
+
+# Set Pod Annotations, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+# Set Pod Labels, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}

@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "relayerName" . }}
+  labels:
+    app: {{ include "relayerName" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "relayerName" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "relayerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      containers:
+        - name: fhevm-relayer
+          image: "{{ .Values.image.name }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["fhevm-relayer"]
+          env:
+{{ toYaml .Values.env | nindent 12 }}
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config/local.yaml
+              subPath: local.yaml
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.resources.limits.memory | default "512Mi" }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ include "relayerConfigName" . }}
+      imagePullSecrets:
+        - name: registry-credentials

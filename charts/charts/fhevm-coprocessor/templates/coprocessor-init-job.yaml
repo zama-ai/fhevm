@@ -1,0 +1,90 @@
+{{- if .Values.config.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: coprocessor-init-job
+    app.kubernetes.io/name: {{ .Release.Name }}-init-job
+  name: {{ .Release.Name }}-config-setup-{{ .Release.Revision }}
+  namespace: {{ .Release.Namespace }}
+  {{- with .Values.config.annotations }}
+  annotations:
+  {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: coprocessor-init-job
+        app.kubernetes.io/name: {{ .Release.Name }}-init-job
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/coprocessor-init-config.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-create-secrets
+      containers:
+        - name: create-secrets
+          image: {{ .Values.config.image.name }}:{{ .Values.config.image.tag }}
+          command:
+            - /app/create-secrets.sh
+          resources:
+            requests:
+              cpu: {{ .Values.config.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.config.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.config.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.config.resources.limits.memory | default "512Mi" }}
+          volumeMounts:
+            - mountPath: /app/create-secrets.sh
+              subPath: create-secrets.sh
+              name: config
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-init-config
+            defaultMode: 0777
+            items:
+              - key: "create-secrets.sh"
+                path: "create-secrets.sh"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-create-secrets
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-weight": "-2"
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-secret-writer
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-weight": "-2"
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "watch", "list", "create", "patch"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-secret-writer
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-weight": "-2"
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-create-secrets
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ .Release.Name }}-secret-writer
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
