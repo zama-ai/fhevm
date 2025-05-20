@@ -1,4 +1,4 @@
-name: fhevm-host
+name: fhevm-host-contracts
 
 services:
   anvil-node:
@@ -26,8 +26,8 @@ services:
   fhevm-sc-deploy:
     container_name: fhevm-sc-deploy
     build:
-      context: ../
-      dockerfile: contracts/operations/docker/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     env_file:
       - ./.env
     environment:

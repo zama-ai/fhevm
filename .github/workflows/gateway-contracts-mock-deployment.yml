@@ -23,11 +23,11 @@ jobs:
         with:
           filters: |
             gw-contracts:
-              - '.github/workflows/gateway-contracts-mock-deployment.yml'
-              - 'rust_bindings/**'
-              - 'contracts/mocks/**'
-              - 'scripts/mock_contracts_cli.js'
-              - 'Makefile'
+              - .github/workflows/gateway-contracts-mock-deployment.yml
+              - gateway-contracts/rust_bindings/**
+              - gateway-contracts/contracts/mocks/**
+              - gateway-contracts/scripts/mock_contracts_cli.js
+              - gateway-contracts/Makefile
   fhevm-gateway-mock-contracts-deploy:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
@@ -46,11 +46,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and start Docker services
+        working-directory: gateway-contracts
         run: |
           make docker-compose-build
           make docker-compose-up
 
       - name: Check mock smart contract deployment
+        working-directory: gateway-contracts
         run: |
 
           ## Check Mock contracts deployment
@@ -70,6 +72,7 @@ jobs:
           fi
 
       - name: Clean up
+        working-directory: gateway-contracts
         if: always()
         run: |
           make docker-compose-down

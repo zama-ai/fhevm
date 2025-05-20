@@ -1,4 +1,4 @@
-name: Docker - Fhevm Coprocessor
+name: Docker - Fhevm Host Contracts
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ on:
       - published
 
 concurrency:
-  group: fhevm-coprocessor-${{ github.ref_name }}
+  group: docker-fhevm-contracts-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -21,20 +21,19 @@ jobs:
       pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
-      changes-coprocessor-files: ${{ steps.filter.outputs.coprocessor-files }}
+      changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
         id: filter
         with:
           filters: |
-            coprocessor-files:
-              - .github/workflows/coprocessor-docker-build.yml
-              - fhevm-engine/**
-              - proto/**
-  docker-fhevm-coprocessor:
+            host-contracts:
+              - .github/workflows/host-contracts-docker-build.yml
+              - host-contracts/**
+  docker-fhevm-contracts:
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-coprocessor-files == 'true' || github.event_name == 'release' }}
+    if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
     secrets:
       GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
@@ -44,9 +43,9 @@ jobs:
       id-token: "write"
       packages: "write"
     with:
-      working-directory: "."
+      working-directory: "host-contracts"
+      docker-context: "host-contracts"
       push_image: true
-      image-name: "fhevm-backend/coprocessor"
-      generate-dev-image: false
-      docker-file: "fhevm-engine/coprocessor/Dockerfile"
+      image-name: "fhevm/host-contracts"
+      docker-file: "Dockerfile"
       arm-build: true

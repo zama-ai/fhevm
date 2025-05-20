@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./contracts
+        working-directory: ./host-contracts
     permissions:
       contents: read
       id-token: write
@@ -30,22 +30,26 @@ jobs:
           node-version: 20.x
 
       - name: Prepare environment file
+        working-directory: host-contracts
         run: cp .env.example .env
 
       - name: Install dependencies
+        working-directory: host-contracts
         run: npm ci --include=optional
 
-      - name: Compile contracts
+      - name: Compile host contracts
+        working-directory: host-contracts
         run: npm run compile
 
       - name: Compile decryption oracle
+        working-directory: host-contracts
         run: npm run compile:decryptionOracle
 
       - name: Publish prerelease to npm
         if: ${{ inputs.release != 'true' }}
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
-          package: ./contracts/package.json
+          package: ./host-contracts/package.json
           tag: prerelease
           token: ${{ secrets.NPM_TOKEN }}
           provenance: true
@@ -55,7 +59,7 @@ jobs:
         if: ${{ inputs.release == 'true' }}
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
-          package: ./contracts/package.json
+          package: ./host-contracts/package.json
           token: ${{ secrets.NPM_TOKEN }}
           provenance: true
           access: public

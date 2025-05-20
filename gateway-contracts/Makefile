@@ -34,6 +34,7 @@ test-local:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test $(if $(GREP),--grep '$(GREP)',) --network localGateway --skip-setup true
 
 docker-compose-build:
+	pwd
 	cp .env.example .env
 	docker compose -vvv build
 
