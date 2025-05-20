@@ -1,4 +1,4 @@
-name: Publish fhevm Solidity core contracts
+name: Fhevm Host Contracts npm Publish
 
 on:
   workflow_dispatch:

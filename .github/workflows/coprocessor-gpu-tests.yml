@@ -1,5 +1,5 @@
 # Compile and test fhevm-backend on a single L40 GPU, on hyperstack
-name: GPU backend tests (L40)
+name: Coprocessor GPU backend tests (L40)
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,37 +15,9 @@ on:
   # Allows you to run this workflow manually from the Actions tab as an alternative.
   workflow_dispatch:
   pull_request:
-    paths:
-      - fhevm-engine/Cargo.toml
-      - fhevm-engine/coprocessor/Cargo.toml
-      - fhevm-engine/coprocessor/build.rs
-      - fhevm-engine/coprocessor/src/**
-      - fhevm-engine/executor/Cargo.toml
-      - fhevm-engine/executor/build.rs
-      - fhevm-engine/executor/src/**
-      - fhevm-engine/scheduler/src/**
-      - fhevm-engine/scheduler/Cargo.toml
-      - fhevm-engine/scheduler/build.rs
-      - proto/**
-      - '.github/workflows/gpu-tests.yml'
-      - ci/slab.toml
   push:
     branches:
       - main
-    paths:
-      - fhevm-engine/Cargo.toml
-      - fhevm-engine/coprocessor/Cargo.toml
-      - fhevm-engine/coprocessor/build.rs
-      - fhevm-engine/coprocessor/src/**
-      - fhevm-engine/executor/Cargo.toml
-      - fhevm-engine/executor/build.rs
-      - fhevm-engine/executor/src/**
-      - fhevm-engine/scheduler/src/**
-      - fhevm-engine/scheduler/Cargo.toml
-      - fhevm-engine/scheduler/build.rs
-      - proto/**
-      - '.github/workflows/gpu-tests.yml'
-      - ci/slab.toml
 
 jobs:
   should-run:
@@ -78,7 +50,7 @@ jobs:
               - fhevm-engine/scheduler/Cargo.toml
               - fhevm-engine/scheduler/build.rs
               - proto/**
-              - '.github/workflows/gpu-tests.yml'
+              - '.github/workflows/coprocessor_gpu-tests.yml'
               - ci/slab.toml
 
   setup-instance:
