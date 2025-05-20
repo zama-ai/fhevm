@@ -1,0 +1,18 @@
+{{- if .Values.persistence.volumeClaim.create }}
+{{- $volumeName := include "scVolumeName" . }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $volumeName }}
+  labels:
+    app: fhevm-sc-deploy
+    app.kubernetes.io/name: {{ $volumeName }}
+spec:
+  storageClassName: {{ .Values.persistence.volumeClaim.storageClassName }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.persistence.volumeClaim.storageCapacity }}
+---
+{{- end }}

@@ -1,0 +1,82 @@
+{{- if .Values.tfheWorker.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
+  name: {{ include "tfheWorkerName" . }}
+spec:
+  replicas: {{ .Values.tfheWorker.replicas | default 0 }}
+  selector:
+    matchLabels:
+      app: coprocessor-server
+  {{- if .Values.tfheWorker.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.tfheWorker.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-server
+        app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Always
+      {{- if and .Values.tfheWorker.affinity .Values.tfheWorker.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.tfheWorker.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.tfheWorker.tolerations .Values.tfheWorker.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.tfheWorker.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.tfheWorker.serviceAccountName }}
+      serviceAccountName: {{ .Values.tfheWorker.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: coprocessor-server
+          image: {{ .Values.tfheWorker.image.name }}:{{ .Values.tfheWorker.image.tag }}
+          command: ["coprocessor"]
+          args:
+{{ toYaml .Values.tfheWorker.args | nindent 12 }}
+          env:
+{{ toYaml .Values.tfheWorker.env | nindent 12 }}
+          {{- if .Values.tfheWorker.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.tfheWorker.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.tfheWorker.tracing.service | quote }}
+            {{- end }}
+          ports:
+            {{- range $portName, $portValue := .Values.tfheWorker.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.tfheWorker.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.tfheWorker.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.tfheWorker.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.tfheWorker.resources.limits.memory | default "512Mi" }}
+      {{- if .Values.config.enabled }}
+          volumeMounts:
+            - name: coprocessor-account
+              mountPath: /accounts
+      volumes:
+        - name: coprocessor-account
+          secret:
+            secretName: {{ .Values.config.coprocessorKey.secret.name }}
+            defaultMode: 0644
+            items:
+              - key: {{ .Values.config.coprocessorKey.secret.key }}
+                path: {{ .Values.config.coprocessorKey.secret.key }}
+      {{- end }}
+{{- end -}}

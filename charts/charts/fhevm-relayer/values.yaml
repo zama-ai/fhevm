@@ -1,0 +1,87 @@
+nameOverride:
+
+replicaCount: 1
+
+image:
+  name: ghcr.io/zama-ai/fhevm-relayer
+  tag: ecb5ac5
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 3000
+
+env:
+  - name: fhevm_PRIVATE_KEY
+    value: ""
+  - name: GATEWAY_PRIVATE_KEY
+    value: ""
+  - name: DECRYPTION_ORACLE_ADDRESS
+    valueFrom:
+      configMapKeyRef:
+        name: host-sc-addresses
+        key: decryption_oracle.address
+  - name: TFHE_EXECUTOR_ADDRESS
+    valueFrom:
+      configMapKeyRef:
+        name: host-sc-addresses
+        key: tfhe_executor.address
+  - name: DECRYPTION_MANAGER_ADDRESS
+    valueFrom:
+      configMapKeyRef:
+        name: gateway-sc-addresses
+        key: fhevm.address
+  - name: ZKPOK_MANAGER_ADDRESS
+    valueFrom:
+      configMapKeyRef:
+        name: gateway-sc-addresses
+        key: zkpok_manager.address
+
+config:
+  environment: staging
+  networks:
+    fhevm:
+      ws_url: "ws://host-node:8545"
+      http_url: "http://host-anvil-node:8545"
+      chain_id: 12345
+      retry_delay: 1000
+      max_reconnection_attempts: 3
+    rollup:
+      ws_url: "ws://gateway-anvil-node:8546"
+      http_url: "http://gateway-anvil-node:8546"
+      chain_id: 54321
+      retry_delay: 1000
+      max_reconnection_attempts: 3
+  transaction:
+    private_key_fhevm_env: "fhevm_PRIVATE_KEY"
+    private_key_gateway_env: "GATEWAY_PRIVATE_KEY"
+    gas_limit: 150000
+    max_priority_fee: 2000000000
+    timeout_secs: 30
+    confirmations: 1
+  contracts:
+    decryption_oracle_address: DECRYPTION_ORACLE_ADDRESS
+    tfhe_executor_address: TFHE_EXECUTOR_ADDRESS
+    decryption_manager_address: DECRYPTION_MANAGER_ADDRESS
+    zkpok_manager_address: ZKPOK_MANAGER_ADDRESS
+  log:
+    level: "info"
+    format: "pretty"
+    show_file_line: false
+    show_thread_ids: false
+    show_timestamp: true
+  staging:
+    verbose_errors: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Set Pod Annotations, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+# Set Pod Labels, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}

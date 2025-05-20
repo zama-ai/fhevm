@@ -1,0 +1,16 @@
+{{- if .Values.zkProofWorker.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-zkproof-worker
+    app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
+  name: {{ include "zkProofWorkerName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-zkproof-worker
+      app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
+  endpoints:
+  - port: metrics
+{{- end -}}

@@ -1,0 +1,16 @@
+{{- if .Values.snsWorker.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-sns-worker
+    app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+  name: {{ include "snsWorkerName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-sns-worker
+      app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+  endpoints:
+  - port: metrics
+{{- end -}}

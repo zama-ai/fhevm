@@ -1,0 +1,16 @@
+{{- if .Values.tfheWorker.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
+  name: {{ include "tfheWorkerName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-tfhe-worker
+      app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
+  endpoints:
+  - port: metrics
+{{- end -}}

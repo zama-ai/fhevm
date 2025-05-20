@@ -1,0 +1,101 @@
+{{- if .Values.scDeploy.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: fhevm-sc-deploy
+    app.kubernetes.io/name: {{ include "scDeployJobName" . }}
+  name: {{ include "scDeployJobName" . }}
+spec:
+  template:
+    metadata:
+      annotations:
+        {{- if .Values.persistence.enabled }}
+        checksum/pvc: {{ include (print $.Template.BasePath "/sc-deploy-pvc.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- if .Values.persistence.enabled }}
+        checksum/pvc: {{ include (print $.Template.BasePath "/sc-deploy-pvc.yaml") . | sha256sum | trunc 63 }}
+        {{- end }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+
+    spec:
+      serviceAccountName: {{ .Release.Name }}-config-writer
+      securityContext:
+        {{- toYaml .Values.scDeploy.securityContext | nindent 8 }}
+      containers:
+      - name: deploy
+        image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}
+        command: ["/app/deploy-contracts.sh"]
+        {{- if .Values.scDeploy.env }}
+        env:
+          {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
+          - name: MANIFEST_DEFAULT_DIR
+            value: "/app/cache/.openzeppelin"
+          {{ toYaml .Values.scDeploy.env | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+          - mountPath: /app/deploy-contracts.sh
+            subPath: deploy-contracts.sh
+            name: config
+          {{- if .Values.persistence.enabled }}
+          - mountPath: /app/cache
+            name: persistence
+          {{- end }}
+        resources:
+          requests:
+            cpu: {{ .Values.scDeploy.resources.requests.cpu | default "100m" }}
+            memory: {{ .Values.scDeploy.resources.requests.memory | default "256Mi" }}
+          limits:
+            cpu: {{ .Values.scDeploy.resources.limits.cpu | default "500m" }}
+            memory: {{ .Values.scDeploy.resources.limits.memory | default "512Mi" }}
+      volumes:
+      - name: config
+        configMap:
+          name: {{ .Release.Name }}-config
+          defaultMode: 0755
+      {{- if .Values.persistence.enabled }}
+      - name: persistence
+        persistentVolumeClaim:
+          claimName: {{ include "scVolumeName" . }}
+      {{- end }}
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-config-writer
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "watch", "list", "create", "patch"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-config-writer
+  namespace: {{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-config-writer
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ .Release.Name }}-config-writer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-config-writer
+  namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -1,0 +1,58 @@
+{{- if .Values.snsWorker.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-sns-worker
+    app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+  name: {{ include "snsWorkerName" . }}
+spec:
+  replicas: {{ .Values.snsWorker.replicas | default 0 }}
+  selector:
+    matchLabels:
+      app: coprocessor-sns-worker
+  {{- if .Values.tfheWorker.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.tfheWorker.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-sns-worker
+        app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Always
+      {{- if and .Values.snsWorker.affinity .Values.snsWorker.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.snsWorker.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.snsWorker.tolerations .Values.snsWorker.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.snsWorker.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.snsWorker.serviceAccountName }}
+      serviceAccountName: {{ .Values.snsWorker.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: coprocessor-sns-worker
+          image: {{ .Values.snsWorker.image.name }}:{{ .Values.snsWorker.image.tag }}
+          command: ["sns_worker"]
+          args:
+{{ toYaml .Values.snsWorker.args | nindent 12 }}
+          env:
+{{ toYaml .Values.snsWorker.env | nindent 12 }}
+          resources:
+            requests:
+              cpu: {{ .Values.snsWorker.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.snsWorker.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.snsWorker.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.snsWorker.resources.limits.memory | default "512Mi" }}
+{{- end -}}

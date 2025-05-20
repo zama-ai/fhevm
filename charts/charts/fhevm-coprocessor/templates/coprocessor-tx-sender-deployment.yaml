@@ -1,0 +1,58 @@
+{{- if .Values.txSender.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: {{ include "txSenderName" . }}
+  name: {{ include "txSenderName" . }}
+spec:
+  replicas: {{ .Values.txSender.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: coprocessor-tx-sender
+  {{- if .Values.txSender.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.txSender.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-tx-sender
+        app.kubernetes.io/name: {{ include "txSenderName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Always
+      {{- if and .Values.txSender.affinity .Values.txSender.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.txSender.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.txSender.tolerations .Values.txSender.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.txSender.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.txSender.serviceAccountName }}
+      serviceAccountName: {{ .Values.txSender.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: coprocessor-tx-sender
+          image: {{ .Values.txSender.image.name }}:{{ .Values.txSender.image.tag }}
+          command: ["transaction_sender"]
+          args:
+{{ toYaml .Values.txSender.args | nindent 12 }}
+          env:
+{{ toYaml .Values.txSender.env | nindent 12 }}
+          resources:
+            requests:
+              cpu: {{ .Values.txSender.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.txSender.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.txSender.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.txSender.resources.limits.memory | default "512Mi" }}
+{{- end -}}

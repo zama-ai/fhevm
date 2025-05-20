@@ -1,0 +1,58 @@
+{{- if .Values.gwListener.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: {{ include "gwListenerName" . }}
+  name: {{ include "gwListenerName" . }}
+spec:
+  replicas: {{ .Values.gwListener.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: coprocessor-gw-listener
+  {{- if .Values.gwListener.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.gwListener.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-gw-listener
+        app.kubernetes.io/name: {{ include "gwListenerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Always
+      {{- if and .Values.gwListener.affinity .Values.gwListener.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.gwListener.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.gwListener.tolerations .Values.gwListener.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.gwListener.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.gwListener.serviceAccountName }}
+      serviceAccountName: {{ .Values.gwListener.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: coprocessor-gw-listener
+          image: {{ .Values.gwListener.image.name }}:{{ .Values.gwListener.image.tag }}
+          command: ["gw_listener"]
+          args:
+{{ toYaml .Values.gwListener.args | nindent 12 }}
+          env:
+{{ toYaml .Values.gwListener.env | nindent 12 }}
+          resources:
+            requests:
+              cpu: {{ .Values.gwListener.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.gwListener.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.gwListener.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.gwListener.resources.limits.memory | default "512Mi" }}
+{{- end -}}

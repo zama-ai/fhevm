@@ -1,0 +1,105 @@
+{{- if .Values.scDeploy.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: fhevm-sc-deploy
+    app.kubernetes.io/name: {{ .Release.Name }}-config
+  name: {{ .Release.Name }}-config
+data:
+  deploy-contracts.sh: |
+    #!/bin/bash
+    set -eo pipefail
+    
+    create_configmap() {
+      configmap_name="${1}"
+      if [[ -z "$configmap_name" ]]; then
+        echo "error: you must supply a configmap name" 1>&2
+        exit 1
+      fi
+      if ! kubectl get configmap ${configmap_name}; then
+        kubectl create configmap ${configmap_name}
+      else
+        echo "skipping: configmap ${configmap_name} already exists" 2>&1
+      fi
+      {{- range $annotationKey, $annotationValue := $.Values.scDeploy.configmap.annotations }}
+      kubectl annotate --overwrite configmap "${configmap_name}" {{ $annotationKey }}={{ $annotationValue | quote }}
+      {{- end }}
+    }
+    add_key_to_configmap() {
+      configmap_name="${1}"
+      name="${2}"
+      value="${3}"
+      if [[ -z "$configmap_name" ]]; then
+        echo "error: you must supply a configmap name" 1>&2
+        exit 1
+      fi
+      if [[ -z "$name" ]]; then
+        echo "error: you must supply an item name" 1>&2
+        exit 1
+      fi
+      if [[ -z "$value" ]]; then
+        echo "error: you must supply an item value" 1>&2
+        exit 1
+      fi
+      kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
+    }
+    add_annotation_to_configmap() {
+      configmap_name="${1}"
+      key="${2}"
+      value="${3}"
+      if [[ -z "$configmap_name" ]]; then
+        echo "error: you must supply a configmap name" 1>&2
+        exit 1
+      fi
+      if [[ -z "$key" ]]; then
+        echo "error: you must supply an annotation key" 1>&2
+        exit 1
+      fi
+      if [[ -z "$value" ]]; then
+        echo "error: you must supply an annotation value" 1>&2
+        exit 1
+      fi
+    }
+    CONFIGMAP_NAME="{{ .Values.scDeploy.configmap.name }}"
+
+    echo "creating kubernetes configmap for smart contract configuration outputs"
+    create_configmap "${CONFIGMAP_NAME}"
+
+    # Populate .env file
+    echo "# Generated at $(date)" > /app/.env
+    env | \
+      grep -v '^KUBERNETES_' | \
+      grep -v '^HOSTNAME=' | \
+      grep -v '^HOME=' | \
+      grep -v '^PATH=' | \
+      grep -v '^PWD=' | \
+      grep -v '^SHLVL=' | \
+      grep -v '^_=' | \
+      grep -v '_SERVICE_' | \
+      grep -v '_PORT_' | \
+      grep -v '_SERVICE_PORT' | \
+      grep -v 'VERSION=' | \
+      grep -v '^YARN_' | \
+      grep -v '^NODE_' | \
+      grep -v 'TCP_ADDR=' | \
+      grep -v 'TCP_PORT=' | \
+      grep -v 'TCP_PROTO=' | \
+      while read -r line; do
+        key=$(echo "$line" | cut -d= -f1)
+        value=$(echo "$line" | cut -d= -f2-)
+        echo "export ${key}=\"${value}\"" >> /app/.env
+      done
+    echo "Generated .env file with $(($(wc -l < /app/.env) - 1)) variables"
+    
+    # Main deploy commands
+    {{- range .Values.scDeploy.deployCommands }}
+    {{ . }}
+    {{- end }}
+    echo "Smart contracts deployed successfully"
+
+    # Post-deploy commands
+    {{- range .Values.scDeploy.postDeployCommands }}
+    {{ . | nindent 4 }}
+    {{- end }}
+{{- end }}

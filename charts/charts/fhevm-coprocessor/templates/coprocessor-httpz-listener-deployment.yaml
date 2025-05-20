@@ -1,0 +1,63 @@
+{{- if .Values.fhevmListener.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-fhevm-listener
+    app.kubernetes.io/name: {{ include "fhevmListenerName" . }}
+  name: {{ include "fhevmListenerName" . }}
+spec:
+  replicas: {{ .Values.fhevmListener.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: coprocessor-fhevm-listener
+  {{- if .Values.fhevmListener.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.fhevmListener.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-fhevm-listener
+        app.kubernetes.io/name: {{ include "fhevmListenerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Always
+      {{- if and .Values.fhevmListener.affinity .Values.fhevmListener.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.fhevmListener.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.fhevmListener.tolerations .Values.fhevmListener.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.fhevmListener.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.fhevmListener.serviceAccountName }}
+      serviceAccountName: {{ .Values.fhevmListener.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: coprocessor-fhevm-listener
+          image: {{ .Values.fhevmListener.image.name }}:{{ .Values.fhevmListener.image.tag }}
+          command: ["fhevm_listener"]
+          args:
+{{ toYaml .Values.fhevmListener.args | nindent 12 }}
+          env:
+{{ toYaml .Values.fhevmListener.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.fhevmListener.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.fhevmListener.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.fhevmListener.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.fhevmListener.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.fhevmListener.resources.limits.memory | default "512Mi" }}
+{{- end -}}
