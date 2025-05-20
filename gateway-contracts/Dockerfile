@@ -6,17 +6,17 @@ RUN chown -R fhevm:fhevm /home/fhevm && \
     chown -R fhevm:fhevm /app
 
 # Copy only necessary files
-COPY --chown=fhevm:fhevm package.json package-lock.json ./
+COPY --chown=fhevm:fhevm ./package.json ./package-lock.json ./
 
 # Install dependencies
 RUN npm ci && \
     npm prune
 
 # Copy the application files
-COPY --chown=fhevm:fhevm hardhat.config.ts tsconfig.json ./
-COPY --chown=fhevm:fhevm contracts ./contracts/
-COPY --chown=fhevm:fhevm addresses ./addresses/
-COPY --chown=fhevm:fhevm tasks ./tasks/
+COPY --chown=fhevm:fhevm ./hardhat.config.ts tsconfig.json ./
+COPY --chown=fhevm:fhevm ./contracts ./contracts/
+COPY --chown=fhevm:fhevm ./addresses ./addresses/
+COPY --chown=fhevm:fhevm ./tasks ./tasks/
 
 # Pre-compile proxy and mock contracts
 # Implementation contracts cannot be pre-compiled as they depend on the proxy contracts' addresses
