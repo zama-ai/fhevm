@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)\n        FROM (\n            SELECT 1\n            FROM pbs_computations a\n            JOIN ciphertexts c \n            ON a.handle = c.handle\n            WHERE c.ciphertext IS NOT NULL\n            AND a.is_completed = FALSE -- filter out completed tasks\n            FOR UPDATE OF a SKIP LOCKED -- don't count locked rows\n        ) AS unlocked_rows;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b09a41fd259180f44a0cf803bb60781466267febd653046908cf3913ff8f5485"
+}

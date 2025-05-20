@@ -1,0 +1,38 @@
+[package]
+name = "zkproof-worker"
+version = "0.6.1"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# workspace dependencies
+alloy-primitives = { workspace = true }
+clap = { workspace = true }
+hex = { workspace = true }
+lru = { workspace = true }
+rand = { workspace = true }
+sha3 = { workspace = true }
+sqlx = { workspace = true }
+tfhe = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tokio-util = { workspace = true }
+bincode = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# local dependencies
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+
+# crates.io dependencies
+[features]
+nightly-avx512 = ["tfhe/nightly-avx512"]
+
+[dev-dependencies]
+test-harness = { path = "../test-harness" }
+
+[[bin]]
+name = "zkproof_worker"
+path = "src/bin/zkproof_worker.rs"

@@ -1,0 +1,63 @@
+name: Setup Cuda
+description: Setup Cuda on Hyperstack or GitHub instance
+
+inputs:
+  cuda-version:
+    description: Version of Cuda to use
+    required: true
+  gcc-version:
+    description: Version of GCC to use
+    required: true
+  cmake-version:
+    description: Version of cmake to use
+    default: 3.29.6
+  github-instance:
+    description: Instance is hosted on GitHub
+    default: 'false'
+
+runs:
+  using: "composite"
+  steps:
+    # Mandatory on hyperstack since a bootable volume is not re-usable yet.
+    - name: Install dependencies
+      shell: bash
+      run: |
+        sudo apt update
+        curl -fsSL https://apt.kitware.com/keys/kitware-archive-latest.asc | sudo gpg --dearmour -o /etc/apt/trusted.gpg.d/kitware.gpg
+        sudo chmod 644 /etc/apt/trusted.gpg.d/kitware.gpg
+        echo 'deb [signed-by=/etc/apt/trusted.gpg.d/kitware.gpg] https://apt.kitware.com/ubuntu/ jammy main' | sudo tee /etc/apt/sources.list.d/kitware.list >/dev/null
+        sudo apt update
+        sudo apt install -y cmake cmake-format libclang-dev
+
+    - name: Install CUDA
+      if: inputs.github-instance == 'true'
+      shell: bash
+      run: |
+        TOOLKIT_VERSION="$(echo ${{ inputs.cuda-version }} | sed 's/\(.*\)\.\(.*\)/\1-\2/')"
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+        sudo dpkg -i cuda-keyring_1.1-1_all.deb
+        sudo apt update
+        sudo apt -y install cuda-toolkit-${TOOLKIT_VERSION}
+
+    - name: Export CUDA variables
+      shell: bash
+      run: |
+        CUDA_PATH=/usr/local/cuda-${{ inputs.cuda-version }}
+        echo "CUDA_PATH=$CUDA_PATH" >> "${GITHUB_ENV}"
+        echo "PATH=$PATH:$CUDA_PATH/bin" >> "${GITHUB_PATH}"
+        echo "LD_LIBRARY_PATH=$CUDA_PATH/lib64:$LD_LIBRARY_PATH" >> "${GITHUB_ENV}"
+        echo "CUDA_MODULE_LOADER=EAGER" >> "${GITHUB_ENV}"
+
+    # Specify the correct host compilers
+    - name: Export gcc and g++ variables
+      shell: bash
+      run: |
+        {
+          echo "CC=/usr/bin/gcc-${{ inputs.gcc-version }}";
+          echo "CXX=/usr/bin/g++-${{ inputs.gcc-version }}";
+          echo "CUDAHOSTCXX=/usr/bin/g++-${{ inputs.gcc-version }}";
+        } >> "${GITHUB_ENV}"
+
+    - name: Check device is detected
+      shell: bash
+      run: nvidia-smi

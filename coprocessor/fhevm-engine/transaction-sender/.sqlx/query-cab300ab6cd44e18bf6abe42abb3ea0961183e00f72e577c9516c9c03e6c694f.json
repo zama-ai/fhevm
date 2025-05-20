@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE allowed_handles\n            SET\n            txn_transport_retry_count = txn_transport_retry_count + 1,\n            txn_last_error = $1,\n            txn_last_error_at = NOW()\n            WHERE handle = $2\n            AND account_address = $3\n            AND tenant_id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cab300ab6cd44e18bf6abe42abb3ea0961183e00f72e577c9516c9c03e6c694f"
+}

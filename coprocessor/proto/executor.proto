@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.grpc.fhevmexecutor";
+option java_outer_classname = "FhevmExecutor";
+option go_package = "./fhevm";
+
+package fhevm.executor;
+
+import "common.proto";
+
+service FhevmExecutor {
+    // Returns when computation of all operations has been completed.
+    rpc SyncCompute (SyncComputeRequest) returns (SyncComputeResponse);
+}
+
+message SyncComputeRequest {
+    // Ordered list of computations.
+    repeated SyncComputation computations = 1;
+
+    // Multiple serialized `tfhe::ProvenCompactCiphertextList`s. A list can contain multiple ciphertexts.
+    // Note: used for inputs by fhEVM-native.
+    repeated bytes compact_ciphertext_lists = 2;
+
+    // Multiple compressed ciphertexts.
+    // Note: used for ciphertexts stored in the state of fhEVM-native.
+    repeated CompressedCiphertext compressed_ciphertexts = 3;
+}
+
+message SyncComputeResponse {
+    oneof resp {
+        SyncComputeError error = 1;
+
+        // Note: handles in `result_ciphertexts` will be the same ones as `SyncComputeRequest.result_handles`.
+        ResultCiphertexts result_ciphertexts = 2;
+    }
+}
+
+message ResultCiphertexts {
+    repeated CompressedCiphertext ciphertexts = 1; 
+}
+
+message SyncComputation {
+    fhevm.common.FheOperation operation = 1;
+
+    // A list of ordered computations.
+    repeated SyncInput inputs = 2;
+
+    // The result handles after execution the operation on the inputs.
+    repeated bytes result_handles = 3;
+}
+
+enum SyncComputeError {
+    BAD_INPUT_LIST = 0;
+    BAD_INPUT_CIPHERTEXT = 1;
+    INVALID_OPERATION = 2;
+    UNSUPPORTED_OPERATION = 3;
+    BAD_INPUTS = 4;
+    UNKNOWN_HANDLE = 5;
+    COMPUTATION_FAILED = 6;
+    BAD_RESULT_HANDLES = 7;
+    UNSATISFIED_DEPENDENCE = 8;
+}
+
+message CompressedCiphertext {
+    bytes handle = 1;
+
+    // Serialized as a `tfhe::CompressedCiphertextList`. A list contains one ciphertext.
+    bytes serialization = 2;
+}
+
+message SyncInput {
+    oneof input {
+        // A handle that points to either an input ciphertext in `SyncComputeRequest.compact_ciphertext_lists`
+        // or `SyncComputeRequest.compressed_ciphertext_lists`.
+        bytes handle = 1;
+
+        // A scalar value. Dependent on the operation, but typically big-endian integers.
+        bytes scalar = 2;
+    }
+}

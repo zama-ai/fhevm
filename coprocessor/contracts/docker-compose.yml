@@ -1,0 +1,37 @@
+name: fhevm-host
+
+services:
+  anvil-node:
+    container_name: anvil-node
+    image: ghcr.io/foundry-rs/foundry:stable
+    entrypoint:
+      - anvil
+      - --block-time
+      - "0.5"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8545"
+      - --chain-id
+      - "12345"
+      - --accounts
+      - "15"
+      - --mnemonic
+      - "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
+    ports:
+      - "8545:8545"
+    volumes:
+      - .:/anvil
+
+  fhevm-sc-deploy:
+    container_name: fhevm-sc-deploy
+    build:
+      context: ../
+      dockerfile: contracts/operations/docker/Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      - HARDHAT_NETWORK=${HARDHAT_NETWORK:-staging}
+      - CHAIN_ID_GATEWAY=54321
+    command:
+      - npx hardhat task:deployAllHostContracts

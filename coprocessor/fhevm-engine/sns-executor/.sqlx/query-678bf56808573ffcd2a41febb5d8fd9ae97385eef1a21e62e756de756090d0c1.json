@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ciphertext_digest (tenant_id, handle)\n        VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "678bf56808573ffcd2a41febb5d8fd9ae97385eef1a21e62e756de756090d0c1"
+}

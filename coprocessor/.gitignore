@@ -1,0 +1,29 @@
+# Ignore macOS system files
+.DS_Store
+docs/.DS_Store
+fhevm-engine/.DS_Store
+
+# Common development files
+node_modules/
+target/
+build/
+dist/
+.env
+.env.local
+*.log
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+coverage/
+*.tsbuildinfo

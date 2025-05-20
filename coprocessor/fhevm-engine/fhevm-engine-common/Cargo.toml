@@ -1,0 +1,45 @@
+[package]
+name = "fhevm-engine-common"
+version = "0.6.1"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# workspace dependencies
+anyhow = { workspace = true }
+bigdecimal = { workspace = true }
+bincode = { workspace = true }
+hex = { workspace = true }
+lru = { workspace = true }
+prost = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+sha3 = { workspace = true }
+strum = { workspace = true }
+sqlx = {workspace = true}
+tfhe = { workspace = true }
+tonic  = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+# crates.io dependencies
+paste = "1.0.15"
+rand_chacha = "0.3.1"
+
+# opentelemetry support
+opentelemetry = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
+
+[features]
+nightly-avx512 = ["tfhe/nightly-avx512"]
+gpu = ["tfhe/gpu"]
+
+[build-dependencies]
+tonic-build = { workspace = true }
+
+[[bin]]
+name = "generate-keys"
+path = "src/bin/generate_keys.rs"

@@ -1,0 +1,25 @@
+[package]
+name = "gw-listener"
+version = "0.6.1"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# workspace dependencies
+alloy = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+futures-util = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[build-dependencies]
+foundry-compilers = { workspace = true }
+semver = { workspace = true }
+
+[dev-dependencies]
+serial_test = { workspace = true }

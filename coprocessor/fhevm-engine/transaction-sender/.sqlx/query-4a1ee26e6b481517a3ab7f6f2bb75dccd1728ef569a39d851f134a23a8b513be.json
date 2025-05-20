@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE verify_proofs\n            SET\n                retry_count = retry_count + 1,\n                last_error = $2,\n                last_retry_at = NOW()\n            WHERE zk_proof_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4a1ee26e6b481517a3ab7f6f2bb75dccd1728ef569a39d851f134a23a8b513be"
+}

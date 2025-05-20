@@ -1,0 +1,38 @@
+name: fhevm
+
+services:
+  db:
+    container_name: db
+    image: postgres:15.7
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - db:/var/lib/postgresql/data
+
+  db-migration:
+    container_name: db-migration
+    build:
+      context: ../../.
+      dockerfile: fhevm-engine/fhevm-db/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/coprocessor
+      TENANT_API_KEY: "a1503fb6-d79b-4e9e-826d-44cf262f3e05"
+      ACL_CONTRACT_ADDRESS: "0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2"
+      INPUT_VERIFIER_ADDRESS: "0x69dE3158643e738a0724418b21a35FAA20CBb1c5"
+    volumes:
+      - ../fhevm-keys:/fhevm-keys
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db:

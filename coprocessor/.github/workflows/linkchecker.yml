@@ -1,0 +1,29 @@
+name: Check Markdown links
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    # Run everyday at 9:00 AM (See https://pubs.opengroup.org/onlinepubs/9699919799/utilities/crontab.html#tag_20_25_07)
+    - cron: "0 9 * * *"
+
+jobs:
+  markdown-link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Run linkspector
+        uses: umbrelladocs/action-linkspector@a0567ce1c7c13de4a2358587492ed43cab5d0102 # v1.3.4
+        with:
+          filter_mode: nofilter
+          reporter: github-check
+          level: info
+          fail_level: warning
+          show_stats: true
