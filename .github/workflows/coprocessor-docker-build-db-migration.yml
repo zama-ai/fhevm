@@ -1,4 +1,4 @@
-name: Docker - Fhevm NodeJS Base Image
+name: Docker - Fhevm DB migration
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ on:
       - published
 
 concurrency:
-  group: node-golden-${{ github.ref }}
+  group: fhevm-db-migration-${{ github.ref_name }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -21,19 +21,19 @@ jobs:
       pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
-      changes-node: ${{ steps.filter.outputs.node-image }}
+      changes-db-migration-files: ${{ steps.filter.outputs.db-migration-files }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
         id: filter
         with:
           filters: |
-            base-image:
-              - '.github/workflows/base-images-docker-build.yml'
-              - 'docker/base/Dockerfile'
-  docker-node-golden:
+            db-migration-files:
+              - .github/workflows/coprocessor-docker-build-db-migration.yml
+              - coprocessor/fhevm-engine/fhevm-db/**
+  docker-fhevm-db-migration:
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-node == 'true' || github.event_name == 'release' }}
+    if: ${{ needs.check-changes.outputs.changes-db-migration-files == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
     secrets:
       GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
@@ -45,6 +45,7 @@ jobs:
     with:
       working-directory: "."
       push_image: true
-      image-name: "fhevm-node"
-      docker-file: "docker/base/Dockerfile"
+      image-name: "fhevm/coprocessor/db-migration"
+      generate-dev-image: false
+      docker-file: "coprocessor/fhevm-engine/fhevm-db/Dockerfile"
       arm-build: true

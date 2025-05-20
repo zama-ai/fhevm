@@ -120,7 +120,7 @@ jobs:
 
       - name: Init database
         run: make init_db
-        working-directory: fhevm-engine/coprocessor
+        working-directory: coprocessor/fhevm-engine/coprocessor
 
       - name: Use Node.js
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -129,18 +129,18 @@ jobs:
 
       - name: Build contracts
         run: |
-          cp ./contracts/.env.example ./contracts/.env
-          npm --prefix ./contracts ci --include=optional
-          cd contracts && npm install && npx hardhat compile
+          cp ./host-contracts/.env.example ./host-contracts/.env
+          npm --prefix ./host-contracts ci --include=optional
+          cd host-contracts && npm install && npx hardhat compile
 
       - name: Run benchmarks on CPU
         run: |
           BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" make "benchmark_${{ inputs.benchmarks }}_cpu"
-        working-directory: fhevm-engine/coprocessor
+        working-directory: coprocessor/fhevm-engine/coprocessor
 
       - name: Parse results
         run: |
-          python3 ./ci/benchmark_parser.py fhevm-engine/target/criterion ${{ env.RESULTS_FILENAME }} \
+          python3 ./ci/benchmark_parser.py coprocessor/fhevm-engine/target/criterion ${{ env.RESULTS_FILENAME }} \
           --database coprocessor \
           --hardware "hpc7a.96xlarge" \
           --backend cpu \

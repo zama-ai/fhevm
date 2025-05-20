@@ -30,8 +30,8 @@ jobs:
           filters: |
             coprocessor-files:
               - .github/workflows/coprocessor-docker-build.yml
-              - fhevm-engine/**
-              - proto/**
+              - coprocessor/fhevm-engine/**
+              - coprocessor/proto/**
   docker-fhevm-coprocessor:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-files == 'true' || github.event_name == 'release' }}
@@ -46,7 +46,7 @@ jobs:
     with:
       working-directory: "."
       push_image: true
-      image-name: "fhevm-backend/coprocessor"
+      image-name: "fhevm/coprocessor"
       generate-dev-image: false
-      docker-file: "fhevm-engine/coprocessor/Dockerfile"
+      docker-file: "coprocessor/fhevm-engine/coprocessor/Dockerfile"
       arm-build: true

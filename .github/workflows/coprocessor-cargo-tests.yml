@@ -24,8 +24,8 @@ jobs:
           filters: |
             rust-files:
               - .github/workflows/coprocessor-cargo-tests.yml
-              - fhevm-engine/**
-              - proto/**
+              - coprocessor/fhevm-engine/**
+              - coprocessor/proto/**
   cargo-tests:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
@@ -65,7 +65,7 @@ jobs:
 
     - name: Init database
       run: make init_db
-      working-directory: fhevm-engine/coprocessor
+      working-directory: coprocessor/fhevm-engine/coprocessor
 
     - name: Use Node.js
       uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -79,7 +79,7 @@ jobs:
     - name: Run tests
       run: |
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor cargo test --release -- --test-threads=1
-      working-directory: fhevm-engine
+      working-directory: coprocessor/fhevm-engine
 
 permissions:
   contents: read

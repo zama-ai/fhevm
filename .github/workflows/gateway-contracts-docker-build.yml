@@ -29,13 +29,13 @@ jobs:
         with:
           filters: |
             gw-contracts:
-              - '.github/workflows/gateway-contracts-docker-build.yml'
-              - 'contracts/**'
-              - 'tasks/**'
-              - 'package*.json'
-              - 'hardhat.config.ts'
-              - 'tsconfig.json'
-              - 'Dockerfile'
+              - .github/workflows/gateway-contracts-docker-build.yml
+              - gateway-contracts/contracts/**
+              - gateway-contracts/tasks/**
+              - gateway-contracts/package*.json
+              - gateway-contracts/hardhat.config.ts
+              - gateway-contracts/tsconfig.json
+              - gateway-contracts/Dockerfile
   docker-gateway-contracts:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' || github.event_name == 'release' }}
@@ -51,13 +51,12 @@ jobs:
     with:
       working-directory: "."
       push_image: true
-      image-name: "fhevm-gateway/contracts"
-      docker-file: "Dockerfile"
+      image-name: "fhevm/gateway-contracts"
+      docker-file: "gateway-contracts/Dockerfile"
       arm-build: true
 
   docker-hardhat-test:
-    needs:
-      - docker-gateway-contracts
+    needs: docker-gateway-contracts
     name: Run Hardhat tests with built image
     uses: ./.github/workflows/gateway-contracts-hardhat-tests-docker.yml
     with:

@@ -39,17 +39,17 @@ jobs:
         with:
           files_yaml: |
             gpu:
-              - fhevm-engine/Cargo.toml
-              - fhevm-engine/coprocessor/Cargo.toml
-              - fhevm-engine/coprocessor/build.rs
-              - fhevm-engine/coprocessor/src/**
-              - fhevm-engine/executor/Cargo.toml
-              - fhevm-engine/executor/build.rs
-              - fhevm-engine/executor/src/**
-              - fhevm-engine/scheduler/src/**
-              - fhevm-engine/scheduler/Cargo.toml
-              - fhevm-engine/scheduler/build.rs
-              - proto/**
+              - coprocessor/fhevm-engine/Cargo.toml
+              - coprocessor/fhevm-engine/coprocessor/Cargo.toml
+              - coprocessor/fhevm-engine/coprocessor/build.rs
+              - coprocessor/fhevm-engine/coprocessor/src/**
+              - coprocessor/fhevm-engine/executor/Cargo.toml
+              - coprocessor/fhevm-engine/executor/build.rs
+              - coprocessor/fhevm-engine/executor/src/**
+              - coprocessor/fhevm-engine/scheduler/src/**
+              - coprocessor/fhevm-engine/scheduler/Cargo.toml
+              - coprocessor/fhevm-engine/scheduler/build.rs
+              - coprocessor/proto/**
               - '.github/workflows/coprocessor_gpu-tests.yml'
               - ci/slab.toml
 
@@ -147,7 +147,7 @@ jobs:
 
       - name: Init database
         run: make init_db
-        working-directory: fhevm-engine/coprocessor
+        working-directory: coprocessor/fhevm-engine/coprocessor
 
       - name: Use Node.js
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -161,7 +161,7 @@ jobs:
       - name: Run tests on GPU
         run: |
           DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor cargo test --release --features=gpu -- --test-threads=1
-        working-directory: fhevm-engine
+        working-directory: coprocessor/fhevm-engine
 
 
   teardown-instance:

@@ -29,12 +29,12 @@ RUN npm ci && \
     npm prune
 
 # Copy the application files
-COPY --chown=fhevm:fhevm contracts/*.ts contracts/tsconfig.json ./
-COPY --chown=fhevm:fhevm contracts/contracts ./contracts/
-COPY --chown=fhevm:fhevm contracts/addresses ./addresses/
-COPY --chown=fhevm:fhevm contracts/tasks ./tasks/
-COPY --chown=fhevm:fhevm contracts/lib ./lib/
-COPY --chown=fhevm:fhevm contracts/decryptionOracle ./decryptionOracle/
+COPY --chown=fhevm:fhevm host-contracts/*.ts host-contracts/tsconfig.json ./
+COPY --chown=fhevm:fhevm host-contracts/contracts ./contracts/
+COPY --chown=fhevm:fhevm host-contracts/addresses ./addresses/
+COPY --chown=fhevm:fhevm host-contracts/tasks ./tasks/
+COPY --chown=fhevm:fhevm host-contracts/lib ./lib/
+COPY --chown=fhevm:fhevm host-contracts/decryptionOracle ./decryptionOracle/
 
 # Pre-compile proxy contracts
 RUN npx hardhat clean && \

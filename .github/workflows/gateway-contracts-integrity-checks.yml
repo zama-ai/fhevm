@@ -30,11 +30,11 @@ jobs:
         with:
           filters: |
             gw-contracts:
-              - '.github/workflows/gateway-contracts-integrity-checks.yml'
-              - 'rust_bindings/**'
-              - 'contracts/**' # not sure if this is needed
-              - 'scripts/**'
-              - 'Makefile'
+              - .github/workflows/gateway-contracts-integrity-checks.yml
+              - gateway-contracts/rust_bindings/**
+              - gateway-contracts/contracts/**
+              - gateway-contracts/scripts/**
+              - gateway-contracts/Makefile
   contract-integrity-checks:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
@@ -56,16 +56,21 @@ jobs:
           version: v1.1.0
 
       - name: Install dependencies
+        working-directory: gateway-contracts
         run: npm ci
 
       - name: Check bindings are up-to-date
+        working-directory: gateway-contracts
         run: make check-bindings
 
       - name: Check contract selectors are up-to-date
+        working-directory: gateway-contracts
         run: make check-selectors
 
       - name: Check mock contracts are up-to-date
+        working-directory: gateway-contracts
         run: make check-mocks
 
       - name: Check licenses compliance
+        working-directory: gateway-contracts
         run: make check-licenses

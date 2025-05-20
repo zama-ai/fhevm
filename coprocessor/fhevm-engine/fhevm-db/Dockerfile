@@ -10,10 +10,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy migrations and initialization script
-COPY fhevm-engine/ /fhevm-engine
-COPY proto/ /proto/
+COPY coprocessor/fhevm-engine/ /coprocessor/fhevm-engine
+COPY coprocessor/proto/ /coprocessor/proto/
 
-WORKDIR /fhevm-engine
+WORKDIR /coprocessor/fhevm-engine
 # Build utils binary
 # Currently, this utils is used only for keys converting. 
 # Later on, it will be extended to replace initialize_db.sh completely
@@ -29,9 +29,9 @@ RUN apt-get update && \
     groupadd -r zama && useradd -r -g zama zama && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-COPY fhevm-engine/fhevm-db/initialize_db.sh /initialize_db.sh
-COPY fhevm-engine/fhevm-db/migrations /migrations
-COPY  --from=build /fhevm-engine/target/release/utils /usr/local/bin/utils
+COPY coprocessor/fhevm-engine/fhevm-db/initialize_db.sh /initialize_db.sh
+COPY coprocessor/fhevm-engine/fhevm-db/migrations /migrations
+COPY  --from=build /coprocessor/fhevm-engine/target/release/utils /usr/local/bin/utils
 
 # Change ownership of the copied files to the non-root user
 RUN mkdir /fhevm-keys && \

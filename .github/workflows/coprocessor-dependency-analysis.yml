@@ -24,7 +24,7 @@ jobs:
           filters: |
             rust-files:
               - .github/workflows/coprocessor-dependency-analysis.yml
-              - fhevm-engine/**
+              - coprocessor/fhevm-engine/**
   dependencies-check:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
@@ -51,17 +51,17 @@ jobs:
 
       - name: Check that Cargo.lock is the source of truth
         run: |
-          cd fhevm-engine
+          cd coprocessor/fhevm-engine
           cargo update -w --locked || (echo "Error: Cargo.lock is out of sync. Please run 'cargo update' locally and commit changes" && exit 1)
 
       - name: License whitelist
         run: |
-          cd fhevm-engine
+          cd coprocessor/fhevm-engine
           cargo-deny deny check license --deny license-not-encountered
 
       - name: Security issue whitelist
         run: |
-          cd fhevm-engine
+          cd coprocessor/fhevm-engine
           cargo-audit audit
 
 permissions:
