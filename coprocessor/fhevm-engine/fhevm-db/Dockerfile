@@ -1,19 +1,16 @@
 # Use the Rust image as the base
 FROM rust:1.85.0-bookworm AS build
 
-# Install dependencies and tools
-
-
 # Install dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends protobuf-compiler && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy migrations and initialization script
-COPY coprocessor/fhevm-engine/ /coprocessor/fhevm-engine
-COPY coprocessor/proto/ /coprocessor/proto/
+COPY fhevm-engine/ /fhevm-engine
+COPY proto/ /proto/
 
-WORKDIR /coprocessor/fhevm-engine
+WORKDIR /fhevm-engine
 # Build utils binary
 # Currently, this utils is used only for keys converting. 
 # Later on, it will be extended to replace initialize_db.sh completely
@@ -29,9 +26,9 @@ RUN apt-get update && \
     groupadd -r zama && useradd -r -g zama zama && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-COPY coprocessor/fhevm-engine/fhevm-db/initialize_db.sh /initialize_db.sh
-COPY coprocessor/fhevm-engine/fhevm-db/migrations /migrations
-COPY  --from=build /coprocessor/fhevm-engine/target/release/utils /usr/local/bin/utils
+COPY fhevm-engine/fhevm-db/initialize_db.sh /initialize_db.sh
+COPY fhevm-engine/fhevm-db/migrations /migrations
+COPY  --from=build /fhevm-engine/target/release/utils /usr/local/bin/utils
 
 # Change ownership of the copied files to the non-root user
 RUN mkdir /fhevm-keys && \

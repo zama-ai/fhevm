@@ -49,6 +49,7 @@ jobs:
       packages: "write"
     with:
       working-directory: "gateway-contracts"
+      docker-context: "gateway-contracts"
       push_image: true
       image-name: "fhevm/gateway-contracts"
       docker-file: "Dockerfile"

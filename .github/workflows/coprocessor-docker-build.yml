@@ -45,6 +45,7 @@ jobs:
       packages: "write"
     with:
       working-directory: "."
+      docker-context: "."
       push_image: true
       image-name: "fhevm/coprocessor"
       generate-dev-image: false

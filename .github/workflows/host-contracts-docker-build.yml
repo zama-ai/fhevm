@@ -44,6 +44,7 @@ jobs:
       packages: "write"
     with:
       working-directory: "host-contracts"
+      docker-context: "host-contracts"
       push_image: true
       image-name: "fhevm/host-contracts"
       docker-file: "Dockerfile"

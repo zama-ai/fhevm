@@ -43,9 +43,10 @@ jobs:
       id-token: "write"
       packages: "write"
     with:
-      working-directory: "."
+      working-directory: "coprocessor"
+      docker-context: "coprocessor"
       push_image: true
       image-name: "fhevm/coprocessor/db-migration"
       generate-dev-image: false
-      docker-file: "coprocessor/fhevm-engine/fhevm-db/Dockerfile"
+      docker-file: "fhevm-engine/fhevm-db/Dockerfile"
       arm-build: true
