@@ -1,4 +1,4 @@
-name: "Hardhat tests in docker container"
+name: Fhevm Gateway Contracts Hardhat tests in Docker
 
 on:
   workflow_call:
