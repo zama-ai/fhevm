@@ -1,0 +1,55 @@
+services:
+
+  kms-core:
+    container_name: kms-core
+    image: ghcr.io/zama-ai/kms-service:${CORE_VERSION}
+    env_file:
+      - ../env/staging/.env.core.local
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key)
+        export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key)
+        echo '=================GENERATING SIGNING KEYS================='
+        kms-gen-keys --pub-url "$$KMS_CORE__PUBLIC_VAULT__STORAGE" --aws-s3-endpoint "$$S3_ENDPOINT" --aws-region "$$S3_REGION" --priv-url "$$KMS_CORE__PRIVATE_VAULT__STORAGE" --cmd signing-keys centralized
+        echo '=================STARTING KMS SERVICE================='
+        kms-server --config-file config/config.toml
+    volumes:
+      - fhevm_minio_secrets:/minio_secrets
+      - ../config/kms-core/config.toml:/app/kms/core/service/config/config.toml
+    ports:
+      - "50051:50051"
+    healthcheck:
+      test: "grpc_health_probe --addr=localhost:50051"
+      interval: 1s
+      timeout: 1s
+      retries: 5
+      start_period: 1s
+
+  generate-fhe-keys:
+    container_name: fhevm-generate-fhe-keys
+    image: ghcr.io/zama-ai/kms-core-client:${CORE_VERSION}
+    env_file:
+      - ../env/staging/.env.core.local
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        sleep 10
+        cd /app/kms-core-client
+        bin/kms-core-client -f config.toml insecure-key-gen
+        bin/kms-core-client -f config.toml insecure-crs-gen --max-num-bits 2048
+
+    volumes:
+      - fhevm_minio_secrets:/minio_secrets
+      - ../config/core-client/config.toml:/app/kms-core-client/config.toml
+    depends_on:
+      kms-core:
+        condition: service_started
+
+volumes:
+  fhevm_minio_secrets:
+    external: true

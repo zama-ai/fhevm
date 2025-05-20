@@ -1,0 +1,44 @@
+environment: development
+
+inputproof:
+  url: "0.0.0.0:3000"
+
+
+
+
+transaction:
+  private_key_fhevm_env: FHEVM_PRIVATE_KEY
+  private_key_gateway_env: GATEWAY_PRIVATE_KEY
+  gas_limit: 150000
+  max_priority_fee: 2000000000
+  timeout_secs: 60
+  confirmations: 1
+  retry:
+    enabled: false
+    max_attempts: 3
+    base_delay_secs: 2
+    max_delay_secs: 60
+  ciphertext_check_retry:
+    enabled: false
+    max_attempts: 75
+    base_delay_secs: 3
+    max_delay_secs: 225
+
+
+log:
+  # Set log level for development
+  level: "info"
+  # Choose format: compact, pretty, or json
+  format: "pretty"
+  # Show source code location for debugging
+  show_file_line: false
+  # Show thread IDs for concurrency debugging
+  show_thread_ids: false
+  # Include timestamps in logs
+  show_timestamp: true
+  # Optional: Set specific log levels for different modules
+
+# Development-specific settings
+development:
+  # Enable for detailed error messages
+  verbose_errors: true

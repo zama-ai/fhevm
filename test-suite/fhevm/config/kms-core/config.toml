@@ -1,0 +1,38 @@
+# See default_1.toml for the documentation.
+
+[service]
+listen_address = "0.0.0.0"
+listen_port = 50051
+timeout_secs = 360
+grpc_max_message_size = 104857600 # 100 MiB
+
+[telemetry]
+tracing_service_name = "kms-centralized"
+tracing_otlp_timeout_ms = 10000
+metrics_bind_address = "0.0.0.0:9646"
+
+[telemetry.batch]
+max_queue_size = 8192
+max_export_batch_size = 2048
+max_concurrent_exports = 4
+scheduled_delay_ms = 500
+export_timeout_ms = 5000
+
+[aws]
+region = "eu-west-1"
+s3_endpoint = "http://minio:9000"
+
+[public_vault]
+storage = "s3://kms-public"
+storage_cache_size = 1000
+
+[private_vault]
+storage = "file://./keys"
+
+[rate_limiter_conf]
+bucket_size = 50000
+pub_decrypt = 1
+user_decrypt = 1
+crsgen = 100
+preproc = 5000
+keygen = 1000

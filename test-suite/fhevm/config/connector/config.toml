@@ -1,0 +1,42 @@
+# Example configuration for KMS Connector
+
+# Service name for tracing (optional, defaults to "kms-connector")
+service_name = "kms-connector"
+
+# BIP39 mnemonic phrase for wallet generation (required)
+# This is used to derive the private key for signing responses
+# IMPORTANT: Keep this secure and never share it!
+# mnemonic = ""
+
+# Chain ID for the L2 network (required)
+# chain_id = 
+
+# Address of the Decryption contract (required)
+# Format: hex string with 0x prefix
+# decryption_address = ""
+
+# Address of the GatewayConfig contract (required)
+# Format: hex string with 0x prefix
+# gateway_config_address = ""
+
+# KMS-core gRPC endpoint (required)
+# Format: http://host:port
+# kms_core_endpoint = "http://[::1]:50051"
+
+# GateWay L2 WebSocket RPC URL endpoint (required)
+# gateway_url = ""
+
+# Size of the event processing channel (optional)
+# channel_size = 1000
+
+# Path to the signing key file (optional)
+# If provided, the connector will use this signing key instead of the mnemonic
+# signing_key_path = ""
+
+# Whether to verify coprocessors against the GatewayConfig contract (optional, defaults to false)
+
+# S3 configuration for ciphertext storage (optional)
+# [s3_config]
+# region = "us-east-1"
+# bucket = "my-ciphertext-bucket"
+# endpoint = "http://localhost:9876"

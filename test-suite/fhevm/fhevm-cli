@@ -1,0 +1,233 @@
+#!/bin/bash
+set -e
+
+BLUE='\033[0;34m'
+LIGHT_BLUE='\033[1;34m'
+GREEN='\033[0;32m'
+LIGHT_GREEN='\033[1;32m'
+RED='\033[0;31m'
+LIGHT_RED='\033[1;31m'
+YELLOW='\033[0;33m'
+LIGHT_YELLOW='\033[1;33m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT="fhevm"
+
+export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc13"}
+export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.1.0-rc6"}
+export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"v0.7.0-rc8"}
+export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc8"}
+export HOST_VERSION=${HOST_VERSION:-"31c51c3"}
+export GATEWAY_VERSION=${GATEWAY_VERSION:-"5d13e72"}
+export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc8"}
+export TESTS_VERSION=${TESTS_VERSION:-"0d61373"}
+
+function print_logo() {
+  echo -e "${LIGHT_BLUE}"
+  echo "  ______   _    _   ______  __      __  __  __"
+  echo " |  ____| | |  | | |  ____| \ \    / / |  \/  |"
+  echo " | |__    | |__| | | |__     \ \  / /  | \  / |"
+  echo " |  __|   |  __  | |  __|     \ \/ /   | |\/| |"
+  echo " | |      | |  | | | |____     \  /    | |  | |"
+  echo " |_|      |_|  |_| |______|     \/     |_|  |_|"
+  echo -e "${RESET}"
+}
+
+function usage {
+  print_logo
+  echo -e "${BOLD}Usage:${RESET} ${YELLOW}fhevm-cli${RESET} ${CYAN}COMMAND [OPTIONS]${RESET}"
+  echo
+  echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
+  echo -e "  ${YELLOW}deploy${RESET}              Deploy the full fhevm stack"
+  echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|erc20|debug)"
+  echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|tests)"
+  echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
+  echo -e "  ${YELLOW}logs${RESET} ${CYAN}[SERVICE]${RESET}      View logs for a specific service"
+  echo -e "  ${YELLOW}help${RESET}                Display this help message"
+  echo
+  echo -e "${BOLD}${LIGHT_BLUE}Test Options:${RESET}"
+  echo -e "  ${CYAN}-v, --verbose${RESET}       Enable verbose output"
+  echo -e "  ${CYAN}-n, --network NAME${RESET}  Specify network (default: ${GREEN}staging${RESET})"
+  echo -e "  ${CYAN}-g, --grep PATTERN${RESET}  Override default test pattern"
+  echo -e "  ${CYAN}-r, --no-relayer${RESET}    Disable Rust relayer"
+  echo
+  echo -e "${BOLD}${LIGHT_BLUE}Examples:${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli deploy${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test public-decryption -n staging${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test erc20${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli upgrade coprocessor${RESET}"
+  echo -e "${BLUE}============================================================${RESET}"
+}
+
+COMMAND=$1
+shift
+
+# Show help if no command is provided
+if [ -z "$COMMAND" ]; then
+  usage
+  exit 0
+fi
+
+case $COMMAND in
+  deploy)
+    print_logo
+    echo -e "${LIGHT_BLUE}${BOLD}[DEPLOY] Deploying fhevm stack...${RESET}"
+    "${SCRIPT_DIR}/scripts/deploy-fhevm-stack.sh"
+    echo -e "${GREEN}${BOLD} [SUCCESS] fhevm stack deployment complete!${RESET}"
+    ;;
+    
+  test)
+    print_logo
+    TEST_TYPE=$1
+    shift
+
+    VERBOSE=""
+    NETWORK="staging"
+    GREP=""
+    NO_RELAYER=""
+
+    while (( "$#" )); do
+      case "$1" in
+        -v|--verbose)
+          VERBOSE="-v"
+          shift
+          ;;
+        -n|--network)
+          if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+            NETWORK="$2"
+            shift 2
+          else
+            echo -e "${RED}[ERROR]${RESET} ${BOLD}Network argument missing${RESET}"
+            usage
+            exit 1
+          fi
+          ;;
+        -g|--grep)
+          if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+            GREP="$2"
+            shift 2
+          else
+            echo -e "${RED}[ERROR]${RESET} ${BOLD}Grep pattern missing${RESET}"
+            usage
+            exit 1
+          fi
+          ;;
+        -r|--no-relayer)
+          NO_RELAYER="-r"
+          shift
+          ;;
+        *)
+          echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown option: $1${RESET}"
+          usage
+          exit 1
+          ;;
+      esac
+    done
+
+    docker_args=("./run-tests.sh")
+    if [ -n "$VERBOSE" ]; then
+      docker_args+=("-v")
+    fi
+    docker_args+=("-n" "$NETWORK")
+    if [ -n "$NO_RELAYER" ]; then
+      docker_args+=("-r")
+    fi
+
+    if [ -n "$GREP" ]; then
+      docker_args+=("-g" "$GREP")
+    else
+      case $TEST_TYPE in
+        input-proof)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test user input uint64")
+          ;;
+        user-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
+          docker_args+=("-g" "test user decrypt")
+          ;;
+        public-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
+          docker_args+=("-g" "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)")
+          ;;
+        public-decryption-ebytes256)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION (ebytes256)${RESET}"
+          docker_args+=("-g" "test async decrypt ebytes256 trivial")
+          ;;
+        erc20)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] ERC20${RESET}"
+          docker_args+=("-g" "should transfer tokens between two users.")
+          ;;
+        public-decrypt-http-ebool)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION OVER HTTP FOR EBOOL${RESET}"
+          docker_args+=("-g" "test HTTPPublicDecrypt ebool")
+          ;;
+        public-decrypt-http-mixed)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION OVER HTTP FOR MIXED${RESET}"
+          docker_args+=("-g" "test HTTPPublicDecrypt mixed")
+          ;;
+        debug)
+          echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
+          docker exec -it fhevm-tests-e2e-debug bash
+          ;;
+        *)
+          echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown test type: $TEST_TYPE${RESET}"
+          usage
+          exit 1
+          ;;
+      esac
+    fi
+    if [ "$TEST_TYPE" != "debug" ]; then
+      echo -e "${log_message}"
+      docker exec fhevm-tests-e2e-debug "${docker_args[@]}"
+    fi
+    ;;
+    
+  help|-h|--help)
+    usage
+    exit 0
+    ;;
+    
+  upgrade)
+    print_logo
+    SERVICE=$1
+    if [[ ! $SERVICE =~ ^(minio|core|gateway|host|connector|coprocessor|relayer|tests)$ ]]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $SERVICE${RESET}"
+      usage
+      exit 1
+    fi
+    
+    echo -e "${LIGHT_BLUE}[UPGRADE]${RESET} ${BOLD}Upgrading $SERVICE...${RESET}"
+    docker compose -p "${PROJECT}" --env-file "${SCRIPT_DIR}/env/staging/.env.${SERVICE}.local" -f "${SCRIPT_DIR}/docker-compose/${SERVICE}-docker-compose.yml" up -d
+    echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}$SERVICE upgraded successfully${RESET}"
+    ;;
+    
+  clean)
+    echo -e "${LIGHT_BLUE}[CLEAN]${RESET} ${BOLD}Cleaning up FHEVM stack...${RESET}"
+    docker compose -p "${PROJECT}" down -v --remove-orphans
+    echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}FHEVM stack cleaned successfully${RESET}"
+    ;;
+    
+  logs)
+    SERVICE=$1
+    if [ -z "${SERVICE}" ]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}Service name is required${RESET}"
+      usage
+      exit 1
+    fi
+    
+    echo -e "${LIGHT_BLUE}[LOGS]${RESET} ${BOLD}Showing logs for $SERVICE...${RESET}"
+    docker logs "${PROJECT}-${SERVICE}"
+    ;;
+    
+  *)
+    echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown command: ${COMMAND}${RESET}"
+    usage
+    exit 1
+    ;;
+esac

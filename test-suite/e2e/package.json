@@ -1,0 +1,14 @@
+{
+  "name": "hardhat-project",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.23.0"
+  },
+  "dependencies": {
+    "@zama-fhe/relayer-sdk": "^0.1.0-1",
+    "@fhevm/solidity": "^0.7.0-3",
+    "@openzeppelin/contracts": "^5.3.0",
+    "bigint-buffer": "^1.1.5",
+    "dotenv": "^16.0.3"
+  }
+}
