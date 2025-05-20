@@ -65,10 +65,10 @@ WORKDIR /app
 
 COPY host-contracts/contracts/ ./host-contracts/contracts/
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
-COPY coprocessor/fhevm-engine/ ./fhevm-engine/
-COPY coprocessor/proto/ ./proto/
+COPY coprocessor/fhevm-engine/ ./coprocessor/fhevm-engine/
+COPY coprocessor/proto/ ./coprocessor/proto/
 
-WORKDIR /app/fhevm-engine
+WORKDIR /app/coprocessor/fhevm-engine
 
 # Build all binaries
 RUN cargo fetch && \
@@ -87,13 +87,13 @@ COPY --from=builder /etc/ssl/certs/ /etc/ssl/certs/
 COPY --from=builder --chown=fhevm:fhevm /home/fhevm /home/fhevm
 COPY --from=builder --chown=fhevm:fhevm /app /app
 
-COPY --from=builder --chown=fhevm:fhevm /app/fhevm-engine/target/release/coprocessor /usr/local/bin/coprocessor
-COPY --from=builder --chown=fhevm:fhevm /app/fhevm-engine/target/release/sns_worker /usr/local/bin/sns_worker
-COPY --from=builder --chown=fhevm:fhevm /app/fhevm-engine/target/release/zkproof_worker /usr/local/bin/zkproof_worker
-COPY --from=builder --chown=fhevm:fhevm /app/fhevm-engine/target/release/fhevm_listener /usr/local/bin/fhevm_listener
-COPY --from=builder --chown=fhevm:fhevm /app/fhevm-engine/target/release/gw_listener /usr/local/bin/gw_listener
-COPY --from=builder --chown=fhevm:fhevm /app/fhevm-engine/target/release/transaction_sender /usr/local/bin/transaction_sender
-COPY --from=builder --chown=fhevm:fhevm /app/fhevm-engine/target/release/cli /usr/local/bin/cli
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/coprocessor /usr/local/bin/coprocessor
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/sns_worker /usr/local/bin/sns_worker
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/zkproof_worker /usr/local/bin/zkproof_worker
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/fhevm_listener /usr/local/bin/fhevm_listener
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/gw_listener /usr/local/bin/gw_listener
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/transaction_sender /usr/local/bin/transaction_sender
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/cli /usr/local/bin/cli
 
 USER fhevm:fhevm
 
