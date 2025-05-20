@@ -49,10 +49,10 @@ jobs:
       id-token: "write"
       packages: "write"
     with:
-      working-directory: "."
+      working-directory: "gateway-contracts"
       push_image: true
       image-name: "fhevm/gateway-contracts"
-      docker-file: "gateway-contracts/Dockerfile"
+      docker-file: "Dockerfile"
       arm-build: true
 
   docker-hardhat-test:

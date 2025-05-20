@@ -33,9 +33,9 @@ jobs:
               - gateway-contracts/docker-compose.yml
               - gateway-contracts/Makefile
   fhevm-gateway-sc-deploy:
+    name: Fhevm Gateway Contracts Deployment Tests
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
-    name: fhevm Gateway Contracts Deployment
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
