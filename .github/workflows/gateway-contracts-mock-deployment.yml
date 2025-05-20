@@ -2,16 +2,35 @@ name: Fhevm Gateway Mock Contracts Deployment
 
 on:
   pull_request:
-    paths-ignore:
-      - "rust_bindings/**"
-      - "docs/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  check-changes:
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            gw-contracts:
+              - '.github/workflows/gateway-contracts-mock-deployment.yml'
+              - 'rust_bindings/**'
+              - 'contracts/mocks/**'
+              - 'scripts/mock_contracts_cli.js'
+              - 'Makefile'
   fhevm-gateway-mock-contracts-deploy:
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     name: Fhevm Gateway Mock Contracts Deployment
     runs-on: ubuntu-latest
     steps:
