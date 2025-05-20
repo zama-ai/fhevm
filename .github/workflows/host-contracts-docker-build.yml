@@ -43,8 +43,8 @@ jobs:
       id-token: "write"
       packages: "write"
     with:
-      working-directory: "."
+      working-directory: "host-contracts"
       push_image: true
       image-name: "fhevm/host-contracts"
-      docker-file: "host-contracts/Dockerfile"
+      docker-file: "Dockerfile"
       arm-build: true
