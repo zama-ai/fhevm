@@ -1,0 +1,22 @@
+node_modules
+.env
+
+# Hardhat files
+/cache
+/artifacts
+
+# TypeChain files
+/typechain
+/typechain-types
+
+# solidity-coverage files
+/coverage
+/coverage.json
+
+# Common files
+*.env
+*.log
+.DS_Store
+.pnp.*
+coverage.json
+yarn.lock
