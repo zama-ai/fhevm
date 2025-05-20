@@ -1,0 +1,41 @@
+service_name = "kms-connector-3"
+
+chain_id = 31337
+
+decryption_address = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+
+gateway_config_address = "0x0000000000000000000000000000000000000001"
+
+kms_core_endpoint = "http://[::1]:50200"
+
+gateway_url = "ws://0.0.0.0:8545"
+
+channel_size = 2000
+
+private_key = "8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f"
+
+# public_decryption_timeout_secs = 300
+
+# user_decryption_timeout_secs = 300
+
+# retry_interval_secs = 5
+
+# decryption_domain_name = "Decryption"
+
+# decryption_domain_version = "1"
+
+# gateway_config_domain_name = "GatewayConfig"
+
+# gateway_config_domain_version = "1"
+
+# [s3_config]
+# region = "us-east-1"
+# bucket = "my-ciphertext-bucket"
+# endpoint = "http://localhost:9876"
+
+# verify_coprocessors = true
+
+# [aws_kms_config]
+# key_id = "12345678-1234-1234-1234-123456789012"
+# region = "us-east-1"
+# endpoint = "https://kms.us-east-1.amazonaws.com"

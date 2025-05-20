@@ -1,0 +1,13 @@
+name: "[PR] Helm Chart Lint"
+
+on:
+  workflow_call:
+jobs:
+  lint:
+    runs-on: 'ubuntu-latest'
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - name: Lint
+        uses: WyriHaximus/github-action-helm3@fc4ba26e75cf5d08182c6ce3b72623c8bfd7272b # v3.1.0
+        with:
+          exec: helm lint charts/*
