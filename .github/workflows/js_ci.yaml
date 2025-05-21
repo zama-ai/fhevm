@@ -1,4 +1,6 @@
 name: JS CI
+permissions:
+  contents: read
 
 # NOTE: figure out if we need to parametrize which app/package should be tested
 
