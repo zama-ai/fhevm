@@ -132,6 +132,31 @@ describe('TestAsyncDecrypt', function () {
     expect(y).to.equal(52); // 5+15+32
   });
 
+  it('test async decrypt uint32 - two requests in same block', async function () {
+    const pendingNonce = await ethers.provider.getTransactionCount(this.signers.alice.address, "pending");
+
+    const [txA, txB] = await Promise.all([
+      this.contract.requestUint32_2({
+        nonce: pendingNonce,
+      }),
+      this.contract.requestUint32_3({
+        nonce: pendingNonce+1,
+      }),
+    ]);
+
+    const [receiptA, receiptB] = await Promise.all([txA.wait(), txB.wait()]);
+
+    console.log("txA block:", receiptA.blockNumber);
+    console.log("txB block:", receiptB.blockNumber);
+
+    await awaitAllDecryptionResults();
+
+    const y2 = await this.contract.yUint32_2();
+    expect(y2).to.equal(1000);
+    const y3 = await this.contract.yUint32_3();
+    expect(y3).to.equal(2000);
+  });
+
   it.skip('test async decrypt FAKE uint32', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode

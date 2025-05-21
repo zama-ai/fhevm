@@ -12,6 +12,8 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
     euint8 xUint8;
     euint16 xUint16;
     euint32 xUint32;
+    euint32 xUint32_2;
+    euint32 xUint32_3;
     euint64 xUint64;
     euint64 xUint64_2;
     euint64 xUint64_3;
@@ -25,6 +27,8 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
     uint8 public yUint8;
     uint16 public yUint16;
     uint32 public yUint32;
+    uint32 public yUint32_2;
+    uint32 public yUint32_3;
     uint64 public yUint64;
     uint64 public yUint64_2;
     uint64 public yUint64_3;
@@ -44,13 +48,16 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
         /// @dev Initialize encrypted variables with sample values
         xBool = FHE.asEbool(true);
         FHE.allowThis(xBool);
-
         xUint8 = FHE.asEuint8(42);
         FHE.allowThis(xUint8);
         xUint16 = FHE.asEuint16(16);
         FHE.allowThis(xUint16);
         xUint32 = FHE.asEuint32(32);
         FHE.allowThis(xUint32);
+        xUint32_2 = FHE.asEuint32(1000);
+        FHE.allowThis(xUint32_2);
+        xUint32_3 = FHE.asEuint32(2000);
+        FHE.allowThis(xUint32_3);
         xUint64 = FHE.asEuint64(18446744073709551600);
         FHE.allowThis(xUint64);
         xUint64_2 = FHE.asEuint64(76575465786);
@@ -198,6 +205,38 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
             yUint32 = result;
             return result;
         }
+    }
+
+    /// @notice Request decryption of a 32-bit unsigned integer
+    function requestUint32_2() public {
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = FHE.toBytes32(xUint32_2);
+        FHE.requestDecryption(cts, this.callbackUint32_2.selector);
+    }
+
+    function callbackUint32_2(
+        uint256 requestID,
+        uint32 decryptedInput,
+        bytes[] memory signatures
+    ) public {
+        FHE.checkSignatures(requestID, signatures);
+        yUint32_2 = decryptedInput;
+    }
+
+    /// @notice Request decryption of a 32-bit unsigned integer
+    function requestUint32_3() public {
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = FHE.toBytes32(xUint32_3);
+       FHE.requestDecryption(cts, this.callbackUint32_3.selector);
+    }
+
+        function callbackUint32_3(
+        uint256 requestID,
+        uint32 decryptedInput,
+        bytes[] memory signatures
+    ) public {
+        FHE.checkSignatures(requestID, signatures);
+        yUint32_3 = decryptedInput;
     }
 
     /// @notice Request decryption of a 64-bit unsigned integer
