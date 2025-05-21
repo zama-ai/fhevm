@@ -1,4 +1,4 @@
 {
   "solc_remaps": ["@openzeppelin/=node_modules/@openzeppelin/"],
-  "filter_paths": "contracts/node_modules/|contracts/lib/|contracts/test/"
+  "filter_paths": "host-contracts/node_modules/|host-contracts/lib/|host-contracts/test/"
 }

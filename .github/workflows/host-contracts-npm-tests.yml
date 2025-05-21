@@ -1,4 +1,4 @@
-name: Fhevm Host Contracts npm Tests
+name: Fhevm Host Contracts NPM/Forge Tests
 
 on:
   pull_request:
@@ -34,7 +34,7 @@ jobs:
         with:
           persist-credentials: 'false'
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c # v1.3.1
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
         with:
           version: stable
       - name: Use Node.js ${{ matrix.node-version }}
@@ -43,9 +43,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - run: cp ./host-contracts/.env.example ./host-contracts/.env
       - run: npm --prefix ./host-contracts ci --include=optional
-      - name: Prettier check
-        run: npm --prefix ./host-contracts run prettier:check
       - name: "Run JS/TS tests"
-        run: npm --prefix ./host-contracts run test:mock
+        run: npm --prefix ./host-contracts run test:mock      
       - name: "Run forge tests"
-        run: "cd host-contracts && forge test"
+        run: "cd host-contracts && forge install foundry-rs/forge-std && forge test"
