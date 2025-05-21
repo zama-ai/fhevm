@@ -1,4 +1,4 @@
-name: Fhevm Host Contracts NPM/Forge Tests
+name: Fhevm Host Contracts Hardhat/Forge Tests
 
 on:
   pull_request:
