@@ -192,6 +192,16 @@ describe('TestAsyncDecrypt', function () {
     expect(y).to.equal(1267650600228229401496703205443n);
   });
 
+  it('test async decrypt uint128 - two requests in same tx', async function () {
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint128_Many();
+    await tx2.wait();
+    await awaitAllDecryptionResults();
+    const y2 = await this.contract.yUint128_2();
+    expect(y2).to.equal(10000n);
+    const y3 = await this.contract.yUint128_3();
+    expect(y3).to.equal(20000n);
+  });
+
   it('test async decrypt uint128 non-trivial', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add128(184467440737095500429401496n);

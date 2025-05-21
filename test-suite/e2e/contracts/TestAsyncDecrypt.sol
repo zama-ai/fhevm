@@ -18,6 +18,8 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
     euint64 xUint64_2;
     euint64 xUint64_3;
     euint128 xUint128;
+    euint128 xUint128_2;
+    euint128 xUint128_3;
     eaddress xAddress;
     eaddress xAddress2;
     euint256 xUint256;
@@ -33,6 +35,8 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
     uint64 public yUint64_2;
     uint64 public yUint64_3;
     uint128 public yUint128;
+    uint128 public yUint128_2;
+    uint128 public yUint128_3;
     address public yAddress;
     address public yAddress2;
     uint256 public yUint256;
@@ -66,6 +70,10 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
         FHE.allowThis(xUint64_3);
         xUint128 = FHE.asEuint128(1267650600228229401496703205443);
         FHE.allowThis(xUint128);
+        xUint128_2 = FHE.asEuint128(10000);
+        FHE.allowThis(xUint128_2);
+        xUint128_3 = FHE.asEuint128(20000);
+        FHE.allowThis(xUint128_3);
         xUint256 = FHE.asEuint256(27606985387162255149739023449108101809804435888681546220650096895197251);
         FHE.allowThis(xUint256);
         xAddress = FHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
@@ -298,6 +306,33 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
         FHE.checkSignatures(requestID, signatures);
         yUint128 = decryptedInput;
         return decryptedInput;
+    }
+
+    function requestUint128_Many() public {
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = FHE.toBytes32(xUint128_2);
+        FHE.requestDecryption(cts, this.callbackUint128_2.selector);
+        bytes32[] memory cts_2 = new bytes32[](1);
+        cts_2[0] = FHE.toBytes32(xUint128_3);
+        FHE.requestDecryption(cts_2, this.callbackUint128_3.selector);
+    }
+
+    function callbackUint128_2(
+        uint256 requestID,
+        uint128 decryptedInput,
+        bytes[] memory signatures
+    ) public {
+        FHE.checkSignatures(requestID, signatures);
+        yUint128_2 = decryptedInput;
+    }
+
+    function callbackUint128_3(
+        uint256 requestID,
+        uint128 decryptedInput,
+        bytes[] memory signatures
+    ) public {
+        FHE.checkSignatures(requestID, signatures);
+        yUint128_3 = decryptedInput;
     }
 
     function requestUint256() public {
