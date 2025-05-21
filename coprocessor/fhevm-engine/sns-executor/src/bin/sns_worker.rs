@@ -36,13 +36,14 @@ fn construct_config() -> Config {
             bucket_ct128: args.bucket_name_ct128,
             bucket_ct64: args.bucket_name_ct64,
             max_concurrent_uploads: args.max_concurrent_uploads,
+            retry_policy: S3Config::default().retry_policy, // TODO:
         },
     }
 }
 
 #[tokio::main]
 async fn main() {
-    let conf: Config = construct_config();
+    let config: Config = construct_config();
     let parent = CancellationToken::new();
 
     tracing_subscriber::fmt()
@@ -58,23 +59,26 @@ async fn main() {
     // to avoid blocking the worker
     // and to allow for some burst of uploads
     let (uploads_tx, uploads_rx) =
-        mpsc::channel::<HandleItem>(10 * conf.s3.max_concurrent_uploads as usize);
+        mpsc::channel::<HandleItem>(10 * config.s3.max_concurrent_uploads as usize);
 
-    let config = conf.clone();
-    let token = parent.child_token();
-
-    if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
+    if let Err(err) = telemetry::setup_otlp(&config.service_name) {
         panic!("Error while initializing tracing: {:?}", err);
     }
 
+    let conf = config.clone();
+    let token = parent.child_token();
+    let tx = uploads_tx.clone();
     spawn(async move {
-        if let Err(err) = process_s3_uploads(&config, uploads_rx, token).await {
+        if let Err(err) = process_s3_uploads(&conf, uploads_rx, tx, token).await {
             error!("Failed to run the upload-worker : {:?}", err);
         }
     });
 
     // Start the SnS worker
-    if let Err(err) = compute_128bit_ct(&conf, uploads_tx, parent.child_token()).await {
+
+    let conf = config.clone();
+    let token = parent.child_token();
+    if let Err(err) = compute_128bit_ct(&conf, uploads_tx, token).await {
         error!("SnS worker failed: {:?}", err);
     }
 }

@@ -6,6 +6,8 @@ mod squash_noise;
 #[cfg(test)]
 mod tests;
 
+use std::time::Duration;
+
 use fhevm_engine_common::{telemetry::OtelTracer, types::FhevmError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -37,6 +39,28 @@ pub struct S3Config {
     pub bucket_ct128: String,
     pub bucket_ct64: String,
     pub max_concurrent_uploads: u32,
+    pub retry_policy: S3RetryPolicy,
+}
+
+#[derive(Clone, Debug)]
+pub struct S3RetryPolicy {
+    pub max_retries_per_upload: u32,
+    pub max_backoff: Duration,
+    pub max_retries_timeout: Duration,
+    pub recheck_duration: Duration,
+    pub regular_recheck_duration: Duration,
+}
+
+impl Default for S3RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_retries_per_upload: 60,
+            max_backoff: Duration::from_secs(10),
+            max_retries_timeout: Duration::from_secs(2 * 60),
+            recheck_duration: Duration::from_secs(1),
+            regular_recheck_duration: Duration::from_secs(60),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -62,7 +86,7 @@ impl std::fmt::Display for Config {
 pub struct HandleItem {
     pub tenant_id: i32,
     pub handle: Vec<u8>,
-    pub ct64_compressed: Vec<u8>,
+    pub ct64_compressed: Option<Vec<u8>>,
     pub ct128_uncompressed: Option<Vec<u8>>,
     pub otel: OtelTracer,
 }
@@ -84,6 +108,9 @@ pub enum ExecutionError {
     #[error("Missing 128-bit ciphertext: {0}")]
     MissingCiphertext128(String),
 
+    #[error("Missing 64-bit ciphertext: {0}")]
+    MissingCiphertext64(String),
+
     #[error("Recv error")]
     RecvFailure,
 
@@ -98,6 +125,12 @@ pub enum ExecutionError {
 
     #[error("Deserialization error: {0}")]
     DeserializationError(String),
+
+    #[error("Bucket S3 upload: {0}")]
+    BucketNotExist(String),
+
+    #[error("S3 Transient error: {0}")]
+    S3TransientError(String),
 }
 
 /// Runs the SnS worker loop
@@ -118,11 +151,12 @@ pub async fn compute_128bit_ct(
 pub async fn process_s3_uploads(
     conf: &Config,
     rx: mpsc::Receiver<HandleItem>,
+    tx: Sender<HandleItem>,
     token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(target: "sns", "Uploader started with {:?}", conf.s3);
 
-    aws_upload::process_s3_uploads(conf, rx, token).await?;
+    aws_upload::process_s3_uploads(conf, rx, tx, token).await?;
 
     info!(target: "sns", "Uploader stopped");
     Ok(())

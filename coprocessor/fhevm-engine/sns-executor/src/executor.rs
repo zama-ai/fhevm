@@ -187,8 +187,8 @@ async fn query_sns_tasks(
         .map(|record| HandleItem {
             tenant_id: record.tenant_id,
             handle: record.handle.clone(),
-            ct64_compressed: record.ciphertext,
-            ct128_uncompressed: None,
+            ct64_compressed: Some(record.ciphertext),
+            ct128_uncompressed: None, // to be computed
             otel: telemetry::tracer_with_handle("task", record.handle),
         })
         .collect();
@@ -237,8 +237,15 @@ fn process_tasks(
     set_server_key(keys.server_key.clone());
 
     for task in tasks.iter_mut() {
+        let ct64_compressed = task.ct64_compressed.as_ref().ok_or_else(|| {
+            ExecutionError::MissingCiphertext128(format!(
+                "Missing ct64_compressed for handle: {}",
+                hex::encode(&task.handle)
+            ))
+        })?;
+
         let s = task.otel.child_span("decompress_ct64");
-        let ct = decompress_ct(&task.handle, &task.ct64_compressed)?;
+        let ct = decompress_ct(&task.handle, ct64_compressed)?;
         telemetry::end_span(s);
 
         let handle = compact_hex(&task.handle);
@@ -285,8 +292,10 @@ fn process_tasks(
             // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
             // 3. The PostgresDB (size: unlimited)
 
-            error!({targe = "worker", action = "review"},  "Failed to send task to upload worker: {err}");
+            error!({target = "worker", action = "review"},  "Failed to send task to upload worker: {err}");
             telemetry::end_span_with_err(task.otel.child_span("send_task"), err.to_string());
+
+            // TODO: Insert ciphertext
         }
     }
 
@@ -309,11 +318,20 @@ async fn update_ciphertext128(
     for task in tasks {
         if let Some(ciphertext128) = &task.ct128_uncompressed {
             let s = task.otel.child_span("ct128_db_insert");
+
+            // Insert the ciphertext128 into the database only if
+            // the uploader has not already put it in AWS S3
             let res = sqlx::query!(
                 "
                 UPDATE ciphertexts
                 SET ciphertext128 = $1
-                WHERE handle = $2;",
+                WHERE handle = $2
+                AND EXISTS (
+                    SELECT 1
+                    FROM ciphertext_digest
+                    WHERE handle = $2
+                        AND ciphertext128 IS NULL
+                );",
                 ciphertext128,
                 task.handle
             )
