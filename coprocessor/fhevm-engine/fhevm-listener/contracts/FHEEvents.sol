@@ -1,1 +1,1 @@
-../../../contracts/contracts/FHEEvents.sol
+./../../../../host-contracts/contracts/FHEEvents.sol

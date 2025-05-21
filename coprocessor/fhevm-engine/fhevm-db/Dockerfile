@@ -1,9 +1,6 @@
 # Use the Rust image as the base
 FROM rust:1.85.0-bookworm AS build
 
-# Install dependencies and tools
-
-
 # Install dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends protobuf-compiler && \

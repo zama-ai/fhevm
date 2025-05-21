@@ -8,7 +8,7 @@ sol!(
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     AclContract,
-    "../../contracts/artifacts/contracts/ACL.sol/ACL.json"
+    "./../../../host-contracts/artifacts/contracts/ACL.sol/ACL.json"
 );
 
 sol!(
@@ -16,5 +16,5 @@ sol!(
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     TfheContract,
-    "../../contracts/artifacts/contracts/FHEVMExecutor.sol/FHEVMExecutor.json"
+    "./../../../host-contracts/artifacts/contracts/FHEVMExecutor.sol/FHEVMExecutor.json"
 );

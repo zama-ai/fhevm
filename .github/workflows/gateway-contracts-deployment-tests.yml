@@ -23,19 +23,19 @@ jobs:
         with:
           filters: |
             gw-contracts:
-              - '.github/workflows/gateway-contracts-deployment-tests.yml'
-              - 'contracts/**'
-              - 'tasks/**'
-              - 'package*.json'
-              - 'hardhat.config.ts'
-              - 'tsconfig.json'
-              - 'Dockerfile'
-              - 'docker-compose.yml'
-              - 'Makefile'
+              - .github/workflows/gateway-contracts-deployment-tests.yml
+              - gateway-contracts/contracts/**
+              - gateway-contracts/tasks/**
+              - gateway-contracts/package*.json
+              - gateway-contracts/hardhat.config.ts
+              - gateway-contracts/tsconfig.json
+              - gateway-contracts/Dockerfile
+              - gateway-contracts/docker-compose.yml
+              - gateway-contracts/Makefile
   fhevm-gateway-sc-deploy:
+    name: Fhevm Gateway Contracts Deployment Tests
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
-    name: fhevm Gateway Contracts Deployment
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -50,11 +50,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and start Docker services
+        working-directory: gateway-contracts
         run: |
           make docker-compose-build
           make docker-compose-up
 
       - name: Check smart contract deployment
+        working-directory: gateway-contracts
         run: |
 
           ## Check Contracts Deployment
@@ -90,6 +92,7 @@ jobs:
           fi
 
       - name: Clean up
+        working-directory: gateway-contracts
         if: always()
         run: |
           make docker-compose-down

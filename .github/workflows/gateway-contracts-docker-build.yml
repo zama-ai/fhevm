@@ -29,17 +29,16 @@ jobs:
         with:
           filters: |
             gw-contracts:
-              - '.github/workflows/gateway-contracts-docker-build.yml'
-              - 'contracts/**'
-              - 'tasks/**'
-              - 'package*.json'
-              - 'hardhat.config.ts'
-              - 'tsconfig.json'
-              - 'Dockerfile'
+              - .github/workflows/gateway-contracts-docker-build.yml
+              - gateway-contracts/contracts/**
+              - gateway-contracts/tasks/**
+              - gateway-contracts/package*.json
+              - gateway-contracts/hardhat.config.ts
+              - gateway-contracts/tsconfig.json
+              - gateway-contracts/Dockerfile
   docker-gateway-contracts:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' || github.event_name == 'release' }}
-    name: Docker - fhevm Gateway Contracts
     uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
     secrets:
       GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
@@ -49,16 +48,15 @@ jobs:
       id-token: "write"
       packages: "write"
     with:
-      working-directory: "."
+      working-directory: "gateway-contracts"
+      docker-context: "gateway-contracts"
       push_image: true
-      image-name: "fhevm-gateway/contracts"
+      image-name: "fhevm/gateway-contracts"
       docker-file: "Dockerfile"
       arm-build: true
 
   docker-hardhat-test:
-    needs:
-      - docker-gateway-contracts
-    name: Run Hardhat tests with built image
+    needs: docker-gateway-contracts
     uses: ./.github/workflows/gateway-contracts-hardhat-tests-docker.yml
     with:
       image-name: ${{ needs.docker-gateway-contracts.outputs.image_name }}

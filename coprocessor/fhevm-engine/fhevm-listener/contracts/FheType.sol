@@ -1,1 +1,1 @@
-../../../contracts/contracts/FheType.sol
+./../../../../host-contracts/contracts/FheType.sol

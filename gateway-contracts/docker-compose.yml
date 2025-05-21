@@ -1,4 +1,4 @@
-name: fhevm-gateway
+name: fhevm-gateway-contracts
 
 services:
   anvil-node:

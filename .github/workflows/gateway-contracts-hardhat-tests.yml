@@ -28,15 +28,15 @@ jobs:
         with:
           filters: |
             gw-contracts:
-              - '.github/workflows/gateway-contracts-hardhat-tests.yml'
-              - 'contracts/**'
-              - 'tasks/**'
-              - 'package*.json'
-              - 'hardhat.config.ts'
-              - 'tsconfig.json'
-              - 'Makefile'
-              - 'test/**'
-              - '.env.example'
+              - .github/workflows/gateway-contracts-hardhat-tests.yml
+              - gateway-contracts/contracts/**
+              - gateway-contracts/tasks/**
+              - gateway-contracts/package*.json
+              - gateway-contracts/hardhat.config.ts
+              - gateway-contracts/tsconfig.json
+              - gateway-contracts/Makefile
+              - gateway-contracts/test/**
+              - gateway-contracts/.env.example
   hardhat-tests:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
@@ -47,7 +47,9 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install dependencies
+        working-directory: gateway-contracts
         run: npm ci
 
       - name: Run hardhat tests
+        working-directory: gateway-contracts
         run: make test
