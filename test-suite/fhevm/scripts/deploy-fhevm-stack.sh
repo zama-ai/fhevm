@@ -112,7 +112,7 @@ prepare_local_config_relayer() {
 prepare_all_env_files() {
     log_info "Preparing all local environment files..."
 
-    local components=("minio" "core" "gateway" "host" "connector" "coprocessor" "relayer" "tests")
+    local components=("minio" "core" "gateway" "host" "connector" "coprocessor" "relayer" "test-suite")
     
     for component in "${components[@]}"; do
         prepare_local_env_file "$component" > /dev/null
@@ -198,16 +198,16 @@ cleanup "$@"
 prepare_all_env_files
 prepare_local_config_relayer
 
-log_info "Deploying FHEVM stack..."
+log_info "Deploying FHEVM Stack..."
 log_info "Using component versions:"
-log_info "  CORE: ${CORE_VERSION}"
-log_info "  CONNECTOR: ${CONNECTOR_VERSION}"
+log_info "  KMS CORE:${CORE_VERSION}"
+log_info "  KMS CONNECTOR: ${CONNECTOR_VERSION}"
 log_info "  COPROCESSOR: ${COPROCESSOR_VERSION}"
 log_info "  DB MIGRATION: ${DB_MIGRATION_VERSION}"
 log_info "  GATEWAY: ${GATEWAY_VERSION}"
 log_info "  HOST: ${HOST_VERSION}"
 log_info "  RELAYER: ${RELAYER_VERSION}"
-log_info "  TESTS: ${TESTS_VERSION}"
+log_info "  TEST SUITE: ${TEST_SUITE_VERSION}"
 
 run_compose "minio" "MinIO Services" \
     "${PROJECT}-minio:running" \
@@ -247,7 +247,7 @@ run_compose "coprocessor" "Coprocessor Services" \
 run_compose "relayer" "Relayer Services" \
     "${PROJECT}-relayer:running"
 
-run_compose "tests" "E2E Tests" \
-    "${PROJECT}-tests-e2e-debug:running"
+run_compose "test-suite" "Test Suite E2E Tests" \
+    "${PROJECT}-test-suite-e2e-debug:running"
 
 log_info "All services started successfully!"

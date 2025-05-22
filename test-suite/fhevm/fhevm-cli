@@ -24,7 +24,7 @@ export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc8"}
 export HOST_VERSION=${HOST_VERSION:-"31c51c3"}
 export GATEWAY_VERSION=${GATEWAY_VERSION:-"5d13e72"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc8"}
-export TESTS_VERSION=${TESTS_VERSION:-"0d61373"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"0d61373"}
 
 function print_logo() {
   echo -e "${LIGHT_BLUE}"
@@ -44,7 +44,7 @@ function usage {
   echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
   echo -e "  ${YELLOW}deploy${RESET}              Deploy the full fhevm stack"
   echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|erc20|debug)"
-  echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|tests)"
+  echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
   echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
   echo -e "  ${YELLOW}logs${RESET} ${CYAN}[SERVICE]${RESET}      View logs for a specific service"
   echo -e "  ${YELLOW}help${RESET}                Display this help message"
@@ -173,7 +173,7 @@ case $COMMAND in
           ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
-          docker exec -it fhevm-tests-e2e-debug bash
+          docker exec -it fhevm-test-suite-e2e-debug bash
           ;;
         *)
           echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown test type: $TEST_TYPE${RESET}"
@@ -184,7 +184,7 @@ case $COMMAND in
     fi
     if [ "$TEST_TYPE" != "debug" ]; then
       echo -e "${log_message}"
-      docker exec fhevm-tests-e2e-debug "${docker_args[@]}"
+      docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
     fi
     ;;
     
@@ -196,7 +196,7 @@ case $COMMAND in
   upgrade)
     print_logo
     SERVICE=$1
-    if [[ ! $SERVICE =~ ^(minio|core|gateway|host|connector|coprocessor|relayer|tests)$ ]]; then
+    if [[ ! $SERVICE =~ ^(minio|core|gateway|host|connector|coprocessor|relayer|test-suite)$ ]]; then
       echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $SERVICE${RESET}"
       usage
       exit 1
