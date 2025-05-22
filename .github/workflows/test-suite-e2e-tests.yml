@@ -1,4 +1,4 @@
-name: fhevm E2E Tests
+name: Fhevm Test Suite E2E Tests
 
 on:
   workflow_dispatch:
@@ -38,8 +38,8 @@ on:
         required: true
         default: ""
         type: string
-      tests_version:
-        description: "E2E Tests Image Version"
+      test_suite_version:
+        description: "Test Suite E2E Image Version"
         required: true
         default: ""
         type: string
@@ -59,13 +59,13 @@ jobs:
     outputs:
       changes-fhevm: ${{ steps.filter.outputs.fhevm }}
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
         id: filter
         with:
           filters: |
             fhevm:
-              - 'fhevm/**'
+              - 'test-suite/fhevm/**'
   fhevm-e2e-test:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' }}
@@ -77,7 +77,7 @@ jobs:
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Docker
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
@@ -90,7 +90,7 @@ jobs:
           password: ${{ secrets.GHCR_READ_TOKEN }}
 
       - name: Deploy fhevm Stack
-        working-directory: fhevm
+        working-directory: test-suite/fhevm
         env:
           CORE_VERSION: ${{ inputs.core_version }}
           CONNECTOR_VERSION: ${{ inputs.connector_version }}
@@ -99,42 +99,42 @@ jobs:
           HOST_VERSION: ${{ inputs.host_version }}
           GATEWAY_VERSION: ${{ inputs.gateway_version }}
           RELAYER_VERSION: ${{ inputs.relayer_version }}
-          TESTS_VERSION: ${{ inputs.tests_version }}
+          TEST_SUITE_VERSION: ${{ inputs.test_suite_version }}
         run: |
           ./fhevm-cli deploy
 
       - name: Input proof test (uint64)
-        working-directory: fhevm
+        working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test input-proof
 
       - name: Public Decryption test
-        working-directory: fhevm
+        working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test public-decryption
 
       - name: User Decryption test
-        working-directory: fhevm
+        working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test user-decryption
 
       - name: ERC20 test
-        working-directory: fhevm
+        working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test erc20
 
       - name: Public Decryption HTTP endpoint test (ebool)
-        working-directory: fhevm
+        working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test public-decrypt-http-ebool
 
       - name: Public Decryption HTTP endpoint test (mixed)
-        working-directory: fhevm
+        working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test public-decrypt-http-mixed
 
       - name: Show logs on test failure
-        working-directory: fhevm
+        working-directory: test-suite/fhevm
         if: always()
         run: |
           echo "::group::Relayer Logs"
@@ -148,7 +148,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Cleanup
-        working-directory: fhevm
+        working-directory: test-suite/fhevm
         if: always()
         run: |
           ./fhevm-cli clean
