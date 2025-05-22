@@ -6,7 +6,7 @@ use anyhow::Error;
 use async_trait::async_trait;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::info;
+use tracing::{error, info};
 use uuid::v1::{Context, Timestamp};
 use uuid::Uuid;
 
@@ -35,14 +35,19 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
         self.uuid_generator.generate_id()
     }
 
-    fn run_pre_dispatch_hooks(&self, event: E) {
-        if let Ok(hooks) = self.pre_dispatch_hooks.read() {
-            for hook in hooks.iter() {
-                info!("Running pre-dispatch hook: {}", hook);
-                hook.run(event.clone());
-            }
+    async fn run_pre_dispatch_hooks_sequentially(&self, event: E) {
+        // Acquire lock and prepare all hooks as Futures.
+        let hooks: Vec<_> = if let Ok(hooks_guard) = self.pre_dispatch_hooks.read() {
+            hooks_guard.iter().cloned().collect()
         } else {
-            panic!("Failed to acquire read lock on pre-dispatch hooks");
+            error!("Failed to acquire read lock on pre-dispatch hooks");
+            return;
+        };
+
+        // Execute the futures sequentially.
+        for hook in hooks {
+            info!("Running pre-dispatch hook: {}", hook);
+            hook.run(event.clone()).await;
         }
     }
 }
@@ -52,17 +57,18 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> EventDispatcher<E>
     for Orchestrator<D, E>
 {
     async fn dispatch_event(&self, event: E) -> Result<(), Error> {
-        self.run_pre_dispatch_hooks(event.clone());
+        self.run_pre_dispatch_hooks_sequentially(event.clone())
+            .await;
         self.event_dispatcher.dispatch_event(event).await
     }
 }
-
+#[async_trait::async_trait]
 impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HookRegistry<E> for Orchestrator<D, E> {
     fn register_pre_dispatch_hook(&self, hook: Arc<dyn PreDispatchHook<E>>) {
         if let Ok(mut hooks) = self.pre_dispatch_hooks.write() {
             hooks.push(hook);
         } else {
-            panic!("Failed to acquire write lock on pre-dispatch hooks");
+            error!("Failed to acquire write lock on pre-dispatch hooks");
         }
     }
 }

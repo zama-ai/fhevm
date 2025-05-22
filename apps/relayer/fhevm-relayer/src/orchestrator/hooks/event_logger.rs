@@ -24,8 +24,9 @@ impl Display for EventLoggingHook {
         write!(f, "{}", self.name)
     }
 }
-impl<E: Event> PreDispatchHook<E> for EventLoggingHook {
-    fn run(&self, event: E) {
+#[async_trait::async_trait]
+impl<E: Event + Send + Sync + 'static> PreDispatchHook<E> for EventLoggingHook {
+    async fn run(&self, event: E) {
         info!(
             event_name = %colorize_event_type(event.event_name()),
             request_id = %colorize_request_id(event.request_id()),

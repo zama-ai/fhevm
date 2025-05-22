@@ -39,6 +39,7 @@ pub trait HooksRunner<E: Event> {
     fn run_hooks(&self, event: E);
 }
 
+#[async_trait]
 pub trait PreDispatchHook<E: Event>: Display + Send + Sync {
-    fn run(&self, event: E);
+    async fn run(&self, event: E);
 }
