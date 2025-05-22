@@ -56,10 +56,11 @@ use fhevm_relayer::{
     },
     http::http_server::run_http_server,
     orchestrator::{
-        hooks::EventLoggingHook,
+        hooks::{EventLoggingHook, EventPersistenceHook},
         traits::{EventHandler, HandlerRegistry, HookRegistry},
         Orchestrator, TokioEventDispatcher,
     },
+    store::{key_value_db::InMemoryKVStore, EventStore},
     transaction::{TransactionService, TxConfig},
 };
 
@@ -141,9 +142,18 @@ async fn main() -> eyre::Result<()> {
         &node_id,
     );
 
+    // Create the storage components for event persistence
+    let kv_store = InMemoryKVStore::new();
+    let event_store = Arc::new(EventStore::<RelayerEvent>::new(kv_store.clone()));
+    
     // Register event logging hook to capture all events
     orchestrator
         .register_pre_dispatch_hook(EventLoggingHook::new("Received relayer event".to_string()));
+    
+    // Register event persistence hook
+    orchestrator.register_pre_dispatch_hook(EventPersistenceHook::<RelayerEvent>::new(
+        event_store.clone(),
+    ));
 
     // === Register the event handlers
     let tx_config = TxConfig::from(settings.transaction.clone());
