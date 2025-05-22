@@ -10,6 +10,7 @@ use crate::http::userdecrypt_http_listener::{
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::{primitives::U256, rpc::types::Log};
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::num::ParseIntError;
 use std::str::FromStr;
@@ -81,7 +82,7 @@ impl From<InputProofEventId> for u8 {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// Relayer event represents a single step in one of the different flows of the
 /// relayer (such as public decryption, input proof verification and so on).
 pub struct RelayerEvent {
@@ -184,7 +185,7 @@ impl Event for RelayerEvent {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiVersion {
     pub category: ApiCategory,
     pub number: u8,
@@ -208,7 +209,7 @@ impl ApiVersion {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// Api category allows for differentiating between production and experimental
 /// APIs.
 pub enum ApiCategory {
@@ -216,7 +217,7 @@ pub enum ApiCategory {
     EXPERIMENTAL,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// Relayer event data represents the different categories of event data, each
 /// representing a specific flow. Generic event data represents the event data
 /// shared between the different flows.
@@ -238,7 +239,7 @@ impl AsRef<str> for RelayerEventData {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum GenericEventData {
     /// Event representing a raw blockchain event log received from fhevm blockchain.
     EventLogFromFhevm { log: Log },
@@ -256,7 +257,7 @@ impl GenericEventData {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PublicDecryptEventData {
     /// Event representing a public decryption request for ciphertexts on fhevm.
     ReqRcvdFromFhevm {
@@ -293,7 +294,7 @@ impl PublicDecryptEventData {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum UserDecryptEventData {
     /// Event representing a user decryption request for ciphertexts on fhevm.
     ReqRcvdFromUser { decrypt_request: UserDecryptRequest },
@@ -328,7 +329,7 @@ impl UserDecryptEventData {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicDecryptRequest {
     pub ct_handles: Vec<[u8; 32]>,
 }
@@ -358,14 +359,14 @@ pub struct RequestValidity {
     pub duration_days: U256,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicDecryptResponse {
     pub gateway_request_id: U256,
     pub decrypted_value: Bytes,
     pub signatures: Vec<Bytes>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserDecryptResponse {
     pub gateway_request_id: U256,
     pub reencrypted_shares: Vec<Bytes>,
@@ -498,7 +499,7 @@ impl TryFrom<PublicDecryptResponse> for PublicDecryptResponseJson {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum InputProofEventData {
     /// Event representing a input proof verification request from the user.
     ReqRcvdFromUser {
@@ -532,7 +533,7 @@ impl InputProofEventData {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InputProofRequest {
     pub contract_chain_id: u64,
     pub contract_address: Address,
@@ -556,7 +557,7 @@ impl InputProofRequest {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InputProofResponse {
     pub handles: Vec<FixedBytes<32>>,
     pub signatures: Vec<Bytes>,

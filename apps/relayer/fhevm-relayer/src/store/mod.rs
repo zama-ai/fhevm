@@ -5,4 +5,8 @@
 //! 2. A data translation layer for storing different kinds of data . Eg: EventStore.
 
 // Export the store components and traits
+mod event;
 pub mod key_value_db;
+
+// Re-export EventStore interface easier access
+pub use event::EventStore;
