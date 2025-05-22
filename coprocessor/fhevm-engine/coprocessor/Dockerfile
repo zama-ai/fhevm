@@ -13,7 +13,7 @@ RUN npm install && npx hardhat compile
 # Stage 2: Build fhevm-engine
 FROM cgr.dev/chainguard/glibc-dynamic:latest-dev AS builder
 
-ARG RUST_IMAGE_VERSION=1.85.0
+ARG RUST_IMAGE_VERSION=1.87.0
 
 USER root
 
