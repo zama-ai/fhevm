@@ -43,25 +43,13 @@ pub struct S3Config {
     pub retry_policy: S3RetryPolicy,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct S3RetryPolicy {
     pub max_retries_per_upload: u32,
     pub max_backoff: Duration,
     pub max_retries_timeout: Duration,
     pub recheck_duration: Duration,
     pub regular_recheck_duration: Duration,
-}
-
-impl Default for S3RetryPolicy {
-    fn default() -> Self {
-        Self {
-            max_retries_per_upload: 60,
-            max_backoff: Duration::from_secs(10),
-            max_retries_timeout: Duration::from_secs(2 * 60),
-            recheck_duration: Duration::from_secs(1),
-            regular_recheck_duration: Duration::from_secs(60),
-        }
-    }
 }
 
 #[derive(Clone)]

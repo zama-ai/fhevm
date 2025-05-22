@@ -39,6 +39,7 @@ num-traits = "0.2.19"
 aws-sdk-s3 = "1.78.0"
 bytesize = "2.0.1"
 futures = "0.3.31"
+humantime = "2.2.0"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }

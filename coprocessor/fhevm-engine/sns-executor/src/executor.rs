@@ -239,7 +239,7 @@ async fn process_tasks(
 ) -> Result<(), ExecutionError> {
     for task in tasks.iter_mut() {
         let ct64_compressed = task.ct64_compressed.as_ref().ok_or_else(|| {
-            ExecutionError::MissingCiphertext128(format!(
+            ExecutionError::MissingCiphertext64(format!(
                 "Missing ct64_compressed for handle: {}",
                 hex::encode(&task.handle)
             ))
@@ -282,7 +282,7 @@ async fn process_tasks(
         // Enqueue the task for upload in DB
         task.enqueue_upload_task(db_txn).await?;
 
-        // Start uploading the ciphertexts
+        // Start uploading the ciphertexts as soon as the ct128 is computed
         //
         // The service must continue running the squashed noise algorithm,
         // regardless of the availability of the upload worker.

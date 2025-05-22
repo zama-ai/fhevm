@@ -1,5 +1,7 @@
 use fhevm_engine_common::telemetry;
-use sns_executor::{compute_128bit_ct, process_s3_uploads, Config, DBConfig, HandleItem, S3Config};
+use sns_executor::{
+    compute_128bit_ct, process_s3_uploads, Config, DBConfig, HandleItem, S3Config, S3RetryPolicy,
+};
 use tokio::{signal::unix, spawn, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, Level};
@@ -35,8 +37,14 @@ fn construct_config() -> Config {
         s3: S3Config {
             bucket_ct128: args.bucket_name_ct128,
             bucket_ct64: args.bucket_name_ct64,
-            max_concurrent_uploads: args.max_concurrent_uploads,
-            retry_policy: S3Config::default().retry_policy, // TODO:
+            max_concurrent_uploads: args.s3_max_concurrent_uploads,
+            retry_policy: S3RetryPolicy {
+                max_retries_per_upload: args.s3_max_retries_per_upload,
+                max_backoff: args.s3_max_backoff,
+                max_retries_timeout: args.s3_max_retries_timeout,
+                recheck_duration: args.s3_recheck_duration,
+                regular_recheck_duration: args.s3_recheck_duration,
+            },
         },
     }
 }
