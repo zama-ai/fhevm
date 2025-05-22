@@ -1,7 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
-use std::sync::Arc;
 use tracing::debug;
 
 use super::kvstore::KVStore;
@@ -14,11 +13,16 @@ pub struct InMemoryKVStore {
 }
 
 impl InMemoryKVStore {
-    /// Create a new in-memory key-value store.
-    pub fn new() -> Arc<dyn KVStore> {
-        Arc::new(Self {
+    pub fn new() -> Self {
+        Self {
             data: DashMap::new(),
-        })
+        }
+    }
+}
+
+impl Default for InMemoryKVStore {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -88,12 +92,14 @@ impl KVStore for InMemoryKVStore {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::store::key_value_db::kvstore_tests::suite::run_kvstore_interface_tests;
 
     #[tokio::test]
     async fn test_inmemory_kvstore_interface() {
-        let store = InMemoryKVStore::new();
+        let store = Arc::new(InMemoryKVStore::default());
         run_kvstore_interface_tests(store).await.unwrap();
     }
 }

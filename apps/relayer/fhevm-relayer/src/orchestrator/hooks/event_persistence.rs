@@ -68,7 +68,7 @@ mod tests {
             Arc<EventStore<MockEvent>>,
             Arc<EventPersistenceHook<MockEvent>>,
         ) {
-            let kv_store = InMemoryKVStore::new();
+            let kv_store = Arc::new(InMemoryKVStore::default());
             let event_store = Arc::new(EventStore::<MockEvent>::new(kv_store));
             let hook = EventPersistenceHook::new(event_store.clone());
             (event_store, hook)

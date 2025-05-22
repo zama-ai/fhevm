@@ -143,7 +143,7 @@ async fn main() -> eyre::Result<()> {
     );
 
     // Create the storage components for event persistence
-    let kv_store = InMemoryKVStore::new();
+    let kv_store = Arc::new(InMemoryKVStore::default());
     let event_store = Arc::new(EventStore::<RelayerEvent>::new(kv_store.clone()));
     
     // Register event logging hook to capture all events

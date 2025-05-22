@@ -119,7 +119,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_event_store_inmemorykvstore() {
-        let kv_store = InMemoryKVStore::new();
+        let kv_store = Arc::new(InMemoryKVStore::default());
         let event_store = EventStore::<MockEvent>::new(kv_store);
 
         let request_id = uuid::Uuid::new_v4();
