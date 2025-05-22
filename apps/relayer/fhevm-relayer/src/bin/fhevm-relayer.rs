@@ -145,11 +145,11 @@ async fn main() -> eyre::Result<()> {
     // Create the storage components for event persistence
     let kv_store = Arc::new(InMemoryKVStore::default());
     let event_store = Arc::new(EventStore::<RelayerEvent>::new(kv_store.clone()));
-    
+
     // Register event logging hook to capture all events
     orchestrator
         .register_pre_dispatch_hook(EventLoggingHook::new("Received relayer event".to_string()));
-    
+
     // Register event persistence hook
     orchestrator.register_pre_dispatch_hook(EventPersistenceHook::<RelayerEvent>::new(
         event_store.clone(),

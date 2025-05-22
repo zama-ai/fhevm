@@ -23,7 +23,7 @@ impl GatewayProcessorsEvent {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-            
+
         GatewayProcessorsEvent {
             request_id,
             api_version,
@@ -40,7 +40,7 @@ impl GatewayProcessorsEvent {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-            
+
         GatewayProcessorsEvent {
             request_id: self.request_id,
             api_version: self.api_version,
@@ -74,7 +74,7 @@ impl Event for GatewayProcessorsEvent {
     fn request_id(&self) -> Uuid {
         self.request_id
     }
-    
+
     fn timestamp(&self) -> u64 {
         self.timestamp
     }
