@@ -8,8 +8,9 @@ mod tests;
 
 use std::time::Duration;
 
-use fhevm_engine_common::{telemetry::OtelTracer, types::FhevmError};
+use fhevm_engine_common::{telemetry::OtelTracer, types::FhevmError, utils::compact_hex};
 use serde::{Deserialize, Serialize};
+use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::sync::mpsc::{self, Sender};
 use tokio_util::sync::CancellationToken;
@@ -91,6 +92,89 @@ pub struct HandleItem {
     pub otel: OtelTracer,
 }
 
+impl HandleItem {
+    /// Enqueues the upload task into the database
+    ///
+    /// If inserted into the `ciphertext_digest` table means that the both (ct64 and ct128)
+    /// ciphertexts are ready to be uploaded to S3.
+    pub(crate) async fn enqueue_upload_task(
+        &self,
+        db_txn: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), ExecutionError> {
+        sqlx::query!(
+            "INSERT INTO ciphertext_digest (tenant_id, handle)
+            VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            self.tenant_id,
+            &self.handle,
+        )
+        .execute(db_txn.as_mut())
+        .await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn update_ct128_uploaded(
+        &self,
+        trx: &mut Transaction<'_, Postgres>,
+        digest: Vec<u8>,
+    ) -> Result<(), ExecutionError> {
+        sqlx::query!(
+            "UPDATE ciphertext_digest
+            SET ciphertext128 = $1
+            WHERE handle = $2",
+            digest,
+            self.handle
+        )
+        .execute(trx.as_mut())
+        .await?;
+
+        // Reset ciphertext128 as the ct128 has been successfully uploaded to S3
+        // NB: For reclaiming the disk-space in DB, we rely on auto vacuuming in
+        // Postgres
+
+        sqlx::query!(
+            "UPDATE ciphertexts
+             SET ciphertext128 = NULL
+             WHERE handle = $1",
+            self.handle
+        )
+        .execute(trx.as_mut())
+        .await?;
+
+        info!(
+            "Mark ct128 as uploaded, handle: {}, digest: {}",
+            compact_hex(&self.handle),
+            compact_hex(&digest)
+        );
+
+        Ok(())
+    }
+
+    pub(crate) async fn update_ct64_uploaded(
+        &self,
+        trx: &mut Transaction<'_, Postgres>,
+        digest: Vec<u8>,
+    ) -> Result<(), ExecutionError> {
+        sqlx::query!(
+            "UPDATE ciphertext_digest
+             SET ciphertext = $1
+             WHERE handle = $2",
+            digest,
+            self.handle
+        )
+        .execute(trx.as_mut())
+        .await?;
+
+        info!(
+            "Mark ct64 as uploaded, handle: {}, digest: {}",
+            compact_hex(&self.handle),
+            compact_hex(&digest)
+        );
+
+        Ok(())
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum ExecutionError {
     #[error("Conversion error: {0}")]
@@ -126,8 +210,8 @@ pub enum ExecutionError {
     #[error("Deserialization error: {0}")]
     DeserializationError(String),
 
-    #[error("Bucket S3 upload: {0}")]
-    BucketNotExist(String),
+    #[error("Bucket not found {0}")]
+    BucketNotFound(String),
 
     #[error("S3 Transient error: {0}")]
     S3TransientError(String),

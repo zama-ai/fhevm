@@ -74,15 +74,31 @@ pub(crate) async fn process_s3_uploads(
                     Some(task) => task,
                     None => return Ok(()),
                 };
+                debug!("Received task, handle: {}", hex::encode(&task.handle));
 
-                let trx = insert_and_lock(task.tenant_id, task.handle.clone(), &pool).await?;
+                let mut trx_lock = pool.begin().await?;
+                task.enqueue_upload_task(&mut trx_lock).await?;
+
+                if let Err(err) = sqlx::query!(
+                    "SELECT * FROM ciphertext_digest
+                    WHERE handle = $2 AND tenant_id = $1 AND
+                    (ciphertext128 IS NULL OR ciphertext IS NULL)
+                    FOR UPDATE SKIP LOCKED",
+                    task.tenant_id,
+                    task.handle,
+                )
+                .fetch_one(trx_lock.as_mut())
+                .await {
+                    error!("Failed to lock pending uploads {}, handle: {}", err, compact_hex(&task.handle));
+                    trx_lock.rollback().await?;
+                    continue;
+                }
 
                 if !is_ready.load(Ordering::SeqCst) {
                     // If the S3 setup is not ready, we need to wait for its ready status
                     // before we can continue spawning uploading job
                     info!("Upload task skipped, S3 connection still not ready");
-                    // Queue the uploading job in the database
-                    trx.commit().await?;
+                    trx_lock.commit().await?;
                     continue;
                 }
 
@@ -111,7 +127,7 @@ pub(crate) async fn process_s3_uploads(
                 // Spawn a new task to upload the ciphertexts
                 let h = tokio::spawn(async move {
                     let s = task.otel.child_span("upload_s3");
-                        if let Err(err) = upload_ciphertexts(trx, task, &client, &conf).await {
+                        if let Err(err) = upload_ciphertexts(trx_lock, task, &client, &conf).await {
                             if let ExecutionError::S3TransientError(_) = err {
                                 ready_flag.store(false, Ordering::SeqCst );
                                 info!("S3 setup is not ready, due to transient error: {}", err);
@@ -144,40 +160,6 @@ pub(crate) async fn process_s3_uploads(
             }
         }
     }
-}
-
-async fn insert_and_lock(
-    tenant_id: i32,
-    handle: Vec<u8>,
-    pool: &PgPool,
-) -> Result<Transaction<'static, Postgres>, ExecutionError> {
-    let mut trx = pool.begin().await?;
-
-    sqlx::query!(
-        "INSERT INTO ciphertext_digest (tenant_id, handle)
-        VALUES ($1, $2) ON CONFLICT DO NOTHING",
-        tenant_id,
-        &handle,
-    )
-    .execute(trx.as_mut())
-    .await?;
-
-    trx.commit().await?;
-
-    let mut trx = pool.begin().await?;
-
-    sqlx::query!(
-        "SELECT * FROM ciphertext_digest
-        WHERE handle = $2 AND tenant_id = $1 AND
-        (ciphertext128 IS NULL OR ciphertext IS NULL)
-        FOR UPDATE SKIP LOCKED",
-        tenant_id,
-        handle,
-    )
-    .fetch_all(trx.as_mut())
-    .await?;
-
-    Ok(trx)
 }
 
 enum UploadResult {
@@ -230,6 +212,14 @@ async fn upload_ciphertexts(
                     .send(),
                 UploadResult::CtType128((ct128_digest.clone(), span)),
             ));
+        } else {
+            info!(
+                "ct128 already exists in S3, handle: {}, digest: {}",
+                handle_as_hex,
+                hex::encode(&ct128_digest)
+            );
+
+            task.update_ct128_uploaded(&mut trx, ct128_digest).await?;
         }
     }
 
@@ -261,8 +251,14 @@ async fn upload_ciphertexts(
                     .send(),
                 UploadResult::CtType64((ct64_digest.clone(), span)),
             ));
+        } else {
+            info!(
+                "ct64 already exists in S3, handle: {}, digest: {}",
+                handle_as_hex,
+                hex::encode(&ct64_digest)
+            );
 
-            // TODO: Update DB
+            task.update_ct64_uploaded(&mut trx, ct64_digest).await?;
         }
     }
 
@@ -287,35 +283,7 @@ async fn upload_ciphertexts(
                     telemetry::end_span_with_err(span, err.to_string());
                     transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
                 } else {
-                    sqlx::query!(
-                        "UPDATE ciphertext_digest
-                        SET ciphertext128 = $1
-                        WHERE handle = $2",
-                        digest,
-                        task.handle
-                    )
-                    .execute(trx.as_mut())
-                    .await?;
-
-                    // Reset ciphertext128 as the ct128 has been successfully uploaded to S3
-                    // NB: For reclaiming the disk-space in DB, we rely on auto vacuuming in
-                    // Postgres
-
-                    sqlx::query!(
-                        "UPDATE ciphertexts
-                        SET ciphertext128 = NULL
-                        WHERE handle = $1",
-                        task.handle
-                    )
-                    .execute(trx.as_mut())
-                    .await?;
-
-                    info!(
-                        "Uploaded ct128, handle: {}, digest: {}",
-                        handle_as_hex,
-                        compact_hex(&digest)
-                    );
-
+                    task.update_ct128_uploaded(&mut trx, digest).await?;
                     telemetry::end_span_with_timestamp(span, finish_time);
                 }
             }
@@ -329,28 +297,13 @@ async fn upload_ciphertexts(
                     telemetry::end_span_with_err(span, err.to_string());
                     transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
                 } else {
-                    sqlx::query!(
-                        "UPDATE ciphertext_digest
-                            SET ciphertext = $1
-                            WHERE handle = $2",
-                        digest,
-                        task.handle
-                    )
-                    .execute(trx.as_mut())
-                    .await?;
-                    info!(
-                        "Uploaded ct64, handle: {}, digest: {}",
-                        handle_as_hex,
-                        compact_hex(&digest)
-                    );
-
+                    task.update_ct64_uploaded(&mut trx, digest).await?;
                     telemetry::end_span_with_timestamp(span, finish_time);
                 }
             }
         }
     }
 
-    // TODO: Move this notify in DB query
     sqlx::query("SELECT pg_notify($1, '')")
         .bind(EVENT_CIPHERTEXTS_UPLOADED)
         .execute(trx.as_mut())
