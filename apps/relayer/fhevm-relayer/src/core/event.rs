@@ -13,6 +13,7 @@ use alloy::{primitives::U256, rpc::types::Log};
 use std::fmt::Display;
 use std::num::ParseIntError;
 use std::str::FromStr;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 use uuid::Uuid;
 
@@ -87,22 +88,35 @@ pub struct RelayerEvent {
     pub request_id: Uuid,
     pub api_version: ApiVersion,
     pub data: RelayerEventData,
+    pub timestamp: u64,
 }
 
 impl RelayerEvent {
     pub fn new(request_id: Uuid, api_version: ApiVersion, data: RelayerEventData) -> RelayerEvent {
+        let timestamp = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(duration) => duration.as_secs(),
+            Err(_) => 0,
+        };
+
         RelayerEvent {
             request_id,
             api_version,
             data,
+            timestamp,
         }
     }
 
     pub fn derive_next_event(self, next_event_data: RelayerEventData) -> RelayerEvent {
+        let timestamp = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(duration) => duration.as_secs(),
+            Err(_) => 0,
+        };
+
         RelayerEvent {
             request_id: self.request_id,
             api_version: self.api_version,
             data: next_event_data,
+            timestamp,
         }
     }
 }
@@ -163,6 +177,10 @@ impl Event for RelayerEvent {
 
     fn request_id(&self) -> Uuid {
         self.request_id
+    }
+
+    fn timestamp(&self) -> u64 {
+        self.timestamp
     }
 }
 

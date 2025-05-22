@@ -8,6 +8,7 @@ pub trait Event: Clone + Send + Sync + 'static {
     fn event_name(&self) -> &str;
     fn event_id(&self) -> u8;
     fn request_id(&self) -> Uuid;
+    fn timestamp(&self) -> u64;
 }
 
 #[async_trait]

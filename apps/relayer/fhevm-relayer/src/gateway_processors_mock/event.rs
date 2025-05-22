@@ -10,6 +10,7 @@ pub struct GatewayProcessorsEvent {
     pub request_id: Uuid,
     pub api_version: ApiVersion,
     pub data: GatewayProcessorsEventData,
+    pub timestamp: u64,
 }
 
 impl GatewayProcessorsEvent {
@@ -18,10 +19,16 @@ impl GatewayProcessorsEvent {
         api_version: ApiVersion,
         data: GatewayProcessorsEventData,
     ) -> GatewayProcessorsEvent {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+            
         GatewayProcessorsEvent {
             request_id,
             api_version,
             data,
+            timestamp,
         }
     }
 
@@ -29,10 +36,16 @@ impl GatewayProcessorsEvent {
         self,
         next_event_data: GatewayProcessorsEventData,
     ) -> GatewayProcessorsEvent {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+            
         GatewayProcessorsEvent {
             request_id: self.request_id,
             api_version: self.api_version,
             data: next_event_data,
+            timestamp,
         }
     }
 }
@@ -60,6 +73,10 @@ impl Event for GatewayProcessorsEvent {
 
     fn request_id(&self) -> Uuid {
         self.request_id
+    }
+    
+    fn timestamp(&self) -> u64 {
+        self.timestamp
     }
 }
 
