@@ -178,6 +178,9 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
   // Generate mock struct definitions
   const mockStruct = generateMockStructs(structDefinitions);
 
+  // Generate mock counters
+  const mockCounters = generateMockCounters(functionDefinitions);
+
   // Generate mock function definitions
   const mockFunctions = generateMockFunctions(
     functionDefinitions,
@@ -203,6 +206,8 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
   mockContract += mockStruct + "\n\n";
   // Append event lines
   mockContract += mockEvents + "\n\n";
+  // Append counter lines
+  mockContract += mockCounters + "\n\n";
   // Append function lines
   mockContract += mockFunctions + "\n\n";
   // Close the contract
@@ -215,6 +220,16 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
 
   // Write the mock contract to a file
   fs.writeFileSync(path.join(outputPath, `${contractName}.sol`), mockContract, "utf8");
+}
+
+/**
+ * @description Generates mock counter definitions based on the provided function definitions.
+ * @param {BaseASTNode[]} functionDefinitions - Array of function definitions
+ * @returns string - Generated mock counter definitions
+ */
+function generateMockCounters(functionDefinitions) {
+  const counterOperators = findCounterOperators(functionDefinitions);
+  return counterOperators.map((counter) => `uint256 ${counter};`).join("\n");
 }
 
 /**
@@ -268,6 +283,8 @@ function generateMockEvents(eventDefinitions) {
  * @returns string - Generated mock functions
  */
 function generateMockFunctions(functionDefinitions, eventDefinitions, structDefinitions) {
+  // const counters = findCounterOperators(functionDefinitions);
+
   return functionDefinitions
     .filter(
       (functionDef) =>
@@ -290,6 +307,10 @@ function generateMockFunctions(functionDefinitions, eventDefinitions, structDefi
         })
         .join(", ");
 
+      // Get the function ID assignments based on counters
+      const counterOperators = findCounterOperators(functionDef.body.statements);
+      const idCounterAssignments = findCounterIdAssignments(functionDef.body.statements, counterOperators);
+
       // Initialize the mock function's header
       let mockFunction = `function ${functionDef.name}(${functionParameters}) ${functionDef.visibility} {\n`;
 
@@ -305,6 +326,17 @@ function generateMockFunctions(functionDefinitions, eventDefinitions, structDefi
             const parameterName = parameter.name;
             eventArguments.push(parameterName);
             const parameterType = getParameterType(parameter.typeName);
+
+            // Skip parameters received in function parameters
+            const skipDeclaration = functionDef.parameters.some((p) => p.name === parameter.name);
+            if (skipDeclaration) return "";
+
+            // Check if the parameter is an counter ID assignation variable
+            const idCounterAssignment = idCounterAssignments.find((assignment) => assignment.idVar === parameterName);
+            if (idCounterAssignment) {
+              return `${idCounterAssignment.counterVar}++;\n${parameterType} ${parameterName} = ${idCounterAssignment.counterVar};`;
+            }
+
             const isStruct = structDefinitions.some((structDef) => structDef.name === parameterType);
             // Check if the parameter type is an array and declare it in memory
             if (parameterType.endsWith("[]")) {
@@ -389,4 +421,75 @@ function findEmitStatements(statements) {
   }
 
   return emitStatements;
+}
+
+/**
+ * @description Finds counter operators in the list of nodes
+ * @param {BaseASTNode[]} nodes - AST nodes (e.g., function bodies)
+ * @returns string[] - List of counter operator names
+ */
+function findCounterOperators(nodes) {
+  const memberNames = [];
+
+  for (const node of nodes) {
+    if (
+      node.type === "UnaryOperation" &&
+      node.operator === "++" &&
+      node.subExpression &&
+      node.subExpression.type === "MemberAccess"
+    ) {
+      memberNames.push(node.subExpression.memberName);
+    } else {
+      // Recursively check all object properties and array elements
+      for (const key in node) {
+        if (node[key] && typeof node[key] === "object") {
+          memberNames.push(...findCounterOperators([node[key]]));
+        }
+      }
+    }
+  }
+
+  // Remove duplicates
+  return [...new Set(memberNames)];
+}
+
+/**
+ * Finds the ID variables assigned from a counter variable after it's incremented.
+ * @param {BaseASTNode[]} nodes - AST nodes (e.g., function bodies)
+ * @param {string[]} counterNames - Names of counter variables
+ * @returns {{ counterVar: string, idVar: string }[]} - Array of pairs
+ */
+function findCounterIdAssignments(nodes, counterNames) {
+  const assignments = [];
+
+  for (const node of Array.isArray(nodes) ? nodes : [nodes]) {
+    // Look for VariableDeclarationStatement with initialValue from a counter
+    if (
+      node.type === "VariableDeclarationStatement" &&
+      node.variables &&
+      node.initialValue &&
+      node.initialValue.type === "MemberAccess" &&
+      counterNames.includes(node.initialValue.memberName)
+    ) {
+      // Get the variable name being assigned
+      const idVar = node.variables[0]?.name;
+      const counterVar = node.initialValue.memberName;
+      if (idVar && counterVar) {
+        assignments.push({ counterVar, idVar });
+      }
+    }
+    // Recursively check all object properties and array elements
+    for (const key in node) {
+      if (node[key] && typeof node[key] === "object") {
+        assignments.push(...findCounterIdAssignments(node[key], counterNames));
+      }
+    }
+  }
+
+  // Remove duplicates
+  const unique = {};
+  for (const a of assignments) {
+    unique[`${a.counter}:${a.idVar}`] = a;
+  }
+  return Object.values(unique);
 }

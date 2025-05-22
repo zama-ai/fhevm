@@ -2,13 +2,13 @@
 pragma solidity ^0.8.24;
 
 contract KmsManagementMock {
-    event PreprocessKeygenRequest(uint256 preKeyRequestId, bytes32 fheParamsDigest);
+    event PreprocessKeygenRequest(uint256 preKeygenRequestId, bytes32 fheParamsDigest);
 
-    event PreprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId);
+    event PreprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId);
 
-    event PreprocessKskgenRequest(uint256 preKskRequestId, bytes32 fheParamsDigest);
+    event PreprocessKskgenRequest(uint256 preKskgenRequestId, bytes32 fheParamsDigest);
 
-    event PreprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId);
+    event PreprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId);
 
     event KeygenRequest(uint256 preKeyId, bytes32 fheParamsDigest);
 
@@ -30,90 +30,78 @@ contract KmsManagementMock {
 
     event UpdateFheParams(string fheParamsName, bytes32 fheParamsDigest);
 
+    uint256 _preKeygenRequestCounter;
+    uint256 _preKskgenRequestCounter;
+    uint256 _crsgenRequestCounter;
+
     function preprocessKeygenRequest(string calldata fheParamsName) external {
-        uint256 preKeyRequestId;
+        _preKeygenRequestCounter++;
+        uint256 preKeygenRequestId = _preKeygenRequestCounter;
         bytes32 fheParamsDigest;
-        emit PreprocessKeygenRequest(preKeyRequestId, fheParamsDigest);
+        emit PreprocessKeygenRequest(preKeygenRequestId, fheParamsDigest);
     }
 
     function preprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId) external {
-        uint256 preKeyRequestId;
-        uint256 preKeyId;
-        emit PreprocessKeygenResponse(preKeyRequestId, preKeyId);
+        emit PreprocessKeygenResponse(preKeygenRequestId, preKeyId);
     }
 
     function preprocessKskgenRequest(string calldata fheParamsName) external {
-        uint256 preKskRequestId;
+        _preKskgenRequestCounter++;
+        uint256 preKskgenRequestId = _preKskgenRequestCounter;
         bytes32 fheParamsDigest;
-        emit PreprocessKskgenRequest(preKskRequestId, fheParamsDigest);
+        emit PreprocessKskgenRequest(preKskgenRequestId, fheParamsDigest);
     }
 
     function preprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId) external {
-        uint256 preKskRequestId;
-        uint256 preKskId;
-        emit PreprocessKskgenResponse(preKskRequestId, preKskId);
+        emit PreprocessKskgenResponse(preKskgenRequestId, preKskId);
     }
 
     function keygenRequest(uint256 preKeyId) external {
-        uint256 preKeyId;
         bytes32 fheParamsDigest;
         emit KeygenRequest(preKeyId, fheParamsDigest);
     }
 
     function keygenResponse(uint256 preKeyId, uint256 keyId) external {
-        uint256 preKeyId;
         uint256 keygenId;
         bytes32 fheParamsDigest;
         emit KeygenResponse(preKeyId, keygenId, fheParamsDigest);
     }
 
     function crsgenRequest(string calldata fheParamsName) external {
-        uint256 crsgenRequestId;
+        _crsgenRequestCounter++;
+        uint256 crsgenRequestId = _crsgenRequestCounter;
         bytes32 fheParamsDigest;
         emit CrsgenRequest(crsgenRequestId, fheParamsDigest);
     }
 
     function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external {
-        uint256 crsgenRequestId;
-        uint256 crsId;
         bytes32 fheParamsDigest;
         emit CrsgenResponse(crsgenRequestId, crsId, fheParamsDigest);
     }
 
     function kskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId) external {
-        uint256 preKskId;
-        uint256 sourceKeyId;
-        uint256 destKeyId;
         bytes32 fheParamsDigest;
         emit KskgenRequest(preKskId, sourceKeyId, destKeyId, fheParamsDigest);
     }
 
     function kskgenResponse(uint256 preKskId, uint256 kskId) external {
-        uint256 preKskId;
-        uint256 kskId;
         bytes32 fheParamsDigest;
         emit KskgenResponse(preKskId, kskId, fheParamsDigest);
     }
 
     function activateKeyRequest(uint256 keyId) external {
-        uint256 keyId;
         emit ActivateKeyRequest(keyId);
     }
 
     function activateKeyResponse(uint256 keyId) external {
-        uint256 keyId;
         emit ActivateKeyResponse(keyId);
     }
 
     function addFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external {
-        string memory fheParamsName;
-        bytes32 fheParamsDigest;
         emit AddFheParams(fheParamsName, fheParamsDigest);
     }
 
     function updateFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external {
-        string memory fheParamsName;
-        bytes32 fheParamsDigest;
         emit UpdateFheParams(fheParamsName, fheParamsDigest);
     }
 }

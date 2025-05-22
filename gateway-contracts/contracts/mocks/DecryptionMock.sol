@@ -21,8 +21,11 @@ contract DecryptionMock {
 
     event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecryptedShares, bytes[] signatures);
 
+    uint256 _decryptionRequestCounter;
+
     function publicDecryptionRequest(bytes32[] calldata ctHandles) external {
-        uint256 decryptionId;
+        _decryptionRequestCounter++;
+        uint256 decryptionId = _decryptionRequestCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
         emit PublicDecryptionRequest(decryptionId, snsCtMaterials);
     }
@@ -32,8 +35,6 @@ contract DecryptionMock {
         bytes calldata decryptedResult,
         bytes calldata signature
     ) external {
-        uint256 decryptionId;
-        bytes memory decryptedResult;
         bytes[] memory signatures = new bytes[](1);
         emit PublicDecryptionResponse(decryptionId, decryptedResult, signatures);
     }
@@ -47,10 +48,10 @@ contract DecryptionMock {
         bytes calldata publicKey,
         bytes calldata signature
     ) external {
-        uint256 decryptionId;
+        _decryptionRequestCounter++;
+        uint256 decryptionId = _decryptionRequestCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
-        address userAddress;
-        bytes memory publicKey;
+
         emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey);
     }
 
@@ -63,10 +64,11 @@ contract DecryptionMock {
         bytes calldata publicKey,
         bytes calldata signature
     ) external {
-        uint256 decryptionId;
+        _decryptionRequestCounter++;
+        uint256 decryptionId = _decryptionRequestCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
         address userAddress;
-        bytes memory publicKey;
+
         emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey);
     }
 
@@ -75,7 +77,6 @@ contract DecryptionMock {
         bytes calldata userDecryptedShare,
         bytes calldata signature
     ) external {
-        uint256 decryptionId;
         bytes[] memory userDecryptedShares = new bytes[](1);
         bytes[] memory signatures = new bytes[](1);
         emit UserDecryptionResponse(decryptionId, userDecryptedShares, signatures);
