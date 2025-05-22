@@ -114,55 +114,19 @@ mod tests {
     use super::*;
     use crate::store::key_value_db::InMemoryKVStore;
 
-    mod test_utils {
-        use crate::orchestrator::traits::Event;
-        use serde::{Deserialize, Serialize};
-        use uuid::Uuid;
-
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-        pub struct MockEvent {
-            pub request_id: Uuid,
-            pub event_id: u8,
-            pub name: String,
-            pub timestamp: u64,
-        }
-
-        impl Event for MockEvent {
-            fn event_name(&self) -> &str {
-                &self.name
-            }
-            fn event_id(&self) -> u8 {
-                self.event_id
-            }
-            fn request_id(&self) -> Uuid {
-                self.request_id
-            }
-            fn timestamp(&self) -> u64 {
-                self.timestamp
-            }
-        }
-
-        pub fn create_test_event(request_id: Uuid, event_id: u8, name: &str) -> MockEvent {
-            MockEvent {
-                request_id,
-                event_id,
-                name: name.to_string(),
-                timestamp: 0,
-            }
-        }
-    }
+    #[cfg(test)]
+    use crate::core::test_utils::MockEvent;
 
     #[tokio::test]
     async fn test_event_store_inmemorykvstore() {
-        use self::test_utils;
         let kv_store = InMemoryKVStore::new();
-        let event_store = EventStore::<test_utils::MockEvent>::new(kv_store);
+        let event_store = EventStore::<MockEvent>::new(kv_store);
 
         let request_id = uuid::Uuid::new_v4();
 
         // Create and persist some test events
-        let event1 = test_utils::create_test_event(request_id, 1, "Event1");
-        let event2 = test_utils::create_test_event(request_id, 2, "Event2");
+        let event1 = MockEvent::new(request_id, 1, "Event1");
+        let event2 = MockEvent::new(request_id, 2, "Event2");
 
         // Test persist_event
         event_store.persist_event(event1.clone()).await.unwrap();
