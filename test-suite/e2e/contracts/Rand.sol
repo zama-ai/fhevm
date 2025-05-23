@@ -3,7 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import { E2EFHEVMConfig } from "./E2EFHEVMConfigLocal.sol";
+import {E2EFHEVMConfig} from "./E2EFHEVMConfigLocal.sol";
 
 /// @notice Contract for generating random encrypted numbers
 contract Rand is E2EFHEVMConfig {

@@ -171,6 +171,10 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION OVER HTTP FOR MIXED${RESET}"
           docker_args+=("-g" "test HTTPPublicDecrypt mixed")
           ;;
+        operators)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
+          docker_args+=("-g" "test operator")
+          ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
           docker exec -it fhevm-test-suite-e2e-debug bash

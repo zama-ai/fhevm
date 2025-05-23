@@ -1,13 +1,13 @@
-import { ethers } from "hardhat";
-import type { Provider } from "ethers";
+import type { Provider } from 'ethers';
+import { ethers } from 'hardhat';
 
 const currentTime = (): string => {
   const now = new Date();
-  return now.toLocaleTimeString("en-US", {
+  return now.toLocaleTimeString('en-US', {
     hour12: true,
-    hour: "numeric",
-    minute: "numeric",
-    second: "numeric",
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
   });
 };
 
@@ -19,16 +19,13 @@ const pendingDecryptionRequestParameters = new Map<bigint, [string, bigint]>();
 
 // Event definitions
 const decryptionRequestEventFragment =
-  "event DecryptionRequest(uint256 indexed counter, uint256 requestID, bytes32[] cts, address contractCaller, bytes4 callbackSelector)";
+  'event DecryptionRequest(uint256 indexed counter, uint256 requestID, bytes32[] cts, address contractCaller, bytes4 callbackSelector)';
 const ifaceRequest = new ethers.Interface([decryptionRequestEventFragment]);
-const topicHashRequest = ifaceRequest.getEvent("DecryptionRequest")!.topicHash;
+const topicHashRequest = ifaceRequest.getEvent('DecryptionRequest')!.topicHash;
 
-const decryptionFulfillEventFragment =
-  "event DecryptionFulfilled(uint256 indexed requestID)";
+const decryptionFulfillEventFragment = 'event DecryptionFulfilled(uint256 indexed requestID)';
 const ifaceFulfill = new ethers.Interface([decryptionFulfillEventFragment]);
-const topicHashFulfill = ifaceFulfill.getEvent(
-  "DecryptionFulfilled"
-)!.topicHash;
+const topicHashFulfill = ifaceFulfill.getEvent('DecryptionFulfilled')!.topicHash;
 
 // Initialize by starting the polling of eth_getLogs (more robust solution than using websocket to avoid missng events on anvil)
 export const initDecryptionOracle = async (): Promise<void> => {
@@ -44,14 +41,8 @@ async function pollEvents(): Promise<void> {
     return;
   }
 
-  const requestLogs = await getDecryptionRequestLogs(
-    lastProcessedBlock + 1,
-    currentBlock
-  );
-  const fulfillLogs = await getDecryptionFulfillLogs(
-    lastProcessedBlock + 1,
-    currentBlock
-  );
+  const requestLogs = await getDecryptionRequestLogs(lastProcessedBlock + 1, currentBlock);
+  const fulfillLogs = await getDecryptionFulfillLogs(lastProcessedBlock + 1, currentBlock);
 
   processDecryptionRequests(requestLogs);
 
@@ -60,10 +51,7 @@ async function pollEvents(): Promise<void> {
   lastProcessedBlock = currentBlock;
 }
 
-async function getDecryptionRequestLogs(
-  fromBlock: number,
-  toBlock: number
-): Promise<ethers.Log[]> {
+async function getDecryptionRequestLogs(fromBlock: number, toBlock: number): Promise<ethers.Log[]> {
   const filterOracle = {
     address: process.env.DECRYPTION_ORACLE_ADDRESS!,
     topics: [topicHashRequest],
@@ -74,10 +62,7 @@ async function getDecryptionRequestLogs(
   return ethers.provider.getLogs(filterOracle);
 }
 
-async function getDecryptionFulfillLogs(
-  fromBlock: number,
-  toBlock: number
-): Promise<ethers.Log[]> {
+async function getDecryptionFulfillLogs(fromBlock: number, toBlock: number): Promise<ethers.Log[]> {
   const filterFulfill = {
     topics: [topicHashFulfill],
     fromBlock,
@@ -96,20 +81,15 @@ function processDecryptionRequests(logs: ethers.Log[]): void {
 
     if (!parsed) continue;
 
-    const { counter, requestID, cts, contractCaller, callbackSelector } =
-      parsed.args;
+    const { counter, requestID, cts, contractCaller, callbackSelector } = parsed.args;
 
     console.log(
-      `${currentTime()} - Requested public decryption on block ${
-        log.blockNumber
-      } ` + ` (counter ${counter} - requestID ${requestID})`
+      `${currentTime()} - Requested public decryption on block ${log.blockNumber} ` +
+        ` (counter ${counter} - requestID ${requestID})`,
     );
 
     pendingDecryptionRequestCounters.add(counter);
-    pendingDecryptionRequestParameters.set(counter, [
-      contractCaller,
-      requestID,
-    ]);
+    pendingDecryptionRequestParameters.set(counter, [contractCaller, requestID]);
   }
 }
 
@@ -131,9 +111,8 @@ function processDecryptionFulfillments(logs: ethers.Log[]): void {
         pendingDecryptionRequestCounters.delete(counter);
         pendingDecryptionRequestParameters.delete(counter);
         console.log(
-          `${currentTime()} - Fulfilled public decryption on block ${
-            log.blockNumber
-          } ` + ` (counter ${counter} - requestID ${requestID})`
+          `${currentTime()} - Fulfilled public decryption on block ${log.blockNumber} ` +
+            ` (counter ${counter} - requestID ${requestID})`,
         );
       }
     }
@@ -158,7 +137,7 @@ export const awaitAllDecryptionResults = async (): Promise<void> => {
   // otherwise poll every 100ms until the Set is emptied by the event-listener
   console.log(
     `${currentTime()} - Waiting for ${pendingDecryptionRequestCounters.size}` +
-      ` pending decryption request(s) to be fulfilled...`
+      ` pending decryption request(s) to be fulfilled...`,
   );
   while (pendingDecryptionRequestCounters.size > 0) {
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -171,7 +150,7 @@ export const awaitAllDecryptionResults = async (): Promise<void> => {
 
 async function waitOneBlock(provider: Provider): Promise<void> {
   await new Promise<void>((resolve) => {
-    provider.once("block", () => {
+    provider.once('block', () => {
       resolve();
     });
   });

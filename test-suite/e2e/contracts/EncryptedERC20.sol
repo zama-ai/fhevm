@@ -3,9 +3,8 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import { E2EFHEVMConfig } from "./E2EFHEVMConfigLocal.sol";
+import {E2EFHEVMConfig} from "./E2EFHEVMConfigLocal.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
-
 
 /// @notice This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE (Fully Homomorphic Encryption) library.
 /// @dev It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances, but uses encrypted data types.

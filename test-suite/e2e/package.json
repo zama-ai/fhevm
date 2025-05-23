@@ -2,12 +2,20 @@
   "name": "hardhat-project",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-    "hardhat": "^2.23.0"
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@types/node": "^22.15.21",
+    "hardhat": "^2.23.0",
+    "prettier": "^3.5.3",
+    "prettier-plugin-solidity": "^2.0.0"
+  },
+  "scripts": {
+    "codegen": "npx ts-node codegen/main.ts && npm run prettier",
+    "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
   },
   "dependencies": {
-    "@zama-fhe/relayer-sdk": "^0.1.0-1",
     "@fhevm/solidity": "^0.7.0-3",
     "@openzeppelin/contracts": "^5.3.0",
+    "@zama-fhe/relayer-sdk": "^0.1.0-1",
     "bigint-buffer": "^1.1.5",
     "dotenv": "^16.0.3"
   }

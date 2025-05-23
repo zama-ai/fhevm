@@ -3,7 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import { E2EFHEVMConfig } from "./E2EFHEVMConfigLocal.sol";
+import {E2EFHEVMConfig} from "./E2EFHEVMConfigLocal.sol";
 
 contract TestInput is E2EFHEVMConfig {
     uint64 public yUint64;
