@@ -2,14 +2,14 @@ import {
   clientKeyDecryptor,
   createInstance as createFhevmInstance,
   getCiphertextCallParams,
-} from "@zama-fhe/relayer-sdk";
-import { readFileSync } from "fs";
-import { ethers, ethers as hethers, network } from "hardhat";
-import { homedir } from "os";
-import path from "path";
+} from '@zama-fhe/relayer-sdk';
+import { readFileSync } from 'fs';
+import { ethers, ethers as hethers, network } from 'hardhat';
+import { homedir } from 'os';
+import path from 'path';
 
-import type { Signers } from "./signers";
-import { FhevmInstances } from "./types";
+import type { Signers } from './signers';
+import { FhevmInstances } from './types';
 
 const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
 
@@ -20,29 +20,25 @@ const aclAdd = process.env.ACL_CONTRACT_ADDRESS;
 const inputAdd = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS;
 const gatewayChainID = +process.env.CHAIN_ID_GATEWAY!;
 const verifyingContractAddressDecryption = process.env.DECRYPTION_ADDRESS!;
-const verifyingContractAddressInputVerification =
-  process.env.INPUT_VERIFICATION_ADDRESS!;
+const verifyingContractAddressInputVerification = process.env.INPUT_VERIFICATION_ADDRESS!;
 const relayerUrl = process.env.RELAYER_URL!;
 
-export const createInstances = async (
-  accounts: Signers
-): Promise<FhevmInstances> => {
+export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {
   // Create instance
   const instances: FhevmInstances = {} as FhevmInstances;
   await Promise.all(
     Object.keys(accounts).map(async (k) => {
       instances[k as keyof FhevmInstances] = await createInstance();
-    })
+    }),
   );
   return instances;
 };
 
 export const createInstance = async () => {
-  console.log("relayer url given to create instance", relayerUrl);
+  console.log('relayer url given to create instance', relayerUrl);
   const instance = await createFhevmInstance({
     verifyingContractAddressDecryption: verifyingContractAddressDecryption,
-    verifyingContractAddressInputVerification:
-      verifyingContractAddressInputVerification,
+    verifyingContractAddressInputVerification: verifyingContractAddressInputVerification,
     kmsContractAddress: kmsAdd,
     inputVerifierContractAddress: inputAdd,
     aclContractAddress: aclAdd,
@@ -53,10 +49,7 @@ export const createInstance = async () => {
   return instance;
 };
 
-const getCiphertext = async (
-  handle: string,
-  ethers: typeof hethers
-): Promise<string> => {
+const getCiphertext = async (handle: string, ethers: typeof hethers): Promise<string> => {
   return ethers.provider.call(getCiphertextCallParams(handle));
 };
 
@@ -66,7 +59,7 @@ const getDecryptor = () => {
       clientKey = readFileSync(FHE_CLIENT_KEY_PATH);
     } else {
       const home = homedir();
-      const clientKeyPath = path.join(home, "network-fhe-keys/cks");
+      const clientKeyPath = path.join(home, 'network-fhe-keys/cks');
       clientKey = readFileSync(clientKeyPath);
     }
   }

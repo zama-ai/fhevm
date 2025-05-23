@@ -200,14 +200,14 @@ prepare_local_config_relayer
 
 log_info "Deploying FHEVM Stack..."
 log_info "Using component versions:"
-log_info "  KMS CORE:${CORE_VERSION}"
-log_info "  KMS CONNECTOR: ${CONNECTOR_VERSION}"
-log_info "  COPROCESSOR: ${COPROCESSOR_VERSION}"
-log_info "  DB MIGRATION: ${DB_MIGRATION_VERSION}"
-log_info "  GATEWAY: ${GATEWAY_VERSION}"
-log_info "  HOST: ${HOST_VERSION}"
+log_info "  FHEVM GATEWAY: ${GATEWAY_VERSION}"
+log_info "  FHEVM HOST: ${HOST_VERSION}"
+log_info "  FHEVM COPROCESSOR: ${COPROCESSOR_VERSION}"
+log_info "  FHEVM DB MIGRATION: ${DB_MIGRATION_VERSION}"
+log_info "  FHEVM KMS CONNECTOR: ${CONNECTOR_VERSION}"
+log_info "  FHEVM TEST SUITE: ${TEST_SUITE_VERSION}"
+log_info "  KMS CORE: ${CORE_VERSION}"
 log_info "  RELAYER: ${RELAYER_VERSION}"
-log_info "  TEST SUITE: ${TEST_SUITE_VERSION}"
 
 run_compose "minio" "MinIO Services" \
     "${PROJECT}-minio:running" \

@@ -3,13 +3,13 @@ name: Fhevm Test Suite E2E Tests
 on:
   workflow_dispatch:
     inputs:
-      core_version:
-        description: "KMS Core Version"
+      gateway_version:
+        description: "Gateway Image Version"
         required: true
         default: ""
         type: string
-      connector_version:
-        description: "Connector Version"
+      host_version:
+        description: "Host Image Version"
         required: true
         default: ""
         type: string
@@ -23,18 +23,8 @@ on:
         required: true
         default: ""
         type: string
-      host_version:
-        description: "Host Image Version"
-        required: false
-        default: ""
-        type: string
-      gateway_version:
-        description: "Gateway Image Version"
-        required: false
-        default: ""
-        type: string
-      relayer_version:
-        description: "Relayer Image Version"
+      connector_version:
+        description: "Connector Version"
         required: true
         default: ""
         type: string
@@ -43,7 +33,20 @@ on:
         required: true
         default: ""
         type: string
+      core_version:
+        description: "KMS Core Version"
+        required: true
+        default: ""
+        type: string
+      relayer_version:
+        description: "Relayer Image Version"
+        required: true
+        default: ""
+        type: string
   pull_request:
+  release:
+    types:
+      - published
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -68,7 +71,7 @@ jobs:
               - 'test-suite/fhevm/**'
   fhevm-e2e-test:
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' }}
+    if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -89,17 +92,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_READ_TOKEN }}
 
+      - name: Set version from release
+        if: github.event_name == 'release'
+        run: |
+          {
+            echo "GATEWAY_VERSION=${{ github.ref_name }}"
+            echo "HOST_VERSION=${{ github.ref_name }}"
+            echo "COPROCESSOR_VERSION=${{ github.ref_name }}"
+            echo "DB_MIGRATION_VERSION=${{ github.ref_name }}"
+            echo "CONNECTOR_VERSION=${{ github.ref_name }}"
+            echo "TEST_SUITE_VERSION=${{ github.ref_name }}"
+          } >> "$GITHUB_ENV"
+
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         env:
+          GATEWAY_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.gateway_version || env.GATEWAY_VERSION }}
+          HOST_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.host_version || env.HOST_VERSION }}
+          COPROCESSOR_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.coprocessor_version || env.COPROCESSOR_VERSION }}
+          DB_MIGRATION_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.db_migration_version || env.DB_MIGRATION_VERSION }}
+          CONNECTOR_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_VERSION }}
+          TEST_SUITE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.test_suite_version || env.TEST_SUITE_VERSION }}
           CORE_VERSION: ${{ inputs.core_version }}
-          CONNECTOR_VERSION: ${{ inputs.connector_version }}
-          COPROCESSOR_VERSION: ${{ inputs.coprocessor_version }}
-          DB_MIGRATION_VERSION: ${{ inputs.db_migration_version }}
-          HOST_VERSION: ${{ inputs.host_version }}
-          GATEWAY_VERSION: ${{ inputs.gateway_version }}
           RELAYER_VERSION: ${{ inputs.relayer_version }}
-          TEST_SUITE_VERSION: ${{ inputs.test_suite_version }}
         run: |
           ./fhevm-cli deploy
 

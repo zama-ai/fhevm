@@ -17,14 +17,14 @@ RESET='\033[0m'
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT="fhevm"
 
-export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc13"}
-export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.1.0-rc6"}
-export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"v0.7.0-rc8"}
-export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc8"}
-export HOST_VERSION=${HOST_VERSION:-"31c51c3"}
-export GATEWAY_VERSION=${GATEWAY_VERSION:-"5d13e72"}
+export GATEWAY_VERSION=${GATEWAY_VERSION:-"latest"}
+export HOST_VERSION=${HOST_VERSION:-"latest"}
+export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"latest"}
+export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"latest"}
+export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"latest"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"latest"}
+export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc14"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc8"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"76b0e4f"}
 
 function print_logo() {
   echo -e "${LIGHT_BLUE}"
@@ -170,6 +170,10 @@ case $COMMAND in
         public-decrypt-http-mixed)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION OVER HTTP FOR MIXED${RESET}"
           docker_args+=("-g" "test HTTPPublicDecrypt mixed")
+          ;;
+        operators)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
+          docker_args+=("-g" "test operator")
           ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"

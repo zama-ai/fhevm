@@ -1,0 +1,111 @@
+name: Test Suite E2E Operators
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_version:
+        description: "KMS Core Version"
+        required: true
+        default: ""
+        type: string
+      connector_version:
+        description: "Connector Version"
+        required: true
+        default: ""
+        type: string
+      coprocessor_version:
+        description: "Coprocessor Image Version"
+        required: true
+        default: ""
+        type: string
+      db_migration_version:
+        description: "Coprocessor DB Migration Image Version"
+        required: true
+        default: ""
+        type: string
+      host_version:
+        description: "Host Image Version"
+        required: false
+        default: ""
+        type: string
+      gateway_version:
+        description: "Gateway Image Version"
+        required: false
+        default: ""
+        type: string
+      relayer_version:
+        description: "Relayer Image Version"
+        required: true
+        default: ""
+        type: string
+      test_suite_version:
+        description: "Test Suite E2E Image Version"
+        required: true
+        default: ""
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  operators-e2e-test:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "read"
+
+    runs-on: large_ubuntu_32
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Docker
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_READ_TOKEN }}
+
+      - name: Deploy fhevm Stack
+        working-directory: test-suite/fhevm
+        env:
+          CORE_VERSION: ${{ inputs.core_version }}
+          CONNECTOR_VERSION: ${{ inputs.connector_version }}
+          COPROCESSOR_VERSION: ${{ inputs.coprocessor_version }}
+          DB_MIGRATION_VERSION: ${{ inputs.db_migration_version }}
+          HOST_VERSION: ${{ inputs.host_version }}
+          GATEWAY_VERSION: ${{ inputs.gateway_version }}
+          RELAYER_VERSION: ${{ inputs.relayer_version }}
+          TEST_SUITE_VERSION: ${{ inputs.test_suite_version }}
+        run: |
+          ./fhevm-cli deploy
+
+      - name: All operators tests
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test operators
+
+      - name: Show logs on test failure
+        working-directory: test-suite/fhevm
+        if: always()
+        run: |
+          echo "::group::Relayer Logs"
+          ./fhevm-cli logs relayer
+          echo "::endgroup::"
+          echo "::group::SNS Worker Logs"
+          ./fhevm-cli logs sns-worker | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+          echo "::group::Transaction Sender Logs (filtered)"
+          ./fhevm-cli logs transaction-sender | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+
+      - name: Cleanup
+        working-directory: test-suite/fhevm
+        if: always()
+        run: |
+          ./fhevm-cli clean
