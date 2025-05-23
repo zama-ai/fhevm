@@ -66,6 +66,8 @@ on:
         required: true
       AWS_SECRET_KEY_S3_USER:
         required: true
+      REPO_CHECKOUT_TOKEN:
+        required: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -96,6 +98,7 @@ jobs:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      REPO_CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN }}
     with:
       runs-on: ${{ needs.start-runner.outputs.label }}
       build-publish-docs: ${{ inputs.build-publish-docs }}

@@ -18,13 +18,13 @@ concurrency:
   cancel-in-progress: ${{ !contains(fromJSON('["release/", "main"]'),github.ref) }}
 
 # Required permissions for workflow execution
-permissions: write-all
-  # actions: 'write'
-  # contents: 'write'
-  # id-token: 'write'
-  # pull-requests: 'write'
-  # pages: 'write'
-  # packages: 'write'
+permissions:
+  actions: 'write'
+  contents: 'write'
+  id-token: 'write'
+  pull-requests: 'write'
+  pages: 'write'
+  packages: 'write'
 
 
 jobs:
@@ -68,6 +68,7 @@ jobs:
       package-name: 'kms-connector'
       app-cache-dir: 'kms-connector'
     secrets:
+      REPO_CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN }}
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       SLAB_ACTION_TOKEN: ${{ secrets.SLAB_ACTION_TOKEN }}
       SLAB_BASE_URL: ${{ secrets.SLAB_BASE_URL }}
