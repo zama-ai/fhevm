@@ -34,7 +34,7 @@ services:
 
   db-migration:
     container_name: fhevm-db-migration
-    image: ghcr.io/zama-ai/fhevm-backend/db-migration:${DB_MIGRATION_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     environment:
@@ -50,7 +50,7 @@ services:
   ####################### COPROCESSOR SERVICES #######################
   fhevm-listener:
     container_name: fhevm-fhevm-listener
-    image: ghcr.io/zama-ai/fhevm-backend/coprocessor:${COPROCESSOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -66,7 +66,7 @@ services:
 
   gw-listener:
     container_name: fhevm-gw-listener
-    image: ghcr.io/zama-ai/fhevm-backend/coprocessor:${COPROCESSOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -83,7 +83,7 @@ services:
 
   tfhe-worker:
     container_name: fhevm-tfhe-worker
-    image: ghcr.io/zama-ai/fhevm-backend/coprocessor:${COPROCESSOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -104,7 +104,7 @@ services:
 
   zkproof-worker:
     container_name: fhevm-zkproof-worker
-    image: ghcr.io/zama-ai/fhevm-backend/coprocessor:${COPROCESSOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -123,7 +123,7 @@ services:
 
   sns-worker:
     container_name: fhevm-sns-worker
-    image: ghcr.io/zama-ai/fhevm-backend/coprocessor:${COPROCESSOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -145,7 +145,7 @@ services:
 
   transaction-sender:
     container_name: fhevm-transaction-sender
-    image: ghcr.io/zama-ai/fhevm-backend/coprocessor:${COPROCESSOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
