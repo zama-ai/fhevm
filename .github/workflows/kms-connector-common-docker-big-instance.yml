@@ -71,7 +71,7 @@ jobs:
 
   run-docker:
     needs: [start-amd64-runner]
-    uses: ./.github/workflows/common-docker.yml
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@4597dee06cf8e3e977f66aa8b1824ef4e1d84a22
     secrets:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
