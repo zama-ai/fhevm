@@ -7,13 +7,15 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {fhevmExecutorAdd} from "../addresses/FHEVMExecutorAddress.sol";
 
+import {ACLEvents} from "./ACLEvents.sol";
+
 /**
  * @title  ACL
  * @notice The ACL (Access Control List) is a permission management system designed to control who can access, compute on,
  * or decrypt encrypted values in fhEVM. By defining and enforcing these permissions, the ACL ensures that encrypted data remains
  * secure while still being usable within authorized contexts.
  */
-contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable, PausableUpgradeable {
+contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable, PausableUpgradeable, ACLEvents {
     /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
     /// @param delegatee delegatee address.
     /// @param contractAddress contract address.
@@ -45,33 +47,6 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable, PausableUpgradeable {
 
     /// @notice Returned if the pauser address is set to the zero address.
     error InvalidNullPauser();
-
-    /// @notice Emitted when a handle is allowed.
-    /// @param caller account calling the allow function.
-    /// @param account account being allowed for the handle.
-    /// @param handle handle being allowed.
-    event Allowed(address indexed caller, address indexed account, bytes32 handle);
-
-    /// @notice Emitted when a list of handles is allowed for decryption.
-    /// @param caller account calling the allowForDecryption function.
-    /// @param handlesList  List of handles allowed for decryption.
-    event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
-
-    /// @notice Emitted when a new delegatee address is added.
-    /// @param caller caller address
-    /// @param delegatee Delegatee address.
-    /// @param contractAddresses Contract addresses.
-    event NewDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
-
-    /// @notice Emitted when a delegatee address is revoked.
-    /// @param caller caller address
-    /// @param delegatee Delegatee address.
-    /// @param contractAddresses Contract addresses.
-    event RevokedDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
-
-    /// @notice Emitted when the pauser address is updated.
-    /// @param newPauser New pauser address.
-    event UpdatePauser(address indexed newPauser);
 
     /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {
