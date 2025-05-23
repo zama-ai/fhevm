@@ -56,14 +56,14 @@ jobs:
   test-helm-chart:
     needs: check-changes
     if: needs.check-changes.outputs.changes-helm-chart == 'true'
-    uses: ./.github/workflows/helm-test.yml
+    uses: ./.github/workflows/kms-connector-helm-test.yml
 
   lint-helm-chart:
     needs: check-changes
     if: needs.check-changes.outputs.changes-helm-chart == 'true'
-    uses: ./.github/workflows/helm-lint.yml
+    uses: ./.github/workflows/kms-connector-helm-lint.yml
 
   release-helm-chart:
     needs: check-changes
     if: github.ref == 'refs/heads/main' && needs.check-changes.outputs.changes-helm-chart == 'true'
-    uses: ./.github/workflows/helm-release.yml
+    uses: ./.github/workflows/kms-connector-helm-release.yml
