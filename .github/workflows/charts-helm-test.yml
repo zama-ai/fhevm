@@ -1,18 +1,34 @@
-name: "[PR] Helm Chart Test"
+name: "Fhevm Helm Chart Test"
 
 on:
   pull_request:
     branches:
       - main
-    paths:
-      - 'charts/**'
-      - '.github/workflows/helm-test.yml'
 
 env:
   HELM_VERSION: v3.16.4
 
 jobs:
+  check-changes:
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      changes-charts: ${{ steps.filter.outputs.charts }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            charts:
+              - '.github/workflows/charts-helm-test.yml'
+              - 'charts/**'
   helm-test:
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -36,14 +52,14 @@ jobs:
       - name: Run chart-testing (list-changed)
         id: list-changed
         run: |
-          changed=$(ct list-changed --config ct.yaml)
+          changed=$(ct list-changed --config .github/config/ct.yaml)
           if [[ -n "$changed" ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run chart-testing (lint)
         if: steps.list-changed.outputs.changed == 'true'
-        run: ct lint --config ct.yaml
+        run: ct lint --config .github/config/ct.yaml
 
 # To implement later
 #      - name: Create kind cluster
@@ -52,4 +68,4 @@ jobs:
 #
 #      - name: Run chart-testing (install)
 #        if: steps.list-changed.outputs.changed == 'true'
-#        run: ct install --config ct.yaml
+#        run: ct install --config .github/config/ct.yaml
