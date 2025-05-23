@@ -62,8 +62,6 @@ on:
         required: true
       AWS_SECRET_KEY_S3_USER:
         required: true
-      REPO_CHECKOUT_TOKEN:
-        required: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -92,7 +90,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: true
-          token: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+          token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
 
 
       # LFS files are needed for backward compatibility tests
