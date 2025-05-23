@@ -1,7 +1,10 @@
-name: Run lint on PR
+name: Fhevm Common PR Lint
 
 on:
   pull_request:
+
+env:
+  ACTIONLINT_VERSION: 1.6.27
 
 jobs:
   lint:

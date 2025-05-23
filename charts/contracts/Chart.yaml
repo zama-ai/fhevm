@@ -1,4 +1,4 @@
-name: fhevm-sc-deploy
+name: contracts
 description: A helm chart to manage fhevm Smart Contracts Deployment
 version: 0.3.2
 apiVersion: v2
