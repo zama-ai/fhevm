@@ -27,7 +27,7 @@ RUN cargo install sccache --version ^0.7
 ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 
 WORKDIR /app/kms-connector
-COPY . .
+COPY ./kms-connector .
 
 # Setup SSH and git
 RUN mkdir -p -m 0600 /root/.ssh && \
