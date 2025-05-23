@@ -127,7 +127,7 @@ impl<P: Provider + Clone> EventProcessor<P> {
                         KmsCoreEvent::PublicDecryptionRequest(req) => {
                             info!(
                                 "Processing PublicDecryptionRequest: {}",
-                                req.publicDecryptionId
+                                req.decryptionId
                             );
 
                             // Extract keyId from the first SNS ciphertext material if available
@@ -136,14 +136,14 @@ impl<P: Provider + Clone> EventProcessor<P> {
                                 let key_id_hex = alloy::hex::encode(extracted_key_id.to_be_bytes::<32>());
                                 info!(
                                     "Extracted key_id {} from snsCtMaterials[0] for public decryption request {}",
-                                    key_id_hex, req.publicDecryptionId
+                                    key_id_hex, req.decryptionId
                                 );
                                 key_id_hex
                             } else {
                                 // Fail the request if no materials available
                                 error!(
                                     "No snsCtMaterials found for public decryption request {}, cannot proceed without a valid key_id",
-                                    req.publicDecryptionId
+                                    req.decryptionId
                                 );
                                 continue;
                             };
@@ -155,13 +155,13 @@ impl<P: Provider + Clone> EventProcessor<P> {
                             if sns_ciphertext_materials.is_empty() {
                                 error!(
                                     "Failed to retrieve any ciphertext materials for public decryption request {}",
-                                    req.publicDecryptionId
+                                    req.decryptionId
                                 );
                                 continue;
                             }
 
                             self.decryption_handler.handle_decryption_request_response(
-                                req.publicDecryptionId,
+                                req.decryptionId,
                                 key_id,
                                 sns_ciphertext_materials,
                                 None,
@@ -173,7 +173,7 @@ impl<P: Provider + Clone> EventProcessor<P> {
                         KmsCoreEvent::UserDecryptionRequest(req) => {
                             info!(
                                 "Processing UserDecryptionRequest: {}",
-                                req.userDecryptionId
+                                req.decryptionId
                             );
 
                             // Extract keyId from the first SNS ciphertext material if available
@@ -182,14 +182,14 @@ impl<P: Provider + Clone> EventProcessor<P> {
                                 let key_id_hex = alloy::hex::encode(extracted_key_id.to_be_bytes::<32>());
                                 info!(
                                     "Extracted key_id {} from snsCtMaterials[0] for user decryption request {} (contract: {})",
-                                    key_id_hex, req.userDecryptionId, req.publicKey
+                                    key_id_hex, req.decryptionId, req.publicKey
                                 );
                                 key_id_hex
                             } else {
                                 // Fail the request if no materials available
                                 error!(
                                     "No snsCtMaterials found for user decryption request {} (contract: {}), cannot proceed without a valid key_id",
-                                    req.userDecryptionId, req.publicKey
+                                    req.decryptionId, req.publicKey
                                 );
                                 continue;
                             };
@@ -201,7 +201,7 @@ impl<P: Provider + Clone> EventProcessor<P> {
                             if sns_ciphertext_materials.is_empty() {
                                 error!(
                                     "Failed to retrieve any ciphertext materials for user decryption request {}",
-                                    req.userDecryptionId
+                                    req.decryptionId
                                 );
                                 continue;
                             }
@@ -211,14 +211,14 @@ impl<P: Provider + Clone> EventProcessor<P> {
 
                             info!(
                                 "UserDecryptionRequest {} was received with:\nuserAddress: {}\npublicKey: {}\nkeyId: {}",
-                                req.userDecryptionId,
+                                req.decryptionId,
                                 user_key_prefixed,
                                 public_key_string,
                                 key_id
                             );
 
                             match self.decryption_handler.handle_decryption_request_response(
-                                req.userDecryptionId,
+                                req.decryptionId,
                                 key_id,
                                 sns_ciphertext_materials,
                                 Some(req.userAddress),
@@ -228,7 +228,7 @@ impl<P: Provider + Clone> EventProcessor<P> {
                                 Err(e) => {
                                     error!(
                                         "Error processing user decryption request {}: {}",
-                                        req.userDecryptionId, e
+                                        req.decryptionId, e
                                     );
                                     // Log error but continue processing other events
                                     Ok(())
