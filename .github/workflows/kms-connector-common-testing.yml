@@ -91,7 +91,7 @@ jobs:
 
       - name: Checkout submodules
         env:
-          GIT_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: git submodule update --init --recursive
 
       # LFS files are needed for backward compatibility tests
