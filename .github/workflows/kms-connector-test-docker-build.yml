@@ -87,7 +87,7 @@ jobs:
     uses: ./.github/workflows/kms-connector-common-docker-big-instance.yml
     with:
       working-directory: "./kms-connector"
-      docker-context: "./fhevm/kms-connector"
+      docker-context: "./kms-connector"
       push_image: true
       image-name: 'fhevm/kms-connector'
       app-cache-dir: 'kms-connector'
