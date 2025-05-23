@@ -72,10 +72,6 @@ jobs:
       with:
         node-version: 20.x
 
-    - run: cp ./host-contracts/.env.example ./host-contracts/.env
-    - run: npm --prefix ./host-contracts ci --include=optional
-    - run: "cd host-contracts && npm install && npx hardhat compile"
-
     - name: Run tests
       run: |
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor cargo test --release -- --test-threads=1
