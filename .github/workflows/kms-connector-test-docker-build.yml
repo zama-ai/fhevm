@@ -86,8 +86,7 @@ jobs:
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'docker'))
     uses: ./.github/workflows/kms-connector-common-docker-big-instance.yml
     with:
-      working-directory: "./kms-connector"
-      docker-context: "./kms-connector"
+      working-directory: './kms-connector'
       push_image: true
       image-name: 'fhevm/kms-connector'
       app-cache-dir: 'kms-connector'
