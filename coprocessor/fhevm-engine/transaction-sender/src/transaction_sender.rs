@@ -1,6 +1,4 @@
-use alloy::{
-    network::Ethereum, primitives::Address, providers::Provider, signers::local::PrivateKeySigner,
-};
+use alloy::{network::Ethereum, primitives::Address, providers::Provider};
 use futures_util::FutureExt;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use std::{sync::Arc, time::Duration};
@@ -8,7 +6,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use crate::{nonce_managed_provider::NonceManagedProvider, ops, ConfigSettings};
+use crate::{nonce_managed_provider::NonceManagedProvider, ops, AbstractSigner, ConfigSettings};
 
 #[derive(Clone)]
 pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
@@ -27,7 +25,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
         input_verification_address: Address,
         ciphertext_commits_address: Address,
         multichain_acl_address: Address,
-        signer: PrivateKeySigner,
+        signer: AbstractSigner,
         provider: NonceManagedProvider<P>,
         cancel_token: CancellationToken,
         conf: ConfigSettings,

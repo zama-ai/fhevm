@@ -282,6 +282,7 @@ dependencies = [
  "alloy-rpc-types",
  "alloy-serde",
  "alloy-signer",
+ "alloy-signer-aws",
  "alloy-signer-local",
  "alloy-transport",
  "alloy-transport-http",
@@ -813,6 +814,24 @@ dependencies = [
  "elliptic-curve 0.13.8",
  "k256",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "alloy-signer-aws"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6f7fae8dec636317c89e08498675c9421a214f1791a59dcaea2094c1a2dbf07"
+dependencies = [
+ "alloy-consensus",
+ "alloy-network",
+ "alloy-primitives",
+ "alloy-signer",
+ "async-trait",
+ "aws-sdk-kms",
+ "k256",
+ "spki 0.7.3",
+ "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]
@@ -7115,8 +7134,12 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
+ "aws-config",
+ "aws-sdk-kms",
+ "base64 0.22.1",
  "fhevm-engine-common",
  "hex",
+ "k256",
  "rand 0.9.1",
  "serde_json",
  "sqlx",
