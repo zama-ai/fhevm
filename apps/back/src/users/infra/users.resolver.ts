@@ -9,7 +9,7 @@ import {
 import { UseFilters, UseGuards } from '@nestjs/common'
 import { JwtAuthGuard } from '../../auth/infra/guards/jwt-auth-guard.js'
 import { CurrentUser } from '../../auth/infra/decorators/current-user.js'
-import { GetTeamsByUserId } from '#users/use-cases/get-teams-by-user-id.use-case.js'
+import { GetTeamsByUserId } from '#teams/use-cases/get-teams-by-user-id.use-case.js'
 import { UserType } from './types/user.type.js'
 import { User } from '../domain/entities/user.js'
 import { UserId } from '../domain/entities/value-objects.js'

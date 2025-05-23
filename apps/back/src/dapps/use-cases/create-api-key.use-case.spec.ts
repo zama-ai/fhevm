@@ -14,7 +14,7 @@ import {
 } from '#dapps/domain/entities/value-objects.js'
 import { DApp } from '#dapps/domain/entities/dapp.js'
 import { faker } from '@faker-js/faker'
-import { TeamId } from '#users/domain/entities/value-objects.js'
+import { TeamId } from '#teams/domain/entities/value-objects.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import { TestBed } from '@suites/unit'
 import { UNIT_OF_WORK } from '#constants.js'

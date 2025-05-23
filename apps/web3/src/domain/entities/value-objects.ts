@@ -1,6 +1,13 @@
 import { chainId, web3Address } from 'messages'
-import { AppError, fail, ok, Result, validationError, ValueObject } from 'utils'
-import { fromZodError } from 'utils/dist/src/app-error.js'
+import {
+  AppError,
+  fail,
+  fromZodError,
+  ok,
+  Result,
+  validationError,
+  ValueObject,
+} from 'utils'
 import { z } from 'zod'
 
 export class FheEventId extends ValueObject(

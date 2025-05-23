@@ -54,20 +54,20 @@ export interface IPubSub<TEvent extends EventObject> {
 export class PubSub<TEvent extends EventObject> implements IPubSub<TEvent> {
   #subscribers: Partial<ISubscriberMap<TEvent>> = {}
 
-  subscribe<TKey extends EventDescriptor<TEvent>>(
+  subscribe = <TKey extends EventDescriptor<TEvent>>(
     descriptor: TKey,
     subscriber: ISubscriber<TEvent>,
-  ) {
+  ) => {
     if (!this.#subscribers[descriptor]) {
       this.#subscribers[descriptor] = []
     }
     this.#subscribers[descriptor].push(subscriber)
   }
 
-  once<TKey extends EventDescriptor<TEvent>>(
+  once = <TKey extends EventDescriptor<TEvent>>(
     descriptor: TKey,
     subscriber: ISubscriber<TEvent>,
-  ) {
+  ) => {
     if (!this.#subscribers[descriptor]) {
       this.#subscribers[descriptor] = []
     }
@@ -82,10 +82,10 @@ export class PubSub<TEvent extends EventObject> implements IPubSub<TEvent> {
     this.#subscribers[descriptor].push(handler)
   }
 
-  unsubscribe<TKey extends EventDescriptor<TEvent>>(
+  unsubscribe = <TKey extends EventDescriptor<TEvent>>(
     descriptor: TKey,
     subscriber: ISubscriber<TEvent>,
-  ) {
+  ) => {
     this.#subscribers[descriptor] = this.#subscribers[descriptor]?.filter(
       s => s !== subscriber,
     )

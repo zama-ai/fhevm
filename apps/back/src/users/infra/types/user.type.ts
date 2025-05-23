@@ -1,5 +1,5 @@
+import { TeamType } from '#teams/infra/grapqhl/types/team.type.js'
 import { Field, ID, ObjectType } from '@nestjs/graphql'
-import { TeamType } from './team.type.js'
 
 @ObjectType('User')
 export class UserType {

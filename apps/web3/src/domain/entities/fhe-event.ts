@@ -1,8 +1,15 @@
 import { z } from 'zod'
 import { ChainId, FheEventId, Web3Address } from './value-objects.js'
-import { AppError, Entity, fail, ok, Result, Unbrand } from 'utils'
+import {
+  AppError,
+  Entity,
+  fail,
+  fromZodError,
+  ok,
+  Result,
+  Unbrand,
+} from 'utils'
 import { operationEnum } from 'messages'
-import { fromZodError } from 'utils/dist/src/app-error.js'
 
 const schema = z.object({
   chainId: ChainId.schema,

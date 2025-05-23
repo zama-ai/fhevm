@@ -3,7 +3,6 @@ import { DappsResolver } from './dapps.resolver.js'
 import { DatabaseModule } from '#infra/database/database.module.js'
 import * as uc from '#dapps/use-cases/index.js'
 import { UpdateDapp } from '#dapps/use-cases/update-dapp.use-case.js'
-import { GetTeamById } from '#users/use-cases/get-team-by-id.use-case.js'
 import { GetDappById } from '../use-cases/get-dapp-by-id.use-case.js'
 import { SharedModule } from '#shared/shared.module.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
@@ -16,9 +15,16 @@ import {
 } from '#feature-flag/services/feature-flags.service.js'
 import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
 import { SyncInstances } from '#shared/use-cases/sync-instances.use-case.js'
+import { TeamsModule } from '#teams/infra/teams.module.js'
 
 @Module({
-  imports: [DatabaseModule, SharedModule, SubscriptionsModule, ChainsModule],
+  imports: [
+    DatabaseModule,
+    SharedModule,
+    SubscriptionsModule,
+    TeamsModule,
+    ChainsModule,
+  ],
   providers: [
     DappsResolver,
     ApiKeyResolver,
@@ -68,7 +74,6 @@ import { SyncInstances } from '#shared/use-cases/sync-instances.use-case.js'
         ),
     },
     uc.ApiKeyAllowsRequest,
-    GetTeamById,
   ],
   exports: [
     UpdateDapp,

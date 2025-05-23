@@ -21,6 +21,7 @@ export class SetupManager {
   #backQueueName: string
   #relayerQueueName: string
   #web3QueueName: string
+  #emailQueueName: string
 
   constructor(private readonly logEnabled = false) {}
   private log(message: string) {
@@ -49,6 +50,10 @@ export class SetupManager {
 
   get relayerQueueUrl(): string {
     return `${this.awsEndpoint}/000000000000/${this.#relayerQueueName}`
+  }
+
+  get emailQueueUrl(): string {
+    return `${this.awsEndpoint}/000000000000/${this.#emailQueueName}`
   }
 
   private async startPostgres() {
@@ -108,6 +113,7 @@ export class SetupManager {
     this.#orchQueueName = `orch-queue-${id}`
     this.#relayerQueueName = `relayer-queue-${id}`
     this.#web3QueueName = `web3-queue-${id}`
+    this.#emailQueueName = `email-queue-${id}`
 
     // NOTE: We need to create the orch queue once because
     // the SqsConsumer open a Long Pulling request to this queue
@@ -132,6 +138,7 @@ export class SetupManager {
     this.createQueue(this.#backQueueName)
     this.createQueue(this.#web3QueueName)
     this.createQueue(this.#relayerQueueName)
+    this.createQueue(this.#emailQueueName)
     this.log(`queue created`)
   }
 
@@ -140,6 +147,7 @@ export class SetupManager {
     this.deleteQueue(this.backQueueUrl)
     this.deleteQueue(this.web3QueueUrl)
     this.deleteQueue(this.relayerQueueUrl)
+    this.deleteQueue(this.emailQueueUrl)
     this.log(`queue deleted`)
   }
 
@@ -174,6 +182,9 @@ export class SetupManager {
               },
               web3: {
                 queueUrl: this.web3QueueUrl,
+              },
+              email: {
+                queueUrl: this.emailQueueUrl,
               },
             })),
             // dbConfig,

@@ -35,6 +35,8 @@ export class UpdateDapp implements UseCase<Input, DAppProps> {
     dapp: { id, ...data },
     user,
   }: Input): Task<DAppProps, AppError> => {
+    // NOTE: here I'm using a Unit Of Work because I want to rollback the dapp updates
+    // in case I fail to publish the message
     return this.uow.exec(
       this.dappRepository
         .findOneByIdAndUserId(id, user.id)

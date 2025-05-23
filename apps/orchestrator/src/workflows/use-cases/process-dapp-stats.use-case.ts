@@ -1,19 +1,22 @@
+import { EVENT_PRODUCER, PUBSUB } from '#constants.js'
 import {
   DAppStats,
   DAppStatsEvents,
   isDAppStatsEvent,
 } from '#workflows/entities/dapp-stats.js'
 import { EventProducer } from '#workflows/interfaces/event.producer.js'
-import { Logger } from '@nestjs/common'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { back, web3 } from 'messages'
 import { AppError, IPubSub, ISubscriber, Task, UseCase } from 'utils'
 
+@Injectable()
 export class ProcessDAppStats implements UseCase<DAppStatsEvents, void> {
   private readonly logger = new Logger(ProcessDAppStats.name)
 
   constructor(
-    private readonly pupsub: IPubSub<back.BackEvent | web3.Web3Event>,
-    private readonly producer: EventProducer,
+    @Inject(PUBSUB)
+    private readonly pupsub: IPubSub<DAppStatsEvents>,
+    @Inject(EVENT_PRODUCER) private readonly producer: EventProducer,
   ) {
     this.pupsub.subscribe('*', this.handleEvent)
   }
@@ -39,7 +42,7 @@ export class ProcessDAppStats implements UseCase<DAppStatsEvents, void> {
   execute = (event: DAppStatsEvents): Task<void, AppError> => {
     return Task.of<DAppStats, AppError>(new DAppStats()).chain(dAppStats =>
       Task.all<AppError, void>(
-        dAppStats.send(event).map(this.producer.publish),
+        dAppStats.send(event).map(msg => this.producer.publish(msg)),
       ).map(() => void 0),
     )
   }

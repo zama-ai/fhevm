@@ -166,8 +166,8 @@ type Invitation {
 }
 
 type Query {
-  me: User!
   invitation(token: String!): Invitation!
+  me: User!
   dapp(input: QueryDappInput!): Dapp!
   validateAddress(input: ValidateAddressInput!): ValidateAddress!
   apiKey(input: QueryApiKeyInput!): ApiKey!
@@ -202,8 +202,10 @@ input QueryChainInput {
 type Mutation {
   login(input: LoginInput!): auth!
   signup(input: SignupInput!): auth!
-  updateUser(input: UpdateUserInput!): User!
+  requestResetPassword(input: requestResetPasswordInput!): Boolean!
+  resetPassword(input: resetPasswordInput!): auth!
   createInvitation(input: CreateInvitationInput!): Invitation!
+  updateUser(input: UpdateUserInput!): User!
   createDapp(input: CreateDappInput!): Dapp!
   updateDapp(input: UpdateDappInput!): Dapp!
   deployDapp(input: DeployDAppInput!): Dapp!
@@ -223,9 +225,18 @@ input SignupInput {
   invitationToken: String!
 }
 
-input UpdateUserInput {
-  id: ID!
-  name: String!
+"""Request reset password input"""
+input requestResetPasswordInput {
+  """The user's email address to reset the password"""
+  email: String!
+}
+
+input resetPasswordInput {
+  """The token received by email"""
+  token: String!
+
+  """The new password"""
+  password: String!
 }
 
 input CreateInvitationInput {
@@ -235,6 +246,11 @@ input CreateInvitationInput {
   You need the secret key to create an invitation ask the #zws team to get one
   """
   secret: String!
+}
+
+input UpdateUserInput {
+  id: ID!
+  name: String!
 }
 
 input CreateDappInput {

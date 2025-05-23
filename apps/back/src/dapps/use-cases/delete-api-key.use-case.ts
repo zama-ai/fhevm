@@ -27,8 +27,6 @@ export class DeleteApiKey implements UseCase<Input, Output> {
   ): Task<Output, AppError> => {
     this.logger.debug(`Deleting API Key ${input.apiKeyId}`)
     // TODO: implement authorization
-    return this.uow.exec(
-      ApiKeyId.from(input.apiKeyId).asyncChain(this.repo.deleteApiKey),
-    )
+    return ApiKeyId.from(input.apiKeyId).asyncChain(this.repo.deleteApiKey)
   }
 }

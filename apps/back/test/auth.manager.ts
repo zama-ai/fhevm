@@ -94,6 +94,27 @@ export class AuthManager {
       .mutate(ME)
       .exec('me')
   }
+
+  async requestPasswordReset(email: string): Promise<GraphQlResponse<boolean>> {
+    return await GraphQl.request<
+      { requestPasswordReset: boolean },
+      { email: string }
+    >(this.httpServer)
+      .mutate(REQUEST_PASSWORD_RESET, { email })
+      .exec('requestPasswordReset')
+  }
+
+  async resetPassword(input: {
+    token: string
+    password: string
+  }): Promise<GraphQlResponse<{ user: User; token: string }>> {
+    return await GraphQl.request<
+      { resetPassword: { user: User; token: string } },
+      { token: string; password: string }
+    >(this.httpServer)
+      .mutate(RESET_PASSWORD, input)
+      .exec('resetPassword')
+  }
 }
 
 const CREATE_INVITATION = `
@@ -164,6 +185,34 @@ const ME = `
           status
         }
       }
+    }
+  }
+`
+
+const REQUEST_PASSWORD_RESET = `
+  mutation RequestPasswordReset($email: String!) {
+    requestResetPassword(input: {
+      email: $email
+    })
+  }
+`
+
+const RESET_PASSWORD = `
+  mutation ResetPassword($token: String!, $password: String!) {
+    resetPassword(input: {
+      token: $token
+      password: $password
+    }) {
+      user {
+        id
+        email
+        name
+        teams {
+          id
+          name
+        }
+      }
+      token
     }
   }
 `

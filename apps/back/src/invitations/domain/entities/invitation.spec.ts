@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { Invitation, InvitationProps } from './invitation.js'
 import { BRAND } from 'zod'
-import { ExpiresAt } from './value-objects.js'
+import { ExpiresAt } from '#shared/entities/value-objects/expires-at.js'
 
 describe('Invitation', () => {
   test('expiresAt', () => {

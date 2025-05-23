@@ -1,8 +1,7 @@
-import { AppError, fail, ok, Result, ValueObject } from 'utils'
+import { AppError, fail, fromZodError, ok, Result, ValueObject } from 'utils'
 import { validateNanoId } from 'utils/dist/src/validation.js'
 import { z } from 'zod'
 import { nanoid } from 'nanoid'
-import { fromZodError } from 'utils/dist/src/app-error.js'
 import { web3Address } from 'messages'
 
 export class DAppId extends ValueObject(

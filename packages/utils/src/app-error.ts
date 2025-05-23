@@ -95,7 +95,16 @@ export function timeoutError(message = 'Timeout'): TimeoutError {
  */
 export function fromZodError(error: ZodError): ValidationError {
   return validationError(
-    error.errors.map(err => `${err.path}: ${err.message}`).join(', '),
+    Array.from(
+      error.issues
+        .reduce(
+          (acc, err) => acc.set(err.path.join('.'), err.message),
+          new Map(),
+        )
+        .entries(),
+    )
+      .map(([key, value]) => (key ? `${key}: ${value}` : value))
+      .join(', '),
   )
 }
 

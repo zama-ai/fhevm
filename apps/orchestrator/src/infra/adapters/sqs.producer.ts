@@ -19,6 +19,7 @@ export class SQSProducer implements EventProducer {
       useQueueUrlAsEndpoint: true,
     })
     this.queueMap.set('back', config.getOrThrow('aws.back.queueUrl'))
+    this.queueMap.set('email', config.getOrThrow('aws.email.queueUrl'))
     this.queueMap.set('web3', config.getOrThrow('aws.web3.queueUrl'))
     this.queueMap.set('relayer', config.getOrThrow('aws.relayer.queueUrl'))
   }

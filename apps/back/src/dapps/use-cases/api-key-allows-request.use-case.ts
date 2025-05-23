@@ -66,7 +66,10 @@ export class ApiKeyAllowRequestWithFeatureFlag implements IApiKeyAllowsRequest {
     private readonly ffService: FeatureFlagHandler,
   ) {}
 
-  execute(input: Input, context?: Record<string, any>): Task<void, AppError> {
+  execute = (
+    input: Input,
+    context?: Record<string, any>,
+  ): Task<void, AppError> => {
     return this.ffService
       .handle('API_KEYS')
       .chain(flag =>

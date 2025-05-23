@@ -3,8 +3,10 @@ import type { AppError } from 'utils'
 import { Task } from 'utils'
 import { InvitationId, Token } from '../entities/value-objects.js'
 
-export abstract class InvitationRepository {
-  abstract create(props: Invitation): Task<Invitation, AppError>
-  abstract findByToken(token: Token): Task<Invitation, AppError>
-  abstract markAsUsed(id: InvitationId): Task<Invitation, AppError>
+export interface InvitationRepository {
+  create(props: Invitation): Task<Invitation, AppError>
+  findByToken(token: Token): Task<Invitation, AppError>
+  markAsUsed(id: InvitationId): Task<Invitation, AppError>
 }
+
+export const INVITATION_REPOSITORY = 'INVITATION_REPOSITORY'

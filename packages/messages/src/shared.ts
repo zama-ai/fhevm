@@ -39,7 +39,7 @@ export const operationEnum = z.enum(operationNames)
 
 export type operationName = z.infer<typeof operationEnum>
 
-export const MS_PREFIXES = ['back', 'orch', 'relayer', 'web3'] as const
+export const MS_PREFIXES = ['back', 'orch', 'relayer', 'web3', 'email'] as const
 export type MSPrefix = (typeof MS_PREFIXES)[number]
 
 export const meta = z.record(z.string(), z.union([z.string(), z.number()])).and(
@@ -90,7 +90,7 @@ export function metaFactory<
       meta: Meta
     } = Extract<Events, { type: `${Prefix}:${Key}` }>,
   >(key: Key) {
-    return function(payload: Event['payload'], meta: Event['meta']) {
+    return function (payload: Event['payload'], meta: Event['meta']) {
       return {
         type: `${prefix}:${key}`,
         payload,

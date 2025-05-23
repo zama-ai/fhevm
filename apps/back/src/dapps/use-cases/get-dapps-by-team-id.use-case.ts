@@ -6,7 +6,7 @@ import {
   DAPP_REPOSITORY,
   DAppRepository,
 } from '../domain/repositories/dapp.repository.js'
-import { TeamId } from '#users/domain/entities/value-objects.js'
+import { TeamId } from '#teams/domain/entities/value-objects.js'
 
 @Injectable()
 export class GetDappsByTeamId implements UseCase<TeamId, DApp[]> {

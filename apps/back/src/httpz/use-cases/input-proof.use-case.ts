@@ -102,7 +102,10 @@ export class InputProofWithSync implements IInputProof {
     syncInstances.listenToEvent('back:httpz:input-proof:completed')
   }
 
-  execute(input: Input, context?: Record<string, any>): Task<Output, AppError> {
+  execute = (
+    input: Input,
+    context?: Record<string, any>,
+  ): Task<Output, AppError> => {
     return fromOption<string, AppError>(
       fromNullable<string>(context?.requestId).orElse(() =>
         generateRequestId(),
@@ -153,7 +156,10 @@ export class InputProofWithApiKey implements IInputProof {
     private readonly apiKeyAllowsRequest: IApiKeyAllowsRequest,
   ) {}
 
-  execute(input: Input, context?: Record<string, any>): Task<Output, AppError> {
+  execute = (
+    input: Input,
+    context?: Record<string, any>,
+  ): Task<Output, AppError> => {
     return every([
       ChainId.fromHex(input.contractChainId),
       Web3Address.from(input.contractAddress),

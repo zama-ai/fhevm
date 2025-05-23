@@ -11,7 +11,7 @@ import {
 import { CreateDappInput } from '#dapps/infra/dto/inputs/create-dapp.input.js'
 import { UpdateDappInput } from '#dapps/infra/dto/inputs/update-dapp.input.js'
 import * as uc from '#dapps/use-cases/index.js'
-import { GetTeamById } from '#users/use-cases/get-team-by-id.use-case.js'
+import { GetTeamById } from '#teams/use-cases/get-team-by-id.use-case.js'
 import {
   DappType,
   RawStatsType,
@@ -20,13 +20,12 @@ import {
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
 import { JwtAuthGuard } from '#auth/infra/guards/jwt-auth-guard.js'
 import { User } from '#users/domain/entities/user.js'
-import { TeamId } from '#users/domain/entities/value-objects.js'
 import { DeployDAppInput } from './dto/inputs/deploy-dapp.input.js'
 import { DAppId } from '../domain/entities/value-objects.js'
-import { TeamType } from '#users/infra/types/team.type.js'
+import { TeamType } from '#teams/infra/grapqhl/types/team.type.js'
 import { QueryDappInput } from './dto/inputs/query-dapp.input.js'
 import { DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
-import { TeamProps } from '#users/domain/entities/team.js'
+import { TeamProps } from '#teams/domain/entities/team.js'
 import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
 import { ValidateAddressInput } from './dto/inputs/validate-address.input.js'
 import { AppErrorFilter } from '#auth/infra/filters/app-error.filter.js'
@@ -135,8 +134,9 @@ export class DappsResolver {
   async team(@Parent() dapp: DappType): Promise<TeamProps> {
     const { teamId } = dapp
     this.logger.verbose(`resolving team field for dappId=${dapp.id}`)
-    return TeamId.from(teamId)
-      .asyncChain(this.getTeamByIdUC.execute)
+    return this.getTeamByIdUC
+      .execute(teamId)
+      .map(team => team.toJSON())
       .toPromise()
   }
 

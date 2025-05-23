@@ -1,4 +1,4 @@
-import { TeamType } from '#users/infra/types/team.type.js'
+import { TeamType } from '#teams/infra/grapqhl/types/team.type.js'
 import { Field, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql'
 import { ApiKeyType } from './api-key.type.js'
 import { DappStatsType } from './stat.type.js'

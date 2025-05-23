@@ -1,13 +1,9 @@
 import { Module } from '@nestjs/common'
 import { ClsModule } from 'nestjs-cls'
 import { PrismaService } from './prisma.service.js'
-import { InvitationRepository } from '#invitations/domain/repositories/invitation.repository.js'
 import { DAPP_REPOSITORY } from '#dapps/domain/repositories/dapp.repository.js'
-import { UserRepository } from '#users/domain/repositories/user.repository.js'
-import { TeamRepository } from '#users/domain/repositories/team.repository.js'
-import { PrismaInvitationRepository } from './repositories/prisma-invitation.repository.js'
+import { USER_REPOSITORY } from '#users/domain/repositories/user.repository.js'
 import { PrismaUserRepository } from './repositories/prisma-user.repository.js'
-import { PrismaTeamRepository } from './repositories/prisma-team.repository.js'
 import { PrismaDAppRepository } from './repositories/prisma-dapp.repository.js'
 import { PrismaClient } from '#prisma/client/index.js'
 import { UNIT_OF_WORK } from '#constants.js'
@@ -38,16 +34,8 @@ import { PrismaUOW } from './prisma.uow.js'
     },
     PrismaService,
     {
-      provide: UserRepository,
+      provide: USER_REPOSITORY,
       useClass: PrismaUserRepository,
-    },
-    {
-      provide: TeamRepository,
-      useClass: PrismaTeamRepository,
-    },
-    {
-      provide: InvitationRepository,
-      useClass: PrismaInvitationRepository,
     },
     {
       provide: DAPP_REPOSITORY,
@@ -58,13 +46,6 @@ import { PrismaUOW } from './prisma.uow.js'
       useClass: PrismaUOW,
     },
   ],
-  exports: [
-    PrismaService,
-    UserRepository,
-    TeamRepository,
-    InvitationRepository,
-    DAPP_REPOSITORY,
-    UNIT_OF_WORK,
-  ],
+  exports: [PrismaService, USER_REPOSITORY, DAPP_REPOSITORY, UNIT_OF_WORK],
 })
 export class DatabaseModule {}

@@ -24,6 +24,8 @@ type EventTypes =
   | 'httpz:input-proof:completed'
   | 'httpz:private-decrypt:requested'
   | 'httpz:private-decrypt:completed'
+  | 'user:password-reset:requested'
+  | 'user:password-reset:completed'
 
 function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   key: Key,
@@ -110,6 +112,13 @@ const schemas = [
     decryptedValue: z.string(),
     signatures: z.array(z.string()),
   }),
+  genSchema('user:password-reset:requested', {
+    email: z.string().email(),
+    token: z.string(),
+  }),
+  genSchema('user:password-reset:completed', {
+    email: z.string().email(),
+  }),
 ] as const
 
 export const schema = z.discriminatedUnion('type', [...schemas]).and(
@@ -136,8 +145,18 @@ export const dappStatsRequested = factory('dapp:stats-requested')
 export const dappStatsAvailable = factory('dapp:stats-available')
 export const httpzInputProofRequested = factory('httpz:input-proof:requested')
 export const httpzInputProofCompleted = factory('httpz:input-proof:completed')
-export const httpzPrivateDecryptRequested = factory('httpz:private-decrypt:requested')
-export const httpzPrivateDecryptCompleted = factory('httpz:private-decrypt:completed')
+export const httpzPrivateDecryptRequested = factory(
+  'httpz:private-decrypt:requested',
+)
+export const httpzPrivateDecryptCompleted = factory(
+  'httpz:private-decrypt:completed',
+)
+export const userPasswordResetRequested = factory(
+  'user:password-reset:requested',
+)
+export const userPasswordResetCompleted = factory(
+  'user:password-reset:completed',
+)
 
 export function isBackEvent(data: unknown): data is BackEvent {
   return schema.safeParse(data).success

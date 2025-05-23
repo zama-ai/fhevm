@@ -4,12 +4,12 @@ import {
   AppError,
   Entity,
   fail,
+  fromZodError,
   ok,
   Result,
   Unbrand,
   validationError,
 } from 'utils'
-import { fromZodError } from 'utils/dist/src/app-error.js'
 
 const schema = z.object({
   id: ApiKeyId.schema,

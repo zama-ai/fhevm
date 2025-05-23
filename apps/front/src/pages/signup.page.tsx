@@ -42,6 +42,7 @@ export function SignupPage() {
 
   const navigate = useNavigate()
 
+  // TODO: move this to a reusable function
   useEffect(() => {
     if (data) {
       localStorage.setItem('token', data.signup.token)

@@ -2,10 +2,11 @@ import { z } from 'zod'
 import type { AppError, Result, Unbrand } from 'utils'
 import { Entity, ok, fail, unauthorizedError, validationError } from 'utils'
 import { Password, UserId, ValidatedPassword } from './value-objects.js'
+import { Email } from '#shared/entities/value-objects/email.js'
 
 const schema = z.object({
   id: UserId.schema,
-  email: z.string().email(),
+  email: Email.schema,
   password: Password.schema,
   name: z.string(),
 })
@@ -14,7 +15,13 @@ export type UserProps = Unbrand<z.infer<typeof schema>>
 
 export class User
   extends Entity<UserProps>
-  implements Readonly<Omit<UserProps, 'id' | 'password'> & { id: UserId }>
+  implements
+    Readonly<
+      Omit<UserProps, 'id' | 'password' | 'email'> & {
+        id: UserId
+        email: Email
+      }
+    >
 {
   static parse(data: unknown): Result<User, AppError> {
     const check = schema.safeParse(data)
@@ -45,7 +52,7 @@ export class User
   }
 
   get email() {
-    return this.get('email')
+    return new Email(this.get('email'))
   }
 
   get name() {
@@ -53,8 +60,12 @@ export class User
   }
 
   checkPassword(password: string): Result<User, AppError> {
-    return new Password(this.get('password')).check(password)
+    return Password.fromHashed(this.get('password')).check(password)
       ? ok(this)
       : fail(unauthorizedError())
+  }
+
+  hashPassword(password: string): Result<Password, AppError> {
+    return ValidatedPassword.validate(password).map(Password.hash)
   }
 }

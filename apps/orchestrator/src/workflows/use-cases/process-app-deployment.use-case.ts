@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { AppDeploymentRepository } from '../interfaces/app-deployment.repository.js'
 import { AppError, IPubSub, ISubscriber, Option, Task, UseCase } from 'utils'
 import { back, web3 } from 'messages'
@@ -8,16 +8,19 @@ import {
   isAppDeploymentEvent,
 } from '#workflows/entities/app-deployment.js'
 import { EventProducer } from '#workflows/interfaces/event.producer.js'
+import { APP_DEPLOYMENT_REPO, EVENT_PRODUCER, PUBSUB } from '#constants.js'
 
+@Injectable()
 export class ProcessAppDeployment
   implements UseCase<back.BackEvent | web3.Web3Event, void>
 {
   logger = new Logger(ProcessAppDeployment.name)
 
   constructor(
+    @Inject(PUBSUB)
     private readonly pupsub: IPubSub<back.BackEvent | web3.Web3Event>,
-    private readonly repo: AppDeploymentRepository,
-    private readonly producer: EventProducer,
+    @Inject(APP_DEPLOYMENT_REPO) private readonly repo: AppDeploymentRepository,
+    @Inject(EVENT_PRODUCER) private readonly producer: EventProducer,
   ) {
     this.pupsub.subscribe('*', this.handleEvent)
   }

@@ -1,10 +1,6 @@
 import { randomUUID } from 'crypto'
-import { AppError, fail, ok, Result, ValueObject } from 'utils'
-import { fromZodError } from 'utils/dist/src/app-error.js'
+import { AppError, fail, fromZodError, ok, Result, ValueObject } from 'utils'
 import { z } from 'zod'
-
-export const EXPIRATION_TIME_IN_MILLISECONDS =
-  parseInt(process.env.INVITATION_EXPIRATION_TIME ?? '', 10) || 86400 * 1000 * 7
 
 export class InvitationId extends ValueObject(
   'InvitationId',
@@ -35,6 +31,7 @@ export class Token extends ValueObject('Token', z.string().uuid()) {
   }
 }
 
+const EXPIRATION_TIME_IN_MILLISECONDS = 1000 * 60 * 60 * 24
 export class ExpiresAt extends ValueObject('ExpiresAt', z.date()) {
   static compute(options?: { expirationTime?: number }) {
     return new ExpiresAt(

@@ -1,6 +1,5 @@
-import { AppError, fail, ok, Result, ValueObject } from 'utils'
-import { fromZodError } from 'utils/dist/src/app-error.js'
 import { z } from 'zod'
+import { AppError, fail, fromZodError, ok, Result, ValueObject } from 'utils'
 
 export class SubscriptionId extends ValueObject('SubscriptionId', z.number()) {
   static from(value: unknown): Result<SubscriptionId, AppError> {

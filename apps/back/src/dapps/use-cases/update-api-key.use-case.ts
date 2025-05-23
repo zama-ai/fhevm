@@ -1,4 +1,3 @@
-import { UNIT_OF_WORK } from '#constants.js'
 import { ApiKey, ApiKeyProps } from '#dapps/domain/entities/api-key.js'
 import { ApiKeyId } from '#dapps/domain/entities/value-objects.js'
 import {
@@ -6,7 +5,7 @@ import {
   DAppRepository,
 } from '#dapps/domain/repositories/dapp.repository.js'
 import { Inject, Injectable } from '@nestjs/common'
-import { AppError, Task, UnitOfWork, UseCase } from 'utils'
+import { AppError, Task, UseCase } from 'utils'
 
 type Input = {
   apiKeyId: string
@@ -19,10 +18,7 @@ type Output = {
 
 @Injectable()
 export class UpdateApiKey implements UseCase<Input, Output> {
-  constructor(
-    @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
-    @Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository,
-  ) {}
+  constructor(@Inject(DAPP_REPOSITORY) private readonly repo: DAppRepository) {}
 
   execute = (
     input: Input,
@@ -30,17 +26,15 @@ export class UpdateApiKey implements UseCase<Input, Output> {
     context?: Record<string, unknown>,
   ): Task<Output, AppError> => {
     // TODO: implement authorization
-    return this.uow.exec(
-      ApiKeyId.from(input.apiKeyId)
-        .asyncChain(this.repo.findApiKey)
-        .chain(apiKey =>
-          ApiKey.parse({
-            ...apiKey.toJSON(),
-            ...input.props,
-          }).async(),
-        )
-        .chain(this.repo.updateApiKey)
-        .map(apiKey => ({ apiKey })),
-    )
+    return ApiKeyId.from(input.apiKeyId)
+      .asyncChain(this.repo.findApiKey)
+      .chain(apiKey =>
+        ApiKey.parse({
+          ...apiKey.toJSON(),
+          ...input.props,
+        }).async(),
+      )
+      .chain(this.repo.updateApiKey)
+      .map(apiKey => ({ apiKey }))
   }
 }

@@ -1,9 +1,12 @@
-import { Injectable } from '@nestjs/common'
+import { Inject, Injectable } from '@nestjs/common'
 
 import { Invitation } from '../domain/entities/invitation.js'
 import type { AppError, Result, UseCase } from 'utils'
 import { fail, ok, Task, unauthorizedError } from 'utils'
-import { InvitationRepository } from '../domain/repositories/invitation.repository.js'
+import {
+  INVITATION_REPOSITORY,
+  InvitationRepository,
+} from '../domain/repositories/invitation.repository.js'
 
 export const EXPIRATION_TIME_IN_MILLISECONDS =
   parseInt(process.env.INVITATION_EXPIRATION_TIME ?? '', 10) || 86400 * 1000 * 7
@@ -15,7 +18,10 @@ interface Input {
 
 @Injectable()
 export class CreateInvitation implements UseCase<Input, Invitation> {
-  constructor(private readonly invitationRepository: InvitationRepository) {}
+  constructor(
+    @Inject(INVITATION_REPOSITORY)
+    private readonly invitationRepository: InvitationRepository,
+  ) {}
 
   /**
    * It checks the supplied secret matches with the stored one.

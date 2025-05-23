@@ -128,7 +128,6 @@ describe('login', () => {
         if (!login.success) {
           expect(login.errors[0].message).toMatch('Unauthorized')
         } else {
-          console.log()
           expect(login.success, 'It should fail').toBe(false)
         }
       })
@@ -158,7 +157,6 @@ describe('login', () => {
         if (!login.success) {
           expect(login.errors[0].message).toMatch('Unauthorized')
         } else {
-          console.log()
           expect(login.success, 'It should fail').toBe(false)
         }
       })

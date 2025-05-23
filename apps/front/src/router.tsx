@@ -39,6 +39,15 @@ const router = createBrowserRouter([
         path: 'signin',
         element: <SigninPage />,
       },
+      {
+        path: 'reset-password/:token?',
+        lazy: {
+          Component: async () => {
+            return (await import('./features/auth/reset-password/page.tsx'))
+              .ResetPasswordPage
+          },
+        },
+      },
     ],
   },
   {

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { AppError, Option, Result, Unbrand } from 'utils'
 import { Entity, ok, fail, validationError, some, none } from 'utils'
 import { DAppId } from './value-objects.js'
-import { TeamId } from '#users/domain/entities/value-objects.js'
+import { TeamId } from '#teams/domain/entities/value-objects.js'
 import { ChainId } from '#chains/domain/entities/value-objects.js'
 import { Web3Address } from '#shared/entities/value-objects/web3-address.js'
 

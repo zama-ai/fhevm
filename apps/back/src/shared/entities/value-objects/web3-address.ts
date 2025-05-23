@@ -1,7 +1,6 @@
 import { web3Address } from 'messages'
 import type { AppError, Result } from 'utils'
-import { fail, ok, ValueObject } from 'utils'
-import { fromZodError } from 'utils/dist/src/app-error.js'
+import { fail, fromZodError, ok, ValueObject } from 'utils'
 
 export class Web3Address extends ValueObject('Web3Address', web3Address) {
   static from(data: unknown): Result<Web3Address, AppError> {

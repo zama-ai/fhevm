@@ -51,6 +51,7 @@
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.0.0",
+    "@suites/unit": "^3.0.1",
     "@testcontainers/localstack": "^10.16.0",
     "@testcontainers/postgresql": "^10.16.0",
     "@testcontainers/redis": "^10.17.2",

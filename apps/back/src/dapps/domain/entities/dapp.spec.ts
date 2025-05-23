@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { DApp } from './dapp.js'
-import { TeamId } from '#users/domain/entities/value-objects.js'
+import { TeamId } from '#teams/domain/entities/value-objects.js'
 import { DAppId } from './value-objects.js'
 
 describe('Dapp', () => {

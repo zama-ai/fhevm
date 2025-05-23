@@ -269,4 +269,9 @@ class PrismaClientProxy {
   get dappStat() {
     return this.instances[Number(process.env.VITEST_POOL_ID) - 1].dappStat
   }
+
+  get passwordResetToken() {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1]
+      .passwordResetToken
+  }
 }

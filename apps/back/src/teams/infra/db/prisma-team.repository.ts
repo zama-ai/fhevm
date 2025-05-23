@@ -1,17 +1,17 @@
-import { Team } from '#users/domain/entities/team.js'
-import { TeamRepository } from '#users/domain/repositories/team.repository.js'
-import { PrismaService } from '../prisma.service.js'
 import { Injectable, Logger } from '@nestjs/common'
 import type { AppError, Result } from 'utils'
 import { notFoundError, unknownError, Task, ok, fail, isAppError } from 'utils'
-import { TeamId, UserId } from '#users/domain/entities/value-objects.js'
+
+import { Team } from '#teams/domain/entities/team.js'
+import { TeamRepository } from '#teams/domain/repositories/team.repository.js'
+import { TeamId } from '#teams/domain/entities/value-objects.js'
+import { UserId } from '#users/domain/entities/value-objects.js'
+import { PrismaService } from '#infra/database/prisma.service.js'
 
 @Injectable()
-export class PrismaTeamRepository extends TeamRepository {
+export class PrismaTeamRepository implements TeamRepository {
   private readonly logger = new Logger(PrismaTeamRepository.name)
-  constructor(private readonly db: PrismaService) {
-    super()
-  }
+  constructor(private readonly db: PrismaService) {}
 
   findOneById = (id: TeamId): Task<Team, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {

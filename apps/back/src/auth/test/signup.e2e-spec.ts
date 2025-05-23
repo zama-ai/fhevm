@@ -97,7 +97,7 @@ describe('signup', () => {
       test('then it fails', () => {
         expect(result.success).toBe(false)
         if (!result.success) {
-          expect(result.errors[0].message).toContain('invalid token')
+          expect(result.errors[0].message).toMatch(/invalid token/i)
         }
       })
     })
@@ -177,7 +177,7 @@ describe('signup', () => {
         expect(result.success).toBe(false)
         if (!result.success) {
           expect(result.errors?.length).toBe(1)
-          expect(result.errors?.[0].message).toContain('invalid token')
+          expect(result.errors?.[0].message).toMatch(/invalid token/i)
         }
       })
     })

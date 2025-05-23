@@ -26,7 +26,7 @@ export class PrismaService implements OnModuleInit {
   }
 
   private get client(): PrismaClient {
-    const tx = this.cls.get('transaction') as PrismaClient
+    const tx = this.cls.get('transaction') as PrismaClient | undefined
     this.logger.verbose(`in a trasaction? ${typeof tx !== 'undefined'}`)
     return tx ?? this.prisma
   }
@@ -57,5 +57,9 @@ export class PrismaService implements OnModuleInit {
 
   get chain() {
     return this.client.chain
+  }
+
+  get passwordResetToken() {
+    return this.client.passwordResetToken
   }
 }

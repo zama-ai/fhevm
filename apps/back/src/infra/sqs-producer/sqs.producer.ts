@@ -21,7 +21,9 @@ export class SqsProducer implements IProducer {
   }
 
   publish = (event: back.BackEvent): Task<void, AppError> => {
-    this.logger.debug(`publishing: ${JSON.stringify(event)} to ${this.queueUrl}`)
+    this.logger.debug(
+      `publishing: ${JSON.stringify(event)} to ${this.queueUrl}`,
+    )
 
     return new Task((resolve, reject) => {
       this.sqs

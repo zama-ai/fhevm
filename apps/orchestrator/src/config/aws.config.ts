@@ -14,5 +14,8 @@ export default registerAs('aws', () => ({
   web3: {
     queueUrl: process.env.AWS_WEB3_QUEUE_URL,
   },
+  email: {
+    queueUrl: process.env.AWS_EMAIL_QUEUE_URL,
+  },
   region: process.env.AWS_REGION,
 }))

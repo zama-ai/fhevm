@@ -93,7 +93,7 @@ model DappStat {
   timestamp   DateTime
   dappId      String
   type        StatsType @default(COMPUTATION)
-  day         Int // day of year 1-366
+  day         Int // day of year 1-366  
   month       Int // month 0-11
   year        Int
   dapp        Dapp      @relation(fields: [dappId], references: [id], onDelete: Cascade)
@@ -109,4 +109,12 @@ model ApiKey {
   dapp        Dapp      @relation(fields: [dappId], references: [id], onDelete: Cascade)
   createdAt   DateTime  @default(now())
   deletedAt   DateTime?
+}
+
+model PasswordResetToken {
+  tokenHash String   @id @map("token_hash")
+  userId    String   @unique @map("user_id")
+  expiresAt DateTime @map("expires_at")
+
+  @@map("password_reset_tokens")
 }

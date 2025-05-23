@@ -80,10 +80,10 @@ export class ValidateAddressWithSync implements IValidateAddress {
     syncInstances.listenToEvent('back:address:validation:confirmed')
     syncInstances.listenToEvent('back:address:validation:failed')
   }
-  execute(
+  execute = (
     input: ValidateAddressInput,
     context?: Record<string, any>,
-  ): Task<ValidateAddressOutput, AppError> {
+  ): Task<ValidateAddressOutput, AppError> => {
     return fromOption<string, AppError>(
       fromNullable<string>(context?.requestId).orElse(() =>
         generateRequestId(),

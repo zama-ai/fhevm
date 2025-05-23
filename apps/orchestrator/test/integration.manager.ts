@@ -72,6 +72,8 @@ export class IntegrationManager {
         return this.setup.relayerQueueUrl
       case 'web3':
         return this.setup.web3QueueUrl
+      case 'email':
+        return this.setup.emailQueueUrl
     }
   }
 

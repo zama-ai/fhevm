@@ -1,6 +1,6 @@
 import { Invitation } from '#invitations/domain/entities/invitation.js'
 import { InvitationRepository } from '#invitations/domain/repositories/invitation.repository.js'
-import { PrismaService } from '../prisma.service.js'
+import { PrismaService } from '../../../infra/database/prisma.service.js'
 import { Injectable } from '@nestjs/common'
 import type { AppError } from 'utils'
 import { notFoundError, unknownError, Task } from 'utils'
@@ -10,10 +10,8 @@ import {
 } from '#invitations/domain/entities/value-objects.js'
 
 @Injectable()
-export class PrismaInvitationRepository extends InvitationRepository {
-  constructor(private readonly db: PrismaService) {
-    super()
-  }
+export class PrismaInvitationRepository implements InvitationRepository {
+  constructor(private readonly db: PrismaService) {}
 
   create = (data: Invitation): Task<Invitation, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {

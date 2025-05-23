@@ -14,7 +14,14 @@ export class PrismaUOW implements UnitOfWork {
 
   exec<A, E>(task: Task<A, E>): Task<A, E> {
     this.logger.verbose('creating the wrapping task')
+    const tx = this.cls.get('transaction') as PrismaClient | undefined
+    if (tx) {
+      this.logger.verbose(`already in transaction`)
+      return task
+    }
+
     return new Task((resolve, reject) => {
+      this.logger.verbose(`starting a transaction`)
       this.prisma
         .$transaction(tx => {
           this.logger.verbose('init tx')
@@ -22,7 +29,11 @@ export class PrismaUOW implements UnitOfWork {
             this.cls.set('transaction', tx)
 
             return task.toPromise().then(value => {
+              // NOTE: I need to clear the AsyncLocalStorage from the tx
+              // in case I try to call it later.
+              this.cls.set('transaction', undefined)
               this.logger.verbose('committing tx')
+
               resolve(value)
             })
           })

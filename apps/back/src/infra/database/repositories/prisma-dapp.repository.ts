@@ -21,7 +21,8 @@ import {
   DAppId,
   Token,
 } from '#dapps/domain/entities/value-objects.js'
-import { TeamId, UserId } from '#users/domain/entities/value-objects.js'
+import { TeamId } from '#teams/domain/entities/value-objects.js'
+import { UserId } from '#users/domain/entities/value-objects.js'
 import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import { Computation } from '#dapps/domain/utilities/computation.js'

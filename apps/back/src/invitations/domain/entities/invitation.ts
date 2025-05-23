@@ -1,8 +1,8 @@
 import type { AppError, Result, Unbrand } from 'utils'
-import { Entity, fail, ok, validationError } from 'utils'
+import { Entity, fail, fromZodError, ok, validationError } from 'utils'
 import { z } from 'zod'
-import { ExpiresAt, InvitationId, Token } from './value-objects.js'
-import { fromZodError } from 'utils/dist/src/app-error.js'
+import { InvitationId, Token } from './value-objects.js'
+import { ExpiresAt } from '#shared/entities/value-objects/expires-at.js'
 
 const schema = z.object({
   id: InvitationId.schema,

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test } from 'vitest'
 import { PrismaDAppRepository } from './prisma-dapp.repository.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 import {
@@ -11,15 +11,13 @@ import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { AppError, every, executeTask, isAppError } from 'utils'
 import { faker } from '@faker-js/faker'
 import { z } from 'zod'
-import { TeamId } from '#users/domain/entities/value-objects.js'
+import { TeamId } from '#teams/domain/entities/value-objects.js'
 import { Dapp, DappStatus, StatsType } from '#prisma/client/index.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import { TestBed } from '@suites/unit'
 import { Mocked } from '@suites/doubles.vitest'
 import { PrismaService } from '../prisma.service.js'
 import { ChainId } from '#chains/domain/entities/value-objects.js'
-
-vi.mock('../prisma.service.js')
 
 describe('PrismaDappRepository', () => {
   let repo: DAppRepository

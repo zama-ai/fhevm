@@ -3,7 +3,7 @@ import {
   beforeEach,
   describe,
   expect,
-  MockInstance,
+  Mocked,
   test,
   vi,
 } from 'vitest'
@@ -12,16 +12,23 @@ import { AppError, IPubSub, PubSub, Task } from 'utils'
 import { back, web3 } from 'messages'
 import type { EventProducer } from '#workflows/interfaces/event.producer.js'
 import { faker } from '@faker-js/faker'
+import { AddressValidationEvents } from '#workflows/entities/address-validation.js'
+import { TestBed } from '@suites/unit'
+import { EVENT_PRODUCER, PUBSUB } from '#constants.js'
 
 describe(ProcessAddressValidation, () => {
-  // let useCase: ProcessAddressValidation
-  let pubsub: IPubSub<back.BackEvent | web3.Web3Event>
-  let producer: EventProducer
+  let pubsub: IPubSub<AddressValidationEvents>
+  let producer: Mocked<EventProducer>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     pubsub = new PubSub()
-    producer = { publish: () => Task.of(void 0) }
-    new ProcessAddressValidation(pubsub, producer)
+    const { unitRef } = await TestBed.solitary(ProcessAddressValidation)
+      .mock(PUBSUB)
+      .impl(() => pubsub)
+      .compile()
+
+    producer = unitRef.get(EVENT_PRODUCER) as unknown as Mocked<EventProducer>
+    producer.publish.mockReturnValue(Task.of(void 0))
   })
 
   afterEach(() => {
@@ -29,32 +36,28 @@ describe(ProcessAddressValidation, () => {
   })
 
   describe(`when receiving 'back:address:validation:requested' event`, () => {
-    let spy: MockInstance<
-      (event: back.BackEvent | web3.Web3Event) => Task<void, AppError>
+    let event: Extract<
+      back.BackEvent,
+      { type: 'back:address:validation:requested' }
     >
-    let requestId: string
-    let chainId: string
-    let address: string
-    let correlationId: string
     let task: Task<void, AppError>
 
     beforeEach(() => {
-      spy = vi.spyOn(producer, 'publish')
-      requestId = faker.string.uuid()
-      chainId = faker.string.numeric(5)
-      address = faker.string.hexadecimal({ length: 40 })
-      correlationId = faker.string.uuid()
-      task = pubsub.publish(
-        back.addressValidationRequested(
-          { requestId, chainId, address },
-          { correlationId },
-        ),
+      event = back.addressValidationRequested(
+        {
+          requestId: faker.string.uuid(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+        },
+        { correlationId: faker.string.uuid() },
       )
+
+      task = pubsub.publish(event)
     })
 
     test(`publish a 'web3:contract:validation:requested' event`, async () => {
       await task.toPromise()
-      expect(spy).toHaveBeenCalledExactlyOnceWith(
+      expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
           type: 'web3:contract:validation:requested',
         }),
@@ -63,50 +66,51 @@ describe(ProcessAddressValidation, () => {
 
     test(`forward the right payload`, async () => {
       await task.toPromise()
-      expect(spy).toHaveBeenCalledExactlyOnceWith(
+      expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          payload: { requestId, chainId, address },
+          payload: {
+            requestId: event.payload.requestId,
+            chainId: event.payload.chainId,
+            address: event.payload.address,
+          },
         }),
       )
     })
 
     test(`forward the right correlationId`, async () => {
       await task.toPromise()
-      expect(spy).toHaveBeenCalledExactlyOnceWith(
+      expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          meta: { correlationId },
+          meta: { correlationId: event.meta.correlationId },
         }),
       )
     })
   })
 
   describe(`when receiving 'web3:contract:validation:success' event`, () => {
-    let spy: MockInstance<
-      (event: back.BackEvent | web3.Web3Event) => Task<void, AppError>
+    let event: Extract<
+      web3.Web3Event,
+      { type: 'web3:contract:validation:success' }
     >
-    let requestId: string
-    let chainId: string
-    let address: string
-    let correlationId: string
     let task: Task<void, AppError>
 
     beforeEach(() => {
-      spy = vi.spyOn(producer, 'publish')
-      requestId = faker.string.uuid()
-      chainId = faker.string.numeric(5)
-      address = faker.string.hexadecimal({ length: 40 })
-      correlationId = faker.string.uuid()
-      task = pubsub.publish(
-        web3.contractValidationSuccess(
-          { requestId, chainId, address },
-          { correlationId },
-        ),
+      event = web3.contractValidationSuccess(
+        {
+          requestId: faker.string.uuid(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+        },
+        {
+          correlationId: faker.string.uuid(),
+        },
       )
+      task = pubsub.publish(event)
     })
 
     test(`publish a 'back:address:validation:confirmed' event`, async () => {
       await task.toPromise()
-      expect(spy).toHaveBeenCalledExactlyOnceWith(
+      expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
           type: 'back:address:validation:confirmed',
         }),
@@ -115,52 +119,52 @@ describe(ProcessAddressValidation, () => {
 
     test(`forward the right payload`, async () => {
       await task.toPromise()
-      expect(spy).toHaveBeenCalledExactlyOnceWith(
+      expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          payload: { requestId, chainId, address },
+          payload: {
+            requestId: event.payload.requestId,
+            chainId: event.payload.chainId,
+            address: event.payload.address,
+          },
         }),
       )
     })
 
     test(`forward the right correlationId`, async () => {
       await task.toPromise()
-      expect(spy).toHaveBeenCalledExactlyOnceWith(
+      expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          meta: { correlationId },
+          meta: { correlationId: event.meta.correlationId },
         }),
       )
     })
   })
 
   describe(`when receiving 'web3:contract:validation:failure' event`, () => {
-    let spy: MockInstance<
-      (event: back.BackEvent | web3.Web3Event) => Task<void, AppError>
+    let event: Extract<
+      web3.Web3Event,
+      { type: 'web3:contract:validation:failure' }
     >
-    let requestId: string
-    let chainId: string
-    let address: string
-    let reason: string
-    let correlationId: string
     let task: Task<void, AppError>
 
     beforeEach(() => {
-      spy = vi.spyOn(producer, 'publish')
-      requestId = faker.string.uuid()
-      chainId = faker.string.numeric(5)
-      address = faker.string.hexadecimal({ length: 40 })
-      reason = faker.lorem.paragraph()
-      correlationId = faker.string.uuid()
-      task = pubsub.publish(
-        web3.contractValidationFailure(
-          { requestId, chainId, address, reason },
-          { correlationId },
-        ),
+      event = web3.contractValidationFailure(
+        {
+          requestId: faker.string.uuid(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+          reason: faker.lorem.paragraph(),
+        },
+        {
+          correlationId: faker.string.uuid(),
+        },
       )
+      task = pubsub.publish(event)
     })
 
     test(`publish a 'back:address:validation:failed' event`, async () => {
       await task.toPromise()
-      expect(spy).toHaveBeenCalledExactlyOnceWith(
+      expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
           type: 'back:address:validation:failed',
         }),
@@ -169,18 +173,23 @@ describe(ProcessAddressValidation, () => {
 
     test(`forward the right payload`, async () => {
       await task.toPromise()
-      expect(spy).toHaveBeenCalledExactlyOnceWith(
+      expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          payload: { requestId, chainId, address, reason },
+          payload: {
+            requestId: event.payload.requestId,
+            chainId: event.payload.chainId,
+            address: event.payload.address,
+            reason: event.payload.reason,
+          },
         }),
       )
     })
 
     test(`forward the right correlationId`, async () => {
       await task.toPromise()
-      expect(spy).toHaveBeenCalledExactlyOnceWith(
+      expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          meta: { correlationId },
+          meta: { correlationId: event.meta.correlationId },
         }),
       )
     })
