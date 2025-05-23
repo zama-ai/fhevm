@@ -1,5 +1,5 @@
 # Main build workflow that handles both x86 and ARM builds
-name: Compile Rust Project and Run Tests
+name: KMS Connector Common Testing
 
 on:
   workflow_call:

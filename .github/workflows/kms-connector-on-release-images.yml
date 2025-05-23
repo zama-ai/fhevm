@@ -1,4 +1,4 @@
-name: "[Release KMS] - Create Docker Images"
+name: "Release KMS Connector Create Docker Images"
 
 on:
   release:

@@ -1,4 +1,4 @@
-name: "Helm Chart Release"
+name: "KMS Connector Helm Chart Release"
 
 on:
   workflow_call:

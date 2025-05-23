@@ -1,4 +1,4 @@
-name: Run Testing On Big Instance
+name: KMS Connector Common Testing Big Instance
 on:
   workflow_call:
     inputs:

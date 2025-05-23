@@ -1,4 +1,4 @@
-name: "[PR] Helm Chart Lint"
+name: "KMS Connector Helm Chart Lint"
 
 on:
   workflow_call:

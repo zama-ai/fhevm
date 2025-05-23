@@ -1,4 +1,4 @@
-name: Run Docker On Big Instance
+name: KMS Connector Run Docker On Big Instance
 on:
   workflow_call:
     inputs:

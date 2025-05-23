@@ -3,7 +3,7 @@
 # 1. Pull requests: For validation before merging
 # 2. Pushes: On main and release/* branches for building images
 # IMPORTANT NOTES: The tests are only executed for components that have been changed
-name: "KMS Connector Global Common Workflow"
+name: "KMS Connector Test Docker Build"
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ on:
 # - Groups runs by git ref
 # - Cancels in-progress runs for non-main/release branches
 concurrency:
-  group: kms-connector-global-common-workflow-${{ github.ref }}
+  group: kms-connector-test-docker-build-${{ github.ref }}
   cancel-in-progress: ${{ !contains(fromJSON('["release/", "main"]'),github.ref) }}
 
 # Required permissions for workflow execution
