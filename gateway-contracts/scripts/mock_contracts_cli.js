@@ -283,8 +283,6 @@ function generateMockEvents(eventDefinitions) {
  * @returns string - Generated mock functions
  */
 function generateMockFunctions(functionDefinitions, eventDefinitions, structDefinitions) {
-  // const counters = findCounterOperators(functionDefinitions);
-
   return functionDefinitions
     .filter(
       (functionDef) =>
@@ -331,7 +329,7 @@ function generateMockFunctions(functionDefinitions, eventDefinitions, structDefi
             const skipDeclaration = functionDef.parameters.some((p) => p.name === parameter.name);
             if (skipDeclaration) return "";
 
-            // Check if the parameter is an counter ID assignation variable
+            // Check if the parameter is a counter ID assignation variable
             const idCounterAssignment = idCounterAssignments.find((assignment) => assignment.idVar === parameterName);
             if (idCounterAssignment) {
               return `${idCounterAssignment.counterVar}++;\n${parameterType} ${parameterName} = ${idCounterAssignment.counterVar};`;
@@ -429,7 +427,7 @@ function findEmitStatements(statements) {
  * @returns string[] - List of counter operator names
  */
 function findCounterOperators(nodes) {
-  const memberNames = [];
+  const counterOperators = [];
 
   for (const node of nodes) {
     if (
@@ -438,19 +436,20 @@ function findCounterOperators(nodes) {
       node.subExpression &&
       node.subExpression.type === "MemberAccess"
     ) {
-      memberNames.push(node.subExpression.memberName);
+      counterOperators.push(node.subExpression.memberName);
     } else {
       // Recursively check all object properties and array elements
       for (const key in node) {
         if (node[key] && typeof node[key] === "object") {
-          memberNames.push(...findCounterOperators([node[key]]));
+          const nodes = Array.isArray(node[key]) ? node[key] : [node[key]];
+          counterOperators.push(...findCounterOperators(nodes));
         }
       }
     }
   }
 
   // Remove duplicates
-  return [...new Set(memberNames)];
+  return [...new Set(counterOperators)];
 }
 
 /**
@@ -460,10 +459,10 @@ function findCounterOperators(nodes) {
  * @returns {{ counterVar: string, idVar: string }[]} - Array of pairs
  */
 function findCounterIdAssignments(nodes, counterNames) {
-  const assignments = [];
+  const counterIdAssignments = [];
 
-  for (const node of Array.isArray(nodes) ? nodes : [nodes]) {
-    // Look for VariableDeclarationStatement with initialValue from a counter
+  for (const node of nodes) {
+    // Check for VariableDeclarationStatement with initialValue from a counter
     if (
       node.type === "VariableDeclarationStatement" &&
       node.variables &&
@@ -475,21 +474,17 @@ function findCounterIdAssignments(nodes, counterNames) {
       const idVar = node.variables[0]?.name;
       const counterVar = node.initialValue.memberName;
       if (idVar && counterVar) {
-        assignments.push({ counterVar, idVar });
+        counterIdAssignments.push({ counterVar, idVar });
       }
     }
     // Recursively check all object properties and array elements
     for (const key in node) {
       if (node[key] && typeof node[key] === "object") {
-        assignments.push(...findCounterIdAssignments(node[key], counterNames));
+        const nodes = Array.isArray(node[key]) ? node[key] : [node[key]];
+        counterIdAssignments.push(...findCounterIdAssignments(nodes, counterNames));
       }
     }
   }
 
-  // Remove duplicates
-  const unique = {};
-  for (const a of assignments) {
-    unique[`${a.counter}:${a.idVar}`] = a;
-  }
-  return Object.values(unique);
+  return counterIdAssignments;
 }
