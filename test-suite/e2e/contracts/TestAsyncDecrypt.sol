@@ -3,10 +3,10 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import { E2EFHEVMConfig } from "./E2EFHEVMConfigLocal.sol";
+import {E2EFHEVMConfig} from "./E2EFHEVMConfigLocal.sol";
 
 /// @notice Contract for testing asynchronous decryption using the Gateway
-contract TestAsyncDecrypt is E2EFHEVMConfig  {
+contract TestAsyncDecrypt is E2EFHEVMConfig {
     /// @dev Encrypted state variables
     ebool xBool;
     euint8 xUint8;
@@ -222,11 +222,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
         FHE.requestDecryption(cts, this.callbackUint32_2.selector);
     }
 
-    function callbackUint32_2(
-        uint256 requestID,
-        uint32 decryptedInput,
-        bytes[] memory signatures
-    ) public {
+    function callbackUint32_2(uint256 requestID, uint32 decryptedInput, bytes[] memory signatures) public {
         FHE.checkSignatures(requestID, signatures);
         yUint32_2 = decryptedInput;
     }
@@ -235,14 +231,10 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
     function requestUint32_3() public {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = FHE.toBytes32(xUint32_3);
-       FHE.requestDecryption(cts, this.callbackUint32_3.selector);
+        FHE.requestDecryption(cts, this.callbackUint32_3.selector);
     }
 
-        function callbackUint32_3(
-        uint256 requestID,
-        uint32 decryptedInput,
-        bytes[] memory signatures
-    ) public {
+    function callbackUint32_3(uint256 requestID, uint32 decryptedInput, bytes[] memory signatures) public {
         FHE.checkSignatures(requestID, signatures);
         yUint32_3 = decryptedInput;
     }
@@ -317,20 +309,12 @@ contract TestAsyncDecrypt is E2EFHEVMConfig  {
         FHE.requestDecryption(cts_2, this.callbackUint128_3.selector);
     }
 
-    function callbackUint128_2(
-        uint256 requestID,
-        uint128 decryptedInput,
-        bytes[] memory signatures
-    ) public {
+    function callbackUint128_2(uint256 requestID, uint128 decryptedInput, bytes[] memory signatures) public {
         FHE.checkSignatures(requestID, signatures);
         yUint128_2 = decryptedInput;
     }
 
-    function callbackUint128_3(
-        uint256 requestID,
-        uint128 decryptedInput,
-        bytes[] memory signatures
-    ) public {
+    function callbackUint128_3(uint256 requestID, uint128 decryptedInput, bytes[] memory signatures) public {
         FHE.checkSignatures(requestID, signatures);
         yUint128_3 = decryptedInput;
     }

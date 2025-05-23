@@ -1,26 +1,4 @@
-import type { FhevmInstance } from '@zama-fhe/relayer-sdk';
-
-import { EncryptedERC20, Rand } from '../types';
 import { FheType } from './common';
-import type { Signers } from './signers';
-
-declare module 'mocha' {
-  export interface Context {
-    signers: Signers;
-    contractAddress: string;
-    instances: FhevmInstances;
-    erc20: EncryptedERC20;
-    rand: Rand;
-  }
-}
-
-export interface FhevmInstances {
-  alice: FhevmInstance;
-  bob: FhevmInstance;
-  carol: FhevmInstance;
-  dave: FhevmInstance;
-  eve: FhevmInstance;
-}
 
 /**
  * A constant array containing all Fully Homomorphic Encryption (FHE) types.
