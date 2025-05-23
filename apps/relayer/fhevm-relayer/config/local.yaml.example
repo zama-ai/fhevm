@@ -19,8 +19,7 @@ networks:
     retry_delay: 1000
     max_reconnection_attempts: 3
 
-inputproof:
-    url: "0.0.0.0:3000"
+http_endpoint: "0.0.0.0:3000"
 
 keyurl:
     fhe_public_key:

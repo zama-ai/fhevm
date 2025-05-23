@@ -143,11 +143,6 @@ pub struct ContractConfig {
     pub input_verification_address: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct InputProof {
-    pub url: String,
-}
-
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct KeyUrl {
     pub fhe_public_key: KeyData,
@@ -175,10 +170,8 @@ pub struct Settings {
     pub contracts: ContractConfig,
     /// Logging configuration
     pub log: LogConfig,
-    /// TODO: rename this
-    /// Input proof endpoint address
-    pub inputproof: InputProof,
-
+    /// HTTP endpoint address
+    pub http_endpoint: String,
     /// Hard-coded data (from config for keyurl)
     pub keyurl: KeyUrl,
 }

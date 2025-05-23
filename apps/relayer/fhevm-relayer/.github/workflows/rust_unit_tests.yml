@@ -40,8 +40,8 @@ jobs:
     - name: Verify Anvil nodes
       run: |
         docker ps
-        docker logs anvil-httpz
-        docker logs anvil-gateway
+        docker logs anvil-httpz-mock
+        docker logs anvil-gateway-mock
         curl -v http://localhost:8756/ || echo "Port 8756 not responding"
         curl -v http://localhost:8757/ || echo "Port 8757 not responding"
 

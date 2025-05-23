@@ -212,6 +212,7 @@ impl NonceManager for CachedNonceManagerWithRefresh {
     }
 }
 
+#[cfg(not(feature = "ci"))]
 #[cfg(test)]
 mod tests {
     use crate::transaction::nonce::CachedNonceManagerWithRefresh;
@@ -226,6 +227,7 @@ mod tests {
     use alloy::providers::ProviderBuilder;
     use alloy::providers::WalletProvider;
     use alloy::rpc::types::TransactionRequest;
+    use reqwest::Url;
     use std::sync::Arc;
 
     #[test]
@@ -234,6 +236,8 @@ mod tests {
         assert!(val);
     }
 
+    // TODO: Remove usage of `connect_anvil_with_wallet` and `connect_anvil` that relies on
+    // `anvil` being available on the test machine.
     #[tokio::test]
     async fn increments_nonce() {
         let cnm1 = CachedNonceManagerWithRefresh::default();
@@ -276,7 +280,8 @@ mod tests {
         let cnm1 = CachedNonceManagerWithRefresh::default();
         let cnm2 = cnm1.clone();
 
-        let provider = ProviderBuilder::new().connect_anvil();
+        let provider =
+            ProviderBuilder::new().connect_http(Url::parse("http://localhost:8756").unwrap());
         let address = Address::ZERO;
 
         assert_eq!(cnm1.get_next_nonce(&provider, address).await.unwrap(), 0);

@@ -250,28 +250,14 @@ pub mod test_utils {
 
         let mut mock_service_changer = RELAYER_MOCK_SERVICE.lock().unwrap();
         let mut relayer_kill_result: Option<_> = None;
-        if let Some(mut mock_service) = mock_service_changer.take() {
-            relayer_kill_result = Some(mock_service.kill());
-        } else {
-            println!("Relayer mutex is empty");
-        }
-
-        let mut mock_service_changer = GATEWAY_PROCESSORS_MOCK_SERVICE.lock().unwrap();
-        // let mut gateway_kill_result: Option<_> = None;
-
-        if let Some(mut child) = mock_service_changer.take() {
+        if let Some(mut child) = relayer_kill_result.take() {
             kill_gracefully(child);
         }
 
-        // if let Some(mut mock_service) = mock_service_changer.take() {
-        //     gateway_kill_result = Some(mock_service.kill());
-        // } else {
-        //     println!("Gateway mutex is empty");
-        // }
-        // println!(
-        //     "Relayer-kill-output: {:?}\nGateway-kill-output{:?}",
-        //     relayer_kill_result, gateway_kill_result
-        // );
+        let mut mock_service_changer = GATEWAY_PROCESSORS_MOCK_SERVICE.lock().unwrap();
+        if let Some(mut child) = mock_service_changer.take() {
+            kill_gracefully(child);
+        }
 
         // Shutdown docker compose
         let project_root = env::var("CARGO_MANIFEST_DIR")

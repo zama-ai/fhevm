@@ -71,7 +71,7 @@ where
     let settings = Settings::new()
         .map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))
         .unwrap(); // TODO(mano): Handle error properly.
-    let addr: SocketAddr = settings.inputproof.url.parse().expect("Invalid address");
+    let addr: SocketAddr = settings.http_endpoint.parse().expect("Invalid address");
     println!("Server listening on http://{}", addr);
 
     // Start the server with hyper underneath.
