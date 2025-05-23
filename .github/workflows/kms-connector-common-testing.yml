@@ -88,9 +88,9 @@ jobs:
     steps:
       - name: Checkout Project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          submodules: true
-          token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
 
       # LFS files are needed for backward compatibility tests
       # Install git LFS before checkout does not seem possible on our self-hosted runners, so we
