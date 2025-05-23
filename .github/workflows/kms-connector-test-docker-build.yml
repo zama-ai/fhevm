@@ -18,13 +18,13 @@ concurrency:
   cancel-in-progress: ${{ !contains(fromJSON('["release/", "main"]'),github.ref) }}
 
 # Required permissions for workflow execution
-permissions:
-  actions: 'write'
-  contents: 'write'
-  id-token: 'write'
-  pull-requests: 'write'
-  pages: 'write'
-  packages: 'write'
+permissions: write-all
+  # actions: 'write'
+  # contents: 'write'
+  # id-token: 'write'
+  # pull-requests: 'write'
+  # pages: 'write'
+  # packages: 'write'
 
 
 jobs:
