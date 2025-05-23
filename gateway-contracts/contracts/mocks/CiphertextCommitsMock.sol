@@ -16,9 +16,6 @@ contract CiphertextCommitsMock {
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
     ) external {
-        bytes32 ctHandle;
-        bytes32 ciphertextDigest;
-        bytes32 snsCiphertextDigest;
         address[] memory coprocessorTxSenders = new address[](1);
         emit AddCiphertextMaterial(ctHandle, ciphertextDigest, snsCiphertextDigest, coprocessorTxSenders);
     }
