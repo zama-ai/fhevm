@@ -31,10 +31,10 @@ interface IKmsManagement {
     event KeygenResponse(uint256 preKeyId, uint256 keygenId, bytes32 fheParamsDigest);
     event KskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId, bytes32 fheParamsDigest);
     event KskgenResponse(uint256 preKskId, uint256 kskId, bytes32 fheParamsDigest);
-    event PreprocessKeygenRequest(uint256 preKeyRequestId, bytes32 fheParamsDigest);
-    event PreprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId);
-    event PreprocessKskgenRequest(uint256 preKskRequestId, bytes32 fheParamsDigest);
-    event PreprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId);
+    event PreprocessKeygenRequest(uint256 preKeygenRequestId, bytes32 fheParamsDigest);
+    event PreprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId);
+    event PreprocessKskgenRequest(uint256 preKskgenRequestId, bytes32 fheParamsDigest);
+    event PreprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId);
     event UpdateFheParams(string fheParamsName, bytes32 fheParamsDigest);
 
     function activateKeyRequest(uint256 keyId) external;
@@ -606,7 +606,7 @@ interface IKmsManagement {
     "name": "PreprocessKeygenRequest",
     "inputs": [
       {
-        "name": "preKeyRequestId",
+        "name": "preKeygenRequestId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -625,7 +625,7 @@ interface IKmsManagement {
     "name": "PreprocessKeygenResponse",
     "inputs": [
       {
-        "name": "preKeyRequestId",
+        "name": "preKeygenRequestId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -644,7 +644,7 @@ interface IKmsManagement {
     "name": "PreprocessKskgenRequest",
     "inputs": [
       {
-        "name": "preKskRequestId",
+        "name": "preKskgenRequestId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -663,7 +663,7 @@ interface IKmsManagement {
     "name": "PreprocessKskgenResponse",
     "inputs": [
       {
-        "name": "preKskRequestId",
+        "name": "preKskgenRequestId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -3445,7 +3445,7 @@ event KskgenResponse(uint256 preKskId, uint256 kskId, bytes32 fheParamsDigest);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PreprocessKeygenRequest(uint256,bytes32)` and selector `0x8511337ad89c20ef904f13e9b9e7eb05f4c0fff128a8760c2c1d436c111b309f`.
 ```solidity
-event PreprocessKeygenRequest(uint256 preKeyRequestId, bytes32 fheParamsDigest);
+event PreprocessKeygenRequest(uint256 preKeygenRequestId, bytes32 fheParamsDigest);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3456,7 +3456,7 @@ event PreprocessKeygenRequest(uint256 preKeyRequestId, bytes32 fheParamsDigest);
     #[derive(Clone)]
     pub struct PreprocessKeygenRequest {
         #[allow(missing_docs)]
-        pub preKeyRequestId: alloy::sol_types::private::primitives::aliases::U256,
+        pub preKeygenRequestId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub fheParamsDigest: alloy::sol_types::private::FixedBytes<32>,
     }
@@ -3492,7 +3492,7 @@ event PreprocessKeygenRequest(uint256 preKeyRequestId, bytes32 fheParamsDigest);
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    preKeyRequestId: data.0,
+                    preKeygenRequestId: data.0,
                     fheParamsDigest: data.1,
                 }
             }
@@ -3516,7 +3516,7 @@ event PreprocessKeygenRequest(uint256 preKeyRequestId, bytes32 fheParamsDigest);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.preKeyRequestId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.preKeygenRequestId),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.fheParamsDigest),
@@ -3562,7 +3562,7 @@ event PreprocessKeygenRequest(uint256 preKeyRequestId, bytes32 fheParamsDigest);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PreprocessKeygenResponse(uint256,uint256)` and selector `0x4187011e59171694872e08b3d3cdd3c901567aa0e38aaa6dbb4368837c1e8e34`.
 ```solidity
-event PreprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId);
+event PreprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3573,7 +3573,7 @@ event PreprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId);
     #[derive(Clone)]
     pub struct PreprocessKeygenResponse {
         #[allow(missing_docs)]
-        pub preKeyRequestId: alloy::sol_types::private::primitives::aliases::U256,
+        pub preKeygenRequestId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub preKeyId: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -3609,7 +3609,7 @@ event PreprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId);
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    preKeyRequestId: data.0,
+                    preKeygenRequestId: data.0,
                     preKeyId: data.1,
                 }
             }
@@ -3633,7 +3633,7 @@ event PreprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.preKeyRequestId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.preKeygenRequestId),
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.preKeyId),
@@ -3679,7 +3679,7 @@ event PreprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PreprocessKskgenRequest(uint256,bytes32)` and selector `0x596d111e7512a47ee0c5eb66eef6f22c45d8ad4fee0520340785a11e221ed512`.
 ```solidity
-event PreprocessKskgenRequest(uint256 preKskRequestId, bytes32 fheParamsDigest);
+event PreprocessKskgenRequest(uint256 preKskgenRequestId, bytes32 fheParamsDigest);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3690,7 +3690,7 @@ event PreprocessKskgenRequest(uint256 preKskRequestId, bytes32 fheParamsDigest);
     #[derive(Clone)]
     pub struct PreprocessKskgenRequest {
         #[allow(missing_docs)]
-        pub preKskRequestId: alloy::sol_types::private::primitives::aliases::U256,
+        pub preKskgenRequestId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub fheParamsDigest: alloy::sol_types::private::FixedBytes<32>,
     }
@@ -3726,7 +3726,7 @@ event PreprocessKskgenRequest(uint256 preKskRequestId, bytes32 fheParamsDigest);
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    preKskRequestId: data.0,
+                    preKskgenRequestId: data.0,
                     fheParamsDigest: data.1,
                 }
             }
@@ -3750,7 +3750,7 @@ event PreprocessKskgenRequest(uint256 preKskRequestId, bytes32 fheParamsDigest);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.preKskRequestId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.preKskgenRequestId),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.fheParamsDigest),
@@ -3796,7 +3796,7 @@ event PreprocessKskgenRequest(uint256 preKskRequestId, bytes32 fheParamsDigest);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PreprocessKskgenResponse(uint256,uint256)` and selector `0x76863545735c29cf1c7ebb0028e734d1d738d2a5d099ba8b529c1793354ae312`.
 ```solidity
-event PreprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId);
+event PreprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3807,7 +3807,7 @@ event PreprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId);
     #[derive(Clone)]
     pub struct PreprocessKskgenResponse {
         #[allow(missing_docs)]
-        pub preKskRequestId: alloy::sol_types::private::primitives::aliases::U256,
+        pub preKskgenRequestId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub preKskId: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -3843,7 +3843,7 @@ event PreprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId);
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    preKskRequestId: data.0,
+                    preKskgenRequestId: data.0,
                     preKskId: data.1,
                 }
             }
@@ -3867,7 +3867,7 @@ event PreprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.preKskRequestId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.preKskgenRequestId),
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.preKskId),

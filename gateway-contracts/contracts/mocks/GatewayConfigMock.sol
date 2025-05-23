@@ -39,27 +39,22 @@ contract GatewayConfigMock {
     }
 
     function updatePauser(address newPauser) external {
-        address newPauser;
         emit UpdatePauser(newPauser);
     }
 
     function updateMpcThreshold(uint256 newMpcThreshold) external {
-        uint256 newMpcThreshold;
         emit UpdateMpcThreshold(newMpcThreshold);
     }
 
     function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external {
-        uint256 newPublicDecryptionThreshold;
         emit UpdatePublicDecryptionThreshold(newPublicDecryptionThreshold);
     }
 
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external {
-        uint256 newUserDecryptionThreshold;
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
     }
 
     function addHostChain(HostChain calldata hostChain) external {
-        HostChain memory hostChain;
         emit AddHostChain(hostChain);
     }
 }

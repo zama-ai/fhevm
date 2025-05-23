@@ -17,31 +17,31 @@ pragma solidity ^0.8.24;
 interface IKmsManagement {
     /**
      * @notice Emitted to trigger a key generation preprocessing.
-     * @param preKeyRequestId The ID of the preprocessed key request.
+     * @param preKeygenRequestId The ID of the preprocess key generation request.
      * @param fheParamsDigest The digest of the FHE parameters to use.
      */
-    event PreprocessKeygenRequest(uint256 preKeyRequestId, bytes32 fheParamsDigest);
+    event PreprocessKeygenRequest(uint256 preKeygenRequestId, bytes32 fheParamsDigest);
 
     /**
      * @notice Emitted when the key generation preprocessing is completed.
-     * @param preKeyRequestId The ID of the preprocessed key request.
+     * @param preKeygenRequestId The ID of the preprocessed key generation request.
      * @param preKeyId The ID of the preprocessed key.
      */
-    event PreprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId);
+    event PreprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId);
 
     /**
      * @notice Emitted to trigger a KSK generation preprocessing.
-     * @param preKskRequestId The ID of the preprocessed KSK request.
+     * @param preKskgenRequestId The ID of the preprocess KSK generation request.
      * @param fheParamsDigest The digest of the FHE parameters to use.
      */
-    event PreprocessKskgenRequest(uint256 preKskRequestId, bytes32 fheParamsDigest);
+    event PreprocessKskgenRequest(uint256 preKskgenRequestId, bytes32 fheParamsDigest);
 
     /**
      * @notice Emitted when the KSK generation preprocessing is completed.
-     * @param preKskRequestId The ID of the preprocessed KSK request.
+     * @param preKskgenRequestId The ID of the preprocessed KSK generation request.
      * @param preKskId The ID of the preprocessed KSK.
      */
-    event PreprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId);
+    event PreprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId);
 
     /**
      * @notice Emitted to trigger a key generation.
