@@ -92,6 +92,9 @@ jobs:
           submodules: true
           token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
 
+      - name: Setup Home
+        if: "${{ !contains(inputs.runs-on, 'ubuntu') }}"
+        run: echo "HOME=/home/ubuntu" >> "${GITHUB_ENV}"
 
       # LFS files are needed for backward compatibility tests
       # Install git LFS before checkout does not seem possible on our self-hosted runners, so we
@@ -105,9 +108,7 @@ jobs:
           ./git-lfs-${{ env.GIT_LFS_VERSION }}/install.sh
           git lfs pull
 
-      - name: Setup Home
-        if: "${{ !contains(inputs.runs-on, 'ubuntu') }}"
-        run: echo "HOME=/home/ubuntu" >> "${GITHUB_ENV}"
+
 
       # Needed to be able to pull some docker images for the simulator test
       - name: Login to GitHub Container Registry
