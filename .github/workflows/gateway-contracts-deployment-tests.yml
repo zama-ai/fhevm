@@ -52,6 +52,7 @@ jobs:
       - name: Build and start Docker services
         working-directory: gateway-contracts
         run: |
+          mkdir -p addresses
           make docker-compose-build
           make docker-compose-up
 

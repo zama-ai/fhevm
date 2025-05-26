@@ -17,8 +17,6 @@ COPY --chown=fhevm:fhevm hardhat.config.ts tsconfig.json ./
 COPY --chown=fhevm:fhevm contracts ./contracts/
 COPY --chown=fhevm:fhevm tasks ./tasks/
 
-RUN mkdir -p addresses && chown -R fhevm:fhevm ./addresses
-
 # Pre-compile proxy and mock contracts
 # Implementation contracts cannot be pre-compiled as they depend on the proxy contracts' addresses
 # which are only available after they are deployed
