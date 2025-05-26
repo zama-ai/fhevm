@@ -15,7 +15,6 @@ RUN npm ci && \
 # Copy the application files
 COPY --chown=fhevm:fhevm hardhat.config.ts tsconfig.json ./
 COPY --chown=fhevm:fhevm contracts ./contracts/
-COPY --chown=fhevm:fhevm addresses ./addresses/
 COPY --chown=fhevm:fhevm tasks ./tasks/
 
 # Pre-compile proxy and mock contracts
