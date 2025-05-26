@@ -1,5 +1,5 @@
 # Main build workflow that handles both x86 and ARM builds
-name: Compile Rust Project and Run Tests
+name: KMS Connector Common Testing
 
 on:
   workflow_call:
@@ -92,17 +92,23 @@ jobs:
           submodules: true
           token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
 
-      # LFS files are needed for backward compatibility tests
-      # Install git LFS before checkout does not seem possible on our self-hosted runners, so we
-      # need to do it right after and then manually pull LFS files
-      - name: Install git-lfs
-        run: |
-          sudo apt-get update && sudo apt-get -y install git-lfs
-          git lfs pull
-
       - name: Setup Home
         if: "${{ !contains(inputs.runs-on, 'ubuntu') }}"
         run: echo "HOME=/home/ubuntu" >> "${GITHUB_ENV}"
+
+      # LFS files are needed for backward compatibility tests
+      # Install git LFS before checkout does not seem possible on our self-hosted runners, so we
+      # need to do it right after and then manually pull LFS files
+      - name: setup gitlfs from binary
+        env:
+          GIT_LFS_VERSION: "3.6.1"
+        run: |
+          wget https://github.com/git-lfs/git-lfs/releases/download/v${{ env.GIT_LFS_VERSION }}/git-lfs-linux-amd64-v${{ env.GIT_LFS_VERSION }}.tar.gz
+          tar -xzf git-lfs-linux-amd64-v${{ env.GIT_LFS_VERSION }}.tar.gz
+          ./git-lfs-${{ env.GIT_LFS_VERSION }}/install.sh
+          git lfs pull
+
+
 
       # Needed to be able to pull some docker images for the simulator test
       - name: Login to GitHub Container Registry

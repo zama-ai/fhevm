@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN cargo install sccache --version ^0.7
 ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 
-WORKDIR /app/kms-connector
+WORKDIR /app
 COPY . .
 
 # Setup SSH and git
@@ -40,7 +40,7 @@ RUN --mount=type=secret,id=BLOCKCHAIN_ACTIONS_TOKEN,env=BLOCKCHAIN_ACTIONS_TOKEN
 
 # Build with improved caching
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    cargo install --profile=${LTO_RELEASE} --path ./ --root ./ --bins
+    cargo install --profile=${LTO_RELEASE} --path ./kms-connector --root ./ --bins
 
 # Dependencies stage
 FROM debian:stable-slim AS dependencies
@@ -65,7 +65,7 @@ ENV PATH="$PATH:/app/kms-connector/bin"
 
 # Copy binaries and config
 COPY --from=base /app/kms-connector/bin/ /app/kms-connector/bin/
-COPY ./config/environments/config-base.toml /app/kms-connector/config/environments/config-base.toml
+COPY ./kms-connector/config/environments/config-base.toml /app/kms-connector/config/environments/config-base.toml
 
 # Change user to limit root access
 RUN groupadd -g 10002 kms && \
