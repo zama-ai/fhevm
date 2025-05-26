@@ -49,14 +49,33 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  setup-instance:
+    name: Setup instance (operators-e2e-test)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      runner-name: ${{ steps.start-remote-instance.outputs.label }}
+    steps:
+      - name: Start remote instance
+        id: start-remote-instance
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: aws
+          profile: bench
+
   operators-e2e-test:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: "read"
       id-token: "write"
       packages: "read"
-
-    runs-on: large_ubuntu_32
+    runs-on: ${{ needs.setup-instance.outputs.runner-name }}
+    timeout-minutes: 1440
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -109,3 +128,21 @@ jobs:
         if: always()
         run: |
           ./fhevm-cli clean
+
+  teardown-instance:
+    name: Teardown instance (operators-e2e-test)
+    if: ${{ always() && needs.setup-instance.result == 'success' }}
+    needs: [ setup-instance, operators-e2e-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Stop remote instance
+        id: stop-instance
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.setup-instance.outputs.runner-name }}
