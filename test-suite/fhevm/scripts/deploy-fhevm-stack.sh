@@ -230,9 +230,6 @@ run_compose "host" "Host Network Services" \
 
 get_minio_ip "fhevm-minio"
 
-run_compose "connector" "Connector Services" \
-    "kms-connector:running"
-
 run_compose "coprocessor" "Coprocessor Services" \
     "${PROJECT}-coprocessor-db:running" \
     "${PROJECT}-key-downloader:complete" \
@@ -243,6 +240,9 @@ run_compose "coprocessor" "Coprocessor Services" \
     "${PROJECT}-zkproof-worker:running" \
     "${PROJECT}-sns-worker:running" \
     "${PROJECT}-transaction-sender:running"
+
+run_compose "connector" "Connector Services" \
+    "kms-connector:running"
 
 run_compose "relayer" "Relayer Services" \
     "${PROJECT}-relayer:running"
