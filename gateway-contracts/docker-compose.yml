@@ -39,6 +39,8 @@ services:
     depends_on:
       anvil-node:
         condition: service_started
+    volumes:
+      - ./addresses:/app/addresses
 
   add-host-chains:
     container_name: add-host-chains
@@ -58,6 +60,8 @@ services:
         condition: service_started
       deploy-gateway-contracts:
         condition: service_completed_successfully
+    volumes:
+      - ./addresses:/app/addresses
 
   deploy-gateway-mock-contracts:
     container_name: deploy-gateway-mock-contracts

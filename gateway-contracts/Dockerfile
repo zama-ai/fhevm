@@ -22,7 +22,7 @@ COPY --chown=fhevm:fhevm tasks ./tasks/
 # which are only available after they are deployed
 RUN npx hardhat clean && \
     npx hardhat compile:specific --contract contracts/emptyProxy && \
-    npx hardhat compile:specific --contract contracts/mocks 
+    npx hardhat compile:specific --contract contracts/mocks
 
 USER fhevm:fhevm
 
