@@ -40,7 +40,7 @@ RUN --mount=type=secret,id=BLOCKCHAIN_ACTIONS_TOKEN,env=BLOCKCHAIN_ACTIONS_TOKEN
 
 # Build with improved caching
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    cargo install --profile=${LTO_RELEASE} --path ./kms-connector --root ./ --bins
+    cargo install --profile=${LTO_RELEASE} --path ./kms-connector --root ./kms-connector --bins
 
 # Dependencies stage
 FROM debian:stable-slim AS dependencies
