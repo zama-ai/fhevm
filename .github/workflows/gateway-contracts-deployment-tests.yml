@@ -55,6 +55,11 @@ jobs:
           make docker-compose-build
           make docker-compose-up
 
+      - name: Show deploy-gateway-contracts logs
+        if: always()
+        working-directory: gateway-contracts
+        run: docker compose logs deploy-gateway-contracts
+
       - name: Check smart contract deployment
         working-directory: gateway-contracts
         run: |
