@@ -26,7 +26,7 @@ const chainIds = {
   localGateway: 123456,
   staging: 54321,
   zwsDev: 412346,
-  testnet: 16039,
+  testnet: 55815,
 };
 
 // If the mnemonic is not set, use a default one
@@ -131,8 +131,8 @@ const config: HardhatUserConfig = {
         network: "testnet",
         chainId: chainIds.testnet,
         urls: {
-          apiURL: "https://explorer-zama-testnet-v1-zkkw1kf0rf.t.conduit.xyz/api",
-          browserURL: "https://explorer-zama-testnet-v1-zkkw1kf0rf.t.conduit.xyz/",
+          apiURL: "https://explorer.testnet.zama.cloud/api",
+          browserURL: "https://explorer.testnet.zama.cloud/",
         },
       },
     ],
