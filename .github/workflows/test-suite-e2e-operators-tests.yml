@@ -69,12 +69,14 @@ jobs:
           profile: bench
 
   operators-e2e-test:
+    name: Operators tests e2e
     if: ${{ github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: "read"
       id-token: "write"
       packages: "read"
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
+    needs: setup-instance
     timeout-minutes: 1440
     steps:
       - name: Checkout code
