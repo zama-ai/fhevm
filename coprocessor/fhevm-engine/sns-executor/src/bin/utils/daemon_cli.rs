@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use clap::{command, Parser};
+use humantime::parse_duration;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -52,7 +55,22 @@ pub struct Args {
 
     /// Maximum number of concurrent uploads to S3
     #[arg(long, default_value_t = 100)]
-    pub max_concurrent_uploads: u32,
+    pub s3_max_concurrent_uploads: u32,
+
+    #[arg(long, default_value_t = 100)]
+    pub s3_max_retries_per_upload: u32,
+
+    #[arg(long, default_value = "10s", value_parser = parse_duration)]
+    pub s3_max_backoff: Duration,
+
+    #[arg(long, default_value = "120s", value_parser = parse_duration)]
+    pub s3_max_retries_timeout: Duration,
+
+    #[arg(long, default_value = "2s", value_parser = parse_duration)]
+    pub s3_recheck_duration: Duration,
+
+    #[arg(long, default_value = "120s", value_parser = parse_duration)]
+    pub s3_regular_recheck_duration: Duration,
 }
 
 pub fn parse_args() -> Args {

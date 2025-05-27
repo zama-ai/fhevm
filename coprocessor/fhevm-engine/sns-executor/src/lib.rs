@@ -6,8 +6,11 @@ mod squash_noise;
 #[cfg(test)]
 mod tests;
 
-use fhevm_engine_common::{telemetry::OtelTracer, types::FhevmError};
+use std::time::Duration;
+
+use fhevm_engine_common::{telemetry::OtelTracer, types::FhevmError, utils::compact_hex};
 use serde::{Deserialize, Serialize};
+use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::sync::mpsc::{self, Sender};
 use tokio_util::sync::CancellationToken;
@@ -37,6 +40,16 @@ pub struct S3Config {
     pub bucket_ct128: String,
     pub bucket_ct64: String,
     pub max_concurrent_uploads: u32,
+    pub retry_policy: S3RetryPolicy,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct S3RetryPolicy {
+    pub max_retries_per_upload: u32,
+    pub max_backoff: Duration,
+    pub max_retries_timeout: Duration,
+    pub recheck_duration: Duration,
+    pub regular_recheck_duration: Duration,
 }
 
 #[derive(Clone)]
@@ -62,9 +75,92 @@ impl std::fmt::Display for Config {
 pub struct HandleItem {
     pub tenant_id: i32,
     pub handle: Vec<u8>,
-    pub ct64_compressed: Vec<u8>,
+    pub ct64_compressed: Option<Vec<u8>>,
     pub ct128_uncompressed: Option<Vec<u8>>,
     pub otel: OtelTracer,
+}
+
+impl HandleItem {
+    /// Enqueues the upload task into the database
+    ///
+    /// If inserted into the `ciphertext_digest` table means that the both (ct64 and ct128)
+    /// ciphertexts are ready to be uploaded to S3.
+    pub(crate) async fn enqueue_upload_task(
+        &self,
+        db_txn: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), ExecutionError> {
+        sqlx::query!(
+            "INSERT INTO ciphertext_digest (tenant_id, handle)
+            VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            self.tenant_id,
+            &self.handle,
+        )
+        .execute(db_txn.as_mut())
+        .await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn update_ct128_uploaded(
+        &self,
+        trx: &mut Transaction<'_, Postgres>,
+        digest: Vec<u8>,
+    ) -> Result<(), ExecutionError> {
+        sqlx::query!(
+            "UPDATE ciphertext_digest
+            SET ciphertext128 = $1
+            WHERE handle = $2",
+            digest,
+            self.handle
+        )
+        .execute(trx.as_mut())
+        .await?;
+
+        // Reset ciphertext128 as the ct128 has been successfully uploaded to S3
+        // NB: For reclaiming the disk-space in DB, we rely on auto vacuuming in
+        // Postgres
+
+        sqlx::query!(
+            "UPDATE ciphertexts
+             SET ciphertext128 = NULL
+             WHERE handle = $1",
+            self.handle
+        )
+        .execute(trx.as_mut())
+        .await?;
+
+        info!(
+            "Mark ct128 as uploaded, handle: {}, digest: {}",
+            compact_hex(&self.handle),
+            compact_hex(&digest)
+        );
+
+        Ok(())
+    }
+
+    pub(crate) async fn update_ct64_uploaded(
+        &self,
+        trx: &mut Transaction<'_, Postgres>,
+        digest: Vec<u8>,
+    ) -> Result<(), ExecutionError> {
+        sqlx::query!(
+            "UPDATE ciphertext_digest
+             SET ciphertext = $1
+             WHERE handle = $2",
+            digest,
+            self.handle
+        )
+        .execute(trx.as_mut())
+        .await?;
+
+        info!(
+            "Mark ct64 as uploaded, handle: {}, digest: {}",
+            compact_hex(&self.handle),
+            compact_hex(&digest)
+        );
+
+        Ok(())
+    }
 }
 
 #[derive(Error, Debug)]
@@ -84,6 +180,9 @@ pub enum ExecutionError {
     #[error("Missing 128-bit ciphertext: {0}")]
     MissingCiphertext128(String),
 
+    #[error("Missing 64-bit ciphertext: {0}")]
+    MissingCiphertext64(String),
+
     #[error("Recv error")]
     RecvFailure,
 
@@ -98,6 +197,12 @@ pub enum ExecutionError {
 
     #[error("Deserialization error: {0}")]
     DeserializationError(String),
+
+    #[error("Bucket not found {0}")]
+    BucketNotFound(String),
+
+    #[error("S3 Transient error: {0}")]
+    S3TransientError(String),
 }
 
 /// Runs the SnS worker loop
@@ -118,11 +223,12 @@ pub async fn compute_128bit_ct(
 pub async fn process_s3_uploads(
     conf: &Config,
     rx: mpsc::Receiver<HandleItem>,
+    tx: Sender<HandleItem>,
     token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(target: "sns", "Uploader started with {:?}", conf.s3);
 
-    aws_upload::process_s3_uploads(conf, rx, token).await?;
+    aws_upload::process_s3_uploads(conf, rx, tx, token).await?;
 
     info!(target: "sns", "Uploader stopped");
     Ok(())
