@@ -1,3 +1,0 @@
-[submodule "kms-connector/kms-core"]
-	path = kms-connector/kms-core
-	url = git@github.com:zama-ai/kms-core.git
