@@ -17,12 +17,12 @@ RESET='\033[0m'
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT="fhevm"
 
-export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.7.0-rc0"}
-export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc0"}
-export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"v0.7.0-rc0"}
-export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc0"}
-export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.1.0-rc6"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"v0.7.0-rc0"}
+export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.7.0-rc1"}
+export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc1"}
+export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"v0.7.0-rc1"}
+export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc1"}
+export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.7.0-rc1"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"v0.7.0-rc1"}
 export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc14"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc8"}
 
@@ -81,7 +81,7 @@ case $COMMAND in
     "${SCRIPT_DIR}/scripts/deploy-fhevm-stack.sh"
     echo -e "${GREEN}${BOLD} [SUCCESS] fhevm stack deployment complete!${RESET}"
     ;;
-    
+
   test)
     print_logo
     TEST_TYPE=$1
@@ -191,12 +191,12 @@ case $COMMAND in
       docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
     fi
     ;;
-    
+
   help|-h|--help)
     usage
     exit 0
     ;;
-    
+
   upgrade)
     print_logo
     SERVICE=$1
@@ -205,18 +205,18 @@ case $COMMAND in
       usage
       exit 1
     fi
-    
+
     echo -e "${LIGHT_BLUE}[UPGRADE]${RESET} ${BOLD}Upgrading $SERVICE...${RESET}"
     docker compose -p "${PROJECT}" --env-file "${SCRIPT_DIR}/env/staging/.env.${SERVICE}.local" -f "${SCRIPT_DIR}/docker-compose/${SERVICE}-docker-compose.yml" up -d
     echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}$SERVICE upgraded successfully${RESET}"
     ;;
-    
+
   clean)
     echo -e "${LIGHT_BLUE}[CLEAN]${RESET} ${BOLD}Cleaning up FHEVM stack...${RESET}"
     docker compose -p "${PROJECT}" down -v --remove-orphans
     echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}FHEVM stack cleaned successfully${RESET}"
     ;;
-    
+
   logs)
     SERVICE=$1
     if [ -z "${SERVICE}" ]; then
@@ -224,11 +224,11 @@ case $COMMAND in
       usage
       exit 1
     fi
-    
+
     echo -e "${LIGHT_BLUE}[LOGS]${RESET} ${BOLD}Showing logs for $SERVICE...${RESET}"
     docker logs "${PROJECT}-${SERVICE}"
     ;;
-    
+
   *)
     echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown command: ${COMMAND}${RESET}"
     usage

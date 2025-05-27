@@ -2,7 +2,7 @@ services:
 
   kms-connector:
     container_name: kms-connector
-    image: ghcr.io/zama-ai/kms-connector:${CONNECTOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/kms-connector:${CONNECTOR_VERSION}
     env_file:
       - ../env/staging/.env.connector.local
     volumes:
