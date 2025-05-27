@@ -18,7 +18,7 @@ COPY --chown=fhevm:fhevm contracts ./contracts/
 COPY --chown=fhevm:fhevm tasks ./tasks/
 
 # Create addresses directory for storing proxy contract addresses
-RUN mkdir -p /app/addresses && chown fhevm:fhevm /app/addresses
+RUN mkdir -p ./addresses && chown fhevm:fhevm ./addresses
 
 # Pre-compile proxy and mock contracts
 # Implementation contracts cannot be pre-compiled as they depend on the proxy contracts' addresses
