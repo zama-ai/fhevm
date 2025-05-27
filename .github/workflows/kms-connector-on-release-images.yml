@@ -15,9 +15,12 @@ jobs:
   docker-connector:
     uses: ./.github/workflows/kms-connector-common-docker-big-instance.yml
     permissions:
+      actions: 'read'
       contents: 'read'
       id-token: 'write'
-      packages: 'write'
+      pull-requests: 'read'
+      packages: write
+      attestations: write
     with:
       working-directory: "./kms-connector"
       push_image: true
