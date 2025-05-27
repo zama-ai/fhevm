@@ -12,8 +12,6 @@ jobs:
       contents: 'read'
       pull-requests: 'read'
     runs-on: ubuntu-latest
-    env:
-      HARDHAT_NETWORK: "hardhat"
     outputs:
       changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
     steps:
@@ -29,6 +27,8 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
     runs-on: large_ubuntu_32
+    env:
+      HARDHAT_NETWORK: hardhat
     permissions:
       contents: read
       checks: write
