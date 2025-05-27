@@ -19,27 +19,27 @@
     "test:debug": "vitest --inspect-brk --inspect --logHeapUsage --threads=false"
   },
   "dependencies": {
-    "uuid": "^11.1.0",
+    "uuid": "11.1.0",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@faker-js/faker": "^9.3.0",
-    "@nestjs/cli": "^10.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.16.0",
-    "@typescript-eslint/parser": "^8.16.0",
-    "dotenv": "^16.4.7",
+    "@faker-js/faker": "catalog:",
+    "@nestjs/cli": "10.4.9",
+    "@typescript-eslint/eslint-plugin": "8.32.1",
+    "@typescript-eslint/parser": "8.32.1",
+    "dotenv": "16.5.0",
     "eslint": "catalog:",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-prettier": "^5.2.1",
-    "globals": "^15.11.0",
-    "prettier": "^3.0.0",
-    "ts-jest": "^29.1.0",
-    "ts-loader": "^9.4.3",
-    "ts-node": "^10.9.1",
-    "tsconfig-paths": "^4.2.0",
+    "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-prettier": "5.4.0",
+    "globals": "15.15.0",
+    "prettier": "3.5.3",
+    "ts-jest": "29.3.4",
+    "ts-loader": "9.5.2",
+    "ts-node": "10.9.2",
+    "tsconfig-paths": "4.2.0",
     "typescript": "catalog:",
-    "unplugin-swc": "^1.5.1",
-    "vite-tsconfig-paths": "^5.1.4",
+    "unplugin-swc": "1.5.3",
+    "vite-tsconfig-paths": "5.1.4",
     "vitest": "catalog:"
   }
 }

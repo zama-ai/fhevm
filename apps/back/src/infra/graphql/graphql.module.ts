@@ -13,6 +13,7 @@ import {
   FEATURE_FLAGS_SERVICE,
   FeatureFlagHandler,
 } from '#feature-flag/services/feature-flags.service.js'
+import type { Request, Response } from 'express'
 
 @Module({
   imports: [

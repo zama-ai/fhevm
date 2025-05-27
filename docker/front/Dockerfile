@@ -1,5 +1,5 @@
 # --- Base stage ---
-FROM node:22.14.0-alpine3.21 AS base
+FROM node:24.0.2-alpine3.21 AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
@@ -24,7 +24,7 @@ RUN mkdir -p /prod/front/dist/scripts
 COPY ./apps/front/src/public/scripts /prod/front/dist/scripts
 
 # --- Runtime stage ---
-FROM nginx:1.24-alpine as runtime
+FROM nginx:1.28-alpine3.21 AS runtime
 WORKDIR /prod-wrkspc
 COPY --from=builder /prod/front/dist /usr/share/nginx/html/
 COPY /docker/front/nginx.conf /etc/nginx/nginx.conf

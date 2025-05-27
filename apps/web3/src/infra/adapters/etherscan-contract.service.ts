@@ -8,6 +8,7 @@ import {
   some,
 } from 'utils'
 import { stringify } from 'querystring'
+import { fetch } from 'undici'
 import type { EtherConfig } from '#config/ether.config.js'
 import { Logger } from '@nestjs/common'
 import { ChainId, Web3Address } from '#domain/entities/value-objects.js'

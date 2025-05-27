@@ -1,5 +1,5 @@
 # --- Base stage ---
-FROM node:22.14.0-alpine3.21 AS base
+FROM node:24.0.2-alpine3.21 AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
@@ -14,7 +14,7 @@ COPY ./packages packages
 COPY ./apps/orchestrator apps/orchestrator
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm --filter "./packages/**" build
-RUN pnpx prisma generate --schema apps/orchestrator/prisma/schema.prisma
+RUN pnpm --filter=orchestrator prisma:generate
 RUN pnpm --filter=orchestrator build
 RUN pnpm --filter=orchestrator run copy:generated
 RUN pnpm deploy --filter=orchestrator --prod /prod/orchestrator
