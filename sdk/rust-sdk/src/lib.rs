@@ -2,8 +2,10 @@
 //!
 //! A Rust SDK for interacting with FHEVM networks.
 
+use alloy::primitives::{Address, B256};
 use serde::{Deserialize, Serialize};
-use signature::generate_eip712_user_decrypt;
+use signature::Eip712Builder;
+// use signature::generate_eip712_user_decrypt;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -118,14 +120,42 @@ impl FhevmSdk {
     /// Generate an EIP-712 signature for user decrypt
     pub fn generate_eip712_for_user_decrypt(
         &self,
-        ct_handles: &[Vec<u8>],
-        user_address: &str,
-    ) -> Result<Vec<u8>> {
+        public_key: &[u8],
+        contract_addresses: &[Address],
+        start_timestamp: u64,
+        duration_days: u64,
+    ) -> Result<B256> {
         // Placeholder for EIP-712 signature generation
-        let _res = generate_eip712_user_decrypt(ct_handles, user_address, 1u64);
+        // let _res = generate_eip712_user_decrypt(ct_handles, user_address, 1u64);
 
-        // Return mock signature
-        Ok(vec![0; 65])
+        let input_verifier_address_str = self
+            .config
+            .gateway_contracts
+            .get("input-verifier")
+            .ok_or_else(|| {
+                FhevmError::InvalidParams("Input verifier contract address is not set".to_string())
+            })?;
+
+        let input_verifier_address =
+            match alloy::primitives::Address::from_str(input_verifier_address_str) {
+                Ok(addr) => addr,
+                Err(_) => {
+                    return Err(FhevmError::InvalidParams(
+                        "Invalid ACL contract address".to_string(),
+                    ));
+                }
+            };
+        let builder = Eip712Builder::new(
+            self.config.gateway_chain_id,
+            input_verifier_address,
+            self.config.host_chain_id,
+        );
+        builder.build_user_decrypt_hash(
+            public_key,
+            contract_addresses,
+            start_timestamp,
+            duration_days,
+        )
     }
 
     /// Generate calldata for UserDelegatedDecrypt operation
@@ -338,6 +368,12 @@ impl FhevmSdkBuilder {
         if !self.host_contracts.contains_key("acl") {
             return Err(FhevmError::InvalidParams(
                 "ACL contract address is required in host_contracts".to_string(),
+            ));
+        }
+
+        if !self.gateway_contracts.contains_key("input-verifier") {
+            return Err(FhevmError::InvalidParams(
+                "Input verifier contract address is required in gateway_contracts".to_string(),
             ));
         }
 
