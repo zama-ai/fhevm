@@ -25,6 +25,7 @@ permissions:
   pull-requests: 'write'
   pages: 'write'
   packages: 'write'
+  attestations: 'write'
 
 
 jobs:
