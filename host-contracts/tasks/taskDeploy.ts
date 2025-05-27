@@ -25,6 +25,10 @@ async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUp
 task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+
+  // Ensure the addresses directory exists
+  fs.mkdirSync(path.join(__dirname, '../addresses'), { recursive: true });
+
   const aclAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setACLAddress', {
     address: aclAddress,
