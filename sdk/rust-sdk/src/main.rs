@@ -1,5 +1,6 @@
 use std::path;
 
+use fhevm_sdk::signature::validate_address_from_str;
 use fhevm_sdk::{EncryptedInput, FhevmError, FhevmSdk, FhevmSdkBuilder};
 
 use alloy::primitives::address;
@@ -37,7 +38,11 @@ fn create_sample_builder() -> FhevmSdkBuilder {
         .with_keys_directory(path::PathBuf::from("./keys"))
         .with_gateway_chain_id(43113)
         .with_host_chain_id(11155111) // Example: Ethereum Sepolia
-        .with_gateway_contract("Decryption", "0x1234567890123456789012345678901234567890")
+        .with_gateway_contract("Decryption", "0x1234567890123456789012345678901234567bbb")
+        .with_gateway_contract(
+            "input-verifier",
+            "0x1234567890123456789012345678901234567aaa",
+        )
         .with_host_contract("acl", "0x0987654321098765432109876543210987654321")
 }
 
@@ -84,10 +89,26 @@ fn demo_sdk_functionality(sdk: &mut FhevmSdk) -> Result<(), FhevmError> {
     }
 
     // Example: Generate EIP-712 signature
-    log::info!("Generating EIP-712 signature");
-    match sdk.generate_eip712_for_user_decrypt(&handle_vecs, &user_address.to_string()) {
-        Ok(signature) => log::info!("Signature generated: {} bytes", signature.len()),
-        Err(e) => log::info!("Signature generation error: {}", e),
+    log::info!("Generating EIP-712 hash");
+
+    // Message parameters
+    let public_key = hex::decode(
+        "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331",
+    )
+    .unwrap();
+    let contract_addresses = vec![validate_address_from_str(
+        "0x56a24bcaE11890353726596fD6f5cABb5a126Df9",
+    )?];
+    let start_timestamp = 1748252823;
+    let duration_days = 10;
+    match sdk.generate_eip712_for_user_decrypt(
+        &public_key,
+        &contract_addresses,
+        start_timestamp,
+        duration_days,
+    ) {
+        Ok(hash) => log::info!("Hash generated: {} bytes", hash.len()),
+        Err(e) => log::info!("Hash generation error: {}", e),
     }
 
     Ok(())
