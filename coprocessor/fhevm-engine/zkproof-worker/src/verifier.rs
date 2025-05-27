@@ -299,7 +299,7 @@ fn try_verify_and_expand_ciphertext_list(
 
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .verify_and_expand(&keys.public_params, &keys.pks, &aux_data_bytes)
-        .map_err(|_| ExecutionError::InvalidProof(request_id))?;
+        .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))?;
 
     Ok(extract_ct_list(&expanded)?)
 }

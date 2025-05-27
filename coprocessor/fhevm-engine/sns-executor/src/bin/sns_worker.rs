@@ -43,7 +43,7 @@ fn construct_config() -> Config {
                 max_backoff: args.s3_max_backoff,
                 max_retries_timeout: args.s3_max_retries_timeout,
                 recheck_duration: args.s3_recheck_duration,
-                regular_recheck_duration: args.s3_recheck_duration,
+                regular_recheck_duration: args.s3_regular_recheck_duration,
             },
         },
     }
