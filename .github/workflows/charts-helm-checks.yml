@@ -1,9 +1,7 @@
-name: "Fhevm Helm Chart Test"
+name: "Helm - Charts Checks"
 
 on:
   pull_request:
-    branches:
-      - main
 
 env:
   HELM_VERSION: v3.16.4
@@ -24,12 +22,26 @@ jobs:
         with:
           filters: |
             charts:
-              - '.github/workflows/charts-helm-test.yml'
+              - '.github/workflows/charts-helm-checks.yml'
               - 'charts/**'
-  helm-test:
+  helm-charts-lint:
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'read'
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - name: Lint
+        uses: WyriHaximus/github-action-helm3@fc4ba26e75cf5d08182c6ce3b72623c8bfd7272b # v3.1.0
+        with:
+          exec: helm lint charts/*
+  helm-charts-test:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -60,12 +72,3 @@ jobs:
       - name: Run chart-testing (lint)
         if: steps.list-changed.outputs.changed == 'true'
         run: ct lint --config .github/config/ct.yaml
-
-# To implement later
-#      - name: Create kind cluster
-#        if: steps.list-changed.outputs.changed == 'true'
-#        uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde #v1.10.0
-#
-#      - name: Run chart-testing (install)
-#        if: steps.list-changed.outputs.changed == 'true'
-#        run: ct install --config .github/config/ct.yaml

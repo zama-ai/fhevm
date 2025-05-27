@@ -1,4 +1,4 @@
-name: "Fhevm Helm Chart Release"
+name: "Helm - Charts Release"
 
 on:
   push:
@@ -30,7 +30,7 @@ jobs:
             charts:
               - '.github/workflows/charts-helm-release.yml'
               - 'charts/**'
-  charts-helm-release:
+  helm-charts-release:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
     runs-on: ubuntu-latest
