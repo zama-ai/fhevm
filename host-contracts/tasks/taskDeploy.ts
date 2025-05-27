@@ -23,6 +23,9 @@ async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUp
 }
 
 task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+  // Compile the EmptyUUPS proxy contract
+  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
 
@@ -456,7 +459,6 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
     await hre.run('clean');
   }
 
-  await hre.run('compile:specific', { contract: 'contracts/emptyProxy' });
   await hre.run('task:deployEmptyUUPSProxies');
 
   // The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
