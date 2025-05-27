@@ -206,6 +206,7 @@ type Mutation {
   resetPassword(input: resetPasswordInput!): auth!
   createInvitation(input: CreateInvitationInput!): Invitation!
   updateUser(input: UpdateUserInput!): User!
+  changePassword(input: ChangePasswordInput!): Boolean!
   createDapp(input: CreateDappInput!): Dapp!
   updateDapp(input: UpdateDappInput!): Dapp!
   deployDapp(input: DeployDAppInput!): Dapp!
@@ -251,6 +252,14 @@ input CreateInvitationInput {
 input UpdateUserInput {
   id: ID!
   name: String!
+}
+
+input ChangePasswordInput {
+  """Current password"""
+  oldPassword: String!
+
+  """New password"""
+  newPassword: String!
 }
 
 input CreateDappInput {

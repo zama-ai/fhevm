@@ -41,16 +41,6 @@ export function toFormikValidationSchema<T>(
   }
 }
 
-function createValidationResult(error: z.ZodError) {
-  const result: Record<string, string> = {}
-
-  for (const x of error.errors) {
-    result[x.path.filter(Boolean).join('.')] = x.message
-  }
-
-  return result
-}
-
 /**
  * Wrap your zod schema in this function when providing it to Formik's validate prop
  * @usage `validate={toFormikValidate(Schema)}`
@@ -64,7 +54,10 @@ export function toFormikValidate<T>(
   return async (values: T) => {
     const result = await schema.safeParseAsync(values, params)
     if (!result.success) {
-      return createValidationResult(result.error)
+      return result.error.issues.reduce(
+        (acc, issue) => ({ [issue.path.join('.')]: issue.message, ...acc }),
+        {},
+      )
     }
   }
 }

@@ -10,6 +10,7 @@ import {
 import { expect } from 'vitest'
 import { Type } from '@nestjs/common'
 import { HttpzManager } from './httpz.manager.js'
+import { UserManager } from './user.manager.js'
 
 export type { GraphQlResponse } from './setup.manager.js'
 export type { User } from './auth.manager.js'
@@ -18,6 +19,7 @@ export type { DApp, DeployDappResult } from './dapp.manager.js'
 export class IntegrationManager {
   readonly setup = new SetupManager()
   readonly auth = new AuthManager(this.setup)
+  readonly user = new UserManager(this.setup)
   readonly dapp = new DappManager(this.setup, this.auth)
   readonly httpz = new HttpzManager(this.setup)
 

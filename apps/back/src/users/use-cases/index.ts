@@ -1,3 +1,8 @@
+export {
+  ChangePassword,
+  CHANGE_PASSWORD,
+  type IChangePassword,
+} from './change-password.use-case.js'
 export { CreateUser } from './create-user.use-case.js'
 export { GetUserByEmail } from './get-user-by-email.use-case.js'
 export { GetUserById } from './get-user-by-id.use-case.js'

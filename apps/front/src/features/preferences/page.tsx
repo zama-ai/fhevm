@@ -1,7 +1,7 @@
 import { Heading, Separator } from '@chakra-ui/react'
 import { useMutation, useQuery } from '@apollo/client'
 
-import { graphql } from '../__generated__/gql.js'
+import { graphql } from '../../__generated__/gql.js'
 import {
   ChangeUserNameMutation,
   PreferencesQuery,
@@ -9,6 +9,7 @@ import {
 import { SkeletonText } from '@/components/ui/skeleton.js'
 import { DisplaySettings } from '@/components/display-settings/display-settings.js'
 import { Account } from '@/components/account/account.js'
+import { ChangePassword } from './change-password/change-password.js'
 
 const GET_PREFERENCES = graphql(`
   query Preferences {
@@ -59,6 +60,8 @@ export function PreferencesPage() {
           }}
         />
       )}
+      <Separator my="9" />
+      <ChangePassword />
       <Separator my="9" />
       <DisplaySettings />
     </>

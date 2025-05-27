@@ -9,6 +9,10 @@ import * as uc from '#users/use-cases/index.js'
 @Module({
   imports: [DatabaseModule, TeamsModule],
   providers: [
+    {
+      provide: uc.CHANGE_PASSWORD,
+      useClass: uc.ChangePassword,
+    },
     uc.CreateUser,
     uc.GetUserByEmail,
     uc.GetUserById,

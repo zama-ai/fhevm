@@ -17,7 +17,6 @@ import { signupLoader } from './pages/signup.loader.js'
 import { DashboardPage } from './pages/dashboard.page.js'
 import { CreatePage } from './pages/create.js'
 import { DappPage } from './pages/dapp.page.js'
-import { PreferencesPage } from './pages/preferences.page.js'
 
 const router = createBrowserRouter([
   {
@@ -41,11 +40,11 @@ const router = createBrowserRouter([
       },
       {
         path: 'reset-password/:token?',
-        lazy: {
-          Component: async () => {
-            return (await import('./features/auth/reset-password/page.tsx'))
-              .ResetPasswordPage
-          },
+        lazy: async () => {
+          const Component = (
+            await import('./features/auth/reset-password/page.tsx')
+          ).ResetPasswordPage
+          return { Component }
         },
       },
     ],
@@ -60,7 +59,11 @@ const router = createBrowserRouter([
       },
       {
         path: '/preferences/',
-        element: <PreferencesPage />,
+        lazy: async () => {
+          const Component = (await import('./features/preferences/page.tsx'))
+            .PreferencesPage
+          return { Component }
+        },
       },
       {
         path: '/create/:teamId',
