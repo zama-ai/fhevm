@@ -217,7 +217,7 @@ This is the chain ID of the network on which the contracts are expected to be de
 - `localGateway`: 123456
 - `staging`: 54321
 - `zwsDev`: 412346
-- `testnet`: 16039
+- `testnet`: 55815
 
 - Mnemonic
 
