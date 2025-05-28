@@ -37,6 +37,10 @@ jobs:
         working-directory: host-contracts
         run: npm ci --include=optional
 
+      - name: Deploy empty proxy contracts
+        working-directory: host-contracts
+        run: npm run deploy:emptyProxies
+
       - name: Compile host contracts
         working-directory: host-contracts
         run: npm run compile
