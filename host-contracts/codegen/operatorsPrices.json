@@ -1,6 +1,7 @@
 {
   "fheAdd": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 94000,
       "Uint16": 133000,
@@ -17,7 +18,8 @@
     }
   },
   "fheSub": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 94000,
       "Uint16": 133000,
@@ -34,7 +36,8 @@
     }
   },
   "fheMul": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 159000,
       "Uint16": 208000,
@@ -51,7 +54,8 @@
     }
   },
   "fheDiv": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 238000,
       "Uint16": 314000,
@@ -61,7 +65,8 @@
     }
   },
   "fheRem": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 460000,
       "Uint16": 622000,
@@ -71,7 +76,8 @@
     }
   },
   "fheBitAnd": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Bool": 26000,
       "Uint8": 34000,
@@ -92,7 +98,8 @@
     }
   },
   "fheBitOr": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Bool": 26000,
       "Uint8": 34000,
@@ -113,7 +120,8 @@
     }
   },
   "fheBitXor": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Bool": 26000,
       "Uint8": 34000,
@@ -134,7 +142,8 @@
     }
   },
   "fheShl": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 35000,
       "Uint16": 35000,
@@ -153,7 +162,8 @@
     }
   },
   "fheShr": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 35000,
       "Uint16": 35000,
@@ -172,7 +182,8 @@
     }
   },
   "fheRotl": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 35000,
       "Uint16": 35000,
@@ -191,7 +202,8 @@
     }
   },
   "fheRotr": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 35000,
       "Uint16": 35000,
@@ -210,7 +222,38 @@
     }
   },
   "fheEq": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
+    "scalar": {
+      "Bool": 49000,
+      "Uint8": 53000,
+      "Uint16": 54000,
+      "Uint32": 82000,
+      "Uint64": 86000,
+      "Uint128": 88000,
+      "Uint160": 90000,
+      "Uint256": 100000,
+      "Uint512": 150000,
+      "Uint1024": 200000,
+      "Uint2048": 300000
+    },
+    "nonScalar": {
+      "Bool": 49000,
+      "Uint8": 53000,
+      "Uint16": 54000,
+      "Uint32": 82000,
+      "Uint64": 86000,
+      "Uint128": 88000,
+      "Uint160": 90000,
+      "Uint256": 100000,
+      "Uint512": 150000,
+      "Uint1024": 200000,
+      "Uint2048": 300000
+    }
+  },
+  "fheEqBytes": {
+    "supportScalar": true,
+    "numberInputs": 1,
     "scalar": {
       "Bool": 49000,
       "Uint8": 53000,
@@ -239,7 +282,38 @@
     }
   },
   "fheNe": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
+    "scalar": {
+      "Bool": 49000,
+      "Uint8": 53000,
+      "Uint16": 54000,
+      "Uint32": 82000,
+      "Uint64": 86000,
+      "Uint128": 88000,
+      "Uint160": 90000,
+      "Uint256": 100000,
+      "Uint512": 150000,
+      "Uint1024": 200000,
+      "Uint2048": 300000
+    },
+    "nonScalar": {
+      "Bool": 49000,
+      "Uint8": 53000,
+      "Uint16": 54000,
+      "Uint32": 82000,
+      "Uint64": 86000,
+      "Uint128": 88000,
+      "Uint160": 90000,
+      "Uint256": 100000,
+      "Uint512": 150000,
+      "Uint1024": 200000,
+      "Uint2048": 300000
+    }
+  },
+  "fheNeBytes": {
+    "supportScalar": true,
+    "numberInputs": 1,
     "scalar": {
       "Bool": 49000,
       "Uint8": 53000,
@@ -268,7 +342,8 @@
     }
   },
   "fheGe": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 82000,
       "Uint16": 105000,
@@ -285,7 +360,8 @@
     }
   },
   "fheGt": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 82000,
       "Uint16": 105000,
@@ -302,7 +378,8 @@
     }
   },
   "fheLe": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 82000,
       "Uint16": 105000,
@@ -319,7 +396,8 @@
     }
   },
   "fheLt": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 82000,
       "Uint16": 105000,
@@ -336,7 +414,8 @@
     }
   },
   "fheMin": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 128000,
       "Uint16": 150000,
@@ -353,7 +432,8 @@
     }
   },
   "fheMax": {
-    "binary": true,
+    "supportScalar": true,
+    "numberInputs": 2,
     "scalar": {
       "Uint8": 128000,
       "Uint16": 150000,
@@ -370,7 +450,8 @@
     }
   },
   "fheNeg": {
-    "binary": false,
+    "supportScalar": false,
+    "numberInputs": 1,
     "types": {
       "Uint8": 95000,
       "Uint16": 131000,
@@ -381,7 +462,8 @@
     }
   },
   "fheNot": {
-    "binary": false,
+    "supportScalar": false,
+    "numberInputs": 1,
     "types": {
       "Bool": 30000,
       "Uint8": 34000,
@@ -393,7 +475,8 @@
     }
   },
   "cast": {
-    "binary": false,
+    "supportScalar": false,
+    "numberInputs": 1,
     "types": {
       "Bool": 200,
       "Uint8": 200,
@@ -405,7 +488,8 @@
     }
   },
   "trivialEncrypt": {
-    "binary": false,
+    "supportScalar": false,
+    "numberInputs": 0,
     "types": {
       "Bool": 100,
       "Uint8": 100,
@@ -421,7 +505,8 @@
     }
   },
   "ifThenElse": {
-    "binary": false,
+    "supportScalar": false,
+    "numberInputs": 3,
     "types": {
       "Bool": 43000,
       "Uint8": 47000,
@@ -437,7 +522,8 @@
     }
   },
   "fheRand": {
-    "binary": false,
+    "supportScalar": false,
+    "numberInputs": 0,
     "types": {
       "Bool": 100000,
       "Uint8": 100000,
@@ -452,7 +538,8 @@
     }
   },
   "fheRandBounded": {
-    "binary": false,
+    "supportScalar": false,
+    "numberInputs": 0,
     "types": {
       "Uint8": 100000,
       "Uint16": 100000,

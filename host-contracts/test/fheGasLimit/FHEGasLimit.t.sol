@@ -12,16 +12,23 @@ import {fhevmExecutorAdd} from "../../addresses/FHEVMExecutorAddress.sol";
 import {SupportedTypesConstants} from "../fhevmExecutor/fhevmExecutor.t.sol";
 
 contract MockFheGasLimit is FHEGasLimit {
-    /// @dev This function allows reading the current block consumption from the storage.
-    function getCurrentBlockConsumption() public view returns (uint256) {
-        FHEGasLimitStorage storage $ = _getFHEGasLimitStorage();
-        return $.currentBlockConsumption;
+    bytes32 private constant FHEGasLimitStorageLocation =
+        0xb5c80b3bbe0bcbcea690f6dbe62b32a45bd1ad263b78db2f25ef8414efe9bc00;
+
+    function getHCUForTransaction() external view returns (uint256) {
+        return _getHCUForTransaction();
     }
 
-    /// @dev This function is used for testing purposes to increase the paidAmountGas (for checking revertion paths).
-    function updateFunding(uint256 paidAmountGas) public {
-        _checkIfNewBlock();
-        _updateFunding(paidAmountGas);
+    function setHCUForTransaction(uint256 handleHCU) external {
+        _setHCUForTransaction(handleHCU);
+    }
+
+    function resetTotalTransactionHCU() external {
+        bytes32 slot = keccak256(abi.encodePacked(FHEGasLimitStorageLocation, "HCU"));
+
+        assembly {
+            tstore(slot, 0)
+        }
     }
 }
 
@@ -34,7 +41,12 @@ contract FHEGasLimitTest is Test, SupportedTypesConstants {
     address internal implementation;
     address internal fhevmExecutor;
 
-    uint256 internal FHE_GAS_BLOCKLIMIT = 20_000_000;
+    uint256 internal MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000 - 1;
+
+    bytes32 mockLHS;
+    bytes32 mockRHS;
+    bytes32 mockMiddle;
+    bytes32 mockResult;
 
     function _isTypeSupported(FheType fheType, uint256 supportedTypes) internal pure returns (bool) {
         if ((1 << uint8(fheType)) & supportedTypes == 0) {
@@ -71,16 +83,16 @@ contract FHEGasLimitTest is Test, SupportedTypesConstants {
         assertEq(fheGasLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
-    function test_PayForFheAddWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheAddWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheAdd));
 
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheAdd(FheType(resultType), scalarByte);
+        fheGasLimit.checkHCUForFheAdd(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
 
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 94000);
-        vm.assertLe(currentBlockConsumption, 218000);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 94000);
+        vm.assertLe(totalTransactionHCU, 218000);
     }
 
     function test_PayFheSubWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
@@ -88,11 +100,11 @@ contract FHEGasLimitTest is Test, SupportedTypesConstants {
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheSub));
 
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheSub(FheType(resultType), scalarByte);
+        fheGasLimit.checkHCUForFheSub(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
 
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 94000);
-        vm.assertLe(currentBlockConsumption, 218000);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 94000);
+        vm.assertLe(totalTransactionHCU, 218000);
     }
 
     function test_PayFheMulWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
@@ -100,15 +112,15 @@ contract FHEGasLimitTest is Test, SupportedTypesConstants {
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheMul));
 
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheMul(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
+        fheGasLimit.checkHCUForFheMul(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(currentBlockConsumption, 159000);
-            vm.assertLe(currentBlockConsumption, 480000);
+            vm.assertGe(totalTransactionHCU, 159000);
+            vm.assertLe(totalTransactionHCU, 480000);
         } else {
-            vm.assertGe(currentBlockConsumption, 197000);
-            vm.assertLe(currentBlockConsumption, 1145000);
+            vm.assertGe(totalTransactionHCU, 197000);
+            vm.assertLe(totalTransactionHCU, 1145000);
         }
     }
 
@@ -118,10 +130,10 @@ contract FHEGasLimitTest is Test, SupportedTypesConstants {
         bytes1 scalarByte = 0x01;
 
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheDiv(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 238000);
-        vm.assertLe(currentBlockConsumption, 857000);
+        fheGasLimit.checkHCUForFheDiv(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 238000);
+        vm.assertLe(totalTransactionHCU, 857000);
     }
 
     function test_PayFheRemWorksAsExpectedForSupportedTypes(uint8 resultType) public {
@@ -130,630 +142,707 @@ contract FHEGasLimitTest is Test, SupportedTypesConstants {
         bytes1 scalarByte = 0x01;
 
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheRem(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 460000);
-        vm.assertLe(currentBlockConsumption, 1499000);
+        fheGasLimit.checkHCUForFheRem(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 460000);
+        vm.assertLe(totalTransactionHCU, 1499000);
     }
 
-    function test_PayForFheBitAndWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheBitAndWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheBitAnd));
 
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheBitAnd(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 26000);
-        vm.assertLe(currentBlockConsumption, 44000);
+        fheGasLimit.checkHCUForFheBitAnd(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 26000);
+        vm.assertLe(totalTransactionHCU, 44000);
     }
 
-    function test_PayForFheBitOrWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheBitOrWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheBitOr));
 
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheBitOr(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 26000);
-        vm.assertLe(currentBlockConsumption, 44000);
+        fheGasLimit.checkHCUForFheBitOr(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 26000);
+        vm.assertLe(totalTransactionHCU, 44000);
     }
 
     function test_PayFheBitXorWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheBitXor));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheBitXor(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 26000);
-        vm.assertLe(currentBlockConsumption, 44000);
+        fheGasLimit.checkHCUForFheBitXor(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 26000);
+        vm.assertLe(totalTransactionHCU, 44000);
     }
 
-    function test_PayForFheShlWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheShlWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheShl));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheShl(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
+        fheGasLimit.checkHCUForFheShl(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(currentBlockConsumption, 35000);
-            vm.assertLe(currentBlockConsumption, 44000);
+            vm.assertGe(totalTransactionHCU, 35000);
+            vm.assertLe(totalTransactionHCU, 44000);
         } else {
-            vm.assertGe(currentBlockConsumption, 133000);
-            vm.assertLe(currentBlockConsumption, 350000);
+            vm.assertGe(totalTransactionHCU, 133000);
+            vm.assertLe(totalTransactionHCU, 350000);
         }
     }
 
-    function test_PayForFheShrWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheShrWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheShr));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheShr(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
+        fheGasLimit.checkHCUForFheShr(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(currentBlockConsumption, 35000);
-            vm.assertLe(currentBlockConsumption, 44000);
+            vm.assertGe(totalTransactionHCU, 35000);
+            vm.assertLe(totalTransactionHCU, 44000);
         } else {
-            vm.assertGe(currentBlockConsumption, 133000);
-            vm.assertLe(currentBlockConsumption, 350000);
+            vm.assertGe(totalTransactionHCU, 133000);
+            vm.assertLe(totalTransactionHCU, 350000);
         }
     }
 
-    function test_PayForFheRotlWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheRotlWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRotl));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheRotl(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
+        fheGasLimit.checkHCUForFheRotl(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(currentBlockConsumption, 35000);
-            vm.assertLe(currentBlockConsumption, 44000);
+            vm.assertGe(totalTransactionHCU, 35000);
+            vm.assertLe(totalTransactionHCU, 44000);
         } else {
-            vm.assertGe(currentBlockConsumption, 133000);
-            vm.assertLe(currentBlockConsumption, 350000);
+            vm.assertGe(totalTransactionHCU, 133000);
+            vm.assertLe(totalTransactionHCU, 350000);
         }
     }
-    function test_PayForFheRotrWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+
+    function test_checkHCUForFheRotrWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRotr));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheRotr(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
+        fheGasLimit.checkHCUForFheRotr(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(currentBlockConsumption, 35000);
-            vm.assertLe(currentBlockConsumption, 44000);
+            vm.assertGe(totalTransactionHCU, 35000);
+            vm.assertLe(totalTransactionHCU, 44000);
         } else {
-            vm.assertGe(currentBlockConsumption, 133000);
-            vm.assertLe(currentBlockConsumption, 350000);
+            vm.assertGe(totalTransactionHCU, 133000);
+            vm.assertLe(totalTransactionHCU, 350000);
         }
     }
 
-    function test_PayForFheEqWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheEqWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(
             _isTypeSupported(FheType(resultType), supportedTypesFheEq) ||
                 _isTypeSupported(FheType(resultType), supportedTypesFheEqWithBytes)
         );
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheEq(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 49000);
-        vm.assertLe(currentBlockConsumption, 300000);
+        fheGasLimit.checkHCUForFheEq(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 49000);
+        vm.assertLe(totalTransactionHCU, 300000);
     }
 
-    function test_PayForFheNeWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheEqBytesWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(
+            _isTypeSupported(FheType(resultType), supportedTypesFheEq) ||
+                _isTypeSupported(FheType(resultType), supportedTypesFheEqWithBytes)
+        );
+        vm.prank(fhevmExecutor);
+        fheGasLimit.checkHCUForFheEqBytes(FheType(resultType), scalarByte, mockLHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 49000);
+        vm.assertLe(totalTransactionHCU, 300000);
+    }
+
+    function test_checkHCUForFheNeWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(
             _isTypeSupported(FheType(resultType), supportedTypesFheNe) ||
                 _isTypeSupported(FheType(resultType), supportedTypesFheNeWithBytes)
         );
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheNe(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 49000);
-        vm.assertLe(currentBlockConsumption, 300000);
+        fheGasLimit.checkHCUForFheNe(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 49000);
+        vm.assertLe(totalTransactionHCU, 300000);
     }
 
-    function test_PayForFheGeWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheNeBytesWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(
+            _isTypeSupported(FheType(resultType), supportedTypesFheNe) ||
+                _isTypeSupported(FheType(resultType), supportedTypesFheNeWithBytes)
+        );
+        vm.prank(fhevmExecutor);
+        fheGasLimit.checkHCUForFheNeBytes(FheType(resultType), scalarByte, mockLHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 49000);
+        vm.assertLe(totalTransactionHCU, 300000);
+    }
+
+    function test_checkHCUForFheGeWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheGe));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheGe(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 82000);
-        vm.assertLe(currentBlockConsumption, 190000);
+        fheGasLimit.checkHCUForFheGe(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 82000);
+        vm.assertLe(totalTransactionHCU, 190000);
     }
 
-    function test_PayForFheGtWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheGtWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheGt));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheGt(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 82000);
-        vm.assertLe(currentBlockConsumption, 190000);
+        fheGasLimit.checkHCUForFheGt(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 82000);
+        vm.assertLe(totalTransactionHCU, 190000);
     }
 
-    function test_PayForFheLeWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheLeWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheLe));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheLe(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 82000);
-        vm.assertLe(currentBlockConsumption, 190000);
+        fheGasLimit.checkHCUForFheLe(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 82000);
+        vm.assertLe(totalTransactionHCU, 190000);
     }
 
-    function test_PayForFheLtWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheLtWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheLt));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheLt(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 82000);
-        vm.assertLe(currentBlockConsumption, 190000);
+        fheGasLimit.checkHCUForFheLt(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 82000);
+        vm.assertLe(totalTransactionHCU, 190000);
     }
 
-    function test_PayForFheMinWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheMinWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheMin));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheMin(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
+        fheGasLimit.checkHCUForFheMin(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(currentBlockConsumption, 128000);
-            vm.assertLe(currentBlockConsumption, 225000);
+            vm.assertGe(totalTransactionHCU, 128000);
+            vm.assertLe(totalTransactionHCU, 225000);
         } else {
-            vm.assertGe(currentBlockConsumption, 128000);
-            vm.assertLe(currentBlockConsumption, 241000);
+            vm.assertGe(totalTransactionHCU, 128000);
+            vm.assertLe(totalTransactionHCU, 241000);
         }
     }
 
-    function test_PayForFheMaxWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
+    function test_checkHCUForFheMaxWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheMax));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheMax(FheType(resultType), scalarByte);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
+        fheGasLimit.checkHCUForFheMax(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(currentBlockConsumption, 128000);
-            vm.assertLe(currentBlockConsumption, 225000);
+            vm.assertGe(totalTransactionHCU, 128000);
+            vm.assertLe(totalTransactionHCU, 225000);
         } else {
-            vm.assertGe(currentBlockConsumption, 128000);
-            vm.assertLe(currentBlockConsumption, 241000);
+            vm.assertGe(totalTransactionHCU, 128000);
+            vm.assertLe(totalTransactionHCU, 241000);
         }
     }
 
-    function test_PayForFheNegWorksAsExpectedForSupportedTypes(uint8 resultType) public {
+    function test_checkHCUForFheNegWorksAsExpectedForSupportedTypes(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheNeg));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheNeg(FheType(resultType));
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 95000);
-        vm.assertLe(currentBlockConsumption, 309000);
+        fheGasLimit.checkHCUForFheNeg(FheType(resultType), mockLHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 95000);
+        vm.assertLe(totalTransactionHCU, 309000);
     }
 
-    function test_PayForFheNotWorksAsExpectedForSupportedTypes(uint8 resultType) public {
+    function test_checkHCUForFheNotWorksAsExpectedForSupportedTypes(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheNot));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheNot(FheType(resultType));
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 30000);
-        vm.assertLe(currentBlockConsumption, 39000);
+        fheGasLimit.checkHCUForFheNot(FheType(resultType), mockLHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 30000);
+        vm.assertLe(totalTransactionHCU, 39000);
     }
 
-    function test_PayForCastWorksAsExpectedForSupportedTypes(uint8 resultType) public {
+    function test_checkHCUForCastWorksAsExpectedForSupportedTypes(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesInputCast));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForCast(FheType(resultType));
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertEq(currentBlockConsumption, 200);
+        fheGasLimit.checkHCUForCast(FheType(resultType), mockLHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertEq(totalTransactionHCU, 200);
     }
 
-    function test_PayForTrivialEncryptWorksAsExpectedForSupportedTypes(uint8 resultType) public {
+    function test_CheckGasLimitForTrivialEncryptWorksAsExpectedForSupportedTypes(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(
             _isTypeSupported(FheType(resultType), supportedTypesTrivialEncrypt) ||
                 _isTypeSupported(FheType(resultType), supportedTypesTrivialEncryptWithBytes)
         );
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForTrivialEncrypt(FheType(resultType));
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 100);
-        vm.assertLe(currentBlockConsumption, 6400);
+        fheGasLimit.checkHCUForTrivialEncrypt(FheType(resultType), mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 100);
+        vm.assertLe(totalTransactionHCU, 6400);
     }
 
-    function test_PayForIfThenElseWorksAsExpectedForSupportedTypes(uint8 resultType) public {
+    function test_CheckGasLimitForIfThenElseWorksAsExpectedForSupportedTypes(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheIfThenElse));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForIfThenElse(FheType(resultType));
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 43000);
-        vm.assertLe(currentBlockConsumption, 300000);
+        fheGasLimit.checkHCUForIfThenElse(FheType(resultType), mockLHS, mockMiddle, mockRHS, mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 43000);
+        vm.assertLe(totalTransactionHCU, 300000);
     }
 
-    function test_PayForFheRandWorksAsExpectedForSupportedTypes(uint8 resultType) public {
+    function test_checkHCUForFheRandWorksAsExpectedForSupportedTypes(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRand));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheRand(FheType(resultType));
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertGe(currentBlockConsumption, 100000);
-        vm.assertLe(currentBlockConsumption, 400000);
+        fheGasLimit.checkHCUForFheRand(FheType(resultType), mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 100000);
+        vm.assertLe(totalTransactionHCU, 400000);
     }
 
-    function test_PayForFheRandBoundedWorksAsExpectedForSupportedTypes(uint8 resultType) public {
+    function test_checkHCUForFheRandBoundedWorksAsExpectedForSupportedTypes(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRandBounded));
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheRandBounded(FheType(resultType));
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertEq(currentBlockConsumption, 100000);
+        fheGasLimit.checkHCUForFheRandBounded(FheType(resultType), mockResult);
+        uint256 totalTransactionHCU = fheGasLimit.getHCUForTransaction();
+        vm.assertEq(totalTransactionHCU, 100000);
     }
 
-    function test_OnlyFHEVMExecutorCanCallPayForFheAdd(address randomAccount) public {
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheAdd(address randomAccount) public {
         vm.assume(randomAccount != fhevmExecutor);
         vm.prank(randomAccount);
         vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheAdd(FheType.Uint8, 0x01);
+        fheGasLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_OnlyFHEVMExecutorCanCallPayForFheSub(address randomAccount) public {
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheSub(address randomAccount) public {
         vm.assume(randomAccount != fhevmExecutor);
         vm.prank(randomAccount);
         vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheSub(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheMul(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheMul(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheDiv(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheDiv(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheRem(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheRem(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheBitAnd(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheBitAnd(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheBitOr(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheBitOr(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheBitXor(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheBitXor(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheShl(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheShl(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheShr(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheShr(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheRotl(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheRotl(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheRotr(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheRotr(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheEq(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheEq(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheNe(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheNe(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheGe(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheGe(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheGt(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheGt(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheLe(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheLe(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheLt(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheLt(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheMin(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheMin(FheType.Uint8, 0x01);
+        fheGasLimit.checkHCUForFheSub(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_OnlyFHEVMExecutorCanCallPayForFheMax(address randomAccount) public {
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheMul(address randomAccount) public {
         vm.assume(randomAccount != fhevmExecutor);
         vm.prank(randomAccount);
         vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheMax(FheType.Uint8, 0x01);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheNeg(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheNeg(FheType.Uint8);
+        fheGasLimit.checkHCUForFheMul(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_OnlyFHEVMExecutorCanCallPayForFheNot(address randomAccount) public {
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheDiv(address randomAccount) public {
         vm.assume(randomAccount != fhevmExecutor);
         vm.prank(randomAccount);
         vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheNot(FheType.Uint8);
+        fheGasLimit.checkHCUForFheDiv(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_OnlyFHEVMExecutorCanCallPayForCast(address randomAccount) public {
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheRem(address randomAccount) public {
         vm.assume(randomAccount != fhevmExecutor);
         vm.prank(randomAccount);
         vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForCast(FheType.Uint8);
+        fheGasLimit.checkHCUForFheRem(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_OnlyFHEVMExecutorCanCallPayForTrivialEncrypt(address randomAccount) public {
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheBitAnd(address randomAccount) public {
         vm.assume(randomAccount != fhevmExecutor);
         vm.prank(randomAccount);
         vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForTrivialEncrypt(FheType.Uint8);
+        fheGasLimit.checkHCUForFheBitAnd(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_OnlyFHEVMExecutorCanCallPayForIfThenElse(address randomAccount) public {
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheBitOr(address randomAccount) public {
         vm.assume(randomAccount != fhevmExecutor);
         vm.prank(randomAccount);
         vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForIfThenElse(FheType.Uint8);
-    }
-    function test_OnlyFHEVMExecutorCanCallPayForFheRand(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheRand(FheType.Uint8);
+        fheGasLimit.checkHCUForFheBitOr(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_OnlyFHEVMExecutorCanCallPayForFheRandBounded(address randomAccount) public {
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheBitXor(address randomAccount) public {
         vm.assume(randomAccount != fhevmExecutor);
         vm.prank(randomAccount);
         vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
-        fheGasLimit.payForFheRandBounded(FheType.Uint8);
+        fheGasLimit.checkHCUForFheBitXor(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheAddRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheShl(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheShl(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheShr(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheShr(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheRotl(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheRotl(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheRotr(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheRotr(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheEq(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheEq(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheEqBytes(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheEqBytes(FheType.Uint8, 0x01, mockLHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheNe(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheNe(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheNeBytes(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheNeBytes(FheType.Uint8, 0x01, mockLHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheGe(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheGe(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheGt(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheGt(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheLe(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheLe(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheLt(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheLt(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheMin(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheMin(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheMax(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheMax(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheNeg(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheNeg(FheType.Uint8, mockLHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheNot(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheNot(FheType.Uint8, mockLHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForCast(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForCast(FheType.Uint8, mockLHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallCheckGasLimitForTrivialEncrypt(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForTrivialEncrypt(FheType.Uint8, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallCheckGasLimitForIfThenElse(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForIfThenElse(FheType.Uint8, mockLHS, mockMiddle, mockRHS, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheRand(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheRand(FheType.Uint8, mockResult);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheRandBounded(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        vm.prank(randomAccount);
+        vm.expectRevert(FHEGasLimit.CallerMustBeFHEVMExecutorContract.selector);
+        fheGasLimit.checkHCUForFheRandBounded(FheType.Uint8, mockResult);
+    }
+
+    function test_checkHCUForFheAddRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheAdd));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheAdd(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheAdd(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheSubRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheSubRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheSub));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheSub(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheSub(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheMulRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheMulRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheMul));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheMul(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheMul(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheDivRevertsForUnsupportedTypes(uint8 fheType) public {
+    function test_checkHCUForFheDivRevertsForUnsupportedTypes(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheDiv));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheDiv(FheType(fheType), 0x01);
+        fheGasLimit.checkHCUForFheDiv(FheType(fheType), 0x01, mockLHS, mockRHS, mockResult);
     }
-    function test_PayForFheRemRevertsForUnsupportedTypes(uint8 fheType) public {
+
+    function test_checkHCUForFheRemRevertsForUnsupportedTypes(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRem));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheRem(FheType(fheType), 0x01);
+        fheGasLimit.checkHCUForFheRem(FheType(fheType), 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheBitAndRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheBitAndRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheBitAnd));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheBitAnd(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheBitAnd(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheBitOrRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheBitOrRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheBitOr));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheBitOr(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheBitOr(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheBitXorRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheBitXorRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheBitXor));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheBitXor(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheBitXor(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheShlRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheShlRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheShl));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheShl(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheShl(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheShrRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheShrRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheShr));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheShr(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheShr(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheRotlRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheRotlRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRotl));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheRotl(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheRotl(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheRotrRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheRotrRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRotr));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheRotr(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheRotr(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheEqRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheEqRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheEq));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheEq(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheEq(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheNeRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheEqBytesRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheEq));
+        vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
+        vm.prank(fhevmExecutor);
+        fheGasLimit.checkHCUForFheEqBytes(FheType(fheType), scalarByte, mockLHS, mockResult);
+    }
+
+    function test_checkHCUForFheNeRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheNe));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheNe(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheNe(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheGeRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheNeBytesRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheNe));
+        vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
+        vm.prank(fhevmExecutor);
+        fheGasLimit.checkHCUForFheNeBytes(FheType(fheType), scalarByte, mockLHS, mockResult);
+    }
+
+    function test_checkHCUForFheGeRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheGe));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheGe(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheGe(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheGtRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheGtRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheGt));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheGt(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheGt(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheLeRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheLeRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheLe));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheLe(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheLe(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheLtRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheLtRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheLt));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheLt(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheLt(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheMinRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheMinRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheMin));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheMin(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheMin(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheMaxRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
+    function test_checkHCUForFheMaxRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheMax));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheMax(FheType(fheType), scalarByte);
+        fheGasLimit.checkHCUForFheMax(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheNegRevertsForUnsupportedTypes(uint8 fheType) public {
+    function test_checkHCUForFheNegRevertsForUnsupportedTypes(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheNeg));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheNeg(FheType(fheType));
+        fheGasLimit.checkHCUForFheNeg(FheType(fheType), mockLHS, mockResult);
     }
 
-    function test_PayForFheNotRevertsForUnsupportedTypes(uint8 fheType) public {
+    function test_checkHCUForFheNotRevertsForUnsupportedTypes(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheNot));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheNot(FheType(fheType));
+        fheGasLimit.checkHCUForFheNot(FheType(fheType), mockLHS, mockResult);
     }
 
-    function test_PayForCastRevertsForUnsupportedTypes(uint8 fheType) public {
+    function test_checkHCUForCastRevertsForUnsupportedTypes(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesInputCast));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForCast(FheType(fheType));
+        fheGasLimit.checkHCUForCast(FheType(fheType), mockLHS, mockResult);
     }
 
-    function test_PayForTrivialEncryptRevertsForUnsupportedTypes(uint8 fheType) public {
+    function test_CheckGasLimitForTrivialEncryptRevertsForUnsupportedTypes(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(
             !_isTypeSupported(FheType(fheType), supportedTypesTrivialEncrypt) &&
@@ -761,379 +850,445 @@ contract FHEGasLimitTest is Test, SupportedTypesConstants {
         );
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForTrivialEncrypt(FheType(fheType));
+        fheGasLimit.checkHCUForTrivialEncrypt(FheType(fheType), mockResult);
     }
 
-    function test_PayForIfThenElseRevertsForUnsupportedTypes(uint8 fheType) public {
+    function test_CheckGasLimitForIfThenElseRevertsForUnsupportedTypes(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheIfThenElse));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForIfThenElse(FheType(fheType));
+        fheGasLimit.checkHCUForIfThenElse(FheType(fheType), mockLHS, mockMiddle, mockRHS, mockResult);
     }
-    function test_PayForFheRandRevertsForUnsupportedTypes(uint8 fheType) public {
+
+    function test_checkHCUForFheRandRevertsForUnsupportedTypes(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRand));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheRand(FheType(fheType));
+        fheGasLimit.checkHCUForFheRand(FheType(fheType), mockResult);
     }
 
-    function test_PayForFheRandBoundedRevertsForUnsupportedTypes(uint8 fheType) public {
+    function test_checkHCUForFheRandBoundedRevertsForUnsupportedTypes(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRandBounded));
         vm.expectRevert(FHEGasLimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
-        fheGasLimit.payForFheRandBounded(FheType(fheType));
+        fheGasLimit.checkHCUForFheRandBounded(FheType(fheType), mockResult);
     }
 
-    function test_PayForFheDivRevertsIfNotScalar(uint8 resultType) public {
+    function test_checkHCUForFheDivRevertsIfNotScalar(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheDiv));
         bytes1 scalarByte = 0x00;
         vm.prank(fhevmExecutor);
         vm.expectRevert(FHEGasLimit.OnlyScalarOperationsAreSupported.selector);
-        fheGasLimit.payForFheDiv(FheType(resultType), scalarByte);
+        fheGasLimit.checkHCUForFheDiv(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheRemRevertsIfNotScalar(uint8 resultType) public {
+    function test_checkHCUForFheRemRevertsIfNotScalar(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRem));
         bytes1 scalarByte = 0x00;
         vm.prank(fhevmExecutor);
         vm.expectRevert(FHEGasLimit.OnlyScalarOperationsAreSupported.selector);
-        fheGasLimit.payForFheRem(FheType(resultType), scalarByte);
+        fheGasLimit.checkHCUForFheRem(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheAddRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheAddRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheAdd));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheAdd(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheAdd(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheSubRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheSubRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheSub));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheSub(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheSub(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheMulRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheMulRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheMul));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheMul(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheMul(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheDivRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType) public {
+    function test_checkHCUForFheDivRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheDiv));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheDiv(FheType(resultType), 0x01);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheDiv(FheType(resultType), 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheRemRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType) public {
+    function test_checkHCUForFheRemRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRem));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheRem(FheType(resultType), 0x01);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheRem(FheType(resultType), 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheBitAndRevertsIfFheGasBlockLimitIsAboveBlockLimit(
+    function test_checkHCUForFheBitAndRevertsIfHCUTransationIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheBitAnd));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheBitAnd(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheBitAnd(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheBitOrRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheBitOrRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheBitOr));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheBitOr(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheBitOr(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheBitXorRevertsIfFheGasBlockLimitIsAboveBlockLimit(
+    function test_checkHCUForFheBitXorRevertsIfHCUTransationIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheBitXor));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheBitXor(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheBitXor(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheShlRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheShlRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheShl));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheShl(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheShl(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheShrRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheShrRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheShr));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheShr(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheShr(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheRotlRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheRotlRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRotl));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheRotl(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheRotl(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheRotrRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheRotrRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRotr));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheRotr(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheRotr(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheEqRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheEqRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(
             _isTypeSupported(FheType(resultType), supportedTypesFheEq) ||
                 _isTypeSupported(FheType(resultType), supportedTypesFheEqWithBytes)
         );
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheEq(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheEq(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheNeRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheEqBytesRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(
+            _isTypeSupported(FheType(resultType), supportedTypesFheEq) ||
+                _isTypeSupported(FheType(resultType), supportedTypesFheEqWithBytes)
+        );
+
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
+
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheEqBytes(FheType(resultType), scalarType, mockLHS, mockResult);
+    }
+
+    function test_checkHCUForFheNeRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(
             _isTypeSupported(FheType(resultType), supportedTypesFheNe) ||
                 _isTypeSupported(FheType(resultType), supportedTypesFheNeWithBytes)
         );
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheNe(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheNe(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheGeRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheNeBytesRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(
+            _isTypeSupported(FheType(resultType), supportedTypesFheNe) ||
+                _isTypeSupported(FheType(resultType), supportedTypesFheNeWithBytes)
+        );
+
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
+
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheNeBytes(FheType(resultType), scalarType, mockLHS, mockResult);
+    }
+
+    function test_checkHCUForFheGeRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheGe));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheGe(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheGe(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheGtRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheGtRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheGt));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheGt(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheGt(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheLeRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheLeRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheLe));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheLe(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheLe(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheLtRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheLtRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheLt));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheLt(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheLt(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheMinRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheMinRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheMin));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheMin(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheMin(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheMaxRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType, bytes1 scalarType) public {
+    function test_checkHCUForFheMaxRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType,
+        bytes1 scalarType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheMax));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheMax(FheType(resultType), scalarType);
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheMax(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_PayForFheNegRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType) public {
+    function test_checkHCUForFheNegRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheNeg));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheNeg(FheType(resultType));
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheNeg(FheType(resultType), mockLHS, mockResult);
     }
 
-    function test_PayForFheNotRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType) public {
+    function test_checkHCUForFheNotRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheNot));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheNot(FheType(resultType));
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheNot(FheType(resultType), mockLHS, mockResult);
     }
 
-    function test_PayForCastRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType) public {
+    function test_checkHCUForCastRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesInputCast));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForCast(FheType(resultType));
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForCast(FheType(resultType), mockLHS, mockResult);
     }
 
-    function test_PayForTrivialEncryptRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType) public {
+    function test_CheckGasLimitForTrivialEncryptRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+        uint8 resultType
+    ) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(
             _isTypeSupported(FheType(resultType), supportedTypesTrivialEncrypt) ||
                 _isTypeSupported(FheType(resultType), supportedTypesTrivialEncryptWithBytes)
         );
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForTrivialEncrypt(FheType(resultType));
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForTrivialEncrypt(FheType(resultType), mockResult);
     }
 
-    function test_PayForIfThenElseRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType) public {
+    function test_CheckGasLimitForIfThenElseRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheIfThenElse));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForIfThenElse(FheType(resultType));
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForIfThenElse(FheType(resultType), mockLHS, mockMiddle, mockRHS, mockResult);
     }
-    function test_PayForFheRandRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType) public {
+
+    function test_checkHCUForFheRandRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRand));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheRand(FheType(resultType));
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheRand(FheType(resultType), mockResult);
     }
 
-    function test_PayForFheRandBoundedRevertsIfFheGasBlockLimitIsAboveBlockLimit(uint8 resultType) public {
+    function test_checkHCUForFheRandBoundedRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRandBounded));
 
-        fheGasLimit.updateFunding(FHE_GAS_BLOCKLIMIT);
+        fheGasLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
 
         vm.prank(fhevmExecutor);
-        vm.expectRevert(FHEGasLimit.FHEGasBlockLimitExceeded.selector);
-        fheGasLimit.payForFheRandBounded(FheType(resultType));
-    }
-
-    function test_CurrentBlockConsumptionRestartsWhenNewBlock() public {
-        vm.startPrank(fhevmExecutor);
-        fheGasLimit.payForFheAdd(FheType.Uint16, 0x01);
-        uint256 currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertEq(currentBlockConsumption, 133000);
-
-        /// @dev In the same block, it should be 2x.
-        fheGasLimit.payForFheAdd(FheType.Uint16, 0x01);
-        currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertEq(currentBlockConsumption, 133000 * 2);
-
-        // It should reset, so it should be 1x.
-        vm.roll(block.number + 1);
-        fheGasLimit.payForFheAdd(FheType.Uint16, 0x01);
-        currentBlockConsumption = fheGasLimit.getCurrentBlockConsumption();
-        vm.assertEq(currentBlockConsumption, 133000);
-
-        vm.stopPrank();
+        vm.expectRevert(FHEGasLimit.HCUTransactionLimitExceeded.selector);
+        fheGasLimit.checkHCUForFheRandBounded(FheType(resultType), mockResult);
     }
 
     /**

@@ -10,14 +10,19 @@ import {FheType} from "./FheType.sol";
 
 /**
  * @title  FHEGasLimit
- * @notice This contract manages the amount of gas to be paid for FHE operations.
+ * @notice This contract manages the total allowed complexity for FHE operations at the
+ * transaction level, including the maximum number of homomorphic compute units (HCU) per transaction.
+ * @dev The contract is designed to be used with the FHEVMExecutor contract.
  */
 contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
-    /// @notice Returned if the block limit is higher than limit for FHE operation.
-    error FHEGasBlockLimitExceeded();
+    /// @notice Returned if the transaction exceeds the maximum allowed homomorphic compute units.
+    error HCUTransactionLimitExceeded();
+
+    /// @notice Returned if the transaction exceeds the maximum allowed depth of homomorphic compute units.
+    error HCUTransactionDepthLimitExceeded();
 
     /// @notice Returned if the operation is not supported.
     error UnsupportedOperation();
@@ -40,14 +45,13 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice FHEVMExecutor address.
     address private constant fhevmExecutorAddress = fhevmExecutorAdd;
 
-    /// @notice Gas block limit for FHEGas operation.
-    uint256 private constant FHE_GAS_BLOCKLIMIT = 20_000_000;
+    /// @notice Maximum homomorphic compute units depth per block.
+    /// @dev This is the maximum number of homomorphic compute units that can be sequential.
+    uint256 private constant MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX = 5_000_000;
 
-    /// @custom:storage-location erc7201:fhevm.storage.FHEGasLimit
-    struct FHEGasLimitStorage {
-        uint256 lastBlock;
-        uint256 currentBlockConsumption;
-    }
+    /// @notice Maximum homomorphic compute units per transaction.
+    /// @dev This is the maximum number of homomorphic compute units that can be used in a single transaction.
+    uint256 private constant MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEGasLimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEGasLimitStorageLocation =
@@ -67,1072 +71,1437 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice              Computes the gas required for FheAdd.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheAdd.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheAdd(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheAdd(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(94000);
+                opHCU = 94000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(133000);
+                opHCU = 133000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(162000);
+                opHCU = 162000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(188000);
+                opHCU = 188000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(218000);
+                opHCU = 218000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(94000);
+                opHCU = 94000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(133000);
+                opHCU = 133000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(162000);
+                opHCU = 162000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(188000);
+                opHCU = 188000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(218000);
+                opHCU = 218000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheSub.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheSub.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheSub(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheSub(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(94000);
+                opHCU = 94000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(133000);
+                opHCU = 133000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(162000);
+                opHCU = 162000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(188000);
+                opHCU = 188000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(218000);
+                opHCU = 218000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(94000);
+                opHCU = 94000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(133000);
+                opHCU = 133000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(162000);
+                opHCU = 162000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(188000);
+                opHCU = 188000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(218000);
+                opHCU = 218000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheMul.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheMul.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheMul(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheMul(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(159000);
+                opHCU = 159000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(208000);
+                opHCU = 208000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(264000);
+                opHCU = 264000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(356000);
+                opHCU = 356000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(480000);
+                opHCU = 480000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(197000);
+                opHCU = 197000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(262000);
+                opHCU = 262000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(359000);
+                opHCU = 359000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(641000);
+                opHCU = 641000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(1145000);
+                opHCU = 1145000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheDiv.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheDiv.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheDiv(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheDiv(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
         if (resultType == FheType.Uint8) {
-            _updateFunding(238000);
+            opHCU = 238000;
         } else if (resultType == FheType.Uint16) {
-            _updateFunding(314000);
+            opHCU = 314000;
         } else if (resultType == FheType.Uint32) {
-            _updateFunding(398000);
+            opHCU = 398000;
         } else if (resultType == FheType.Uint64) {
-            _updateFunding(584000);
+            opHCU = 584000;
         } else if (resultType == FheType.Uint128) {
-            _updateFunding(857000);
+            opHCU = 857000;
         } else {
             revert UnsupportedOperation();
         }
-        _checkFHEGasBlockLimit();
-    }
 
+        _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+    }
     /**
-     * @notice              Computes the gas required for FheRem.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheRem.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheRem(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheRem(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
         if (resultType == FheType.Uint8) {
-            _updateFunding(460000);
+            opHCU = 460000;
         } else if (resultType == FheType.Uint16) {
-            _updateFunding(622000);
+            opHCU = 622000;
         } else if (resultType == FheType.Uint32) {
-            _updateFunding(805000);
+            opHCU = 805000;
         } else if (resultType == FheType.Uint64) {
-            _updateFunding(1095000);
+            opHCU = 1095000;
         } else if (resultType == FheType.Uint128) {
-            _updateFunding(1499000);
+            opHCU = 1499000;
         } else {
             revert UnsupportedOperation();
         }
-        _checkFHEGasBlockLimit();
-    }
 
+        _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+    }
     /**
-     * @notice              Computes the gas required for FheBitAnd.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheBitAnd.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheBitAnd(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheBitAnd(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                _updateFunding(26000);
+                opHCU = 26000;
             } else if (resultType == FheType.Uint8) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(38000);
+                opHCU = 38000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(41000);
+                opHCU = 41000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(44000);
+                opHCU = 44000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
-                _updateFunding(26000);
+                opHCU = 26000;
             } else if (resultType == FheType.Uint8) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(38000);
+                opHCU = 38000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(41000);
+                opHCU = 41000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(44000);
+                opHCU = 44000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheBitOr.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheBitOr.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheBitOr(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheBitOr(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                _updateFunding(26000);
+                opHCU = 26000;
             } else if (resultType == FheType.Uint8) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(38000);
+                opHCU = 38000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(41000);
+                opHCU = 41000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(44000);
+                opHCU = 44000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
-                _updateFunding(26000);
+                opHCU = 26000;
             } else if (resultType == FheType.Uint8) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(38000);
+                opHCU = 38000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(41000);
+                opHCU = 41000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(44000);
+                opHCU = 44000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheBitXor.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheBitXor.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheBitXor(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheBitXor(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                _updateFunding(26000);
+                opHCU = 26000;
             } else if (resultType == FheType.Uint8) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(38000);
+                opHCU = 38000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(41000);
+                opHCU = 41000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(44000);
+                opHCU = 44000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
-                _updateFunding(26000);
+                opHCU = 26000;
             } else if (resultType == FheType.Uint8) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(34000);
+                opHCU = 34000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(38000);
+                opHCU = 38000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(41000);
+                opHCU = 41000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(44000);
+                opHCU = 44000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheShl.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheShl.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheShl(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheShl(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(38000);
+                opHCU = 38000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(41000);
+                opHCU = 41000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(44000);
+                opHCU = 44000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(133000);
+                opHCU = 133000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(153000);
+                opHCU = 153000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(183000);
+                opHCU = 183000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(227000);
+                opHCU = 227000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(282000);
+                opHCU = 282000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(350000);
+                opHCU = 350000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheShr.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheShr.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheShr(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheShr(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(38000);
+                opHCU = 38000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(41000);
+                opHCU = 41000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(44000);
+                opHCU = 44000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(133000);
+                opHCU = 133000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(153000);
+                opHCU = 153000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(183000);
+                opHCU = 183000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(227000);
+                opHCU = 227000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(282000);
+                opHCU = 282000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(350000);
+                opHCU = 350000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheRotl.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheRotl.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheRotl(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheRotl(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(38000);
+                opHCU = 38000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(41000);
+                opHCU = 41000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(44000);
+                opHCU = 44000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(133000);
+                opHCU = 133000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(153000);
+                opHCU = 153000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(183000);
+                opHCU = 183000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(227000);
+                opHCU = 227000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(282000);
+                opHCU = 282000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(350000);
+                opHCU = 350000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheRotr.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheRotr.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheRotr(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheRotr(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(35000);
+                opHCU = 35000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(38000);
+                opHCU = 38000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(41000);
+                opHCU = 41000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(44000);
+                opHCU = 44000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(133000);
+                opHCU = 133000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(153000);
+                opHCU = 153000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(183000);
+                opHCU = 183000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(227000);
+                opHCU = 227000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(282000);
+                opHCU = 282000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(350000);
+                opHCU = 350000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheEq.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheEq.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheEq(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheEq(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                _updateFunding(49000);
+                opHCU = 49000;
             } else if (resultType == FheType.Uint8) {
-                _updateFunding(53000);
+                opHCU = 53000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(54000);
+                opHCU = 54000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(86000);
+                opHCU = 86000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(88000);
+                opHCU = 88000;
             } else if (resultType == FheType.Uint160) {
-                _updateFunding(90000);
+                opHCU = 90000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(100000);
+                opHCU = 100000;
             } else if (resultType == FheType.Uint512) {
-                _updateFunding(150000);
+                opHCU = 150000;
             } else if (resultType == FheType.Uint1024) {
-                _updateFunding(200000);
+                opHCU = 200000;
             } else if (resultType == FheType.Uint2048) {
-                _updateFunding(300000);
+                opHCU = 300000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
-                _updateFunding(49000);
+                opHCU = 49000;
             } else if (resultType == FheType.Uint8) {
-                _updateFunding(53000);
+                opHCU = 53000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(54000);
+                opHCU = 54000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(86000);
+                opHCU = 86000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(88000);
+                opHCU = 88000;
             } else if (resultType == FheType.Uint160) {
-                _updateFunding(90000);
+                opHCU = 90000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(100000);
+                opHCU = 100000;
             } else if (resultType == FheType.Uint512) {
-                _updateFunding(150000);
+                opHCU = 150000;
             } else if (resultType == FheType.Uint1024) {
-                _updateFunding(200000);
+                opHCU = 200000;
             } else if (resultType == FheType.Uint2048) {
-                _updateFunding(300000);
+                opHCU = 300000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheNe.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit required for FheEqBytes.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param ct The only operand.
+     * @param result Result.
      */
-    function payForFheNe(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheEqBytes(FheType resultType, bytes1 scalarByte, bytes32 ct, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                _updateFunding(49000);
+                opHCU = 49000;
             } else if (resultType == FheType.Uint8) {
-                _updateFunding(53000);
+                opHCU = 53000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(54000);
+                opHCU = 54000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(86000);
+                opHCU = 86000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(88000);
+                opHCU = 88000;
             } else if (resultType == FheType.Uint160) {
-                _updateFunding(90000);
+                opHCU = 90000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(100000);
+                opHCU = 100000;
             } else if (resultType == FheType.Uint512) {
-                _updateFunding(150000);
+                opHCU = 150000;
             } else if (resultType == FheType.Uint1024) {
-                _updateFunding(200000);
+                opHCU = 200000;
             } else if (resultType == FheType.Uint2048) {
-                _updateFunding(300000);
+                opHCU = 300000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _updateAndVerifyHCUTransactionLimit(opHCU);
+            _setHCUForHandle(result, opHCU);
         } else {
             if (resultType == FheType.Bool) {
-                _updateFunding(49000);
+                opHCU = 49000;
             } else if (resultType == FheType.Uint8) {
-                _updateFunding(53000);
+                opHCU = 53000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(54000);
+                opHCU = 54000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(86000);
+                opHCU = 86000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(88000);
+                opHCU = 88000;
             } else if (resultType == FheType.Uint160) {
-                _updateFunding(90000);
+                opHCU = 90000;
             } else if (resultType == FheType.Uint256) {
-                _updateFunding(100000);
+                opHCU = 100000;
             } else if (resultType == FheType.Uint512) {
-                _updateFunding(150000);
+                opHCU = 150000;
             } else if (resultType == FheType.Uint1024) {
-                _updateFunding(200000);
+                opHCU = 200000;
             } else if (resultType == FheType.Uint2048) {
-                _updateFunding(300000);
+                opHCU = 300000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheGe.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheNe.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheGe(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheNe(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
+        if (scalarByte == 0x01) {
+            if (resultType == FheType.Bool) {
+                opHCU = 49000;
+            } else if (resultType == FheType.Uint8) {
+                opHCU = 53000;
+            } else if (resultType == FheType.Uint16) {
+                opHCU = 54000;
+            } else if (resultType == FheType.Uint32) {
+                opHCU = 82000;
+            } else if (resultType == FheType.Uint64) {
+                opHCU = 86000;
+            } else if (resultType == FheType.Uint128) {
+                opHCU = 88000;
+            } else if (resultType == FheType.Uint160) {
+                opHCU = 90000;
+            } else if (resultType == FheType.Uint256) {
+                opHCU = 100000;
+            } else if (resultType == FheType.Uint512) {
+                opHCU = 150000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 200000;
+            } else if (resultType == FheType.Uint2048) {
+                opHCU = 300000;
+            } else {
+                revert UnsupportedOperation();
+            }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+        } else {
+            if (resultType == FheType.Bool) {
+                opHCU = 49000;
+            } else if (resultType == FheType.Uint8) {
+                opHCU = 53000;
+            } else if (resultType == FheType.Uint16) {
+                opHCU = 54000;
+            } else if (resultType == FheType.Uint32) {
+                opHCU = 82000;
+            } else if (resultType == FheType.Uint64) {
+                opHCU = 86000;
+            } else if (resultType == FheType.Uint128) {
+                opHCU = 88000;
+            } else if (resultType == FheType.Uint160) {
+                opHCU = 90000;
+            } else if (resultType == FheType.Uint256) {
+                opHCU = 100000;
+            } else if (resultType == FheType.Uint512) {
+                opHCU = 150000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 200000;
+            } else if (resultType == FheType.Uint2048) {
+                opHCU = 300000;
+            } else {
+                revert UnsupportedOperation();
+            }
+
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
+    /**
+     * @notice Check the homomorphic computation units limit required for FheNeBytes.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param ct The only operand.
+     * @param result Result.
+     */
+    function checkHCUForFheNeBytes(FheType resultType, bytes1 scalarByte, bytes32 ct, bytes32 result) external virtual {
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        uint256 opHCU;
+        if (scalarByte == 0x01) {
+            if (resultType == FheType.Bool) {
+                opHCU = 49000;
+            } else if (resultType == FheType.Uint8) {
+                opHCU = 53000;
+            } else if (resultType == FheType.Uint16) {
+                opHCU = 54000;
+            } else if (resultType == FheType.Uint32) {
+                opHCU = 82000;
+            } else if (resultType == FheType.Uint64) {
+                opHCU = 86000;
+            } else if (resultType == FheType.Uint128) {
+                opHCU = 88000;
+            } else if (resultType == FheType.Uint160) {
+                opHCU = 90000;
+            } else if (resultType == FheType.Uint256) {
+                opHCU = 100000;
+            } else if (resultType == FheType.Uint512) {
+                opHCU = 150000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 200000;
+            } else if (resultType == FheType.Uint2048) {
+                opHCU = 300000;
+            } else {
+                revert UnsupportedOperation();
+            }
+
+            _updateAndVerifyHCUTransactionLimit(opHCU);
+            _setHCUForHandle(result, opHCU);
+        } else {
+            if (resultType == FheType.Bool) {
+                opHCU = 49000;
+            } else if (resultType == FheType.Uint8) {
+                opHCU = 53000;
+            } else if (resultType == FheType.Uint16) {
+                opHCU = 54000;
+            } else if (resultType == FheType.Uint32) {
+                opHCU = 82000;
+            } else if (resultType == FheType.Uint64) {
+                opHCU = 86000;
+            } else if (resultType == FheType.Uint128) {
+                opHCU = 88000;
+            } else if (resultType == FheType.Uint160) {
+                opHCU = 90000;
+            } else if (resultType == FheType.Uint256) {
+                opHCU = 100000;
+            } else if (resultType == FheType.Uint512) {
+                opHCU = 150000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 200000;
+            } else if (resultType == FheType.Uint2048) {
+                opHCU = 300000;
+            } else {
+                revert UnsupportedOperation();
+            }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
+        }
+    }
+    /**
+     * @notice Check the homomorphic computation units limit for FheGe.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
+     */
+    function checkHCUForFheGe(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(105000);
+                opHCU = 105000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(156000);
+                opHCU = 156000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(190000);
+                opHCU = 190000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(105000);
+                opHCU = 105000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(156000);
+                opHCU = 156000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(190000);
+                opHCU = 190000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheGt.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheGt.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheGt(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheGt(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(105000);
+                opHCU = 105000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(156000);
+                opHCU = 156000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(190000);
+                opHCU = 190000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(105000);
+                opHCU = 105000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(156000);
+                opHCU = 156000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(190000);
+                opHCU = 190000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheLe.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheLe.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheLe(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheLe(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(105000);
+                opHCU = 105000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(156000);
+                opHCU = 156000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(190000);
+                opHCU = 190000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(105000);
+                opHCU = 105000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(156000);
+                opHCU = 156000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(190000);
+                opHCU = 190000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheLt.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheLt.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheLt(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheLt(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(105000);
+                opHCU = 105000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(156000);
+                opHCU = 156000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(190000);
+                opHCU = 190000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(82000);
+                opHCU = 82000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(105000);
+                opHCU = 105000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(156000);
+                opHCU = 156000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(190000);
+                opHCU = 190000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheMin.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheMin.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheMin(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheMin(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(150000);
+                opHCU = 150000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(164000);
+                opHCU = 164000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(192000);
+                opHCU = 192000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(225000);
+                opHCU = 225000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(153000);
+                opHCU = 153000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(183000);
+                opHCU = 183000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(210000);
+                opHCU = 210000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(241000);
+                opHCU = 241000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheMax.
-     * @param resultType    Result type.
-     * @param scalarByte    Scalar byte.
+     * @notice Check the homomorphic computation units limit for FheMax.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
      */
-    function payForFheMax(FheType resultType, bytes1 scalarByte) external virtual {
+    function checkHCUForFheMax(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(150000);
+                opHCU = 150000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(164000);
+                opHCU = 164000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(192000);
+                opHCU = 192000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(225000);
+                opHCU = 225000;
             } else {
                 revert UnsupportedOperation();
             }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                _updateFunding(128000);
+                opHCU = 128000;
             } else if (resultType == FheType.Uint16) {
-                _updateFunding(153000);
+                opHCU = 153000;
             } else if (resultType == FheType.Uint32) {
-                _updateFunding(183000);
+                opHCU = 183000;
             } else if (resultType == FheType.Uint64) {
-                _updateFunding(210000);
+                opHCU = 210000;
             } else if (resultType == FheType.Uint128) {
-                _updateFunding(241000);
+                opHCU = 241000;
             } else {
                 revert UnsupportedOperation();
             }
-        }
-        _checkFHEGasBlockLimit();
-    }
 
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+        }
+    }
     /**
-     * @notice              Computes the gas required for FheNeg.
-     * @param resultType    Result type.
+     * @notice Check the homomorphic computation units limit for FheNeg.
+     * @param ct The only operand.
+     * @param result Result.
      */
-    function payForFheNeg(FheType resultType) external virtual {
+    function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (resultType == FheType.Uint8) {
-            _updateFunding(95000);
+            opHCU = 95000;
         } else if (resultType == FheType.Uint16) {
-            _updateFunding(131000);
+            opHCU = 131000;
         } else if (resultType == FheType.Uint32) {
-            _updateFunding(160000);
+            opHCU = 160000;
         } else if (resultType == FheType.Uint64) {
-            _updateFunding(199000);
+            opHCU = 199000;
         } else if (resultType == FheType.Uint128) {
-            _updateFunding(248000);
+            opHCU = 248000;
         } else if (resultType == FheType.Uint256) {
-            _updateFunding(309000);
+            opHCU = 309000;
         } else {
             revert UnsupportedOperation();
         }
-        _checkFHEGasBlockLimit();
+        _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
     }
-
     /**
-     * @notice              Computes the gas required for FheNot.
-     * @param resultType    Result type.
+     * @notice Check the homomorphic computation units limit for FheNot.
+     * @param ct The only operand.
+     * @param result Result.
      */
-    function payForFheNot(FheType resultType) external virtual {
+    function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (resultType == FheType.Bool) {
-            _updateFunding(30000);
+            opHCU = 30000;
         } else if (resultType == FheType.Uint8) {
-            _updateFunding(34000);
+            opHCU = 34000;
         } else if (resultType == FheType.Uint16) {
-            _updateFunding(35000);
+            opHCU = 35000;
         } else if (resultType == FheType.Uint32) {
-            _updateFunding(36000);
+            opHCU = 36000;
         } else if (resultType == FheType.Uint64) {
-            _updateFunding(37000);
+            opHCU = 37000;
         } else if (resultType == FheType.Uint128) {
-            _updateFunding(38000);
+            opHCU = 38000;
         } else if (resultType == FheType.Uint256) {
-            _updateFunding(39000);
+            opHCU = 39000;
         } else {
             revert UnsupportedOperation();
         }
-        _checkFHEGasBlockLimit();
+        _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
     }
-
     /**
-     * @notice              Computes the gas required for Cast.
-     * @param resultType    Result type.
+     * @notice Check the homomorphic computation units limit for Cast.
+     * @param ct The only operand.
+     * @param result Result.
      */
-    function payForCast(FheType resultType) external virtual {
+    function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (resultType == FheType.Bool) {
-            _updateFunding(200);
+            opHCU = 200;
         } else if (resultType == FheType.Uint8) {
-            _updateFunding(200);
+            opHCU = 200;
         } else if (resultType == FheType.Uint16) {
-            _updateFunding(200);
+            opHCU = 200;
         } else if (resultType == FheType.Uint32) {
-            _updateFunding(200);
+            opHCU = 200;
         } else if (resultType == FheType.Uint64) {
-            _updateFunding(200);
+            opHCU = 200;
         } else if (resultType == FheType.Uint128) {
-            _updateFunding(200);
+            opHCU = 200;
         } else if (resultType == FheType.Uint256) {
-            _updateFunding(200);
+            opHCU = 200;
         } else {
             revert UnsupportedOperation();
         }
-        _checkFHEGasBlockLimit();
+        _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
     }
-
     /**
-     * @notice              Computes the gas required for TrivialEncrypt.
-     * @param resultType    Result type.
+     * @notice Check the homomorphic computation units limit for TrivialEncrypt.
+     * @param resultType Result type.
+     * @param result Result.
      */
-    function payForTrivialEncrypt(FheType resultType) external virtual {
+    function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (resultType == FheType.Bool) {
-            _updateFunding(100);
+            opHCU = 100;
         } else if (resultType == FheType.Uint8) {
-            _updateFunding(100);
+            opHCU = 100;
         } else if (resultType == FheType.Uint16) {
-            _updateFunding(200);
+            opHCU = 200;
         } else if (resultType == FheType.Uint32) {
-            _updateFunding(300);
+            opHCU = 300;
         } else if (resultType == FheType.Uint64) {
-            _updateFunding(600);
+            opHCU = 600;
         } else if (resultType == FheType.Uint128) {
-            _updateFunding(650);
+            opHCU = 650;
         } else if (resultType == FheType.Uint160) {
-            _updateFunding(700);
+            opHCU = 700;
         } else if (resultType == FheType.Uint256) {
-            _updateFunding(800);
+            opHCU = 800;
         } else if (resultType == FheType.Uint512) {
-            _updateFunding(1600);
+            opHCU = 1600;
         } else if (resultType == FheType.Uint1024) {
-            _updateFunding(3200);
+            opHCU = 3200;
         } else if (resultType == FheType.Uint2048) {
-            _updateFunding(6400);
+            opHCU = 6400;
         } else {
             revert UnsupportedOperation();
         }
-        _checkFHEGasBlockLimit();
+        _updateAndVerifyHCUTransactionLimit(opHCU);
+        _setHCUForHandle(result, opHCU);
     }
-
     /**
-     * @notice              Computes the gas required for IfThenElse.
-     * @param resultType    Result type.
+     * @notice Check the homomorphic computation units limit for IfThenElse.
+     * @param resultType Result type.
+     * @param lhs The left-hand side operand.
+     * @param middle The middle operand.
+     * @param rhs The right-hand side operand.
      */
-    function payForIfThenElse(FheType resultType) external virtual {
+    function checkHCUForIfThenElse(
+        FheType resultType,
+        bytes32 lhs,
+        bytes32 middle,
+        bytes32 rhs,
+        bytes32 result
+    ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (resultType == FheType.Bool) {
-            _updateFunding(43000);
+            opHCU = 43000;
         } else if (resultType == FheType.Uint8) {
-            _updateFunding(47000);
+            opHCU = 47000;
         } else if (resultType == FheType.Uint16) {
-            _updateFunding(47000);
+            opHCU = 47000;
         } else if (resultType == FheType.Uint32) {
-            _updateFunding(50000);
+            opHCU = 50000;
         } else if (resultType == FheType.Uint64) {
-            _updateFunding(53000);
+            opHCU = 53000;
         } else if (resultType == FheType.Uint128) {
-            _updateFunding(70000);
+            opHCU = 70000;
         } else if (resultType == FheType.Uint160) {
-            _updateFunding(80000);
+            opHCU = 80000;
         } else if (resultType == FheType.Uint256) {
-            _updateFunding(90000);
+            opHCU = 90000;
         } else if (resultType == FheType.Uint512) {
-            _updateFunding(150000);
+            opHCU = 150000;
         } else if (resultType == FheType.Uint1024) {
-            _updateFunding(200000);
+            opHCU = 200000;
         } else if (resultType == FheType.Uint2048) {
-            _updateFunding(300000);
+            opHCU = 300000;
         } else {
             revert UnsupportedOperation();
         }
-        _checkFHEGasBlockLimit();
+        _adjustAndCheckFheTransactionLimitThreeOps(opHCU, lhs, middle, rhs, result);
     }
-
     /**
-     * @notice              Computes the gas required for FheRand.
-     * @param resultType    Result type.
+     * @notice Check the homomorphic computation units limit for FheRand.
+     * @param resultType Result type.
+     * @param result Result.
      */
-    function payForFheRand(FheType resultType) external virtual {
+    function checkHCUForFheRand(FheType resultType, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (resultType == FheType.Bool) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint8) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint16) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint32) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint64) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint128) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint256) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint512) {
-            _updateFunding(200000);
+            opHCU = 200000;
         } else if (resultType == FheType.Uint1024) {
-            _updateFunding(300000);
+            opHCU = 300000;
         } else if (resultType == FheType.Uint2048) {
-            _updateFunding(400000);
+            opHCU = 400000;
         } else {
             revert UnsupportedOperation();
         }
-        _checkFHEGasBlockLimit();
+        _updateAndVerifyHCUTransactionLimit(opHCU);
+        _setHCUForHandle(result, opHCU);
     }
-
     /**
-     * @notice              Computes the gas required for FheRandBounded.
-     * @param resultType    Result type.
+     * @notice Check the homomorphic computation units limit for FheRandBounded.
+     * @param resultType Result type.
+     * @param result Result.
      */
-    function payForFheRandBounded(FheType resultType) external virtual {
+    function checkHCUForFheRandBounded(FheType resultType, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        _checkIfNewBlock();
+        uint256 opHCU;
         if (resultType == FheType.Uint8) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint16) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint32) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint64) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint128) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else if (resultType == FheType.Uint256) {
-            _updateFunding(100000);
+            opHCU = 100000;
         } else {
             revert UnsupportedOperation();
         }
-        _checkFHEGasBlockLimit();
+        _updateAndVerifyHCUTransactionLimit(opHCU);
+        _setHCUForHandle(result, opHCU);
     }
-
     /**
-     * @notice                     Getter function for the FHEVMExecutor contract address.
+     * @notice Getter function for the FHEVMExecutor contract address.
      * @return fhevmExecutorAddress Address of the FHEVMExecutor.
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
@@ -1140,7 +1509,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice        Getter for the name and version of the contract.
+     * @notice Getter for the name and version of the contract.
      * @return string Name and the version of the contract.
      */
     function getVersion() external pure virtual returns (string memory) {
@@ -1159,33 +1528,123 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @dev Checks the accumulated FHE gas used and checks if it is inferior to the limit.
-     *      If so, it reverts.
+     * @notice Adjusts the sequential HCU for the transaction.
      */
-    function _checkFHEGasBlockLimit() internal view virtual {
-        FHEGasLimitStorage storage $ = _getFHEGasLimitStorage();
-        if ($.currentBlockConsumption >= FHE_GAS_BLOCKLIMIT) revert FHEGasBlockLimitExceeded();
+    function _adjustAndCheckFheTransactionLimitOneOp(uint256 opHCU, bytes32 op1, bytes32 result) internal virtual {
+        _updateAndVerifyHCUTransactionLimit(opHCU);
+
+        uint256 totalHCU = opHCU + _getHCUForHandle(op1);
+        if (totalHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX) {
+            revert HCUTransactionDepthLimitExceeded();
+        }
+
+        _setHCUForHandle(result, totalHCU);
     }
 
     /**
-     * @dev Checks if it is a new block. If so, it resets information for new block.
+     * @notice Adjusts the current HCU for the transaction.
      */
-    function _checkIfNewBlock() internal virtual {
-        FHEGasLimitStorage storage $ = _getFHEGasLimitStorage();
-        uint256 lastBlock_ = block.number;
-        if (lastBlock_ > $.lastBlock) {
-            $.lastBlock = lastBlock_;
-            $.currentBlockConsumption = 0;
+    function _adjustAndCheckFheTransactionLimitTwoOps(
+        uint256 opHCU,
+        bytes32 op1,
+        bytes32 op2,
+        bytes32 result
+    ) internal virtual {
+        _updateAndVerifyHCUTransactionLimit(opHCU);
+
+        uint256 totalHCU = opHCU + _max(_getHCUForHandle(op1), _getHCUForHandle(op2));
+        if (totalHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX) {
+            revert HCUTransactionDepthLimitExceeded();
+        }
+
+        _setHCUForHandle(result, totalHCU);
+    }
+
+    /**
+     * @notice Adjusts the current HCU for the transaction.
+     */
+    function _adjustAndCheckFheTransactionLimitThreeOps(
+        uint256 opHCU,
+        bytes32 op1,
+        bytes32 op2,
+        bytes32 op3,
+        bytes32 result
+    ) internal virtual {
+        _updateAndVerifyHCUTransactionLimit(opHCU);
+
+        uint256 totalHCU = opHCU + _max(_getHCUForHandle(op1), _max(_getHCUForHandle(op2), _getHCUForHandle(op3)));
+
+        if (totalHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX) {
+            revert HCUTransactionDepthLimitExceeded();
+        }
+
+        _setHCUForHandle(result, totalHCU);
+    }
+
+    /**
+     * @notice Updates and verifies the HCU transaction limit.
+     * @param opHCU The HCU for the operation.
+     */
+    function _updateAndVerifyHCUTransactionLimit(uint256 opHCU) internal virtual {
+        uint256 transactionHCU = opHCU + _getHCUForTransaction();
+        if (transactionHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX) {
+            revert HCUTransactionLimitExceeded();
+        }
+        _setHCUForTransaction(transactionHCU);
+    }
+
+    /**
+     * @notice Gets the current HCU for the handle.
+     * @param handle The handle for which to get the HCU.
+     * @return handleHCU The current HCU for the handle.
+     * @dev This function uses inline assembly to load the HCU from a specific storage location.
+     */
+    function _getHCUForHandle(bytes32 handle) internal view virtual returns (uint256 handleHCU) {
+        bytes32 slot = keccak256(abi.encodePacked(FHEGasLimitStorageLocation, handle));
+        assembly {
+            // Ensure the slot is properly aligned and validated before using tload.
+            // This assumes the slot is derived from a secure and deterministic process.
+            handleHCU := tload(slot)
         }
     }
 
     /**
-     * @dev                 Updates the funding.
-     * @param paidAmountGas Paid amount gas.
+     * @notice Gets the total HCU for the transaction.
+     * @return transactionHCU The HCU for the transaction.
+     * @dev This function uses inline assembly to store the HCU in a specific storage location.
      */
-    function _updateFunding(uint256 paidAmountGas) internal virtual {
-        FHEGasLimitStorage storage $ = _getFHEGasLimitStorage();
-        $.currentBlockConsumption += paidAmountGas;
+    function _getHCUForTransaction() internal view virtual returns (uint256 transactionHCU) {
+        /// @dev keccak256(abi.encodePacked(FHEGasLimitStorageLocation, "HCU"))
+        bytes32 slot = 0xf0a6f781dda4e666410a23516da0a5550b29ecafc3a35849ff9af2e2ec3b6123;
+        assembly {
+            transactionHCU := tload(slot)
+        }
+    }
+
+    /**
+     * @notice Sets the HCU for a handle in the transient storage.
+     * @param handle The handle for which to set the HCU.
+     * @param handleHCU The HCU to set for the handle.
+     * @dev This function uses inline assembly to store the HCU in a specific storage location.
+     */
+    function _setHCUForHandle(bytes32 handle, uint256 handleHCU) internal virtual {
+        bytes32 slot = keccak256(abi.encodePacked(FHEGasLimitStorageLocation, handle));
+        assembly {
+            tstore(slot, handleHCU)
+        }
+    }
+
+    /**
+     * @notice Updates the current HCU consumption for the transaction and stores it in the transient storage.
+     * @param transactionHCU The total HCU for the transaction.
+     * @dev This function uses inline assembly to store the HCU in a specific storage location.
+     */
+    function _setHCUForTransaction(uint256 transactionHCU) internal virtual {
+        /// @dev keccak256(abi.encodePacked(FHEGasLimitStorageLocation, "HCU"))
+        bytes32 slot = 0xf0a6f781dda4e666410a23516da0a5550b29ecafc3a35849ff9af2e2ec3b6123;
+        assembly {
+            tstore(slot, transactionHCU)
+        }
     }
 
     /**
@@ -1194,11 +1653,12 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
     /**
-     * @dev  Returns the FHEGasLimit storage location.
+     * @dev Returns the maximum of two numbers.
+     * @param a The first number.
+     * @param b The second number.
+     * @return The maximum of a and b.
      */
-    function _getFHEGasLimitStorage() internal pure returns (FHEGasLimitStorage storage $) {
-        assembly {
-            $.slot := FHEGasLimitStorageLocation
-        }
+    function _max(uint256 a, uint256 b) private pure returns (uint256) {
+        return a >= b ? a : b;
     }
 }

@@ -167,8 +167,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheAdd(lhsType, scalar);
         result = _binaryOp(Operators.fheAdd, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheAdd(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -186,8 +186,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheSub(lhsType, scalar);
         result = _binaryOp(Operators.fheSub, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheSub(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -205,8 +205,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheMul(lhsType, scalar);
         result = _binaryOp(Operators.fheMul, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheMul(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -226,8 +226,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheDiv(lhsType, scalar);
         result = _binaryOp(Operators.fheDiv, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheDiv(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -247,8 +247,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheRem(lhsType, scalar);
         result = _binaryOp(Operators.fheRem, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheRem(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -268,8 +268,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheBitAnd(lhsType, scalar);
         result = _binaryOp(Operators.fheBitAnd, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheBitAnd(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -289,8 +289,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheBitOr(lhsType, scalar);
         result = _binaryOp(Operators.fheBitOr, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheBitOr(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -310,8 +310,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheBitXor(lhsType, scalar);
         result = _binaryOp(Operators.fheBitXor, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheBitXor(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -330,8 +330,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheShl(lhsType, scalar);
         result = _binaryOp(Operators.fheShl, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheShl(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -350,8 +350,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheShr(lhsType, scalar);
         result = _binaryOp(Operators.fheShr, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheShr(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -370,8 +370,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheRotl(lhsType, scalar);
         result = _binaryOp(Operators.fheRotl, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheRotl(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -390,8 +390,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheRotr(lhsType, scalar);
         result = _binaryOp(Operators.fheRotr, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheRotr(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -417,8 +417,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         bytes1 scalar = scalarByte & 0x01;
         if (scalar == 0x01 && uint8(lhsType) > 8) revert IsScalar();
 
-        fheGasLimit.payForFheEq(lhsType, scalar);
         result = _binaryOp(Operators.fheEq, lhs, rhs, scalar, FheType.Bool);
+        fheGasLimit.checkHCUForFheEq(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -436,13 +436,14 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         bytes1 scalar = scalarByte & 0x01;
 
         if (scalar != 0x01) revert SecondOperandIsNotScalar();
-        fheGasLimit.payForFheEq(lhsType, scalar);
 
         if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
         _checkByteLengthForEbytesTypes(rhs.length, lhsType);
 
         result = keccak256(abi.encodePacked(Operators.fheEq, lhs, rhs, scalar, acl, block.chainid));
         result = _appendMetadataToPrehandle(result, FheType.Bool);
+
+        fheGasLimit.checkHCUForFheEqBytes(lhsType, scalar, lhs, result);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -469,8 +470,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         bytes1 scalar = scalarByte & 0x01;
         if (scalar == 0x01 && uint8(lhsType) > 8) revert IsScalar();
 
-        fheGasLimit.payForFheNe(lhsType, scalar);
         result = _binaryOp(Operators.fheNe, lhs, rhs, scalar, FheType.Bool);
+        fheGasLimit.checkHCUForFheNe(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -488,12 +489,12 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         bytes1 scalar = scalarByte & 0x01;
 
         if (scalar != 0x01) revert SecondOperandIsNotScalar();
-        fheGasLimit.payForFheNe(lhsType, scalar);
         if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
         _checkByteLengthForEbytesTypes(rhs.length, lhsType);
         result = keccak256(abi.encodePacked(Operators.fheNe, lhs, rhs, scalar, acl, block.chainid));
         result = _appendMetadataToPrehandle(result, FheType.Bool);
         acl.allowTransient(result, msg.sender);
+        fheGasLimit.checkHCUForFheNeBytes(lhsType, scalar, lhs, result);
     }
 
     /**
@@ -511,8 +512,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheGe(lhsType, scalar);
         result = _binaryOp(Operators.fheGe, lhs, rhs, scalar, FheType.Bool);
+        fheGasLimit.checkHCUForFheGe(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -530,8 +531,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheGt(lhsType, scalar);
         result = _binaryOp(Operators.fheGt, lhs, rhs, scalar, FheType.Bool);
+        fheGasLimit.checkHCUForFheGt(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -549,8 +550,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheLe(lhsType, scalar);
         result = _binaryOp(Operators.fheLe, lhs, rhs, scalar, FheType.Bool);
+        fheGasLimit.checkHCUForFheLe(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -568,8 +569,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheLt(lhsType, scalar);
         result = _binaryOp(Operators.fheLt, lhs, rhs, scalar, FheType.Bool);
+        fheGasLimit.checkHCUForFheLt(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -587,8 +588,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheMin(lhsType, scalar);
         result = _binaryOp(Operators.fheMin, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheMin(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -606,8 +607,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        fheGasLimit.payForFheMax(lhsType, scalar);
         result = _binaryOp(Operators.fheMax, lhs, rhs, scalar, lhsType);
+        fheGasLimit.checkHCUForFheMax(lhsType, scalar, lhs, rhs, result);
     }
 
     /**
@@ -623,8 +624,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType typeCt = _verifyAndReturnType(ct, supportedTypes);
-        fheGasLimit.payForFheNeg(typeCt);
         result = _unaryOp(Operators.fheNeg, ct);
+        fheGasLimit.checkHCUForFheNeg(typeCt, ct, result);
     }
 
     /**
@@ -641,8 +642,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType typeCt = _verifyAndReturnType(ct, supportedTypes);
-        fheGasLimit.payForFheNot(typeCt);
         result = _unaryOp(Operators.fheNot, ct);
+        fheGasLimit.checkHCUForFheNot(typeCt, ct, result);
     }
 
     /**
@@ -665,8 +666,8 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint1024)) +
             (1 << uint8(FheType.Uint2048));
         FheType typeCt = _verifyAndReturnType(ifTrue, supportedTypes);
-        fheGasLimit.payForIfThenElse(typeCt);
         result = _ternaryOp(Operators.fheIfThenElse, control, ifTrue, ifFalse);
+        fheGasLimit.checkHCUForIfThenElse(typeCt, control, ifTrue, ifFalse, result);
     }
 
     /**
@@ -716,9 +717,9 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
 
         /// @dev It must not cast to same type.
         if (typeCt == toType) revert InvalidType();
-        fheGasLimit.payForCast(typeCt);
         result = keccak256(abi.encodePacked(Operators.cast, ct, toType, acl, block.chainid));
         result = _appendMetadataToPrehandle(result, toType);
+        fheGasLimit.checkHCUForCast(toType, ct, result);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -739,9 +740,9 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint256));
 
         if ((1 << uint8(toType)) & supportedTypes == 0) revert UnsupportedType();
-        fheGasLimit.payForTrivialEncrypt(toType);
         result = keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid));
         result = _appendMetadataToPrehandle(result, toType);
+        fheGasLimit.checkHCUForTrivialEncrypt(toType, result);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -758,10 +759,10 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint2048));
 
         if (((1 << uint8(toType)) & supportedTypes == 0)) revert UnsupportedType();
-        fheGasLimit.payForTrivialEncrypt(toType);
         _checkByteLengthForEbytesTypes(pt.length, toType);
         result = keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid));
         result = _appendMetadataToPrehandle(result, toType);
+        fheGasLimit.checkHCUForTrivialEncrypt(toType, result);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -950,9 +951,9 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
 
         /// @dev Unsupported erandom type.
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();
-        fheGasLimit.payForFheRand(randType);
         result = keccak256(abi.encodePacked(Operators.fheRand, randType, seed));
         result = _appendMetadataToPrehandle(result, randType);
+        fheGasLimit.checkHCUForFheRand(randType, result);
         acl.allowTransient(result, msg.sender);
     }
 
@@ -970,9 +971,9 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         /// @dev Unsupported erandom type.
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();
         if (!_isPowerOfTwo(upperBound)) revert NotPowerOfTwo();
-        fheGasLimit.payForFheRandBounded(randType);
         result = keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, seed));
         result = _appendMetadataToPrehandle(result, randType);
+        fheGasLimit.checkHCUForFheRandBounded(randType, result);
         acl.allowTransient(result, msg.sender);
     }
 
