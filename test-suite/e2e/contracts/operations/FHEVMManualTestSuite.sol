@@ -21,21 +21,21 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebool input1 = FHE.asEbool(a);
         ebool input2 = FHE.asEbool(b);
         ebool result = FHE.eq(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
     function eqEboolScalarL(bool a, bool b) external {
         ebool input2 = FHE.asEbool(b);
         ebool result = FHE.eq(a, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
     function eqEboolScalarR(bool a, bool b) external {
         ebool input1 = FHE.asEbool(a);
         ebool result = FHE.eq(input1, b);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -43,21 +43,21 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebool input1 = FHE.asEbool(a);
         ebool input2 = FHE.asEbool(b);
         ebool result = FHE.ne(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
     function neEboolScalarL(bool a, bool b) external {
         ebool input2 = FHE.asEbool(b);
         ebool result = FHE.ne(a, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
     function neEboolScalarR(bool a, bool b) external {
         ebool input1 = FHE.asEbool(a);
         ebool result = FHE.ne(input1, b);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -70,7 +70,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes256 input1 = FHE.fromExternal(inp1, inputProof1);
         ebytes256 input2 = FHE.fromExternal(inp2, inputProof2);
         ebool result = FHE.eq(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -83,7 +83,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes256 input1 = FHE.fromExternal(inp1, inputProof1);
         ebytes256 input2 = FHE.fromExternal(inp2, inputProof2);
         ebool result = FHE.ne(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -91,7 +91,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes64 input1 = FHE.asEbytes64(FHE.padToBytes64(a));
         ebytes64 input2 = FHE.asEbytes64(FHE.padToBytes64(b));
         ebool result = FHE.eq(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -99,7 +99,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         bytes memory input1 = FHE.padToBytes64(a);
         ebytes64 input2 = FHE.asEbytes64(FHE.padToBytes64(b));
         ebool result = FHE.eq(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -107,7 +107,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes64 input1 = FHE.asEbytes64(FHE.padToBytes64(a));
         bytes memory input2 = FHE.padToBytes64(b);
         ebool result = FHE.eq(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -115,7 +115,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes64 input1 = FHE.asEbytes64(FHE.padToBytes64(a));
         ebytes64 input2 = FHE.asEbytes64(FHE.padToBytes64(b));
         ebool result = FHE.ne(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -123,7 +123,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         bytes memory input1 = FHE.padToBytes64(a);
         ebytes64 input2 = FHE.asEbytes64(FHE.padToBytes64(b));
         ebool result = FHE.ne(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -131,7 +131,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes64 input1 = FHE.asEbytes64(FHE.padToBytes64(a));
         bytes memory input2 = FHE.padToBytes64(b);
         ebool result = FHE.ne(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -139,7 +139,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes128 input1 = FHE.asEbytes128(FHE.padToBytes128(a));
         ebytes128 input2 = FHE.asEbytes128(FHE.padToBytes128(b));
         ebool result = FHE.eq(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -147,7 +147,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         bytes memory input1 = FHE.padToBytes128(a);
         ebytes128 input2 = FHE.asEbytes128(FHE.padToBytes128(b));
         ebool result = FHE.eq(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -155,7 +155,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes128 input1 = FHE.asEbytes128(FHE.padToBytes128(a));
         bytes memory input2 = FHE.padToBytes128(b);
         ebool result = FHE.eq(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -163,7 +163,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes128 input1 = FHE.asEbytes128(FHE.padToBytes128(a));
         ebytes128 input2 = FHE.asEbytes128(FHE.padToBytes128(b));
         ebool result = FHE.ne(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -171,7 +171,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         bytes memory input1 = FHE.padToBytes128(a);
         ebytes128 input2 = FHE.asEbytes128(FHE.padToBytes128(b));
         ebool result = FHE.ne(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -179,7 +179,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes128 input1 = FHE.asEbytes128(FHE.padToBytes128(a));
         bytes memory input2 = FHE.padToBytes128(b);
         ebool result = FHE.ne(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -187,7 +187,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         bytes memory input1 = FHE.padToBytes256(a);
         ebytes256 input2 = FHE.asEbytes256(FHE.padToBytes256(b));
         ebool result = FHE.eq(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -195,7 +195,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes256 input1 = FHE.asEbytes256(FHE.padToBytes256(a));
         bytes memory input2 = FHE.padToBytes256(b);
         ebool result = FHE.eq(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -203,7 +203,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         bytes memory input1 = FHE.padToBytes256(a);
         ebytes256 input2 = FHE.asEbytes256(FHE.padToBytes256(b));
         ebool result = FHE.ne(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -211,7 +211,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes256 input1 = FHE.asEbytes256(FHE.padToBytes256(a));
         bytes memory input2 = FHE.padToBytes256(b);
         ebool result = FHE.ne(input1, input2);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -220,7 +220,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebool ifTrueProc = FHE.asEbool(ifTrue);
         ebool ifFalseProc = FHE.asEbool(ifFalse);
         ebool result = FHE.select(controlProc, ifTrueProc, ifFalseProc);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -229,7 +229,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes64 ifTrueProc = FHE.asEbytes64(FHE.padToBytes64(ifTrue));
         ebytes64 ifFalseProc = FHE.asEbytes64(FHE.padToBytes64(ifFalse));
         ebytes64 result = FHE.select(controlProc, ifTrueProc, ifFalseProc);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbytes64 = result;
     }
 
@@ -238,7 +238,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes128 ifTrueProc = FHE.asEbytes128(FHE.padToBytes128(ifTrue));
         ebytes128 ifFalseProc = FHE.asEbytes128(FHE.padToBytes128(ifFalse));
         ebytes128 result = FHE.select(controlProc, ifTrueProc, ifFalseProc);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbytes128 = result;
     }
 
@@ -247,7 +247,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebytes256 ifTrueProc = FHE.asEbytes256(FHE.padToBytes256(ifTrue));
         ebytes256 ifFalseProc = FHE.asEbytes256(FHE.padToBytes256(ifFalse));
         ebytes256 result = FHE.select(controlProc, ifTrueProc, ifFalseProc);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbytes256 = result;
     }
 
@@ -261,7 +261,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         euint32 ifTrueProc = FHE.fromExternal(ifTrue, inputProof);
         euint32 ifFalseProc = FHE.fromExternal(ifFalse, inputProof);
         euint32 result = FHE.select(controlProc, ifTrueProc, ifFalseProc);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEuint32 = result;
     }
 
@@ -275,7 +275,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         eaddress ifTrueProc = FHE.fromExternal(ifTrue, inputProof);
         eaddress ifFalseProc = FHE.fromExternal(ifFalse, inputProof);
         eaddress result = FHE.select(controlProc, ifTrueProc, ifFalseProc);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resAdd = result;
     }
 
@@ -283,7 +283,7 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         eaddress aProc = FHE.fromExternal(a, inputProof);
         eaddress bProc = FHE.fromExternal(b, inputProof);
         ebool result = FHE.eq(aProc, bProc);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
@@ -291,103 +291,120 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         eaddress aProc = FHE.fromExternal(a, inputProof);
         eaddress bProc = FHE.fromExternal(b, inputProof);
         ebool result = FHE.ne(aProc, bProc);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
     function test_eq_eaddress_address(externalEaddress a, address b, bytes calldata inputProof) public {
         eaddress aProc = FHE.fromExternal(a, inputProof);
         ebool result = FHE.eq(aProc, b);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
     function test_eq_address_eaddress(externalEaddress a, address b, bytes calldata inputProof) public {
         eaddress aProc = FHE.fromExternal(a, inputProof);
         ebool result = FHE.eq(b, aProc);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
     function test_ne_eaddress_address(externalEaddress a, address b, bytes calldata inputProof) public {
         eaddress aProc = FHE.fromExternal(a, inputProof);
         ebool result = FHE.ne(aProc, b);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
     function test_ne_address_eaddress(externalEaddress a, address b, bytes calldata inputProof) public {
         eaddress aProc = FHE.fromExternal(a, inputProof);
         ebool result = FHE.ne(b, aProc);
-        FHE.allowThis(result);
+        FHE.makePubliclyDecryptable(result);
         resEbool = result;
     }
 
     function test_ebool_to_euint8_cast(bool input) public {
         resEuint8 = FHE.asEuint8(FHE.asEbool(input));
+        FHE.makePubliclyDecryptable(resEuint8);
     }
 
     function test_ebool_to_euint16_cast(bool input) public {
         resEuint16 = FHE.asEuint16(FHE.asEbool(input));
+        FHE.makePubliclyDecryptable(resEuint16);
     }
 
     function test_ebool_to_euint32_cast(bool input) public {
         resEuint32 = FHE.asEuint32(FHE.asEbool(input));
+        FHE.makePubliclyDecryptable(resEuint32);
     }
 
     function test_ebool_to_euint64_cast(bool input) public {
         resEuint64 = FHE.asEuint64(FHE.asEbool(input));
+        FHE.makePubliclyDecryptable(resEuint64);
     }
 
     function test_ebool_to_euint128_cast(bool input) public {
         resEuint128 = FHE.asEuint128(FHE.asEbool(input));
+        FHE.makePubliclyDecryptable(resEuint128);
     }
 
     function test_ebool_to_euint256_cast(bool input) public {
         resEuint256 = FHE.asEuint256(FHE.asEbool(input));
+        FHE.makePubliclyDecryptable(resEuint256);
     }
 
     function test_euint128_to_euint8_cast(uint128 input) public {
         resEuint8 = FHE.asEuint8(FHE.asEuint128(input));
+        FHE.makePubliclyDecryptable(resEuint8);
     }
 
     function test_ebool_not(bool input) public {
         resEbool = FHE.not(FHE.asEbool(input));
+        FHE.makePubliclyDecryptable(resEbool);
     }
 
     function test_ebool_and(bool a, bool b) public {
         resEbool = FHE.and(FHE.asEbool(a), FHE.asEbool(b));
+        FHE.makePubliclyDecryptable(resEbool);
     }
 
     function test_ebool_and_scalarL(bool a, bool b) public {
         resEbool = FHE.and(a, FHE.asEbool(b));
+        FHE.makePubliclyDecryptable(resEbool);
     }
 
     function test_ebool_and_scalarR(bool a, bool b) public {
         resEbool = FHE.and(FHE.asEbool(a), b);
+        FHE.makePubliclyDecryptable(resEbool);
     }
 
     function test_ebool_or(bool a, bool b) public {
         resEbool = FHE.or(FHE.asEbool(a), FHE.asEbool(b));
+        FHE.makePubliclyDecryptable(resEbool);
     }
 
     function test_ebool_or_scalarL(bool a, bool b) public {
         resEbool = FHE.or(a, FHE.asEbool(b));
+        FHE.makePubliclyDecryptable(resEbool);
     }
 
     function test_ebool_or_scalarR(bool a, bool b) public {
         resEbool = FHE.or(FHE.asEbool(a), b);
+        FHE.makePubliclyDecryptable(resEbool);
     }
 
     function test_ebool_xor(bool a, bool b) public {
         resEbool = FHE.xor(FHE.asEbool(a), FHE.asEbool(b));
+        FHE.makePubliclyDecryptable(resEbool);
     }
 
     function test_ebool_xor_scalarL(bool a, bool b) public {
         resEbool = FHE.xor(a, FHE.asEbool(b));
+        FHE.makePubliclyDecryptable(resEbool);
     }
 
     function test_ebool_xor_scalarR(bool a, bool b) public {
         resEbool = FHE.xor(FHE.asEbool(a), b);
+        FHE.makePubliclyDecryptable(resEbool);
     }
 }

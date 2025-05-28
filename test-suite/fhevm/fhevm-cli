@@ -173,7 +173,7 @@ case $COMMAND in
           ;;
         operators)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
-          docker_args+=("-g" "test operator")
+          docker_args+=("-g" "FHEVM revert paths|FHEVM manual operations|test operator")
           ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
