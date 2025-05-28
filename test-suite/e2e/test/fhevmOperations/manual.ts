@@ -1,4 +1,4 @@
-import { assert, expect } from 'chai';
+import { assert } from 'chai';
 import { ethers } from 'hardhat';
 
 import type { FHEVMManualTestSuite } from '../../types/contracts/tests/FHEVMManualTestSuite';
