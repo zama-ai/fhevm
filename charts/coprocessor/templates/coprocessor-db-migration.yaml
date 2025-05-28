@@ -19,6 +19,8 @@ spec:
         app: coprocessor-db-migration
         app.kubernetes.io/name: {{ .Release.Name }}-db-migration
     spec:
+      imagePullSecrets:
+        - name: registry-credentials
       restartPolicy: Never
       {{- if and .Values.dbMigration.affinity .Values.dbMigration.affinity.enabled }}
       affinity:
