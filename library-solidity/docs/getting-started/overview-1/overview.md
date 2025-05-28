@@ -17,11 +17,11 @@ In about 20 minutes, you will:
 - A certain amount of **Sepolia ETH** available.
   - &#x20;If you don’t have enough ETH, use a Sepolia faucet to request free SepoliaETH for testing such as [Alchemy Faucet](https://www.alchemy.com/faucets/ethereum-sepolia) or [QuickNode Faucet](https://faucet.quicknode.com/ethereum/sepolia).
 
-## What is Confidenetial ERC20
+## What is Confidential ERC20
 
 The contract that you will build with this tutorial is called `ConfidentialERC20Mintable` — a privacy-preserving ERC20 implementation that leverages **FHE** to keep balances and transactions confidential. To understand this contract, let’s first introduce the foundational concepts.
 
-**RC20**
+**ERC20**
 
 ERC20 is a widely used token standard on Ethereum that defines a set of rules for creating and managing fungible tokens. These tokens are efficient but lack privacy — balances and transactions are visible to anyone on the blockchain.
 
