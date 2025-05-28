@@ -2,14 +2,14 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
-import { initializeFHEGasLimit } from '../paymentUtils';
+import { initializeHCULimit } from '../paymentUtils';
 import { getSigners, initSigners } from '../signers';
 
-describe('TestFHEGasLimit', function () {
+describe('Test HCULimit', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
-    this.fheGasLimit = await initializeFHEGasLimit();
+    this.HCULimit = await initializeHCULimit();
   });
 
   beforeEach(async function () {
@@ -17,21 +17,21 @@ describe('TestFHEGasLimit', function () {
   });
 
   it('tx reverts if above hcu depth limit', async function () {
-    const contractFactory = await ethers.getContractFactory('HCULimit');
+    const contractFactory = await ethers.getContractFactory('HCULimitTest');
     const contract = await contractFactory.connect(this.signers.alice).deploy();
     await contract.waitForDeployment();
-    await expect(contract.aboveBlockFHEGasLimitWithSequentialOperations()).revertedWithCustomError(
-      this.fheGasLimit,
+    await expect(contract.aboveTransactionHCULimitWithSequentialOperations()).revertedWithCustomError(
+      this.HCULimit,
       'HCUTransactionDepthLimitExceeded',
     );
   });
 
   it('tx reverts if above hcu transaction limit', async function () {
-    const contractFactory = await ethers.getContractFactory('HCULimit');
+    const contractFactory = await ethers.getContractFactory('HCULimitTest');
     const contract = await contractFactory.connect(this.signers.alice).deploy();
     await contract.waitForDeployment();
-    await expect(contract.aboveBlockFHEGasLimitWithNonSequentialOperations()).revertedWithCustomError(
-      this.fheGasLimit,
+    await expect(contract.aboveTransactionHCUWithNonSequentialOperations()).revertedWithCustomError(
+      this.HCULimit,
       'HCUTransactionLimitExceeded',
     );
   });

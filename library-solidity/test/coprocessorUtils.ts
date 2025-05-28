@@ -603,7 +603,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
   }
 }
 
-export function getFHEGasFromTxReceipt(
+export function getTxHCUFromTxReceipt(
   receipt: ethers.TransactionReceipt,
   FheTypes: FheType[] = ALL_FHE_TYPES,
 ): number {

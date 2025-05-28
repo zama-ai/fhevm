@@ -58,16 +58,16 @@ task('task:verifyInputVerifier').setAction(async function (taskArguments, { upgr
   });
 });
 
-task('task:verifyFHEGasLimit').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvFHEGasLimit = dotenv.parse(fs.readFileSync('addresses/.env.fhegaslimit'));
-  const proxyFHEGasLimit = parsedEnvFHEGasLimit.FHE_GASLIMIT_CONTRACT_ADDRESS;
-  const implementationFHEGasLimitAddress = await upgrades.erc1967.getImplementationAddress(proxyFHEGasLimit);
+task('task:verifyHCULimit').setAction(async function (taskArguments, { upgrades, run }) {
+  const parsedEnvHCULimit = dotenv.parse(fs.readFileSync('addresses/.env.HCULimit'));
+  const proxyHCULimit = parsedEnvHCULimit.HCU_LIMIT_CONTRACT_ADDRESS;
+  const implementationHCULimitAddress = await upgrades.erc1967.getImplementationAddress(proxyHCULimit);
   await run('verify:verify', {
-    address: implementationFHEGasLimitAddress,
+    address: implementationHCULimitAddress,
     constructorArguments: [],
   });
   await run('verify:verify', {
-    address: proxyFHEGasLimit,
+    address: proxyHCULimit,
     constructorArguments: [],
   });
 });

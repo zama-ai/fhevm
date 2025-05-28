@@ -13,7 +13,7 @@ import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {FheType} from "../../contracts/FheType.sol";
 
 import {aclAdd} from "../../addresses/ACLAddress.sol";
-import {fheGasLimitAdd} from "../../addresses/FHEGasLimitAddress.sol";
+import {HCULimitAdd} from "../../addresses/HCULimitAddress.sol";
 import {inputVerifierAdd} from "../../addresses/InputVerifierAddress.sol";
 
 contract SupportedTypesConstants {
@@ -195,9 +195,9 @@ contract MockInputVerifier {
     }
 }
 
-/// @dev This contract is a mock implementation of the FHEGasLimit.
+/// @dev This contract is a mock implementation of the HCULimit.
 /// It includes a fallback function not to revert.
-contract MockFHEGasLimit {
+contract MockHCULimit {
     fallback() external payable {}
 }
 
@@ -210,7 +210,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     address internal constant owner = address(456);
 
     MockACL internal acl;
-    MockFHEGasLimit internal fheGasLimit;
+    MockHCULimit internal HCULimit;
     MockInputVerifier internal inputVerifier;
 
     /// @dev Proxy and implementation variables
@@ -253,7 +253,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
     function _deployMockContracts() internal {
         vm.etch(aclAdd, address(new MockACL()).code);
-        vm.etch(fheGasLimitAdd, address(new MockFHEGasLimit()).code);
+        vm.etch(HCULimitAdd, address(new MockHCULimit()).code);
         vm.etch(inputVerifierAdd, address(new MockInputVerifier()).code);
         acl = MockACL(aclAdd);
         inputVerifier = MockInputVerifier(inputVerifierAdd);
@@ -400,7 +400,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(fhevmExecutor.owner(), owner);
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
         assertEq(fhevmExecutor.getACLAddress(), aclAdd);
-        assertEq(fhevmExecutor.getFHEGasLimitAddress(), fheGasLimitAdd);
+        assertEq(fhevmExecutor.getHCULimitAddress(), HCULimitAdd);
         assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.1.0")));
     }
 
