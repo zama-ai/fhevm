@@ -1,51 +1,112 @@
-<p align="center">
-<!-- product name logo -->
-<picture>
-  <img src="https://private-user-images.githubusercontent.com/1384478/421481269-6173e401-7c1b-4911-9731-ca2eb436e85f.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDIzNzM0NjcsIm5iZiI6MTc0MjM3MzE2NywicGF0aCI6Ii8xMzg0NDc4LzQyMTQ4MTI2OS02MTczZTQwMS03YzFiLTQ5MTEtOTczMS1jYTJlYjQzNmU4NWYucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI1MDMxOSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTAzMTlUMDgzMjQ3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9Y2QxMzBhMGJlY2UyMTAwYTg4NTFkOGM5MWRkZGJlYmZiMDgyNzNiYjQ5OTM4MWI5MzA5NGU0ZmI4NWFhNWZlNSZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.YViSBhLRoakk-dPU_lPcV3xDGvPUYqmzqo5eOyJsEWs" alt="Zama HTTPZ">
-</picture>
-</p>
-
----
-
-<p align="center">
-  <a href="./fhevm-whitepaper.pdf"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/fhevm"> 📒 Documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a> | <a href="https://github.com/zama-ai/awesome-zama"> 📚 FHE resources by Zama</a>
-</p>
-
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square"></a>
-  <a href="https://github.com/zama-ai/bounty-program"><img src="https://img.shields.io/badge/Contribute-Zama%20Bounty%20Program-%23ffd208?style=flat-square"></a>
-</p>
-
-> [!Warning]
-> This demo is an early beta version.
+# Fhevm Test Suite
 
 ## Table of Contents
 
 - **[About](#about)**
 - **[Running the demo](#running-the-demo)**
-- **[License](#license)**
+- **[Security Policy](#security-policy)**
 - **[FAQ](#faq)**
 - **[Support](#support)**
 
 ## About
 
-This repository provides a docker based setup to locally run an integration of HTTPZ and Zama KMS (Key Management System).
+This repository provides a docker based setup to locally run an integration of Zama Fhevm and Zama KMS (Key Management System).
 
-For overview of the system, architecture and details on individual components, refer to our [documentation](https://docs.zama.ai/fhevm-backend).
+For overview of the system, architecture and details on individual components, refer to our [documentation](https://docs.zama.ai/fhevm).
 
 KMS can be configured to two modes:
 
-- Central
+- Centralized
 - Threshold
 
-## Running the demo
+## Demo :tada:
 
-- Switch to the [coprocessor](coprocessor) directory on `main` branch and follow the steps in the README.
-- This is the most up to date version.
+### All-in-One CLI
 
-## License
+The test suite offers a unified CLI for all operations:
 
-This software is distributed under the **BSD-3-Clause-Clear** license. Read [this](LICENSE) for more details.
+```sh
+
+cd test-suite/fhevm
+# Deploy the entire stack
+./fhevm-cli deploy
+
+# Run specific tests
+./fhevm-cli test input-proof
+# Trivial
+./fhevm-cli test user-decryption
+# Trivial
+./fhevm-cli test public-decryption
+./fhevm-cli test erc20
+
+# Upgrade a specific service
+./fhevm-cli upgrade coprocessor
+
+# View logs
+./fhevm-cli logs relayer
+
+# Clean up
+./fhevm-cli clean
+```
+
+## Security Policy
+
+### Handling Sensitive Data
+
+This document outlines security best practices for the fhevm project, particularly regarding the handling of sensitive configuration data.
+
+#### Environment Files
+
+Our repository contains example environment files `env/staging` that include sensitive values like private keys, mnemonics, and API keys. **These values are for testing purposes only** and should never be used in production environments.
+
+For production deployments:
+- **Do not** use the same keys, passwords, or mnemonics that appear in the example files
+- **Do not** commit actual production secrets to any repository
+- **Do** use a proper secrets management solution:
+  - Environment variables managed by your deployment platform
+  - HashiCorp Vault or similar secrets management service
+  - AWS Secrets Manager, GCP Secret Manager, or Azure Key Vault
+  - Kubernetes Secrets (with proper encryption)
+
+Example of replacing sensitive data in production:
+```bash
+# Replace test mnemonic with environment variable reference
+# TEST: MNEMONIC=coyote sketch defense hover finger envelope celery urge panther venue verb cheese
+MNEMONIC=${PRODUCTION_MNEMONIC}
+
+# Replace test private key with key stored in a secure vault
+# TEST: TX_SENDER_PRIVATE_KEY=0x8f82b3f482c19a95ac29c82cf048c076ed0de2530c64a73f2d2d7d1e64b5cc6e
+TX_SENDER_PRIVATE_KEY=${SECURE_PRIVATE_KEY}
+```
+#### Development Environment
+
+When developing locally:
+
+- Use `.env.local` files (added to `.gitignore`) for your personal secrets
+- Rotate keys regularly, especially if used for shared development environments
+- Consider using environment-specific configuration files (dev, staging, prod)
+- Use fake/test data for local development whenever possible
+
+
+#### Common Sensitive Data
+The following values should NEVER be committed to repositories:
+
+- Private keys
+- Mnemonics
+- API keys
+- Database credentials
+- JWT secrets
+
+### Reporting Security Issues
+Please report security vulnerabilities to `security@zama.ia` rather than creating public issues.
+
+Include:
+
+- Description of the vulnerability
+- Steps to reproduce
+- Potential impact
+- Suggested mitigation (if any)
+
 
 ## FAQ
 
