@@ -1,7 +1,7 @@
 <p align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/5d44c888-a30a-47a5-86b1-f1a10b58572d">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/f9f6b6e1-db81-4cb7-b962-181802576398">
+  <source media="(prefers-color-scheme: dark)" srcset="library-solidity/docs/.gitbook/assets/fhevm-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="library-solidity/docs/.gitbook/assets/fhevm-light.png">
   <img width=600 alt="fhevm">
 </picture>
 </p>
