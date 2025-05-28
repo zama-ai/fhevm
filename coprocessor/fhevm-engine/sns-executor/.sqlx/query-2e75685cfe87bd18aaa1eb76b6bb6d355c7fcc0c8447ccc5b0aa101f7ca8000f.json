@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ciphertext FROM ciphertexts WHERE tenant_id = $1 AND handle = $2;",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2e75685cfe87bd18aaa1eb76b6bb6d355c7fcc0c8447ccc5b0aa101f7ca8000f"
+}
