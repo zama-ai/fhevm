@@ -34,8 +34,13 @@ show_help() {
 # Parse options
 PARAMS=""
 GREP_PARAM=""
+HARDHAT_PARALLEL=""
 while (( "$#" )); do
   case "$1" in
+    --parallel)
+      HARDHAT_PARALLEL="--parallel"
+      shift
+      ;;
     -h|--help)
       show_help
       exit 0
@@ -93,13 +98,15 @@ trap cleanup SIGINT SIGTERM
 
 echo -e "\n${GREEN}Running tests...${RESET}"
 
-HARDHAT_OPTS=""
+HARDHAT_OPTS="${HARDHAT_PARALLEL} "
 if [ "$VERBOSE" = true ]; then
-  HARDHAT_OPTS="--verbose"
+  HARDHAT_OPTS+=" --verbose "
 fi
 
+echo hardhat test ${HARDHAT_OPTS} --grep "$GREP_TEXT" --network "$NETWORK"
+
 # Run the tests
-if npx hardhat test $HARDHAT_OPTS --grep "$GREP_TEXT" --network "$NETWORK"; then
+if npx hardhat test ${HARDHAT_OPTS} --grep "$GREP_TEXT" --network "$NETWORK"; then
   echo -e "\n${GREEN}✓ Tests completed successfully!${RESET}"
 else
   echo -e "\n${RED}✗ Tests failed!${RESET}"

@@ -72,4 +72,9 @@ export const getSigners = async (): Promise<Signers> => {
   return signers;
 };
 
+export const getSigner = async (signerNumber: number): Promise<HardhatEthersSigner> => {
+  const eSigners = await ethers.getSigners();
+  return eSigners[signerNumber];
+};
+
 export const requestFaucet = faucet;

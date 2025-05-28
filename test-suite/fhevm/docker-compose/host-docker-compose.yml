@@ -15,7 +15,7 @@ services:
       - --chain-id
       - "12345"
       - --accounts
-      - "20"
+      - "120"
       - --mnemonic
       - "${MNEMONIC}"
     ports:

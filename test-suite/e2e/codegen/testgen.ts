@@ -219,6 +219,8 @@ export function splitOverloadsToShards(overloads: OverloadSignature[]): Overload
   const MAX_SHARD_SIZE = 90;
   const res: OverloadShard[] = [];
 
+  overloads.sort(() => Math.random() - 0.5);
+
   let shardNo = 1;
   let accumulator: OverloadSignature[] = [];
   overloads.forEach((o) => {
@@ -258,10 +260,10 @@ export function splitOverloadsToShards(overloads: OverloadSignature[]): Overload
 function generateIntroTestCode(shards: OverloadShard[], idxSplit: number): string {
   const intro: string[] = [];
   intro.push(`
-    import { assert, expect } from 'chai';
+    import { assert } from 'chai';
     import { ethers } from 'hardhat';
-    import { createInstances } from '../instance';
-    import { getSigners, initSigners } from '../signers';
+    import { createInstance } from '../instance';
+    import { getSigner, getSigners, initSigners } from '../signers';
 
   `);
   shards.forEach((os) => {
@@ -272,9 +274,8 @@ function generateIntroTestCode(shards: OverloadShard[], idxSplit: number): strin
 
   shards.forEach((os) => {
     intro.push(`
-async function deployFHEVMTestFixture${os.shardNumber}(): Promise<FHEVMTestSuite${os.shardNumber}> {
-  const signers = await getSigners();
-  const admin = signers.alice;
+async function deployFHEVMTestFixture${os.shardNumber}(signer: HardhatEthersSigner): Promise<FHEVMTestSuite${os.shardNumber}> {
+  const admin = signer;
 
   const contractFactory = await ethers.getContractFactory('FHEVMTestSuite${os.shardNumber}');
   const contract = await contractFactory.connect(admin).deploy();
@@ -288,22 +289,20 @@ async function deployFHEVMTestFixture${os.shardNumber}(): Promise<FHEVMTestSuite
   intro.push(`
     describe('FHEVM operations ${idxSplit}', function () {
         before(async function () {
-            await initSigners(1);
-            this.signers = await getSigners();
-
+            this.signer = await getSigner(${idxSplit});
   `);
 
   shards.forEach((os) => {
     intro.push(`
-            const contract${os.shardNumber} = await deployFHEVMTestFixture${os.shardNumber}();
+            const contract${os.shardNumber} = await deployFHEVMTestFixture${os.shardNumber}(this.signer);
             this.contract${os.shardNumber}Address = await contract${os.shardNumber}.getAddress();
             this.contract${os.shardNumber} = contract${os.shardNumber};
     `);
   });
 
   intro.push(`
-  const instances = await createInstances(this.signers);
-  this.instances = instances;
+  const instance = await createInstance();
+  this.instance = instance;
         });
   `);
   return intro.join('');
@@ -333,6 +332,7 @@ export function generateTypeScriptTestCode(shards: OverloadShard[], numTsSplits:
 
   const overloadUsages: { [methodName: string]: boolean } = {};
   shards.forEach((os) => {
+    os.overloads.sort(() => Math.random() - 0.5);
     os.overloads.forEach((o) => {
       if (idxTsTest % sizeTsShard === 0) res.push(generateIntroTestCode(shards, idxTsTest / sizeTsShard + 1));
       const testName = `test operator "${o.name}" overload ${signatureContractEncryptedSignature(o)}`;
@@ -378,13 +378,13 @@ export function generateTypeScriptTestCode(shards: OverloadShard[], numTsSplits:
 
         res.push(`
                 it('${testName} test ${testIndex} (${testArgs})', async function () {
-                    const input = this.instances.alice.createEncryptedInput(this.contract${os.shardNumber}Address, this.signers.alice.address);
+                    const input = this.instance.createEncryptedInput(this.contract${os.shardNumber}Address, this.signer.address);
                     ${inputsAdd}
                     const encryptedAmount = await input.encrypt();
                     const tx = await this.contract${os.shardNumber}.${methodName}(${testArgsEncrypted}, encryptedAmount.inputProof);
                     await tx.wait();
                     const handle = await this.contract${os.shardNumber}.res${o.returnType.type === 1 ? `Euint${o.returnType.bits}` : 'Ebool'}();
-                    const res = await this.instances.alice.publicDecrypt([handle]);
+                    const res = await this.instance.publicDecrypt([handle]);
                     const expectedRes = {
                       [handle]: ${expectedOutput},
                     };
