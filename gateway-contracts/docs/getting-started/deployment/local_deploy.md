@@ -40,7 +40,8 @@ make deploy-contracts-local
 
 This:
 
-- deploys the contracts through the `deployAllGatewayContracts` task found in [deploy.ts](../../../tasks/deployment/contracts.ts)
+- deploys the contracts through the `deployAllGatewayContracts` task found in
+  [deploy.ts](../../../tasks/deployment/contracts.ts)
 - adds the host chains to the `GatewayConfig` contract through the `addHostChainsToGatewayConfig` task found in
   [addHostChains.ts](../../../tasks/addHostChains.ts)
 
