@@ -51,7 +51,7 @@ export function Navigation({ dapps }: OwnProps) {
             />
           ))}
         </List.Root>
-        <NavBlock title="Documentation" icon={DocumentationIcon} to="/about" />
+        <NavBlock title="Documentation" icon={DocumentationIcon} to="https://docs.zama.ai/fhevm" />
         <NavBlock title="Learn" icon={LearnIcon} to="/" />
         <NavBlock
           title="Community"
