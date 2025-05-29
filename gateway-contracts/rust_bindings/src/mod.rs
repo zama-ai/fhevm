@@ -5,6 +5,8 @@
 //! These files may be overwritten by the codegen system at any time.
 pub mod r#address;
 pub mod r#ciphertextcommits;
+pub mod r#contextchecks;
+pub mod r#contextlifecycle;
 pub mod r#contextupgradeable;
 pub mod r#decryption;
 pub mod r#ecdsa;
@@ -23,10 +25,12 @@ pub mod r#ierc1967;
 pub mod r#ierc5267;
 pub mod r#igatewayconfig;
 pub mod r#iinputverification;
+pub mod r#ikmscontexts;
 pub mod r#ikmsmanagement;
 pub mod r#imultichainacl;
 pub mod r#initializable;
 pub mod r#inputverification;
+pub mod r#kmscontexts;
 pub mod r#kmsmanagement;
 pub mod r#math;
 pub mod r#messagehashutils;

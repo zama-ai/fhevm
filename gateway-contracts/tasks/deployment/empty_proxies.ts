@@ -100,6 +100,13 @@ task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgra
     address: gatewayConfigAddress,
   });
 
+  console.log("Deploying an EmptyUUPS proxy contract for KmsContexts...");
+  const kmsContextsAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run("task:setContractAddress", {
+    name: "KmsContexts",
+    address: kmsContextsAddress,
+  });
+
   console.log("Deploying an EmptyUUPS proxy contract for KmsManagement...");
   const kmsManagementAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run("task:setContractAddress", {

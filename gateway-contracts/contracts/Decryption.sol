@@ -3,19 +3,21 @@ pragma solidity ^0.8.24;
 import { IDecryption } from "./interfaces/IDecryption.sol";
 import { multichainAclAddress } from "../addresses/MultichainAclAddress.sol";
 import { ciphertextCommitsAddress } from "../addresses/CiphertextCommitsAddress.sol";
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
+import { kmsContextsAddress } from "../addresses/KmsContextsAddress.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./interfaces/IGatewayConfig.sol";
+import { IKmsContexts } from "./interfaces/IKmsContexts.sol";
 import "./interfaces/IMultichainAcl.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
+import { ContextChecks } from "./shared/ContextChecks.sol";
 import "./shared/FheType.sol";
 import "./shared/Pausable.sol";
+import { ContextStatus } from "./shared/Enums.sol";
 import "./libraries/FHETypeBitSizes.sol";
 
 /// @title Decryption contract
@@ -26,7 +28,8 @@ contract Decryption is
     Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
-    Pausable
+    Pausable,
+    ContextChecks
 {
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
@@ -92,8 +95,8 @@ contract Decryption is
         bytes32[] ctHandles;
     }
 
-    /// @notice The address of the GatewayConfig contract for checking if a signer is valid
-    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
+    /// @notice The address of the IKmsContexts contract for checking KMS contexts
+    IKmsContexts private constant KMS_CONTEXTS = IKmsContexts(kmsContextsAddress);
 
     /// @notice The address of the MultichainAcl contract for checking if a decryption requests are allowed
     IMultichainAcl private constant MULTICHAIN_ACL = IMultichainAcl(multichainAclAddress);
@@ -166,6 +169,7 @@ contract Decryption is
         mapping(uint256 decryptionId =>
             mapping(address kmsSigner => bool alreadyResponded))
                 _kmsNodeAlreadySigned;
+        mapping(uint256 decryptionId => uint256 contextId) decryptionContextId;
         // ----------------------------------------------------------------------------------------------
         // Public decryption state variables:
         // ----------------------------------------------------------------------------------------------
@@ -216,7 +220,9 @@ contract Decryption is
     function reinitializeV3() public virtual reinitializer(5) {}
 
     /// @dev See {IDecryption-publicDecryptionRequest}.
-    function publicDecryptionRequest(bytes32[] calldata ctHandles) external virtual whenNotPaused {
+    function publicDecryptionRequest(
+        bytes32[] calldata ctHandles
+    ) external virtual whenNotPaused refreshKmsContextStatuses {
         /// @dev Check that the list of handles is not empty
         if (ctHandles.length == 0) {
             revert EmptyCtHandles();
@@ -250,7 +256,11 @@ contract Decryption is
         /// @dev The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[decryptionId] = ctHandles;
 
-        emit PublicDecryptionRequest(decryptionId, snsCtMaterials);
+        // Get the current active KMS context ID
+        uint256 contextId = KMS_CONTEXTS.getActiveKmsContextId();
+        $.decryptionContextId[decryptionId] = contextId;
+
+        emit PublicDecryptionRequest(decryptionId, contextId, snsCtMaterials);
     }
 
     /// @dev See {IDecryption-publicDecryptionResponse}.
@@ -260,8 +270,14 @@ contract Decryption is
         uint256 decryptionId,
         bytes calldata decryptedResult,
         bytes calldata signature
-    ) external virtual onlyKmsTxSender whenNotPaused {
+    ) external virtual whenNotPaused refreshKmsContextStatuses {
         DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Get the KMS context ID associated with the decryption request
+        uint256 contextId = $.decryptionContextId[decryptionId];
+
+        // Check that the context is still valid
+        _checkKmsContextValidity(contextId, decryptionId);
 
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
         PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
@@ -272,9 +288,9 @@ contract Decryption is
         /// @dev Compute the digest of the PublicDecryptVerification structure.
         bytes32 digest = _hashPublicDecryptVerification(publicDecryptVerification);
 
-        /// @dev Recover the signer address from the signature and validate that corresponds to a
+        /// @dev Recover the signer address from the signature and validate that it corresponds to a
         /// @dev KMS node that has not already signed.
-        _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
+        _validateDecryptionResponseEIP712Signature(decryptionId, contextId, digest, signature);
 
         /// @dev Store the signature for the public decryption response.
         /// @dev This list is then used to check the consensus. Important: the mapping considers
@@ -286,7 +302,7 @@ contract Decryption is
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
+        if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(contextId, verifiedSignatures.length)) {
             $.decryptionDone[decryptionId] = true;
 
             emit PublicDecryptionResponse(decryptionId, decryptedResult, verifiedSignatures);
@@ -302,7 +318,7 @@ contract Decryption is
         address userAddress,
         bytes calldata publicKey,
         bytes calldata signature
-    ) external virtual whenNotPaused {
+    ) external virtual whenNotPaused refreshKmsContextStatuses {
         if (contractAddresses.length == 0) {
             revert EmptyContractAddresses();
         }
@@ -349,20 +365,7 @@ contract Decryption is
         /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        DecryptionStorage storage $ = _getDecryptionStorage();
-
-        // Generate a new request ID
-        // Decryption request IDs are unique across all kinds of decryption request (public, user,
-        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
-        // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
-        // how IDs need to be handled off-chain in case of re-org.
-        $._decryptionRequestCounter++;
-        uint256 decryptionId = $._decryptionRequestCounter;
-
-        /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
-
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey);
+        _emitUserDecryptionRequest(ctHandles, snsCtMaterials, userAddress, publicKey);
     }
 
     /// @dev See {IDecryption-userDecryptionWithDelegationRequest}.
@@ -374,7 +377,7 @@ contract Decryption is
         address[] calldata contractAddresses,
         bytes calldata publicKey,
         bytes calldata signature
-    ) external virtual whenNotPaused {
+    ) external virtual whenNotPaused refreshKmsContextStatuses {
         if (contractAddresses.length == 0) {
             revert EmptyContractAddresses();
         }
@@ -431,19 +434,7 @@ contract Decryption is
         /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        DecryptionStorage storage $ = _getDecryptionStorage();
-        // Generate a new request ID
-        // Decryption request IDs are unique across all kinds of decryption request (public, user,
-        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
-        // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
-        // how IDs need to be handled off-chain in case of re-org.
-        $._decryptionRequestCounter++;
-        uint256 decryptionId = $._decryptionRequestCounter;
-
-        /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
-
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, delegationAccounts.delegatedAddress, publicKey);
+        _emitUserDecryptionRequest(ctHandles, snsCtMaterials, delegationAccounts.delegatedAddress, publicKey);
     }
 
     /// @dev See {IDecryption-userDecryptionResponse}.
@@ -453,11 +444,17 @@ contract Decryption is
         uint256 decryptionId,
         bytes calldata userDecryptedShare,
         bytes calldata signature
-    ) external virtual onlyKmsTxSender whenNotPaused {
+    ) external virtual whenNotPaused refreshKmsContextStatuses {
         DecryptionStorage storage $ = _getDecryptionStorage();
-        UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
+
+        // Get the KMS context ID associated with the decryption request
+        uint256 contextId = $.decryptionContextId[decryptionId];
+
+        // Check that the context is still valid
+        _checkKmsContextValidity(contextId, decryptionId);
 
         /// @dev Initialize the UserDecryptResponseVerification structure for the signature validation.
+        UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
         UserDecryptResponseVerification memory userDecryptResponseVerification = UserDecryptResponseVerification(
             userDecryptionPayload.publicKey,
             userDecryptionPayload.ctHandles,
@@ -469,7 +466,7 @@ contract Decryption is
 
         /// @dev Recover the signer address from the signature and validate that it corresponds to a
         /// @dev KMS node that has not already signed.
-        _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
+        _validateDecryptionResponseEIP712Signature(decryptionId, contextId, digest, signature);
 
         /// @dev Store the signature for the user decryption response.
         /// @dev This list is then used to check the consensus. Important: the mapping should not
@@ -483,7 +480,7 @@ contract Decryption is
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
+        if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(contextId, verifiedSignatures.length)) {
             $.decryptionDone[decryptionId] = true;
 
             emit UserDecryptionResponse(decryptionId, $.userDecryptedShares[decryptionId], verifiedSignatures);
@@ -566,18 +563,21 @@ contract Decryption is
 
     /// @notice Validates the EIP712 signature for a given decryption response.
     /// @param decryptionId The decryption request ID.
+    /// @param contextId The KMS context ID.
     /// @param digest The hashed EIP712 struct.
     /// @param signature The signature to validate.
     function _validateDecryptionResponseEIP712Signature(
         uint256 decryptionId,
+        uint256 contextId,
         bytes32 digest,
         bytes calldata signature
     ) internal virtual {
         DecryptionStorage storage $ = _getDecryptionStorage();
+
         address signer = ECDSA.recover(digest, signature);
 
-        /// @dev Check that the signer is a KMS signer.
-        GATEWAY_CONFIG.checkIsKmsSigner(signer);
+        /// @dev Check that the signer is a KMS signer from the associated context.
+        KMS_CONTEXTS.checkIsKmsSignerFromContext(contextId, signer);
 
         /// @dev Check that the signer has not already responded to the user decryption request.
         if ($._kmsNodeAlreadySigned[decryptionId][signer]) {
@@ -585,6 +585,32 @@ contract Decryption is
         }
 
         $._kmsNodeAlreadySigned[decryptionId][signer] = true;
+    }
+
+    function _emitUserDecryptionRequest(
+        bytes32[] memory ctHandles,
+        SnsCiphertextMaterial[] memory snsCtMaterials,
+        address userAddress,
+        bytes memory publicKey
+    ) internal {
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Generate a new request ID
+        // Decryption request IDs are unique across all kinds of decryption request (public, user,
+        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
+        // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
+        // how IDs need to be handled off-chain in case of re-org.
+        $._decryptionRequestCounter++;
+        uint256 decryptionId = $._decryptionRequestCounter;
+
+        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
+        $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+
+        // Get the current active KMS context ID
+        uint256 contextId = KMS_CONTEXTS.getActiveKmsContextId();
+        $.decryptionContextId[decryptionId] = contextId;
+
+        emit UserDecryptionRequest(decryptionId, contextId, snsCtMaterials, userAddress, publicKey);
     }
 
     /**
@@ -715,20 +741,28 @@ contract Decryption is
             );
     }
 
-    /// @notice Checks if the consensus is reached among the KMS nodes.
-    /// @param kmsCounter The number of KMS nodes that agreed
+    /// @notice Checks if the consensus is reached among the KMS nodes from a KMS context.
+    /// @param contextId The KMS context ID
+    /// @param validResponseCount The number of unique valid public decryption responses
     /// @return Whether the consensus is reached
-    function _isConsensusReachedPublic(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
-        return kmsCounter >= consensusThreshold;
+    function _isConsensusReachedPublic(
+        uint256 contextId,
+        uint256 validResponseCount
+    ) internal view virtual returns (bool) {
+        uint256 consensusThreshold = KMS_CONTEXTS.getPublicDecryptionThresholdFromContext(contextId);
+        return validResponseCount >= consensusThreshold;
     }
 
-    /// @notice Checks if the consensus for user decryption is reached among the KMS signers.
-    /// @param verifiedSignaturesCount The number of signatures that have been verified for a user decryption.
+    /// @notice Checks if the consensus for user decryption is reached among the KMS nodes from a KMS context.
+    /// @param contextId The KMS context ID
+    /// @param validResponseCount The number of unique valid user decryption responses
     /// @return Whether the consensus is reached.
-    function _isConsensusReachedUser(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getUserDecryptionThreshold();
-        return verifiedSignaturesCount >= consensusThreshold;
+    function _isConsensusReachedUser(
+        uint256 contextId,
+        uint256 validResponseCount
+    ) internal view virtual returns (bool) {
+        uint256 consensusThreshold = KMS_CONTEXTS.getUserDecryptionThresholdFromContext(contextId);
+        return validResponseCount >= consensusThreshold;
     }
 
     /// @notice Check the handles' conformance for public decryption requests.
@@ -837,6 +871,16 @@ contract Decryption is
         /// @dev from startTimestamp for a number of days equal to durationDays.
         if (requestValidity.startTimestamp + requestValidity.durationDays * 1 days < block.timestamp) {
             revert UserDecryptionRequestExpired(block.timestamp, requestValidity);
+        }
+    }
+
+    function _checkKmsContextValidity(uint256 contextId, uint256 decryptionId) internal view virtual {
+        // Only accept KMS transaction senders from this context
+        KMS_CONTEXTS.checkIsKmsTxSenderFromContext(contextId, msg.sender);
+
+        if (contextId != KMS_CONTEXTS.getActiveKmsContextId() && contextId != KMS_CONTEXTS.getSuspendedKmsContextId()) {
+            ContextStatus contextStatus = KMS_CONTEXTS.getKmsContextStatus(contextId);
+            revert InvalidKmsContextDecryption(decryptionId, contextId, contextStatus);
         }
     }
 

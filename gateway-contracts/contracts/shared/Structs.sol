@@ -11,12 +11,41 @@ struct ProtocolMetadata {
 
 /// @notice Struct that represents a KMS (Key Management Service) node
 struct KmsNode {
-    /// @notice Address of the KMS node's transaction sender (also called KMS connector)
-    address txSenderAddress;
+    /// @notice Name of the KMS node, as a human-readable identifier
+    string name;
     /// @notice Address of the KMS node's signer (used for signing inputs with EIP712 signatures)
     address signerAddress;
-    /// @notice IP address of the KMS node
-    string ipAddress;
+    /// @notice Address of the KMS node's transaction sender (also called KMS connector)
+    address txSenderAddress;
+    /// @notice Party ID of the KMS node
+    uint256 partyId;
+    /// @notice Backup encryption key of the KMS node
+    bytes backupEncryptionKey;
+    /// @notice External URL of the KMS node
+    string externalUrl;
+    /// @notice Public storage URL of the KMS node
+    string publicStorageUrl;
+    /// @notice TLS certificate of the KMS node
+    bytes tlsCertificate;
+}
+
+struct DecryptionThresholds {
+    uint256 publicDecryptionThreshold;
+    uint256 userDecryptionThreshold;
+}
+
+struct KmsContext {
+    uint256 contextId;
+    uint256 previousContextId;
+    bytes8 softwareVersion;
+    uint256 mpcThreshold;
+    KmsNode[] kmsNodes;
+}
+
+struct KmsBlockPeriods {
+    uint256 preActivationBlockPeriod;
+    uint256 generationBlockPeriod;
+    uint256 suspensionBlockPeriod;
 }
 
 /// @notice Struct that represents a coprocessor

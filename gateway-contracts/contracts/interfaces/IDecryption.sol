@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "../shared/Structs.sol";
+import { ContextStatus } from "../shared/Enums.sol";
 
 /**
  * @title Interface for the Decryption contract.
@@ -26,9 +27,14 @@ interface IDecryption {
     /**
      * @notice Emitted when an public decryption request is made.
      * @param decryptionId The decryption request ID.
+     * @param contextId The ID of the KMS context used for the decryption.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      */
-    event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials);
+    event PublicDecryptionRequest(
+        uint256 indexed decryptionId,
+        uint256 indexed contextId,
+        SnsCiphertextMaterial[] snsCtMaterials
+    );
 
     /**
      * @notice Emitted when an public decryption response is made.
@@ -44,9 +50,11 @@ interface IDecryption {
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      * @param userAddress The user's address.
      * @param publicKey The user's public key for used reencryption.
+     * @param contextId The ID of the KMS context used for the decryption.
      */
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
+        uint256 indexed contextId,
         SnsCiphertextMaterial[] snsCtMaterials,
         address userAddress,
         bytes publicKey
@@ -62,6 +70,14 @@ interface IDecryption {
 
     /// @notice Error indicating that the input list of handles is empty.
     error EmptyCtHandles();
+
+    /**
+     * @notice Error indicating that the context is not allowed for decryption.
+     * @param decryptionId The ID of the decryption request.
+     * @param contextId The ID of the KMS context.
+     * @param contextStatus The status of the KMS context.
+     */
+    error InvalidKmsContextDecryption(uint256 decryptionId, uint256 contextId, ContextStatus contextStatus);
 
     /// @notice Error indicating that the input list of ctHandleContractPairs is empty.
     error EmptyCtHandleContractPairs();
