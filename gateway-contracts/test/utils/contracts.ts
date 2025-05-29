@@ -54,6 +54,13 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
     kmsSigners.push(kmsSigner);
   }
 
+  // Load the KMS node IPs
+  const kmsNodeIps = [];
+  for (let idx = 0; idx < nKmsNodes; idx++) {
+    const kmsNodeIp = getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`);
+    kmsNodeIps.push(kmsNodeIp);
+  }
+
   // Load the coprocessor transaction senders
   const coprocessorTxSenders = [];
   for (let idx = 0; idx < nCoprocessors; idx++) {
@@ -70,7 +77,23 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
     coprocessorSigners.push(coprocessorSigner);
   }
 
-  return { owner, pauser, kmsTxSenders, kmsSigners, coprocessorTxSenders, coprocessorSigners };
+  // Load the coprocessor S3 buckets
+  const coprocessorS3Buckets = [];
+  for (let idx = 0; idx < nCoprocessors; idx++) {
+    const coprocessorS3Bucket = getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`);
+    coprocessorS3Buckets.push(coprocessorS3Bucket);
+  }
+
+  return {
+    owner,
+    pauser,
+    kmsTxSenders,
+    kmsSigners,
+    kmsNodeIps,
+    coprocessorTxSenders,
+    coprocessorSigners,
+    coprocessorS3Buckets,
+  };
 }
 
 // Loads the addresses of the deployed contracts, and the values required for the tests.

@@ -43,8 +43,16 @@ describe("GatewayConfig", function () {
 
   async function getInputsForDeployFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
-    const { kmsTxSenders, kmsSigners, nKmsNodes, coprocessorTxSenders, coprocessorSigners, nCoprocessors } =
-      fixtureData;
+    const {
+      kmsTxSenders,
+      kmsSigners,
+      kmsNodeIps,
+      nKmsNodes,
+      coprocessorTxSenders,
+      coprocessorSigners,
+      coprocessorS3Buckets,
+      nCoprocessors,
+    } = fixtureData;
 
     // Create KMS nodes with the tx sender and signer addresses
     kmsNodes = [];
@@ -52,7 +60,7 @@ describe("GatewayConfig", function () {
       kmsNodes.push({
         txSenderAddress: kmsTxSenders[i].address,
         signerAddress: kmsSigners[i].address,
-        ipAddress: `127.0.0.${i}`,
+        ipAddress: kmsNodeIps[i],
       });
     }
 
@@ -62,7 +70,7 @@ describe("GatewayConfig", function () {
       coprocessors.push({
         txSenderAddress: coprocessorTxSenders[i].address,
         signerAddress: coprocessorSigners[i].address,
-        s3BucketUrl: `s3://bucket-${i}`,
+        s3BucketUrl: coprocessorS3Buckets[i],
       });
     }
 
@@ -327,10 +335,6 @@ describe("GatewayConfig", function () {
     });
 
     describe("GatewayConfig initialization checks and getters", function () {
-      it("Should be registered as an pauser", async function () {
-        await expect(gatewayConfig.checkIsPauser(pauser)).to.not.be.reverted;
-      });
-
       it("Should be registered as KMS nodes transaction senders", async function () {
         for (const kmsTxSender of kmsTxSenders) {
           await expect(gatewayConfig.checkIsKmsTxSender(kmsTxSender.address)).to.not.be.reverted;
@@ -359,6 +363,20 @@ describe("GatewayConfig", function () {
         for (const hostChainId of hostChainIds) {
           await expect(gatewayConfig.checkHostChainIsRegistered(hostChainId)).to.not.be.reverted;
         }
+      });
+
+      it("Should get the protocol metadata", async function () {
+        const metadata = await gatewayConfig.getProtocolMetadata();
+
+        // Check that the protocol metadata is correct
+        expect(metadata).to.deep.equal(toValues(protocolMetadata));
+      });
+
+      it("Should get the KMS node metadata by its transaction sender address", async function () {
+        const kmsNode = await gatewayConfig.getKmsNode(kmsNodes[0].txSenderAddress);
+
+        // Check that KMS node metadata for the given transaction sender addresses is correct
+        expect(kmsNode).to.deep.equal(toValues(kmsNodes[0]));
       });
 
       it("Should get all KMS node transaction sender addresses", async function () {

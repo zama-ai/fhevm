@@ -192,14 +192,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         emit AddHostChain(hostChain);
     }
 
-    /// @dev See {IGatewayConfig-checkIsPauser}.
-    function checkIsPauser(address pauserAddress) external view virtual {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if ($.pauser != pauserAddress) {
-            revert NotPauser(pauserAddress);
-        }
-    }
-
     /// @dev See {IGatewayConfig-checkIsKmsTxSender}.
     function checkIsKmsTxSender(address txSenderAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
@@ -310,12 +302,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function getCoprocessorSigners() external view virtual returns (address[] memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.coprocessorSignerAddresses;
-    }
-
-    /// @dev See {IGatewayConfig-getHostChain}.
-    function getHostChain(uint256 index) external view virtual returns (HostChain memory) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.hostChains[index];
     }
 
     /// @dev See {IGatewayConfig-getHostChains}.

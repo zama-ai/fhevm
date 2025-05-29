@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
-import { GatewayConfig, KmsManagement } from "../typechain-types";
+import { KmsManagement } from "../typechain-types";
 import { createRandomWallet, loadTestVariablesFixture } from "./utils";
 
 describe("KmsManagement", function () {
@@ -264,6 +264,22 @@ describe("KmsManagement", function () {
       await expect(txResponse4).to.not.emit(kmsManagement, "KeygenResponse");
     });
 
+    it("Should get the fheParams digest associated to the key ID", async function () {
+      const { kmsManagement, owner, kmsTxSenders, preKeyId, fheParamsDigest } = await loadFixture(
+        prepareKmsManagementPreKeygenFixture,
+      );
+
+      // Complete a key generation
+      const keyId = 1;
+      await kmsManagement.connect(owner).keygenRequest(preKeyId);
+      for (const kmsTxSender of kmsTxSenders) {
+        await kmsManagement.connect(kmsTxSender).keygenResponse(preKeyId, keyId);
+      }
+
+      // Check that the initialized FHE params digest is correctly associated to the KSK ID
+      expect(await kmsManagement.keyFheParamsDigests(keyId)).to.equal(fheParamsDigest);
+    });
+
     it("Should revert because the contract is paused", async function () {
       const { kmsManagement, owner, kmsTxSenders, preKeyId, fheParamsName } = await loadFixture(
         prepareKmsManagementPreKeygenFixture,
@@ -373,6 +389,22 @@ describe("KmsManagement", function () {
       await expect(txRequest2)
         .to.emit(kmsManagement, "CrsgenRequest")
         .withArgs(expectedPreCrsId + 1, fheParamsDigest);
+    });
+
+    it("Should get the fheParams digest associated to the CRS ID", async function () {
+      const { kmsManagement, owner, kmsTxSenders, fheParamsName, fheParamsDigest } =
+        await loadFixture(loadTestVariablesFixture);
+
+      // Complete a CRS generation
+      const crsgenRequestId = 1;
+      const crsId = 1;
+      await kmsManagement.connect(owner).crsgenRequest(fheParamsName);
+      for (const kmsTxSender of kmsTxSenders) {
+        await kmsManagement.connect(kmsTxSender).crsgenResponse(crsgenRequestId, crsId);
+      }
+
+      // Check that the initialized FHE params digest is correctly associated to the KSK ID
+      expect(await kmsManagement.crsFheParamsDigests(crsId)).to.equal(fheParamsDigest);
     });
 
     it("Should revert because the contract is paused", async function () {
@@ -564,6 +596,22 @@ describe("KmsManagement", function () {
       await expect(txResponse4).to.not.emit(kmsManagement, "KskgenResponse");
     });
 
+    it("Should get the fheParams digest associated to the KSK ID", async function () {
+      const { kmsManagement, owner, kmsTxSenders, keyId1, keyId2, preKskId, fheParamsDigest } = await loadFixture(
+        prepareKmsManagementPreKskgenFixture,
+      );
+
+      // Complete a KSK generation
+      const kskId = 1;
+      await kmsManagement.connect(owner).kskgenRequest(preKskId, keyId1, keyId2);
+      for (const kmsTxSender of kmsTxSenders) {
+        await kmsManagement.connect(kmsTxSender).kskgenResponse(preKskId, kskId);
+      }
+
+      // Check that the initialized FHE params digest is correctly associated to the KSK ID
+      expect(await kmsManagement.kskFheParamsDigests(kskId)).to.equal(fheParamsDigest);
+    });
+
     it("Should revert because the contract is paused", async function () {
       const { kmsManagement, owner, kmsTxSenders, keyId1, keyId2, preKskId, fheParamsName } = await loadFixture(
         prepareKmsManagementPreKskgenFixture,
@@ -610,6 +658,21 @@ describe("KmsManagement", function () {
       await expect(kmsManagement.connect(fakeOwner).activateKeyResponse(0))
         .to.be.revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
         .withArgs(fakeOwner.address);
+    });
+
+    it("Should get the ID of the current activated key", async function () {
+      const { kmsManagement, owner, coprocessorTxSenders, keyId1, keyId2 } = await loadFixture(
+        prepareKmsManagementKeygenFixture,
+      );
+
+      // Complete a key activation
+      await kmsManagement.connect(owner).activateKeyRequest(keyId1);
+      for (const coprocessorTxSender of coprocessorTxSenders) {
+        await kmsManagement.connect(coprocessorTxSender).activateKeyResponse(keyId1);
+      }
+
+      // Check that the current activated key ID is the activated one
+      expect(await kmsManagement.getCurrentKeyId()).to.equal(keyId1);
     });
 
     it("Should handle a first key activation (no KSK generation)", async function () {
@@ -703,6 +766,12 @@ describe("KmsManagement", function () {
   });
 
   describe("FHE parameters", async function () {
+    it("Should get the fheParams digest associated to the fheParams name", async function () {
+      const { kmsManagement, fheParamsName, fheParamsDigest } = await loadFixture(loadTestVariablesFixture);
+
+      expect(await kmsManagement.fheParamsDigests(fheParamsName)).to.equal(fheParamsDigest);
+    });
+
     it("Should revert because of access controls", async function () {
       const { kmsManagement } = await loadFixture(loadTestVariablesFixture);
 
