@@ -56,4 +56,4 @@ jobs:
 
       - name: Run coverage
         working-directory: gateway-contracts
-        run: npm run coverage
+        run: make coverage
