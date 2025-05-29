@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "../shared/Structs.sol";
-
+import {
+    KmsNode,
+    KmsContext,
+    Coprocessor,
+    HostChain,
+    ProtocolMetadata,
+    KmsConfiguration,
+    DecryptionThresholds
+} from "../shared/Structs.sol";
+import { ContextStatus } from "../shared/Enums.sol";
 /**
  * @title Interface for the GatewayConfig contract.
  * @notice The GatewayConfig contract is responsible for being a point of truth for all contracts and
@@ -23,15 +31,13 @@ interface IGatewayConfig {
      * @notice Emitted when the GatewayConfig initialization is completed.
      * @param pauser Pauser address.
      * @param metadata Metadata of the protocol.
-     * @param mpcThreshold The MPC threshold.
-     * @param kmsNodes List of KMS nodes.
+     * @param kmsConfiguration KMS configuration parameters.
      * @param coprocessors List of coprocessors.
      */
     event Initialization(
         address pauser,
         ProtocolMetadata metadata,
-        uint256 mpcThreshold,
-        KmsNode[] kmsNodes,
+        KmsConfiguration kmsConfiguration,
         Coprocessor[] coprocessors
     );
 
@@ -40,12 +46,6 @@ interface IGatewayConfig {
      * @param newPauser The new pauser address.
      */
     event UpdatePauser(address newPauser);
-
-    /**
-     * @notice Emitted when the MPC threshold has been updated.
-     * @param newMpcThreshold The new MPC threshold.
-     */
-    event UpdateMpcThreshold(uint256 newMpcThreshold);
 
     /**
      * @notice Emitted when the public decryption threshold has been updated.
@@ -58,6 +58,50 @@ interface IGatewayConfig {
      * @param newUserDecryptionThreshold The new user decryption threshold.
      */
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
+
+    event UpdateKmsContextGenerationBlockPeriod(uint256 newKmsContextGenerationBlockPeriod);
+    event UpdateKmsContextSuspensionBlockPeriod(uint256 newKmsContextSuspensionBlockPeriod);
+
+    /**
+     * @notice Emitted when a key resharing needs to be done among the new KMS nodes.
+     * @param activeKmsContext The current active KMS context.
+     * @param newKmsContext The new KMS context.
+     * @param generationBlockNumber The block number at which the key resharing will be invalidated if
+     * all the KMS nodes have not validated the key resharing.
+     */
+    event StartKeyResharing(KmsContext activeKmsContext, KmsContext newKmsContext, uint256 generationBlockNumber);
+
+    /**
+     * @notice Emitted when a key resharing has been validated by all the KMS nodes.
+     * @param newKmsContext The new KMS context.
+     */
+    event ValidateKeyResharing(KmsContext newKmsContext);
+
+    event InvalidateKeyResharing(uint256 kmsContextId);
+
+    event DeactivateKmsContext(uint256 kmsContextId);
+
+    event CompromiseKmsContext(uint256 kmsContextId);
+
+    /**
+     * @notice Emitted when a new KMS context has been registered.
+     * @param activeKmsContext The current active KMS context.
+     * @param newKmsContext The new KMS context.
+     */
+    event NewKmsContext(KmsContext activeKmsContext, KmsContext newKmsContext);
+
+    event DestroyKmsContext(uint256 kmsContextId);
+
+    event SuspendKmsContext(uint256 kmsContextId);
+
+    event ActivateKmsContext(uint256 kmsContextId);
+
+    /**
+     * @notice Emitted when a new KMS context is being pre-activated.
+     * @param newKmsContext The new KMS context.
+     * @param preActivationBlockNumber The block number at which the KMS context will be activated.
+     */
+    event StartKmsContextPreActivation(KmsContext newKmsContext, uint256 preActivationBlockNumber);
 
     /**
      * @notice Emitted when a new host chain has been registered.
@@ -75,11 +119,13 @@ interface IGatewayConfig {
     error EmptyCoprocessors();
 
     /**
-     * @notice Error emitted when the MPC threshold is greater or equal to the number of KMS nodes.
+     * @notice Error emitted when the MPC threshold is greater or equal to the number of KMS nodes
+     * within the KMS context.
+     * @param kmsContextId The KMS context ID.
      * @param mpcThreshold The MPC threshold.
      * @param nKmsNodes The number of KMS nodes.
      */
-    error InvalidHighMpcThreshold(uint256 mpcThreshold, uint256 nKmsNodes);
+    error InvalidHighMpcThreshold(uint256 kmsContextId, uint256 mpcThreshold, uint256 nKmsNodes);
 
     /// @notice Error emitted when the public decryption threshold is null.
     error InvalidNullPublicDecryptionThreshold();
@@ -104,22 +150,54 @@ interface IGatewayConfig {
     error NotPauser(address pauserAddress);
 
     /**
-     * @notice Error emitted when an address is not a KMS transaction sender.
-     * @param txSenderAddress The address that is not a KMS transaction sender.
+     * @notice Error emitted when an address is not a KMS transaction sender from the active context.
+     * @param txSenderAddress The address to check.
      */
-    error NotKmsTxSender(address txSenderAddress);
+    error NotActiveKmsTxSender(address txSenderAddress);
 
     /**
-     * @notice Error emitted when an address is not a KMS signer.
-     * @param signerAddress The address that is not a KMS signer.
+     * @notice Error emitted when an address is not a KMS transaction sender from a context.
+     * @param kmsContextId The KMS context ID.
+     * @param txSenderAddress The address to check.
      */
-    error NotKmsSigner(address signerAddress);
+    error NotKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress);
+
+    /**
+     * @notice Error emitted when an address is not a KMS signer from the active context.
+     * @param signerAddress The address to check.
+     */
+    error NotActiveKmsSigner(address signerAddress);
+
+    /**
+     * @notice Error emitted when an address is not a KMS signer from a context.
+     * @param kmsContextId The KMS context ID.
+     * @param signerAddress The address to check.
+     */
+    error NotKmsSignerFromContext(uint256 kmsContextId, address signerAddress);
 
     /**
      * @notice Error emitted when an address is not a coprocessor transaction sender.
      * @param txSenderAddress The address that is not a coprocessor transaction sender.
      */
     error NotCoprocessorTxSender(address txSenderAddress);
+
+    /**
+     * @notice Error emitted when an transaction sender address is not associated with a registered KMS node within.
+     * @param kmsContextId The KMS context ID.
+     * @param kmsTxSenderAddress The transaction sender address that is not associated with a registered KMS node.
+     */
+    error NotKmsNode(uint256 kmsContextId, address kmsTxSenderAddress);
+
+    error KmsNodeAlreadyValidatedKeyResharing(uint256 kmsContextId, address kmsSigner);
+
+    error KmsContextNotGenerating(uint256 kmsContextId);
+
+    error NoSuspendedKmsContext();
+
+    error KmsContextNotInitialized(uint256 kmsContextId);
+
+    error CompromiseActiveKmsContextNotAllowed(uint256 kmsContextId);
+    error DestroyActiveKmsContextNotAllowed(uint256 kmsContextId);
 
     /*C
      * @notice Error emitted when an address is not a coprocessor signer.
@@ -148,6 +226,14 @@ interface IGatewayConfig {
      */
     error ChainIdNotUint64(uint256 chainId);
 
+    function getKmsContext(uint256 kmsContextId) external view returns (KmsContext memory);
+    function getActiveKmsContextId() external view returns (uint256);
+    function getSuspendedKmsContextId() external view returns (uint256);
+
+    function getActiveKmsContext() external view returns (KmsContext memory);
+
+    function getKmsNodes() external view returns (KmsNode[] memory);
+
     /**
      * @notice Update the pauser address.
      * @param newPauser The new pauser address.
@@ -155,18 +241,38 @@ interface IGatewayConfig {
     function updatePauser(address newPauser) external;
 
     /**
+     * @notice Add a new KMS context to the GatewayConfig contract.
+     * @param preActivationBlockPeriod The pre-activation block period.
+     * @param softwareVersion The software version.
+     * @param reshareKeys Whether to reshare keys.
+     * @param mpcThreshold The MPC threshold.
+     * @param kmsNodes The set of KMS nodes representing the KMS context.
+     */
+    function addKmsContext(
+        uint256 preActivationBlockPeriod,
+        bytes calldata softwareVersion,
+        bool reshareKeys,
+        uint256 mpcThreshold,
+        KmsNode[] calldata kmsNodes,
+        DecryptionThresholds calldata decryptionThresholds
+    ) external;
+
+    function validateKeyResharing(uint256 kmsContextId, bytes calldata signature) external;
+
+    function refreshKmsContextStatuses() external;
+
+    function compromiseKmsContext(uint256 kmsContextId) external;
+
+    function destroyKmsContext(uint256 kmsContextId) external;
+
+    function moveSuspendedKmsContextToActive() external;
+
+    /**
      * @notice Add a new host chain metadata to the GatewayConfig contract.
      * @dev The associated chain ID must be non-zero and representable by a uint64.
      * @param hostChain The new host chain metadata to include.
      */
     function addHostChain(HostChain calldata hostChain) external;
-
-    /**
-     * @notice Update the MPC threshold.
-     * @dev The new threshold must verify `0 <= t < n`, with `n` the number of KMS nodes currently registered.
-     * @param newMpcThreshold The new MPC threshold.
-     */
-    function updateMpcThreshold(uint256 newMpcThreshold) external;
 
     /**
      * @notice Update the public decryption threshold.
@@ -189,16 +295,18 @@ interface IGatewayConfig {
     function checkIsPauser(address pauserAddress) external view;
 
     /**
-     * @notice Check if an address is a registered KMS transaction sender.
-     * @param kmsTxSenderAddress The address to check.
+     * @notice Check if an address is a registered KMS transaction sender from a context.
+     * @param kmsContextId The KMS context ID.
+     * @param txSenderAddress The address to check.
      */
-    function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
+    function checkIsKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress) external view;
 
     /**
-     * @notice Check if an address is a registered KMS signer.
+     * @notice Check if an address is a registered KMS signer from a context.
+     * @param kmsContextId The KMS context ID.
      * @param signerAddress The address to check.
      */
-    function checkIsKmsSigner(address signerAddress) external view;
+    function checkIsKmsSignerFromContext(uint256 kmsContextId, address signerAddress) external view;
 
     /**
      * @notice Check if an address is a registered coprocessor transaction sender.
@@ -238,9 +346,23 @@ interface IGatewayConfig {
 
     /**
      * @notice Get the public decryption threshold.
+     * @param kmsContextId The KMS context ID.
+     * @return The public decryption threshold.
+     */
+    function getPublicDecryptionThresholdFromContext(uint256 kmsContextId) external view returns (uint256);
+
+    /**
+     * @notice Get the public decryption threshold.
      * @return The public decryption threshold.
      */
     function getPublicDecryptionThreshold() external view returns (uint256);
+
+    /**
+     * @notice Get the user decryption threshold.
+     * @param kmsContextId The KMS context ID.
+     * @return The user decryption threshold.
+     */
+    function getUserDecryptionThresholdFromContext(uint256 kmsContextId) external view returns (uint256);
 
     /**
      * @notice Get the user decryption threshold.
@@ -255,7 +377,19 @@ interface IGatewayConfig {
     function getCoprocessorMajorityThreshold() external view returns (uint256);
 
     /**
-     * @notice Get the metadata of the KMS node with the given transaction sender address.
+     * @notice Get the infos of the KMS node associated to the transaction sender within a KMS context.
+     * @param kmsContextId The KMS context ID.
+     * @param kmsTxSenderAddress The signer address of the KMS node to get.
+     * @return The KMS node's metadata.
+     */
+    function getKmsNodeFromContext(
+        uint256 kmsContextId,
+        address kmsTxSenderAddress
+    ) external view returns (KmsNode memory);
+
+    /**
+     * @notice Get the infos of the KMS node associated to the transaction sender within the active KMS context.
+     * @param kmsTxSenderAddress The signer address of the KMS node to get.
      * @return The KMS node's metadata.
      */
     function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
@@ -271,6 +405,8 @@ interface IGatewayConfig {
      * @return The list of KMS nodes' signer addresses.
      */
     function getKmsSigners() external view returns (address[] memory);
+
+    function getKmsContextStatus(uint256 kmsContextId) external view returns (ContextStatus);
 
     /**
      * @notice Get the metadata of the coprocessor with the given transaction sender address.

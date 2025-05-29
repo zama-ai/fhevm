@@ -11,12 +11,48 @@ struct ProtocolMetadata {
 
 /// @notice Struct that represents a KMS (Key Management Service) node
 struct KmsNode {
+    /// @notice Party ID of the KMS node
+    uint256 partyId;
     /// @notice Address of the KMS node's transaction sender (also called KMS connector)
     address txSenderAddress;
     /// @notice Address of the KMS node's signer (used for signing inputs with EIP712 signatures)
     address signerAddress;
     /// @notice IP address of the KMS node
     string ipAddress;
+    /// @notice TLS certificate of the KMS node
+    bytes tlsCertificate;
+}
+
+struct DecryptionThresholds {
+    uint256 publicDecryptionThreshold;
+    uint256 userDecryptionThreshold;
+}
+
+struct KmsContext {
+    uint256 contextId;
+    bytes softwareVersion;
+    bool reshareKeys;
+    uint256 mpcThreshold;
+    KmsNode[] kmsNodes;
+}
+
+struct KmsBlockPeriods {
+    uint256 preActivationBlockPeriod;
+    uint256 generationBlockPeriod;
+    uint256 suspensionBlockPeriod;
+}
+
+/**
+ * @dev This struct needs to be defined in the shared file instead of the GatewayConfig's interface
+ * else `alloy` is enable to properly import the nested types (KmsBlockPeriods, KmsNode, ...) and
+ * the linter check fails
+ */
+struct KmsConfiguration {
+    DecryptionThresholds decryptionThresholds;
+    KmsBlockPeriods blockPeriods;
+    bytes softwareVersion;
+    uint256 mpcThreshold;
+    KmsNode[] kmsNodes;
 }
 
 /// @notice Struct that represents a coprocessor

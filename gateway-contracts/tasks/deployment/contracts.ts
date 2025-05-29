@@ -73,21 +73,31 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   // Parse the pauser address
   const pauserAddress = getRequiredEnvVar(`PAUSER_ADDRESS`);
 
-  // Parse the MPC threshold
-  const mpcThreshold = getRequiredEnvVar("MPC_THRESHOLD");
-
   // Parse the decryption response thresholds
   const publicDecryptionThreshold = getRequiredEnvVar("PUBLIC_DECRYPTION_THRESHOLD");
   const userDecryptionThreshold = getRequiredEnvVar("USER_DECRYPTION_THRESHOLD");
+
+  // Parse the KMS context block periods
+  const kmsGenerationBlockPeriod = getRequiredEnvVar("KMS_GENERATION_BLOCK_PERIOD");
+  const kmsPreActivationBlockPeriod = getRequiredEnvVar("KMS_PRE_ACTIVATION_BLOCK_PERIOD");
+  const kmsSuspensionBlockPeriod = getRequiredEnvVar("KMS_SUSPENSION_BLOCK_PERIOD");
+
+  // Parse the KMS software version
+  const kmsSoftwareVersion = getRequiredEnvVar("KMS_SOFTWARE_VERSION");
+
+  // Parse the MPC threshold
+  const mpcThreshold = getRequiredEnvVar("MPC_THRESHOLD");
 
   // Parse the KMS nodes
   const numKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
   const kmsNodes = [];
   for (let idx = 0; idx < numKmsNodes; idx++) {
     kmsNodes.push({
+      partyId: getRequiredEnvVar(`KMS_PARTY_ID_${idx}`),
       txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
       signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
       ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
+      tlsCertificate: getRequiredEnvVar(`KMS_TLS_CERTIFICATE_${idx}`),
     });
   }
 
@@ -104,21 +114,30 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
 
   console.log("Pauser address:", pauserAddress);
   console.log("Protocol metadata:", protocolMetadata);
-  console.log("MPC threshold:", mpcThreshold);
   console.log("Public decryption threshold:", publicDecryptionThreshold);
+  console.log("Generation block period:", kmsGenerationBlockPeriod);
+  console.log("Pre-activation block period:", kmsPreActivationBlockPeriod);
+  console.log("Suspension block period:", kmsSuspensionBlockPeriod);
+  console.log("Software version:", kmsSoftwareVersion);
+  console.log("MPC threshold:", mpcThreshold);
   console.log("User decryption threshold:", userDecryptionThreshold);
   console.log("KMS nodes:", kmsNodes);
   console.log("Coprocessors:", coprocessors);
 
-  await deployContractImplementation("GatewayConfig", hre, [
+  const initializeArgs = [
     pauserAddress,
     protocolMetadata,
-    mpcThreshold,
-    publicDecryptionThreshold,
-    userDecryptionThreshold,
-    kmsNodes,
+    [
+      [publicDecryptionThreshold, userDecryptionThreshold],
+      [kmsPreActivationBlockPeriod, kmsGenerationBlockPeriod, kmsSuspensionBlockPeriod],
+      kmsSoftwareVersion,
+      mpcThreshold,
+      kmsNodes,
+    ],
     coprocessors,
-  ]);
+  ];
+
+  await deployContractImplementation("GatewayConfig", hre, initializeArgs);
 });
 
 // Deploy the InputVerification contract

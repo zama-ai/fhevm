@@ -5,6 +5,7 @@
 //! These files may be overwritten by the codegen system at any time.
 pub mod r#address;
 pub mod r#ciphertextcommits;
+pub mod r#contextlifecycle;
 pub mod r#contextupgradeable;
 pub mod r#decryption;
 pub mod r#ecdsa;
@@ -15,6 +16,7 @@ pub mod r#errors;
 pub mod r#fhetypebitsizes;
 pub mod r#gatewayconfig;
 pub mod r#gatewayconfigchecks;
+pub mod r#gatewayconfigcontexts;
 pub mod r#handleops;
 pub mod r#ibeacon;
 pub mod r#iciphertextcommits;
