@@ -94,14 +94,86 @@ fn demo_sdk_functionality(sdk: &mut FhevmSdk) -> Result<(), FhevmError> {
     )?];
     let start_timestamp = 1748252823;
     let duration_days = 10;
+
+    let wallet_private_key = "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f";
+
+    // Example 1: Generate EIP-712 hash only (no signing)
+    log::info!("--- Example 1: Hash Only ---");
     match sdk.generate_eip712_for_user_decrypt(
-        &hex::encode(public_key).as_bytes(),
+        &public_key,
         &contract_addresses,
         start_timestamp,
         duration_days,
+        None, // No wallet key
+        None, // No verification
     ) {
-        Ok(hash) => log::info!("Hash generated: {} bytes", hash.len()),
-        Err(e) => log::info!("Hash generation error: {}", e),
+        Ok(result) => {
+            log::info!("✅ EIP-712 hash generated successfully");
+            log::info!("   Hash: {}", result.hash);
+            log::info!("   Signed: {}", result.is_signed());
+            log::info!("   Verification status: {}", result.verification_status());
+        }
+        Err(e) => log::error!("❌ Hash generation error: {}", e),
+    }
+
+    // Example 2: Generate hash and sign (no verification)
+    log::info!("--- Example 2: Hash + Sign (Fast) ---");
+    match sdk.generate_eip712_for_user_decrypt(
+        &public_key,
+        &contract_addresses,
+        start_timestamp,
+        duration_days,
+        Some(wallet_private_key), // With wallet key
+        None,                     // No verification (default, fast)
+    ) {
+        Ok(result) => {
+            log::info!("✅ EIP-712 hash and signature generated successfully");
+            log::info!("   Hash: {}", result.hash);
+            log::info!("   Signed: {}", result.is_signed());
+            log::info!("   Signer: {}", result.signer.unwrap_or_default());
+            log::info!("   Verification status: {}", result.verification_status());
+
+            if let Ok(signature) = result.require_signature() {
+                log::info!("   Signature: 0x{}", hex::encode(signature));
+            }
+        }
+        Err(e) => log::error!("❌ Signing error: {}", e),
+    }
+
+    // Example 3: Generate, sign, and verify (full process)
+    log::info!("--- Example 3: Hash + Sign + Verify (Full) ---");
+    match sdk.generate_eip712_for_user_decrypt(
+        &public_key,
+        &contract_addresses,
+        start_timestamp,
+        duration_days,
+        Some(wallet_private_key), // With wallet key
+        Some(true),               // With verification
+    ) {
+        Ok(result) => {
+            log::info!("✅ Full EIP-712 process completed");
+            log::info!("   Hash: {}", result.hash);
+            log::info!("   Signed: {}", result.is_signed());
+            log::info!("   Signer: {}", result.signer.unwrap_or_default());
+            log::info!(
+                "   Verification attempted: {}",
+                result.was_verification_attempted()
+            );
+            log::info!("   Verification status: {}", result.verification_status());
+
+            if result.is_verified() {
+                log::info!("   🎉 Signature verified successfully!");
+            } else if result.was_verification_attempted() {
+                log::warn!("   ⚠️ Signature verification failed");
+            }
+
+            // Demonstrate error handling for verification
+            match result.ensure_verified() {
+                Ok(()) => log::info!("   ✅ Verification check passed"),
+                Err(e) => log::warn!("   ⚠️ Verification check failed: {}", e),
+            }
+        }
+        Err(e) => log::error!("❌ Full process error: {}", e),
     }
 
     log::info!("Generating user decrypt calldata");

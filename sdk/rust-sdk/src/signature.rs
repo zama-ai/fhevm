@@ -10,7 +10,6 @@ use alloy::sol_types::eip712_domain;
 use kms_lib::client::js_api::{self, cryptobox_pk_to_u8vec, cryptobox_sk_to_u8vec};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-use tfhe::boolean::public_key;
 
 // Define the EIP-712 types using Alloy's sol! macro
 alloy::sol! {
@@ -33,6 +32,37 @@ alloy::sol! {
         address delegatedAccount;
 
     }
+}
+
+pub fn validate_private_key_format(private_key: &str) -> Result<()> {
+    if private_key.is_empty() {
+        return Err(FhevmError::InvalidParams(
+            "Private key cannot be empty".to_string(),
+        ));
+    }
+
+    // Remove 0x prefix if present
+    let cleaned_key = if private_key.starts_with("0x") {
+        &private_key[2..]
+    } else {
+        private_key
+    };
+
+    // Check length (64 hex characters = 32 bytes)
+    if cleaned_key.len() != 64 {
+        return Err(FhevmError::InvalidParams(
+            "Invalid private key format (must be 64 hex characters)".to_string(),
+        ));
+    }
+
+    // Verify it's valid hex
+    if !cleaned_key.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(FhevmError::InvalidParams(
+            "Invalid private key format (contains non-hex characters)".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 // Add validation helper
@@ -62,6 +92,67 @@ pub fn validate_address_from_str(addr_str: &str) -> Result<Address> {
     validate_address(&address)?;
 
     Ok(address)
+}
+
+/// Result of EIP-712 generation and optional signing
+#[derive(Debug, Clone)]
+pub struct Eip712Result {
+    /// The EIP-712 hash
+    pub hash: B256,
+    /// Optional signature (if wallet private key was provided)
+    pub signature: Option<Bytes>,
+    /// Optional signer address (if signature was created)
+    pub signer: Option<Address>,
+    /// Whether signature was verified (if verification was requested)
+    pub verified: Option<bool>,
+}
+
+impl Eip712Result {
+    /// Check if a signature was generated
+    pub fn is_signed(&self) -> bool {
+        self.signature.is_some()
+    }
+
+    /// Check if the signature was verified successfully
+    pub fn is_verified(&self) -> bool {
+        self.verified == Some(true)
+    }
+
+    /// Check if verification was attempted
+    pub fn was_verification_attempted(&self) -> bool {
+        self.verified.is_some()
+    }
+
+    /// Get verification status as a descriptive string
+    pub fn verification_status(&self) -> &'static str {
+        match self.verified {
+            None => "not attempted",
+            Some(true) => "verified",
+            Some(false) => "failed",
+        }
+    }
+
+    /// Get the signature or return an error if not signed
+    pub fn require_signature(&self) -> Result<&Bytes> {
+        self.signature.as_ref().ok_or_else(|| {
+            FhevmError::SignatureError(
+                "No signature available - wallet private key was not provided".to_string(),
+            )
+        })
+    }
+
+    /// Ensure the signature was verified, return error if not
+    pub fn ensure_verified(&self) -> Result<()> {
+        match self.verified {
+            Some(true) => Ok(()),
+            Some(false) => Err(FhevmError::SignatureError(
+                "Signature verification failed".to_string(),
+            )),
+            None => Err(FhevmError::SignatureError(
+                "Signature was not verified".to_string(),
+            )),
+        }
+    }
 }
 
 /// EIP-712 builder for creating typed data structures
@@ -303,7 +394,7 @@ pub fn generate_keypair() -> Result<Keypair> {
 /// Signs the provided hash using ECDSA with the given private key
 /// This function is used to test compatiblity with previous js
 /// version
-fn sign_eip712_hash(hash: B256, private_key: &str) -> Result<Bytes> {
+pub fn sign_eip712_hash(hash: B256, private_key: &str) -> Result<Bytes> {
     use alloy::signers::{Signer, local::PrivateKeySigner};
 
     // Parse the private key (remove 0x prefix if present)
@@ -332,39 +423,10 @@ fn sign_eip712_hash(hash: B256, private_key: &str) -> Result<Bytes> {
     Ok(Bytes::from(signature.as_bytes().to_vec()))
 }
 
-/// Async version of sign_eip712_hash for use in async contexts
-/// This function is used to test compatiblity with previous js
-/// version
-async fn sign_eip712_hash_async(hash: B256, private_key: &str) -> Result<Bytes> {
-    use alloy::signers::{Signer, local::PrivateKeySigner};
-
-    // Parse the private key (remove 0x prefix if present)
-    let private_key_str = if private_key.starts_with("0x") {
-        &private_key[2..]
-    } else {
-        private_key
-    };
-
-    // Create the signer
-    let signer = PrivateKeySigner::from_str(private_key_str)
-        .map_err(|e| FhevmError::SignatureError(format!("Invalid private key: {}", e)))?;
-
-    // Sign the hash
-    let signature = signer
-        .sign_hash(&hash)
-        .await
-        .map_err(|e| FhevmError::SignatureError(format!("Failed to sign: {}", e)))?;
-
-    // Convert to bytes - Alloy signature already has the correct format
-    Ok(Bytes::from(signature.as_bytes().to_vec()))
-}
-
 /// Recover the signer address from an EIP-712 signature
 ///
 /// Returns the address that created the signature for the given hash
-/// This function is used to test compatiblity with previous js
-/// version
-fn recover_signer(signature: &[u8], hash: B256) -> Result<Address> {
+pub fn recover_signer(signature: &[u8], hash: B256) -> Result<Address> {
     use alloy::primitives::Signature;
 
     // Parse the signature from bytes
@@ -382,39 +444,13 @@ fn recover_signer(signature: &[u8], hash: B256) -> Result<Address> {
 /// Verify an EIP-712 signature
 ///
 /// Checks if the signature was created by the expected signer for the given hash
-/// This function is used to test compatiblity with previous js
-/// version
-fn verify_eip712_signature(signature: &[u8], hash: B256, expected_signer: Address) -> Result<bool> {
+pub fn verify_eip712_signature(
+    signature: &[u8],
+    hash: B256,
+    expected_signer: Address,
+) -> Result<bool> {
     let recovered = recover_signer(signature, hash)?;
     Ok(recovered == expected_signer)
-}
-
-/// Complete example: Generate, sign, and verify an EIP-712 user decrypt request
-///
-/// This demonstrates the full flow from creating the typed data to verifying the signature
-fn sign_user_decrypt_request(
-    builder: &Eip712Builder,
-    private_key: &str,
-    public_key: &[u8],
-    contract_addresses: &[Address],
-    start_timestamp: u64,
-    duration_days: u64,
-) -> Result<(B256, Bytes, Address)> {
-    // Generate the EIP-712 hash
-    let hash = builder.build_user_decrypt_hash(
-        public_key,
-        contract_addresses,
-        start_timestamp,
-        duration_days,
-    )?;
-
-    // Sign it
-    let signature = sign_eip712_hash(hash, private_key)?;
-
-    // Recover the signer address (useful for verification)
-    let signer = recover_signer(&signature, hash)?;
-
-    Ok((hash, signature, signer))
 }
 
 /// Generate an EIP-712 signature for delegated user decrypt
