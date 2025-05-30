@@ -28,6 +28,8 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
+      imagePullSecrets:
+        - name: registry-credentials
       restartPolicy: Always
       {{- if and .Values.fhevmListener.affinity .Values.fhevmListener.affinity.enabled }}
       affinity:
