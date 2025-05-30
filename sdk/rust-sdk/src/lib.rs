@@ -2,14 +2,14 @@
 //!
 //! A Rust SDK for interacting with FHEVM networks.
 
-use crate::blockchain::bindings::Decryption::CtHandleContractPair;
-use crate::blockchain::bindings::IDecryption::RequestValidity;
-use alloy::primitives::{Address, B256, U256};
-use decryption::user::{
-    UserDecryptRequest, UserDecryptRequestBuilder, user_decryption_req_calldata,
+use crate::signature::{
+    Eip712Builder, Eip712Result, recover_signer, sign_eip712_hash, validate_private_key_format,
+    verify_eip712_signature,
 };
+use alloy::primitives::{Address, U256};
+use decryption::user::{UserDecryptRequestBuilder, user_decryption_req_calldata};
 use serde::{Deserialize, Serialize};
-use signature::Eip712Builder;
+
 use utils::parse_hex_string;
 // use signature::generate_eip712_user_decrypt;
 use std::fs::File;
@@ -220,17 +220,62 @@ impl FhevmSdk {
         Ok(calldata.to_vec())
     }
 
-    /// Generate an EIP-712 signature for user decrypt
+    /// Generate EIP-712 hash for user decrypt, with optional signing
+    ///
+    /// This function creates an EIP-712 hash for user decryption requests and optionally
+    /// signs it if a wallet private key is provided. It's the main entry point for
+    /// EIP-712 operations in the SDK.
+    ///
+    /// # Arguments
+    ///
+    /// * `public_key` - User's public key for decryption
+    /// * `contract_addresses` - List of contract addresses that can access the decryption
+    /// * `start_timestamp` - When the decryption permission becomes valid (Unix timestamp)
+    /// * `duration_days` - How many days the permission remains valid
+    /// * `wallet_private_key` - Optional private key for signing (if None, only returns hash)
+    /// * `verify` - Optional verification flag (default: false for performance)
+    ///
+    /// # Returns
+    ///
+    /// Returns `Eip712Result` containing:
+    /// - `hash`: The EIP-712 hash (always present)
+    /// - `signature`: Optional signature (if wallet_private_key was provided)
+    /// - `signer`: Optional signer address (if signature was created)
+    /// - `verified`: Optional verification result (if verify=true was requested)
+    ///
+    /// # Usage Patterns
+    ///
+    /// - **Hash only**: Pass `wallet_private_key=None` to generate only the EIP-712 hash
+    /// - **Hash + Sign**: Pass a wallet private key to generate hash and signature
+    /// - **Hash + Sign + Verify**: Additionally pass `verify=Some(true)` to verify the signature
+    /// - **Performance**: Default verification is `false` for better performance
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Input verifier contract address is not configured
+    /// - Contract addresses list is empty
+    /// - Public key is empty
+    /// - Duration days is zero
+    /// - Wallet private key format is invalid (if provided)
+    /// - Signing fails (if wallet private key is provided)
+    /// - Verification is requested without providing a wallet private key
+    /// - Verification fails (if explicitly requested and signature is invalid)
     pub fn generate_eip712_for_user_decrypt(
         &self,
-        public_key: &[u8],
+        public_key: &str,
         contract_addresses: &[Address],
         start_timestamp: u64,
         duration_days: u64,
-    ) -> Result<B256> {
-        // Placeholder for EIP-712 signature generation
-        // let _res = generate_eip712_user_decrypt(ct_handles, user_address, 1u64);
+        wallet_private_key: Option<&str>,
+        verify: Option<bool>,
+    ) -> Result<Eip712Result> {
+        log::debug!(
+            "Generating EIP-712 for user decrypt with {} contracts",
+            contract_addresses.len()
+        );
 
+        // Get and validate the input verifier contract address from SDK config
         let input_verifier_address_str = self
             .config
             .gateway_contracts
@@ -240,25 +285,91 @@ impl FhevmSdk {
             })?;
 
         let input_verifier_address =
-            match alloy::primitives::Address::from_str(input_verifier_address_str) {
-                Ok(addr) => addr,
-                Err(_) => {
-                    return Err(FhevmError::InvalidParams(
-                        "Invalid ACL contract address".to_string(),
-                    ));
-                }
-            };
+            Address::from_str(input_verifier_address_str).map_err(|_| {
+                FhevmError::InvalidParams("Invalid input verifier contract address".to_string())
+            })?;
+
+        // Create the EIP-712 builder with SDK configuration
         let builder = Eip712Builder::new(
             self.config.gateway_chain_id,
             input_verifier_address,
             self.config.host_chain_id,
         );
-        builder.build_user_decrypt_hash(
-            public_key,
+
+        let public_key_bytes = parse_hex_string(public_key, "public key")?;
+
+        // Always generate the hash first
+        let hash = builder.build_user_decrypt_hash(
+            &public_key_bytes,
             contract_addresses,
             start_timestamp,
             duration_days,
-        )
+        )?;
+
+        log::debug!("Generated EIP-712 hash: {}", hash);
+
+        let should_verify = verify.unwrap_or(false);
+
+        if should_verify && wallet_private_key.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "Cannot verify signature when no wallet private key is provided. Either provide a wallet private key or set verify to false/None.".to_string()
+            ));
+        }
+
+        // Handle optional signing
+        if let Some(wallet_key) = wallet_private_key {
+            log::info!("🔑 Wallet private key provided, will generate signature");
+
+            // Validate the wallet key format using helper function
+            validate_private_key_format(wallet_key)?;
+
+            // Sign the hash using helper function from signature module
+            log::debug!("Signing EIP-712 hash with wallet key");
+            let signature = sign_eip712_hash(hash, wallet_key)?;
+
+            // Recover the signer address using helper function
+            let signer = recover_signer(&signature, hash)?;
+            log::debug!("Recovered signer address: {}", signer);
+
+            // Handle optional verification
+            let should_verify = verify.unwrap_or(false); // Default to false for performance
+            let verification_result = if should_verify {
+                log::debug!("Performing signature verification (requested by user)");
+                match verify_eip712_signature(&signature, hash, signer) {
+                    Ok(is_valid) => {
+                        if is_valid {
+                            log::debug!("✅ Signature verification passed");
+                        } else {
+                            log::warn!("❌ Signature verification failed");
+                        }
+                        Some(is_valid)
+                    }
+                    Err(e) => {
+                        log::warn!("Signature verification error: {}", e);
+                        Some(false)
+                    }
+                }
+            } else {
+                log::debug!("Skipping signature verification (default behavior)");
+                None
+            };
+
+            Ok(Eip712Result {
+                hash,
+                signature: Some(signature),
+                signer: Some(signer),
+                verified: verification_result,
+            })
+        } else {
+            log::info!("ℹ️ No wallet private key provided, returning hash only");
+
+            Ok(Eip712Result {
+                hash,
+                signature: None,
+                signer: None,
+                verified: None,
+            })
+        }
     }
 
     /// Generate calldata for UserDelegatedDecrypt operation

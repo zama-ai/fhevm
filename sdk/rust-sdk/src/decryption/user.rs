@@ -1,18 +1,14 @@
 //! Decryption module for FHEVM SDK
 
 use crate::{FhevmError, Result, types::DecryptedValue};
-use alloy::primitives::{Address, Bytes, FixedBytes};
+use alloy::primitives::U256;
+use alloy::primitives::{Address, Bytes};
 use alloy::sol_types::SolCall;
-use alloy::{primitives::U256, rpc::types::Log};
 
-use crate::blockchain::bindings::Decryption::{
-    self, PublicDecryptionRequest, PublicDecryptionResponse, UserDecryptionRequest,
-    publicDecryptionResponseCall, userDecryptionRequestCall,
-};
+use crate::blockchain::bindings::Decryption::userDecryptionRequestCall;
 
 use crate::blockchain::bindings::Decryption::CtHandleContractPair;
 use crate::blockchain::bindings::IDecryption::RequestValidity;
-use crate::blockchain::bindings::InputVerification;
 
 use log::info;
 
