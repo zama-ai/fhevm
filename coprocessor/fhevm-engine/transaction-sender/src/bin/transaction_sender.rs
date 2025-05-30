@@ -4,15 +4,23 @@ use alloy::{
     network::EthereumWallet,
     primitives::Address,
     providers::{ProviderBuilder, WsConnect},
-    signers::local::PrivateKeySigner,
+    signers::{aws::AwsSigner, local::PrivateKeySigner, Signer},
     transports::http::reqwest::Url,
 };
-use clap::Parser;
+use aws_config::BehaviorVersion;
+use clap::{Parser, ValueEnum};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use transaction_sender::{
-    ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
+    get_chain_id, make_abstract_signer, AbstractSigner, ConfigSettings,
+    FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
+
+#[derive(Parser, Debug, Clone, ValueEnum)]
+enum SignerType {
+    PrivateKey,
+    AwsKms,
+}
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -29,8 +37,11 @@ struct Conf {
     #[arg(short, long)]
     gateway_url: Url,
 
+    #[arg(short, long, value_enum, default_value = "private-key")]
+    signer_type: SignerType,
+
     #[arg(short, long)]
-    private_key: String,
+    private_key: Option<String>,
 
     #[arg(short, long)]
     database_url: Option<String>,
@@ -84,7 +95,7 @@ struct Conf {
     required_txn_confirmations: u16,
 
     #[arg(long, default_value = "30")]
-    review_after_transport_retries: u16,
+    review_after_unlimited_retries: u16,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -104,8 +115,29 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().json().with_level(true).init();
     let conf = Conf::parse();
-    let signer = PrivateKeySigner::from_str(conf.private_key.trim())?;
-    let wallet = EthereumWallet::new(signer.clone());
+    let chain_id = get_chain_id(conf.gateway_url.clone()).await?;
+    let abstract_signer: AbstractSigner;
+    match conf.signer_type {
+        SignerType::PrivateKey => {
+            if conf.private_key.is_none() {
+                return Err(anyhow::anyhow!(
+                    "Private key is required for PrivateKey signer"
+                ));
+            }
+            let mut signer = PrivateKeySigner::from_str(conf.private_key.unwrap().trim())?;
+            signer.set_chain_id(Some(chain_id));
+            abstract_signer = make_abstract_signer(signer);
+        }
+        SignerType::AwsKms => {
+            let key_id = std::env::var("AWS_KEY_ID")
+                .expect("AWS_KEY_ID environment variable is required for AwsKms signer");
+            let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
+            let aws_kms_client = aws_sdk_kms::Client::new(&aws_conf);
+            let signer = AwsSigner::new(aws_kms_client, key_id, Some(chain_id)).await?;
+            abstract_signer = make_abstract_signer(signer);
+        }
+    }
+    let wallet = EthereumWallet::new(abstract_signer.clone());
     let database_url = conf
         .database_url
         .clone()
@@ -123,7 +155,7 @@ async fn main() -> anyhow::Result<()> {
         conf.input_verification_address,
         conf.ciphertext_commits_address,
         conf.multichain_acl_address,
-        signer,
+        abstract_signer,
         provider,
         cancel_token.clone(),
         ConfigSettings {
@@ -144,7 +176,7 @@ async fn main() -> anyhow::Result<()> {
             allow_handle_max_retries: conf.allow_handle_max_retries,
             txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
             required_txn_confirmations: conf.required_txn_confirmations,
-            review_after_transport_retries: conf.review_after_transport_retries,
+            review_after_unlimited_retries: conf.review_after_unlimited_retries,
         },
         None,
     )

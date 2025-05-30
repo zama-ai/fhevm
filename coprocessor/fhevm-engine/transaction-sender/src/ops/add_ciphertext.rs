@@ -40,8 +40,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         &self,
         handle: &[u8],
         txn_request: impl Into<TransactionRequest>,
-        current_retry_count: i32,
-        current_transport_retry_count: i32,
+        current_limited_retries_count: i32,
+        current_unlimited_retries_count: i32,
     ) -> anyhow::Result<()> {
         let h = compact_hex(handle);
 
@@ -59,28 +59,38 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
                 self.set_txn_is_sent(handle).await?;
                 return Ok(());
             }
-            Err(RpcError::Transport(e))
-                if e.is_retry_err() || matches!(e, TransportErrorKind::BackendGone) =>
+            // Consider transport errors and local usage errors as something that must be retried infinitely.
+            // Local usage are included as they might be transient due to external AWS KMS signers.
+            Err(e)
+                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
+                    || matches!(&e, RpcError::LocalUsageError(_)) =>
             {
                 warn!(
-                    "Transaction {:?} sending failed with transport error: {}, handle: {}",
+                    "Transaction {:?} sending failed with unlimited retry error: {}, handle: {}",
                     txn_req, e, h
                 );
-                self.increment_txn_transport_retry_count(
+                self.increment_txn_unlimited_retries_count(
                     handle,
                     &e.to_string(),
-                    current_transport_retry_count,
+                    current_unlimited_retries_count,
                 )
                 .await?;
-                bail!("Transaction sending failed with transport error: {}", e);
+                bail!(
+                    "Transaction sending failed with unlimited retry error: {}",
+                    e
+                );
             }
             Err(e) => {
                 warn!(
                     "Transaction {:?} sending failed with error: {}, handle: {}",
                     txn_req, e, h
                 );
-                self.increment_txn_retry_count(handle, &e.to_string(), current_retry_count)
-                    .await?;
+                self.increment_txn_limited_retries_count(
+                    handle,
+                    &e.to_string(),
+                    current_limited_retries_count,
+                )
+                .await?;
                 bail!("Transaction sending failed with error: {}", e);
             }
         };
@@ -98,8 +108,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
             Ok(receipt) => receipt,
             Err(e) => {
                 error!("Getting receipt failed with error: {}", e);
-                self.increment_txn_retry_count(handle, &e.to_string(), current_retry_count)
-                    .await?;
+                self.increment_txn_limited_retries_count(
+                    handle,
+                    &e.to_string(),
+                    current_limited_retries_count,
+                )
+                .await?;
                 return Err(anyhow::Error::new(e));
             }
         };
@@ -118,8 +132,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
                 h
             );
 
-            self.increment_txn_retry_count(handle, "receipt status = false", current_retry_count)
-                .await?;
+            self.increment_txn_limited_retries_count(
+                handle,
+                "receipt status = false",
+                current_limited_retries_count,
+            )
+            .await?;
 
             return Err(anyhow::anyhow!(
                 "Transaction {} failed with status {}, handle: {}",
@@ -178,7 +196,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         }
     }
 
-    async fn increment_txn_retry_count(
+    async fn increment_txn_limited_retries_count(
         &self,
         handle: &[u8],
         err: &str,
@@ -194,7 +212,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
             );
         } else {
             warn!(
-                "Updating retry count to {}, handle {}",
+                "Updating limited retries count to {}, handle {}",
                 current_retry_count + 1,
                 compact_hex_handle
             );
@@ -202,7 +220,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         sqlx::query!(
             "UPDATE ciphertext_digest
             SET
-            txn_retry_count = txn_retry_count + 1,
+            txn_limited_retries_count = txn_limited_retries_count + 1,
             txn_last_error = $1,
             txn_last_error_at = NOW()
             WHERE handle = $2",
@@ -214,31 +232,32 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         Ok(())
     }
 
-    async fn increment_txn_transport_retry_count(
+    async fn increment_txn_unlimited_retries_count(
         &self,
         handle: &[u8],
         err: &str,
-        current_transport_retry_count: i32,
+        current_unlimited_retries_count: i32,
     ) -> anyhow::Result<()> {
         let compact_hex_handle = compact_hex(handle);
-        if current_transport_retry_count >= (self.conf.review_after_transport_retries as i32) - 1 {
+        if current_unlimited_retries_count >= (self.conf.review_after_unlimited_retries as i32) - 1
+        {
             error!(
                 action = REVIEW,
-                "{} transport retries reached for adding ciphertext with handle {}",
-                current_transport_retry_count,
+                "{} unlimited retries reached for adding ciphertext with handle {}",
+                current_unlimited_retries_count,
                 compact_hex_handle
             );
         } else {
             warn!(
-                "Updating transport retry count to {}, handle {}",
-                current_transport_retry_count + 1,
+                "Updating unlimited retries count to {}, handle {}",
+                current_unlimited_retries_count + 1,
                 compact_hex_handle
             );
         }
         sqlx::query!(
             "UPDATE ciphertext_digest
             SET
-            txn_transport_retry_count = txn_transport_retry_count + 1,
+            txn_unlimited_retries_count = txn_unlimited_retries_count + 1,
             txn_last_error = $1,
             txn_last_error_at = NOW()
             WHERE handle = $2",
@@ -266,12 +285,12 @@ where
         // ciphertexts have been successfully uploaded to AWS S3 buckets.
         let rows = sqlx::query!(
             "
-            SELECT handle, ciphertext, ciphertext128, tenant_id, txn_retry_count, txn_transport_retry_count
+            SELECT handle, ciphertext, ciphertext128, tenant_id, txn_limited_retries_count, txn_unlimited_retries_count
             FROM ciphertext_digest
             WHERE txn_is_sent = false
             AND ciphertext IS NOT NULL
             AND ciphertext128 IS NOT NULL
-            AND txn_retry_count < $1
+            AND txn_limited_retries_count < $1
             LIMIT $2",
             self.conf.add_ciphertexts_max_retries as i64,
             self.conf.add_ciphertexts_batch_limit as i64,
@@ -352,8 +371,8 @@ where
                     .send_transaction(
                         &row.handle,
                         txn_request,
-                        row.txn_retry_count,
-                        row.txn_transport_retry_count,
+                        row.txn_limited_retries_count,
+                        row.txn_unlimited_retries_count,
                     )
                     .await
             });

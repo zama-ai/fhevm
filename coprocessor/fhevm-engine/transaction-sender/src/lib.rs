@@ -2,6 +2,19 @@ mod nonce_managed_provider;
 mod ops;
 mod transaction_sender;
 
+use std::sync::Arc;
+
+use alloy::network::TxSigner;
+use alloy::providers::Provider;
+use alloy::providers::ProviderBuilder;
+use alloy::providers::WsConnect;
+use alloy::signers::Signature;
+use alloy::signers::Signer;
+use alloy::transports::http::reqwest::Url;
+pub use nonce_managed_provider::FillersWithoutNonceManagement;
+pub use nonce_managed_provider::NonceManagedProvider;
+pub use transaction_sender::TransactionSender;
+
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {
     pub database_url: String,
@@ -30,7 +43,7 @@ pub struct ConfigSettings {
 
     pub required_txn_confirmations: u16,
 
-    pub review_after_transport_retries: u16,
+    pub review_after_unlimited_retries: u16,
 }
 
 impl Default for ConfigSettings {
@@ -54,13 +67,28 @@ impl Default for ConfigSettings {
             allow_handle_max_retries: 10,
             txn_receipt_timeout_secs: 10,
             required_txn_confirmations: 0,
-            review_after_transport_retries: 30,
+            review_after_unlimited_retries: 30,
         }
     }
 }
 
-pub use nonce_managed_provider::FillersWithoutNonceManagement;
-pub use nonce_managed_provider::NonceManagedProvider;
-pub use transaction_sender::TransactionSender;
-
 pub const REVIEW: &str = "review";
+
+// A signer that can both sign transactions and messages. Only needed for `AbstractSigner` (see below).
+pub trait CombinedSigner: TxSigner<Signature> + Signer<Signature> {}
+impl<T: TxSigner<Signature> + Signer<Signature>> CombinedSigner for T {}
+
+// A thread-safe abstract signer that can sign both transactions and messages.
+pub type AbstractSigner = Arc<dyn CombinedSigner + Send + Sync>;
+
+pub fn make_abstract_signer<S>(signer: S) -> AbstractSigner
+where
+    S: CombinedSigner + Send + Sync + 'static,
+{
+    Arc::new(signer)
+}
+
+pub async fn get_chain_id(ws_url: Url) -> anyhow::Result<u64> {
+    let provider = ProviderBuilder::new().on_ws(WsConnect::new(ws_url)).await?;
+    Ok(provider.get_chain_id().await?)
+}

@@ -1,11 +1,10 @@
 use super::TransactionOperation;
 use crate::nonce_managed_provider::NonceManagedProvider;
+use crate::AbstractSigner;
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
-use alloy::signers::local::PrivateKeySigner;
-use alloy::signers::SignerSync;
 use alloy::sol;
 use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
@@ -35,7 +34,7 @@ sol!(
 pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> {
     input_verification_address: Address,
     provider: NonceManagedProvider<P>,
-    signer: PrivateKeySigner,
+    signer: AbstractSigner,
     conf: crate::ConfigSettings,
     gas: Option<u64>,
     gw_chain_id: u64,
@@ -46,7 +45,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
     pub(crate) async fn new(
         input_verification_address: Address,
         provider: NonceManagedProvider<P>,
-        signer: PrivateKeySigner,
+        signer: AbstractSigner,
         conf: crate::ConfigSettings,
         gas: Option<u64>,
         db_pool: Pool<Postgres>,
@@ -263,10 +262,7 @@ where
                         contractChainId: U256::from(row.chain_id),
                     }
                     .eip712_signing_hash(&domain);
-                    let signature = self
-                        .signer
-                        .sign_hash_sync(&signing_hash)
-                        .expect("signing failed");
+                    let signature = self.signer.sign_hash(&signing_hash).await?;
 
                     if let Some(gas) = self.gas {
                         (

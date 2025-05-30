@@ -1,3 +1,8 @@
+#![cfg(test)]
+#![allow(dead_code)]
+
+use alloy::signers::aws::AwsSigner;
+use alloy::signers::Signer;
 use alloy::{
     network::EthereumWallet,
     node_bindings::{Anvil, AnvilInstance},
@@ -7,9 +12,13 @@ use alloy::{
     transports::http::reqwest::Url,
 };
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use test_harness::localstack::{
+    create_aws_aws_kms_client, create_localstack_kms_signing_key, start_localstack,
+    LocalstackContainer,
+};
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
-use transaction_sender::ConfigSettings;
+use transaction_sender::{get_chain_id, make_abstract_signer, AbstractSigner, ConfigSettings};
 
 sol!(
     #[sol(rpc)]
@@ -29,26 +38,33 @@ sol!(
     "artifacts/MultichainAcl.sol/MultichainAcl.json"
 );
 
+pub enum SignerType {
+    PrivateKey,
+    AwsKms,
+}
+
 pub struct TestEnvironment {
-    pub signer: PrivateKeySigner,
+    pub signer: AbstractSigner,
     pub conf: ConfigSettings,
     pub cancel_token: CancellationToken,
     pub db_pool: Pool<Postgres>,
-    #[allow(dead_code)]
     pub contract_address: Address,
-    #[allow(dead_code)]
     pub user_address: Address,
     anvil: Option<AnvilInstance>,
-    #[allow(dead_code)]
     pub wallet: EthereumWallet,
+    // Just keep the handle to destroy the container when it is dropped.
+    _localstack: Option<LocalstackContainer>,
 }
 
 impl TestEnvironment {
-    pub async fn new() -> anyhow::Result<Self> {
-        Self::new_with_config(ConfigSettings::default()).await
+    pub async fn new(signer_type: SignerType) -> anyhow::Result<Self> {
+        Self::new_with_config(signer_type, ConfigSettings::default()).await
     }
 
-    pub async fn new_with_config(conf: ConfigSettings) -> anyhow::Result<Self> {
+    pub async fn new_with_config(
+        signer_type: SignerType,
+        conf: ConfigSettings,
+    ) -> anyhow::Result<Self> {
         let _ = tracing_subscriber::fmt()
             .json()
             .with_level(true)
@@ -68,10 +84,30 @@ impl TestEnvironment {
         .await?;
 
         let anvil = Self::new_anvil()?;
-        let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
-        let wallet = signer.clone().into();
+        let chain_id = get_chain_id(anvil.ws_endpoint_url()).await?;
+        let abstract_signer;
+        let localstack;
+        match signer_type {
+            SignerType::PrivateKey => {
+                localstack = None;
+                let mut signer = PrivateKeySigner::from_signing_key(anvil.keys()[0].clone().into());
+                signer.set_chain_id(Some(chain_id));
+                abstract_signer = make_abstract_signer(signer);
+            }
+            SignerType::AwsKms => {
+                localstack = Some(start_localstack().await?);
+                let aws_kms_client =
+                    create_aws_aws_kms_client(localstack.as_ref().unwrap().host_port).await?;
+                let key_id =
+                    create_localstack_kms_signing_key(&aws_kms_client, &anvil.keys()[0].to_bytes())
+                        .await?;
+                let signer = AwsSigner::new(aws_kms_client, key_id, Some(chain_id)).await?;
+                abstract_signer = make_abstract_signer(signer);
+            }
+        }
+        let wallet = abstract_signer.clone().into();
         Ok(Self {
-            signer,
+            signer: abstract_signer,
             conf,
             cancel_token: CancellationToken::new(),
             db_pool,
@@ -79,6 +115,7 @@ impl TestEnvironment {
             user_address: PrivateKeySigner::random().address(),
             anvil: Some(anvil),
             wallet,
+            _localstack: localstack,
         })
     }
 
@@ -86,7 +123,6 @@ impl TestEnvironment {
         self.anvil.as_ref().unwrap().ws_endpoint_url()
     }
 
-    #[allow(dead_code)]
     pub fn recreate_anvil(&mut self) -> anyhow::Result<()> {
         if let Some(old) = self.anvil.take() {
             drop(old);
@@ -95,10 +131,15 @@ impl TestEnvironment {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn drop_anvil(&mut self) {
         if let Some(a) = self.anvil.take() {
             drop(a);
+        }
+    }
+
+    pub async fn stop_localstack(&mut self) {
+        if let Some(a) = self._localstack.take() {
+            a.container.stop().await.unwrap();
         }
     }
 

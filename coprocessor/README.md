@@ -248,7 +248,7 @@ Options:
 
 ```bash
 $ transaction_sender --help
-Usage: transaction_sender [OPTIONS] --input-verification-address <INPUT_VERIFICATION_ADDRESS> --ciphertext-commits-address <CIPHERTEXT_COMMITS_ADDRESS> --multichain-acl-address <MULTICHAIN_ACL_ADDRESS> --gateway-url <GATEWAY_URL> --private-key <PRIVATE_KEY> 
+Usage: transaction_sender [OPTIONS] --input-verification-address <INPUT_VERIFICATION_ADDRESS> --ciphertext-commits-address <CIPHERTEXT_COMMITS_ADDRESS> --multichain-acl-address <MULTICHAIN_ACL_ADDRESS> --gateway-url <GATEWAY_URL>
 
 Options:
   -i, --input-verification-address <INPUT_VERIFICATION_ADDRESS>
@@ -259,6 +259,8 @@ Options:
           
   -g, --gateway-url <GATEWAY_URL>
           
+  -s, --signer-type <SIGNER_TYPE>
+          [default: private-key] [possible values: private-key, aws-kms]
   -p, --private-key <PRIVATE_KEY>
           
   -d, --database-url <DATABASE_URL>
@@ -276,7 +278,7 @@ Options:
       --verify-proof-resp-batch-limit <VERIFY_PROOF_RESP_BATCH_LIMIT>
           [default: 128]
       --verify-proof-resp-max-retries <VERIFY_PROOF_RESP_MAX_RETRIES>
-          [default: 15]
+          [default: 3]
       --verify-proof-remove-after-max-retries
           
       --add-ciphertexts-batch-limit <ADD_CIPHERTEXTS_BATCH_LIMIT>
@@ -295,11 +297,21 @@ Options:
           [default: 10]
       --required-txn-confirmations <REQUIRED_TXN_CONFIRMATIONS>
           [default: 0]
+      --review-after-unlimited-retries <REVIEW_AFTER_UNLIMITED_RETRIES>
+          [default: 30]
   -h, --help
           Print help
   -V, --version
           Print version
 ```
+
+When using the `private-key` signer type, the `-p, --private-key <PRIVATE_KEY>` option becomes mandatory.
+
+When using the `aws-kms` signer type, standard `AWS_*` environment variables are supported, e.g.:
+ - **AWS_REGION**
+ - **AWS_ACCESS_KEY_ID** (i.e. username)
+ - **AWS_SECRET_ACCESS_KEY** (i.e. password)
+ - etc.
 
 More details on configuration can be found in the [documentation](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-coprocessor/configuration).
 
