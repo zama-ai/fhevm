@@ -54,7 +54,9 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
   .setAction(async ({ skipSetup }, hre, runSuper) => {
     if (!skipSetup) {
       await hre.run("task:deployAllGatewayContracts");
-      await hre.run("task:addHostChainsToGatewayConfig");
+      // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory
+      // for local testing
+      await hre.run("task:addHostChainsToGatewayConfig", { useInternalGatewayConfigAddress: true });
     } else {
       console.log("Skipping contracts setup.");
     }
