@@ -136,11 +136,7 @@ async fn main() -> eyre::Result<()> {
     );
 
     // === Intialize the orchestrator.
-    let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
-    let orchestrator = Orchestrator::new(
-        Arc::new(TokioEventDispatcher::<RelayerEvent>::new()),
-        &node_id,
-    );
+    let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::<RelayerEvent>::new()));
 
     // Create the storage components for event persistence
     let kv_store = Arc::new(InMemoryKVStore::default());

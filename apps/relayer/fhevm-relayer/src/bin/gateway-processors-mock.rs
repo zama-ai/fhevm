@@ -79,11 +79,9 @@ async fn main() -> eyre::Result<()> {
     );
 
     // === Intialize the orchestrator.
-    let node_id = [0x02, 0x23, 0x45, 0x67, 0x89, 0xab];
-    let orchestrator = Orchestrator::new(
-        Arc::new(TokioEventDispatcher::<GatewayProcessorsEvent>::new()),
-        &node_id,
-    );
+    let orchestrator = Orchestrator::new(Arc::new(
+        TokioEventDispatcher::<GatewayProcessorsEvent>::new(),
+    ));
 
     orchestrator.register_pre_dispatch_hook(EventLoggingHook::new(
         "Received gateway processor mock event".to_string(),
