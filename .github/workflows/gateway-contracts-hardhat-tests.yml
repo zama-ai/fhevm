@@ -53,3 +53,7 @@ jobs:
       - name: Run hardhat tests
         working-directory: gateway-contracts
         run: make test
+
+      - name: Run coverage
+        working-directory: gateway-contracts
+        run: make coverage

@@ -209,6 +209,18 @@ describe("Mock contracts", function () {
         .withArgs(DefaultUint256);
     });
 
+    it("Should emit UpdatePublicDecryptionThreshold event on update PublicDecryption threshold call", async function () {
+      await expect(gatewayConfigMock.updatePublicDecryptionThreshold(DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdatePublicDecryptionThreshold")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit UpdateUserDecryptionThreshold event on update UserDecryption threshold call", async function () {
+      await expect(gatewayConfigMock.updateUserDecryptionThreshold(DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdateUserDecryptionThreshold")
+        .withArgs(DefaultUint256);
+    });
+
     it("Should emit AddHostChain event on add host chain call", async function () {
       await expect(gatewayConfigMock.addHostChain(DefaultHostChain))
         .to.emit(gatewayConfigMock, "AddHostChain")

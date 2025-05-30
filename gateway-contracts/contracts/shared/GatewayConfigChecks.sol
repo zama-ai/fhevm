@@ -25,12 +25,6 @@ abstract contract GatewayConfigChecks {
         _;
     }
 
-    /// @notice Checks if the sender is the pauser.
-    modifier onlyPauser() {
-        _GATEWAY_CONFIG.checkIsPauser(msg.sender);
-        _;
-    }
-
     /// @dev Check that the chain ID corresponds to a registered host chain.
     modifier onlyRegisteredHostChain(uint256 chainId) {
         _GATEWAY_CONFIG.checkHostChainIsRegistered(chainId);

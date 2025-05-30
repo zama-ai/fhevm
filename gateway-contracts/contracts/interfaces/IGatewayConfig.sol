@@ -183,12 +183,6 @@ interface IGatewayConfig {
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
 
     /**
-     * @notice Check if an address is the pauser.
-     * @param pauserAddress The address to check.
-     */
-    function checkIsPauser(address pauserAddress) external view;
-
-    /**
      * @notice Check if an address is a registered KMS transaction sender.
      * @param kmsTxSenderAddress The address to check.
      */
@@ -289,12 +283,6 @@ interface IGatewayConfig {
      * @return The list of coprocessors' signer addresses.
      */
     function getCoprocessorSigners() external view returns (address[] memory);
-
-    /**
-     * @notice Get the metadata of the host chain with the given index.
-     * @return The host chain's metadata.
-     */
-    function getHostChain(uint256 index) external view returns (HostChain memory);
 
     /**
      * @notice Get the metadata of all the registered host chains.
