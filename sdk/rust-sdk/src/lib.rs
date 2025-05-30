@@ -2,9 +2,14 @@
 //!
 //! A Rust SDK for interacting with FHEVM networks.
 
-use alloy::primitives::{Address, B256};
+use crate::blockchain::bindings::IDecryption::RequestValidity;
+use alloy::primitives::{Address, B256, U256};
+use decryption::user::{
+    HandleContractPair, UserDecryptRequest, UserDecryptRequestBuilder, user_decryption_req_calldata,
+};
 use serde::{Deserialize, Serialize};
 use signature::Eip712Builder;
+use utils::parse_hex_string;
 // use signature::generate_eip712_user_decrypt;
 use std::fs::File;
 use std::io::Read;
@@ -43,6 +48,9 @@ pub enum FhevmError {
     #[error("Signature error: {0}")]
     SignatureError(String),
 
+    #[error("Key generation error: {0}")]
+    KeyGenerationError(String),
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 
@@ -51,6 +59,12 @@ pub enum FhevmError {
 
     #[error("File error: {0}")]
     FileError(String),
+
+    #[error("Address parsing error: {0}")]
+    AddressError(String),
+
+    #[error("Hex decoding error: {0}")]
+    HexError(#[from] hex::FromHexError),
 }
 
 /// Result type for FHEVM operations
@@ -110,11 +124,99 @@ impl FhevmSdk {
     /// Generate calldata for UserDecrypt operation
     pub fn generate_user_decrypt_calldata(
         &self,
-        _ct_handles: &[Vec<u8>],
-        _user_address: &str,
+        ct_handles: &[Vec<u8>],
+        user_address: &str,
+        contract_addresses: Vec<Address>,
+        signature: &str,
+        public_key: &str,
+        start_timestamp: u64,
+        duration_days: u64,
     ) -> Result<Vec<u8>> {
-        // Placeholder
-        Ok(vec![])
+        log::debug!(
+            "Generating user decrypt calldata for {} handles",
+            ct_handles.len()
+        );
+
+        // Validate inputs
+        if ct_handles.is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "At least one ciphertext handle is required".to_string(),
+            ));
+        }
+
+        if contract_addresses.is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "At least one contract address is required".to_string(),
+            ));
+        }
+
+        if contract_addresses.len() > 10 {
+            return Err(FhevmError::InvalidParams(
+                "Maximum 10 contract addresses allowed".to_string(),
+            ));
+        }
+
+        if duration_days == 0 {
+            return Err(FhevmError::InvalidParams(
+                "Duration days cannot be zero".to_string(),
+            ));
+        }
+
+        if duration_days > 365 {
+            return Err(FhevmError::InvalidParams(
+                "Duration days cannot exceed 365".to_string(),
+            ));
+        }
+
+        let user_addr = Address::from_str(user_address)
+            .map_err(|e| FhevmError::AddressError(format!("Invalid user address: {}", e)))?;
+
+        // Convert signature and public key to Bytes
+        let signature_bytes = parse_hex_string(signature, "signature")?;
+        let public_key_bytes = parse_hex_string(public_key, "public key")?;
+
+        let mut builder = UserDecryptRequestBuilder::new()
+            .user_address(user_addr)
+            .signature(signature_bytes)
+            .public_key(public_key_bytes)
+            .start_timestamp(start_timestamp)
+            .duration_days(duration_days)
+            .contracts_chain_id(self.config.host_chain_id);
+
+        for contract_addr in &contract_addresses {
+            builder = builder.add_contract_address(*contract_addr);
+        }
+
+        // Add all handle-contract pairs using the builder
+        for (i, handle) in ct_handles.iter().enumerate() {
+            if handle.len() != 32 {
+                return Err(FhevmError::InvalidParams(format!(
+                    "Handle {} must be exactly 32 bytes",
+                    i
+                )));
+            }
+
+            // Convert handle bytes to U256
+            let handle_u256 = U256::from_be_slice(handle);
+
+            // Use the first contract address or cycle through them
+            let contract_addr = contract_addresses[i % contract_addresses.len()];
+
+            builder = builder.add_handle_contract_pair(handle_u256, contract_addr);
+        }
+
+        // Build the request using the builder (includes validation)
+        let user_decrypt_request = builder.build()?;
+
+        // Generate the calldata using the existing function
+        let calldata = user_decryption_req_calldata(user_decrypt_request)?;
+
+        log::info!(
+            "Successfully generated user decrypt calldata: {} bytes",
+            calldata.len()
+        );
+
+        Ok(calldata.to_vec())
     }
 
     /// Generate an EIP-712 signature for user decrypt

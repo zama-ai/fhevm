@@ -1,4 +1,6 @@
 use crate::FhevmError;
+use crate::Result;
+use alloy::primitives::Bytes;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -6,7 +8,22 @@ use tfhe::safe_serialization::{safe_deserialize, safe_deserialize_conformant, sa
 use tfhe::zk::CompactPkeCrs;
 use tfhe::{ClientKey, CompactPublicKey};
 
-pub fn generate_fhe_keyset(output_dir: &Path) -> Result<(), FhevmError> {
+/// Helper function to parse hex strings with or without 0x prefix
+pub fn parse_hex_string(hex_str: &str, field_name: &str) -> Result<Bytes> {
+    let cleaned = if hex_str.starts_with("0x") {
+        &hex_str[2..]
+    } else {
+        hex_str
+    };
+
+    let bytes = hex::decode(cleaned).map_err(|e| {
+        FhevmError::InvalidParams(format!("Invalid hex string for {}: {}", field_name, e))
+    })?;
+
+    Ok(Bytes::from(bytes))
+}
+
+pub fn generate_fhe_keyset(output_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(output_dir)
         .map_err(|e| FhevmError::FileError(format!("Failed to create output directory: {}", e)))?;
 
@@ -77,15 +94,12 @@ pub fn generate_fhe_keyset(output_dir: &Path) -> Result<(), FhevmError> {
 }
 pub fn load_fhe_keyset(
     input_dir: &Path,
-) -> Result<
-    (
-        tfhe::CompactPublicKey,
-        tfhe::ClientKey,
-        tfhe::ServerKey,
-        CompactPkeCrs,
-    ),
-    FhevmError,
-> {
+) -> Result<(
+    tfhe::CompactPublicKey,
+    tfhe::ClientKey,
+    tfhe::ServerKey,
+    CompactPkeCrs,
+)> {
     log::info!("Loading FHE keyset from: {}", input_dir.display());
 
     // Indicate which parameters to use for the Compact Public Key encryption

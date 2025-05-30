@@ -82,33 +82,43 @@ fn demo_sdk_functionality(sdk: &mut FhevmSdk) -> Result<(), FhevmError> {
         .map(|handle| handle.to_vec())
         .collect();
 
-    log::info!("Generating user decrypt calldata");
-    match sdk.generate_user_decrypt_calldata(&handle_vecs, &user_address.to_string()) {
-        Ok(calldata) => log::info!("Calldata generated: {} bytes", calldata.len()),
-        Err(e) => log::info!("Calldata generation error: {}", e),
-    }
-
     // Example: Generate EIP-712 signature
     log::info!("Generating EIP-712 hash");
 
     // Message parameters
-    let public_key = hex::decode(
-        "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331",
-    )
-    .unwrap();
+    let public_key =
+        "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331";
+
     let contract_addresses = vec![validate_address_from_str(
         "0x56a24bcaE11890353726596fD6f5cABb5a126Df9",
     )?];
     let start_timestamp = 1748252823;
     let duration_days = 10;
     match sdk.generate_eip712_for_user_decrypt(
-        &public_key,
+        &hex::encode(public_key).as_bytes(),
         &contract_addresses,
         start_timestamp,
         duration_days,
     ) {
         Ok(hash) => log::info!("Hash generated: {} bytes", hash.len()),
         Err(e) => log::info!("Hash generation error: {}", e),
+    }
+
+    log::info!("Generating user decrypt calldata");
+
+    let signature = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+
+    match sdk.generate_user_decrypt_calldata(
+        &handle_vecs,
+        &user_address.to_string(),
+        contract_addresses,
+        signature,
+        &public_key,
+        start_timestamp,
+        duration_days,
+    ) {
+        Ok(calldata) => log::info!("Calldata generated: {} bytes", calldata.len()),
+        Err(e) => log::info!("Calldata generation error: {}", e),
     }
 
     Ok(())

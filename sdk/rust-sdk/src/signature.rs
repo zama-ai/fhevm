@@ -7,8 +7,10 @@ use crate::{FhevmError, Result};
 use alloy::primitives::{Address, B256, Bytes};
 use alloy::sol_types::SolStruct;
 use alloy::sol_types::eip712_domain;
+use kms_lib::client::js_api::{self, cryptobox_pk_to_u8vec, cryptobox_sk_to_u8vec};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use tfhe::boolean::public_key;
 
 // Define the EIP-712 types using Alloy's sol! macro
 alloy::sol! {
@@ -279,25 +281,20 @@ pub struct Keypair {
 }
 
 /// Generate a new keypair for cryptobox operations
-///
-/// Note: This is a placeholder. In a real implementation, you would use
-/// the actual cryptobox library (sodium/nacl) to generate keypairs.
-/// First approach will be to use the client api implemented in
-/// kms core.
 pub fn generate_keypair() -> Result<Keypair> {
-    // Placeholder implementation - in reality, use proper crypto library
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
+    // Generate private key using the JS API
+    let private_key = js_api::cryptobox_keygen();
+    let public_key = js_api::cryptobox_get_pk(&private_key);
 
-    let mut public_key = [0u8; 32];
-    let mut private_key = [0u8; 32];
+    let priv_key = cryptobox_sk_to_u8vec(&private_key)
+        .map_err(|_| FhevmError::SignatureError("Failed to convert private key to bytes".into()))?;
 
-    rng.fill(&mut public_key);
-    rng.fill(&mut private_key);
+    let pub_key = cryptobox_pk_to_u8vec(&public_key)
+        .map_err(|_| FhevmError::SignatureError("Failed to convert public key to bytes".into()))?;
 
     Ok(Keypair {
-        public_key: format!("0x{}", hex::encode(public_key)),
-        private_key: format!("0x{}", hex::encode(private_key)),
+        public_key: format!("0x{}", hex::encode(pub_key)),
+        private_key: format!("0x{}", hex::encode(priv_key)),
     })
 }
 
@@ -516,8 +513,8 @@ mod tests {
 
         assert!(keypair.public_key.starts_with("0x"));
         assert!(keypair.private_key.starts_with("0x"));
-        assert_eq!(keypair.public_key.len(), 66);
-        assert_eq!(keypair.private_key.len(), 66);
+        assert_eq!(keypair.public_key.len(), 82);
+        assert_eq!(keypair.private_key.len(), 82);
     }
 
     #[test]
