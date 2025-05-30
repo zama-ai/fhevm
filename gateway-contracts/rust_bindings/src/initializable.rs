@@ -68,6 +68,7 @@ pub mod Initializable {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidInitialization()` and selector `0xf92ee8a9`.
 ```solidity
@@ -133,6 +134,7 @@ error InvalidInitialization();
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotInitializing()` and selector `0xd7e6bcf8`.
 ```solidity
@@ -198,6 +200,7 @@ error NotInitializing();
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Initialized(uint64)` and selector `0xc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2`.
 ```solidity
@@ -303,6 +306,7 @@ event Initialized(uint64 version);
         }
     };
     ///Container for all the [`Initializable`](self) custom errors.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum InitializableErrors {
         #[allow(missing_docs)]
@@ -429,6 +433,7 @@ event Initialized(uint64 version);
         }
     }
     ///Container for all the [`Initializable`](self) events.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum InitializableEvents {
         #[allow(missing_docs)]

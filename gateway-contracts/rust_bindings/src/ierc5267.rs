@@ -93,6 +93,7 @@ pub mod IERC5267 {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `EIP712DomainChanged()` and selector `0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31`.
 ```solidity
@@ -190,6 +191,7 @@ event EIP712DomainChanged();
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `eip712Domain()` and selector `0x84b0196e`.
 ```solidity
@@ -198,6 +200,7 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct eip712DomainCall {}
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`eip712Domain()`](eip712DomainCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -368,6 +371,7 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
         }
     };
     ///Container for all the [`IERC5267`](self) function calls.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum IERC5267Calls {
         #[allow(missing_docs)]
@@ -462,6 +466,7 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
         }
     }
     ///Container for all the [`IERC5267`](self) events.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IERC5267Events {
         #[allow(missing_docs)]

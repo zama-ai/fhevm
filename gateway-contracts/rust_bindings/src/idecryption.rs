@@ -820,6 +820,7 @@ pub mod IDecryption {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct CtHandleContractPair { bytes32 ctHandle; address contractAddress; }
@@ -1043,6 +1044,7 @@ struct CtHandleContractPair { bytes32 ctHandle; address contractAddress; }
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct DelegationAccounts { address delegatorAddress; address delegatedAddress; }
@@ -1262,6 +1264,7 @@ struct DelegationAccounts { address delegatorAddress; address delegatedAddress; 
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct RequestValidity { uint256 startTimestamp; uint256 durationDays; }
@@ -1491,6 +1494,7 @@ struct RequestValidity { uint256 startTimestamp; uint256 durationDays; }
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphertextDigest; address[] coprocessorTxSenderAddresses; }
@@ -1775,6 +1779,7 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContractAddressesMaxLengthExceeded(uint8,uint256)` and selector `0xc5ab467e`.
 ```solidity
@@ -1863,6 +1868,7 @@ error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContractNotInContractAddresses(address,address[])` and selector `0xa4c30391`.
 ```solidity
@@ -1953,6 +1959,7 @@ error ContractNotInContractAddresses(address contractAddress, address[] contract
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `DecryptionNotDone(uint256)` and selector `0x0bf01406`.
 ```solidity
@@ -2027,6 +2034,7 @@ error DecryptionNotDone(uint256 decryptionId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `DelegatorAddressInContractAddresses(address,address[])` and selector `0xc3446ac7`.
 ```solidity
@@ -2117,6 +2125,7 @@ error DelegatorAddressInContractAddresses(address delegatorAddress, address[] co
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `DifferentKeyIdsNotAllowed((bytes32,uint256,bytes32,address[]),(bytes32,uint256,bytes32,address[]))` and selector `0xcfae921f`.
 ```solidity
@@ -2202,6 +2211,7 @@ error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCip
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `EmptyContractAddresses()` and selector `0x57cfa217`.
 ```solidity
@@ -2267,6 +2277,7 @@ error EmptyContractAddresses();
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `EmptyCtHandleContractPairs()` and selector `0xa6a6cb21`.
 ```solidity
@@ -2334,6 +2345,7 @@ error EmptyCtHandleContractPairs();
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `EmptyCtHandles()` and selector `0x2de75438`.
 ```solidity
@@ -2399,6 +2411,7 @@ error EmptyCtHandles();
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidNullDurationDays()` and selector `0xde2859c1`.
 ```solidity
@@ -2464,6 +2477,7 @@ error InvalidNullDurationDays();
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidUserSignature(bytes)` and selector `0x2a873d27`.
 ```solidity
@@ -2536,6 +2550,7 @@ error InvalidUserSignature(bytes signature);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsNodeAlreadySigned(uint256,address)` and selector `0x99ec48d9`.
 ```solidity
@@ -2622,6 +2637,7 @@ error KmsNodeAlreadySigned(uint256 decryptionId, address signer);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `MaxDecryptionRequestBitSizeExceeded(uint256,uint256)` and selector `0xe7f4895d`.
 ```solidity
@@ -2710,6 +2726,7 @@ error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSi
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `MaxDurationDaysExceeded(uint256,uint256)` and selector `0x32951863`.
 ```solidity
@@ -2796,6 +2813,7 @@ error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `StartTimestampInFuture(uint256,uint256)` and selector `0xf24c0887`.
 ```solidity
@@ -2882,6 +2900,7 @@ error StartTimestampInFuture(uint256 currentTimestamp, uint256 startTimestamp);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UserAddressInContractAddresses(address,address[])` and selector `0xdc4d78b1`.
 ```solidity
@@ -2972,6 +2991,7 @@ error UserAddressInContractAddresses(address userAddress, address[] contractAddr
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UserDecryptionRequestExpired(uint256,(uint256,uint256))` and selector `0x30348040`.
 ```solidity
@@ -3060,6 +3080,7 @@ error UserDecryptionRequestExpired(uint256 currentTimestamp, RequestValidity req
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PublicDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[])` and selector `0x17c632196fbf6b96d9675971058d3701733094c3f2f1dcb9ba7d2a08bee0aafb`.
 ```solidity
@@ -3181,6 +3202,7 @@ event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMateria
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PublicDecryptionResponse(uint256,bytes,bytes[])` and selector `0x61568d6eb48e62870afffd55499206a54a8f78b04a627e00ed097161fc05d6be`.
 ```solidity
@@ -3307,6 +3329,7 @@ event PublicDecryptionResponse(uint256 indexed decryptionId, bytes decryptedResu
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes)` and selector `0x1c3dcad6311be6d58dc4d4b9f1bc1625eb18d72de969db75e11a88ef3527d2f3`.
 ```solidity
@@ -3440,6 +3463,7 @@ event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UserDecryptionResponse(uint256,bytes[],bytes[])` and selector `0x7312dec4cead0d5d3da836cdbaed1eb6a81e218c519c8740da4ac75afcb6c5c7`.
 ```solidity
@@ -3566,6 +3590,7 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecrypted
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkDecryptionDone(uint256)` and selector `0xa6090439`.
 ```solidity
@@ -3696,6 +3721,7 @@ function checkDecryptionDone(uint256 decryptionId) external view;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkDelegatedUserDecryptionReady(uint256,(address,address),(bytes32,address)[],address[])` and selector `0xf11d0638`.
 ```solidity
@@ -3872,6 +3898,7 @@ function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationA
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkPublicDecryptionReady(bytes32[])` and selector `0xaa39a356`.
 ```solidity
@@ -4014,6 +4041,7 @@ function checkPublicDecryptionReady(bytes32[] memory ctHandles) external view;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkUserDecryptionReady(address,(bytes32,address)[])` and selector `0x008bc3e1`.
 ```solidity
@@ -4163,6 +4191,7 @@ function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] me
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `delegatedUserDecryptionRequest((bytes32,address)[],(uint256,uint256),(address,address),uint256,address[],bytes,bytes)` and selector `0x760a0419`.
 ```solidity
@@ -4369,6 +4398,7 @@ function delegatedUserDecryptionRequest(CtHandleContractPair[] memory ctHandleCo
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
@@ -4377,6 +4407,7 @@ function getVersion() external pure returns (string memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall {}
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -4490,6 +4521,7 @@ function getVersion() external pure returns (string memory);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `publicDecryptionRequest(bytes32[])` and selector `0x187fe529`.
 ```solidity
@@ -4632,6 +4664,7 @@ function publicDecryptionRequest(bytes32[] memory ctHandles) external;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `publicDecryptionResponse(uint256,bytes,bytes)` and selector `0x02fd1a64`.
 ```solidity
@@ -4786,6 +4819,7 @@ function publicDecryptionResponse(uint256 decryptionId, bytes memory decryptedRe
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `userDecryptionRequest((bytes32,address)[],(uint256,uint256),uint256,address[],address,bytes,bytes)` and selector `0x8316001f`.
 ```solidity
@@ -4992,6 +5026,7 @@ function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPai
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `userDecryptionResponse(uint256,bytes,bytes)` and selector `0xb9bfe0a8`.
 ```solidity
@@ -5147,6 +5182,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         }
     };
     ///Container for all the [`IDecryption`](self) function calls.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum IDecryptionCalls {
         #[allow(missing_docs)]
@@ -5511,6 +5547,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         }
     }
     ///Container for all the [`IDecryption`](self) custom errors.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IDecryptionErrors {
         #[allow(missing_docs)]
@@ -6057,6 +6094,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         }
     }
     ///Container for all the [`IDecryption`](self) events.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IDecryptionEvents {
         #[allow(missing_docs)]
