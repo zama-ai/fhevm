@@ -31,7 +31,6 @@ RUN npm ci && \
 # Copy the application files
 COPY --chown=fhevm:fhevm *.ts ./tsconfig.json ./
 COPY --chown=fhevm:fhevm contracts ./contracts/
-COPY --chown=fhevm:fhevm addresses ./addresses/
 COPY --chown=fhevm:fhevm tasks ./tasks/
 COPY --chown=fhevm:fhevm lib ./lib/
 COPY --chown=fhevm:fhevm decryptionOracle ./decryptionOracle/

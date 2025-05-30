@@ -37,6 +37,12 @@ jobs:
         working-directory: host-contracts
         run: npm ci --include=optional
 
+      - name: Deploy empty proxy contracts
+        env:
+          HARDHAT_NETWORK: hardhat
+        working-directory: host-contracts
+        run: npm run deploy:emptyProxies
+
       - name: Compile host contracts
         working-directory: host-contracts
         run: npm run compile

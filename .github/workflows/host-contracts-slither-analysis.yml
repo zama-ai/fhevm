@@ -27,6 +27,8 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
     runs-on: large_ubuntu_32
+    env:
+      HARDHAT_NETWORK: hardhat
     permissions:
       contents: read
       checks: write
@@ -39,6 +41,7 @@ jobs:
       - run: cp ./host-contracts/.env.example ./host-contracts/.env
       - run: npm --prefix ./host-contracts ci --include=optional
       - run: npm --prefix ./host-contracts install
+      - run: npm --prefix ./host-contracts run deploy:emptyProxies
       - run: npm --prefix ./host-contracts run compile
       - name: Run Slither
         uses: crytic/slither-action@d86660fe7e45835a0ec7b7aeb768d271fb421ea0 # temporarily commit that fixes the issue
