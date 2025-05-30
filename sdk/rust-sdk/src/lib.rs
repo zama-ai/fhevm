@@ -2,10 +2,11 @@
 //!
 //! A Rust SDK for interacting with FHEVM networks.
 
+use crate::blockchain::bindings::Decryption::CtHandleContractPair;
 use crate::blockchain::bindings::IDecryption::RequestValidity;
 use alloy::primitives::{Address, B256, U256};
 use decryption::user::{
-    HandleContractPair, UserDecryptRequest, UserDecryptRequestBuilder, user_decryption_req_calldata,
+    UserDecryptRequest, UserDecryptRequestBuilder, user_decryption_req_calldata,
 };
 use serde::{Deserialize, Serialize};
 use signature::Eip712Builder;

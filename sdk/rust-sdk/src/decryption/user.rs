@@ -18,7 +18,7 @@ use log::info;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UserDecryptRequest {
-    pub ct_handle_contract_pairs: Vec<HandleContractPair>,
+    pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
     pub request_validity: RequestValidity,
     pub contracts_chain_id: u64,
     pub contract_addresses: Vec<Address>,
@@ -31,7 +31,7 @@ pub struct UserDecryptRequest {
 ///
 /// This provides a convenient way to build UserDecryptRequest objects with validation
 pub struct UserDecryptRequestBuilder {
-    ct_handle_contract_pairs: Vec<HandleContractPair>,
+    ct_handle_contract_pairs: Vec<CtHandleContractPair>,
     contract_addresses: Vec<Address>,
     user_address: Option<Address>,
     signature: Option<Bytes>,
@@ -58,9 +58,9 @@ impl UserDecryptRequestBuilder {
 
     /// Add a ciphertext handle with its contract address
     pub fn add_handle_contract_pair(mut self, ct_handle: U256, contract_address: Address) -> Self {
-        self.ct_handle_contract_pairs.push(HandleContractPair {
-            ct_handle,
-            contract_address,
+        self.ct_handle_contract_pairs.push(CtHandleContractPair {
+            ctHandle: ct_handle.into(),
+            contractAddress: contract_address,
         });
         self
     }
@@ -154,27 +154,12 @@ impl Default for UserDecryptRequestBuilder {
     }
 }
 
-#[allow(non_snake_case)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct HandleContractPair {
-    pub ct_handle: U256,
-    pub contract_address: Address,
-}
-
 pub fn user_decryption_req_calldata(user_decrypt_request: UserDecryptRequest) -> Result<Bytes> {
     info!("Generating user decryption request calldata");
-    let ct_handle_contract_pairs = user_decrypt_request
-        .ct_handle_contract_pairs
-        .iter()
-        .map(|d| CtHandleContractPair {
-            ctHandle: d.ct_handle.into(),
-            contractAddress: d.contract_address,
-        })
-        .collect::<Vec<_>>();
 
     // Create the userDecryptionRequest call
     let call = userDecryptionRequestCall::new((
-        ct_handle_contract_pairs,
+        user_decrypt_request.ct_handle_contract_pairs,
         user_decrypt_request.request_validity,
         U256::from(user_decrypt_request.contracts_chain_id),
         user_decrypt_request.contract_addresses,
