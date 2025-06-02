@@ -8,7 +8,8 @@ COPY host-contracts ./host-contracts
 
 # Compiled host-contracts for listeners
 WORKDIR /app/host-contracts
-RUN npm install && npx hardhat compile
+RUN cp .env.example .env
+RUN npm install && HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && npx hardhat compile
 
 # Stage 2: Build fhevm-engine
 FROM cgr.dev/chainguard/glibc-dynamic:latest-dev AS builder
