@@ -8,6 +8,7 @@ use fhevm_engine_common::utils::compact_hex;
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::PgListener;
 use sqlx::{Acquire, PgPool, Postgres, Transaction};
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 use tfhe::set_server_key;
@@ -189,8 +190,8 @@ async fn query_sns_tasks(
         .map(|record| HandleItem {
             tenant_id: record.tenant_id,
             handle: record.handle.clone(),
-            ct64_compressed: Some(record.ciphertext),
-            ct128_uncompressed: None, // to be computed
+            ct64_compressed: Arc::new(record.ciphertext),
+            ct128_uncompressed: Arc::new(Vec::new()), // to be computed
             otel: telemetry::tracer_with_handle("task", record.handle),
         })
         .collect();
@@ -238,12 +239,11 @@ async fn process_tasks(
     tx: &Sender<HandleItem>,
 ) -> Result<(), ExecutionError> {
     for task in tasks.iter_mut() {
-        let ct64_compressed = task.ct64_compressed.as_ref().ok_or_else(|| {
-            ExecutionError::MissingCiphertext64(format!(
-                "Missing ct64_compressed for handle: {}",
-                hex::encode(&task.handle)
-            ))
-        })?;
+        let ct64_compressed = task.ct64_compressed.as_ref();
+        if ct64_compressed.is_empty() {
+            error!(target: "sns", { handle = ?task.handle }, "Empty ciphertext64, skipping task");
+            continue; // Skip empty ciphertexts
+        }
 
         let s = task.otel.child_span("decompress_ct64");
         set_server_key(keys.server_key.clone());
@@ -251,9 +251,12 @@ async fn process_tasks(
         telemetry::end_span(s);
 
         let handle = compact_hex(&task.handle);
-        info!(target: "sns",  { handle }, "Converting ciphertext");
+        let ct_type = ct.type_name().to_owned();
+        info!(target: "sns",  { handle, ct_type }, "Converting ciphertext");
 
-        let span = task.otel.child_span("squash_noise");
+        let mut span = task.otel.child_span("squash_noise");
+        telemetry::attribute(&mut span, "ct_type", ct_type);
+
         match ct.squash_noise_and_serialize() {
             Ok(squashed_noise_serialized) => {
                 telemetry::end_span(span);
@@ -271,7 +274,7 @@ async fn process_tasks(
                     }
                 }
 
-                task.ct128_uncompressed = Some(squashed_noise_serialized);
+                task.ct128_uncompressed = Arc::new(squashed_noise_serialized);
             }
             Err(err) => {
                 telemetry::end_span_with_err(span, err.to_string());
@@ -319,7 +322,8 @@ async fn update_ciphertext128(
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks {
-        if let Some(ciphertext128) = &task.ct128_uncompressed {
+        if !task.ct128_uncompressed.is_empty() {
+            let ciphertext128 = &task.ct128_uncompressed;
             let s = task.otel.child_span("ct128_db_insert");
 
             // Insert the ciphertext128 into the database only if
@@ -333,9 +337,9 @@ async fn update_ciphertext128(
                     SELECT 1
                     FROM ciphertext_digest
                     WHERE handle = $2
-                        AND ciphertext128 IS NULL
+                    AND ciphertext128 IS NULL
                 );",
-                ciphertext128,
+                ciphertext128.as_ref(),
                 task.handle
             )
             .execute(db_txn.as_mut())
@@ -366,7 +370,7 @@ async fn update_computations_status(
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks {
-        if task.ct128_uncompressed.is_some() {
+        if !task.ct128_uncompressed.is_empty() {
             sqlx::query!(
                 "
                 UPDATE pbs_computations

@@ -32,8 +32,8 @@ pub enum ExecutionError {
     #[error("Invalid Compact Public key bytes {0}")]
     InvalidPkBytes(String),
 
-    #[error("Invalid Proof({0})")]
-    InvalidProof(i64),
+    #[error("Invalid Proof({0}, {1})")]
+    InvalidProof(i64, String),
 
     #[error("Fhevm error: {0}")]
     FaildFhevm(#[from] FhevmError),
