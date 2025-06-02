@@ -128,10 +128,12 @@ jobs:
           node-version: 20.x
 
       - name: Build contracts
+        env:
+          HARDHAT_NETWORK: hardhat
         run: |
           cp ./host-contracts/.env.example ./host-contracts/.env
           npm --prefix ./host-contracts ci --include=optional
-          cd host-contracts && npm install && npx hardhat compile
+          cd host-contracts && npm install && npm run deploy:emptyProxies && npx hardhat compile
 
       - name: Run benchmarks on CPU
         run: |

@@ -151,7 +151,9 @@ jobs:
 
       - run: cp ./host-contracts/.env.example ./host-contracts/.env
       - run: npm --prefix ./host-contracts ci --include=optional
-      - run: "cd host-contracts && npm install && npx hardhat compile"
+      - run: "cd host-contracts && npm install && npm run deploy:emptyProxies && npx hardhat compile"
+        env:
+          HARDHAT_NETWORK: hardhat
 
       - name: Run tests on GPU
         run: |
