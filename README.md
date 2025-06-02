@@ -13,9 +13,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zama-ai/fhevm-solidity/releases">
+  <a href="https://github.com/zama-ai/fhevm/releases">
     <img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square"></a>
-  <a href="https://github.com/zama-ai/fhevm-solidity/blob/main/LICENSE">
+  <a href="https://github.com/zama-ai/fhevm/blob/main/LICENSE">
     <!-- markdown-link-check-disable-next-line -->
     <img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square"></a>
   <a href="https://github.com/zama-ai/bounty-program">
@@ -66,8 +66,10 @@ FhEVM is built for developers to write confidential smart contracts without the 
 _Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/tutorials/see-all-tutorials)._
 <br></br>
 
-> [!Note] > **Zama 5-Question Developer Survey**
-> We want to hear from you! Take 1 minute to share your thoughts and help us enhance our documentation and libraries. 👉 **[Click here](https://www.zama.ai/developer-survey)** to participate.
+> [!Note]
+> **Zama 5-Question Developer Survey**
+> We want to hear from you! Take 1 minute to share your thoughts and help us enhance our documentation and libraries.
+> 👉 **[Click here](https://www.zama.ai/developer-survey)** to participate.
 
 ### Citations
 
@@ -78,7 +80,7 @@ To cite fhevm or the whitepaper in academic papers, please use the following ent
 title={{Confidential EVM Smart Contracts using Fully Homomorphic Encryption}},
 author={Zama},
 year={2024},
-note={\url{https://github.com/zama-ai/fhevm-solidity}},
+note={\url{https://github.com/zama-ai/fhevm}},
 }
 ```
 
@@ -86,7 +88,7 @@ note={\url{https://github.com/zama-ai/fhevm-solidity}},
 
 There are two ways to contribute to fhevm:
 
-- [Open issues](https://github.com/zama-ai/fhevm-solidity/issues/new/choose) to report bugs and typos, or to suggest new ideas
+- [Open issues](https://github.com/zama-ai/fhevm/issues/new/choose) to report bugs and typos, or to suggest new ideas
 - Request to become an official contributor by emailing hello@zama.ai.
 
 Becoming an approved contributor involves signing our Contributor License Agreement (CLA). Only approved contributors can send pull requests, so please make sure to get in touch before you do!
