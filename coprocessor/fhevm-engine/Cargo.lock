@@ -3427,6 +3427,7 @@ dependencies = [
  "bytesize",
  "hex",
  "http 1.3.1",
+ "lazy_static",
  "lru 0.13.0",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -6766,7 +6767,7 @@ dependencies = [
  "sqlx",
  "test-harness",
  "tfhe",
- "tfhe-versionable",
+ "tfhe-versionable 0.5.0",
  "thiserror 2.0.12",
  "tokio",
  "tokio-util",
@@ -7396,9 +7397,7 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f722461f1ec9570f4d278b8efe974217a6263ecc97905c0486ed55789fd7dc38"
+version = "1.3.0"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -7416,15 +7415,13 @@ dependencies = [
  "tfhe-cuda-backend",
  "tfhe-fft",
  "tfhe-ntt",
- "tfhe-versionable",
+ "tfhe-versionable 0.6.0",
  "tfhe-zk-pok",
 ]
 
 [[package]]
 name = "tfhe-csprng"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b1a0b71a91c9e36e9e1e8e6a528a056086b01e193e173472ae59cfaac56fdad"
+version = "0.6.0"
 dependencies = [
  "aes",
  "libc",
@@ -7433,9 +7430,7 @@ dependencies = [
 
 [[package]]
 name = "tfhe-cuda-backend"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c52ffd9a1d5e5f8938bba8614db71f150230cd2508e8249d43c172621f98ad8a"
+version = "0.10.0"
 dependencies = [
  "bindgen 0.71.1",
  "cmake",
@@ -7445,8 +7440,6 @@ dependencies = [
 [[package]]
 name = "tfhe-fft"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8621277f2fcbcf56e4cd0e19476854bd9ac195f17f6906476826dceff4063fc"
 dependencies = [
  "aligned-vec",
  "bytemuck",
@@ -7460,8 +7453,6 @@ dependencies = [
 [[package]]
 name = "tfhe-ntt"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c64925e25d6ba666f75332ce44fbd2e80be64dbd657e3c2652a6a07f2868d17"
 dependencies = [
  "aligned-vec",
  "bytemuck",
@@ -7477,7 +7468,17 @@ dependencies = [
  "aligned-vec",
  "num-complex",
  "serde",
- "tfhe-versionable-derive",
+ "tfhe-versionable-derive 0.5.0",
+]
+
+[[package]]
+name = "tfhe-versionable"
+version = "0.6.0"
+dependencies = [
+ "aligned-vec",
+ "num-complex",
+ "serde",
+ "tfhe-versionable-derive 0.6.0",
 ]
 
 [[package]]
@@ -7492,10 +7493,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tfhe-versionable-derive"
+version = "0.6.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
 name = "tfhe-zk-pok"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66fda633050c992c5db1723c116eec7bd27a32884c1db16ff1b914d46101e708"
+version = "0.6.0"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
@@ -7506,7 +7514,7 @@ dependencies = [
  "rayon",
  "serde",
  "sha3",
- "tfhe-versionable",
+ "tfhe-versionable 0.6.0",
  "zeroize",
 ]
 
