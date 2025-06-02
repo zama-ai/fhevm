@@ -1,4 +1,4 @@
-use crate::{keyset::fetch_keys, squash_noise::safe_deserialize, Config, DBConfig, HandleItem};
+use crate::{keyset::fetch_keys, squash_noise::safe_deserialize, Config, DBConfig, UploadJob};
 use anyhow::Ok;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -82,7 +82,7 @@ async fn test_decryptable(
 async fn setup() -> anyhow::Result<(
     sqlx::PgPool,
     Option<ClientKey>,
-    tokio::sync::mpsc::Receiver<HandleItem>,
+    tokio::sync::mpsc::Receiver<UploadJob>,
     DBInstance,
 )> {
     tracing_subscriber::fmt().json().with_level(true).init();
@@ -110,7 +110,7 @@ async fn setup() -> anyhow::Result<(
         .connect(&conf.db.url)
         .await?;
 
-    let (upload_tx, upload_rx) = mpsc::channel::<HandleItem>(10);
+    let (upload_tx, upload_rx) = mpsc::channel::<UploadJob>(10);
 
     let token = test_instance.parent_token.child_token();
     let (client_key, _) = fetch_keys(&pool, &TENANT_API_KEY.to_owned()).await?;

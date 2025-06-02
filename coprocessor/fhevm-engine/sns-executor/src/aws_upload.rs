@@ -1,4 +1,4 @@
-use crate::{Config, ExecutionError, HandleItem, S3Config};
+use crate::{Config, ExecutionError, HandleItem, S3Config, UploadJob};
 use aws_config::retry::RetryConfig;
 use aws_config::timeout::TimeoutConfig;
 use aws_config::BehaviorVersion;
@@ -32,8 +32,8 @@ pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
 /// Process the S3 uploads
 pub(crate) async fn process_s3_uploads(
     conf: &Config,
-    mut tasks: mpsc::Receiver<HandleItem>,
-    tasks_tx: mpsc::Sender<HandleItem>,
+    mut jobs: mpsc::Receiver<UploadJob>,
+    jobs_tx: mpsc::Sender<UploadJob>,
     token: CancellationToken,
 ) -> Result<(), ExecutionError> {
     // Client construction is expensive due to connection thread pool initialization, and should
@@ -56,7 +56,7 @@ pub(crate) async fn process_s3_uploads(
         let token = token.clone();
         let pool = pool.clone();
         async move {
-            do_resubmits_loop(client, pool, &conf, tasks_tx, token, is_ready)
+            do_resubmits_loop(client, pool, &conf, jobs_tx, token, is_ready)
                 .await
                 .unwrap_or_else(|err| {
                     error!("Failed to spawn do_resubmits_loop: {}", err);
@@ -71,40 +71,49 @@ pub(crate) async fn process_s3_uploads(
 
     loop {
         select! {
-            task = tasks.recv() => {
-                let task = match task {
-                    Some(task) => task,
+            job = jobs.recv() => {
+                let job = match job {
+                    Some(job) => job,
                     None => return Ok(()),
                 };
-                debug!("Received task, handle: {}", hex::encode(&task.handle));
-
-                let mut trx_lock = pool.begin().await?;
-                task.enqueue_upload_task(&mut trx_lock).await?;
-
-                if let Err(err) = sqlx::query!(
-                    "SELECT * FROM ciphertext_digest
-                    WHERE handle = $2 AND tenant_id = $1 AND
-                    (ciphertext128 IS NULL OR ciphertext IS NULL)
-                    FOR UPDATE SKIP LOCKED",
-                    task.tenant_id,
-                    task.handle,
-                )
-                .fetch_one(trx_lock.as_mut())
-                .await {
-                    error!("Failed to lock pending uploads {}, handle: {}", err, compact_hex(&task.handle));
-                    trx_lock.rollback().await?;
-                    continue;
-                }
 
                 if !is_ready.load(Ordering::Acquire) {
                     // If the S3 setup is not ready, we need to wait for its ready status
                     // before we can continue spawning uploading job
                     info!("Upload task skipped, S3 connection still not ready");
-
-                    // Ensure that the uploading task is enqueued in the DB
-                    trx_lock.commit().await?;
                     continue;
                 }
+
+                let mut trx = pool.begin().await?;
+
+                let item = match job {
+                    UploadJob::Normal(item) => item,
+                    UploadJob::DatabaseLock(item) => {
+                        if let Err(err) = sqlx::query!(
+                            "SELECT * FROM ciphertext_digest
+                                    WHERE handle = $2 AND tenant_id = $1 AND
+                                    (ciphertext128 IS NULL OR ciphertext IS NULL)
+                                    FOR UPDATE SKIP LOCKED",
+                            item.tenant_id,
+                            item.handle,
+                        )
+                        .fetch_one(trx.as_mut())
+                        .await
+                        {
+                            warn!(
+                                "Failed to lock pending uploads {}, handle: {}",
+                                err,
+                                compact_hex(&item.handle)
+                            );
+                            trx.rollback().await?;
+                            continue;
+                        }
+                        item
+                    },
+                 };
+
+
+                debug!("Received task, handle: {}", hex::encode(&item.handle));
 
                 // Cleanup completed tasks
                 upload_jobs.retain(|h| !h.is_finished());
@@ -130,8 +139,8 @@ pub(crate) async fn process_s3_uploads(
 
                 // Spawn a new task to upload the ciphertexts
                 let h = tokio::spawn(async move {
-                    let s = task.otel.child_span("upload_s3");
-                        if let Err(err) = upload_ciphertexts(trx_lock, task, &client, &conf).await {
+                    let s = item.otel.child_span("upload_s3");
+                        if let Err(err) = upload_ciphertexts(trx, item, &client, &conf).await {
                             if let ExecutionError::S3TransientError(_) = err {
                                 ready_flag.store(false, Ordering::Release);
                                 info!("S3 setup is not ready, due to transient error: {}", err);
@@ -339,7 +348,7 @@ fn compute_digest(ct: &[u8]) -> Vec<u8> {
 async fn fetch_pending_uploads(
     db_pool: &Pool<Postgres>,
     limit: i64,
-) -> Result<Vec<HandleItem>, ExecutionError> {
+) -> Result<Vec<UploadJob>, ExecutionError> {
     let rows = sqlx::query!(
         "SELECT tenant_id, handle, ciphertext, ciphertext128
         FROM ciphertext_digest 
@@ -351,7 +360,7 @@ async fn fetch_pending_uploads(
     .fetch_all(db_pool)
     .await?;
 
-    let mut tasks = Vec::new();
+    let mut jobs = Vec::new();
 
     for row in rows {
         let mut ct64_compressed = Arc::new(Vec::new());
@@ -404,17 +413,20 @@ async fn fetch_pending_uploads(
         }
 
         if !ct64_compressed.is_empty() || !ct128_uncompressed.is_empty() {
-            tasks.push(HandleItem {
+            let item = HandleItem {
                 tenant_id: row.tenant_id,
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128_uncompressed,
                 otel: telemetry::tracer_with_handle("recovery_task", handle),
-            });
+            };
+
+            // Instruct the uploader to acquire DB lock when processing the item
+            jobs.push(UploadJob::DatabaseLock(item));
         }
     }
 
-    Ok(tasks)
+    Ok(jobs)
 }
 
 /// Resubmit for uploading ciphertexts.
@@ -424,7 +436,7 @@ async fn do_resubmits_loop(
     client: Arc<aws_sdk_s3::Client>,
     pool: Arc<Pool<Postgres>>,
     conf: &Config,
-    tasks: mpsc::Sender<HandleItem>,
+    tasks: mpsc::Sender<UploadJob>,
     token: CancellationToken,
     is_ready: Arc<AtomicBool>,
 ) -> Result<(), ExecutionError> {
@@ -472,7 +484,7 @@ async fn do_resubmits_loop(
 async fn try_resubmit(
     pool: &PgPool,
     is_ready: Arc<AtomicBool>,
-    tasks: mpsc::Sender<HandleItem>,
+    tasks: mpsc::Sender<UploadJob>,
     token: CancellationToken,
 ) -> Result<(), ExecutionError> {
     if !is_ready.load(Ordering::SeqCst) {
@@ -482,18 +494,18 @@ async fn try_resubmit(
 
     match fetch_pending_uploads(pool, 10).await {
         // TODO: const, token
-        Ok(recovery_tasks) => {
+        Ok(jobs) => {
             info!(
                 target: "worker",
                 action = "retry_s3_uploads",
                 "Fetched {} pending uploads from the database",
-                recovery_tasks.len()
+                jobs.len()
             );
             // Resubmit for uploading ciphertexts
-            for task in recovery_tasks {
+            for task in jobs {
                 select! {
                     _ = tasks.send(task.clone()) => {
-                        debug!("Task sent to upload worker, handle: {}", hex::encode(&task.handle));
+                        // TODO: debug!("Task sent to upload worker, handle: {}", hex::encode(&task.handle));
                     },
                     _ = token.cancelled() => {
                         return Ok(())
