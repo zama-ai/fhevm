@@ -50,8 +50,15 @@ fn main() {
         });
     }
 
-    if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
+    if ecfg.benchmark_type == "THROUGHPUT"
+        || ecfg.benchmark_type == "THROUGHPUT_200"
+        || ecfg.benchmark_type == "ALL"
+    {
         for num_elems in [10, 50, 200, 500] {
+            if ecfg.benchmark_type == "THROUGHPUT_200" && num_elems != 200 {
+                continue;
+            }
+
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");

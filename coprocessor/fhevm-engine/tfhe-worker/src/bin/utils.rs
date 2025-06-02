@@ -44,6 +44,7 @@ pub fn extract_server_key_without_ns(src_path: String, dest_path: &String) -> bo
         _oprf_key,
         tag,
     ) = server_key.into_raw_parts();
+
     if noise_squashing_key.is_none() {
         error!("Server key does not have noise squashing");
         return false;

@@ -40,6 +40,25 @@ clean_run:
 # Benchmarks
 #
 
+.PHONY: sync_tfhers_local
+sync_tfhers_local:
+	rsync -av --progress ../../../../tfhe-rs/ ../../tfhe-rs/ \
+			--delete \
+			--exclude target \
+			--exclude keys \
+			--exclude backends/tfhe-cuda-backend/cuda/cmake-build-debug/ \
+			--exclude .git \
+			--exclude tfhe/build/
+
+.PHONY: profile_erc20_gpu # Run ECR20 transfer benchmarks on GPU
+profile_erc20_gpu:
+	RUSTFLAGS="-C target-cpu=native" $(DB_URL) cargo +nightly bench --no-run --bench erc20 --features=gpu-profile,bench,$(OPTIMIZATION_TARGET) --
+	RUSTFLAGS="-C target-cpu=native" \
+		  $(DB_URL) \
+		  FHEVM_TEST_NUM_SAMPLES=200 \
+		  nsys profile --trace=cuda,osrt,nvtx \
+						cargo +nightly bench --bench erc20 --features=gpu-profile,bench,$(OPTIMIZATION_TARGET)
+
 .PHONY: benchmark_erc20_gpu # Run ECR20 transfer benchmarks on GPU
 benchmark_erc20_gpu:
 	RUSTFLAGS="-C target-cpu=native" $(DB_URL) cargo +nightly bench --bench erc20 --features=gpu,bench,$(OPTIMIZATION_TARGET) -- --quick

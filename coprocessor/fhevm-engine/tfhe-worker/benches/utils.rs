@@ -73,7 +73,10 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
         work_items_batch_size: ecfg.batch_size,
         dependence_chains_per_batch: 2000,
         key_cache_size: 4,
-        coprocessor_fhe_threads: 64,
+        #[cfg(any(feature = "gpu", feature = "gpu-profile"))]
+        coprocessor_fhe_threads: 20,
+        #[cfg(not(any(feature = "gpu", feature = "gpu-profile")))]
+        coprocessor_fhe_threads: 128,
         tokio_threads: 32,
         pg_pool_max_connections: 2,
         metrics_addr: None,

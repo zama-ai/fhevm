@@ -116,6 +116,7 @@ overflow-checks = false
 [profile.release]
 opt-level = 3
 lto = "fat"
+debug = true
 
 [profile.local]
 inherits = "release"
@@ -129,3 +130,6 @@ opt-level = 1
 lto = false
 debug = 1
 codegen-units = 16
+
+[profile.bench.build-override]
+debug = true
