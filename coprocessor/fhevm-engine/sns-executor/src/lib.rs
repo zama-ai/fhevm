@@ -6,7 +6,7 @@ mod squash_noise;
 #[cfg(test)]
 mod tests;
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use fhevm_engine_common::{telemetry::OtelTracer, types::FhevmError, utils::compact_hex};
 use serde::{Deserialize, Serialize};
@@ -75,8 +75,20 @@ impl std::fmt::Display for Config {
 pub struct HandleItem {
     pub tenant_id: i32,
     pub handle: Vec<u8>,
-    pub ct64_compressed: Option<Vec<u8>>,
-    pub ct128_uncompressed: Option<Vec<u8>>,
+
+    /// Compressed 64-bit ciphertext
+    ///
+    /// Shared between the execute worker and the uploader
+    ///
+    /// The maximum size can be 8.1 KiB (type FheBytes256)
+    pub ct64_compressed: Arc<Vec<u8>>,
+
+    /// Uncompressed 128-bit ciphertext
+    ///
+    /// Shared between the execute worker and the uploader
+    ///
+    /// The maximum size can be 32.0 MiB (type FheBytes256)
+    pub ct128_uncompressed: Arc<Vec<u8>>,
     pub otel: OtelTracer,
 }
 

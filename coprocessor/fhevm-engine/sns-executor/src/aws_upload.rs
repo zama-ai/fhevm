@@ -6,6 +6,7 @@ use aws_sdk_s3::config::Builder;
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::head_bucket::HeadBucketError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
+use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::telemetry::{self};
@@ -132,7 +133,7 @@ pub(crate) async fn process_s3_uploads(
                     let s = task.otel.child_span("upload_s3");
                         if let Err(err) = upload_ciphertexts(trx_lock, task, &client, &conf).await {
                             if let ExecutionError::S3TransientError(_) = err {
-                                ready_flag.store(false, Ordering::Release );
+                                ready_flag.store(false, Ordering::Release);
                                 info!("S3 setup is not ready, due to transient error: {}", err);
                             }else {
                                 error!("Failed to upload ciphertexts: {}", err);
@@ -189,8 +190,9 @@ async fn upload_ciphertexts(
 
     let mut jobs = vec![];
 
-    if let Some(ct128_bytes) = task.ct128_uncompressed.clone() {
-        let ct128_digest = compute_digest(&ct128_bytes);
+    if !task.ct128_uncompressed.is_empty() {
+        let ct128_bytes = task.ct128_uncompressed.as_ref();
+        let ct128_digest = compute_digest(ct128_bytes);
         info!(
             "Uploading ct128, handle: {}, len: {}, tenant: {}",
             handle_as_hex,
@@ -214,7 +216,7 @@ async fn upload_ciphertexts(
                     .put_object()
                     .bucket(conf.bucket_ct128.clone())
                     .key(key)
-                    .body(ct128_bytes.into())
+                    .body(ByteStream::from(ct128_bytes.clone()))
                     .send(),
                 UploadResult::CtType128((ct128_digest.clone(), span)),
             ));
@@ -231,7 +233,8 @@ async fn upload_ciphertexts(
         }
     }
 
-    if let Some(ct64_compressed) = task.ct64_compressed.clone() {
+    if !task.ct64_compressed.is_empty() {
+        let ct64_compressed = task.ct64_compressed.as_ref();
         info!(
             "Uploading ct64, handle: {}, len: {}, tenant: {}",
             handle_as_hex,
@@ -239,7 +242,7 @@ async fn upload_ciphertexts(
             task.tenant_id,
         );
 
-        let ct64_digest = compute_digest(&ct64_compressed);
+        let ct64_digest = compute_digest(ct64_compressed);
 
         let key = hex::encode(&ct64_digest);
 
@@ -257,7 +260,7 @@ async fn upload_ciphertexts(
                     .put_object()
                     .bucket(conf.bucket_ct64.clone())
                     .key(key)
-                    .body(ct64_compressed.into())
+                    .body(ByteStream::from(ct64_compressed.clone()))
                     .send(),
                 UploadResult::CtType64((ct64_digest.clone(), span)),
             ));
@@ -351,8 +354,8 @@ async fn fetch_pending_uploads(
     let mut tasks = Vec::new();
 
     for row in rows {
-        let mut ct64_compressed: Option<Vec<u8>> = None;
-        let mut ct128_uncompressed: Option<Vec<u8>> = None;
+        let mut ct64_compressed = Arc::new(Vec::new());
+        let mut ct128_uncompressed = Arc::new(Vec::new());
         let ciphertext_digest = row.ciphertext;
         let ciphertext128_digest = row.ciphertext128;
         let handle = row.handle;
@@ -368,7 +371,7 @@ async fn fetch_pending_uploads(
             .await
             {
                 if let Some(record) = row {
-                    ct64_compressed = Some(record.ciphertext);
+                    ct64_compressed = Arc::new(record.ciphertext);
                 } else {
                     error!("Missing ciphertext, handle: {}", hex::encode(&handle));
                 }
@@ -386,14 +389,21 @@ async fn fetch_pending_uploads(
             .await
             {
                 if let Some(record) = row {
-                    ct128_uncompressed = record.ciphertext128;
+                    match record.ciphertext128 {
+                        Some(ct) if !ct.is_empty() => {
+                            ct128_uncompressed = Arc::new(ct);
+                        }
+                        _ => {
+                            warn!("Fetched empty ct128, handle: {}", hex::encode(&handle));
+                        }
+                    }
                 } else {
                     error!("Missing ciphertext128, handle: {}", hex::encode(&handle));
                 }
             }
         }
 
-        if ct64_compressed.is_some() || ct128_uncompressed.is_some() {
+        if !ct64_compressed.is_empty() || !ct128_uncompressed.is_empty() {
             tasks.push(HandleItem {
                 tenant_id: row.tenant_id,
                 handle: handle.clone(),
@@ -449,7 +459,6 @@ async fn do_resubmits_loop(
             }
 
             // A regular resubmit to ensure there no left over tasks
-
             _ = tokio::time::sleep(retry_conf.regular_recheck_duration) => {
                 try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone()).await
                     .unwrap_or_else(|err| {
