@@ -2,14 +2,16 @@
 mod utils;
 use crate::utils::{
     default_api_key, default_tenant_id, query_tenant_keys, random_handle, setup_test_app,
-    wait_until_all_allowed_handles_computed, write_to_json, EnvConfig, OperatorType,
+    wait_until_all_allowed_handles_computed, write_to_json, EnvConfig, OperatorType, TestInstance, BenchKeys
 };
+
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
 };
 use fhevm_engine_common::utils::safe_serialize;
 use std::str::FromStr;
 use std::time::SystemTime;
+use sqlx::{Pool, Postgres};
 use tfhe_worker::server::common::FheOperation;
 use tfhe_worker::server::tfhe_worker::{async_computation_input::Input, AsyncComputationInput};
 use tfhe_worker::server::tfhe_worker::{
@@ -31,6 +33,48 @@ fn test_random_contract_address() -> String {
     "0x76c222560Db6b8937B291196eAb4Dad8930043aE".to_string()
 }
 
+async fn run_profile_erc20() {
+    let mut num_samples = 200;
+
+    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
+    if let Ok(samples) = samples {
+        num_samples = samples.parse::<usize>().unwrap();
+    }
+
+    let app = setup_test_app().await.unwrap();
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(app.db_url())
+        .await
+        .unwrap();
+
+    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
+        .await
+        .map_err(|e| {
+            let e: Box<dyn std::error::Error> = e;
+            e
+        })
+        .unwrap();
+    let keys = &keys[0];
+
+    let tfhers_params = keys.cks.computation_parameters();
+    println!("***********************************");
+    println!("CRYPTO PARAMS FOR ERC20 PROFILING");
+    println!("{}", serde_json::to_string(&tfhers_params).unwrap());
+    println!("***********************************");
+
+    prepare_erc20_no_cmux(&app, keys, &pool, num_samples).await;
+
+    let db_url = app.db_url().to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        Runtime::new()
+            .unwrap()
+            .block_on(async { wait_until_all_allowed_handles_computed(db_url).await.unwrap() });
+    })
+    .await;
+}
+
 fn main() {
     let ecfg = EnvConfig::new();
     let mut c = Criterion::default()
@@ -43,6 +87,12 @@ fn main() {
     } else {
         "opt_throughput"
     };
+
+    #[cfg(feature = "gpu-profile")]
+    {
+        Runtime::new().unwrap().block_on(run_profile_erc20());
+        return;
+    }
 
     let mut group = c.benchmark_group(bench_name);
     if ecfg.benchmark_type == "LATENCY" || ecfg.benchmark_type == "ALL" {
@@ -66,8 +116,20 @@ fn main() {
         });
     }
 
-    if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
-        for num_elems in [10, 50, 200, 500] {
+    if ecfg.benchmark_type == "THROUGHPUT"
+        || ecfg.benchmark_type == "THROUGHPUT_200"
+        || ecfg.benchmark_type == "ALL"
+    {
+        for num_elems in [
+            10,
+            50,
+            200,
+            500,
+        ] {
+            if ecfg.benchmark_type == "THROUGHPUT_200" && num_elems != 200 {
+                continue;
+            }
+
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
@@ -311,16 +373,12 @@ async fn schedule_erc20_whitepaper(
     Ok(())
 }
 
-async fn schedule_erc20_no_cmux(
-    bencher: &mut Bencher<'_, WallTime>,
+async fn prepare_erc20_no_cmux(
+    app: &TestInstance,
+    keys: &BenchKeys,
+    pool: &Pool<Postgres>,
     num_tx: usize,
-    bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
     let mut handle_counter: u64 = random_handle();
@@ -338,14 +396,6 @@ async fn schedule_erc20_no_cmux(
     if let Ok(samples) = samples {
         num_samples = samples.parse::<usize>().unwrap();
     }
-
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
 
     let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
     let the_list = builder
@@ -467,6 +517,32 @@ async fn schedule_erc20_no_cmux(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.clone().async_compute(compute_request).await.unwrap();
+
+    Ok(())
+}
+
+async fn schedule_erc20_no_cmux(
+    bencher: &mut Bencher<'_, WallTime>,
+    num_tx: usize,
+    bench_id: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(app.db_url())
+        .await?;
+
+    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
+        .await
+        .map_err(|e| {
+            let e: Box<dyn std::error::Error> = e;
+            e
+        })?;
+    let keys = &keys[0];
+
+    prepare_erc20_no_cmux(&app, keys, &pool, num_tx).await?;
+
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)

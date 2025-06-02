@@ -51,6 +51,7 @@ scheduler = { path = "../scheduler" }
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu", "scheduler/gpu", "fhevm-engine-common/gpu"]
+gpu-profile = ["gpu", "tfhe/gpu-profile"]
 bench = []
 latency = ["fhevm-engine-common/latency"]
 throughput = ["fhevm-engine-common/throughput"]

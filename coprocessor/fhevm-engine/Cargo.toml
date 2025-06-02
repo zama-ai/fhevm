@@ -75,15 +75,9 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 ] }
 testcontainers = "0.24.0"
 thiserror = "2.0.12"
-tfhe = { version = "=1.4.0-alpha.4", features = [
-    "boolean",
-    "shortint",
-    "integer",
-    "zk-pok",
-    "experimental-force_fft_algo_dif4",
-] }
 tfhe-versionable = "=0.6.2"
 tfhe-zk-pok = "=0.7.4"
+tfhe = { path = "../tfhe-rs/tfhe", features = ["boolean", "shortint", "integer", "zk-pok", "experimental-force_fft_algo_dif4"] }
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-util = "0.7.15"
 tonic = { version = "0.12.3", features = ["server"] }
@@ -100,3 +94,7 @@ overflow-checks = false
 [profile.release]
 opt-level = 3
 lto = "fat"
+debug = true
+
+[profile.bench.build-override]
+debug = true

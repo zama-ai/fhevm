@@ -212,6 +212,12 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
 
+      - name: Fetch TFHE-rs
+        run: |
+          pwd
+          git clone https://github.com/zama-ai/tfhe-rs.git
+        working-directory: coprocessor
+
       - name: Init database
         run: make init_db
         working-directory: coprocessor/fhevm-engine/tfhe-worker
