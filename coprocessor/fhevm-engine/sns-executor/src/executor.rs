@@ -2,6 +2,7 @@ use crate::keyset::fetch_keyset;
 use crate::squash_noise::SquashNoiseCiphertext;
 use crate::HandleItem;
 use crate::KeySet;
+use crate::UploadJob;
 use crate::{Config, DBConfig, ExecutionError};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::compact_hex;
@@ -30,7 +31,7 @@ enum ConnStatus {
 /// Executes the worker logic for the SnS task.
 pub(crate) async fn run_loop(
     conf: &Config,
-    tx: &Sender<HandleItem>,
+    tx: &Sender<UploadJob>,
     token: CancellationToken,
 ) -> Result<(), ExecutionError> {
     let tenant_api_key = &conf.tenant_api_key;
@@ -109,7 +110,7 @@ pub(crate) async fn run_loop(
 /// Fetch and process SnS tasks from the database.
 async fn fetch_and_execute_sns_tasks(
     conn: &mut PoolConnection<Postgres>,
-    tx: &Sender<HandleItem>,
+    tx: &Sender<UploadJob>,
     keys: &KeySet,
     conf: &DBConfig,
 ) -> Result<(), ExecutionError> {
@@ -124,11 +125,20 @@ async fn fetch_and_execute_sns_tasks(
     let trx = &mut db_txn;
 
     if let Some(mut tasks) = query_sns_tasks(trx, conf.batch_limit).await? {
+        let t = telemetry::tracer("batch_execution");
+        t.set_attribute("count", tasks.len().to_string());
+
         process_tasks(trx, &mut tasks, keys, tx).await?;
         update_computations_status(trx, &tasks).await?;
+
+        let s = t.child_span("batch_store_ciphertext128");
         update_ciphertext128(trx, &tasks).await?;
         notify_ciphertext128_ready(trx, &conf.notify_channel).await?;
+        telemetry::end_span(s);
+
         db_txn.commit().await?;
+
+        t.end();
     } else {
         db_txn.rollback().await?;
     }
@@ -236,7 +246,7 @@ async fn process_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &mut [HandleItem],
     keys: &KeySet,
-    tx: &Sender<HandleItem>,
+    tx: &Sender<UploadJob>,
 ) -> Result<(), ExecutionError> {
     for task in tasks.iter_mut() {
         let ct64_compressed = task.ct64_compressed.as_ref();
@@ -289,7 +299,7 @@ async fn process_tasks(
         //
         // The service must continue running the squashed noise algorithm,
         // regardless of the availability of the upload worker.
-        if let Err(err) = tx.try_send(task.clone()) {
+        if let Err(err) = tx.try_send(UploadJob::Normal(task.clone())) {
             // This could happen if either we are experiencing a burst of tasks
             // or the upload worker cannot recover the connection to AWS S3
             //
