@@ -321,77 +321,136 @@ impl GatewayHandler {
 
             match log.topic0() {
                 Some(topic) => {
-                    if topic == &InputVerification::VerifyProofResponse::SIGNATURE_HASH {
-                        match InputVerification::VerifyProofResponse::decode_log_data(log.data()) {
-                            Ok(request_event) => {
-                                info!(
-                                    input_verification_id = ?request_event.zkProofId,
-                                    handles = ?request_event.ctHandles,
-                                    signatures = ?request_event.signatures,
-                                    "Processing InputResponse event"
-                                );
-
-                                // FIXME: https://github.com/zama-ai/fhevm-relayer/issues/234
-                                info!("Wait half a second to make sure we receive and process the request ");
-                                info!("event before the current response one");
-                                info!("This race conditions should not happen in a real scenario");
-                                info!("Please REMOVE this SLEEP when using websocket instead");
-                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-                                // TODO: we make the assumption that any request will result in a
-                                // unique on-chain-request-id
-
-                                // Use get_key_value to get both key and value, or use remove if you want to clean up
-                                if let Some(entry) = self
-                                    .input_verification_id_to_request_id
-                                    .get(&request_event.zkProofId)
-                                {
-                                    let original_request_ids = entry.value(); // Dereference the Ref<Uuid>
-
+                    match *topic {
+                        InputVerification::VerifyProofResponse::SIGNATURE_HASH => {
+                            match InputVerification::VerifyProofResponse::decode_log_data(
+                                log.data(),
+                            ) {
+                                Ok(request_event) => {
                                     info!(
-                                        ?original_request_ids,
-                                        ?request_event.zkProofId,
-                                        "Found original request ID for input response"
+                                        input_verification_id = ?request_event.zkProofId,
+                                        handles = ?request_event.ctHandles,
+                                        signatures = ?request_event.signatures,
+                                        "Processing InputResponse event"
                                     );
 
-                                    let next_event_data: RelayerEventData =
-                                        RelayerEventData::InputProof(
-                                            InputProofEventData::RespRcvdFromGw {
-                                                input_proof_response: InputProofResponse {
-                                                    handles: request_event.ctHandles,
-                                                    signatures: request_event.signatures,
-                                                },
-                                            },
+                                    // FIXME: https://github.com/zama-ai/fhevm-relayer/issues/234
+                                    info!("Wait half a second to make sure we receive and process the request ");
+                                    info!("event before the current response one");
+                                    info!(
+                                        "This race conditions should not happen in a real scenario"
+                                    );
+                                    info!("Please REMOVE this SLEEP when using websocket instead");
+                                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+                                    // TODO: we make the assumption that any request will result in a
+                                    // unique on-chain-request-id
+
+                                    // Use get_key_value to get both key and value, or use remove if you want to clean up
+                                    if let Some(entry) = self
+                                        .input_verification_id_to_request_id
+                                        .get(&request_event.zkProofId)
+                                    {
+                                        let original_request_ids = entry.value(); // Dereference the Ref<Uuid>
+
+                                        info!(
+                                            ?original_request_ids,
+                                            ?request_event.zkProofId,
+                                            "Found original request ID for input response"
                                         );
 
-                                    // Now we can use original_request_id directly
-                                    let mut dispatch_set = tokio::task::JoinSet::new();
-                                    for original_request_id in original_request_ids {
-                                        let next_event = next_event_data.clone();
-                                        let handler = self.clone();
-                                        let id = *original_request_id;
-
-                                        dispatch_set.spawn(async move {
-                                            let next_event = RelayerEvent::new(
-                                                id,
-                                                event.api_version,
-                                                next_event,
+                                        let next_event_data: RelayerEventData =
+                                            RelayerEventData::InputProof(
+                                                InputProofEventData::RespRcvdFromGw {
+                                                    input_proof_response: InputProofResponse {
+                                                        handles: request_event.ctHandles,
+                                                        signatures: request_event.signatures,
+                                                    },
+                                                },
                                             );
 
-                                            let _ =
-                                                handler.dispatcher.dispatch_event(next_event).await;
-                                        });
+                                        // Now we can use original_request_id directly
+                                        let mut dispatch_set = tokio::task::JoinSet::new();
+                                        for original_request_id in original_request_ids {
+                                            let next_event = next_event_data.clone();
+                                            let handler = self.clone();
+                                            let id = *original_request_id;
+
+                                            dispatch_set.spawn(async move {
+                                                let next_event = RelayerEvent::new(
+                                                    id,
+                                                    event.api_version,
+                                                    next_event,
+                                                );
+
+                                                let _ = handler
+                                                    .dispatcher
+                                                    .dispatch_event(next_event)
+                                                    .await;
+                                            });
+                                        }
+                                        dispatch_set.join_all().await;
                                     }
-                                    dispatch_set.join_all().await;
-                                } else {
-                                    error!(?request_event.zkProofId, "No matching request ID found for zkproof ID");
+                                }
+                                Err(err) => {
+                                    error!(?err, "Failed to decode InputRequest event");
+                                    // Err(EventProcessingError::DecodingError(e))
                                 }
                             }
-                            Err(e) => {
-                                error!(?e, "Failed to decode InputRequest event");
-                                // Err(EventProcessingError::DecodingError(e))
+                        }
+                        InputVerification::RejectProofResponse::SIGNATURE_HASH => {
+                            match InputVerification::RejectProofResponse::decode_log_data(
+                                log.data(),
+                            ) {
+                                Ok(reject_proof_response) => {
+                                    // Use get_key_value to get both key and value, or use remove if you want to clean up
+                                    if let Some(entry) = self
+                                        .input_verification_id_to_request_id
+                                        .get(&reject_proof_response.zkProofId)
+                                    {
+                                        let original_request_ids = entry.value();
+
+                                        info!(
+                                            ?original_request_ids,
+                                            ?reject_proof_response.zkProofId,
+                                            "Found original request ID for input response"
+                                        );
+
+                                        let next_event_data: RelayerEventData =
+                                            RelayerEventData::InputProof(
+                                                InputProofEventData::Failed {
+                                                    error: "Rejected".to_string(),
+                                                },
+                                            );
+
+                                        // Now we can use original_request_id directly
+                                        let mut dispatch_set = tokio::task::JoinSet::new();
+                                        for original_request_id in original_request_ids {
+                                            let next_event = next_event_data.clone();
+                                            let handler = self.clone();
+                                            let id = *original_request_id;
+                                            dispatch_set.spawn(async move {
+                                                let next_event = RelayerEvent::new(
+                                                    id,
+                                                    event.api_version,
+                                                    next_event,
+                                                );
+
+                                                let _ = handler
+                                                    .dispatcher
+                                                    .dispatch_event(next_event)
+                                                    .await;
+                                            });
+                                        }
+                                        dispatch_set.join_all().await;
+                                    }
+                                }
+                                Err(err) => {
+                                    error!(?err, "Failed to decode InputRequest event");
+                                }
                             }
                         }
+                        _ => {}
                     }
                 }
                 None => {

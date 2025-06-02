@@ -17,7 +17,6 @@ target/
 #.idea/
 
 # Added by cargo
-
 /target
 
 # Local config file
@@ -34,5 +33,8 @@ hardhat/contracts/sql.db
 # MacOS artifacts
 .DS_Store
 
+# Rustc internal compilation error files
 rustc-ice*
+
+# chrome-tracing files (useful to profile/debug async code)
 trace-*
