@@ -1,6 +1,6 @@
 use std::path;
 
-use fhevm_sdk::signature::validate_address_from_str;
+use fhevm_sdk::utils::validate_address_from_str;
 use fhevm_sdk::{EncryptedInput, FhevmError, FhevmSdk, FhevmSdkBuilder};
 
 use alloy::primitives::address;
