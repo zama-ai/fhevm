@@ -4570,6 +4570,7 @@ name = "relayer-sdk-rust"
 version = "0.1.0"
 dependencies = [
  "alloy 1.0.8",
+ "bincode",
  "crypto_box",
  "env",
  "env_logger",
@@ -4578,7 +4579,9 @@ dependencies = [
  "help",
  "hex",
  "kms",
+ "kms-grpc",
  "log",
+ "prost",
  "rand 0.9.1",
  "serde",
  "serde_json",

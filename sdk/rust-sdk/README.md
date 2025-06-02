@@ -57,6 +57,17 @@ The following table shows the current implementation status of features compared
 | Error Handling | ⚠️ Partial | Good error type definitions |
 | Logging | ⚠️ Partial | Comprehensive logging support |
 
+### Learn with minimal examples
+
+```bash
+cargo run --example minimal-sdk-setup
+cargo run --example minimal-users-key-generation  
+cargo run --example minimal-encrypted-input
+cargo run --example minimal-eip712-signing
+cargo run --example minimal-user-decryption
+```
+
+
 ### Basic Usage
 
 ```rust

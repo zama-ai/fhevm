@@ -66,6 +66,9 @@ pub enum FhevmError {
 
     #[error("Hex decoding error: {0}")]
     HexError(#[from] hex::FromHexError),
+
+    #[error("Alloy parse error: {0}")]
+    AlloyParseError(#[from] alloy::primitives::ruint::ParseError),
 }
 
 /// Result type for FHEVM operations

@@ -3,6 +3,7 @@
 //! This module provides EIP-712 signature generation and verification functionality
 //! for user decrypt operations in the FHEVM ecosystem using Alloy's EIP-712 implementation.
 
+use crate::utils::validate_address;
 use crate::{FhevmError, Result};
 use alloy::primitives::{Address, B256, Bytes};
 use alloy::sol_types::SolStruct;
@@ -63,35 +64,6 @@ pub fn validate_private_key_format(private_key: &str) -> Result<()> {
     }
 
     Ok(())
-}
-
-// Add validation helper
-pub fn validate_address(addr: &Address) -> Result<()> {
-    // Check for zero address
-    if addr.is_zero() {
-        return Err(FhevmError::InvalidParams(
-            "Zero address is not allowed".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-pub fn validate_address_from_str(addr_str: &str) -> Result<Address> {
-    // Check for empty string
-    if addr_str.trim().is_empty() {
-        return Err(FhevmError::InvalidParams(
-            "Address string cannot be empty".to_string(),
-        ));
-    }
-
-    let address = Address::from_str(addr_str.trim()).map_err(|e| {
-        FhevmError::InvalidParams(format!("Invalid address format '{}': {}", addr_str, e))
-    })?;
-
-    // Validate the parsed address
-    validate_address(&address)?;
-
-    Ok(address)
 }
 
 /// Result of EIP-712 generation and optional signing
