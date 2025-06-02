@@ -29,6 +29,18 @@ struct Coprocessor {
     string s3BucketUrl;
 }
 
+/// @notice Struct that represents a custodian
+struct Custodian {
+    /// @notice ECDSA public key for verifying EIP712 signatures, used to verify recovery transaction signatures.
+    bytes verificationKey;
+    /// @notice Post-quantum secure public key used for encrypting symmetric key shares during backup.
+    bytes encryptionKey;
+    /// @notice Address of the custodian's transaction sender.
+    address txSenderAddress;
+    /// @notice Address of the custodian's signer (used for signing inputs with EIP712 signatures).
+    address signerAddress;
+}
+
 /// @notice Struct that represents a host chain
 struct HostChain {
     /// @notice Chain ID of the host chain (unique identifier)
