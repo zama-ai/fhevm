@@ -31,7 +31,7 @@ struct Coprocessor {
 
 /// @notice Struct that represents a custodian
 struct Custodian {
-    /// @notice ECDSA public key for verifying EIP712 signatures, used to verify recovery transaction signatures.
+    /// @notice ECDSA public key for verifying EIP712 signatures.
     bytes verificationKey;
     /// @notice Post-quantum secure public key used for encrypting symmetric key shares during backup.
     bytes encryptionKey;
