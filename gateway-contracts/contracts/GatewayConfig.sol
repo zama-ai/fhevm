@@ -62,6 +62,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         address[] coprocessorSignerAddresses;
         /// @notice The host chains' metadata
         HostChain[] hostChains;
+        /// @notice The custodians' metadata
+        mapping(address custodianTxSenderAddress => Custodian custodian) custodians;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -92,8 +94,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
         KmsNode[] memory initialKmsNodes,
-        Coprocessor[] memory initialCoprocessors
-    ) public virtual onlyFromEmptyProxy reinitializer(2) {
+        Coprocessor[] memory initialCoprocessors,
+        Custodian[] memory initialCustodians
+    ) public virtual onlyFromEmptyProxy reinitializer(3) {
         __Ownable_init(owner());
         __Pausable_init();
 
@@ -139,12 +142,18 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             $.coprocessorSignerAddresses.push(initialCoprocessors[i].signerAddress);
         }
 
+        /// @dev Register the custodians
+        for (uint256 i = 0; i < initialCustodians.length; i++) {
+            $.custodians[initialCustodians[i].txSenderAddress] = initialCustodians[i];
+        }
+
         emit InitializeGatewayConfig(
             initialPauser,
             initialMetadata,
             initialMpcThreshold,
             initialKmsNodes,
-            initialCoprocessors
+            initialCoprocessors,
+            initialCustodians
         );
     }
 
@@ -329,6 +338,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function getHostChains() external view virtual returns (HostChain[] memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.hostChains;
+    }
+
+    /// @dev See {IGatewayConfig-getCustodian}.
+    function getCustodian(address custodianTxSenderAddress) external view virtual returns (Custodian memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.custodians[custodianTxSenderAddress];
     }
 
     /// @dev See {IGatewayConfig-getVersion}.

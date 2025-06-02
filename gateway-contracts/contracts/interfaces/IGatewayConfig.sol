@@ -26,13 +26,15 @@ interface IGatewayConfig {
      * @param mpcThreshold The MPC threshold.
      * @param kmsNodes List of KMS nodes.
      * @param coprocessors List of coprocessors.
+     * @param custodians List of custodians.
      */
     event InitializeGatewayConfig(
         address pauser,
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes,
-        Coprocessor[] coprocessors
+        Coprocessor[] coprocessors,
+        Custodian[] custodians
     );
 
     /**
@@ -301,6 +303,12 @@ interface IGatewayConfig {
      * @return The host chains' metadata.
      */
     function getHostChains() external view returns (HostChain[] memory);
+
+    /**
+     * @notice Get the metadata of the custodian with the given transaction sender address.
+     * @return The custodian's metadata.
+     */
+    function getCustodian(address custodianTxSender) external view returns (Custodian memory);
 
     /**
      * @notice Returns the versions of the GatewayConfig contract in SemVer format.
