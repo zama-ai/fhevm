@@ -1,3 +1,5 @@
+
+
 [package]
 name = "relayer-sdk-rust"
 version = "0.1.0"
@@ -15,6 +17,7 @@ path = "src/main.rs"
 
 
 
+
 [dependencies]
 env = "1.0.1"
 env_logger = "0.11.8"
@@ -29,6 +32,8 @@ rand = "0.9.1"
 serde_json = "1.0.140"
 log = "0.4.27"
 futures-util = "0.3.31"
-tokio = "1.45.1"
+tokio = "1.44.2"
 crypto_box = "0.9.1"
+kms = { git = "ssh://git@github.com/zama-ai/kms-core.git", tag = "v0.11.0-rc15", default-features = false, features = ["insecure"] }
+fhevm_gateway_rust_bindings = { path = "../../gateway-contracts/rust_bindings" }
 
