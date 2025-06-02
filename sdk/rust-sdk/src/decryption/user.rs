@@ -167,11 +167,6 @@ pub fn user_decryption_req_calldata(user_decrypt_request: UserDecryptRequest) ->
     // Encode the call to get the calldata
     let calldata = userDecryptionRequestCall::abi_encode(&call);
 
-    info!(
-        "UserDecryptionRequest calldata: 0x{}",
-        hex::encode(&calldata)
-    );
-
     Ok(Bytes::from(calldata))
 }
 
