@@ -5,7 +5,6 @@ import { useLocation } from 'react-router'
 import {
   DocumentationIcon,
   DashboardIcon,
-  LearnIcon,
   CommunityIcon,
 } from '@/components/icons/icons.js'
 
@@ -52,7 +51,6 @@ export function Navigation({ dapps }: OwnProps) {
           ))}
         </List.Root>
         <NavBlock title="Documentation" icon={DocumentationIcon} to="https://docs.zama.ai/fhevm" />
-        <NavBlock title="Learn" icon={LearnIcon} to="/" />
         <NavBlock
           title="Community"
           icon={CommunityIcon}

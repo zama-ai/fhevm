@@ -24,7 +24,7 @@ export function DappsList({ createDapp, dapps }: OwnProps) {
           <Box as="span">
             <NewIcon strokeWidth={3} />
           </Box>
-          Create a new dAapp
+          Create a new dApp
         </Button>
       </Box>
     </Box>
