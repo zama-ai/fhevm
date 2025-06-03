@@ -259,6 +259,84 @@ cargo test --test '*'
 - **Asynchronous**: Uses Tokio for async operations
 - **Type-Safety**: Leverages Rust's type system for API correctness
 
+## Observability Policy
+
+This application provides observability through structured metrics and tracing.
+
+- **Metrics:**
+  Metrics are collected for HTTP endpoints, FHEVM, and gateway listeners using a small set of metric names with descriptive labels. This enables flexible, scalable, and industry-standard monitoring.
+
+- **Tracing:**
+  - Each incoming request (via HTTP or blockchain listeners) creates a parent span at the INFO level.
+  - Each event handler derives a child span from the parent, also at the INFO level.
+  - Additional function-level spans for more granular tracing are created at the DEBUG level.
+
+<details>
+<summary>Metrics Reference</summary>
+
+### HTTP Requests
+
+| Metric Name                         | Type      | Labels                         | Description                                                               |
+| ----------------------------------- | --------- | ------------------------------ | ------------------------------------------------------------------------- |
+| `relayer_http_requests`             | Counter   | `endpoint`, `method`           | Count of HTTP requests                                                    |
+| `relayer_http_responses`            | Counter   | `endpoint`, `method`, `status` | Count of HTTP responses                                                   |
+| `relayer_http_request_duration_sec` | Histogram | `endpoint`, `method`, `status` | Histogram of HTTP request durations (seconds) for success/error responses |
+
+**Labels:**
+
+- `endpoint`: One of `/input-proof`, `/public-decrypt`, `/user-decrypt`, `/keyurl`, `unknown`
+- `method`: HTTP method, e.g., `POST`, `GET`
+- `status`: `success` (2xx), `error` (4xx/5xx)
+
+---
+
+### fhevm Events and transactions
+
+| Metric Name                                 | Labels             | Description                                                                   |
+| -------------------------------------------- | ------------------ | ----------------------------------------------------------------------------- |
+| `relayer_fhevm_events_total`                 | `event_type`       | Count of events from fhevm blockchain, by type                                |
+| `relayer_fhevm_tx_total`                     | `status`, `sender` | Count of transactions sent to fhevm blockchain                                |
+| `relayer_fhevm_pending_tx`                   |                    | Dynamic Count of transactions sent to fhevm blockchain requiring confirmation |
+| `relayer_fhevm_tx_confirmation_seconds`      | `status`, `sender` | Histogram of transaction confirmation times (seconds) on fhevm blockchain     |
+
+**Labels:**
+
+- `event_type`: One of `public_decrypt_request`.
+- `status`: `submitted`, `succeeded`, `failed`.
+- `sender`: Address of the transaction sender.
+
+**Example:**
+
+```
+relayer_fhevm_events{event_type="public_decrypt_request"} 17
+```
+
+---
+
+### Gateway Events and transactions
+
+| Metric Name                                    | Labels                            | Description                                                                     |
+| ----------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------- |
+| `relayer_gateway_events_total`                  | `event_type`, `request_id_status` | Count of gateway events by type and ID match                                    |
+| `relayer_gateway_tx_total`                      | `status`, `sender`                | Count of transactions sent to gateway blockchain                                |
+| `relayer_gateway_pending_tx`                    |                                   | Dynamic Count of transactions sent to gateway blockchain requiring confirmation |
+| `relayer_gateway_tx_confirmation_seconds`       | `status`, `sender`                | Histogram of transaction confirmation times (seconds) on gateway blockchain     |
+
+**Labels:**
+
+- `event_type`: One of `input_proof_response`, `public_decrypt_response`, `user_decrypt_response`
+- `request_id_status`: `known` (matches a known request ID), `unknown` (does not match)
+- `status`: `submitted`, `succeeded`, `failed`.
+- `sender`: Address of the transaction sender.
+
+**Example:**
+
+```
+relayer_gateway_events{event_type="input_proof_response",request_id_status="known"} 8
+```
+
+</details>
+
 ## License
 
 BSD 3-Clause Clear License
