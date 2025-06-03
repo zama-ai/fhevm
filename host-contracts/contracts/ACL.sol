@@ -4,19 +4,19 @@ pragma solidity ^0.8.24;
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {fhevmExecutorAdd} from "../addresses/FHEVMExecutorAddress.sol";
 
 /**
  * @title  ACL
- * @notice The ACL (Access Control List) is a permission management system designed to
- *         control who can access, compute on, or decrypt encrypted values in fhEVM.
- *         By defining and enforcing these permissions, the ACL ensures that encrypted data remains secure while still being usable
- *         within authorized contexts.
+ * @notice The ACL (Access Control List) is a permission management system designed to control who can access, compute on,
+ * or decrypt encrypted values in fhEVM. By defining and enforcing these permissions, the ACL ensures that encrypted data remains
+ * secure while still being usable within authorized contexts.
  */
-contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
+contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable, PausableUpgradeable {
     /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
-    /// @param delegatee   delegatee address.
-    /// @param contractAddress   contract address.
+    /// @param delegatee delegatee address.
+    /// @param contractAddress contract address.
     error AlreadyDelegated(address delegatee, address contractAddress);
 
     /// @notice Returned if the sender is the delegatee address.
@@ -32,42 +32,53 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     error HandlesListIsEmpty();
 
     /// @notice Returned if the the delegatee contract is not already delegatee for sender & delegator addresses.
-    /// @param delegatee   delegatee address.
-    /// @param contractAddress   contract address.
+    /// @param delegatee delegatee address.
+    /// @param contractAddress contract address.
     error NotDelegatedYet(address delegatee, address contractAddress);
 
-    /// @notice         Returned if the sender address is not allowed for allow operations.
-    /// @param sender   Sender address.
+    /// @notice Returned if the sender address is not allowed to pause the contract.
+    error NotOwnerOrPauser(address sender);
+
+    /// @notice Returned if the sender address is not allowed for allow operations.
+    /// @param sender Sender address.
     error SenderNotAllowed(address sender);
 
-    /// @notice         Emitted when a handle is allowed.
-    /// @param caller   account calling the allow function.
-    /// @param account  account being allowed for the handle.
-    /// @param handle   handle being allowed.
+    /// @notice Returned if the pauser address is set to the zero address.
+    error InvalidNullPauser();
+
+    /// @notice Emitted when a handle is allowed.
+    /// @param caller account calling the allow function.
+    /// @param account account being allowed for the handle.
+    /// @param handle handle being allowed.
     event Allowed(address indexed caller, address indexed account, bytes32 handle);
 
-    /// @notice             Emitted when a list of handles is allowed for decryption.
-    /// @param caller       account calling the allowForDecryption function.
+    /// @notice Emitted when a list of handles is allowed for decryption.
+    /// @param caller account calling the allowForDecryption function.
     /// @param handlesList  List of handles allowed for decryption.
     event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
 
-    /// @notice                 Emitted when a new delegatee address is added.
-    /// @param caller           caller address
-    /// @param delegatee        Delegatee address.
-    /// @param contractAddresses  Contract addresses.
+    /// @notice Emitted when a new delegatee address is added.
+    /// @param caller caller address
+    /// @param delegatee Delegatee address.
+    /// @param contractAddresses Contract addresses.
     event NewDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
 
-    /// @notice                 Emitted when a delegatee address is revoked.
-    /// @param caller           caller address
-    /// @param delegatee        Delegatee address.
-    /// @param contractAddresses  Contract addresses.
+    /// @notice Emitted when a delegatee address is revoked.
+    /// @param caller caller address
+    /// @param delegatee Delegatee address.
+    /// @param contractAddresses Contract addresses.
     event RevokedDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
+
+    /// @notice Emitted when the pauser address is updated.
+    /// @param newPauser New pauser address.
+    event UpdatePauser(address indexed newPauser);
 
     /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {
         mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
         mapping(address account => mapping(address delegatee => mapping(address contractAddress => bool isDelegate))) delegates;
+        address pauser;
     }
 
     /// @notice Name of the contract.
@@ -97,20 +108,28 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice  Re-initializes the contract.
+     * @notice Re-initializes the contract.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitialize() public virtual reinitializer(2) {
+    function reinitialize(address initialPauser) public virtual reinitializer(2) {
         __Ownable_init(owner());
+        __Pausable_init();
+
+        if (initialPauser == address(0)) {
+            revert InvalidNullPauser();
+        }
+
+        ACLStorage storage $ = _getACLStorage();
+        $.pauser = initialPauser;
     }
 
     /**
-     * @notice              Allows the use of `handle` for the address `account`.
-     * @dev                 The caller must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
-     * @param handle        Handle.
-     * @param account       Address of the account.
+     * @notice Allows the use of `handle` for the address `account`.
+     * @dev The caller must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
+     * @param handle Handle.
+     * @param account Address of the account.
      */
-    function allow(bytes32 handle, address account) public virtual {
+    function allow(bytes32 handle, address account) public virtual whenNotPaused {
         ACLStorage storage $ = _getACLStorage();
         if (!isAllowed(handle, msg.sender)) {
             revert SenderNotAllowed(msg.sender);
@@ -120,10 +139,10 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice              Allows a list of handles to be decrypted.
-     * @param handlesList   List of handles.
+     * @notice Allows a list of handles to be decrypted.
+     * @param handlesList List of handles.
      */
-    function allowForDecryption(bytes32[] memory handlesList) public virtual {
+    function allowForDecryption(bytes32[] memory handlesList) public virtual whenNotPaused {
         uint256 lenHandlesList = handlesList.length;
         if (lenHandlesList == 0) {
             revert HandlesListIsEmpty();
@@ -141,14 +160,13 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice              Allows the use of `handle` by address `account` for this transaction.
-     * @dev                 The caller must be allowed to use `handle` for allowTransient() to succeed.
-     *                      If not, allowTransient() reverts.
-     *                      The Coprocessor contract can always `allowTransient`, contrarily to `allow`.
-     * @param handle        Handle.
-     * @param account       Address of the account.
+     * @notice Allows the use of `handle` by address `account` for this transaction.
+     * @dev The caller must be allowed to use `handle` for allowTransient() to succeed.
+     * If not, allowTransient() reverts. The Coprocessor contract can always `allowTransient`, contrarily to `allow`.
+     * @param handle Handle.
+     * @param account Address of the account.
      */
-    function allowTransient(bytes32 handle, address account) public virtual {
+    function allowTransient(bytes32 handle, address account) public virtual whenNotPaused {
         if (msg.sender != fhevmExecutorAddress) {
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
@@ -165,12 +183,12 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice                  Delegates the access of handles in the context of account abstraction for issuing
-     *                          reencryption requests from a smart contract account.
-     * @param delegatee         Delegatee address.
+     * @notice Delegates the access of handles in the context of account abstraction for issuing
+     * reencryption requests from a smart contract account.
+     * @param delegatee Delegatee address.
      * @param contractAddresses Contract addresses.
      */
-    function delegateAccount(address delegatee, address[] memory contractAddresses) public virtual {
+    function delegateAccount(address delegatee, address[] memory contractAddresses) public virtual whenNotPaused {
         uint256 lengthContractAddresses = contractAddresses.length;
         if (lengthContractAddresses == 0) {
             revert ContractAddressesIsEmpty();
@@ -194,12 +212,12 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice                  Revokes delegated access of handles in the context of account abstraction for issuing
-     *                          reencryption requests from a smart contract account.
-     * @param delegatee         Delegatee address.
+     * @notice Revokes delegated access of handles in the context of account abstraction for issuing
+     * reencryption requests from a smart contract account.
+     * @param delegatee Delegatee address.
      * @param contractAddresses Contract addresses.
      */
-    function revokeDelegation(address delegatee, address[] memory contractAddresses) public virtual {
+    function revokeDelegation(address delegatee, address[] memory contractAddresses) public virtual whenNotPaused {
         uint256 lengthContractAddresses = contractAddresses.length;
         if (lengthContractAddresses == 0) {
             revert ContractAddressesIsEmpty();
@@ -218,12 +236,51 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice                  Returns whether the delegatee is allowed to access the handle.
-     * @param delegatee         Delegatee address.
-     * @param handle            Handle.
-     * @param contractAddress   Contract address.
-     * @param account           Address of the account.
-     * @return isAllowed        Whether the handle can be accessed.
+     * @dev Triggers stopped state.
+     * Only owner or pauser addresses can pause.
+     * The contract must not be paused.
+     */
+    function pause() external virtual {
+        if (msg.sender != owner() && msg.sender != getPauser()) {
+            revert NotOwnerOrPauser(msg.sender);
+        }
+
+        _pause();
+    }
+
+    /**
+     * @dev Returns to normal state.
+     * Only owner can unpause.
+     * The contract must be paused.
+     */
+    function unpause() external virtual onlyOwner {
+        _unpause();
+    }
+
+    /**
+     * @notice Updates the pauser address.
+     * @dev The new pauser address must not be the zero address.
+     * @param newPauser New pauser address.
+     * @dev This function can only be called by the owner when the contract is not paused.
+     */
+    function updatePauser(address newPauser) external virtual onlyOwner whenNotPaused {
+        if (newPauser == address(0)) {
+            revert InvalidNullPauser();
+        }
+
+        ACLStorage storage $ = _getACLStorage();
+
+        $.pauser = newPauser;
+        emit UpdatePauser(newPauser);
+    }
+
+    /**
+     * @notice Returns whether the delegatee is allowed to access the handle.
+     * @param delegatee Delegatee address.
+     * @param handle Handle.
+     * @param contractAddress Contract address.
+     * @param account Address of the account.
+     * @return isAllowed Whether the handle can be accessed.
      */
     function allowedOnBehalf(
         address delegatee,
@@ -239,11 +296,11 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice                      Checks whether the account is allowed to use the handle in the
-     *                              same transaction (transient).
-     * @param handle                Handle.
-     * @param account               Address of the account.
-     * @return isAllowedTransient   Whether the account can access transiently the handle.
+     * @notice Checks whether the account is allowed to use the handle in the
+     * same transaction (transient).
+     * @param handle Handle.
+     * @param account Address of the account.
+     * @return isAllowedTransient Whether the account can access transiently the handle.
      */
     function allowedTransient(bytes32 handle, address account) public view virtual returns (bool) {
         bool isAllowedTransient;
@@ -255,7 +312,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice                     Getter function for the FHEVMExecutor contract address.
+     * @notice Getter function for the FHEVMExecutor contract address.
      * @return fhevmExecutorAddress Address of the FHEVMExecutor.
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
@@ -263,20 +320,20 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice              Returns whether the account is allowed to use the `handle`, either due to
-     *                      allowTransient() or allow().
-     * @param handle        Handle.
-     * @param account       Address of the account.
-     * @return isAllowed    Whether the account can access the handle.
+     * @notice Returns whether the account is allowed to use the `handle`, either due to
+     * allowTransient() or allow().
+     * @param handle Handle.
+     * @param account Address of the account.
+     * @return isAllowed Whether the account can access the handle.
      */
     function isAllowed(bytes32 handle, address account) public view virtual returns (bool) {
         return allowedTransient(handle, account) || persistAllowed(handle, account);
     }
 
     /**
-     * @notice              Checks whether a handle is allowed for decryption.
-     * @param handle        Handle.
-     * @return isAllowed    Whether the handle is allowed for decryption.
+     * @notice Checks whether a handle is allowed for decryption.
+     * @param handle Handle.
+     * @return isAllowed Whether the handle is allowed for decryption.
      */
     function isAllowedForDecryption(bytes32 handle) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
@@ -284,10 +341,10 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice              Returns `true` if address `a` is allowed to use `c` and `false` otherwise.
-     * @param handle        Handle.
-     * @param account       Address of the account.
-     * @return isAllowed    Whether the account can access the handle.
+     * @notice Returns `true` if address `a` is allowed to use `c` and `false` otherwise.
+     * @param handle Handle.
+     * @param account Address of the account.
+     * @return isAllowed Whether the account can access the handle.
      */
     function persistAllowed(bytes32 handle, address account) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
@@ -295,8 +352,17 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
+     * @notice Returns the address of the pauser.
+     * @return pauser Address of the pauser.
+     */
+    function getPauser() public view virtual returns (address pauser) {
+        ACLStorage storage $ = _getACLStorage();
+        return $.pauser;
+    }
+
+    /**
      * @dev This function removes the transient allowances, which could be useful for integration with
-     *      Account Abstraction when bundling several UserOps calling the FHEVMExecutor Coprocessor.
+     * Account Abstraction when bundling several UserOps calling the FHEVMExecutor Coprocessor.
      */
     function cleanTransientStorage() external virtual {
         assembly {
@@ -316,7 +382,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice        Getter for the name and version of the contract.
+     * @notice Getter for the name and version of the contract.
      * @return string Name and the version of the contract.
      */
     function getVersion() external pure virtual returns (string memory) {
@@ -340,7 +406,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
     /**
-     * @dev                         Returns the ACL storage location.
+     * @dev Returns the ACL storage location.
      */
     function _getACLStorage() internal pure returns (ACLStorage storage $) {
         assembly {

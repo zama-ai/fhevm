@@ -32,7 +32,7 @@ describe('Upgrades', function () {
       kind: 'uups',
     });
     const acl = await upgrades.upgradeProxy(emptyUUPS, this.aclFactory, {
-      call: { fn: 'reinitialize' },
+      call: { fn: 'reinitialize', args: [this.signers.alice.address] },
     });
     await acl.waitForDeployment();
     const ownerBef = await acl.owner();
