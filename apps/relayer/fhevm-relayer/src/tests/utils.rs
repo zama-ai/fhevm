@@ -248,9 +248,8 @@ pub mod test_utils {
     pub fn teardown() {
         // Use mutex to kill long-running processes
 
-        let mut mock_service_changer = RELAYER_MOCK_SERVICE.lock().unwrap();
-        let mut relayer_kill_result: Option<_> = None;
-        if let Some(mut child) = relayer_kill_result.take() {
+        let mut relayer_service_changer = RELAYER_MOCK_SERVICE.lock().unwrap();
+        if let Some(mut child) = relayer_service_changer.take() {
             kill_gracefully(child);
         }
 

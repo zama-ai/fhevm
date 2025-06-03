@@ -6,6 +6,7 @@ mod tests {
     use reqwest;
     use serde_json::json;
 
+    // TODO: split in multiple tests
     #[tokio::test]
     async fn test_input_url_endpoint() {
         let before_time = tokio::time::Instant::now();
@@ -81,6 +82,140 @@ mod tests {
             number_of_queries,
             multi_query_duration.as_secs()
         );
+
+        // Empty ct-proof
+        let client = reqwest::Client::new();
+        let res = client
+            .post("http://localhost:3000/v1/input-proof")
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(5))
+            .json(&json!({
+                "contractChainId": "123456",
+                "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
+                "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+                "ciphertextWithInputVerification": ""
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let status_code = res.status();
+        let res_text = res.text().await;
+        assert_eq!(status_code, 400, "{:?}, {}", res_text, status_code);
+        if let Ok(ok_text) = res_text {
+            assert_eq!(
+                ok_text,
+                "{\"message\":\"Input Verification cannot be empty.\"}"
+            )
+        }
+
+        // Incorrect chain-id
+        let client = reqwest::Client::new();
+        let res = client
+            .post("http://localhost:3000/v1/input-proof")
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(5))
+            .json(&json!({
+                "contractChainId": "0",
+                "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
+                "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+                "ciphertextWithInputVerification": "abcdef"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let status_code = res.status();
+        let res_text = res.text().await;
+        // TODO: Should fail
+        let check_incorrect_chain_id = false;
+        if check_incorrect_chain_id {
+            assert_eq!(status_code, 400, "{:?}, {}", res_text, status_code);
+            if let Ok(ok_text) = res_text {
+                assert_eq!(
+                    ok_text,
+                    "{\"message\":\"Input Verification cannot be empty.\"}"
+                )
+            }
+        }
+
+        // Incorrect contract address
+        let client = reqwest::Client::new();
+        let res = client
+            .post("http://localhost:3000/v1/input-proof")
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(5))
+            .json(&json!({
+                "contractChainId": "123456",
+                "contractAddress": "0xfds",
+                "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+                "ciphertextWithInputVerification": "abcdef"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let status_code = res.status();
+        let res_text = res.text().await;
+        assert_eq!(status_code, 400, "{:?}, {}", res_text, status_code);
+        if let Ok(ok_text) = res_text {
+            assert_eq!(
+                ok_text,
+                "{\"message\":\"Error parsing contractAddress: OddLength\"}"
+            )
+        }
+
+        // Incorrect user address
+        let client = reqwest::Client::new();
+        let res = client
+            .post("http://localhost:3000/v1/input-proof")
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(5))
+            .json(&json!({
+                "contractChainId": "123456",
+                "contractAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+                "userAddress": "0xfds",
+                "ciphertextWithInputVerification": "abcdef"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let status_code = res.status();
+        let res_text = res.text().await;
+        assert_eq!(status_code, 400, "{:?}, {}", res_text, status_code);
+        if let Ok(ok_text) = res_text {
+            assert_eq!(
+                ok_text,
+                "{\"message\":\"Error parsing userAddress: OddLength\"}"
+            )
+        }
+
+        // Incorrect ct-proof
+        let client = reqwest::Client::new();
+        let res = client
+            .post("http://localhost:3000/v1/input-proof")
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(5))
+            .json(&json!({
+                "contractChainId": "123456",
+                "contractAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+                "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+                "ciphertextWithInputVerification": "abcdefabcdefs"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let status_code = res.status();
+        let res_text = res.text().await;
+        assert_eq!(status_code, 400, "{:?}, {}", res_text, status_code);
+        if let Ok(ok_text) = res_text {
+            assert_eq!(
+                ok_text,
+                "{\"message\":\"Error decoding ciphertextWithInputVerification: Odd number of digits\"}"
+            )
+        }
     }
 
     #[tokio::test]
