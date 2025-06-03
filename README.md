@@ -37,6 +37,35 @@ Thanks to a breakthrough in homomorphic encryption, fhevm makes it possible to r
 - **No impact on existing dApps and state:** Encrypted state co-exists alongside public one, and doesn't impact existing dApps.
   <br></br>
 
+### Project structure
+The directories of this repository are organized in the following way:
+
+##### Root
+
+- `coprocessor/`
+  - Rust-based coprocessor implementation for FHE operations.
+
+- `host-contracts/`
+  - Smart Contracts deployed on the host chain for orchestrating FHE workflows.
+
+- `gateway-contracts/`
+  - Smart contracts managing the gateway between on-chain and off-chain components.
+
+- `kms-connector/`
+  - Interface for integrating with Key Management Services (KMS) to handle encryption keys securely.
+
+- `library-solidity/`
+  - Shared Solidity libraries used across smart contracts in the stack.
+
+- `test-suite/`
+  - Integration with docker-compose and tests covering end-to-end fhevm stack behavior.
+
+- `docker/`
+  - Docker base images for Node.js and Rust environments used by the stack.
+
+- `charts/`
+  - Helm charts and deployment configurations for the stack.
+
 ### Main features
 
 - **Solidity integration:** fhevm contracts are simple solidity contracts that are built using traditional solidity tool-chains.
@@ -51,6 +80,7 @@ Thanks to a breakthrough in homomorphic encryption, fhevm makes it possible to r
 
 _Learn more about fhevm features in the [documentation](https://docs.zama.ai/fhevm)._
 <br></br>
+
 
 ### Use cases
 
