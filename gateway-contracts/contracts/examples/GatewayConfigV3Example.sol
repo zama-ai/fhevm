@@ -52,13 +52,11 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
         _disableInitializers();
     }
 
-    /**
-     * @notice  Initializes the contract.
-     * @dev This function needs to be public in order to be called by the UUPS proxy.
-     */
     function initialize(string calldata newField) public virtual reinitializer(3) {
         __Ownable_init(owner());
         __Pausable_init();
+
+        // Execute the migration logic to set the new field in the protocol metadata
         _migrate(newField);
     }
 
