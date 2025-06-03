@@ -38,6 +38,8 @@ task("task:setContractAddress")
 
     // Write the contract's address in its addresses/.env.xxx file
     try {
+      // Ensure the ADDRESSES_DIR exists or create it
+      fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
       fs.writeFileSync(envFilePath, envContent, { flag: "w" });
       console.log(`${name} address ${address} written successfully!`);
     } catch (err) {
