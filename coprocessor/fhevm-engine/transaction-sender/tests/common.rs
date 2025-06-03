@@ -14,7 +14,7 @@ use alloy::{
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use test_harness::localstack::{
     create_aws_aws_kms_client, create_localstack_kms_signing_key, start_localstack,
-    LocalstackContainer,
+    LocalstackContainer, LOCALSTACK_PORT,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
@@ -58,12 +58,19 @@ pub struct TestEnvironment {
 
 impl TestEnvironment {
     pub async fn new(signer_type: SignerType) -> anyhow::Result<Self> {
-        Self::new_with_config(signer_type, ConfigSettings::default()).await
+        let force_per_test_localstack = false;
+        Self::new_with_config(
+            signer_type,
+            ConfigSettings::default(),
+            force_per_test_localstack,
+        )
+        .await
     }
 
     pub async fn new_with_config(
         signer_type: SignerType,
         conf: ConfigSettings,
+        force_per_test_localstack: bool,
     ) -> anyhow::Result<Self> {
         let _ = tracing_subscriber::fmt()
             .json()
@@ -95,9 +102,19 @@ impl TestEnvironment {
                 abstract_signer = make_abstract_signer(signer);
             }
             SignerType::AwsKms => {
-                localstack = Some(start_localstack().await?);
-                let aws_kms_client =
-                    create_aws_aws_kms_client(localstack.as_ref().unwrap().host_port).await?;
+                let host_port;
+                if std::env::var("TXN_SENDER_TEST_GLOBAL_LOCALSTACK").unwrap_or("0".to_string())
+                    == "1"
+                    && !force_per_test_localstack
+                {
+                    localstack = None;
+                    host_port = LOCALSTACK_PORT;
+                } else {
+                    localstack = Some(start_localstack().await?);
+                    host_port = localstack.as_ref().unwrap().host_port;
+                }
+
+                let aws_kms_client = create_aws_aws_kms_client(host_port).await?;
                 let key_id =
                     create_localstack_kms_signing_key(&aws_kms_client, &anvil.keys()[0].to_bytes())
                         .await?;

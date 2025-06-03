@@ -72,9 +72,13 @@ jobs:
       with:
         node-version: 20.x
 
+    - name: Start localstack
+      run: |
+        docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:latest
+
     - name: Run tests
       run: |
-        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor cargo test --release -- --test-threads=1
+        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TXN_SENDER_TEST_GLOBAL_LOCALSTACK=1 cargo test --release -- --test-threads=1
       working-directory: coprocessor/fhevm-engine
 
 permissions:
