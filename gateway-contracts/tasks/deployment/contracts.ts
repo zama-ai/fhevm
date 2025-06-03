@@ -93,10 +93,13 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   const kmsNodes = [];
   for (let idx = 0; idx < numKmsNodes; idx++) {
     kmsNodes.push({
-      partyId: getRequiredEnvVar(`KMS_PARTY_ID_${idx}`),
-      txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
+      name: getRequiredEnvVar(`KMS_NAME_${idx}`),
       signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
-      ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
+      txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
+      partyId: getRequiredEnvVar(`KMS_PARTY_ID_${idx}`),
+      backupEncryptionKey: getRequiredEnvVar(`KMS_BACKUP_ENCRYPTION_KEY_${idx}`),
+      externalUrl: getRequiredEnvVar(`KMS_EXTERNAL_URL_${idx}`),
+      publicStorageUrl: getRequiredEnvVar(`KMS_PUBLIC_STORAGE_URL_${idx}`),
       tlsCertificate: getRequiredEnvVar(`KMS_TLS_CERTIFICATE_${idx}`),
     });
   }

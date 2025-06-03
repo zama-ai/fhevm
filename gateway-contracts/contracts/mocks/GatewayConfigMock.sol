@@ -81,7 +81,7 @@ contract GatewayConfigMock {
 
     function addKmsContext(
         uint256 preActivationBlockPeriod,
-        bytes calldata softwareVersion,
+        bytes8 softwareVersion,
         bool reshareKeys,
         uint256 mpcThreshold,
         KmsNode[] calldata kmsNodes,

@@ -131,6 +131,7 @@ pub mod ContextLifecycle {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"s\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x000\x14`\x80`@R_\x80\xFD",
     );
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContextAlreadyExists(uint256)` and selector `0x6653f6d7`.
 ```solidity
@@ -205,6 +206,7 @@ error ContextAlreadyExists(uint256 contextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContextIsActive(uint256)` and selector `0xcd494e49`.
 ```solidity
@@ -279,6 +281,7 @@ error ContextIsActive(uint256 contextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContextNotActive(uint256)` and selector `0x331486b3`.
 ```solidity
@@ -353,6 +356,7 @@ error ContextNotActive(uint256 contextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContextNotActiveOrSuspended(uint256)` and selector `0x2b3652d1`.
 ```solidity
@@ -429,6 +433,7 @@ error ContextNotActiveOrSuspended(uint256 contextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContextNotGenerated(uint256)` and selector `0xc0b5ee66`.
 ```solidity
@@ -503,6 +508,7 @@ error ContextNotGenerated(uint256 contextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContextNotInitializedOrIsGenerating(uint256)` and selector `0xb0c5151d`.
 ```solidity
@@ -579,6 +585,7 @@ error ContextNotInitializedOrIsGenerating(uint256 contextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContextNotPreActivatedOrSuspended(uint256)` and selector `0x12b49e3d`.
 ```solidity
@@ -655,6 +662,7 @@ error ContextNotPreActivatedOrSuspended(uint256 contextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidNullContextId()` and selector `0xcb17b7a5`.
 ```solidity
@@ -721,6 +729,7 @@ error InvalidNullContextId();
         }
     };
     ///Container for all the [`ContextLifecycle`](self) custom errors.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ContextLifecycleErrors {
         #[allow(missing_docs)]

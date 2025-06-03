@@ -28,22 +28,25 @@ interface IGatewayConfig {
     struct KmsConfiguration {
         DecryptionThresholds decryptionThresholds;
         KmsBlockPeriods blockPeriods;
-        bytes softwareVersion;
+        bytes8 softwareVersion;
         uint256 mpcThreshold;
         KmsNode[] kmsNodes;
     }
     struct KmsContext {
         uint256 contextId;
-        bytes softwareVersion;
-        bool reshareKeys;
+        uint256 previousContextId;
+        bytes8 softwareVersion;
         uint256 mpcThreshold;
         KmsNode[] kmsNodes;
     }
     struct KmsNode {
-        uint256 partyId;
-        address txSenderAddress;
+        string name;
         address signerAddress;
-        string ipAddress;
+        address txSenderAddress;
+        uint256 partyId;
+        bytes backupEncryptionKey;
+        string externalUrl;
+        string publicStorageUrl;
         bytes tlsCertificate;
     }
     struct ProtocolMetadata {
@@ -77,6 +80,8 @@ interface IGatewayConfig {
     error NotKmsSignerFromContext(uint256 kmsContextId, address signerAddress);
     error NotKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress);
     error NotPauser(address pauserAddress);
+    error NumberOfKmsNodesChanged(uint256 activeKmsNodesLength, uint256 newKmsNodesLength);
+    error SuspendedKmsContextOngoing(uint256 suspendedContextId);
 
     event ActivateKmsContext(uint256 kmsContextId);
     event AddHostChain(HostChain hostChain);
@@ -97,7 +102,7 @@ interface IGatewayConfig {
     event ValidateKeyResharing(KmsContext newKmsContext);
 
     function addHostChain(HostChain memory hostChain) external;
-    function addKmsContext(uint256 preActivationBlockPeriod, bytes memory softwareVersion, bool reshareKeys, uint256 mpcThreshold, KmsNode[] memory kmsNodes, DecryptionThresholds memory decryptionThresholds) external;
+    function addKmsContext(uint256 preActivationBlockPeriod, bytes8 softwareVersion, bool reshareKeys, uint256 mpcThreshold, KmsNode[] memory kmsNodes, DecryptionThresholds memory decryptionThresholds) external;
     function checkHostChainIsRegistered(uint256 chainId) external view;
     function checkIsCoprocessorSigner(address signerAddress) external view;
     function checkIsCoprocessorTxSender(address coprocessorTxSenderAddress) external view;
@@ -193,8 +198,8 @@ interface IGatewayConfig {
       },
       {
         "name": "softwareVersion",
-        "type": "bytes",
-        "internalType": "bytes"
+        "type": "bytes8",
+        "internalType": "bytes8"
       },
       {
         "name": "reshareKeys",
@@ -212,14 +217,9 @@ interface IGatewayConfig {
         "internalType": "struct KmsNode[]",
         "components": [
           {
-            "name": "partyId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "txSenderAddress",
-            "type": "address",
-            "internalType": "address"
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
           },
           {
             "name": "signerAddress",
@@ -227,7 +227,27 @@ interface IGatewayConfig {
             "internalType": "address"
           },
           {
-            "name": "ipAddress",
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "partyId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "backupEncryptionKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "externalUrl",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "publicStorageUrl",
             "type": "string",
             "internalType": "string"
           },
@@ -389,14 +409,14 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "softwareVersion",
-            "type": "bytes",
-            "internalType": "bytes"
+            "name": "previousContextId",
+            "type": "uint256",
+            "internalType": "uint256"
           },
           {
-            "name": "reshareKeys",
-            "type": "bool",
-            "internalType": "bool"
+            "name": "softwareVersion",
+            "type": "bytes8",
+            "internalType": "bytes8"
           },
           {
             "name": "mpcThreshold",
@@ -409,14 +429,9 @@ interface IGatewayConfig {
             "internalType": "struct KmsNode[]",
             "components": [
               {
-                "name": "partyId",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "txSenderAddress",
-                "type": "address",
-                "internalType": "address"
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
               },
               {
                 "name": "signerAddress",
@@ -424,7 +439,27 @@ interface IGatewayConfig {
                 "internalType": "address"
               },
               {
-                "name": "ipAddress",
+                "name": "txSenderAddress",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "partyId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "backupEncryptionKey",
+                "type": "bytes",
+                "internalType": "bytes"
+              },
+              {
+                "name": "externalUrl",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "publicStorageUrl",
                 "type": "string",
                 "internalType": "string"
               },
@@ -636,14 +671,14 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "softwareVersion",
-            "type": "bytes",
-            "internalType": "bytes"
+            "name": "previousContextId",
+            "type": "uint256",
+            "internalType": "uint256"
           },
           {
-            "name": "reshareKeys",
-            "type": "bool",
-            "internalType": "bool"
+            "name": "softwareVersion",
+            "type": "bytes8",
+            "internalType": "bytes8"
           },
           {
             "name": "mpcThreshold",
@@ -656,14 +691,9 @@ interface IGatewayConfig {
             "internalType": "struct KmsNode[]",
             "components": [
               {
-                "name": "partyId",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "txSenderAddress",
-                "type": "address",
-                "internalType": "address"
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
               },
               {
                 "name": "signerAddress",
@@ -671,7 +701,27 @@ interface IGatewayConfig {
                 "internalType": "address"
               },
               {
-                "name": "ipAddress",
+                "name": "txSenderAddress",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "partyId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "backupEncryptionKey",
+                "type": "bytes",
+                "internalType": "bytes"
+              },
+              {
+                "name": "externalUrl",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "publicStorageUrl",
                 "type": "string",
                 "internalType": "string"
               },
@@ -723,14 +773,9 @@ interface IGatewayConfig {
         "internalType": "struct KmsNode",
         "components": [
           {
-            "name": "partyId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "txSenderAddress",
-            "type": "address",
-            "internalType": "address"
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
           },
           {
             "name": "signerAddress",
@@ -738,7 +783,27 @@ interface IGatewayConfig {
             "internalType": "address"
           },
           {
-            "name": "ipAddress",
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "partyId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "backupEncryptionKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "externalUrl",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "publicStorageUrl",
             "type": "string",
             "internalType": "string"
           },
@@ -774,14 +839,9 @@ interface IGatewayConfig {
         "internalType": "struct KmsNode",
         "components": [
           {
-            "name": "partyId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "txSenderAddress",
-            "type": "address",
-            "internalType": "address"
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
           },
           {
             "name": "signerAddress",
@@ -789,7 +849,27 @@ interface IGatewayConfig {
             "internalType": "address"
           },
           {
-            "name": "ipAddress",
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "partyId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "backupEncryptionKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "externalUrl",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "publicStorageUrl",
             "type": "string",
             "internalType": "string"
           },
@@ -814,14 +894,9 @@ interface IGatewayConfig {
         "internalType": "struct KmsNode[]",
         "components": [
           {
-            "name": "partyId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "txSenderAddress",
-            "type": "address",
-            "internalType": "address"
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
           },
           {
             "name": "signerAddress",
@@ -829,7 +904,27 @@ interface IGatewayConfig {
             "internalType": "address"
           },
           {
-            "name": "ipAddress",
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "partyId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "backupEncryptionKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "externalUrl",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "publicStorageUrl",
             "type": "string",
             "internalType": "string"
           },
@@ -1248,8 +1343,8 @@ interface IGatewayConfig {
           },
           {
             "name": "softwareVersion",
-            "type": "bytes",
-            "internalType": "bytes"
+            "type": "bytes8",
+            "internalType": "bytes8"
           },
           {
             "name": "mpcThreshold",
@@ -1262,14 +1357,9 @@ interface IGatewayConfig {
             "internalType": "struct KmsNode[]",
             "components": [
               {
-                "name": "partyId",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "txSenderAddress",
-                "type": "address",
-                "internalType": "address"
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
               },
               {
                 "name": "signerAddress",
@@ -1277,7 +1367,27 @@ interface IGatewayConfig {
                 "internalType": "address"
               },
               {
-                "name": "ipAddress",
+                "name": "txSenderAddress",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "partyId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "backupEncryptionKey",
+                "type": "bytes",
+                "internalType": "bytes"
+              },
+              {
+                "name": "externalUrl",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "publicStorageUrl",
                 "type": "string",
                 "internalType": "string"
               },
@@ -1345,14 +1455,14 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "softwareVersion",
-            "type": "bytes",
-            "internalType": "bytes"
+            "name": "previousContextId",
+            "type": "uint256",
+            "internalType": "uint256"
           },
           {
-            "name": "reshareKeys",
-            "type": "bool",
-            "internalType": "bool"
+            "name": "softwareVersion",
+            "type": "bytes8",
+            "internalType": "bytes8"
           },
           {
             "name": "mpcThreshold",
@@ -1365,14 +1475,9 @@ interface IGatewayConfig {
             "internalType": "struct KmsNode[]",
             "components": [
               {
-                "name": "partyId",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "txSenderAddress",
-                "type": "address",
-                "internalType": "address"
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
               },
               {
                 "name": "signerAddress",
@@ -1380,7 +1485,27 @@ interface IGatewayConfig {
                 "internalType": "address"
               },
               {
-                "name": "ipAddress",
+                "name": "txSenderAddress",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "partyId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "backupEncryptionKey",
+                "type": "bytes",
+                "internalType": "bytes"
+              },
+              {
+                "name": "externalUrl",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "publicStorageUrl",
                 "type": "string",
                 "internalType": "string"
               },
@@ -1405,14 +1530,14 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "softwareVersion",
-            "type": "bytes",
-            "internalType": "bytes"
+            "name": "previousContextId",
+            "type": "uint256",
+            "internalType": "uint256"
           },
           {
-            "name": "reshareKeys",
-            "type": "bool",
-            "internalType": "bool"
+            "name": "softwareVersion",
+            "type": "bytes8",
+            "internalType": "bytes8"
           },
           {
             "name": "mpcThreshold",
@@ -1425,14 +1550,9 @@ interface IGatewayConfig {
             "internalType": "struct KmsNode[]",
             "components": [
               {
-                "name": "partyId",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "txSenderAddress",
-                "type": "address",
-                "internalType": "address"
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
               },
               {
                 "name": "signerAddress",
@@ -1440,7 +1560,27 @@ interface IGatewayConfig {
                 "internalType": "address"
               },
               {
-                "name": "ipAddress",
+                "name": "txSenderAddress",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "partyId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "backupEncryptionKey",
+                "type": "bytes",
+                "internalType": "bytes"
+              },
+              {
+                "name": "externalUrl",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "publicStorageUrl",
                 "type": "string",
                 "internalType": "string"
               },
@@ -1472,14 +1612,14 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "softwareVersion",
-            "type": "bytes",
-            "internalType": "bytes"
+            "name": "previousContextId",
+            "type": "uint256",
+            "internalType": "uint256"
           },
           {
-            "name": "reshareKeys",
-            "type": "bool",
-            "internalType": "bool"
+            "name": "softwareVersion",
+            "type": "bytes8",
+            "internalType": "bytes8"
           },
           {
             "name": "mpcThreshold",
@@ -1492,14 +1632,9 @@ interface IGatewayConfig {
             "internalType": "struct KmsNode[]",
             "components": [
               {
-                "name": "partyId",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "txSenderAddress",
-                "type": "address",
-                "internalType": "address"
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
               },
               {
                 "name": "signerAddress",
@@ -1507,7 +1642,27 @@ interface IGatewayConfig {
                 "internalType": "address"
               },
               {
-                "name": "ipAddress",
+                "name": "txSenderAddress",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "partyId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "backupEncryptionKey",
+                "type": "bytes",
+                "internalType": "bytes"
+              },
+              {
+                "name": "externalUrl",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "publicStorageUrl",
                 "type": "string",
                 "internalType": "string"
               },
@@ -1532,14 +1687,14 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "softwareVersion",
-            "type": "bytes",
-            "internalType": "bytes"
+            "name": "previousContextId",
+            "type": "uint256",
+            "internalType": "uint256"
           },
           {
-            "name": "reshareKeys",
-            "type": "bool",
-            "internalType": "bool"
+            "name": "softwareVersion",
+            "type": "bytes8",
+            "internalType": "bytes8"
           },
           {
             "name": "mpcThreshold",
@@ -1552,14 +1707,9 @@ interface IGatewayConfig {
             "internalType": "struct KmsNode[]",
             "components": [
               {
-                "name": "partyId",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "txSenderAddress",
-                "type": "address",
-                "internalType": "address"
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
               },
               {
                 "name": "signerAddress",
@@ -1567,7 +1717,27 @@ interface IGatewayConfig {
                 "internalType": "address"
               },
               {
-                "name": "ipAddress",
+                "name": "txSenderAddress",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "partyId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "backupEncryptionKey",
+                "type": "bytes",
+                "internalType": "bytes"
+              },
+              {
+                "name": "externalUrl",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "publicStorageUrl",
                 "type": "string",
                 "internalType": "string"
               },
@@ -1605,14 +1775,14 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "softwareVersion",
-            "type": "bytes",
-            "internalType": "bytes"
+            "name": "previousContextId",
+            "type": "uint256",
+            "internalType": "uint256"
           },
           {
-            "name": "reshareKeys",
-            "type": "bool",
-            "internalType": "bool"
+            "name": "softwareVersion",
+            "type": "bytes8",
+            "internalType": "bytes8"
           },
           {
             "name": "mpcThreshold",
@@ -1625,14 +1795,9 @@ interface IGatewayConfig {
             "internalType": "struct KmsNode[]",
             "components": [
               {
-                "name": "partyId",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "txSenderAddress",
-                "type": "address",
-                "internalType": "address"
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
               },
               {
                 "name": "signerAddress",
@@ -1640,7 +1805,27 @@ interface IGatewayConfig {
                 "internalType": "address"
               },
               {
-                "name": "ipAddress",
+                "name": "txSenderAddress",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "partyId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "backupEncryptionKey",
+                "type": "bytes",
+                "internalType": "bytes"
+              },
+              {
+                "name": "externalUrl",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "publicStorageUrl",
                 "type": "string",
                 "internalType": "string"
               },
@@ -1756,14 +1941,14 @@ interface IGatewayConfig {
             "internalType": "uint256"
           },
           {
-            "name": "softwareVersion",
-            "type": "bytes",
-            "internalType": "bytes"
+            "name": "previousContextId",
+            "type": "uint256",
+            "internalType": "uint256"
           },
           {
-            "name": "reshareKeys",
-            "type": "bool",
-            "internalType": "bool"
+            "name": "softwareVersion",
+            "type": "bytes8",
+            "internalType": "bytes8"
           },
           {
             "name": "mpcThreshold",
@@ -1776,14 +1961,9 @@ interface IGatewayConfig {
             "internalType": "struct KmsNode[]",
             "components": [
               {
-                "name": "partyId",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "txSenderAddress",
-                "type": "address",
-                "internalType": "address"
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
               },
               {
                 "name": "signerAddress",
@@ -1791,7 +1971,27 @@ interface IGatewayConfig {
                 "internalType": "address"
               },
               {
-                "name": "ipAddress",
+                "name": "txSenderAddress",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "partyId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "backupEncryptionKey",
+                "type": "bytes",
+                "internalType": "bytes"
+              },
+              {
+                "name": "externalUrl",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "publicStorageUrl",
                 "type": "string",
                 "internalType": "string"
               },
@@ -2090,6 +2290,33 @@ interface IGatewayConfig {
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "NumberOfKmsNodesChanged",
+    "inputs": [
+      {
+        "name": "activeKmsNodesLength",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "newKmsNodesLength",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SuspendedKmsContextOngoing",
+    "inputs": [
+      {
+        "name": "suspendedContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   }
 ]
 ```*/
@@ -2249,6 +2476,7 @@ pub mod IGatewayConfig {
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct Coprocessor { address txSenderAddress; address signerAddress; string s3BucketUrl; }
@@ -2723,6 +2951,7 @@ struct DecryptionThresholds { uint256 publicDecryptionThreshold; uint256 userDec
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct HostChain { uint256 chainId; address fhevmExecutorAddress; address aclAddress; string name; string website; }
@@ -3274,9 +3503,10 @@ struct KmsBlockPeriods { uint256 preActivationBlockPeriod; uint256 generationBlo
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPeriods blockPeriods; bytes softwareVersion; uint256 mpcThreshold; KmsNode[] kmsNodes; }
+struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPeriods blockPeriods; bytes8 softwareVersion; uint256 mpcThreshold; KmsNode[] kmsNodes; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3286,7 +3516,7 @@ struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPer
         #[allow(missing_docs)]
         pub blockPeriods: <KmsBlockPeriods as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
-        pub softwareVersion: alloy::sol_types::private::Bytes,
+        pub softwareVersion: alloy::sol_types::private::FixedBytes<8>,
         #[allow(missing_docs)]
         pub mpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -3306,7 +3536,7 @@ struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPer
         type UnderlyingSolTuple<'a> = (
             DecryptionThresholds,
             KmsBlockPeriods,
-            alloy::sol_types::sol_data::Bytes,
+            alloy::sol_types::sol_data::FixedBytes<8>,
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Array<KmsNode>,
         );
@@ -3314,7 +3544,7 @@ struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPer
         type UnderlyingRustTuple<'a> = (
             <DecryptionThresholds as alloy::sol_types::SolType>::RustType,
             <KmsBlockPeriods as alloy::sol_types::SolType>::RustType,
-            alloy::sol_types::private::Bytes,
+            alloy::sol_types::private::FixedBytes<8>,
             alloy::sol_types::private::primitives::aliases::U256,
             alloy::sol_types::private::Vec<
                 <KmsNode as alloy::sol_types::SolType>::RustType,
@@ -3372,9 +3602,9 @@ struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPer
                     <KmsBlockPeriods as alloy_sol_types::SolType>::tokenize(
                         &self.blockPeriods,
                     ),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.softwareVersion,
-                    ),
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        8,
+                    > as alloy_sol_types::SolType>::tokenize(&self.softwareVersion),
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.mpcThreshold),
@@ -3455,7 +3685,7 @@ struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPer
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "KmsConfiguration(DecryptionThresholds decryptionThresholds,KmsBlockPeriods blockPeriods,bytes softwareVersion,uint256 mpcThreshold,KmsNode[] kmsNodes)",
+                    "KmsConfiguration(DecryptionThresholds decryptionThresholds,KmsBlockPeriods blockPeriods,bytes8 softwareVersion,uint256 mpcThreshold,KmsNode[] kmsNodes)",
                 )
             }
             #[inline]
@@ -3498,7 +3728,9 @@ struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPer
                             &self.blockPeriods,
                         )
                         .0,
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::eip712_data_word(
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        8,
+                    > as alloy_sol_types::SolType>::eip712_data_word(
                             &self.softwareVersion,
                         )
                         .0,
@@ -3525,7 +3757,9 @@ struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPer
                     + <KmsBlockPeriods as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.blockPeriods,
                     )
-                    + <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
+                    + <alloy::sol_types::sol_data::FixedBytes<
+                        8,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.softwareVersion,
                     )
                     + <alloy::sol_types::sol_data::Uint<
@@ -3555,7 +3789,9 @@ struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPer
                     &rust.blockPeriods,
                     out,
                 );
-                <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                <alloy::sol_types::sol_data::FixedBytes<
+                    8,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.softwareVersion,
                     out,
                 );
@@ -3587,9 +3823,10 @@ struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPer
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct KmsContext { uint256 contextId; bytes softwareVersion; bool reshareKeys; uint256 mpcThreshold; KmsNode[] kmsNodes; }
+struct KmsContext { uint256 contextId; uint256 previousContextId; bytes8 softwareVersion; uint256 mpcThreshold; KmsNode[] kmsNodes; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3597,9 +3834,9 @@ struct KmsContext { uint256 contextId; bytes softwareVersion; bool reshareKeys; 
         #[allow(missing_docs)]
         pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub softwareVersion: alloy::sol_types::private::Bytes,
+        pub previousContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub reshareKeys: bool,
+        pub softwareVersion: alloy::sol_types::private::FixedBytes<8>,
         #[allow(missing_docs)]
         pub mpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -3618,16 +3855,16 @@ struct KmsContext { uint256 contextId; bytes softwareVersion; bool reshareKeys; 
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
-            alloy::sol_types::sol_data::Bytes,
-            alloy::sol_types::sol_data::Bool,
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::FixedBytes<8>,
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Array<KmsNode>,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
             alloy::sol_types::private::primitives::aliases::U256,
-            alloy::sol_types::private::Bytes,
-            bool,
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::FixedBytes<8>,
             alloy::sol_types::private::primitives::aliases::U256,
             alloy::sol_types::private::Vec<
                 <KmsNode as alloy::sol_types::SolType>::RustType,
@@ -3650,8 +3887,8 @@ struct KmsContext { uint256 contextId; bytes softwareVersion; bool reshareKeys; 
             fn from(value: KmsContext) -> Self {
                 (
                     value.contextId,
+                    value.previousContextId,
                     value.softwareVersion,
-                    value.reshareKeys,
                     value.mpcThreshold,
                     value.kmsNodes,
                 )
@@ -3663,8 +3900,8 @@ struct KmsContext { uint256 contextId; bytes softwareVersion; bool reshareKeys; 
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     contextId: tuple.0,
-                    softwareVersion: tuple.1,
-                    reshareKeys: tuple.2,
+                    previousContextId: tuple.1,
+                    softwareVersion: tuple.2,
                     mpcThreshold: tuple.3,
                     kmsNodes: tuple.4,
                 }
@@ -3682,12 +3919,12 @@ struct KmsContext { uint256 contextId; bytes softwareVersion; bool reshareKeys; 
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.contextId),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.softwareVersion,
-                    ),
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.reshareKeys,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.previousContextId),
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        8,
+                    > as alloy_sol_types::SolType>::tokenize(&self.softwareVersion),
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.mpcThreshold),
@@ -3768,7 +4005,7 @@ struct KmsContext { uint256 contextId; bytes softwareVersion; bool reshareKeys; 
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "KmsContext(uint256 contextId,bytes softwareVersion,bool reshareKeys,uint256 mpcThreshold,KmsNode[] kmsNodes)",
+                    "KmsContext(uint256 contextId,uint256 previousContextId,bytes8 softwareVersion,uint256 mpcThreshold,KmsNode[] kmsNodes)",
                 )
             }
             #[inline]
@@ -3791,12 +4028,16 @@ struct KmsContext { uint256 contextId; bytes softwareVersion; bool reshareKeys; 
                         256,
                     > as alloy_sol_types::SolType>::eip712_data_word(&self.contextId)
                         .0,
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.softwareVersion,
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.previousContextId,
                         )
                         .0,
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.reshareKeys,
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        8,
+                    > as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.softwareVersion,
                         )
                         .0,
                     <alloy::sol_types::sol_data::Uint<
@@ -3821,11 +4062,15 @@ struct KmsContext { uint256 contextId; bytes softwareVersion; bool reshareKeys; 
                     > as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.contextId,
                     )
-                    + <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.softwareVersion,
+                    + <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.previousContextId,
                     )
-                    + <alloy::sol_types::sol_data::Bool as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.reshareKeys,
+                    + <alloy::sol_types::sol_data::FixedBytes<
+                        8,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.softwareVersion,
                     )
                     + <alloy::sol_types::sol_data::Uint<
                         256,
@@ -3852,12 +4097,16 @@ struct KmsContext { uint256 contextId; bytes softwareVersion; bool reshareKeys; 
                     &rust.contextId,
                     out,
                 );
-                <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.softwareVersion,
+                <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.previousContextId,
                     out,
                 );
-                <alloy::sol_types::sol_data::Bool as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.reshareKeys,
+                <alloy::sol_types::sol_data::FixedBytes<
+                    8,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.softwareVersion,
                     out,
                 );
                 <alloy::sol_types::sol_data::Uint<
@@ -3888,21 +4137,28 @@ struct KmsContext { uint256 contextId; bytes softwareVersion; bool reshareKeys; 
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct KmsNode { uint256 partyId; address txSenderAddress; address signerAddress; string ipAddress; bytes tlsCertificate; }
+struct KmsNode { string name; address signerAddress; address txSenderAddress; uint256 partyId; bytes backupEncryptionKey; string externalUrl; string publicStorageUrl; bytes tlsCertificate; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct KmsNode {
         #[allow(missing_docs)]
-        pub partyId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub txSenderAddress: alloy::sol_types::private::Address,
+        pub name: alloy::sol_types::private::String,
         #[allow(missing_docs)]
         pub signerAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub ipAddress: alloy::sol_types::private::String,
+        pub txSenderAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub partyId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub backupEncryptionKey: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub externalUrl: alloy::sol_types::private::String,
+        #[allow(missing_docs)]
+        pub publicStorageUrl: alloy::sol_types::private::String,
         #[allow(missing_docs)]
         pub tlsCertificate: alloy::sol_types::private::Bytes,
     }
@@ -3916,17 +4172,23 @@ struct KmsNode { uint256 partyId; address txSenderAddress; address signerAddress
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::String,
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Address,
             alloy::sol_types::sol_data::Uint<256>,
-            alloy::sol_types::sol_data::Address,
-            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Bytes,
+            alloy::sol_types::sol_data::String,
             alloy::sol_types::sol_data::String,
             alloy::sol_types::sol_data::Bytes,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::String,
+            alloy::sol_types::private::Address,
+            alloy::sol_types::private::Address,
             alloy::sol_types::private::primitives::aliases::U256,
-            alloy::sol_types::private::Address,
-            alloy::sol_types::private::Address,
+            alloy::sol_types::private::Bytes,
+            alloy::sol_types::private::String,
             alloy::sol_types::private::String,
             alloy::sol_types::private::Bytes,
         );
@@ -3946,10 +4208,13 @@ struct KmsNode { uint256 partyId; address txSenderAddress; address signerAddress
         impl ::core::convert::From<KmsNode> for UnderlyingRustTuple<'_> {
             fn from(value: KmsNode) -> Self {
                 (
-                    value.partyId,
-                    value.txSenderAddress,
+                    value.name,
                     value.signerAddress,
-                    value.ipAddress,
+                    value.txSenderAddress,
+                    value.partyId,
+                    value.backupEncryptionKey,
+                    value.externalUrl,
+                    value.publicStorageUrl,
                     value.tlsCertificate,
                 )
             }
@@ -3959,11 +4224,14 @@ struct KmsNode { uint256 partyId; address txSenderAddress; address signerAddress
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsNode {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    partyId: tuple.0,
-                    txSenderAddress: tuple.1,
-                    signerAddress: tuple.2,
-                    ipAddress: tuple.3,
-                    tlsCertificate: tuple.4,
+                    name: tuple.0,
+                    signerAddress: tuple.1,
+                    txSenderAddress: tuple.2,
+                    partyId: tuple.3,
+                    backupEncryptionKey: tuple.4,
+                    externalUrl: tuple.5,
+                    publicStorageUrl: tuple.6,
+                    tlsCertificate: tuple.7,
                 }
             }
         }
@@ -3976,17 +4244,26 @@ struct KmsNode { uint256 partyId; address txSenderAddress; address signerAddress
             #[inline]
             fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.partyId),
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.txSenderAddress,
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.name,
                     ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.signerAddress,
                     ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.txSenderAddress,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.partyId),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.backupEncryptionKey,
+                    ),
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        &self.ipAddress,
+                        &self.externalUrl,
+                    ),
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.publicStorageUrl,
                     ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.tlsCertificate,
@@ -4065,7 +4342,7 @@ struct KmsNode { uint256 partyId; address txSenderAddress; address signerAddress
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "KmsNode(uint256 partyId,address txSenderAddress,address signerAddress,string ipAddress,bytes tlsCertificate)",
+                    "KmsNode(string name,address signerAddress,address txSenderAddress,uint256 partyId,bytes backupEncryptionKey,string externalUrl,string publicStorageUrl,bytes tlsCertificate)",
                 )
             }
             #[inline]
@@ -4081,20 +4358,32 @@ struct KmsNode { uint256 partyId; address txSenderAddress; address signerAddress
             #[inline]
             fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
                 [
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.partyId)
-                        .0,
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.txSenderAddress,
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.name,
                         )
                         .0,
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
                             &self.signerAddress,
                         )
                         .0,
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.txSenderAddress,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::eip712_data_word(&self.partyId)
+                        .0,
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.backupEncryptionKey,
+                        )
+                        .0,
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.ipAddress,
+                            &self.externalUrl,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.publicStorageUrl,
                         )
                         .0,
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::eip712_data_word(
@@ -4110,19 +4399,28 @@ struct KmsNode { uint256 partyId; address txSenderAddress; address signerAddress
             #[inline]
             fn topic_preimage_length(rust: &Self::RustType) -> usize {
                 0usize
+                    + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.name,
+                    )
+                    + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.signerAddress,
+                    )
+                    + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.txSenderAddress,
+                    )
                     + <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.partyId,
                     )
-                    + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.txSenderAddress,
-                    )
-                    + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.signerAddress,
+                    + <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.backupEncryptionKey,
                     )
                     + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.ipAddress,
+                        &rust.externalUrl,
+                    )
+                    + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.publicStorageUrl,
                     )
                     + <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.tlsCertificate,
@@ -4136,22 +4434,34 @@ struct KmsNode { uint256 partyId; address txSenderAddress; address signerAddress
                 out.reserve(
                     <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
                 );
-                <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.partyId,
-                    out,
-                );
-                <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.txSenderAddress,
+                <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.name,
                     out,
                 );
                 <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.signerAddress,
                     out,
                 );
+                <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.txSenderAddress,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.partyId,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.backupEncryptionKey,
+                    out,
+                );
                 <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.ipAddress,
+                    &rust.externalUrl,
+                    out,
+                );
+                <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.publicStorageUrl,
                     out,
                 );
                 <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
@@ -4546,6 +4856,7 @@ error CompromiseActiveKmsContextNotAllowed(uint256 kmsContextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `DestroyActiveKmsContextNotAllowed(uint256)` and selector `0xb25e4eb3`.
 ```solidity
@@ -4622,6 +4933,7 @@ error DestroyActiveKmsContextNotAllowed(uint256 kmsContextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `EmptyCoprocessors()` and selector `0x8af082ef`.
 ```solidity
@@ -5525,6 +5837,7 @@ error KmsContextNotGenerating(uint256 kmsContextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsContextNotInitialized(uint256)` and selector `0x82b1fbda`.
 ```solidity
@@ -5601,6 +5914,7 @@ error KmsContextNotInitialized(uint256 kmsContextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsNodeAlreadyValidatedKeyResharing(uint256,address)` and selector `0x99b158c1`.
 ```solidity
@@ -5689,6 +6003,7 @@ error KmsNodeAlreadyValidatedKeyResharing(uint256 kmsContextId, address kmsSigne
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NoSuspendedKmsContext()` and selector `0x207ea3f3`.
 ```solidity
@@ -5754,6 +6069,7 @@ error NoSuspendedKmsContext();
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotActiveKmsSigner(address)` and selector `0x5410a110`.
 ```solidity
@@ -5826,6 +6142,7 @@ error NotActiveKmsSigner(address signerAddress);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotActiveKmsTxSender(address)` and selector `0xa904219e`.
 ```solidity
@@ -5898,6 +6215,7 @@ error NotActiveKmsTxSender(address txSenderAddress);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotCoprocessorSigner(address)` and selector `0x26cd75dc`.
 ```solidity
@@ -6130,6 +6448,7 @@ error NotKmsNode(uint256 kmsContextId, address kmsTxSenderAddress);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotKmsSignerFromContext(uint256,address)` and selector `0x89b45e5d`.
 ```solidity
@@ -6380,6 +6699,172 @@ error NotPauser(address pauserAddress);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `NumberOfKmsNodesChanged(uint256,uint256)` and selector `0xd595a962`.
+```solidity
+error NumberOfKmsNodesChanged(uint256 activeKmsNodesLength, uint256 newKmsNodesLength);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct NumberOfKmsNodesChanged {
+        #[allow(missing_docs)]
+        pub activeKmsNodesLength: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub newKmsNodesLength: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<NumberOfKmsNodesChanged> for UnderlyingRustTuple<'_> {
+            fn from(value: NumberOfKmsNodesChanged) -> Self {
+                (value.activeKmsNodesLength, value.newKmsNodesLength)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NumberOfKmsNodesChanged {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    activeKmsNodesLength: tuple.0,
+                    newKmsNodesLength: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for NumberOfKmsNodesChanged {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "NumberOfKmsNodesChanged(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [213u8, 149u8, 169u8, 98u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.activeKmsNodesLength),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.newKmsNodesLength),
+                )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `SuspendedKmsContextOngoing(uint256)` and selector `0x7623d357`.
+```solidity
+error SuspendedKmsContextOngoing(uint256 suspendedContextId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct SuspendedKmsContextOngoing {
+        #[allow(missing_docs)]
+        pub suspendedContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<SuspendedKmsContextOngoing>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: SuspendedKmsContextOngoing) -> Self {
+                (value.suspendedContextId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for SuspendedKmsContextOngoing {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    suspendedContextId: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for SuspendedKmsContextOngoing {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "SuspendedKmsContextOngoing(uint256)";
+            const SELECTOR: [u8; 4] = [118u8, 35u8, 211u8, 87u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.suspendedContextId),
+                )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ActivateKmsContext(uint256)` and selector `0x4f54a6ac981cc8dc83142b3eb4d120be7c70fc5de6477a14eae3e9ca647644bc`.
 ```solidity
 event ActivateKmsContext(uint256 kmsContextId);
@@ -6483,6 +6968,7 @@ event ActivateKmsContext(uint256 kmsContextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AddHostChain((uint256,address,address,string,string))` and selector `0x66769341effd268fc4e9a9c8f27bfc968507b519b0ddb9b4ad3ded5f03016837`.
 ```solidity
@@ -6688,6 +7174,7 @@ event CompromiseKmsContext(uint256 kmsContextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DeactivateKmsContext(uint256)` and selector `0x8fb75858a565aee117342d93196a7f0b54c1c8519885eddda6a01f477359b363`.
 ```solidity
@@ -6792,6 +7279,7 @@ event DeactivateKmsContext(uint256 kmsContextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DestroyKmsContext(uint256)` and selector `0x3e8f02dc7af6e3a67f3af0bc99bcf11b4deb46105e9ba7f1ac6da82322e9025e`.
 ```solidity
@@ -6896,8 +7384,9 @@ event DestroyKmsContext(uint256 kmsContextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `Initialization(address,(string,string),((uint256,uint256),(uint256,uint256,uint256),bytes,uint256,(uint256,address,address,string,bytes)[]),(address,address,string)[])` and selector `0xfa77f5e14dda8ed665623f28cebadab72a75efa9568316f4a16acf25be6a2a31`.
+    /**Event with signature `Initialization(address,(string,string),((uint256,uint256),(uint256,uint256,uint256),bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]),(address,address,string)[])` and selector `0x73c800168aad5e0fdb3a763f5c74bc77ab3a617a4bdf52e070bcec4a37982bf1`.
 ```solidity
 event Initialization(address pauser, ProtocolMetadata metadata, KmsConfiguration kmsConfiguration, Coprocessor[] coprocessors);
 ```*/
@@ -6940,11 +7429,11 @@ event Initialization(address pauser, ProtocolMetadata metadata, KmsConfiguration
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "Initialization(address,(string,string),((uint256,uint256),(uint256,uint256,uint256),bytes,uint256,(uint256,address,address,string,bytes)[]),(address,address,string)[])";
+            const SIGNATURE: &'static str = "Initialization(address,(string,string),((uint256,uint256),(uint256,uint256,uint256),bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]),(address,address,string)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                250u8, 119u8, 245u8, 225u8, 77u8, 218u8, 142u8, 214u8, 101u8, 98u8, 63u8,
-                40u8, 206u8, 186u8, 218u8, 183u8, 42u8, 117u8, 239u8, 169u8, 86u8, 131u8,
-                22u8, 244u8, 161u8, 106u8, 207u8, 37u8, 190u8, 106u8, 42u8, 49u8,
+                115u8, 200u8, 0u8, 22u8, 138u8, 173u8, 94u8, 15u8, 219u8, 58u8, 118u8,
+                63u8, 92u8, 116u8, 188u8, 119u8, 171u8, 58u8, 97u8, 122u8, 75u8, 223u8,
+                82u8, 224u8, 112u8, 188u8, 236u8, 74u8, 55u8, 152u8, 43u8, 241u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -7132,8 +7621,9 @@ event InvalidateKeyResharing(uint256 kmsContextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `NewKmsContext((uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]),(uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]))` and selector `0xfc7be15ed33e4717cebd6a6b7960e6c0311160f588c996f0a8ebdd1348924fc1`.
+    /**Event with signature `NewKmsContext((uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]),(uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]))` and selector `0x3662ec316d76e6a75eb7c45001a8ad74c3eb943e8778111c0225f2a9fd5e00e6`.
 ```solidity
 event NewKmsContext(KmsContext activeKmsContext, KmsContext newKmsContext);
 ```*/
@@ -7165,11 +7655,11 @@ event NewKmsContext(KmsContext activeKmsContext, KmsContext newKmsContext);
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "NewKmsContext((uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]),(uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]))";
+            const SIGNATURE: &'static str = "NewKmsContext((uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]),(uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]))";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                252u8, 123u8, 225u8, 94u8, 211u8, 62u8, 71u8, 23u8, 206u8, 189u8, 106u8,
-                107u8, 121u8, 96u8, 230u8, 192u8, 49u8, 17u8, 96u8, 245u8, 136u8, 201u8,
-                150u8, 240u8, 168u8, 235u8, 221u8, 19u8, 72u8, 146u8, 79u8, 193u8,
+                54u8, 98u8, 236u8, 49u8, 109u8, 118u8, 230u8, 167u8, 94u8, 183u8, 196u8,
+                80u8, 1u8, 168u8, 173u8, 116u8, 195u8, 235u8, 148u8, 62u8, 135u8, 120u8,
+                17u8, 28u8, 2u8, 37u8, 242u8, 169u8, 253u8, 94u8, 0u8, 230u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -7244,8 +7734,9 @@ event NewKmsContext(KmsContext activeKmsContext, KmsContext newKmsContext);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `StartKeyResharing((uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]),(uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]),uint256)` and selector `0x61d0e67b40fff35af90e7b5d294bc63043ca630a2b4da80456a73254b16b9c62`.
+    /**Event with signature `StartKeyResharing((uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]),(uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]),uint256)` and selector `0x5dc601065a035d78305cd9ef27c91a009cd8d37297e43bb76319490895a0d058`.
 ```solidity
 event StartKeyResharing(KmsContext activeKmsContext, KmsContext newKmsContext, uint256 generationBlockNumber);
 ```*/
@@ -7283,11 +7774,11 @@ event StartKeyResharing(KmsContext activeKmsContext, KmsContext newKmsContext, u
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "StartKeyResharing((uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]),(uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]),uint256)";
+            const SIGNATURE: &'static str = "StartKeyResharing((uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]),(uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]),uint256)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                97u8, 208u8, 230u8, 123u8, 64u8, 255u8, 243u8, 90u8, 249u8, 14u8, 123u8,
-                93u8, 41u8, 75u8, 198u8, 48u8, 67u8, 202u8, 99u8, 10u8, 43u8, 77u8,
-                168u8, 4u8, 86u8, 167u8, 50u8, 84u8, 177u8, 107u8, 156u8, 98u8,
+                93u8, 198u8, 1u8, 6u8, 90u8, 3u8, 93u8, 120u8, 48u8, 92u8, 217u8, 239u8,
+                39u8, 201u8, 26u8, 0u8, 156u8, 216u8, 211u8, 114u8, 151u8, 228u8, 59u8,
+                183u8, 99u8, 25u8, 73u8, 8u8, 149u8, 160u8, 208u8, 88u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -7366,8 +7857,9 @@ event StartKeyResharing(KmsContext activeKmsContext, KmsContext newKmsContext, u
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `StartKmsContextPreActivation((uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]),uint256)` and selector `0x8b4796c43aa653dd3d424b0812082ec77ffd1b55ca109ed3ac1a142e4967bf0c`.
+    /**Event with signature `StartKmsContextPreActivation((uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]),uint256)` and selector `0xe9b4a7ae1c149645c728bb941595723497a8e7aabf4d12e231333f27ad8587c4`.
 ```solidity
 event StartKmsContextPreActivation(KmsContext newKmsContext, uint256 preActivationBlockNumber);
 ```*/
@@ -7399,11 +7891,11 @@ event StartKmsContextPreActivation(KmsContext newKmsContext, uint256 preActivati
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "StartKmsContextPreActivation((uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]),uint256)";
+            const SIGNATURE: &'static str = "StartKmsContextPreActivation((uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]),uint256)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                139u8, 71u8, 150u8, 196u8, 58u8, 166u8, 83u8, 221u8, 61u8, 66u8, 75u8,
-                8u8, 18u8, 8u8, 46u8, 199u8, 127u8, 253u8, 27u8, 85u8, 202u8, 16u8,
-                158u8, 211u8, 172u8, 26u8, 20u8, 46u8, 73u8, 103u8, 191u8, 12u8,
+                233u8, 180u8, 167u8, 174u8, 28u8, 20u8, 150u8, 69u8, 199u8, 40u8, 187u8,
+                148u8, 21u8, 149u8, 114u8, 52u8, 151u8, 168u8, 231u8, 170u8, 191u8, 77u8,
+                18u8, 226u8, 49u8, 51u8, 63u8, 39u8, 173u8, 133u8, 135u8, 196u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -7482,6 +7974,7 @@ event StartKmsContextPreActivation(KmsContext newKmsContext, uint256 preActivati
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `SuspendKmsContext(uint256)` and selector `0x851a08c16b15959c338ac4b56466d06c9f9d5ff8d715168aa125d5ccaf538320`.
 ```solidity
@@ -7586,6 +8079,7 @@ event SuspendKmsContext(uint256 kmsContextId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UpdateKmsContextGenerationBlockPeriod(uint256)` and selector `0x53cb968d31c28c6504a6e73d9908db6e1c1a386b66dcacec1a0117752c5ab986`.
 ```solidity
@@ -7698,6 +8192,7 @@ event UpdateKmsContextGenerationBlockPeriod(uint256 newKmsContextGenerationBlock
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UpdateKmsContextSuspensionBlockPeriod(uint256)` and selector `0x3ad5c22724afab8ed2b578fb9b160c7f65f5abd0aad105752b7ba4e068a3e021`.
 ```solidity
@@ -8140,7 +8635,7 @@ event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `ValidateKeyResharing((uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]))` and selector `0xea6eb04f458333491c4c56ca56b1de8c507d76a7f502aabbdf124c3dd4f3c4ec`.
+    /**Event with signature `ValidateKeyResharing((uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]))` and selector `0x68898a98936bf23a56e8ed4b23dcc98cef926bd9ac2ce522f1f9423e3864f2f5`.
 ```solidity
 event ValidateKeyResharing(KmsContext newKmsContext);
 ```*/
@@ -8170,11 +8665,12 @@ event ValidateKeyResharing(KmsContext newKmsContext);
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "ValidateKeyResharing((uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[]))";
+            const SIGNATURE: &'static str = "ValidateKeyResharing((uint256,uint256,bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]))";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                234u8, 110u8, 176u8, 79u8, 69u8, 131u8, 51u8, 73u8, 28u8, 76u8, 86u8,
-                202u8, 86u8, 177u8, 222u8, 140u8, 80u8, 125u8, 118u8, 167u8, 245u8, 2u8,
-                170u8, 187u8, 223u8, 18u8, 76u8, 61u8, 212u8, 243u8, 196u8, 236u8,
+                104u8, 137u8, 138u8, 152u8, 147u8, 107u8, 242u8, 58u8, 86u8, 232u8,
+                237u8, 75u8, 35u8, 220u8, 201u8, 140u8, 239u8, 146u8, 107u8, 217u8,
+                172u8, 44u8, 229u8, 34u8, 241u8, 249u8, 66u8, 62u8, 56u8, 100u8, 242u8,
+                245u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -8243,6 +8739,7 @@ event ValidateKeyResharing(KmsContext newKmsContext);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `addHostChain((uint256,address,address,string,string))` and selector `0xc80b33ca`.
 ```solidity
@@ -8367,9 +8864,9 @@ function addHostChain(HostChain memory hostChain) external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `addKmsContext(uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[],(uint256,uint256))` and selector `0xa91f66a6`.
+    /**Function with signature `addKmsContext(uint256,bytes8,bool,uint256,(string,address,address,uint256,bytes,string,string,bytes)[],(uint256,uint256))` and selector `0x169cac14`.
 ```solidity
-function addKmsContext(uint256 preActivationBlockPeriod, bytes memory softwareVersion, bool reshareKeys, uint256 mpcThreshold, KmsNode[] memory kmsNodes, DecryptionThresholds memory decryptionThresholds) external;
+function addKmsContext(uint256 preActivationBlockPeriod, bytes8 softwareVersion, bool reshareKeys, uint256 mpcThreshold, KmsNode[] memory kmsNodes, DecryptionThresholds memory decryptionThresholds) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -8377,7 +8874,7 @@ function addKmsContext(uint256 preActivationBlockPeriod, bytes memory softwareVe
         #[allow(missing_docs)]
         pub preActivationBlockPeriod: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub softwareVersion: alloy::sol_types::private::Bytes,
+        pub softwareVersion: alloy::sol_types::private::FixedBytes<8>,
         #[allow(missing_docs)]
         pub reshareKeys: bool,
         #[allow(missing_docs)]
@@ -8389,7 +8886,7 @@ function addKmsContext(uint256 preActivationBlockPeriod, bytes memory softwareVe
         #[allow(missing_docs)]
         pub decryptionThresholds: <DecryptionThresholds as alloy::sol_types::SolType>::RustType,
     }
-    ///Container type for the return parameters of the [`addKmsContext(uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[],(uint256,uint256))`](addKmsContextCall) function.
+    ///Container type for the return parameters of the [`addKmsContext(uint256,bytes8,bool,uint256,(string,address,address,uint256,bytes,string,string,bytes)[],(uint256,uint256))`](addKmsContextCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addKmsContextReturn {}
@@ -8405,7 +8902,7 @@ function addKmsContext(uint256 preActivationBlockPeriod, bytes memory softwareVe
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::FixedBytes<8>,
                 alloy::sol_types::sol_data::Bool,
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<KmsNode>,
@@ -8414,7 +8911,7 @@ function addKmsContext(uint256 preActivationBlockPeriod, bytes memory softwareVe
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::primitives::aliases::U256,
-                alloy::sol_types::private::Bytes,
+                alloy::sol_types::private::FixedBytes<8>,
                 bool,
                 alloy::sol_types::private::primitives::aliases::U256,
                 alloy::sol_types::private::Vec<
@@ -8497,7 +8994,7 @@ function addKmsContext(uint256 preActivationBlockPeriod, bytes memory softwareVe
         impl alloy_sol_types::SolCall for addKmsContextCall {
             type Parameters<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::FixedBytes<8>,
                 alloy::sol_types::sol_data::Bool,
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<KmsNode>,
@@ -8511,8 +9008,8 @@ function addKmsContext(uint256 preActivationBlockPeriod, bytes memory softwareVe
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "addKmsContext(uint256,bytes,bool,uint256,(uint256,address,address,string,bytes)[],(uint256,uint256))";
-            const SELECTOR: [u8; 4] = [169u8, 31u8, 102u8, 166u8];
+            const SIGNATURE: &'static str = "addKmsContext(uint256,bytes8,bool,uint256,(string,address,address,uint256,bytes,string,string,bytes)[],(uint256,uint256))";
+            const SELECTOR: [u8; 4] = [22u8, 156u8, 172u8, 20u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -8527,9 +9024,9 @@ function addKmsContext(uint256 preActivationBlockPeriod, bytes memory softwareVe
                     > as alloy_sol_types::SolType>::tokenize(
                         &self.preActivationBlockPeriod,
                     ),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.softwareVersion,
-                    ),
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        8,
+                    > as alloy_sol_types::SolType>::tokenize(&self.softwareVersion),
                     <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
                         &self.reshareKeys,
                     ),
@@ -8556,6 +9053,7 @@ function addKmsContext(uint256 preActivationBlockPeriod, bytes memory softwareVe
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHostChainIsRegistered(uint256)` and selector `0x86fa2139`.
 ```solidity
@@ -9005,136 +9503,7 @@ function checkIsKmsSignerFromContext(uint256 kmsContextId, address signerAddress
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkIsKmsSignerCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { signerAddress: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkIsKmsSignerReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkIsKmsSignerReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkIsKmsSignerReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for checkIsKmsSignerCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = checkIsKmsSignerReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkIsKmsSigner(address)";
-            const SELECTOR: [u8; 4] = [108u8, 136u8, 235u8, 67u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.signerAddress,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `checkIsKmsTxSender(address)` and selector `0xc6275258`.
-```solidity
-function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkIsKmsTxSenderCall {
-        #[allow(missing_docs)]
-        pub kmsTxSenderAddress: alloy::sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the [`checkIsKmsTxSender(address)`](checkIsKmsTxSenderCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkIsKmsTxSenderReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkIsKmsTxSenderCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkIsKmsTxSenderCall) -> Self {
-                    (value.kmsTxSenderAddress,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkIsKmsTxSenderCall {
+            for checkIsKmsSignerFromContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         kmsContextId: tuple.0,
@@ -9221,6 +9590,7 @@ function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkIsKmsTxSenderFromContext(uint256,address)` and selector `0xdefba06a`.
 ```solidity
@@ -9622,6 +9992,7 @@ function compromiseKmsContext(uint256 kmsContextId) external;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `destroyKmsContext(uint256)` and selector `0xc0ae64f7`.
 ```solidity
@@ -9752,6 +10123,7 @@ function destroyKmsContext(uint256 kmsContextId) external;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getActiveKmsContext()` and selector `0x0dd486c0`.
 ```solidity
@@ -9760,6 +10132,7 @@ function getActiveKmsContext() external view returns (KmsContext memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getActiveKmsContextCall {}
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getActiveKmsContext()`](getActiveKmsContextCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -9879,6 +10252,7 @@ function getActiveKmsContext() external view returns (KmsContext memory);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getActiveKmsContextId()` and selector `0x43e37e8a`.
 ```solidity
@@ -9887,6 +10261,7 @@ function getActiveKmsContextId() external view returns (uint256);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getActiveKmsContextIdCall {}
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getActiveKmsContextId()`](getActiveKmsContextIdCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -10006,6 +10381,7 @@ function getActiveKmsContextId() external view returns (uint256);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCoprocessor(address)` and selector `0xef6997f9`.
 ```solidity
@@ -10813,6 +11189,7 @@ function getKmsContext(uint256 kmsContextId) external view returns (KmsContext m
         #[allow(missing_docs)]
         pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
     }
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getKmsContext(uint256)`](getKmsContextCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -10934,6 +11311,7 @@ function getKmsContext(uint256 kmsContextId) external view returns (KmsContext m
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsContextStatus(uint256)` and selector `0x4d694260`.
 ```solidity
@@ -10945,6 +11323,7 @@ function getKmsContextStatus(uint256 kmsContextId) external view returns (Contex
         #[allow(missing_docs)]
         pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
     }
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getKmsContextStatus(uint256)`](getKmsContextStatusCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -11070,6 +11449,7 @@ function getKmsContextStatus(uint256 kmsContextId) external view returns (Contex
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsNode(address)` and selector `0xe3b2a874`.
 ```solidity
@@ -11217,6 +11597,7 @@ function getKmsNodeFromContext(uint256 kmsContextId, address kmsTxSenderAddress)
         #[allow(missing_docs)]
         pub kmsTxSenderAddress: alloy::sol_types::private::Address,
     }
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getKmsNodeFromContext(uint256,address)`](getKmsNodeFromContextCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -11355,6 +11736,7 @@ function getKmsNodeFromContext(uint256 kmsContextId, address kmsTxSenderAddress)
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsNodes()` and selector `0xe72ee991`.
 ```solidity
@@ -11363,6 +11745,7 @@ function getKmsNodes() external view returns (KmsNode[] memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getKmsNodesCall {}
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getKmsNodes()`](getKmsNodesCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -11482,6 +11865,7 @@ function getKmsNodes() external view returns (KmsNode[] memory);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsSigners()` and selector `0x7eaac8f2`.
 ```solidity
@@ -12261,6 +12645,7 @@ function getPublicDecryptionThresholdFromContext(uint256 kmsContextId) external 
         #[allow(missing_docs)]
         pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
     }
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getPublicDecryptionThresholdFromContext(uint256)`](getPublicDecryptionThresholdFromContextCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -12386,6 +12771,7 @@ function getPublicDecryptionThresholdFromContext(uint256 kmsContextId) external 
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getSuspendedKmsContextId()` and selector `0x0a50e318`.
 ```solidity
@@ -12394,6 +12780,7 @@ function getSuspendedKmsContextId() external view returns (uint256);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getSuspendedKmsContextIdCall {}
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getSuspendedKmsContextId()`](getSuspendedKmsContextIdCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -12513,6 +12900,7 @@ function getSuspendedKmsContextId() external view returns (uint256);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getUserDecryptionThreshold()` and selector `0xc2b42986`.
 ```solidity
@@ -12653,6 +13041,7 @@ function getUserDecryptionThresholdFromContext(uint256 kmsContextId) external vi
         #[allow(missing_docs)]
         pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
     }
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getUserDecryptionThresholdFromContext(uint256)`](getUserDecryptionThresholdFromContextCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -12778,6 +13167,7 @@ function getUserDecryptionThresholdFromContext(uint256 kmsContextId) external vi
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
@@ -13022,6 +13412,7 @@ function moveSuspendedKmsContextToActive() external;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `refreshKmsContextStatuses()` and selector `0x8cb96751`.
 ```solidity
@@ -13538,6 +13929,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `validateKeyResharing(uint256,bytes)` and selector `0x1079ebeb`.
 ```solidity
@@ -13783,6 +14175,7 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
             [13u8, 142u8, 110u8, 44u8],
             [13u8, 212u8, 134u8, 192u8],
             [16u8, 121u8, 235u8, 235u8],
+            [22u8, 156u8, 172u8, 20u8],
             [25u8, 90u8, 253u8, 230u8],
             [30u8, 165u8, 189u8, 66u8],
             [37u8, 133u8, 187u8, 101u8],
@@ -13804,7 +14197,6 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
             [145u8, 100u8, 208u8, 174u8],
             [153u8, 91u8, 219u8, 212u8],
             [158u8, 231u8, 122u8, 243u8],
-            [169u8, 31u8, 102u8, 166u8],
             [184u8, 113u8, 93u8, 77u8],
             [192u8, 174u8, 100u8, 247u8],
             [194u8, 180u8, 41u8, 134u8],
@@ -14021,6 +14413,19 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                             .map(IGatewayConfigCalls::validateKeyResharing)
                     }
                     validateKeyResharing
+                },
+                {
+                    fn addKmsContext(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <addKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigCalls::addKmsContext)
+                    }
+                    addKmsContext
                 },
                 {
                     fn checkIsPauser(
@@ -14296,19 +14701,6 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                             .map(IGatewayConfigCalls::compromiseKmsContext)
                     }
                     compromiseKmsContext
-                },
-                {
-                    fn addKmsContext(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <addKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigCalls::addKmsContext)
-                    }
-                    addKmsContext
                 },
                 {
                     fn getPublicDecryptionThresholdFromContext(
@@ -15006,6 +15398,10 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
         NotKmsTxSenderFromContext(NotKmsTxSenderFromContext),
         #[allow(missing_docs)]
         NotPauser(NotPauser),
+        #[allow(missing_docs)]
+        NumberOfKmsNodesChanged(NumberOfKmsNodesChanged),
+        #[allow(missing_docs)]
+        SuspendedKmsContextOngoing(SuspendedKmsContextOngoing),
     }
     #[automatically_derived]
     impl IGatewayConfigErrors {
@@ -15026,6 +15422,7 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
             [82u8, 215u8, 37u8, 245u8],
             [84u8, 16u8, 161u8, 16u8],
             [94u8, 81u8, 162u8, 225u8],
+            [118u8, 35u8, 211u8, 87u8],
             [119u8, 208u8, 94u8, 167u8],
             [130u8, 177u8, 251u8, 218u8],
             [132u8, 32u8, 143u8, 35u8],
@@ -15040,6 +15437,7 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
             [178u8, 94u8, 78u8, 179u8],
             [182u8, 103u8, 156u8, 59u8],
             [210u8, 83u8, 94u8, 17u8],
+            [213u8, 149u8, 169u8, 98u8],
             [230u8, 10u8, 114u8, 113u8],
             [253u8, 248u8, 160u8, 93u8],
         ];
@@ -15048,7 +15446,7 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 26usize;
+        const COUNT: usize = 28usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -15128,6 +15526,12 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                     <NotKmsTxSenderFromContext as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotPauser(_) => <NotPauser as alloy_sol_types::SolError>::SELECTOR,
+                Self::NumberOfKmsNodesChanged(_) => {
+                    <NumberOfKmsNodesChanged as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::SuspendedKmsContextOngoing(_) => {
+                    <SuspendedKmsContextOngoing as alloy_sol_types::SolError>::SELECTOR
+                }
             }
         }
         #[inline]
@@ -15278,6 +15682,19 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                             .map(IGatewayConfigErrors::KmsContextNotGenerating)
                     }
                     KmsContextNotGenerating
+                },
+                {
+                    fn SuspendedKmsContextOngoing(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <SuspendedKmsContextOngoing as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigErrors::SuspendedKmsContextOngoing)
+                    }
+                    SuspendedKmsContextOngoing
                 },
                 {
                     fn CompromiseActiveKmsContextNotAllowed(
@@ -15472,6 +15889,19 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                     InvalidHighUserDecryptionThreshold
                 },
                 {
+                    fn NumberOfKmsNodesChanged(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <NumberOfKmsNodesChanged as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigErrors::NumberOfKmsNodesChanged)
+                    }
+                    NumberOfKmsNodesChanged
+                },
+                {
                     fn InvalidNullUserDecryptionThreshold(
                         data: &[u8],
                         validate: bool,
@@ -15637,6 +16067,16 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                 Self::NotPauser(inner) => {
                     <NotPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
+                Self::NumberOfKmsNodesChanged(inner) => {
+                    <NumberOfKmsNodesChanged as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::SuspendedKmsContextOngoing(inner) => {
+                    <SuspendedKmsContextOngoing as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
             }
         }
         #[inline]
@@ -15792,6 +16232,18 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                 Self::NotPauser(inner) => {
                     <NotPauser as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
+                Self::NumberOfKmsNodesChanged(inner) => {
+                    <NumberOfKmsNodesChanged as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::SuspendedKmsContextOngoing(inner) => {
+                    <SuspendedKmsContextOngoing as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
             }
         }
     }
@@ -15849,6 +16301,11 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                 12u8, 74u8, 215u8, 244u8, 228u8, 238u8, 94u8, 239u8, 197u8, 163u8,
             ],
             [
+                54u8, 98u8, 236u8, 49u8, 109u8, 118u8, 230u8, 167u8, 94u8, 183u8, 196u8,
+                80u8, 1u8, 168u8, 173u8, 116u8, 195u8, 235u8, 148u8, 62u8, 135u8, 120u8,
+                17u8, 28u8, 2u8, 37u8, 242u8, 169u8, 253u8, 94u8, 0u8, 230u8,
+            ],
+            [
                 58u8, 213u8, 194u8, 39u8, 36u8, 175u8, 171u8, 142u8, 210u8, 181u8, 120u8,
                 251u8, 155u8, 22u8, 12u8, 127u8, 101u8, 245u8, 171u8, 208u8, 170u8,
                 209u8, 5u8, 117u8, 43u8, 123u8, 164u8, 224u8, 104u8, 163u8, 224u8, 33u8,
@@ -15869,14 +16326,25 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                 172u8, 236u8, 26u8, 1u8, 23u8, 117u8, 44u8, 90u8, 185u8, 134u8,
             ],
             [
-                97u8, 208u8, 230u8, 123u8, 64u8, 255u8, 243u8, 90u8, 249u8, 14u8, 123u8,
-                93u8, 41u8, 75u8, 198u8, 48u8, 67u8, 202u8, 99u8, 10u8, 43u8, 77u8,
-                168u8, 4u8, 86u8, 167u8, 50u8, 84u8, 177u8, 107u8, 156u8, 98u8,
+                93u8, 198u8, 1u8, 6u8, 90u8, 3u8, 93u8, 120u8, 48u8, 92u8, 217u8, 239u8,
+                39u8, 201u8, 26u8, 0u8, 156u8, 216u8, 211u8, 114u8, 151u8, 228u8, 59u8,
+                183u8, 99u8, 25u8, 73u8, 8u8, 149u8, 160u8, 208u8, 88u8,
             ],
             [
                 102u8, 118u8, 147u8, 65u8, 239u8, 253u8, 38u8, 143u8, 196u8, 233u8,
                 169u8, 200u8, 242u8, 123u8, 252u8, 150u8, 133u8, 7u8, 181u8, 25u8, 176u8,
                 221u8, 185u8, 180u8, 173u8, 61u8, 237u8, 95u8, 3u8, 1u8, 104u8, 55u8,
+            ],
+            [
+                104u8, 137u8, 138u8, 152u8, 147u8, 107u8, 242u8, 58u8, 86u8, 232u8,
+                237u8, 75u8, 35u8, 220u8, 201u8, 140u8, 239u8, 146u8, 107u8, 217u8,
+                172u8, 44u8, 229u8, 34u8, 241u8, 249u8, 66u8, 62u8, 56u8, 100u8, 242u8,
+                245u8,
+            ],
+            [
+                115u8, 200u8, 0u8, 22u8, 138u8, 173u8, 94u8, 15u8, 219u8, 58u8, 118u8,
+                63u8, 92u8, 116u8, 188u8, 119u8, 171u8, 58u8, 97u8, 122u8, 75u8, 223u8,
+                82u8, 224u8, 112u8, 188u8, 236u8, 74u8, 55u8, 152u8, 43u8, 241u8,
             ],
             [
                 131u8, 126u8, 10u8, 101u8, 40u8, 218u8, 223u8, 162u8, 220u8, 121u8, 38u8,
@@ -15887,11 +16355,6 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                 133u8, 26u8, 8u8, 193u8, 107u8, 21u8, 149u8, 156u8, 51u8, 138u8, 196u8,
                 181u8, 100u8, 102u8, 208u8, 108u8, 159u8, 157u8, 95u8, 248u8, 215u8,
                 21u8, 22u8, 138u8, 161u8, 37u8, 213u8, 204u8, 175u8, 83u8, 131u8, 32u8,
-            ],
-            [
-                139u8, 71u8, 150u8, 196u8, 58u8, 166u8, 83u8, 221u8, 61u8, 66u8, 75u8,
-                8u8, 18u8, 8u8, 46u8, 199u8, 127u8, 253u8, 27u8, 85u8, 202u8, 16u8,
-                158u8, 211u8, 172u8, 26u8, 20u8, 46u8, 73u8, 103u8, 191u8, 12u8,
             ],
             [
                 143u8, 183u8, 88u8, 88u8, 165u8, 101u8, 174u8, 225u8, 23u8, 52u8, 45u8,
@@ -15914,19 +16377,9 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                 58u8, 245u8, 211u8, 151u8, 154u8, 218u8, 181u8, 3u8, 88u8, 0u8,
             ],
             [
-                234u8, 110u8, 176u8, 79u8, 69u8, 131u8, 51u8, 73u8, 28u8, 76u8, 86u8,
-                202u8, 86u8, 177u8, 222u8, 140u8, 80u8, 125u8, 118u8, 167u8, 245u8, 2u8,
-                170u8, 187u8, 223u8, 18u8, 76u8, 61u8, 212u8, 243u8, 196u8, 236u8,
-            ],
-            [
-                250u8, 119u8, 245u8, 225u8, 77u8, 218u8, 142u8, 214u8, 101u8, 98u8, 63u8,
-                40u8, 206u8, 186u8, 218u8, 183u8, 42u8, 117u8, 239u8, 169u8, 86u8, 131u8,
-                22u8, 244u8, 161u8, 106u8, 207u8, 37u8, 190u8, 106u8, 42u8, 49u8,
-            ],
-            [
-                252u8, 123u8, 225u8, 94u8, 211u8, 62u8, 71u8, 23u8, 206u8, 189u8, 106u8,
-                107u8, 121u8, 96u8, 230u8, 192u8, 49u8, 17u8, 96u8, 245u8, 136u8, 201u8,
-                150u8, 240u8, 168u8, 235u8, 221u8, 19u8, 72u8, 146u8, 79u8, 193u8,
+                233u8, 180u8, 167u8, 174u8, 28u8, 20u8, 150u8, 69u8, 199u8, 40u8, 187u8,
+                148u8, 21u8, 149u8, 114u8, 52u8, 151u8, 168u8, 231u8, 170u8, 191u8, 77u8,
+                18u8, 226u8, 49u8, 51u8, 63u8, 39u8, 173u8, 133u8, 135u8, 196u8,
             ],
         ];
     }
@@ -16404,7 +16857,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn addKmsContext(
             &self,
             preActivationBlockPeriod: alloy::sol_types::private::primitives::aliases::U256,
-            softwareVersion: alloy::sol_types::private::Bytes,
+            softwareVersion: alloy::sol_types::private::FixedBytes<8>,
             reshareKeys: bool,
             mpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
             kmsNodes: alloy::sol_types::private::Vec<

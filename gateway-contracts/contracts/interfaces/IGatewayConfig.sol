@@ -194,6 +194,10 @@ interface IGatewayConfig {
 
     error NoSuspendedKmsContext();
 
+    error NumberOfKmsNodesChanged(uint256 activeKmsNodesLength, uint256 newKmsNodesLength);
+
+    error SuspendedKmsContextOngoing(uint256 suspendedContextId);
+
     error KmsContextNotInitialized(uint256 kmsContextId);
 
     error CompromiseActiveKmsContextNotAllowed(uint256 kmsContextId);
@@ -250,7 +254,7 @@ interface IGatewayConfig {
      */
     function addKmsContext(
         uint256 preActivationBlockPeriod,
-        bytes calldata softwareVersion,
+        bytes8 softwareVersion,
         bool reshareKeys,
         uint256 mpcThreshold,
         KmsNode[] calldata kmsNodes,

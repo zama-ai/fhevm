@@ -160,11 +160,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @dev Register the pauser
         $.pauser = initialPauser;
 
-        // The key resharing flag is set to false at initialization as there is no previous KMS context
-        // to reshare from
+        // The first KMS context is the initial KMS context and thus does not have a previous context
         KmsContext memory newKmsContext = _addKmsContext(
+            0,
             initialKmsConfiguration.softwareVersion,
-            false,
             initialKmsConfiguration.mpcThreshold,
             initialKmsConfiguration.kmsNodes
         );
@@ -344,7 +343,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IGatewayConfig-addKmsContext}.
     function addKmsContext(
         uint256 preActivationBlockPeriod,
-        bytes calldata softwareVersion,
+        bytes8 softwareVersion,
         bool reshareKeys,
         uint256 mpcThreshold,
         KmsNode[] calldata kmsNodes,
@@ -352,12 +351,33 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     ) external virtual onlyOwner {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
-        KmsContext memory newKmsContext = _addKmsContext(softwareVersion, reshareKeys, mpcThreshold, kmsNodes);
+        KmsContext memory activeKmsContext = getActiveKmsContext();
+        uint256 activeKmsNodesLength = activeKmsContext.kmsNodes.length;
+        uint256 newKmsNodesLength = kmsNodes.length;
+
+        // Changing the number of KMS nodes is currently not allowed as the KMS does not support
+        // resharing between different numbers of KMS nodes yet
+        // See https://github.com/zama-ai/fhevm/issues/134
+        if (newKmsNodesLength != activeKmsNodesLength) {
+            revert NumberOfKmsNodesChanged(activeKmsNodesLength, newKmsNodesLength);
+        }
+
+        // Do not allow adding a new KMS context if there is a suspended KMS context ongoing
+        uint256 suspendedContextId = getSuspendedKmsContextId();
+        if (suspendedContextId != 0) {
+            revert SuspendedKmsContextOngoing(suspendedContextId);
+        }
+
+        KmsContext memory newKmsContext = _addKmsContext(
+            activeKmsContext.contextId,
+            softwareVersion,
+            mpcThreshold,
+            kmsNodes
+        );
 
         _setDecryptionThresholds(newKmsContext, decryptionThresholds);
 
         // Get the current active KMS context
-        KmsContext memory activeKmsContext = getActiveKmsContext();
 
         // Emit the `NewKmsContext` event in any case
         emit NewKmsContext(activeKmsContext, newKmsContext);
@@ -365,7 +385,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         // If the `reshareKeys` flag is set or if the number of KMS nodes has changed, a key resharing is triggered
         // TODO: We should not trigger key resharing in case of parties having too many compromised parties
         // See: https://github.com/zama-ai/fhevm-gateway/issues/393
-        if (reshareKeys || (activeKmsContext.kmsNodes.length != newKmsContext.kmsNodes.length)) {
+        // TODO: We should also trigger key resharing if the number of KMS nodes has changed once
+        // this is supported by the KMS
+        // See https://github.com/zama-ai/fhevm/issues/134
+        if (reshareKeys) {
             ContextLifecycle.setGenerating($.kmsContextLifecycle, newKmsContext.contextId);
 
             // Store the pre-activation block period that will be taken into account once the key resharing is validated
@@ -764,8 +787,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     function _addKmsContext(
-        bytes calldata softwareVersion,
-        bool reshareKeys,
+        uint256 previousKmsContextId,
+        bytes8 softwareVersion,
         uint256 mpcThreshold,
         KmsNode[] calldata kmsNodes
     ) internal virtual returns (KmsContext memory) {
@@ -778,8 +801,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         // Solidity doesn't support directly copying complex data structures like KmsNodes (array
         // of structs), so we need to instead create the struct field by field
         $.kmsContexts[kmsContextId].contextId = kmsContextId;
+        $.kmsContexts[kmsContextId].previousContextId = previousKmsContextId;
         $.kmsContexts[kmsContextId].softwareVersion = softwareVersion;
-        $.kmsContexts[kmsContextId].reshareKeys = reshareKeys;
         _setMpcThreshold(kmsContextId, kmsNodes.length, mpcThreshold);
 
         // Then, we need copy each KMS node struct one by one

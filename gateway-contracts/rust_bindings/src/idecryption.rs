@@ -981,6 +981,7 @@ pub mod IDecryption {
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct CtHandleContractPair { bytes32 ctHandle; address contractAddress; }
@@ -2036,6 +2037,7 @@ error ContextNotAllowedForDecryption(uint256 decryptionId, uint256 contextId, Co
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContractAddressesMaxLengthExceeded(uint8,uint256)` and selector `0xc5ab467e`.
 ```solidity
