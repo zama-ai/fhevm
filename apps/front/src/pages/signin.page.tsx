@@ -43,7 +43,7 @@ export function SigninPage() {
         errorMessage={errorMessage}
       />
       <Text textStyle="sm">
-        Forgot your parssword? <Link to="/reset-password">Reset it</Link>
+        Forgot your password? <Link to="/reset-password">Reset it</Link>
       </Text>
     </>
   )

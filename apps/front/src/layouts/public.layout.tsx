@@ -8,7 +8,7 @@ function Help() {
   return (
     <Text color={{ base: 'gray.500', md: 'yellow.700' }} textStyle="sm">
       Console is in closed beta. Please{' '}
-      <Link to="https://zama.ai">contact us</Link> for details.
+      <Link to="https://zama.ai/contact">contact us</Link> for details.
     </Text>
   )
 }
