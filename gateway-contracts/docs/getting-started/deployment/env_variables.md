@@ -234,3 +234,15 @@ RPC_URL="http://127.0.0.1:8757" # (string)
 ```
 
 This is the URL of the RPC node for the fhevm gateway network.
+
+#### After deploying contracts in production
+
+Some additional settings are needed after deploying the contracts in a production setting.
+
+- GatewayConfig address
+
+```bash
+GATEWAY_CONFIG_ADDRESS="0xC7D45661a345eC5cA0e8521CFEF7e32FDA0Daa68" # (address)
+```
+
+This (static) address is needed for adding host chains to the GatewayConfig contract separately. In a proper production setting, this environment variable needs to be dynamically set after deploying the contracts.
