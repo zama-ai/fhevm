@@ -71,7 +71,14 @@ jobs:
 
   run-docker:
     needs: [start-amd64-runner]
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@4597dee06cf8e3e977f66aa8b1824ef4e1d84a22
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef9d90453e0d776453026c751fbbd48e410d605a
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      id-token: 'write'
+      pull-requests: 'read'
+      packages: write
+      attestations: write
     secrets:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
