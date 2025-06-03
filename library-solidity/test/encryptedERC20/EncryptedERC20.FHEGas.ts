@@ -1,11 +1,11 @@
 import { expect } from 'chai';
 
-import { getFHEGasFromTxReceipt } from '../coprocessorUtils';
+import { getTxHCUFromTxReceipt } from '../coprocessorUtils';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
-describe('EncryptedERC20:FHEGas', function () {
+describe('EncryptedERC20:HCU', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
@@ -34,8 +34,8 @@ describe('EncryptedERC20:FHEGas', function () {
     const t2 = await tx.wait();
     expect(t2?.status).to.eq(1);
 
-    const FHEGasConsumedTransfer = getFHEGasFromTxReceipt(t2);
-    console.log('FHEGas Consumed in transfer', FHEGasConsumedTransfer);
+    const FHEGasConsumedTransfer = getTxHCUFromTxReceipt(t2);
+    console.log('HCU Consumed in transfer', FHEGasConsumedTransfer);
     console.log('Native Gas Consumed in transfer', t2.gasUsed);
   });
 
@@ -64,9 +64,9 @@ describe('EncryptedERC20:FHEGas', function () {
       encryptedTransferAmount2.inputProof,
     );
     const t3 = await tx3.wait();
-    // FHEGas tracking is currently implemented only with TFHEExecutor.events.sol variant
-    const FHEGasConsumedTransferFrom = getFHEGasFromTxReceipt(t3);
-    console.log('FHEGas Consumed in transferFrom', FHEGasConsumedTransferFrom);
+    // HCU tracking is currently implemented only with TFHEExecutor.events.sol variant
+    const FHEGasConsumedTransferFrom = getTxHCUFromTxReceipt(t3);
+    console.log('HCU Consumed in transferFrom', FHEGasConsumedTransferFrom);
     console.log('Native Gas Consumed in transferFrom', t3.gasUsed);
   });
 });

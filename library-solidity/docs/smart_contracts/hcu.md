@@ -1,50 +1,32 @@
-# Gas estimation in fhevm
+# Homomorphic Complexity Units ("HCU") in fhevm
 
-This guide explains how to estimate gas costs for Fully Homomorphic Encryption (FHE) operations in your smart contracts on fhevm. Understanding gas consumption is critical for designing efficient confidential smart contracts.
+This guide explains how to use Fully Homomorphic Encryption (FHE) operations in your smart contracts on fhevm. Understanding HCU is critical for designing efficient confidential smart contracts.
 
 ## Overview
 
-FHE operations in fhevm are computationally intensive, resulting in higher gas costs compared to standard Ethereum operations. This is due to the complex mathematical operations required to ensure privacy and security.
+FHE operations in fhevm are computationally intensive compared to standard Ethereum operations, as they require complex mathematical computations to maintain privacy and security. To manage computational load and prevent potential denial-of-service attacks, fhevm implements a metering system called **Homomorphic Complexity Units ("HCU")**.
 
-### Types of gas in fhevm
+Each FHE operation consumes a specific amount of HCU based on its computational complexity. The `HCULimit` contract monitors HCU consumption for each transaction and enforces two key limits:
 
-1. **Native Gas**:
-   - Standard gas used for operations on the underlying EVM chain.
-   - On fhevm, native gas consumption is approximately 20% higher than in mocked environments.
-2. **FHEGas**:
-   - Represents gas consumed by FHE-specific computations.
-   - A new synthetic kind of gas consumed by FHE-specific computations.
-   - FHEGas is tracked in each block by the FHEGasLimit contract to prevent DDOS attacks.
-   - If too many FHE operations are requested in the same block, the transaction will revert once the FHEGas block limit is reached.
-   - FHEGas is consistent across both mocked and real fhevm environments.
+- **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order.
+- **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel.
 
-> **Note**: Gas values provided are approximate and may vary based on network conditions, implementation details, and contract complexity.
+If either limit is exceeded, the transaction will revert, ensuring network stability and preventing resource exhaustion.
 
----
+## Measuring HCU
 
-## Measuring gas consumption
+To monitor HCU during development, you can use the following tool: **`getTxHCUFromTxReceipt`**:
 
-To monitor gas usage during development, use the following tools:
+You can import it as such: `import { getTxHCUFromTxReceipt } from "../coprocessorUtils";`
 
-- **`getFHEGasFromTxReceipt`**:
+It allows to extract either the total HCU consumption or the maximum depth HCU consumption from a transaction receipt.
 
-  - Extracts FHEGas consumption from a transaction receipt.
-  - Works only in mocked fhevm environments, but gives the exact same value as in non-mocked environments.
-  - Import as: `import { getFHEGasFromTxReceipt } from "../coprocessorUtils";`
+### Example
 
-- **`.gasUsed` from ethers.js transaction receipt**:
-  - Standard ethers.js transaction receipt property that returns the native gas used.
-  - In mocked mode, this value underestimates real native gas usage by ~20%.
-  - Works in both mocked and real fhevm environments, as it's a standard Ethereum transaction property.
-
-### Example: gas measurement
-
-The following code demonstrates how to measure both FHEGas and native gas during a transaction:
+The following code demonstrates how to obtain information about HCU from the logs.
 
 ```typescript
-import { getFHEGasFromTxReceipt } from "../coprocessorUtils";
-
-// ...
+import { getTxHCUFromTxReceipt } from "../coprocessorUtils";
 
 const tx = await this.erc20["transfer(address,bytes32,bytes)"](
   this.signers.bob.address,
@@ -54,46 +36,60 @@ const tx = await this.erc20["transfer(address,bytes32,bytes)"](
 const receipt = await tx.wait();
 expect(receipt?.status).to.eq(1);
 
-if (network.name === "hardhat") {
-  // The getFHEGasFromTxReceipt function only works in mocked mode (hardhat network)
-  // but returns the exact same FHEGas value that would be consumed on the real network
-  const FHEGasConsumed = getFHEGasFromTxReceipt(receipt);
-  console.log("FHEGas Consumed:", FHEGasConsumed);
-}
+const {
+  globalTxHCU: globalTxHCU,
+  maxTxHCUDepth: maxTxHCUDepth,
+  HCUDepthPerHandle: hcuDepthPerHandle,
+} = getTxHCUFromTxReceipt(tx);
 
-console.log("Native Gas Consumed:", transaction.gasUsed);
+console.log("Total Transaction HCU:", globalTxHCU);
+console.log("Maximum transaction HCU depth:", maxTxHCUDepth);
+console.log(hcuDepthPerHandle);
 ```
 
-## FHEGas limit
+The output from the code above will look similar to the following:
 
-The current devnet has a FHEGas limit of **10,000,000** per block. Here's what you need to know:
+```
+Total Transaction HCU: 586200
+Maximum transaction HCU depth: 397000
+{
+  '0xbd7130bfcc326fda4bb2d1369a8f2aa53f8f537a66ff0000000000007a690000': 156000,
+  '0xf1a829fc1ef14cec26872d6671ed40e6e46b923a94ff0000000000007a690500': 600,
+  '0xf44b392aec4240d38d0fa468a9334139784f3e1ac7ff0000000000007a690500': 209000,
+  '0xf6f5c565fda71893b08bba9b8395d0877a5beb3847ff0000000000007a690500': 397000,
+  '0x1f442f6150dae1ca5dd32e1e34c11210f9c37a68edff0000000000007a690500': 397000
+}
+```
 
-- If you send a transaction that exceeds this limit or if the FHEGas block limit is exceeded, depending on other previous transaction in the same block:
-  - The transaction will revert
-  - Any native gas fees (but not FHEGas) will still be charged
-  - You should do one of the following:
-    - Reduce the number of FHE operations in your transaction
-    - Wait for the next block when the FHEGas limit resets
-    - Split your operations across multiple transactions
+- The first two lines show the total HCU consumed by the transaction and the maximum HCU depth.
+- The object lists HCU usage per handle, where each key is a handle identifier and each value is the HCU depth for that handle.
 
-## FHEGas costs for common operations
+## HCU limit
+
+The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. If either HCU limit is exceeded, the transaction will revert.
+
+To resolve this, you must do one of the following:
+- Refactor your code to reduce the number of FHE operations in your transaction.
+- Split your FHE operations across multiple independent transactions.
+
+## HCU costs for common operations
 
 ### Boolean operations (`ebool`)
 
-| Function Name    | FHEGas Cost |
-| ---------------- | ----------- |
-| `and`/`or`/`xor` | 26,000      |
-| `not`            | 30,000      |
+| Function Name    | HCU    |
+| ---------------- | ------ |
+| `and`/`or`/`xor` | 26,000 |
+| `not`            | 30,000 |
 
 ---
 
 ### Unsigned integer operations
 
-Gas costs increase with the bit-width of the encrypted integer type. Below are the detailed costs for various operations on encrypted types.
+HCU increase with the bit-width of the encrypted integer type. Below are the detailed costs for various operations on encrypted types.
 
 #### **8-bit Encrypted integers (`euint8`)**
 
-| Function name          | FHEGas  |
+| Function name          | HCU     |
 | ---------------------- | ------- |
 | `add`/`sub`            | 94,000  |
 | `add`/`sub` (scalar)   | 94,000  |
@@ -117,7 +113,7 @@ Gas costs increase with the bit-width of the encrypted integer type. Below are t
 
 #### **16-bit Encrypted integers (`euint16`)**
 
-| Function name          | FHEGas  |
+| Function name          | HCU     |
 | ---------------------- | ------- |
 | `add`/`sub`            | 133,000 |
 | `add`/`sub` (scalar)   | 133,000 |
@@ -141,7 +137,7 @@ Gas costs increase with the bit-width of the encrypted integer type. Below are t
 
 #### **32-bit Encrypted Integers (`euint32`)**
 
-| Function name          | FHEGas  |
+| Function name          | HCU     |
 | ---------------------- | ------- |
 | `add`/`sub`            | 162,000 |
 | `add`/`sub` (scalar)   | 162,000 |
@@ -165,7 +161,7 @@ Gas costs increase with the bit-width of the encrypted integer type. Below are t
 
 #### **64-bit Encrypted integers (`euint64`)**
 
-| Function name          | FHEGas    |
+| Function name          | HCU       |
 | ---------------------- | --------- |
 | `add`/`sub`            | 188,000   |
 | `add`/`sub` (scalar)   | 188,000   |
@@ -189,7 +185,7 @@ Gas costs increase with the bit-width of the encrypted integer type. Below are t
 
 #### **128-bit Encrypted integers (`euint128`)**
 
-| Function name          | FHEGas    |
+| Function name          | HCU       |
 | ---------------------- | --------- |
 | `add`/`sub`            | 218,000   |
 | `add`/`sub` (scalar)   | 218,000   |
@@ -212,7 +208,7 @@ Gas costs increase with the bit-width of the encrypted integer type. Below are t
 
 #### **256-bit Encrypted integers (`euint256`)**
 
-| function name          | FHEGas  |
+| function name          | HCU     |
 | ---------------------- | ------- |
 | `and`/`or`/`xor`       | 44,000  |
 | `shr`/`shl`            | 350,000 |
@@ -229,13 +225,13 @@ Gas costs increase with the bit-width of the encrypted integer type. Below are t
 
 ### eAddress
 
-| Function name | FHEGas |
+| Function name | HCU    |
 | ------------- | ------ |
 | `eq`/`ne`     | 90,000 |
 
 ## Additional Operations
 
-| Function name               | FHEGas          |
+| Function name               | HCU             |
 | --------------------------- | --------------- |
 | `cast`                      | 200             |
 | `trivialEncrypt` (basic)    | 100-800         |
@@ -243,17 +239,3 @@ Gas costs increase with the bit-width of the encrypted integer type. Below are t
 | `randBounded`               | 100,000         |
 | `select`                    | 43,000-300,000  |
 | `rand`                      | 100,000-400,000 |
-
-## Fixing Failed Transactions in MetaMask
-
-To resolve a failed transaction due to gas limits:
-
-1. Open MetaMask and go to Settings
-2. Navigate to Advanced Settings
-3. Enable "Customize transaction nonce"
-4. When resending the transaction:
-   - Use the same nonce as the failed transaction
-   - Set an appropriate gas limit under 10M
-   - Adjust other parameters as needed
-
-This allows you to "replace" the failed transaction with a valid one using the correct gas parameters.

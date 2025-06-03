@@ -46,6 +46,6 @@ scDeploy:
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"acl.address\" \"$(cat /app/addresses/.env.acl | cut -d'=' -f 2)\""
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"decryptionoracle.address\" \"$(cat /app/addresses/.env.decryptionoracle | cut -d'=' -f 2)\""
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"exec.address\" \"$(cat /app/addresses/.env.exec | cut -d'=' -f 2)\""
-    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"fhegaslimit.address\" \"$(cat /app/addresses/.env.fhegaslimit | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"hculimit.address\" \"$(cat /app/addresses/.env.hculimit | cut -d'=' -f 2)\""
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"inputverifier.address\" \"$(cat /app/addresses/.env.inputverifier | cut -d'=' -f 2)\""
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"kmsverifier.address\" \"$(cat /app/addresses/.env.kmsverifier | cut -d'=' -f 2)\""

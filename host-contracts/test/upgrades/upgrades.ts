@@ -17,8 +17,8 @@ describe('Upgrades', function () {
     this.kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample');
     this.executorFactory = await ethers.getContractFactory('contracts/FHEVMExecutor.sol:FHEVMExecutor');
     this.executorFactoryUpgraded = await ethers.getContractFactory('FHEVMExecutorUpgradedExample');
-    this.paymentFactory = await ethers.getContractFactory('FHEGasLimit');
-    this.paymentFactoryUpgraded = await ethers.getContractFactory('FHEGasLimitUpgradedExample');
+    this.paymentFactory = await ethers.getContractFactory('HCULimit');
+    this.paymentFactoryUpgraded = await ethers.getContractFactory('HCULimitUpgradedExample');
     this.decryptionOracleFactory = await ethers.getContractFactory(
       'decryptionOracle/DecryptionOracle.sol:DecryptionOracle',
     );
@@ -79,7 +79,7 @@ describe('Upgrades', function () {
     expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.2.0');
   });
 
-  it('deploy upgradable FHEGasLimit', async function () {
+  it('deploy upgradable HCULimit', async function () {
     const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
       initializer: 'initialize',
       kind: 'uups',
@@ -88,10 +88,10 @@ describe('Upgrades', function () {
       call: { fn: 'reinitialize' },
     });
     await payment.waitForDeployment();
-    expect(await payment.getVersion()).to.equal('FHEGasLimit v0.1.0');
+    expect(await payment.getVersion()).to.equal('HCULimit v0.1.0');
     const payment2 = await upgrades.upgradeProxy(payment, this.paymentFactoryUpgraded);
     await payment2.waitForDeployment();
-    expect(await payment2.getVersion()).to.equal('FHEGasLimit v0.2.0');
+    expect(await payment2.getVersion()).to.equal('HCULimit v0.2.0');
   });
 
   it('deploy upgradable DecryptionOracle', async function () {

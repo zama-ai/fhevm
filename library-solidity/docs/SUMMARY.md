@@ -43,7 +43,7 @@
 - [AsEbool, asEuintXX, asEaddress and asEbytesXX operations](smart_contracts/asEXXoperators.md)
 - [Generate random numbers](smart_contracts/random.md)
 - [Error handling](smart_contracts/error_handling.md)
-- [Gas estimation](smart_contracts/gas.md)
+- [Homomorphic Complexity Units (HCU)](smart_contracts/hcu.md)
 - [Debug decrypt](smart_contracts/debug_decrypt.md)
 - [Using Foundry](smart_contracts/write_contract/foundry.md)
 - [Mocked mode](smart_contracts/mocked.md)

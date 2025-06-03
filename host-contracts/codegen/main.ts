@@ -5,7 +5,7 @@ import { validateFHETypes, validateOperators } from './common';
 import { generateOverloads } from './generateOverloads';
 import { ALL_OPERATORS } from './operators';
 import operatorsPrices from './operatorsPrices.json';
-import { generateSolidityFHEGasLimit } from './payments';
+import { generateSolidityHCULimit } from './hcuLimitGenerator';
 import { generateSolidityFHELib, generateSolidityFheType, generateSolidityImplLib } from './templates';
 import {
   generateSolidityOverloadTestFiles,
@@ -39,7 +39,7 @@ function generateAllFiles() {
   writeFileSync('contracts/FheType.sol', generateSolidityFheType(ALL_FHE_TYPES));
   writeFileSync('lib/Impl.sol', generateSolidityImplLib(ALL_OPERATORS));
   writeFileSync('lib/FHE.sol', generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPES));
-  writeFileSync('contracts/FHEGasLimit.sol', generateSolidityFHEGasLimit(operatorsPrices));
+  writeFileSync('contracts/HCULimit.sol', generateSolidityHCULimit(operatorsPrices));
 
   // TODO: For now, the testgen only supports automatically generated tests for euintXX.
   /// Generate overloads, split them into shards, and generate Solidity contracts to be used for TypeScript unit test files.
