@@ -68,19 +68,16 @@ The directories of this repository are organized in the following way:
 
 ### Main features
 
-- **Solidity integration:** fhevm contracts are simple solidity contracts that are built using traditional solidity tool-chains.
-- **Simple developer experience:** Developers can use the `euint` data types to mark which part of their contracts should be private.
-- **Programmable privacy:** All the logic for access control of encrypted states is defined by developers in their smart contracts.
-- **High precision encrypted integers :** Up to 256 bits of precision for integers
-- **Full range of operators :** All typical operators are available: `+`, `-`, `*`, `/`, `<`, `>`, `==`, …
-- **Encrypted if-else conditionals :** Check conditions on encrypted states
-- **On-chain PRNG :** Generate secure randomness without using oracles
-- **Configurable decryption :** Threshold, centralized or KMS decryption
-- **Unbounded compute Depth :** Unlimited consecutive FHE operations
+- **Privacy by design:** Building decentralized apps with full privacy and confidentiality on Ethereum, leveraging FHE.
+- **Solidity integration:** Write FHEVM contracts like any standard Solidity contract using Solidity. Compatible with existing toolchains — with Hardhat and Foundry (coming soon) support.
+- **Programmable privacy:**  Define exactly what data is encrypted and write the access control logic directly in your smart contracts.
+- **High precision encrypted integers :** Up to 256 bits of precision for integers.
+- **Full range of operators:** All typical operators are available: `+`, `-`, `*`, `/`, `<`, `>`, `==`, ternary-if, boolean operations…. Consecutive FHE operations are not limited.
+- **Security:** The underlying FHE crypto-scheme of FHEVM is quantum-resistant. Decryption is managed via a key management system (KMS) using multi-party computation (MPC), ensuring security even if some parties are compromised or misbehaving.
+**Symbolic execution of FHE computations:** All FHE operations are executed symbolically on the host chain, significantly reducing execution time. The actual computations on encrypted data are offloaded asynchronously to our coprocessor, allowing for faster, efficient, and scalable processing.
 
-_Learn more about fhevm features in the [documentation](https://docs.zama.ai/fhevm)._
+_Learn more about fhevm features in the [documentation](https://docs.zama.ai/fhevm) and in our [whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper-v2.pdf)._
 <br></br>
-
 
 ### Use cases
 
@@ -106,10 +103,10 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/tutor
 To cite fhevm or the whitepaper in academic papers, please use the following entries:
 
 ```text
-@Misc{fhevm,
-title={{Confidential EVM Smart Contracts using Fully Homomorphic Encryption}},
+@Misc{FHEVM,
+title={{FHEVM: A full-stack framework for integrating Fully Homomorphic Encryption (FHE) with blockchain applications},
 author={Zama},
-year={2024},
+year={2025},
 note={\url{https://github.com/zama-ai/fhevm}},
 }
 ```
