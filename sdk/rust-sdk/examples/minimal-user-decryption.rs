@@ -1,6 +1,7 @@
 //! # Minimal User Decryption
 //!
-//! Decrypt an encrypted value using KMS.
+//! Decrypt an encrypted value using KMS client api.
+//! This example is taken from a centralized KMS configuration.
 //!
 //! ```bash
 //! cargo run --example minimal-user-decryption

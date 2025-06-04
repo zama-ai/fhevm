@@ -7,11 +7,10 @@ use crate::signature::{
     verify_eip712_signature,
 };
 use alloy::primitives::{Address, U256};
-use decryption::user::{UserDecryptRequestBuilder, user_decryption_req_calldata};
+use blockchain::calldata::user_decryption_req;
+use decryption::user::UserDecryptRequestBuilder;
 use serde::{Deserialize, Serialize};
 
-use utils::parse_hex_string;
-// use signature::generate_eip712_user_decrypt;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -19,6 +18,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
 use thiserror::Error;
+use utils::parse_hex_string;
 /// Configuration for the FHEVM SDK.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FhevmConfig {
@@ -213,7 +213,7 @@ impl FhevmSdk {
         let user_decrypt_request = builder.build()?;
 
         // Generate the calldata using the existing function
-        let calldata = user_decryption_req_calldata(user_decrypt_request)?;
+        let calldata = user_decryption_req(user_decrypt_request)?;
 
         log::info!(
             "Successfully generated user decrypt calldata: {} bytes",

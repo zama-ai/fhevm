@@ -3,14 +3,10 @@
 use crate::utils::validate_address_from_str;
 use crate::utils::{JsonConverter, parse_hex_string};
 use crate::{FhevmError, Result, types::DecryptedValue};
-use alloy::primitives::U256;
-use alloy::primitives::{Address, Bytes};
+use alloy::primitives::{Address, Bytes, U256};
 use alloy::signers::Signature;
-use alloy::sol_types::SolCall;
 use kms_grpc::kms::v1::TypedPlaintext;
 use kms_lib::client::{CiphertextHandle, ParsedUserDecryptionRequest};
-
-use crate::blockchain::bindings::Decryption::userDecryptionRequestCall;
 
 use crate::blockchain::bindings::Decryption::CtHandleContractPair;
 use crate::blockchain::bindings::IDecryption::RequestValidity;
@@ -158,61 +154,14 @@ impl Default for UserDecryptRequestBuilder {
     }
 }
 
-pub fn user_decryption_req_calldata(user_decrypt_request: UserDecryptRequest) -> Result<Bytes> {
-    info!("Generating user decryption request calldata");
-
-    // Create the userDecryptionRequest call
-    let call = userDecryptionRequestCall::new((
-        user_decrypt_request.ct_handle_contract_pairs,
-        user_decrypt_request.request_validity,
-        U256::from(user_decrypt_request.contracts_chain_id),
-        user_decrypt_request.contract_addresses,
-        user_decrypt_request.user_address,
-        user_decrypt_request.public_key,
-        user_decrypt_request.signature,
-    ));
-
-    // Encode the call to get the calldata
-    let calldata = userDecryptionRequestCall::abi_encode(&call);
-
-    Ok(Bytes::from(calldata))
-}
-
-pub fn user_decrypt_request() -> Result<()> {
-    // Placeholder implementation
-    Ok(())
-}
-
-/// Reconstruct a plaintext from encrypted shares (for user decrypt)
-pub fn user_decrypt_reconstruction(
-    encrypted_shares: &[Vec<u8>],
-    private_key: &[u8],
-) -> Result<DecryptedValue> {
-    // Placeholder implementation
-    if encrypted_shares.is_empty() {
-        return Err(FhevmError::DecryptionError(
-            "No encrypted shares provided".to_string(),
-        ));
-    }
-
-    if private_key.is_empty() {
-        return Err(FhevmError::DecryptionError(
-            "Invalid private key".to_string(),
-        ));
-    }
-
-    // Return mock decrypted value
-    Ok(DecryptedValue(vec![42]))
-}
-
 /// Process user decryption using KMS library
 ///
 /// This function replicates the JavaScript functionality:
 /// 1. Creates a KMS client with signers and user address
 /// 2. Constructs the EIP-712 domain with gateway chain ID
 /// 3. Builds the verification payload
-/// 4. Processes the decryption response from the relayer
-/// 5. Returns the decrypted results as a HashMap
+/// 4. Processes the decryption response from the gateway
+/// 5. Returns the decrypted results as a vector
 pub fn process_user_decryption(
     kms_signers: &[String],
     user_address: &str,
@@ -224,13 +173,12 @@ pub fn process_user_decryption(
     handle_contract_pairs: &[CtHandleContractPair],
     json_response: &str,
 ) -> Result<Vec<TypedPlaintext>> {
-    info!("🔐 Processing user decryption with KMS");
+    info!("🔐 Processing user decryption with KMS api");
     info!("   KMS signers: {:?}", kms_signers);
     info!("   User address: {}", user_address);
     info!("   Gateway chain ID: {}", gateway_chain_id);
 
-    info!("📋 Verification of inputs");
-
+    debug!("📋 Verification of inputs");
     let user_address_verified = validate_address_from_str(user_address)?;
     let public_key_bytes = parse_hex_string(public_key, "public_key")?;
     let private_key_bytes = parse_hex_string(private_key, "private_key")?;
@@ -284,10 +232,12 @@ pub fn process_user_decryption(
         ciphertext_handles.len()
     );
 
+    // Prepare signature for payload
     let sig = parse_hex_string(signature, "signature")?;
     let sign = Signature::from_raw(sig.iter().as_slice())
         .map_err(|e| FhevmError::DecryptionError(format!("Invalid signature format: {}", e)))?;
 
+    // Prepare handles into specific type, .i.e. `kms_lib::client::CiphertextHandle`
     let ct_handles: Vec<CiphertextHandle> = ciphertext_handles
         .iter()
         .map(|h| parse_hex_string(h, "handle").map(|bytes| CiphertextHandle::new(bytes.to_vec())))
@@ -301,9 +251,9 @@ pub fn process_user_decryption(
         verifying_contract_address_checked,
     );
 
+    // Convert an array of user decryption response into kms
+    // friendly type, i.e. `kms_grpc::kms::v1::UserDecryptionResponse;`
     let responses = JsonConverter::json_to_responses(json_response)?;
-
-    info!("📋 Verification payload prepared");
 
     // Step 6: Convert keys for KMS processing
 
@@ -315,7 +265,7 @@ pub fn process_user_decryption(
         FhevmError::DecryptionError(format!("Failed to convert private key: {:?}", e.to_owned()))
     })?;
 
-    // Process the decryption response using KMS
+    // Process the decryption response using KMS library
     let decryption_result = process_user_decryption_resp(
         &mut client,
         Some(payload),
@@ -337,7 +287,7 @@ pub fn process_user_decryption(
     Ok(decryption_result)
 }
 
-/// Public decrypt operation (used by the network)
+/// Public decrypt operation
 pub fn public_decrypt(ciphertext: &[u8], _public_key: &[u8]) -> Result<DecryptedValue> {
     // Placeholder implementation
     if ciphertext.is_empty() {
@@ -349,7 +299,6 @@ pub fn public_decrypt(ciphertext: &[u8], _public_key: &[u8]) -> Result<Decrypted
     // Return mock decrypted value
     Ok(DecryptedValue(vec![42]))
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,7 +311,7 @@ mod tests {
         TestData {
             kms_signers: vec!["0x67F6A11ADf13CEDdB8319Fe12705809563611703".to_string()],
             user_address: "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80".to_string(),
-            gateway_chain_id: 54321, // This matches the eip.chain_id buffer showing [212, 49] at the end
+            gateway_chain_id: 54321,
             verifying_contract_address: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e".to_string(),
             signature: "791e8a06dab85d960745c4c5dea65fdc250e0d42cbfbd2037ae221d2baa980c062f8b46f023c11bba8ba49c17e9e73a8ce0556040c567849b62b675678c3bc071c".to_string(),
             public_key: "2000000000000000750f4e54713eae622dfeb01809290183a447e2b277e89d2c6a681af1aa5b2c2b".to_string(),
@@ -377,7 +326,6 @@ mod tests {
         }
     }
 
-    /// Creates the mock JSON response from the KMS relayer
     fn create_mock_json_response() -> String {
         serde_json::json!({
             "response": [
@@ -389,7 +337,6 @@ mod tests {
         }).to_string()
     }
 
-    /// Test data structure to keep our test organized and maintainable
     struct TestData {
         kms_signers: Vec<String>,
         user_address: String,
@@ -402,272 +349,163 @@ mod tests {
         json_response: String,
     }
 
+    /// Helper function to call process_user_decryption with test data
+    fn call_process_user_decryption(test_data: &TestData) -> Result<Vec<TypedPlaintext>> {
+        process_user_decryption(
+            &test_data.kms_signers,
+            &test_data.user_address,
+            test_data.gateway_chain_id,
+            &test_data.verifying_contract_address,
+            &test_data.signature,
+            &test_data.public_key,
+            &test_data.private_key,
+            &test_data.handle_contract_pairs,
+            &test_data.json_response,
+        )
+    }
+
+    /// Helper to assert error contains expected keywords
+    fn assert_error_contains(result: &Result<Vec<TypedPlaintext>>, keywords: &[&str]) {
+        let error = result
+            .as_ref()
+            .expect_err("Expected an error but got success");
+        let error_msg = error.to_string().to_lowercase();
+
+        let found = keywords
+            .iter()
+            .any(|&keyword| error_msg.contains(&keyword.to_lowercase()));
+
+        assert!(
+            found,
+            "Error '{}' should contain one of: {:?}",
+            error, keywords
+        );
+    }
+
     #[test]
     fn test_process_user_decryption_success() {
         let test_data = create_test_data();
+        let result = call_process_user_decryption(&test_data);
 
-        println!("🧪 Starting process_user_decryption success test");
-        println!(
-            "   Test data prepared with {} KMS signers",
-            test_data.kms_signers.len()
-        );
-        println!("   User address: {}", test_data.user_address);
-        println!("   Gateway chain ID: {}", test_data.gateway_chain_id);
-
-        // 🚀 Execute the function under test
-        let result = process_user_decryption(
-            &test_data.kms_signers,
-            &test_data.user_address,
-            test_data.gateway_chain_id,
-            &test_data.verifying_contract_address,
-            &test_data.signature,
-            &test_data.public_key,
-            &test_data.private_key,
-            &test_data.handle_contract_pairs,
-            &test_data.json_response,
-        );
-
-        // ✅ Verify the result
         match result {
-            Ok(result) => {
-                println!("✅ Test passed! User decryption processed successfully");
-                assert!(true, "Function should complete without errors");
-                assert_eq!(
-                    result[0].as_u8(),
-                    42,
-                    "Decrypted value should match expected"
-                );
+            Ok(decrypted_values) => {
+                // Based on the test data, we expect the decrypted value to be 42
+                let first_value = &decrypted_values[0];
+                assert_eq!(first_value.as_u8(), 42, "Decrypted value should be 42");
             }
             Err(e) => {
-                log::error!("❌ Test failed with error: {}", e);
-                panic!("Function should not return an error: {}", e);
+                panic!("Expected success but got error: {}", e);
             }
         }
     }
 
     #[test]
-    fn test_process_user_decryption_invalid_signature_format() {
+    fn test_process_user_decryption_invalid_signature() {
         let mut test_data = create_test_data();
-        // 🔧 Corrupt the signature to test error handling
-        test_data.signature = "invalid_signature_format".to_string();
+        test_data.signature = "invalid_signature".to_string();
 
-        println!("🧪 Testing invalid signature format handling");
+        let result = call_process_user_decryption(&test_data);
 
-        let result = process_user_decryption(
-            &test_data.kms_signers,
-            &test_data.user_address,
-            test_data.gateway_chain_id,
-            &test_data.verifying_contract_address,
-            &test_data.signature,
-            &test_data.public_key,
-            &test_data.private_key,
-            &test_data.handle_contract_pairs,
-            &test_data.json_response,
-        );
-
-        // ✅ Should return a DecryptionError for invalid signature
-        match result {
-            Err(FhevmError::InvalidParams(msg)) => {
-                println!("✅ Correctly caught invalid params error: {}", msg);
-                assert!(
-                    msg.contains("signature"),
-                    "Error should be related to signature"
-                );
-            }
-            Ok(_) => {
-                panic!("Function should return an error for invalid signature format");
-            }
-            Err(other) => {
-                log::warn!("⚠️ Got unexpected error type: {}", other);
-                // This might still be acceptable depending on the validation chain
-                assert!(
-                    other.to_string().to_lowercase().contains("signature")
-                        || other.to_string().to_lowercase().contains("hex"),
-                    "Error should be related to signature validation"
-                );
-            }
-        }
+        assert_error_contains(&result, &["signature", "hex"]);
     }
 
     #[test]
-    fn test_process_user_decryption_invalid_user_address() {
+    fn test_process_user_decryption_invalid_address() {
         let mut test_data = create_test_data();
-        // 🔧 Use an invalid Ethereum address
-        test_data.user_address = "not_an_ethereum_address".to_string();
+        test_data.user_address = "invalid_address".to_string();
 
-        println!("🧪 Testing invalid user address handling");
+        let result = call_process_user_decryption(&test_data);
 
-        let result = process_user_decryption(
-            &test_data.kms_signers,
-            &test_data.user_address,
-            test_data.gateway_chain_id,
-            &test_data.verifying_contract_address,
-            &test_data.signature,
-            &test_data.public_key,
-            &test_data.private_key,
-            &test_data.handle_contract_pairs,
-            &test_data.json_response,
-        );
-
-        // ✅ Should return an InvalidParams error for invalid address
-        match result {
-            Err(FhevmError::InvalidParams(msg)) => {
-                println!("✅ Correctly caught invalid address error: {}", msg);
-                assert!(
-                    msg.contains("address"),
-                    "Error message should mention address"
-                );
-            }
-            Ok(_) => {
-                panic!("Function should return an error for invalid user address");
-            }
-            Err(other) => {
-                println!("ℹ️ Got different error type (also acceptable): {}", other);
-            }
-        }
+        assert_error_contains(&result, &["address"]);
     }
 
     #[test]
-    fn test_process_user_decryption_invalid_json_response() {
+    fn test_process_user_decryption_malformed_json() {
         let mut test_data = create_test_data();
-        test_data.json_response = "{ invalid json }".to_string();
+        test_data.json_response = "{ malformed json".to_string();
 
-        println!("🧪 Testing invalid JSON response handling");
+        let result = call_process_user_decryption(&test_data);
 
-        let result = process_user_decryption(
-            &test_data.kms_signers,
-            &test_data.user_address,
-            test_data.gateway_chain_id,
-            &test_data.verifying_contract_address,
-            &test_data.signature,
-            &test_data.public_key,
-            &test_data.private_key,
-            &test_data.handle_contract_pairs,
-            &test_data.json_response,
-        );
-
-        match result {
-            Err(FhevmError::DecryptionError(msg)) => {
-                println!("✅ Correctly caught JSON parsing error: {}", msg);
-                assert!(
-                    msg.contains("JSON") || msg.contains("parse") || msg.contains("json"),
-                    "Error message should mention JSON parsing issue"
-                );
-            }
-            Ok(_) => {
-                panic!("Function should return an error for invalid JSON");
-            }
-            Err(other) => {
-                println!("ℹ️ Got different error type: {}", other);
-            }
-        }
+        assert_error_contains(&result, &["json", "parse"]);
     }
 
     #[test]
-    fn test_process_user_decryption_empty_kms_signers() {
+    fn test_process_user_decryption_empty_signers() {
         let mut test_data = create_test_data();
-        //  Empty KMS signers array
         test_data.kms_signers = vec![];
 
-        println!("🧪 Testing empty KMS signers handling");
+        let result = call_process_user_decryption(&test_data);
 
-        let result = process_user_decryption(
-            &test_data.kms_signers,
-            &test_data.user_address,
-            test_data.gateway_chain_id,
-            &test_data.verifying_contract_address,
-            &test_data.signature,
-            &test_data.public_key,
-            &test_data.private_key,
-            &test_data.handle_contract_pairs,
-            &test_data.json_response,
-        );
-
-        match result {
-            Err(FhevmError::DecryptionError(msg)) => {
-                println!("✅ Correctly caught KMS client creation error: {}", msg);
-                assert!(msg.contains("KMS"), "Error should mention KMS");
-            }
-            Ok(_) => {
-                panic!("Function should return an error for empty KMS signers");
-            }
-            Err(other) => {
-                println!("ℹ️ Got different error type: {}", other);
-            }
-        }
+        assert_error_contains(&result, &["kms", "client"]);
     }
 
     #[test]
     fn test_process_user_decryption_invalid_public_key() {
         let mut test_data = create_test_data();
-        // 🔧 Use an invalid public key format
-        test_data.public_key = "invalid_public_key".to_string();
+        test_data.public_key = "invalid_key".to_string();
 
-        println!("🧪 Testing invalid public key handling");
+        let result = call_process_user_decryption(&test_data);
 
-        let result = process_user_decryption(
-            &test_data.kms_signers,
-            &test_data.user_address,
-            test_data.gateway_chain_id,
-            &test_data.verifying_contract_address,
-            &test_data.signature,
-            &test_data.public_key,
-            &test_data.private_key,
-            &test_data.handle_contract_pairs,
-            &test_data.json_response,
-        );
+        assert_error_contains(&result, &["public key", "hex", "key"]);
+    }
 
-        // ✅ Should return an error for invalid public key
-        match result {
-            Err(FhevmError::DecryptionError(msg)) => {
-                println!("✅ Correctly caught public key error: {}", msg);
-                assert!(
-                    msg.contains("public key") || msg.contains("hex"),
-                    "Error should mention public key or hex format issue"
-                );
-            }
-            Err(FhevmError::InvalidParams(msg)) => {
-                println!("✅ Correctly caught invalid params error: {}", msg);
-                assert!(
-                    msg.contains("public key") || msg.contains("public_key"),
-                    "Error should mention public key"
-                );
-            }
-            Ok(_) => {
-                panic!("Function should return an error for invalid public key");
-            }
-            Err(other) => {
-                println!("ℹ️ Got different error type: {}", other);
-                // Any error is acceptable since the key is clearly invalid
-            }
+    #[test]
+    fn test_multiple_error_scenarios() {
+        let test_cases: &[(&str, Box<dyn Fn(&mut TestData)>, &[&str])] = &[
+            (
+                "invalid_sig",
+                Box::new(|data| data.signature = "bad".to_string()),
+                &["signature", "hex"],
+            ),
+            (
+                "bad_address",
+                Box::new(|data| data.user_address = "bad".to_string()),
+                &["address"],
+            ),
+            (
+                "bad_json",
+                Box::new(|data| data.json_response = "{bad}".to_string()),
+                &["json"],
+            ),
+            (
+                "empty_signers",
+                Box::new(|data| data.kms_signers = vec![]),
+                &["kms", "client"],
+            ),
+            (
+                "bad_key",
+                Box::new(|data| data.public_key = "bad".to_string()),
+                &["key", "hex"],
+            ),
+        ];
+
+        for (name, modify_data, expected_keywords) in test_cases {
+            let mut test_data = create_test_data();
+            modify_data(&mut test_data);
+
+            let result = call_process_user_decryption(&test_data);
+
+            assert!(result.is_err(), "Test case '{}' should fail", name);
+            assert_error_contains(&result, expected_keywords);
         }
     }
 
     #[test]
     fn test_chain_id_buffer_creation() {
-        let gateway_chain_id = 54321u64; // Same as reference data
-
-        // Recreate the buffer creation logic from the function
+        let gateway_chain_id = 54321u64;
         let mut chain_id_buffer = [0u8; 32];
-        let chain_id_bytes = gateway_chain_id.to_be_bytes();
 
         if gateway_chain_id <= u32::MAX as u64 {
-            // For values that fit in u32, place them at position 28
             chain_id_buffer[28..32].copy_from_slice(&(gateway_chain_id as u32).to_be_bytes());
         } else {
-            // For larger values, place the full u64 at the end
-            chain_id_buffer[24..32].copy_from_slice(&chain_id_bytes);
+            chain_id_buffer[24..32].copy_from_slice(&gateway_chain_id.to_be_bytes());
         }
 
-        // Verify the buffer matches the expected format from JS reference
-        // The JS reference shows: chain_id: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,212,49]
-        // 212,49 in decimal = 0xD431 in hex = 54321 in decimal
-        assert_eq!(chain_id_buffer[30], 212); // 0xD4
-        assert_eq!(chain_id_buffer[31], 49); // 0x31
-        assert_eq!(chain_id_buffer[28], 0); // Leading zeros
-        assert_eq!(chain_id_buffer[29], 0); // Leading zeros
+        // Verify against JS reference: [0,0,...,0,0,212,49]
+        assert_eq!(chain_id_buffer[30], 212);
+        assert_eq!(chain_id_buffer[31], 49);
+        assert_eq!(&chain_id_buffer[..28], &[0u8; 28]);
 
-        // Verify the entire buffer is correctly formatted
         let expected_hex = "000000000000000000000000000000000000000000000000000000000000d431";
         assert_eq!(hex::encode(&chain_id_buffer), expected_hex);
     }
@@ -676,18 +514,14 @@ mod tests {
     fn test_handle_preparation() {
         let test_data = create_test_data();
 
-        // Recreate the handle preparation from the function
-        // TODO: find a better way to test it
         let ciphertext_handles: Vec<String> = test_data
             .handle_contract_pairs
             .iter()
             .map(|pair| hex::encode(pair.ctHandle))
             .collect();
 
-        // Verify handle format
         assert_eq!(ciphertext_handles.len(), 1);
 
-        // The handle should match the reference (without 0x prefix when hex-encoded)
         let expected_handle = "f2eac20e8f2385a14094f424c3adb8ee0a713bfcbbff00000000000030390200";
         assert_eq!(ciphertext_handles[0], expected_handle);
     }
