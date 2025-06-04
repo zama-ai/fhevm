@@ -2,13 +2,12 @@ import { assert } from 'chai';
 import { ethers } from 'hardhat';
 
 import type { FHEVMManualTestSuite } from '../../types/contracts/tests/FHEVMManualTestSuite';
-import { createInstances } from '../instance';
-import { getSigners, initSigners } from '../signers';
+import { createInstance } from '../instance';
+import { getSigner } from '../signers';
 import { bigIntToBytes256 } from '../utils';
 
 async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
-  const signers = await getSigners();
-  const admin = signers.alice;
+  const admin = await getSigner(119);
 
   const contractFactory = await ethers.getContractFactory('FHEVMManualTestSuite');
   const contract = await contractFactory.connect(admin).deploy();
@@ -19,18 +18,17 @@ async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
 
 describe('FHEVM manual operations', function () {
   beforeEach(async function () {
-    await initSigners(1);
-    this.signers = await getSigners();
+    this.signer = await getSigner(119);
 
     const contract = await deployFHEVMManualTestFixture();
     this.contractAddress = await contract.getAddress();
     this.contract = contract;
-    const instances = await createInstances(this.signers);
-    this.instances = instances;
+    const instance = await createInstance();
+    this.instance = instance;
   });
 
   it('Select works returning if false', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addBool(false);
     input.add32(3);
     input.add32(4);
@@ -43,7 +41,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resEuint32();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 4n,
     };
@@ -51,7 +49,7 @@ describe('FHEVM manual operations', function () {
   });
 
   it('Select works returning if true', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addBool(true);
     input.add32(3);
     input.add32(4);
@@ -64,7 +62,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resEuint32();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 3n,
     };
@@ -78,7 +76,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.test_select_ebool(false, false, true);
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -97,7 +95,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.test_select_ebytes64(false, '0x42', '0xaaaaaaaa');
     await tx2.wait();
     const handle2 = await await this.contract.resEbytes64();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: ethers.toBeHex(
         BigInt('0x6798aa6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb'),
@@ -119,7 +117,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.test_select_ebytes128(false, '0x42', '0xaaaaaaaa');
     await tx2.wait();
     const handle2 = await this.contract.resEbytes128();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: ethers.toBeHex(
         BigInt('0x6798aa6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb'),
@@ -141,7 +139,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.test_select_ebytes256(false, '0x428899', '0xaaaaaabb');
     await tx2.wait();
     const handle2 = await this.contract.resEbytes256();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: ethers.toBeHex(
         BigInt('0x6798aa6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb'),
@@ -149,7 +147,7 @@ describe('FHEVM manual operations', function () {
       ),
     };
     assert.deepEqual(res, expectedRes);
-    const res2 = await this.instances.alice.publicDecrypt([handle2]);
+    const res2 = await this.instance.publicDecrypt([handle2]);
     const expectedRes2 = {
       [handle2]: ethers.toBeHex(BigInt('0xaaaaaabb'), 256),
     };
@@ -157,7 +155,7 @@ describe('FHEVM manual operations', function () {
   });
 
   it('Select works for eaddress returning if false', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addBool(false);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     input.addAddress('0x8881f109551bd432803012645ac136ddd64dba72');
@@ -170,7 +168,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resAdd();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: ethers.getAddress('0x8881f109551bd432803012645ac136ddd64dba72'),
     };
@@ -178,7 +176,7 @@ describe('FHEVM manual operations', function () {
   });
 
   it('Select works for eaddress returning if true', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addBool(true);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     input.addAddress('0x8881f109551bd432803012645ac136ddd64dba72');
@@ -191,7 +189,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resAdd();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: ethers.getAddress('0x8ba1f109551bd432803012645ac136ddd64dba72'),
     };
@@ -211,7 +209,7 @@ describe('FHEVM manual operations', function () {
     const tx4 = await this.contract.eqEbool(true, false);
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: true,
       [handle2]: true,
@@ -234,7 +232,7 @@ describe('FHEVM manual operations', function () {
     const tx4 = await this.contract.eqEboolScalarL(true, false);
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: true,
       [handle2]: false,
@@ -257,7 +255,7 @@ describe('FHEVM manual operations', function () {
     const tx4 = await this.contract.eqEboolScalarL(true, false);
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: true,
       [handle2]: false,
@@ -280,7 +278,7 @@ describe('FHEVM manual operations', function () {
     const tx4 = await this.contract.neEbool(true, false);
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: false,
@@ -303,7 +301,7 @@ describe('FHEVM manual operations', function () {
     const tx4 = await this.contract.neEboolScalarL(true, false);
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -326,7 +324,7 @@ describe('FHEVM manual operations', function () {
     const tx4 = await this.contract.neEboolScalarL(true, false);
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -337,7 +335,7 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq eaddress,eaddress true', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const encryptedAmount = await input.encrypt();
@@ -348,7 +346,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: true,
     };
@@ -356,7 +354,7 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq eaddress,eaddress false', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     input.addAddress('0x9ba1f109551bd432803012645ac136ddd64dba72');
     const encryptedAmount = await input.encrypt();
@@ -367,7 +365,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: false,
     };
@@ -375,14 +373,14 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq scalar eaddress,address true', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: true,
     };
@@ -390,14 +388,14 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq scalar eaddress,address false', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: false,
     };
@@ -405,14 +403,14 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq scalar address,eaddress true', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: true,
     };
@@ -420,14 +418,14 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq scalar address,eaddress false', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: false,
     };
@@ -435,7 +433,7 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne eaddress,eaddress false', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const encryptedAmount = await input.encrypt();
@@ -446,7 +444,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: false,
     };
@@ -454,7 +452,7 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne eaddress,eaddress true', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     input.addAddress('0x9ba1f109551bd432803012645ac136ddd64dba72');
     const encryptedAmount = await input.encrypt();
@@ -465,7 +463,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: true,
     };
@@ -473,14 +471,14 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne scalar eaddress,address false', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: false,
     };
@@ -488,14 +486,14 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne scalar eaddress,address true', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: true,
     };
@@ -503,14 +501,14 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne scalar address,eaddress false', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: false,
     };
@@ -518,14 +516,14 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne scalar address,eaddress true', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: true,
     };
@@ -536,7 +534,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint8_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint8();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 1n,
     };
@@ -547,7 +545,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint8_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint8();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 0n,
     };
@@ -558,7 +556,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint16_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint16();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 1n,
     };
@@ -569,7 +567,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint16_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint16();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 0n,
     };
@@ -580,7 +578,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint32_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint32();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 1n,
     };
@@ -591,7 +589,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint32_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint32();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 0n,
     };
@@ -602,7 +600,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint64_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint64();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 1n,
     };
@@ -613,7 +611,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint64_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint64();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 0n,
     };
@@ -624,7 +622,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint128_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint128();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 1n,
     };
@@ -635,7 +633,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint128_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint128();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 0n,
     };
@@ -646,7 +644,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint256_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint256();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 1n,
     };
@@ -657,7 +655,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_to_euint256_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint256();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 0n,
     };
@@ -668,7 +666,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_euint128_to_euint8_cast(7668756464674969496544n);
     await tx.wait();
     const handle = await this.contract.resEuint8();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 224n,
     };
@@ -679,7 +677,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_not(false);
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: true,
     };
@@ -690,7 +688,7 @@ describe('FHEVM manual operations', function () {
     const tx = await this.contract.test_ebool_not(true);
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: false,
     };
@@ -714,7 +712,7 @@ describe('FHEVM manual operations', function () {
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
 
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: false,
@@ -741,7 +739,7 @@ describe('FHEVM manual operations', function () {
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
 
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -768,7 +766,7 @@ describe('FHEVM manual operations', function () {
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
 
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -795,7 +793,7 @@ describe('FHEVM manual operations', function () {
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
 
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -822,7 +820,7 @@ describe('FHEVM manual operations', function () {
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
 
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -849,7 +847,7 @@ describe('FHEVM manual operations', function () {
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
 
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -876,7 +874,7 @@ describe('FHEVM manual operations', function () {
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
 
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -903,7 +901,7 @@ describe('FHEVM manual operations', function () {
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
 
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: false,
@@ -930,7 +928,7 @@ describe('FHEVM manual operations', function () {
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
 
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: false,
@@ -941,11 +939,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eq ebytes256,ebytes256 true', async function () {
-    const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAliceA = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     inputAliceA.addBytes256(bigIntToBytes256(18446744073709550022n));
     const encryptedAmountA = await inputAliceA.encrypt();
 
-    const inputAliceB = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAliceB = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     inputAliceB.addBytes256(bigIntToBytes256(18446744073709550022n));
     const encryptedAmountB = await inputAliceB.encrypt();
 
@@ -958,7 +956,7 @@ describe('FHEVM manual operations', function () {
     await tx.wait();
 
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: true,
     };
@@ -966,11 +964,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eq ebytes256,ebytes256 false', async function () {
-    const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAliceA = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     inputAliceA.addBytes256(bigIntToBytes256(18446744073709550022n));
     const encryptedAmountA = await inputAliceA.encrypt();
 
-    const inputAliceB = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAliceB = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     inputAliceB.addBytes256(bigIntToBytes256(18446744073709550021n));
     const encryptedAmountB = await inputAliceB.encrypt();
 
@@ -983,7 +981,7 @@ describe('FHEVM manual operations', function () {
     await tx.wait();
 
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: false,
     };
@@ -991,11 +989,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('ne ebytes256,ebytes256 true', async function () {
-    const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAliceA = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     inputAliceA.addBytes256(bigIntToBytes256(18446744073709550022n));
     const encryptedAmountA = await inputAliceA.encrypt();
 
-    const inputAliceB = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAliceB = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     inputAliceB.addBytes256(bigIntToBytes256(18446744073709550021n));
     const encryptedAmountB = await inputAliceB.encrypt();
 
@@ -1008,7 +1006,7 @@ describe('FHEVM manual operations', function () {
     await tx.wait();
 
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: true,
     };
@@ -1016,11 +1014,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('ne ebytes256,ebytes256 false', async function () {
-    const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAliceA = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     inputAliceA.addBytes256(bigIntToBytes256(184467440184467440184467440184467440n));
     const encryptedAmountA = await inputAliceA.encrypt();
 
-    const inputAliceB = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAliceB = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     inputAliceB.addBytes256(bigIntToBytes256(184467440184467440184467440184467440n));
     const encryptedAmountB = await inputAliceB.encrypt();
 
@@ -1033,7 +1031,7 @@ describe('FHEVM manual operations', function () {
     await tx.wait();
 
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: false,
     };
@@ -1050,7 +1048,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.eqEbytes64('0x1100', '0x0011');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: true,
       [handle2]: false,
@@ -1068,7 +1066,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.eqEbytes64ScalarL('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -1086,7 +1084,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.eqEbytes64ScalarR('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -1104,7 +1102,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.neEbytes64('0x1100', '0x0011');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -1122,7 +1120,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.neEbytes64ScalarL('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: true,
       [handle2]: false,
@@ -1140,7 +1138,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.neEbytes64ScalarR('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: true,
       [handle2]: false,
@@ -1161,7 +1159,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: true,
       [handle2]: false,
@@ -1179,7 +1177,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.eqEbytes128ScalarL('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -1197,7 +1195,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.eqEbytes128ScalarR('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -1218,7 +1216,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -1236,7 +1234,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.neEbytes128ScalarL('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: true,
       [handle2]: false,
@@ -1254,7 +1252,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.neEbytes128ScalarR('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2]);
+    const res = await this.instance.publicDecrypt([handle, handle2]);
     const expectedRes = {
       [handle]: true,
       [handle2]: false,
@@ -1269,7 +1267,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: false,
     };
@@ -1277,7 +1275,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.eqEbytes256ScalarL('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res2 = await this.instances.alice.publicDecrypt([handle2]);
+    const res2 = await this.instance.publicDecrypt([handle2]);
     const expectedRes2 = {
       [handle2]: true,
     };
@@ -1291,7 +1289,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: false,
     };
@@ -1299,7 +1297,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.eqEbytes256ScalarR('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res2 = await this.instances.alice.publicDecrypt([handle2]);
+    const res2 = await this.instance.publicDecrypt([handle2]);
     const expectedRes2 = {
       [handle2]: true,
     };
@@ -1313,7 +1311,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: true,
     };
@@ -1321,7 +1319,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.neEbytes256ScalarL('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res2 = await this.instances.alice.publicDecrypt([handle2]);
+    const res2 = await this.instance.publicDecrypt([handle2]);
     const expectedRes2 = {
       [handle2]: false,
     };
@@ -1335,7 +1333,7 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     const handle = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: true,
     };
@@ -1343,7 +1341,7 @@ describe('FHEVM manual operations', function () {
     const tx2 = await this.contract.neEbytes256ScalarR('0x1100', '0x1100');
     await tx2.wait();
     const handle2 = await this.contract.resEbool();
-    const res2 = await this.instances.alice.publicDecrypt([handle2]);
+    const res2 = await this.instance.publicDecrypt([handle2]);
     const expectedRes2 = {
       [handle2]: false,
     };
@@ -1363,7 +1361,7 @@ describe('FHEVM manual operations', function () {
     const tx4 = await this.contract.neEbool(true, false);
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: false,
@@ -1386,7 +1384,7 @@ describe('FHEVM manual operations', function () {
     const tx4 = await this.contract.neEboolScalarL(true, false);
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
@@ -1409,7 +1407,7 @@ describe('FHEVM manual operations', function () {
     const tx4 = await this.contract.neEboolScalarL(true, false);
     await tx4.wait();
     const handle4 = await this.contract.resEbool();
-    const res = await this.instances.alice.publicDecrypt([handle, handle2, handle3, handle4]);
+    const res = await this.instance.publicDecrypt([handle, handle2, handle3, handle4]);
     const expectedRes = {
       [handle]: false,
       [handle2]: true,
