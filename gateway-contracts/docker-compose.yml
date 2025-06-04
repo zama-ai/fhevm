@@ -60,6 +60,8 @@ services:
         condition: service_started
       deploy-gateway-contracts:
         condition: service_completed_successfully
+    # Addresses needs to be mounted even though we don't use them in the task because all contracts
+    # are compiled, and most of them import these addresses.
     volumes:
       - addresses-volume:/app/addresses
 

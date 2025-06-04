@@ -30,12 +30,7 @@ jobs:
           filters: |
             gw-contracts:
               - .github/workflows/gateway-contracts-docker-build.yml
-              - gateway-contracts/contracts/**
-              - gateway-contracts/tasks/**
-              - gateway-contracts/package*.json
-              - gateway-contracts/hardhat.config.ts
-              - gateway-contracts/tsconfig.json
-              - gateway-contracts/Dockerfile
+              - gateway-contracts/**
   docker-gateway-contracts:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' || github.event_name == 'release' }}

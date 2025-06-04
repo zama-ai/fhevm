@@ -31,6 +31,8 @@ services:
     depends_on:
       gateway-node:
         condition: service_started
+    volumes:
+      - addresses-volume:/app/addresses
 
   gateway-sc-add-network:
     container_name: fhevm-gateway-sc-add-network
@@ -44,3 +46,10 @@ services:
         condition: service_started
       gateway-sc-deploy:
         condition: service_completed_successfully
+    # Addresses needs to be mounted even though we don't use them in the task because all contracts
+    # are compiled, and most of them import these addresses.
+    volumes:
+      - addresses-volume:/app/addresses
+
+volumes:
+  addresses-volume:
