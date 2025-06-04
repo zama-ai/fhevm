@@ -1,5 +1,6 @@
 //! Decryption module for FHEVM SDK
 
+use crate::blockchain::calldata::user_decryption_req;
 use crate::utils::validate_address_from_str;
 use crate::utils::{JsonConverter, parse_hex_string};
 use crate::{FhevmError, Result, types::DecryptedValue};
@@ -28,8 +29,6 @@ pub struct UserDecryptRequest {
 }
 
 /// Builder pattern for creating UserDecryptRequest instances
-///
-/// This provides a convenient way to build UserDecryptRequest objects with validation
 pub struct UserDecryptRequestBuilder {
     ct_handle_contract_pairs: Vec<CtHandleContractPair>,
     contract_addresses: Vec<Address>,
@@ -56,87 +55,313 @@ impl UserDecryptRequestBuilder {
         }
     }
 
-    /// Add a ciphertext handle with its contract address
-    pub fn add_handle_contract_pair(mut self, ct_handle: U256, contract_address: Address) -> Self {
-        self.ct_handle_contract_pairs.push(CtHandleContractPair {
-            ctHandle: ct_handle.into(),
-            contractAddress: contract_address,
-        });
-        self
+    pub fn add_handles_from_bytes(
+        mut self,
+        handles: &[Vec<u8>],
+        contract_addresses: &[Address],
+    ) -> Result<Self> {
+        // Validate inputs upfront
+        if handles.is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "At least one ciphertext handle is required".to_string(),
+            ));
+        }
+
+        if contract_addresses.is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "At least one contract address is required".to_string(),
+            ));
+        }
+
+        if contract_addresses.len() > 10 {
+            return Err(FhevmError::InvalidParams(
+                "Maximum 10 contract addresses allowed".to_string(),
+            ));
+        }
+
+        // Process handles with validation
+        for (i, handle) in handles.iter().enumerate() {
+            if handle.len() != 32 {
+                return Err(FhevmError::InvalidParams(format!(
+                    "Handle {} must be exactly 32 bytes, got {}",
+                    i,
+                    handle.len()
+                )));
+            }
+
+            let handle_u256 = U256::from_be_slice(handle);
+            let contract_addr = contract_addresses[i % contract_addresses.len()];
+
+            self.ct_handle_contract_pairs.push(CtHandleContractPair {
+                ctHandle: handle_u256.into(),
+                contractAddress: contract_addr,
+            });
+        }
+
+        // Store unique contract addresses
+        for &addr in contract_addresses {
+            if !self.contract_addresses.contains(&addr) {
+                self.contract_addresses.push(addr);
+            }
+        }
+
+        Ok(self)
     }
 
-    /// Set the user address
-    pub fn user_address(mut self, address: Address) -> Self {
-        self.user_address = Some(address);
-        self
+    pub fn user_address_from_str(mut self, address: &str) -> Result<Self> {
+        if address.trim().is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "User address cannot be empty".to_string(),
+            ));
+        }
+
+        let addr = validate_address_from_str(address)?;
+
+        if addr.is_zero() {
+            return Err(FhevmError::InvalidParams(
+                "Zero address is not allowed for user".to_string(),
+            ));
+        }
+
+        self.user_address = Some(addr);
+        Ok(self)
     }
 
-    /// Add a contract address
-    pub fn add_contract_address(mut self, address: Address) -> Self {
-        self.contract_addresses.push(address);
-        self
+    pub fn signature_from_hex(mut self, signature: &str) -> Result<Self> {
+        let signature_bytes = parse_hex_string(signature, "signature")?;
+
+        // Validate signature length (should be 65 bytes for ECDSA)
+        if signature_bytes.len() != 65 {
+            return Err(FhevmError::InvalidParams(format!(
+                "Invalid signature length: expected 65 bytes, got {}",
+                signature_bytes.len()
+            )));
+        }
+
+        self.signature = Some(signature_bytes);
+        Ok(self)
     }
 
-    /// Set the signature
-    pub fn signature(mut self, signature: Bytes) -> Self {
-        self.signature = Some(signature);
-        self
+    pub fn public_key_from_hex(mut self, public_key: &str) -> Result<Self> {
+        let public_key_bytes = parse_hex_string(public_key, "public key")?;
+
+        if public_key_bytes.is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "Public key cannot be empty".to_string(),
+            ));
+        }
+
+        self.public_key = Some(public_key_bytes);
+        Ok(self)
     }
 
-    /// Set the public key
-    pub fn public_key(mut self, public_key: Bytes) -> Self {
-        self.public_key = Some(public_key);
-        self
+    pub fn validity(mut self, start_timestamp: u64, duration_days: u64) -> Result<Self> {
+        if duration_days == 0 {
+            return Err(FhevmError::InvalidParams(
+                "Duration days cannot be zero".to_string(),
+            ));
+        }
+
+        if duration_days > 365 {
+            return Err(FhevmError::InvalidParams(
+                "Duration days cannot exceed 365".to_string(),
+            ));
+        }
+
+        // Validate timestamp is not in the future (with 5 minute tolerance)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        if start_timestamp > now + 300 {
+            // 5 minute tolerance
+            return Err(FhevmError::InvalidParams(
+                "Start timestamp cannot be more than 5 minutes in the future".to_string(),
+            ));
+        }
+
+        self.start_timestamp = Some(start_timestamp);
+        self.duration_days = Some(duration_days);
+        Ok(self)
     }
 
-    /// Set the start timestamp
-    pub fn start_timestamp(mut self, timestamp: u64) -> Self {
-        self.start_timestamp = Some(timestamp);
-        self
-    }
-
-    /// Set the duration in days
-    pub fn duration_days(mut self, days: u64) -> Self {
-        self.duration_days = Some(days);
-        self
-    }
-
-    /// Set the contracts chain ID
     pub fn contracts_chain_id(mut self, chain_id: u64) -> Self {
         self.contracts_chain_id = Some(chain_id);
         self
     }
 
-    /// Build the UserDecryptRequest
+    /// ## **Build the request and generate calldata**
+    ///
+    /// This is the final step that creates the transaction calldata ready to send to the blockchain.
+    /// All required fields must be set before calling this method.
+    ///
+    /// ## Returns
+    /// * `Ok(Vec<u8>)` - The encoded calldata bytes ready for your transaction
+    /// * `Err(FhevmError)` - If any required fields are missing or validation fails
+    ///
+    ///
+    /// ## Example
+    /// ```ignore
+    /// // Complete flow ending with calldata generation
+    /// let calldata = UserDecryptRequestBuilder::new()
+    ///     .add_handles_from_bytes(&handles, &contracts)?
+    ///     .user_address_from_str("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1")?
+    ///     .signature_from_hex("0x1234567890abcdef...")?
+    ///     .public_key_from_hex("0x2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331")?
+    ///     .validity(1640995200, 30)?
+    ///     .build_and_generate_calldata()?;
+    ///
+    /// // Now you can use the calldata in your transaction
+    /// println!("Calldata ready: {} bytes", calldata.len());
+    /// send_transaction_with_calldata(calldata)?;
+    /// ```
+    ///
+    /// # Required Fields Check
+    /// This method will return helpful errors if you're missing any required fields:
+    /// - "❌ Missing handles: Call `add_handles_from_bytes()` first"
+    /// - "❌ Missing user address: Call `user_address_from_str()` first"  
+    /// - "❌ Missing signature: Call `signature_from_hex()` first"
+    /// - "❌ Missing public key: Call `public_key_from_hex()` first"
+    /// - "❌ Missing validity: Call `validity()` first"
+    ///
+    /// # Typical Usage Pattern
+    /// ```ignore
+    /// match builder.build_and_generate_calldata() {
+    ///     Ok(calldata) => {
+    ///         // Success! Send the transaction
+    ///         send_transaction(calldata).await?;
+    ///     }
+    ///     Err(e) => {
+    ///         // The error message will tell you exactly what's missing
+    ///         println!("Build failed: {}", e);
+    ///         // Example: "Missing signature: Call `signature_from_hex()` first"
+    ///     }
+    /// }
+    /// ```
+    pub fn build_and_generate_calldata(self) -> Result<Vec<u8>> {
+        let request = self.build()?;
+        let calldata = user_decryption_req(request)?;
+        Ok(calldata.to_vec())
+    }
+
+    /// **Alternative: Build just the request object (without calldata generation)**
+    ///
+    /// Use this method if you need the structured request object for other purposes
+    /// besides generating calldata (e.g., serialization, inspection, or custom encoding).
+    ///
+    /// # Returns
+    /// * `Ok(UserDecryptRequest)` - The structured request object
+    /// * `Err(FhevmError)` - If any required fields are missing or validation fails
+    ///
+    /// # When to Use This
+    /// - **Debugging**: Inspect the request structure before encoding
+    /// - **Custom encoding**: You want to encode the request differently
+    /// - **Multiple outputs**: Generate both calldata and other formats
+    /// - **Testing**: Validate request structure in tests
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Build the request object
+    /// let request = UserDecryptRequestBuilder::new()
+    ///     .add_handles_from_bytes(&handles, &contracts)?
+    ///     .user_address_from_str("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1")?
+    ///     .signature_from_hex("0x1234...")?
+    ///     .public_key_from_hex("0xabcd...")?
+    ///     .validity(1640995200, 30)?
+    ///     .build()?;
+    ///
+    /// // Now you can:
+    /// println!("Request has {} handles", request.ct_handle_contract_pairs.len());
+    /// println!("User address: {}", request.user_address);
+    /// println!("Valid for {} days", request.request_validity.durationDays);
+    ///
+    /// // Generate calldata separately if needed
+    /// let calldata = user_decryption_req(request)?;
+    /// ```
+    ///
+    /// # Request Structure
+    /// The returned `UserDecryptRequest` contains:
+    /// - `ct_handle_contract_pairs`: Handle-contract mappings
+    /// - `request_validity`: Start time and duration
+    /// - `contracts_chain_id`: Chain ID for contracts
+    /// - `contract_addresses`: List of contract addresses
+    /// - `user_address`: User who can decrypt
+    /// - `signature`: EIP-712 signature
+    /// - `public_key`: User's public key for decryption
     pub fn build(self) -> Result<UserDecryptRequest> {
-        let user_address = self
-            .user_address
-            .ok_or_else(|| FhevmError::InvalidParams("User address is required".to_string()))?;
+        // Check handles
+        if self.ct_handle_contract_pairs.is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "❌ Missing handles: Call `add_handles_from_bytes()` first.\n\
+                 💡 Tip: You need at least one encrypted handle to decrypt."
+                    .to_string(),
+            ));
+        }
 
-        let signature = self
-            .signature
-            .ok_or_else(|| FhevmError::InvalidParams("Signature is required".to_string()))?;
+        // Check user address
+        let user_address = self.user_address.ok_or_else(|| {
+            FhevmError::InvalidParams(
+                "❌ Missing user address: Call `user_address_from_str()` first.\n\
+                 💡 Tip: Specify who can decrypt the data with their Ethereum address."
+                    .to_string(),
+            )
+        })?;
 
-        let public_key = self
-            .public_key
-            .ok_or_else(|| FhevmError::InvalidParams("Public key is required".to_string()))?;
+        // Check signature
+        let signature = self.signature.ok_or_else(|| {
+            FhevmError::InvalidParams(
+                "❌ Missing signature: Call `signature_from_hex()` first.\n\
+                 💡 Tip: Add the EIP-712 signature that proves authorization."
+                    .to_string(),
+            )
+        })?;
 
-        let start_timestamp = self.start_timestamp.unwrap_or_else(|| {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-        });
+        // Check public key
+        let public_key = self.public_key.ok_or_else(|| {
+            FhevmError::InvalidParams(
+                "❌ Missing public key: Call `public_key_from_hex()` first.\n\
+                 💡 Tip: Add the user's public key for decryption."
+                    .to_string(),
+            )
+        })?;
 
-        let duration_days = self.duration_days.unwrap_or(7); // Default to 7 days
-        let contracts_chain_id = self.contracts_chain_id.unwrap_or(1); // Default to mainnet
+        // Check validity
+        let start_timestamp = self.start_timestamp.ok_or_else(|| {
+            FhevmError::InvalidParams(
+                "❌ Missing validity: Call `validity()` first.\n\
+                 💡 Tip: Set when and for how long the decryption permission is valid."
+                    .to_string(),
+            )
+        })?;
 
+        let duration_days = self.duration_days.ok_or_else(|| {
+            FhevmError::InvalidParams(
+                "❌ Missing validity: Call `validity()` first.\n\
+                 💡 Tip: Set when and for how long the decryption permission is valid."
+                    .to_string(),
+            )
+        })?;
+
+        // Use default chain ID if not set (usually set by SDK)
+        let contracts_chain_id = self.contracts_chain_id.unwrap_or(1);
+
+        // Additional validation
+        if self.contract_addresses.is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "❌ No contract addresses found. This should not happen if you called `add_handles_from_bytes()`.\n\
+                 💡 Tip: Make sure you added handles with valid contract addresses.".to_string(),
+            ));
+        }
+
+        // Create the request validity object
         let request_validity = RequestValidity {
             startTimestamp: U256::from(start_timestamp),
             durationDays: U256::from(duration_days),
         };
 
-        Ok(UserDecryptRequest {
+        // Build the final request
+        let request = UserDecryptRequest {
             ct_handle_contract_pairs: self.ct_handle_contract_pairs,
             request_validity,
             contracts_chain_id,
@@ -144,7 +369,18 @@ impl UserDecryptRequestBuilder {
             user_address,
             signature,
             public_key,
-        })
+        };
+
+        log::debug!("✅ UserDecryptRequest built successfully");
+        log::debug!("   📊 Handles: {}", request.ct_handle_contract_pairs.len());
+        log::debug!("   👤 User: {}", request.user_address);
+        log::debug!("   🏢 Contracts: {}", request.contract_addresses.len());
+        log::debug!(
+            "   ⏰ Duration: {} days",
+            request.request_validity.durationDays
+        );
+
+        Ok(request)
     }
 }
 
@@ -162,7 +398,7 @@ impl Default for UserDecryptRequestBuilder {
 /// 3. Builds the verification payload
 /// 4. Processes the decryption response from the gateway
 /// 5. Returns the decrypted results as a vector
-pub fn process_user_decryption(
+pub fn process_user_decryption_response(
     kms_signers: &[String],
     user_address: &str,
     gateway_chain_id: u64,
@@ -221,7 +457,7 @@ pub fn process_user_decryption(
 
     debug!("📝 EIP-712 domain constructed");
 
-    // Step 4: Prepare handles (remove 0x prefix)
+    // Step 4: Prepare handles
     let ciphertext_handles: Vec<String> = handle_contract_pairs
         .iter()
         .map(|pair| hex::encode(pair.ctHandle))
@@ -351,7 +587,7 @@ mod tests {
 
     /// Helper function to call process_user_decryption with test data
     fn call_process_user_decryption(test_data: &TestData) -> Result<Vec<TypedPlaintext>> {
-        process_user_decryption(
+        process_user_decryption_response(
             &test_data.kms_signers,
             &test_data.user_address,
             test_data.gateway_chain_id,

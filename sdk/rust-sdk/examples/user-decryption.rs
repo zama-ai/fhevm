@@ -179,26 +179,28 @@ fn generate_user_decrypt_calldata(
 
     let start_timestamp = 1748252823u64;
     let duration_days = 10u64;
-
-    // Generate the calldata
-    let calldata = sdk.generate_user_decrypt_calldata(
-        handles,
-        user_address,
-        contract_addresses,
-        &signature_hex,
-        public_key_hex,
-        start_timestamp,
-        duration_days,
-    )?;
-
-    log::info!("✅ User decrypt calldata generated");
-    log::info!("   Size: {} bytes", calldata.len());
-    log::info!(
-        "   Calldata: 0x{}",
-        hex::encode(&calldata[..std::cmp::min(64, calldata.len())])
-    );
-
-    Ok(calldata)
+    match sdk
+        .create_user_decrypt_builder()
+        .add_handles_from_bytes(&handles, &contract_addresses)?
+        .user_address_from_str(&user_address.to_string())?
+        .signature_from_hex(&signature_hex)?
+        .public_key_from_hex(&public_key_hex)?
+        .validity(start_timestamp, duration_days)?
+        .build_and_generate_calldata()
+    {
+        Ok(calldata) => {
+            log::info!("✅ Calldata generated: {} bytes", calldata.len());
+            log::info!(
+                "   First 32 bytes: 0x{}",
+                hex::encode(&calldata[..32.min(calldata.len())])
+            );
+            return Ok(calldata);
+        }
+        Err(e) => {
+            log::error!("❌ Calldata generation error: {}", e);
+            return Err(e);
+        }
+    }
 }
 
 /// Prepare curl command for relayer (matching JS userDecrypt call)
@@ -315,22 +317,6 @@ fn demonstrate_error_scenarios(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     ) {
         Ok(_) => log::error!("❌ Should have failed"),
         Err(e) => log::info!("✅ Correctly caught error: {}", e),
-    }
-
-    // Scenario 2: Invalid signature in calldata
-    log::info!("Testing invalid signature in calldata...");
-    let handles = vec![vec![0u8; 32]]; // Mock handle
-    match sdk.generate_user_decrypt_calldata(
-        &handles,
-        "0xfCefe53c7012a075b8a711df391100d9c431c468",
-        vec![address!("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")],
-        "invalid_signature",
-        "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331",
-        1748252823,
-        10,
-    ) {
-        Ok(_) => log::error!("❌ Should have failed with invalid signature"),
-        Err(e) => log::info!("✅ Correctly caught invalid signature: {}", e),
     }
 
     Ok(())

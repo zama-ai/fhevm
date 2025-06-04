@@ -6,8 +6,7 @@ use crate::signature::{
     Eip712Builder, Eip712Result, recover_signer, sign_eip712_hash, validate_private_key_format,
     verify_eip712_signature,
 };
-use alloy::primitives::{Address, U256};
-use blockchain::calldata::user_decryption_req;
+use alloy::primitives::Address;
 use decryption::user::UserDecryptRequestBuilder;
 use serde::{Deserialize, Serialize};
 
@@ -123,104 +122,6 @@ impl FhevmSdk {
     pub fn from_yaml_str(yaml: &str) -> Result<Self> {
         let config = serde_yaml::from_str(yaml)?;
         Ok(Self::new(config))
-    }
-
-    /// Generate calldata for UserDecrypt operation
-    pub fn generate_user_decrypt_calldata(
-        &self,
-        ct_handles: &[Vec<u8>],
-        user_address: &str,
-        contract_addresses: Vec<Address>,
-        signature: &str,
-        public_key: &str,
-        start_timestamp: u64,
-        duration_days: u64,
-    ) -> Result<Vec<u8>> {
-        log::debug!(
-            "Generating user decrypt calldata for {} handles",
-            ct_handles.len()
-        );
-
-        // Validate inputs
-        if ct_handles.is_empty() {
-            return Err(FhevmError::InvalidParams(
-                "At least one ciphertext handle is required".to_string(),
-            ));
-        }
-
-        if contract_addresses.is_empty() {
-            return Err(FhevmError::InvalidParams(
-                "At least one contract address is required".to_string(),
-            ));
-        }
-
-        if contract_addresses.len() > 10 {
-            return Err(FhevmError::InvalidParams(
-                "Maximum 10 contract addresses allowed".to_string(),
-            ));
-        }
-
-        if duration_days == 0 {
-            return Err(FhevmError::InvalidParams(
-                "Duration days cannot be zero".to_string(),
-            ));
-        }
-
-        if duration_days > 365 {
-            return Err(FhevmError::InvalidParams(
-                "Duration days cannot exceed 365".to_string(),
-            ));
-        }
-
-        let user_addr = Address::from_str(user_address)
-            .map_err(|e| FhevmError::AddressError(format!("Invalid user address: {}", e)))?;
-
-        // Convert signature and public key to Bytes
-        let signature_bytes = parse_hex_string(signature, "signature")?;
-        let public_key_bytes = parse_hex_string(public_key, "public key")?;
-
-        let mut builder = UserDecryptRequestBuilder::new()
-            .user_address(user_addr)
-            .signature(signature_bytes)
-            .public_key(public_key_bytes)
-            .start_timestamp(start_timestamp)
-            .duration_days(duration_days)
-            .contracts_chain_id(self.config.host_chain_id);
-
-        for contract_addr in &contract_addresses {
-            builder = builder.add_contract_address(*contract_addr);
-        }
-
-        // Add all handle-contract pairs using the builder
-        for (i, handle) in ct_handles.iter().enumerate() {
-            if handle.len() != 32 {
-                return Err(FhevmError::InvalidParams(format!(
-                    "Handle {} must be exactly 32 bytes",
-                    i
-                )));
-            }
-
-            // Convert handle bytes to U256
-            let handle_u256 = U256::from_be_slice(handle);
-
-            // Use the first contract address or cycle through them
-            let contract_addr = contract_addresses[i % contract_addresses.len()];
-
-            builder = builder.add_handle_contract_pair(handle_u256, contract_addr);
-        }
-
-        // Build the request using the builder (includes validation)
-        let user_decrypt_request = builder.build()?;
-
-        // Generate the calldata using the existing function
-        let calldata = user_decryption_req(user_decrypt_request)?;
-
-        log::info!(
-            "Successfully generated user decrypt calldata: {} bytes",
-            calldata.len()
-        );
-
-        Ok(calldata.to_vec())
     }
 
     /// Generate EIP-712 hash for user decrypt, with optional signing
@@ -393,7 +294,11 @@ impl FhevmSdk {
     }
 
     /// Generate calldata for Input operation
-    pub fn generate_input_calldata(&self, _ciphertext: &[u8], _proof: &[u8]) -> Result<Vec<u8>> {
+    pub fn generate_verify_proof_calldata(
+        &self,
+        _ciphertext: &[u8],
+        _proof: &[u8],
+    ) -> Result<Vec<u8>> {
         // Placeholder
         Ok(vec![])
     }
@@ -449,6 +354,69 @@ impl FhevmSdk {
         log::debug!("Creating encrypted input builder");
         let factory = self.get_input_factory()?;
         Ok(factory.create_builder())
+    }
+
+    /// Create a user decrypt request builder
+    ///
+    /// This builder provides a fluent API for constructing user decrypt requests
+    /// with comprehensive validation and clear error messages.
+    ///
+    /// The builder automatically configures the chain ID from the SDK configuration.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use fhevm_sdk::{FhevmSdk, FhevmError};
+    /// # use alloy::primitives::Address;
+    /// # use std::str::FromStr;
+    /// # use std::path::PathBuf;
+    /// # use fhevm_sdk::FhevmSdkBuilder;
+    /// #
+    /// # fn example() -> Result<(), FhevmError> {
+    /// # let sdk = FhevmSdkBuilder::new()
+    /// #     .with_keys_directory(PathBuf::from("./test_keys"))
+    /// #     .with_gateway_chain_id(31337)
+    /// #     .with_host_chain_id(31337)
+    /// #     .with_gateway_contract("Decryption", "0x1111111111111111111111111111111111111111")
+    /// #     .with_gateway_contract("input-verifier", "0x2222222222222222222222222222222222222222")
+    /// #     .with_host_contract("acl", "0x3333333333333333333333333333333333333333")
+    /// #     .build()?;
+    /// #
+    /// # // Sample data
+    /// # let handles = vec![vec![1u8; 32]]; // Your encrypted handles
+    /// # let contracts = vec![
+    /// #     Address::from_str("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1").unwrap()
+    /// # ];
+    /// # let timestamp = 1640995200u64;
+    /// #
+    /// let calldata = sdk.create_user_decrypt_builder()
+    ///     .add_handles_from_bytes(&handles, &contracts)?
+    ///     .user_address_from_str("0x742d35Cc6634C0...")?
+    ///     .signature_from_hex("0x1234567890abc5678...")?
+    ///     .public_key_from_hex("0x200000000000...bc6f331")?
+    ///     .validity(timestamp, 30)?
+    ///     .build_and_generate_calldata()?;
+    ///
+    /// println!("Generated calldata: {} bytes", calldata.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Quick Start Steps
+    ///
+    /// 1. **Add handles**: `.add_handles_from_bytes()` - The encrypted data  
+    /// 2. **Set user**: `.user_address_from_str()` - Who can decrypt
+    /// 3. **Add signature**: `.signature_from_hex()` - EIP-712 signature
+    /// 4. **Add public key**: `.public_key_from_hex()` - User's decryption key
+    /// 5. **Set validity**: `.validity()` - Time period for permission
+    /// 6. **Build**: `.build_and_generate_calldata()` - Generate final calldata
+    pub fn create_user_decrypt_builder(&self) -> UserDecryptRequestBuilder {
+        UserDecryptRequestBuilder::new().contracts_chain_id(self.config.host_chain_id)
+    }
+
+    /// Alternative shorter name for discoverability
+    pub fn user_decrypt_builder(&self) -> UserDecryptRequestBuilder {
+        self.create_user_decrypt_builder()
     }
 }
 
