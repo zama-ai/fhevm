@@ -1,6 +1,6 @@
 //! Encryption module for FHEVM SDK
 //!
-//! This module provides functionalities for encrypting data using TFHE and generating zero-knowledge proofs
+//! This module provides functionalities for encrypting data using tfhe-rs and generating zero-knowledge proofs
 //! for encrypted inputs. It's designed to work with the FHEVM (Fully Homomorphic Encryption Virtual Machine).
 
 use crate::{FhevmError, Result};

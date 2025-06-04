@@ -1,6 +1,6 @@
 //! # Minimal Encrypted Input
 //!
-//! Encrypt a single value for a smart contract.
+//! Encrypt a single value with the associated ZkPok
 //!
 //! ```bash
 //! cargo run --example minimal-encrypted-input

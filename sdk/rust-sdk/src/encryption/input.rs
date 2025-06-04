@@ -60,7 +60,7 @@ impl InputBuilderFactory {
     }
 }
 
-/// Represents an encrypted input builder for the FHEVM.
+/// Represents an encrypted input builder for the fheVM.
 ///
 /// This builder allows adding different types of encrypted values (bool, u8, u16, etc.)
 /// and produces a serialized ciphertext with a zero-knowledge proof.
@@ -421,17 +421,14 @@ pub fn get_default_encryption_parameters() -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        encryption::input::InputBuilderFactory,
-        encryption::input::get_default_encryption_parameters,
-    };
+
+    use super::*;
     use tfhe::{
         FheBool, FheUint8, FheUint64, FheUint160,
         integer::bigint::StaticUnsignedBigInt,
         prelude::{CiphertextList, FheDecrypt},
     };
 
-    use super::*;
     use alloy::primitives::{Address, U256};
     use std::str::FromStr;
 

@@ -1,6 +1,11 @@
 //! Calldata module for FHEVM SDK
 
 use crate::Result;
+use crate::blockchain::bindings::Decryption::userDecryptionRequestCall;
+use crate::decryption::user::UserDecryptRequest;
+use alloy::primitives::{Bytes, U256};
+use alloy::sol_types::SolCall;
+use log::info;
 
 /// Function selectors (first 4 bytes of keccak256 hash of function signature)
 pub mod selectors {
@@ -17,20 +22,25 @@ pub mod selectors {
     pub const INPUT: [u8; 4] = [0x45, 0x67, 0x89, 0xAB];
 }
 
-/// Generate calldata for user decrypt
-pub fn generate_user_decrypt(
-    _ct_handles: &[Vec<u8>],
-    _user_address: &str,
-    _chain_id: u64,
-) -> Result<Vec<u8>> {
-    // Simple placeholder implementation
-    let mut calldata = Vec::new();
-    calldata.extend_from_slice(&selectors::USER_DECRYPT);
+/// Generate calldata for user decryptÒ
+pub fn user_decryption_req(user_decrypt_request: UserDecryptRequest) -> Result<Bytes> {
+    info!("Generating user decryption request calldata");
 
-    // In a real implementation, we would properly encode all parameters
-    // according to Ethereum ABI encoding specification
+    // Create the userDecryptionRequest call
+    let call = userDecryptionRequestCall::new((
+        user_decrypt_request.ct_handle_contract_pairs,
+        user_decrypt_request.request_validity,
+        U256::from(user_decrypt_request.contracts_chain_id),
+        user_decrypt_request.contract_addresses,
+        user_decrypt_request.user_address,
+        user_decrypt_request.public_key,
+        user_decrypt_request.signature,
+    ));
 
-    Ok(calldata)
+    // Encode the call to get the calldata
+    let calldata = userDecryptionRequestCall::abi_encode(&call);
+
+    Ok(Bytes::from(calldata))
 }
 
 /// Generate calldata for delegated decrypt
