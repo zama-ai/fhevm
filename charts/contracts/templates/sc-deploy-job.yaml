@@ -32,11 +32,17 @@ spec:
       - name: deploy
         image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}
         command: ["/app/deploy-contracts.sh"]
-        {{- if .Values.scDeploy.env }}
         env:
+          - name: DEPLOYED_SMART_CONTRACTS_VERSION
+            valueFrom:
+              configMapKeyRef:
+                name: {{ .Values.scDeploy.configmap.name }}
+                key: contracts.version
+                optional: true
           {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
           - name: MANIFEST_DEFAULT_DIR
-            value: "/app/cache/.openzeppelin"
+            value: "/app/addresses/.openzeppelin"
+        {{- if .Values.scDeploy.env }}
           {{ toYaml .Values.scDeploy.env | nindent 10 }}
         {{- end }}
         volumeMounts:
@@ -44,7 +50,7 @@ spec:
             subPath: deploy-contracts.sh
             name: config
           {{- if .Values.persistence.enabled }}
-          - mountPath: /app/cache
+          - mountPath: /app/addresses
             name: persistence
           {{- end }}
         resources:

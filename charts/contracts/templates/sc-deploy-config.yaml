@@ -42,7 +42,13 @@ data:
         echo "error: you must supply an item value" 1>&2
         exit 1
       fi
-      kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
+      # Patch configmap to add key if it doesn't already exists
+      configmap_value=$(kubectl get configmap "${configmap_name}" -o jsonpath="{.data['${name//./\\.}']}")
+      if [[ -n "${configmap_value}" ]]; then
+        echo "skipping: ${configmap_name} already contains ${name}:${configmap_value}"
+      else
+          kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
+      fi
     }
     add_annotation_to_configmap() {
       configmap_name="${1}"
@@ -62,44 +68,37 @@ data:
       fi
     }
     CONFIGMAP_NAME="{{ .Values.scDeploy.configmap.name }}"
-
     echo "creating kubernetes configmap for smart contract configuration outputs"
     create_configmap "${CONFIGMAP_NAME}"
 
-    # Populate .env file
-    echo "# Generated at $(date)" > /app/.env
-    env | \
-      grep -v '^KUBERNETES_' | \
-      grep -v '^HOSTNAME=' | \
-      grep -v '^HOME=' | \
-      grep -v '^PATH=' | \
-      grep -v '^PWD=' | \
-      grep -v '^SHLVL=' | \
-      grep -v '^_=' | \
-      grep -v '_SERVICE_' | \
-      grep -v '_PORT_' | \
-      grep -v '_SERVICE_PORT' | \
-      grep -v 'VERSION=' | \
-      grep -v '^YARN_' | \
-      grep -v '^NODE_' | \
-      grep -v 'TCP_ADDR=' | \
-      grep -v 'TCP_PORT=' | \
-      grep -v 'TCP_PROTO=' | \
-      while read -r line; do
-        key=$(echo "$line" | cut -d= -f1)
-        value=$(echo "$line" | cut -d= -f2-)
-        echo "export ${key}=\"${value}\"" >> /app/.env
-      done
-    echo "Generated .env file with $(($(wc -l < /app/.env) - 1)) variables"
-    
-    # Main deploy commands
-    {{- range .Values.scDeploy.deployCommands }}
-    {{ . }}
-    {{- end }}
-    echo "Smart contracts deployed successfully"
+    # Prevent smart contract deployment if already done for current version
+    if [[ "$DEPLOYED_SMART_CONTRACTS_VERSION" == "{{ .Values.scDeploy.image.tag }}" ]]; then
+      echo "contracts already deployed with version: ${DEPLOYED_SMART_CONTRACTS_VERSION}, aborting deployment" 1>&2
+      exit 0
+    fi
 
-    # Post-deploy commands
-    {{- range .Values.scDeploy.postDeployCommands }}
+    echo "executing deploy commands"
+    {{- range .Values.scDeploy.deployCommands }}
     {{ . | nindent 4 }}
     {{- end }}
+
+    for envfile in /app/addresses/.env.*; do
+      echo "---"
+      echo "Updating configmap for ${envfile}"
+      CONTRACT_NAME="$(echo ${envfile} | cut -d'.' -f 3)"
+      CONTRACT_ADDRESS="$(cat ${envfile} | cut -d'=' -f 2)"
+      add_key_to_configmap "${CONFIGMAP_NAME}" "${CONTRACT_NAME}.address" "${CONTRACT_ADDRESS}"
+    done;
+
+    {{- if .Values.scDeploy.verifyContracts }}
+    for envfile in /app/addresses/.env.*; do
+      echo "---"
+      echo "Verifying contract for ${envfile}"
+      CONTRACT_NAME="$(echo ${envfile} | cut -d'.' -f 3)"
+      CONTRACT_ADDRESS="$(cat ${envfile} | cut -d'=' -f 2)"
+      npx --no-install hardhat verify ${CONTRACT_ADDRESS} || true
+    done;
+    {{- end }}
+    echo "adding the current contracts version to the configmap"
+    kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"{{ .Values.scDeploy.image.tag }}\"}}"
 {{- end }}

@@ -33,7 +33,7 @@ spec:
           env:
           {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
           - name: MANIFEST_DEFAULT_DIR
-            value: "/app/cache/.openzeppelin"
+            value: "/app/addresses/.openzeppelin"
           {{ toYaml .Values.scDeploy.env | nindent 10 }}
           {{- end }}
           volumeMounts:
@@ -41,7 +41,7 @@ spec:
               subPath: deploy-contracts.sh
               name: config
             {{- if .Values.persistence.enabled }}
-            - mountPath: /app/cache
+            - mountPath: /app/addresses
               name: persistence
             {{- end }}
           resources:
