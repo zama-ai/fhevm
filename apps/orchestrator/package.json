@@ -68,7 +68,7 @@
     "eslint": "catalog:",
     "eslint-config-prettier": "9.0.0",
     "eslint-plugin-prettier": "5.0.0",
-    "globals": "15.11.0",
+    "globals": "catalog:",
     "prettier": "3.0.0",
     "prisma": "catalog:",
     "rimraf": "6.0.1",

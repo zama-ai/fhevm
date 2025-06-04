@@ -1,25 +1,24 @@
 import { ChainsRepository } from '#chains/domain/repositories/chains.repository.js'
 import { beforeEach, describe, expect, test } from 'vitest'
-import { PrismaChainsRepository } from './prisma-chains.repository.js'
+import { ConfigChainsRepository } from './config-chains.repository.js'
 import { TestBed } from '@suites/unit'
 import { faker } from '@faker-js/faker'
 import { Mocked } from '@suites/doubles.vitest'
-import { PrismaService } from '#infra/database/prisma.service.js'
 import { ChainId } from '#chains/domain/entities/value-objects.js'
-import { Chain as PrismaChain } from '#prisma/client/index.js'
 import { Chain } from '#chains/domain/entities/chain.js'
+import { ConfigService } from '@nestjs/config'
 
-describe('PrismaChainsRepository', () => {
+describe('ConfigChainsRepository', () => {
   let repo: ChainsRepository
-  let prisma: Mocked<PrismaService>
+  let config: Mocked<ConfigService>
 
   beforeEach(async () => {
     const { unit, unitRef } = await TestBed.solitary(
-      PrismaChainsRepository,
+      ConfigChainsRepository,
     ).compile()
 
     repo = unit
-    prisma = unitRef.get(PrismaService) as unknown as Mocked<PrismaService>
+    config = unitRef.get(ConfigService) as unknown as Mocked<ConfigService>
   })
 
   test('should be defined', () => {
@@ -28,54 +27,39 @@ describe('PrismaChainsRepository', () => {
 
   describe('getChainById', () => {
     let chainId: number
-
     beforeEach(() => {
       chainId = faker.number.int({ min: 1, max: 100_000 })
     })
 
     describe('given no chain exists', () => {
       beforeEach(() => {
-        prisma.chain.findUnique.mockResolvedValue(null)
+        config.get.mockReturnValue(undefined)
       })
 
       test('when is called, then it should return a not found error', async () => {
         await expect(
           repo.getChainById(ChainId.from(chainId).unwrap()).toPromise(),
         ).rejects.toThrowError(/not found/i)
-        expect(prisma.chain.findUnique).toHaveBeenCalledWith({
-          where: {
-            id: chainId,
-            enabled: true,
-          },
-        })
       })
     })
 
     describe('given a chain exists', () => {
-      let chain: PrismaChain
-
       beforeEach(() => {
-        chain = {
-          id: chainId,
-          name: faker.string.alphanumeric(10),
-          description: faker.lorem.words(5),
-          enabled: true,
-        }
-
-        prisma.chain.findUnique.mockResolvedValue(chain)
+        console.log(`calling mockImplementation on config.get`)
+        config.get.mockReturnValue([
+          {
+            id: chainId,
+            name: faker.string.alphanumeric(10),
+            description: faker.lorem.words(5),
+          },
+        ])
       })
 
       test('when is called, then it should return the chain', async () => {
         const result = await repo
           .getChainById(ChainId.from(chainId).unwrap())
           .toPromise()
-        expect(result).toEqual(Chain.parse(chain).unwrap())
-        expect(prisma.chain.findUnique).toHaveBeenCalledWith({
-          where: {
-            id: chainId,
-            enabled: true,
-          },
-        })
+        expect(result.id.value).toEqual(chainId)
       })
     })
   })
@@ -83,22 +67,17 @@ describe('PrismaChainsRepository', () => {
   describe('getChains', () => {
     describe('given no chain exists', () => {
       beforeEach(() => {
-        prisma.chain.findMany.mockResolvedValue([])
+        config.get.mockReturnValue(undefined)
       })
 
       test('when is called, then it should return an empty array', async () => {
         const result = await repo.getChains().toPromise()
         expect(result).toEqual([])
-        expect(prisma.chain.findMany).toHaveBeenCalledWith({
-          where: {
-            enabled: true,
-          },
-        })
       })
     })
 
     describe('given chains exist', () => {
-      let chains: PrismaChain[]
+      let chains: Array<{ id: number; name: string; description?: string }>
 
       beforeEach(() => {
         chains = [
@@ -106,23 +85,18 @@ describe('PrismaChainsRepository', () => {
             id: faker.number.int({ min: 1, max: 100_000 }),
             name: faker.string.alphanumeric(10),
             description: faker.lorem.words(5),
-            enabled: true,
           },
           {
             id: faker.number.int({ min: 1, max: 100_000 }),
             name: faker.string.alphanumeric(10),
-            description: null,
-            enabled: true,
           },
           {
             id: faker.number.int({ min: 1, max: 100_000 }),
             name: faker.string.alphanumeric(10),
-            description: null,
-            enabled: true,
           },
         ]
 
-        prisma.chain.findMany.mockResolvedValue(chains)
+        config.get.mockReturnValue(chains)
       })
 
       test('when is called, then it should return the chains', async () => {
@@ -130,11 +104,6 @@ describe('PrismaChainsRepository', () => {
         expect(result.length).toEqual(chains.length)
         result.forEach((chain, index) => {
           expect(chain).toEqual(Chain.parse(chains[index]).unwrap())
-        })
-        expect(prisma.chain.findMany).toHaveBeenCalledWith({
-          where: {
-            enabled: true,
-          },
         })
       })
     })

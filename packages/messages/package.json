@@ -31,7 +31,7 @@
     "eslint": "catalog:",
     "eslint-config-prettier": "9.1.0",
     "eslint-plugin-prettier": "5.4.0",
-    "globals": "15.15.0",
+    "globals": "catalog:",
     "prettier": "3.5.3",
     "ts-jest": "29.3.4",
     "ts-loader": "9.5.2",

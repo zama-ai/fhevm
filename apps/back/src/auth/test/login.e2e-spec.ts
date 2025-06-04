@@ -53,12 +53,13 @@ describe('login', () => {
       beforeEach(async () => {
         const result = await manager.auth.login({ email, password })
         if (result.success) {
-          ;({ token, user } = result.data)
+          token = result.data.token
+          user = result.data.user
         }
       })
 
       test('then it returns a token', () => {
-        expect(token).not.toBeFalsy()
+        expect(token).toEqual(expect.any(String))
       })
 
       test('then it returns the user', () => {

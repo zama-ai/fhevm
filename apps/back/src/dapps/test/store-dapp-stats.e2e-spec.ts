@@ -61,15 +61,7 @@ describe('store-dapp-stats', () => {
       let timestamp: string
       beforeEach(async () => {
         timestamp = faker.date.past().toISOString()
-        const chainId = faker.number.int({ min: 1, max: 100_000 })
-        // TODO: move to a GraphQL endpoint when implemented
-        await manager.prismaClient.chain.create({
-          data: {
-            id: chainId,
-            name: faker.string.alphanumeric(10),
-            enabled: true,
-          },
-        })
+        const chainId = 11155111 // Sepolia
         await manager.sendMessage(
           JSON.stringify(
             back.dappStatsAvailable(

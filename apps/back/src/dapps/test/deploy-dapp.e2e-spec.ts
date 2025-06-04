@@ -85,16 +85,7 @@ describe('deploy-dapp', () => {
       let status: DAppStatus
 
       beforeEach(async () => {
-        const chainId = faker.number.int({ min: 1, max: 100_000 })
-
-        // TODO: move to a GraphQL when implemented
-        await manager.prismaClient.chain.create({
-          data: {
-            id: chainId,
-            name: faker.string.alphanumeric(10),
-            description: faker.lorem.words(5),
-          },
-        })
+        const chainId = 11155111 // Sepolia
 
         const updateDApp = await manager.dapp.updateDApp({
           token,
@@ -129,7 +120,7 @@ describe('deploy-dapp', () => {
     let teamId: string
     let dappId = ''
     // NOTE: I need to use faker here because I'm using `describe.each` later
-    const chainId = faker.number.int({ min: 1, max: 100_000 })
+    const chainId = 11155111 // Sepolia
 
     beforeEach(async () => {
       const login = await manager.auth.login(
@@ -139,15 +130,6 @@ describe('deploy-dapp', () => {
       if (login.success) {
         token = login.data.token
         teamId = login.data.user.teams[0].id
-
-        // TODO: move to a GraphQL when implemented
-        await manager.prismaClient.chain.create({
-          data: {
-            id: chainId,
-            name: faker.string.alphanumeric(10),
-            enabled: true,
-          },
-        })
 
         const createDapp = await manager.dapp.createDApp({
           token,

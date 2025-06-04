@@ -157,7 +157,7 @@ async function sendValidateAddressRequest(
   token: string,
   success: boolean,
 ) {
-  const chainId = faker.number.int({ min: 1, max: 100_000 })
+  const chainId = 11155111 // Sepolia
   const address = faker.string.hexadecimal({ length: 40 })
 
   const promise = manager.dapp.valiateAddress({

@@ -67,7 +67,6 @@ model Dapp {
   id        String     @id
   name      String
   chainId   Int?
-  chain     Chain?     @relation(fields: [chainId], references: [id])
   address   String?
   status    DappStatus @default(DRAFT)
   teamId    String
@@ -77,14 +76,6 @@ model Dapp {
   deletedAt DateTime?
   DappStats DappStat[]
   ApiKey    ApiKey[]
-}
-
-model Chain {
-  id          Int     @id
-  name        String
-  description String?
-  enabled     Boolean @default(false)
-  Dapp        Dapp[]
 }
 
 model DappStat {

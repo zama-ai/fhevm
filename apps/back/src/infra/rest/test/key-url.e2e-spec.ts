@@ -30,8 +30,7 @@ describe('GET /v1/keyurl', () => {
                 fhe_public_key: {
                   data_id: 'fhe-public-key-data-id',
                   urls: [
-                    'http://0.0.0.0:9000/kms-public/PUB/PublicKey/' +
-                      process.env.KEY_GEN_ID,
+                    'http://0.0.0.0:9000/kms-public/PUB/PublicKey/KEY_GEN_ID',
                   ],
                 },
               },
@@ -39,10 +38,7 @@ describe('GET /v1/keyurl', () => {
             crs: {
               '2048': {
                 data_id: 'crs-data-id',
-                urls: [
-                  'http://0.0.0.0:9000/kms-public/PUB/CRS/' +
-                    process.env.CRS_GEN_ID,
-                ],
+                urls: ['http://0.0.0.0:9000/kms-public/PUB/CRS/CRS_GEN_ID'],
               },
             },
           },

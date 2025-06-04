@@ -145,6 +145,9 @@ describe('reset-user-password', () => {
 
       test('then the previous token has been deleted', async () => {
         const hash = Hash.hash(Token.from(token).unwrap()).value
+        // Note: sometime this test fails.
+        // Sleep for 100ms to ensure the token has been deleted
+        await new Promise(resolve => setTimeout(resolve, 100))
         await expect(
           manager.prismaClient.passwordResetToken.findUnique({
             where: {

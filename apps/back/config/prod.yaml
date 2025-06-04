@@ -1,0 +1,12 @@
+common:
+  port: 3000
+  graphqlMaxComplexity: 150
+  prettify: false
+chains:
+  - id: 11155111
+    name: 'Sepolia'
+    description: 'Ethereum Sepolia'
+jwt:
+  expiresIn: '1week'
+redis:
+  port: 6379

@@ -40,11 +40,10 @@ describe('input proof', () => {
     describe('given a user has a valid API key', () => {
       let apiKey: string
       let dappId: string
-      let chainId: number
+      const chainId = 11155111 // Sepolia
       let address: string
 
       beforeEach(async () => {
-        chainId = faker.number.int({ min: 1, max: 100_000 })
         address = faker.string.hexadecimal({ length: 40 })
 
         const signup = await manager.auth.signup(
@@ -66,14 +65,6 @@ describe('input proof', () => {
           expect(signup.success).toBe(true)
         }
 
-        // TODO: move to a GraphQL endpoint when implemented
-        await manager.prismaClient.chain.create({
-          data: {
-            id: chainId,
-            name: faker.string.alphanumeric(10),
-            enabled: true,
-          },
-        })
         const createDapp = await manager.dapp.createDApp({
           token,
           teamId,

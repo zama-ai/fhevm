@@ -7,17 +7,32 @@ import { AppError, Task, unknownError } from 'utils'
 
 @Injectable()
 export class SqsProducer implements IProducer {
-  private readonly sqs: SQSClient
-  private readonly queueUrl: string
+  private _sqs: SQSClient | undefined
+  private _queueUrl: string | undefined
   private readonly logger = new Logger(SqsProducer.name)
 
-  constructor(config: ConfigService) {
-    this.sqs = new SQSClient({
-      endpoint: config.get('aws.endpoint'),
-      region: config.get('aws.region'),
-      useQueueUrlAsEndpoint: true,
-    })
-    this.queueUrl = config.getOrThrow('aws.orchestrator.queueUrl')
+  constructor(private readonly config: ConfigService) {}
+
+  private get sqs(): SQSClient {
+    if (!this._sqs) {
+      this._sqs = new SQSClient({
+        endpoint: this.config.get('aws.endpoint'),
+        region: this.config.get('aws.region'),
+        useQueueUrlAsEndpoint: true,
+        credentials: {
+          accessKeyId: this.config.getOrThrow('aws.accessKeyId'),
+          secretAccessKey: this.config.getOrThrow('aws.secretAccessKey'),
+        },
+      })
+    }
+    return this._sqs
+  }
+
+  private get queueUrl(): string {
+    if (!this._queueUrl) {
+      this._queueUrl = this.config.getOrThrow('aws.orchestrator.queueUrl')
+    }
+    return this._queueUrl
   }
 
   publish = (event: back.BackEvent): Task<void, AppError> => {

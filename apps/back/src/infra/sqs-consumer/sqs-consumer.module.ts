@@ -23,6 +23,10 @@ import { SharedModule } from '#shared/shared.module.js'
             sqs: new SQSClient({
               endpoint: config.get('aws.endpoint'),
               region: config.get('aws.region'),
+              credentials: {
+                accessKeyId: config.getOrThrow('aws.accessKeyId'),
+                secretAccessKey: config.getOrThrow('aws.secretAccessKey'),
+              },
             }),
             messageAttributeNames: ['All'],
             attributeNames: ['All'],

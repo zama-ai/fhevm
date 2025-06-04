@@ -4,15 +4,13 @@ import { Test } from '@nestjs/testing'
 import { AppModule, configModule } from '#app.module.js'
 import { PrismaClient } from '#prisma/client/index.js'
 import { ConfigModule, registerAs } from '@nestjs/config'
-import dbConfig from '#config/db.config.js'
-import jwtConfig from '#config/jwt.config.js'
 import { inject } from 'vitest'
 import { randomUUID } from 'crypto'
 import { execSync } from 'child_process'
-import commonConfig from '#config/common.config.js'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { JsPromise } from '#prisma/client/runtime/library.js'
 import type { Type } from '@nestjs/common'
+import configuration from '#config/configuration.js'
 export type GraphQlResponse<T> =
   | {
       success: true
@@ -99,44 +97,22 @@ export class SetupManager {
         ConfigModule.forRoot({
           isGlobal: true,
           load: [
-            commonConfig,
-            registerAs('aws', () => ({
-              endpoint: this.awsEndpoint,
-              region: this.awsRegion,
-              back: {
-                queueUrl: this.backQueueUrl,
-              },
-              orchestrator: {
-                queueUrl: this.orchQueueUrl,
-              },
-            })),
-            dbConfig,
-            jwtConfig,
-            registerAs('redis', () => this.redisConnection),
-            // NOTE: I should inject the env variables and use the current configuration,
-            // but right now it fails.
-            registerAs('httpz', () => ({
-              fhe_key_info: [
-                {
-                  fhe_public_key: {
-                    data_id: 'fhe-public-key-data-id',
-                    urls: [
-                      'http://0.0.0.0:9000/kms-public/PUB/PublicKey/' +
-                        process.env.KEY_GEN_ID,
-                    ],
-                  },
+            configuration,
+            () => ({
+              aws: {
+                accessKeyId: 'test',
+                secretAccessKey: 'test',
+                endpoint: this.awsEndpoint,
+                region: this.awsRegion,
+                back: {
+                  queueUrl: this.backQueueUrl,
                 },
-              ],
-              crs: {
-                '2048': {
-                  data_id: 'crs-data-id',
-                  urls: [
-                    'http://0.0.0.0:9000/kms-public/PUB/CRS/' +
-                      process.env.CRS_GEN_ID,
-                  ],
+                orchestrator: {
+                  queueUrl: this.orchQueueUrl,
                 },
               },
-            })),
+              redis: this.redisConnection,
+            }),
           ],
         }),
       )
@@ -168,7 +144,6 @@ export class SetupManager {
         this.#prismaClients[WORKER_ID].invitation.deleteMany(),
         this.#prismaClients[WORKER_ID].dapp.deleteMany(),
         this.#prismaClients[WORKER_ID].apiKey.deleteMany(),
-        this.#prismaClients[WORKER_ID].chain.deleteMany(),
       ]),
     ])
   }

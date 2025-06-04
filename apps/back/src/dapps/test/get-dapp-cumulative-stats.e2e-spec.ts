@@ -117,7 +117,7 @@ describe('get-dapp-cumulative-stats', () => {
     let dappId: string
     let token: string
     let teamId: string
-    let chainId: number
+    const chainId = 11155111 // Sepolia
     let address: string
 
     beforeEach(async () => {
@@ -131,15 +131,6 @@ describe('get-dapp-cumulative-stats', () => {
         teamId = result.data.user.teams[0].id
       }
 
-      chainId = faker.number.int({ min: 1, max: 100_000 })
-      // TODO: move to a GraphQL endpoint when implemented
-      await manager.prismaClient.chain.create({
-        data: {
-          id: chainId,
-          name: faker.string.alphanumeric(10),
-          enabled: true,
-        },
-      })
       address = faker.string.hexadecimal({ length: 40 })
       const createDappResult = await manager.dapp.createDApp({
         token,
@@ -266,15 +257,7 @@ describe('get-dapp-cumulative-stats', () => {
         teamId = result.data.user.teams[0].id
       }
 
-      const chainId = faker.number.int({ min: 1, max: 100_000 })
-      // TODO: move to a GraphQL endpoint when implemented
-      await manager.prismaClient.chain.create({
-        data: {
-          id: chainId,
-          name: faker.string.alphanumeric(10),
-          enabled: true,
-        },
-      })
+      const chainId = 11155111 // Sepolia
 
       const createDappResult = await manager.dapp.createDApp({
         token,

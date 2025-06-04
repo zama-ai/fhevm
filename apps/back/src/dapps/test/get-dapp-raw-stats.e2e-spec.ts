@@ -45,15 +45,7 @@ describe('get-dapp-raw-stats', () => {
         teamId = result.data.user.teams[0].id
       }
 
-      const chainId = faker.number.int({ min: 1, max: 100_000 })
-      // TODO: move to a GraphQL endpoint when implemented
-      await manager.prismaClient.chain.create({
-        data: {
-          id: chainId,
-          name: faker.string.alphanumeric(10),
-          enabled: true,
-        },
-      })
+      const chainId = 11155111
       const createDappResult = await manager.dapp.createDApp({
         token,
         teamId,
