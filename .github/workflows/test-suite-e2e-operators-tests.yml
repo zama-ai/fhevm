@@ -5,27 +5,22 @@ on:
     inputs:
       core_version:
         description: "KMS Core Version"
-        required: true
         default: ""
         type: string
       connector_version:
         description: "Connector Version"
-        required: true
         default: ""
         type: string
       coprocessor_version:
         description: "Coprocessor Image Version"
-        required: true
         default: ""
         type: string
       db_migration_version:
         description: "Coprocessor DB Migration Image Version"
-        required: true
         default: ""
         type: string
       host_version:
         description: "Host Image Version"
-        required: false
         default: ""
         type: string
       gateway_version:
@@ -35,12 +30,10 @@ on:
         type: string
       relayer_version:
         description: "Relayer Image Version"
-        required: true
         default: ""
         type: string
       test_suite_version:
         description: "Test Suite E2E Image Version"
-        required: true
         default: ""
         type: string
 
@@ -110,6 +103,11 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test operators
+
+      - name: Extra operators tests
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test extra-operators
 
       - name: Show logs on test failure
         working-directory: test-suite/fhevm

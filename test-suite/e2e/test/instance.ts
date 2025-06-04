@@ -36,6 +36,7 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 
 export const createInstance = async () => {
   console.log('relayer url given to create instance', relayerUrl);
+  console.log('network', network.name, network.config.url);
   const instance = await createFhevmInstance({
     verifyingContractAddressDecryption: verifyingContractAddressDecryption,
     verifyingContractAddressInputVerification: verifyingContractAddressInputVerification,

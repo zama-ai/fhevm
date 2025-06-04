@@ -24,7 +24,7 @@ export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc1"}
 export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.7.0-rc1"}
 export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"6cb1acf"}
 export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc14"}
-export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc8"}
+export RELAYER_VERSION=${RELAYER_VERSION:-"d79c4f5"}
 
 function print_logo() {
   echo -e "${LIGHT_BLUE}"
@@ -173,7 +173,11 @@ case $COMMAND in
           ;;
         operators)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
-          docker_args+=("-g" "FHEVM revert paths|FHEVM manual operations|test operator")
+          docker_args+=("--parallel" "-g" "test operator")
+          ;;
+        extra-operators)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] EXTRA OPERATORS${RESET}"
+          docker_args+=("-g" "FHEVM revert paths|FHEVM manual operations")
           ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
