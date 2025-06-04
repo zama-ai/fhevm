@@ -182,7 +182,7 @@ fn demo_sdk_functionality(sdk: &mut FhevmSdk) -> Result<(), FhevmError> {
     let signature = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
 
     match sdk
-        .create_user_decrypt_builder()
+        .create_user_decrypt_request_builder()
         .add_handles_from_bytes(&handle_vecs, &contract_addresses)?
         .user_address_from_str(&user_address.to_string())?
         .signature_from_hex(signature)?

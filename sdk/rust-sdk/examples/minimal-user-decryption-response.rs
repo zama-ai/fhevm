@@ -4,17 +4,29 @@
 //! This example is taken from a centralized KMS configuration.
 //!
 //! ```bash
-//! cargo run --example minimal-user-decryption
+//! cargo run --example minimal-user-decryption-response
 //! ```
 
 use alloy::primitives::U256;
 use fhevm_sdk::{
-    Result, blockchain::bindings::Decryption::CtHandleContractPair,
-    decryption::user::process_user_decryption_response, utils::validate_address_from_str,
+    FhevmSdkBuilder, Result, blockchain::bindings::Decryption::CtHandleContractPair,
+    utils::validate_address_from_str,
 };
-use std::str::FromStr;
+use std::{path, str::FromStr};
 fn main() -> Result<()> {
     println!("🔓 Processing user decryption...");
+
+    let sdk = FhevmSdkBuilder::new()
+        .with_keys_directory(path::PathBuf::from("./keys"))
+        .with_gateway_chain_id(43113)
+        .with_host_chain_id(11155111) // Example: Ethereum Sepolia
+        .with_gateway_contract("Decryption", "0x1234567890123456789012345678901234567bbb")
+        .with_gateway_contract(
+            "input-verifier",
+            "0x1234567890123456789012345678901234567aaa",
+        )
+        .with_host_contract("acl", "0x0987654321098765432109876543210987654321")
+        .build()?;
 
     let handle_pair = CtHandleContractPair {
         ctHandle: U256::from_str(
@@ -31,20 +43,24 @@ fn main() -> Result<()> {
         }]
     }"#;
 
-    let result = process_user_decryption_response(
-        &["0x67F6A11ADf13CEDdB8319Fe12705809563611703".to_string()],
-        "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-        54321,
-        "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e",
-        "791e8a06dab85d960745c4c5dea65fdc250e0d42cbfbd2037ae221d2baa980c062f8b46f023c11bba8ba49c17e9e73a8ce0556040c567849b62b675678c3bc071c",
-        "2000000000000000750f4e54713eae622dfeb01809290183a447e2b277e89d2c6a681af1aa5b2c2b",
-        "2000000000000000321387e7b579a16d9bcb17d14625dc2841314c05f7c266418a9576091178902d",
-        &[handle_pair],
-        json_response,
-    );
+    let result = sdk.create_user_decrypt_response_builder()
+        .add_kms_signer("0x67F6A11ADf13CEDdB8319Fe12705809563611703".to_string())
+        .gateway_chain_id(54321)
+        .user_address("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80")
+        .verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
+        .public_key(
+            "2000000000000000750f4e54713eae622dfeb01809290183a447e2b277e89d2c6a681af1aa5b2c2b",
+        )
+        .private_key(
+            "2000000000000000321387e7b579a16d9bcb17d14625dc2841314c05f7c266418a9576091178902d",
+        )
+        .handle_contract_pairs([handle_pair].to_vec())
+        .signature("791e8a06dab85d960745c4c5dea65fdc250e0d42cbfbd2037ae221d2baa980c062f8b46f023c11bba8ba49c17e9e73a8ce0556040c567849b62b675678c3bc071c")
+        .json_response(json_response)
+        .process();
 
     match result {
-        Ok(_) => println!("✅ Decryption completed! (Expected result: 42)"),
+        Ok(res) => println!("✅ Decryption completed! (Expected result: 42); {:?}", res),
         Err(e) => println!("⚠️ Decryption failed (expected in test env): {}", e),
     }
 
