@@ -99,7 +99,7 @@ case $COMMAND in
           shift
           ;;
         -n|--network)
-          if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+          if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
             NETWORK="$2"
             shift 2
           else
@@ -109,7 +109,7 @@ case $COMMAND in
           fi
           ;;
         -g|--grep)
-          if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+          if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
             GREP="$2"
             shift 2
           else
