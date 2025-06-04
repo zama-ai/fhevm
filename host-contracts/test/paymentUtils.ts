@@ -4,7 +4,7 @@ import { ethers } from 'hardhat';
 
 export async function initializeHCULimit() {
   const HCULimitFactory = await ethers.getContractFactory('HCULimit');
-  const parsedHCULimit = dotenv.parse(fs.readFileSync('addresses/.env.HCULimit'));
+  const parsedHCULimit = dotenv.parse(fs.readFileSync('addresses/.env.hculimit'));
   const HCULimit = HCULimitFactory.attach(parsedHCULimit.HCU_LIMIT_CONTRACT_ADDRESS);
   return HCULimit;
 }
