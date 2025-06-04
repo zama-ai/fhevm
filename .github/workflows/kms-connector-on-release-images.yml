@@ -22,6 +22,7 @@ jobs:
       packages: write
       attestations: write
     with:
+      docker-file: './kms-connector/Dockerfile'
       working-directory: "./kms-connector"
       push_image: true
       image-name: 'fhevm/kms-connector'
