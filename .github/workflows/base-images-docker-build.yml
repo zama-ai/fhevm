@@ -1,13 +1,7 @@
 name: Docker - Fhevm NodeJS Base Image
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
-  release:
-    types:
-      - published
+  workflow_dispatch:
 
 concurrency:
   group: base-nodejs-${{ github.ref }}
