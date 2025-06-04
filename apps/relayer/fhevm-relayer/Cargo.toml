@@ -31,7 +31,7 @@ thiserror = "2.0.11"
 config = "0.15.6"
 anyhow = "1.0.44"
 strum_macros = "0.21.0"
-uuid = { version = "1", features = ["serde", "v1", "v4"] }
+uuid = { version = "1", features = ["serde", "v4"] }
 reqwest = "0.12.12"
 axum = "0.2.5"
 rusqlite = "0.33.0"

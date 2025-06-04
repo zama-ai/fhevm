@@ -108,13 +108,7 @@ impl TransactionService {
     }
 
     fn generate_request_id() -> Uuid {
-        let ctx = uuid::v1::Context::new(0);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("Time went backwards");
-        let ts = uuid::v1::Timestamp::from_unix(&ctx, now.as_secs(), now.subsec_nanos());
-        let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
-        Uuid::new_v1(ts, &node_id)
+        Uuid::new_v4()
     }
 
     /// Submits a new transaction
