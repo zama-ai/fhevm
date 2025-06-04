@@ -382,3 +382,4 @@ address constant DECRYPTION_ORACLE_ADDRESS = ${taskArguments.address};
       console.error('Failed to write ./fhevmTemp/addresses/DecryptionOracleAddress.sol', error);
     }
   });
+  

@@ -8,7 +8,7 @@ interface PriceData {
   };
 }
 
-export function generateSolidityFHEGasLimit(priceData: PriceData): string {
+export function generateSolidityHCULimit(priceData: PriceData): string {
   let output = `// SPDX-License-Identifier: BSD-3-Clause-Clear
   pragma solidity ^0.8.24;
   
@@ -20,19 +20,19 @@ export function generateSolidityFHEGasLimit(priceData: PriceData): string {
   import {FheType} from "./FheType.sol"; 
 
   /**
-   * @title  FHEGasLimit
+   * @title HCULimit
    * @notice This contract manages the total allowed complexity for FHE operations at the
-   * transaction level, including the maximum number of homomorphic compute units (HCU) per transaction.
+   * transaction level, including the maximum number of homomorphic complexity units (HCU) per transaction.
    * @dev The contract is designed to be used with the FHEVMExecutor contract.
   */
-contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
+contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
-    /// @notice Returned if the transaction exceeds the maximum allowed homomorphic compute units.
+    /// @notice Returned if the transaction exceeds the maximum allowed homomorphic complexity units.
     error HCUTransactionLimitExceeded();
 
-    /// @notice Returned if the transaction exceeds the maximum allowed depth of homomorphic compute units.
+    /// @notice Returned if the transaction exceeds the maximum allowed depth of homomorphic complexity units.
     error HCUTransactionDepthLimitExceeded();
 
     /// @notice Returned if the operation is not supported.
@@ -42,7 +42,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     error OnlyScalarOperationsAreSupported();
 
     /// @notice Name of the contract.
-    string private constant CONTRACT_NAME = "FHEGasLimit";
+    string private constant CONTRACT_NAME = "HCULimit";
 
     /// @notice Major version of the contract.
     uint256 private constant MAJOR_VERSION = 0;
@@ -56,17 +56,17 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice FHEVMExecutor address.
     address private constant fhevmExecutorAddress = fhevmExecutorAdd;
 
-    /// @notice Maximum homomorphic compute units depth per block.
-    /// @dev This is the maximum number of homomorphic compute units that can be sequential.
+    /// @notice Maximum homomorphic complexity units depth per block.
+    /// @dev This is the maximum number of homomorphic complexity units that can be sequential.
     uint256 private constant MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX = 5_000_000;
 
-    /// @notice Maximum homomorphic compute units per transaction.
-    /// @dev This is the maximum number of homomorphic compute units that can be used in a single transaction.
+    /// @notice Maximum homomorphic complexity units per transaction.
+    /// @dev This is the maximum number of homomorphic complexity units that can be used in a single transaction.
      uint256 private constant MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000;
 
-    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEGasLimit")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant FHEGasLimitStorageLocation =
-      0xb5c80b3bbe0bcbcea690f6dbe62b32a45bd1ad263b78db2f25ef8414efe9bc00;
+    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant HCULimitStorageLocation =
+      0xc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad6500;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -90,7 +90,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
       switch (data.numberInputs) {
         case 1:
           output += `    /**
-        * @notice Check the homomorphic computation units limit required for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
+        * @notice Check the homomorphic complexity units limit required for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
         * @param resultType Result type.
         * @param scalarByte Scalar byte.
         * @param ct The only operand.
@@ -103,7 +103,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
           break;
         case 2:
           output += `    /**
-         * @notice Check the homomorphic computation units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
+         * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param scalarByte Scalar byte.
          * @param lhs The left-hand side operand.
@@ -122,7 +122,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
       switch (data.numberInputs) {
         case 0:
           output += `    /**
-         * @notice Check the homomorphic computation units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
+         * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param result Result.
          */
@@ -133,7 +133,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
           break;
         case 1:
           output += `    /**
-        * @notice Check the homomorphic computation units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
+        * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
         * @param ct The only operand.
         * @param result Result.
         */
@@ -144,7 +144,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
           break;
         case 2:
           output += `    /**
-         * @notice Check the homomorphic computation units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
+         * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param lhs The left-hand side operand.
          * @param rhs The right-hand side operand.
@@ -157,7 +157,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
           break;
         case 3:
           output += `    /**
-         * @notice Check the homomorphic computation units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
+         * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param lhs The left-hand side operand.
          * @param middle The middle operand.
@@ -310,7 +310,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @dev This function uses inline assembly to load the HCU from a specific storage location.
      */
     function _getHCUForHandle(bytes32 handle) internal view virtual returns (uint256 handleHCU) {
-        bytes32 slot = keccak256(abi.encodePacked(FHEGasLimitStorageLocation, handle));
+        bytes32 slot = keccak256(abi.encodePacked(HCULimitStorageLocation, handle));
         assembly {
             // Ensure the slot is properly aligned and validated before using tload.
             // This assumes the slot is derived from a secure and deterministic process.
@@ -324,8 +324,8 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @dev This function uses inline assembly to store the HCU in a specific storage location.
      */
     function _getHCUForTransaction() internal view virtual returns (uint256 transactionHCU) {
-        /// @dev keccak256(abi.encodePacked(FHEGasLimitStorageLocation, "HCU"))
-        bytes32 slot = 0xf0a6f781dda4e666410a23516da0a5550b29ecafc3a35849ff9af2e2ec3b6123;
+        /// @dev keccak256(abi.encodePacked(HCULimitStorageLocation, "HCU"))
+        bytes32 slot = 0x9fe02aa19e370f46d43dc2b6620733ba9c3b193659e9699f55eefe911af8a4b4;
         assembly {
             transactionHCU := tload(slot)
         }
@@ -339,7 +339,7 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @dev This function uses inline assembly to store the HCU in a specific storage location.
      */
     function _setHCUForHandle(bytes32 handle, uint256 handleHCU) internal virtual {
-        bytes32 slot = keccak256(abi.encodePacked(FHEGasLimitStorageLocation, handle));
+        bytes32 slot = keccak256(abi.encodePacked(HCULimitStorageLocation, handle));
         assembly {
             tstore(slot, handleHCU)
         }
@@ -353,8 +353,8 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @dev This function uses inline assembly to store the HCU in a specific storage location.
      */
     function _setHCUForTransaction(uint256 transactionHCU) internal virtual {
-        /// @dev keccak256(abi.encodePacked(FHEGasLimitStorageLocation, "HCU"))
-        bytes32 slot = 0xf0a6f781dda4e666410a23516da0a5550b29ecafc3a35849ff9af2e2ec3b6123;
+        /// @dev keccak256(abi.encodePacked(HCULimitStorageLocation, "HCU"))
+        bytes32 slot = 0x9fe02aa19e370f46d43dc2b6620733ba9c3b193659e9699f55eefe911af8a4b4;
         assembly {
             tstore(slot, transactionHCU)
         }

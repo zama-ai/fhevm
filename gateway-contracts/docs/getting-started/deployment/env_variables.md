@@ -56,7 +56,7 @@ found in [this section](#in-details) below. Solidity types are defined in
 | `CHAIN_ID_GATEWAY`                  | Chain ID of the gateway network              | uint256       | 31337                                                                                               | It should be consistent with the `HARDHAT_NETWORK` value                      |
 | `MNEMONIC`                          | "Mnemonic phrase for address generation      | string        | "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer" | -                                                                             |
 | `RPC_URL`                           | URL of the RPC node                          | string        | "http://127.0.0.1:8757"                                                                             | -                                                                             |
-| `GATEWAY_CONFIG_ADDRESS`            | Address of the GatewayConfig contract        | address       | -                                                                                                   | Only for non-staging/production settings                                      |
+| `GATEWAY_CONFIG_ADDRESS`            | Address of the GatewayConfig contract        | address       | -                                                                                                   | Only for production settings                                                  |
 
 ## In details
 
@@ -235,9 +235,9 @@ RPC_URL="http://127.0.0.1:8757" # (string)
 
 This is the URL of the RPC node for the fhevm gateway network.
 
-#### Local docker-compose deployment only
+#### After deploying contracts in production
 
-Some additional settings are needed when deploying the contracts through docker-compose locally.
+Some additional settings are needed after deploying the contracts in a production setting.
 
 - GatewayConfig address
 
@@ -245,5 +245,5 @@ Some additional settings are needed when deploying the contracts through docker-
 GATEWAY_CONFIG_ADDRESS="0xC7D45661a345eC5cA0e8521CFEF7e32FDA0Daa68" # (address)
 ```
 
-This (static) address is needed for adding host chains to the GatewayConfig contract as a separate service. In a proper
-staging/production setting, this environment variable will be dynamically set after running the deployment service.
+This (static) address is needed for adding host chains to the GatewayConfig contract separately. In a proper production
+setting, this environment variable needs to be dynamically set after deploying the contracts.

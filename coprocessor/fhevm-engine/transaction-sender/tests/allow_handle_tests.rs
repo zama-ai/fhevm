@@ -198,7 +198,10 @@ async fn retry_on_transport_error(#[case] signer_type: SignerType) -> anyhow::Re
         ..Default::default()
     };
 
-    let mut env = TestEnvironment::new_with_config(signer_type, conf.clone()).await?;
+    let force_per_test_localstack: bool = false;
+    let mut env =
+        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
+            .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
         .on_ws(WsConnect::new(env.ws_endpoint_url()))
@@ -294,7 +297,10 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
         ..Default::default()
     };
 
-    let mut env = TestEnvironment::new_with_config(signer_type, conf.clone()).await?;
+    let force_per_test_localstack = true;
+    let mut env =
+        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
+            .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
         .on_ws(WsConnect::new(env.ws_endpoint_url()))

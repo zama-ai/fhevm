@@ -10,8 +10,7 @@ import { getRequiredEnvVar } from "./utils/loadVariables";
 task("task:addHostChainsToGatewayConfig")
   .addParam("useInternalGatewayConfigAddress", "If internal GatewayConfig address should be used", false, types.boolean)
   .setAction(async function (taskArgs, hre) {
-    await hre.run("clean");
-    await hre.run("compile");
+    await hre.run("compile:specific", { contract: "contracts" });
     console.log("Register host chains to GatewayConfig contract");
 
     const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");

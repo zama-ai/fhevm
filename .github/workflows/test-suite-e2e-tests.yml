@@ -44,9 +44,6 @@ on:
         default: ""
         type: string
   pull_request:
-  release:
-    types:
-      - published
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

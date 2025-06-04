@@ -47,7 +47,7 @@
 ## Tooling & Debugging
 - [Using Foundry](foundry.md)  
 - [Mocked mode](mocked.md)  
-- [Gas estimation](gas.md)  
+- [HCU estimation](hcu.md)  
 - [Debug decrypt](debug_decrypt.md)  
 - [Error handling](error_handling.md)  
 
