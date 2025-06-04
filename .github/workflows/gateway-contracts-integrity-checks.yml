@@ -31,10 +31,7 @@ jobs:
           filters: |
             gw-contracts:
               - .github/workflows/gateway-contracts-integrity-checks.yml
-              - gateway-contracts/rust_bindings/**
-              - gateway-contracts/contracts/**
-              - gateway-contracts/scripts/**
-              - gateway-contracts/Makefile
+              - gateway-contracts/**
   contract-integrity-checks:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
