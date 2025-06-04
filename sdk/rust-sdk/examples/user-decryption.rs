@@ -180,7 +180,7 @@ fn generate_user_decrypt_calldata(
     let start_timestamp = 1748252823u64;
     let duration_days = 10u64;
     match sdk
-        .create_user_decrypt_builder()
+        .create_user_decrypt_request_builder()
         .add_handles_from_bytes(&handles, &contract_addresses)?
         .user_address_from_str(&user_address.to_string())?
         .signature_from_hex(&signature_hex)?

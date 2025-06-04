@@ -390,137 +390,319 @@ impl Default for UserDecryptRequestBuilder {
     }
 }
 
-/// Process user decryption using KMS library
+/// Builder for processing user decryption responses
 ///
-/// This function replicates the JavaScript functionality:
-/// 1. Creates a KMS client with signers and user address
-/// 2. Constructs the EIP-712 domain with gateway chain ID
-/// 3. Builds the verification payload
-/// 4. Processes the decryption response from the gateway
-/// 5. Returns the decrypted results as a vector
-pub fn process_user_decryption_response(
-    kms_signers: &[String],
-    user_address: &str,
-    gateway_chain_id: u64,
-    verifying_contract_address: &str,
-    signature: &str,
-    public_key: &str,
-    private_key: &str,
-    handle_contract_pairs: &[CtHandleContractPair],
-    json_response: &str,
-) -> Result<Vec<TypedPlaintext>> {
-    info!("🔐 Processing user decryption with KMS api");
-    info!("   KMS signers: {:?}", kms_signers);
-    info!("   User address: {}", user_address);
-    info!("   Gateway chain ID: {}", gateway_chain_id);
+/// This builder provides a fluent API for configuring and executing
+/// user decryption operations with proper validation at processing time.
+pub struct UserDecryptionResponseBuilder {
+    kms_signers: Option<Vec<String>>,
+    user_address: Option<String>,
+    gateway_chain_id: Option<u64>,
+    verifying_contract_address: Option<String>,
+    signature: Option<String>,
+    public_key: Option<String>,
+    private_key: Option<String>,
+    handle_contract_pairs: Option<Vec<CtHandleContractPair>>,
+    json_response: Option<String>,
+    // Optional configuration flags
+    verify_signatures: bool,
+}
 
-    debug!("📋 Verification of inputs");
-    let user_address_verified = validate_address_from_str(user_address)?;
-    let public_key_bytes = parse_hex_string(public_key, "public_key")?;
-    let private_key_bytes = parse_hex_string(private_key, "private_key")?;
-    let verifying_contract_address_checked = validate_address_from_str(verifying_contract_address)?;
+impl Default for UserDecryptionResponseBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-    if kms_signers.is_empty() {
-        return Err(FhevmError::DecryptionError(
-            "KMS signers cannot be empty".to_string(),
-        ));
+impl UserDecryptionResponseBuilder {
+    /// Create a new builder instance
+    pub fn new() -> Self {
+        Self {
+            kms_signers: None,
+            user_address: None,
+            gateway_chain_id: None,
+            verifying_contract_address: None,
+            signature: None,
+            public_key: None,
+            private_key: None,
+            handle_contract_pairs: None,
+            json_response: None,
+            verify_signatures: false, // Default to false as in original
+        }
     }
 
-    // Step 1: Create KMS client
-    let mut client = new_client(kms_signers.to_vec(), user_address, "default")
-        .map_err(|_| FhevmError::DecryptionError(format!("Failed to create KMS client")))?;
-
-    debug!("✅ KMS client created successfully");
-
-    // Step 2: Create the gateway chain ID buffer (32 bytes, big-endian)
-    let mut chain_id_buffer = [0u8; 32];
-    // Set the gateway chain ID in the last 4 bytes (positions 28-31)
-    let chain_id_bytes = gateway_chain_id.to_be_bytes();
-    if gateway_chain_id <= u32::MAX as u64 {
-        // For values that fit in u32, place them at position 28
-        chain_id_buffer[28..32].copy_from_slice(&(gateway_chain_id as u32).to_be_bytes());
-    } else {
-        // For larger values, place the full u64 at the end
-        chain_id_buffer[24..32].copy_from_slice(&chain_id_bytes);
+    /// Set KMS signers (required)
+    pub fn kms_signers(mut self, signers: Vec<String>) -> Self {
+        self.kms_signers = Some(signers);
+        self
     }
 
-    debug!("🔢 Chain ID buffer: {}", hex::encode(&chain_id_buffer));
+    /// Add a single KMS signer (convenience method)
+    pub fn add_kms_signer(mut self, signer: String) -> Self {
+        self.kms_signers.get_or_insert_with(Vec::new).push(signer);
+        self
+    }
 
-    // Step 3: Build EIP-712 domain
-    let eip712_domain = kms_grpc::kms::v1::Eip712DomainMsg {
-        name: "Decryption".to_string(),
-        version: "1".to_string(),
-        chain_id: chain_id_buffer.to_vec(),
-        verifying_contract: verifying_contract_address.to_string(),
-        salt: None,
-    };
+    /// Set user address (required)
+    pub fn user_address(mut self, address: &str) -> Self {
+        self.user_address = Some(address.to_string());
+        self
+    }
 
-    debug!("📝 EIP-712 domain constructed");
+    /// Set gateway chain ID (required)
+    pub fn gateway_chain_id(mut self, chain_id: u64) -> Self {
+        self.gateway_chain_id = Some(chain_id);
+        self
+    }
 
-    // Step 4: Prepare handles
-    let ciphertext_handles: Vec<String> = handle_contract_pairs
-        .iter()
-        .map(|pair| hex::encode(pair.ctHandle))
-        .collect();
+    /// Set verifying contract address (required)
+    pub fn verifying_contract_address(mut self, address: &str) -> Self {
+        self.verifying_contract_address = Some(address.to_string());
+        self
+    }
 
-    debug!(
-        "🔗 Prepared {} ciphertext handles",
-        ciphertext_handles.len()
-    );
+    /// Set signature (required)
+    pub fn signature(mut self, signature: &str) -> Self {
+        self.signature = Some(signature.to_string());
+        self
+    }
 
-    // Prepare signature for payload
-    let sig = parse_hex_string(signature, "signature")?;
-    let sign = Signature::from_raw(sig.iter().as_slice())
-        .map_err(|e| FhevmError::DecryptionError(format!("Invalid signature format: {}", e)))?;
+    /// Set public key (required)
+    pub fn public_key(mut self, key: &str) -> Self {
+        self.public_key = Some(key.to_string());
+        self
+    }
 
-    // Prepare handles into specific type, .i.e. `kms_lib::client::CiphertextHandle`
-    let ct_handles: Vec<CiphertextHandle> = ciphertext_handles
-        .iter()
-        .map(|h| parse_hex_string(h, "handle").map(|bytes| CiphertextHandle::new(bytes.to_vec())))
-        .collect::<Result<Vec<_>>>()?;
+    /// Set private key (required)
+    pub fn private_key(mut self, key: &str) -> Self {
+        self.private_key = Some(key.to_string());
+        self
+    }
 
-    let payload = ParsedUserDecryptionRequest::new(
-        Some(sign),
-        user_address_verified,
-        public_key_bytes.clone().into(),
-        ct_handles,
-        verifying_contract_address_checked,
-    );
+    /// Set handle-contract pairs (required)
+    pub fn handle_contract_pairs(mut self, pairs: Vec<CtHandleContractPair>) -> Self {
+        self.handle_contract_pairs = Some(pairs);
+        self
+    }
 
-    // Convert an array of user decryption response into kms
-    // friendly type, i.e. `kms_grpc::kms::v1::UserDecryptionResponse;`
-    let responses = JsonConverter::json_to_responses(json_response)?;
+    /// Set JSON response (required)
+    pub fn json_response(mut self, response: &str) -> Self {
+        self.json_response = Some(response.to_string());
+        self
+    }
 
-    // Step 6: Convert keys for KMS processing
+    /// Enable or disable signature verification (optional, default: false)
+    pub fn verify_signatures(mut self, verify: bool) -> Self {
+        self.verify_signatures = verify;
+        self
+    }
 
-    let crypto_pub_key = u8vec_to_cryptobox_pk(&public_key_bytes).map_err(|e| {
-        FhevmError::DecryptionError(format!("Failed to convert public key: {:?}", e.to_owned()))
-    })?;
+    /// Validate that all required fields are set with helpful error messages
+    fn validate(&self) -> Result<()> {
+        if self.kms_signers.as_ref().map_or(true, |s| s.is_empty()) {
+            return Err(FhevmError::InvalidParams(
+                "❌ Missing KMS signers: Call `kms_signers()` or `add_kms_signer()` first.\n\
+                 💡 Tip: Add at least one KMS signer address that will participate in the decryption."
+                    .to_string()
+            ));
+        }
 
-    let crypto_priv_key = u8vec_to_cryptobox_sk(&private_key_bytes).map_err(|e| {
-        FhevmError::DecryptionError(format!("Failed to convert private key: {:?}", e.to_owned()))
-    })?;
+        if self.user_address.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "❌ Missing user address: Call `user_address()` first.\n\
+                 💡 Tip: This should be the address of the user requesting the decryption."
+                    .to_string(),
+            ));
+        }
 
-    // Process the decryption response using KMS library
-    let decryption_result = process_user_decryption_resp(
-        &mut client,
-        Some(payload),
-        Some(eip712_domain),
-        responses,
-        &crypto_pub_key,
-        &crypto_priv_key,
-        false, // verify signatures
-    )
-    .map_err(|e| {
-        FhevmError::DecryptionError(format!("KMS decryption failed: {:?}", e.to_owned()))
-    })?;
+        if self.gateway_chain_id.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "❌ Missing gateway chain ID: Call `gateway_chain_id()` first.\n\
+                 💡 Tip: This is the chain ID where the gateway contracts are deployed (e.g., 54321 for testnet)."
+                    .to_string()
+            ));
+        }
 
-    log::info!(
-        "✅ User decryption processed successfully {:?}",
-        decryption_result
-    );
+        if self.verifying_contract_address.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "❌ Missing verifying contract address: Call `verifying_contract_address()` first.\n\
+                 💡 Tip: This is the address of the contract that will verify the decryption request."
+                    .to_string()
+            ));
+        }
 
-    Ok(decryption_result)
+        if self.signature.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "❌ Missing signature: Call `signature()` first.\n\
+                 💡 Tip: This should be the EIP-712 signature for the decryption request."
+                    .to_string(),
+            ));
+        }
+
+        if self.public_key.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "❌ Missing public key: Call `public_key()` first.\n\
+                 💡 Tip: This is the user's cryptobox public key for receiving encrypted responses."
+                    .to_string(),
+            ));
+        }
+
+        if self.private_key.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "❌ Missing private key: Call `private_key()` first.\n\
+                 💡 Tip: This is the user's cryptobox private key for decrypting responses.\n\
+                 ⚠️  Security: Never share or log this key!"
+                    .to_string(),
+            ));
+        }
+
+        if self
+            .handle_contract_pairs
+            .as_ref()
+            .map_or(true, |p| p.is_empty())
+        {
+            return Err(FhevmError::InvalidParams(
+                "❌ Missing handle-contract pairs: Call `handle_contract_pairs()` first.\n\
+                 💡 Tip: Add the ciphertext handles and their associated contract addresses to decrypt."
+                    .to_string()
+            ));
+        }
+
+        if self.json_response.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "❌ Missing JSON response: Call `json_response()` first.\n\
+                 💡 Tip: This should be the decryption response received from the gateway/relayer."
+                    .to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Build and execute the user decryption process
+    pub fn process(self) -> Result<Vec<TypedPlaintext>> {
+        // Validate all required fields
+        self.validate()?;
+
+        // Extract fields (safe unwraps after validation)
+        let kms_signers = self.kms_signers.unwrap();
+        let user_address = self.user_address.unwrap();
+        let gateway_chain_id = self.gateway_chain_id.unwrap();
+        let verifying_contract_address = self.verifying_contract_address.unwrap();
+        let signature = self.signature.unwrap();
+        let public_key = self.public_key.unwrap();
+        let private_key = self.private_key.unwrap();
+        let handle_contract_pairs = self.handle_contract_pairs.unwrap();
+        let json_response = self.json_response.unwrap();
+
+        info!("🔐 Processing user decryption with KMS api");
+        info!("   KMS signers: {:?}", kms_signers);
+        info!("   User address: {}", user_address);
+        info!("   Gateway chain ID: {}", gateway_chain_id);
+
+        debug!("📋 Verification of inputs");
+        let user_address_verified = validate_address_from_str(&user_address)?;
+        let public_key_bytes = parse_hex_string(&public_key, "public_key")?;
+        let private_key_bytes = parse_hex_string(&private_key, "private_key")?;
+        let verifying_contract_address_checked =
+            validate_address_from_str(&verifying_contract_address)?;
+
+        // Step 1: Create KMS client
+        let mut client = new_client(kms_signers, &user_address, "default")
+            .map_err(|_| FhevmError::DecryptionError("Failed to create KMS client".to_string()))?;
+
+        debug!("✅ KMS client created successfully");
+
+        // Step 2: Create the gateway chain ID buffer (32 bytes, big-endian)
+        let mut chain_id_buffer = [0u8; 32];
+        let chain_id_bytes = gateway_chain_id.to_be_bytes();
+        if gateway_chain_id <= u32::MAX as u64 {
+            chain_id_buffer[28..32].copy_from_slice(&(gateway_chain_id as u32).to_be_bytes());
+        } else {
+            chain_id_buffer[24..32].copy_from_slice(&chain_id_bytes);
+        }
+
+        debug!("🔢 Chain ID buffer: {}", hex::encode(&chain_id_buffer));
+
+        // Step 3: Build EIP-712 domain
+        let eip712_domain = kms_grpc::kms::v1::Eip712DomainMsg {
+            name: "Decryption".to_string(),
+            version: "1".to_string(),
+            chain_id: chain_id_buffer.to_vec(),
+            verifying_contract: verifying_contract_address.to_string(),
+            salt: None,
+        };
+
+        debug!("📝 EIP-712 domain constructed");
+
+        // Step 4: Prepare handles
+        let ciphertext_handles: Vec<String> = handle_contract_pairs
+            .iter()
+            .map(|pair| hex::encode(&pair.ctHandle))
+            .collect();
+
+        debug!(
+            "🔗 Prepared {} ciphertext handles",
+            ciphertext_handles.len()
+        );
+
+        // Prepare signature for payload
+        let sig = parse_hex_string(&signature, "signature")?;
+        let sign = Signature::from_raw(&sig)
+            .map_err(|e| FhevmError::DecryptionError(format!("Invalid signature format: {}", e)))?;
+
+        // Prepare handles into specific type
+        let ct_handles: Vec<CiphertextHandle> = ciphertext_handles
+            .iter()
+            .map(|h| {
+                parse_hex_string(h, "handle").map(|bytes| CiphertextHandle::new(bytes.to_vec()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let payload = ParsedUserDecryptionRequest::new(
+            Some(sign),
+            user_address_verified,
+            public_key_bytes.clone().into(),
+            ct_handles,
+            verifying_contract_address_checked,
+        );
+
+        // Convert responses to KMS-friendly type
+        let responses = JsonConverter::json_to_responses(&json_response)?;
+
+        // Step 6: Convert keys for KMS processing
+        let crypto_pub_key = u8vec_to_cryptobox_pk(&public_key_bytes).map_err(|e| {
+            FhevmError::DecryptionError(format!("Failed to convert public key: {:?}", e))
+        })?;
+
+        let crypto_priv_key = u8vec_to_cryptobox_sk(&private_key_bytes).map_err(|e| {
+            FhevmError::DecryptionError(format!("Failed to convert private key: {:?}", e))
+        })?;
+
+        // Process the decryption response using KMS library
+        let decryption_result = process_user_decryption_resp(
+            &mut client,
+            Some(payload),
+            Some(eip712_domain),
+            responses,
+            &crypto_pub_key,
+            &crypto_priv_key,
+            self.verify_signatures,
+        )
+        .map_err(|e| FhevmError::DecryptionError(format!("KMS decryption failed: {:?}", e)))?;
+
+        log::info!(
+            "✅ User decryption processed successfully: {} results",
+            decryption_result.len()
+        );
+
+        Ok(decryption_result)
+    }
+}
+
+/// Convenience function that creates a builder
+pub fn process_user_decryption_response() -> UserDecryptionResponseBuilder {
+    UserDecryptionResponseBuilder::new()
 }
 
 /// Public decrypt operation
@@ -535,6 +717,7 @@ pub fn public_decrypt(ciphertext: &[u8], _public_key: &[u8]) -> Result<Decrypted
     // Return mock decrypted value
     Ok(DecryptedValue(vec![42]))
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -585,19 +768,18 @@ mod tests {
         json_response: String,
     }
 
-    /// Helper function to call process_user_decryption with test data
-    fn call_process_user_decryption(test_data: &TestData) -> Result<Vec<TypedPlaintext>> {
-        process_user_decryption_response(
-            &test_data.kms_signers,
-            &test_data.user_address,
-            test_data.gateway_chain_id,
-            &test_data.verifying_contract_address,
-            &test_data.signature,
-            &test_data.public_key,
-            &test_data.private_key,
-            &test_data.handle_contract_pairs,
-            &test_data.json_response,
-        )
+    /// Helper function to create a builder from test data
+    fn create_builder_from_test_data(test_data: &TestData) -> UserDecryptionResponseBuilder {
+        process_user_decryption_response()
+            .kms_signers(test_data.kms_signers.clone())
+            .user_address(&test_data.user_address)
+            .gateway_chain_id(test_data.gateway_chain_id)
+            .verifying_contract_address(&test_data.verifying_contract_address)
+            .signature(&test_data.signature)
+            .public_key(&test_data.public_key)
+            .private_key(&test_data.private_key)
+            .handle_contract_pairs(test_data.handle_contract_pairs.clone())
+            .json_response(&test_data.json_response)
     }
 
     /// Helper to assert error contains expected keywords
@@ -619,20 +801,65 @@ mod tests {
     }
 
     #[test]
+    fn test_builder_validates_missing_fields() {
+        let builder = UserDecryptionResponseBuilder::new();
+        let result = builder.process();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("❌ Missing"));
+        assert!(err.contains("💡 Tip:"));
+    }
+
+    #[test]
+    fn test_builder_validates_invalid_address() {
+        let builder = process_user_decryption_response()
+            .user_address("not_a_valid_address")
+            .kms_signers(vec!["0x123".to_string()])
+            .gateway_chain_id(1)
+            .verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
+            .signature("0xabc")
+            .public_key("0xdef")
+            .private_key("0x123")
+            .handle_contract_pairs(vec![])
+            .json_response("{}");
+
+        let result = builder.process();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid parameters")
+        );
+    }
+
+    #[test]
+    fn test_builder_validates_invalid_hex() {
+        let test_data = create_test_data();
+        let builder = process_user_decryption_response()
+            .kms_signers(test_data.kms_signers)
+            .user_address(&test_data.user_address)
+            .gateway_chain_id(test_data.gateway_chain_id)
+            .verifying_contract_address(&test_data.verifying_contract_address)
+            .signature("not_hex") // Invalid hex
+            .public_key(&test_data.public_key)
+            .private_key(&test_data.private_key)
+            .handle_contract_pairs(test_data.handle_contract_pairs)
+            .json_response(&test_data.json_response);
+
+        let result = builder.process();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid hex"));
+    }
+
+    #[test]
     fn test_process_user_decryption_success() {
         let test_data = create_test_data();
-        let result = call_process_user_decryption(&test_data);
-
-        match result {
-            Ok(decrypted_values) => {
-                // Based on the test data, we expect the decrypted value to be 42
-                let first_value = &decrypted_values[0];
-                assert_eq!(first_value.as_u8(), 42, "Decrypted value should be 42");
-            }
-            Err(e) => {
-                panic!("Expected success but got error: {}", e);
-            }
-        }
+        let builder = create_builder_from_test_data(&test_data);
+        let result = builder.process().unwrap();
+        assert_eq!(result.len(), 1, "Expected one decryption result");
+        assert_eq!(result[0].as_u8(), 42, "Expected decrypted value to be 42");
     }
 
     #[test]
@@ -640,7 +867,8 @@ mod tests {
         let mut test_data = create_test_data();
         test_data.signature = "invalid_signature".to_string();
 
-        let result = call_process_user_decryption(&test_data);
+        let builder = create_builder_from_test_data(&test_data);
+        let result = builder.process();
 
         assert_error_contains(&result, &["signature", "hex"]);
     }
@@ -650,7 +878,8 @@ mod tests {
         let mut test_data = create_test_data();
         test_data.user_address = "invalid_address".to_string();
 
-        let result = call_process_user_decryption(&test_data);
+        let builder = create_builder_from_test_data(&test_data);
+        let result = builder.process();
 
         assert_error_contains(&result, &["address"]);
     }
@@ -660,7 +889,8 @@ mod tests {
         let mut test_data = create_test_data();
         test_data.json_response = "{ malformed json".to_string();
 
-        let result = call_process_user_decryption(&test_data);
+        let builder = create_builder_from_test_data(&test_data);
+        let result = builder.process();
 
         assert_error_contains(&result, &["json", "parse"]);
     }
@@ -670,9 +900,10 @@ mod tests {
         let mut test_data = create_test_data();
         test_data.kms_signers = vec![];
 
-        let result = call_process_user_decryption(&test_data);
+        let builder = create_builder_from_test_data(&test_data);
+        let result = builder.process();
 
-        assert_error_contains(&result, &["kms", "client"]);
+        assert_error_contains(&result, &["KMS signers"]);
     }
 
     #[test]
@@ -680,7 +911,8 @@ mod tests {
         let mut test_data = create_test_data();
         test_data.public_key = "invalid_key".to_string();
 
-        let result = call_process_user_decryption(&test_data);
+        let builder = create_builder_from_test_data(&test_data);
+        let result = builder.process();
 
         assert_error_contains(&result, &["public key", "hex", "key"]);
     }
@@ -706,7 +938,7 @@ mod tests {
             (
                 "empty_signers",
                 Box::new(|data| data.kms_signers = vec![]),
-                &["kms", "client"],
+                &["KMS signers"],
             ),
             (
                 "bad_key",
@@ -719,11 +951,29 @@ mod tests {
             let mut test_data = create_test_data();
             modify_data(&mut test_data);
 
-            let result = call_process_user_decryption(&test_data);
+            let builder = create_builder_from_test_data(&test_data);
+            let result = builder.process();
 
             assert!(result.is_err(), "Test case '{}' should fail", name);
             assert_error_contains(&result, expected_keywords);
         }
+    }
+
+    #[test]
+    fn test_builder_convenience_methods() {
+        let builder = UserDecryptionResponseBuilder::new()
+            .add_kms_signer("signer1".to_string())
+            .add_kms_signer("signer2".to_string());
+
+        assert_eq!(builder.kms_signers.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_builder_with_verify_signatures() {
+        let test_data = create_test_data();
+        let builder = create_builder_from_test_data(&test_data).verify_signatures(true);
+
+        assert_eq!(builder.verify_signatures, true);
     }
 
     #[test]
@@ -753,7 +1003,7 @@ mod tests {
         let ciphertext_handles: Vec<String> = test_data
             .handle_contract_pairs
             .iter()
-            .map(|pair| hex::encode(pair.ctHandle))
+            .map(|pair| hex::encode(&pair.ctHandle))
             .collect();
 
         assert_eq!(ciphertext_handles.len(), 1);

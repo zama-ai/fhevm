@@ -7,7 +7,7 @@ use crate::signature::{
     verify_eip712_signature,
 };
 use alloy::primitives::Address;
-use decryption::user::UserDecryptRequestBuilder;
+use decryption::user::{UserDecryptRequestBuilder, UserDecryptionResponseBuilder};
 use serde::{Deserialize, Serialize};
 
 use std::fs::File;
@@ -410,13 +410,22 @@ impl FhevmSdk {
     /// 4. **Add public key**: `.public_key_from_hex()` - User's decryption key
     /// 5. **Set validity**: `.validity()` - Time period for permission
     /// 6. **Build**: `.build_and_generate_calldata()` - Generate final calldata
-    pub fn create_user_decrypt_builder(&self) -> UserDecryptRequestBuilder {
+    pub fn create_user_decrypt_request_builder(&self) -> UserDecryptRequestBuilder {
         UserDecryptRequestBuilder::new().contracts_chain_id(self.config.host_chain_id)
     }
 
     /// Alternative shorter name for discoverability
-    pub fn user_decrypt_builder(&self) -> UserDecryptRequestBuilder {
-        self.create_user_decrypt_builder()
+    pub fn user_decrypt_request_builder(&self) -> UserDecryptRequestBuilder {
+        self.create_user_decrypt_request_builder()
+    }
+
+    pub fn create_user_decrypt_response_builder(&self) -> UserDecryptionResponseBuilder {
+        UserDecryptionResponseBuilder::new().gateway_chain_id(self.config.gateway_chain_id)
+    }
+
+    /// Alternative shorter name for discoverability
+    pub fn user_decrypt_response_builder(&self) -> UserDecryptionResponseBuilder {
+        self.create_user_decrypt_response_builder()
     }
 }
 

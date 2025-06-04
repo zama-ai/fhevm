@@ -21,7 +21,7 @@ fn example_encrypt_bool() -> Result<()> {
     let contract_address = address!("0x7777777777777777777777777777777777777777");
     let user_address = address!("0x8888888888888888888888888888888888888888");
     let acl_address = address!("0x9999999999999999999999999999999999999999");
-    let chain_id = 1; // Ethereum mainnet
+    let chain_id = 1;
 
     // Create or load encryption parameters
     let (public_key, _, _, crs) = get_default_encryption_parameters().unwrap();
@@ -58,7 +58,6 @@ fn example_encrypt_u64() -> Result<()> {
     let chain_id = 12345u64; // Ethereum mainnet
 
     // Create or load encryption parameters
-    // let (public_key, _, _, crs) = get_default_encryption_parameters().unwrap();
     let default_path = std::path::PathBuf::from("./keys");
     let (public_key, _, _, crs) = create_encryption_parameters(&default_path).unwrap();
 
