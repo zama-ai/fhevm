@@ -10,7 +10,7 @@
 use alloy::primitives::U256;
 use fhevm_sdk::{
     Result, blockchain::bindings::Decryption::CtHandleContractPair,
-    decryption::user::process_user_decryption, utils::validate_address_from_str,
+    decryption::user::process_user_decryption_response, utils::validate_address_from_str,
 };
 use std::str::FromStr;
 fn main() -> Result<()> {
@@ -31,7 +31,7 @@ fn main() -> Result<()> {
         }]
     }"#;
 
-    let result = process_user_decryption(
+    let result = process_user_decryption_response(
         &["0x67F6A11ADf13CEDdB8319Fe12705809563611703".to_string()],
         "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
         54321,

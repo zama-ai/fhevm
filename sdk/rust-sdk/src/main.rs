@@ -176,21 +176,28 @@ fn demo_sdk_functionality(sdk: &mut FhevmSdk) -> Result<(), FhevmError> {
         Err(e) => log::error!("❌ Full process error: {}", e),
     }
 
+    // Generate user decrypt calldata using the builder pattern
     log::info!("Generating user decrypt calldata");
 
     let signature = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
 
-    match sdk.generate_user_decrypt_calldata(
-        &handle_vecs,
-        &user_address.to_string(),
-        contract_addresses,
-        signature,
-        &public_key,
-        start_timestamp,
-        duration_days,
-    ) {
-        Ok(calldata) => log::info!("Calldata generated: {} bytes", calldata.len()),
-        Err(e) => log::info!("Calldata generation error: {}", e),
+    match sdk
+        .create_user_decrypt_builder()
+        .add_handles_from_bytes(&handle_vecs, &contract_addresses)?
+        .user_address_from_str(&user_address.to_string())?
+        .signature_from_hex(signature)?
+        .public_key_from_hex(&public_key)?
+        .validity(start_timestamp, duration_days)?
+        .build_and_generate_calldata()
+    {
+        Ok(calldata) => {
+            log::info!("✅ Calldata generated: {} bytes", calldata.len());
+            log::info!(
+                "   First 32 bytes: 0x{}",
+                hex::encode(&calldata[..32.min(calldata.len())])
+            );
+        }
+        Err(e) => log::info!("❌ Calldata generation error: {}", e),
     }
 
     Ok(())
