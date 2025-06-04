@@ -102,6 +102,11 @@ impl TransactionConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct HttpMetricsConfig {
+    pub histogram_buckets: Vec<f64>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct RetrySettings {
     #[serde(default = "default_max_attempts")]
     pub max_attempts: u32,
@@ -177,6 +182,10 @@ pub struct Settings {
     pub keyurl: KeyUrl,
     /// SQS endpoints
     pub sqs_endpoint: Option<SQSEndpointConfig>,
+    /// Endpoint for metrics server (e.g., "0.0.0.0:9898")
+    pub metrics_endpoint: String,
+    /// HTTP metrics configuration
+    pub http_metrics: HttpMetricsConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -224,6 +233,11 @@ impl Settings {
 
         // Validate network configurations
         settings.networks.validate()?;
+
+        // Ensure HTTP metrics configuration is provided
+        if settings.http_metrics.histogram_buckets.is_empty() {
+            panic!("HTTP metrics histogram buckets must be set in the configuration file.");
+        }
 
         // Log the network configurations for debugging
         tracing::info!(

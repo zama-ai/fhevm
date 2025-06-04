@@ -72,6 +72,7 @@ use fhevm_relayer::{
         GenericEventId, InputProofEventId, PublicDecryptEventId, RelayerEvent, UserDecryptEventId,
     },
     http::http_server::run_http_server,
+    metrics,
     orchestrator::{
         hooks::{EventLoggingHook, EventPersistenceHook},
         traits::{EventHandler, HandlerRegistry, HookRegistry},
@@ -81,6 +82,7 @@ use fhevm_relayer::{
     store::{key_value_db::InMemoryKVStore, EventStore},
     transaction::{TransactionService, TxConfig},
 };
+use prometheus::Registry;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -112,6 +114,14 @@ async fn main() -> eyre::Result<()> {
     // We need to keep the guard to force-flush on SIGINT
     {
         let chrome_tracing_guard = init_tracing(&settings.log)?;
+
+        // === Initialize Prometheus metrics registry and metrics
+        let registry = Registry::new();
+        metrics::init_metrics(&registry);
+        metrics::init_http_metrics(&registry, &settings.http_metrics);
+        let metrics_endpoint = settings.metrics_endpoint.clone();
+        let registry_clone = registry.clone();
+
         {
             let mut task_set = tokio::task::JoinSet::new();
             let main_span = span!(Level::INFO, "main-span"); // Add other relevant top-level details
@@ -368,6 +378,11 @@ async fn main() -> eyre::Result<()> {
                     Arc::clone(&orchestrator),
                 ));
             }
+
+            // Run metrics server
+            task_set.spawn(async move {
+                metrics::server::run_metrics_server(registry_clone, metrics_endpoint).await;
+            });
 
             drop(setup_span);
 

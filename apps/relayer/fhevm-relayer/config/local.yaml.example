@@ -20,6 +20,10 @@ networks:
     max_reconnection_attempts: 3
 
 http_endpoint: "0.0.0.0:3000"
+metrics_endpoint: "0.0.0.0:9898"
+
+http_metrics:
+  histogram_buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
 
 keyurl:
     fhe_public_key:

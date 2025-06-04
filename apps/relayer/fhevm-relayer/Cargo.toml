@@ -34,11 +34,14 @@ strum_macros = "0.21.0"
 uuid = { version = "1", features = ["serde", "v4"] }
 reqwest = "0.12.12"
 axum = "0.2.5"
+http = "0.2"
 rusqlite = "0.33.0"
 rand = "0.9.0"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-chrome = { version = "0.7.2", optional = true }
+prometheus = "0.14"
+once_cell = "1.19"
 clap = { version = "4", features = ["derive"] }
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-sqs = { version = "1" }
