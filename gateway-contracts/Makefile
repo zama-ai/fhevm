@@ -45,7 +45,7 @@ docker-compose-up: docker-compose-down
 docker-compose-down:
 	docker compose -vvv down -v --remove-orphans
 
-check-bindings:
+check-bindings: ensure-addresses
 	python3 scripts/bindings_update.py check
 
 update-bindings: ensure-addresses
@@ -60,7 +60,7 @@ update-mocks:
 # Here, we purposely use a logical OR (||) instead of an if statement with a negation to avoid having
 # discrepancies between running locally and in the CI. This is because some shell environments
 # handle exit statuses of pipelines differently.
-check-selectors:
+check-selectors: ensure-addresses
 	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 | diff ./selectors.txt - &> /dev/null || { \
 		echo "Contract selectors are not up-to-date."; \
 		echo "Please run 'make update-selectors' to update them."; \
@@ -73,7 +73,7 @@ update-selectors: ensure-addresses
 # Conform to pre-commit checks
 conformance: prettier update-bindings update-mocks update-selectors
 
-# Ensure that the empty proxy addresses directory exists. These are required for contract compilation.
+# Ensure that the empty proxy addresses exists. These are required for contract compilation.
 ensure-addresses:
 	@if [ ! -d addresses ]; then \
 		DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployEmptyUUPSProxies; \
