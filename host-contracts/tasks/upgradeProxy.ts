@@ -181,7 +181,7 @@ task('task:upgradeHCULimit')
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.HCULimit'));
+    const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.hculimit'));
     const proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
       taskArguments.privateKey,

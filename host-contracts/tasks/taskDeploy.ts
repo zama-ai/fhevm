@@ -191,7 +191,7 @@ task('task:deployHCULimit').setAction(async function (taskArguments: TaskArgumen
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('HCULimit', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.HCULimit'));
+  const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.hculimit'));
   const proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
@@ -389,7 +389,7 @@ address constant inputVerifierAdd = ${taskArguments.address};\n`;
 task('task:setHCULimitAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../addresses/.env.HCULimit');
+    const envFilePath = path.join(__dirname, '../addresses/.env.hculimit');
     const content = `HCU_LIMIT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });

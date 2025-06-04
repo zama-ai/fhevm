@@ -59,7 +59,7 @@ task('task:verifyInputVerifier').setAction(async function (taskArguments, { upgr
 });
 
 task('task:verifyHCULimit').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvHCULimit = dotenv.parse(fs.readFileSync('addresses/.env.HCULimit'));
+  const parsedEnvHCULimit = dotenv.parse(fs.readFileSync('addresses/.env.hculimit'));
   const proxyHCULimit = parsedEnvHCULimit.HCU_LIMIT_CONTRACT_ADDRESS;
   const implementationHCULimitAddress = await upgrades.erc1967.getImplementationAddress(proxyHCULimit);
   await run('verify:verify', {
