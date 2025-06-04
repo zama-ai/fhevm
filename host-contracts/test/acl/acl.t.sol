@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {fhevmExecutorAdd} from "../../addresses/FHEVMExecutorAddress.sol";
@@ -13,6 +13,7 @@ contract ACLTest is Test {
     ACL internal acl;
 
     address internal constant owner = address(456);
+    address internal constant pauser = address(789);
 
     address internal proxy;
     address internal implementation;
@@ -32,6 +33,13 @@ contract ACLTest is Test {
         acl.cleanTransientStorage();
     }
 
+    function _upgradeProxy() internal {
+        implementation = address(new ACL());
+        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(acl.reinitialize, (pauser)), owner);
+        acl = ACL(proxy);
+        fhevmExecutor = acl.getFHEVMExecutorAddress();
+    }
+
     /**
      * @dev Sets up the testing environment by deploying a proxy contract and initializing signers.
      * This function is executed before each test to ensure a consistent and isolated state.
@@ -42,48 +50,49 @@ contract ACLTest is Test {
             address(new EmptyUUPSProxy()),
             abi.encodeCall(EmptyUUPSProxy.initialize, owner)
         );
-
-        implementation = address(new ACL());
-        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(acl.reinitialize, ()), owner);
-        acl = ACL(proxy);
-        fhevmExecutor = acl.getFHEVMExecutorAddress();
     }
 
     /**
      * @dev Tests that the post-upgrade check for the proxy contract works as expected.
-     * It checks that the version is correct, the owner is set to the expected address, and the fhevmExecutor address is correct.
+     * It checks that the version is correct, the owner/pauser are set to the expected addresses, and the fhevmExecutor address is correct.
      */
-    function test_PostProxyUpgradeCheck() public view {
+    function test_PostProxyUpgradeCheck() public {
+        _upgradeProxy();
         assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.1.0")));
         assertEq(acl.owner(), owner);
+        assertEq(acl.getPauser(), pauser);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
     /**
      * @dev Tests that the contract isAllowed returns false if the handle is not allowed for the account.
      */
-    function test_IsAllowedReturnsFalseIfNotAllowed(bytes32 handle, address account) public view {
+    function test_IsAllowedReturnsFalseIfNotAllowed(bytes32 handle, address account) public {
+        _upgradeProxy();
         assertFalse(acl.isAllowed(handle, account));
     }
 
     /**
      * @dev Tests that the contract isAllowedForDecryption returns false if the handle is not allowed for decryption.
      */
-    function test_IsAllowedForDecryptionReturnsFalseIfNotAllowed(bytes32 handle) public view {
+    function test_IsAllowedForDecryptionReturnsFalseIfNotAllowed(bytes32 handle) public {
+        _upgradeProxy();
         assertFalse(acl.isAllowedForDecryption(handle));
     }
 
     /**
      * @dev Tests that the contract allowedTransient returns false if the handle is not allowed for the account.
      */
-    function test_AllowedTransientReturnsFalseIfNotAllowed(bytes32 handle, address account) public view {
+    function test_AllowedTransientReturnsFalseIfNotAllowed(bytes32 handle, address account) public {
+        _upgradeProxy();
         assertFalse(acl.allowedTransient(handle, account));
     }
 
     /**
      * @dev Tests that the contract persistAllowed returns false if the handle is not allowed for the account.
      */
-    function test_PersistAllowedReturnsFalseIfNotAllowed(bytes32 handle, address account) public view {
+    function test_PersistAllowedReturnsFalseIfNotAllowed(bytes32 handle, address account) public {
+        _upgradeProxy();
         assertFalse(acl.persistAllowed(handle, account));
     }
 
@@ -91,6 +100,7 @@ contract ACLTest is Test {
      * @dev Tests that the function allow reverts if the sender is not allowed to use the handle.
      */
     function test_CannotAllowIfNotAllowedToUseTheHandle(bytes32 handle, address account) public {
+        _upgradeProxy();
         vm.expectPartialRevert(ACL.SenderNotAllowed.selector);
         acl.allow(handle, account);
     }
@@ -99,6 +109,7 @@ contract ACLTest is Test {
      * @dev Tests that the function allowTransient reverts if the sender is not allowed to use the handle.
      */
     function test_CannotAllowTransientIfNotAllowedToUseTheHandle(bytes32 handle, address account) public {
+        _upgradeProxy();
         vm.expectPartialRevert(ACL.SenderNotAllowed.selector);
         acl.allowTransient(handle, account);
     }
@@ -107,6 +118,7 @@ contract ACLTest is Test {
      * @dev Tests that the function allow works if the sender address is the fhevmExecutor address.
      */
     function test_CanAllowTransientIfFhevmExecutor(bytes32 handle, address account) public {
+        _upgradeProxy();
         vm.prank(fhevmExecutor);
         acl.allowTransient(handle, account);
         assertTrue(acl.allowedTransient(handle, account));
@@ -117,6 +129,7 @@ contract ACLTest is Test {
      * @dev Tests that the function allowTransient works if the sender address is the fhevmExecutor address until the transient storage gets cleaned.
      */
     function test_CanAllowTransientIfFhevmExecutorButOnlyUntilItGetsCleaned(bytes32 handle, address account) public {
+        _upgradeProxy();
         vm.prank(fhevmExecutor);
         acl.allowTransient(handle, account);
         acl.cleanTransientStorage();
@@ -128,6 +141,7 @@ contract ACLTest is Test {
      * @dev Tests that the function allow works if the sender address is allowed to use the handle.
      */
     function test_CanAllow(bytes32 handle, address account) public {
+        _upgradeProxy();
         assertFalse(acl.isAllowed(handle, account));
         _allowHandle(handle, account);
         assertTrue(acl.isAllowed(handle, account));
@@ -144,6 +158,7 @@ contract ACLTest is Test {
         address delegatee,
         address delegateeContract
     ) public {
+        _upgradeProxy();
         vm.assume(sender != delegateeContract);
 
         address[] memory contractAddresses = new address[](1);
@@ -191,6 +206,7 @@ contract ACLTest is Test {
      * @dev Tests that the sender cannot delegate to the account if contractAddresses are empty.
      */
     function test_CannotDelegateIfContractAddressesAreEmpty(address sender, address delegatee) public {
+        _upgradeProxy();
         vm.assume(sender != delegatee);
         address[] memory contractAddresses = new address[](0);
 
@@ -203,6 +219,7 @@ contract ACLTest is Test {
         address sender,
         address delegatee
     ) public {
+        _upgradeProxy();
         vm.assume(sender != delegatee);
         /// @dev The max number of contract addresses is hardcoded to 10 in the ACL contract.
         address[] memory contractAddresses = new address[](11);
@@ -221,6 +238,7 @@ contract ACLTest is Test {
      * @dev Tests that the sender cannot delegate to a contract address.
      */
     function test_CannotDelegateIfSenderIsDelegateeContract(address sender, address delegatee) public {
+        _upgradeProxy();
         address[] memory contractAddresses = new address[](1);
         contractAddresses[0] = sender;
 
@@ -238,6 +256,7 @@ contract ACLTest is Test {
         address delegatee,
         address delegateeContract
     ) public {
+        _upgradeProxy();
         vm.assume(sender != delegateeContract);
         /// @dev Only the delegatee contract must be allowed to use the handle before it delegates.
         _allowHandle(handle, delegateeContract);
@@ -257,6 +276,7 @@ contract ACLTest is Test {
      * @dev Tests that the sender can revoke delegation if the sender has already delegated.
      */
     function test_CanRevokeDelegation(address sender, address delegatee, address delegateeContract) public {
+        _upgradeProxy();
         vm.assume(sender != delegateeContract);
 
         address[] memory contractAddresses = new address[](1);
@@ -280,6 +300,7 @@ contract ACLTest is Test {
         address delegatee,
         address delegateeContract
     ) public {
+        _upgradeProxy();
         vm.assume(sender != delegateeContract);
 
         address[] memory contractAddresses = new address[](1);
@@ -294,6 +315,7 @@ contract ACLTest is Test {
      * @dev Tests that the sender cannot revoke delegation if the contract addresses are empty.
      */
     function test_CannotRevokeDelegationIfEmptyConctractAddresses(address sender, address delegatee) public {
+        _upgradeProxy();
         vm.assume(sender != delegatee);
         address[] memory contractAddresses = new address[](0);
 
@@ -306,6 +328,7 @@ contract ACLTest is Test {
      * @dev Tests that the sender cannot delegate if the handle list is empty.
      */
     function test_NoOneCanAllowForDecryptionIfEmptyList(address sender) public {
+        _upgradeProxy();
         bytes32[] memory handlesList = new bytes32[](0);
         vm.prank(sender);
         vm.expectRevert(ACL.HandlesListIsEmpty.selector);
@@ -320,6 +343,7 @@ contract ACLTest is Test {
         bytes32 handle0,
         bytes32 handle1
     ) public {
+        _upgradeProxy();
         bytes32[] memory handlesList = new bytes32[](2);
         handlesList[0] = handle0;
         handlesList[1] = handle1;
@@ -340,6 +364,7 @@ contract ACLTest is Test {
      * @dev Tests that the sender cannot allow for decryption if the sender is not allowed to use the handle.
      */
     function test_CannotAllowForDecryptionIfSenderIsNotAllowedToUseTheHandle(bytes32 handle0, bytes32 handle1) public {
+        _upgradeProxy();
         bytes32[] memory handlesList = new bytes32[](2);
         handlesList[0] = handle0;
         handlesList[1] = handle1;
@@ -356,6 +381,7 @@ contract ACLTest is Test {
         bytes32 handle0,
         bytes32 handle1
     ) public {
+        _upgradeProxy();
         vm.assume(handle0 != handle1);
         bytes32[] memory handlesList = new bytes32[](2);
         handlesList[0] = handle0;
@@ -370,9 +396,194 @@ contract ACLTest is Test {
     }
 
     /**
+     * @dev Tests that only the owner/pauser can pause the contract.
+     */
+    function test_OnlyOwnerOrPauserCanPause(address randomAccount) public {
+        _upgradeProxy();
+        vm.assume(randomAccount != owner && randomAccount != pauser);
+        vm.expectPartialRevert(ACL.NotOwnerOrPauser.selector);
+        vm.prank(randomAccount);
+        acl.pause();
+    }
+
+    /**
+     * @dev Tests that only the owner can unpause the contract.
+     */
+    function test_OnlyOwnerCanUnpause(address randomAccount) public {
+        _upgradeProxy();
+        vm.assume(randomAccount != owner);
+        vm.prank(owner);
+        acl.pause();
+        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.prank(randomAccount);
+        acl.unpause();
+    }
+
+    /**
+     * @dev Tests that only the pauser cannot unpause the contract.
+     */
+    function test_PauserCannotUnpause() public {
+        _upgradeProxy();
+        vm.prank(owner);
+        acl.pause();
+        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.prank(pauser);
+        acl.unpause();
+    }
+
+    /**
+     * @dev Tests that allow() cannot be called if the contract is paused.
+     */
+    function test_CannotCallAllowIfPaused() public {
+        _upgradeProxy();
+        bytes32 mockHandle = keccak256(abi.encodePacked("handle"));
+        vm.prank(owner);
+        acl.pause();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        vm.prank(fhevmExecutor);
+        acl.allow(mockHandle, address(123));
+    }
+
+    /**
+     * @dev Tests that allowTransient() cannot be called if the contract is paused.
+     */
+    function test_CannotCallAllowTransientIfPaused() public {
+        _upgradeProxy();
+        bytes32 mockHandle = keccak256(abi.encodePacked("handle"));
+
+        vm.prank(owner);
+        acl.pause();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        vm.prank(fhevmExecutor);
+        acl.allowTransient(mockHandle, address(123));
+    }
+
+    /**
+     * @dev Tests that allowForDecryption() cannot be called if the contract is paused.
+     */
+    function test_CannotCallAllowForDecryptionIfPaused() public {
+        _upgradeProxy();
+        vm.prank(owner);
+        acl.pause();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        vm.prank(fhevmExecutor);
+        acl.allowForDecryption(new bytes32[](1));
+    }
+
+    /**
+     * @dev Tests that delegateAccount() cannot be called if the contract is paused.
+     */
+    function test_CannotDelegateAccountIfPaused(address sender, address delegatee, address delegateeContract) public {
+        _upgradeProxy();
+        vm.assume(sender != delegateeContract);
+
+        address[] memory contractAddresses = new address[](1);
+        contractAddresses[0] = delegateeContract;
+
+        vm.prank(sender);
+        acl.delegateAccount(delegatee, contractAddresses);
+
+        vm.prank(owner);
+        acl.pause();
+
+        vm.prank(sender);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        acl.delegateAccount(delegatee, contractAddresses);
+    }
+
+    /**
+     * @dev Tests that revokeDelegation() cannot be called if the contract is paused.
+     */
+    function test_CannotRevokeDelegationIfPaused(address sender, address delegatee, address delegateeContract) public {
+        _upgradeProxy();
+        vm.assume(sender != delegateeContract);
+
+        address[] memory contractAddresses = new address[](1);
+        contractAddresses[0] = delegateeContract;
+
+        vm.prank(sender);
+        acl.delegateAccount(delegatee, contractAddresses);
+
+        vm.prank(owner);
+        acl.pause();
+
+        vm.prank(sender);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        acl.revokeDelegation(delegatee, contractAddresses);
+    }
+
+    /**
+     * @dev Tests that updatePauser() cannot be called if the contract is paused.
+     */
+    function test_CannotUpdatePauserIfPaused(address randomAccount) public {
+        _upgradeProxy();
+        vm.prank(owner);
+        acl.pause();
+
+        vm.expectPartialRevert(PausableUpgradeable.EnforcedPause.selector);
+        vm.prank(owner);
+        acl.updatePauser(randomAccount);
+    }
+
+    /**
+     * @dev Tests that only the owner can update the pauser.
+     *      It expects a revert if another address tries to update the pauser.
+     */
+    function test_OnlyOwnerCanUpdatePauser(address randomAccount) public {
+        _upgradeProxy();
+        vm.assume(randomAccount != owner);
+        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.prank(randomAccount);
+        acl.updatePauser(randomAccount);
+    }
+
+    /**
+     * @dev Tests that the owner can update the pauser to a new address.
+     *      It expects an event to be emitted and the pauser to be updated.
+     */
+    function test_OwnerCanUpdatePauser(address randomPauser) public {
+        _upgradeProxy();
+        vm.assume(randomPauser != address(0));
+        vm.prank(owner);
+        vm.expectEmit(address(acl));
+        emit ACL.UpdatePauser(randomPauser);
+        acl.updatePauser(randomPauser);
+        assertEq(acl.getPauser(), randomPauser);
+    }
+
+    /**
+     * @dev Tests that the owner cannot set the pauser to the null address.
+     *      It expects a revert with the InvalidNullPauser error.
+     */
+    function test_CannotSetPauserAsNullAddress() public {
+        _upgradeProxy();
+        vm.prank(owner);
+        vm.expectRevert(ACL.InvalidNullPauser.selector);
+        acl.updatePauser(address(0));
+    }
+
+    /// @dev This function exists for the test below to call it externally.
+    function upgradeWithNullPauser() public {
+        implementation = address(new ACL());
+        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(acl.reinitialize, (address(0))), owner);
+    }
+
+    /**
+     * @dev Tests that the contract cannot be reinitialized if the pauser is set to the null address.
+     */
+    function test_CannotReinitializeIfPauserIsNull() public {
+        vm.expectRevert(ACL.InvalidNullPauser.selector);
+        this.upgradeWithNullPauser();
+    }
+
+    /**
      * @dev Tests that only the owner can authorize an upgrade.
      */
     function test_OnlyOwnerCanAuthorizeUpgrade(address randomAccount) public {
+        _upgradeProxy();
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806

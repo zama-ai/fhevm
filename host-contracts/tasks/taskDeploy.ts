@@ -86,7 +86,7 @@ task('task:deployACL').setAction(async function (taskArguments: TaskArguments, {
   const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
-    call: { fn: 'reinitialize' },
+    call: { fn: 'reinitialize', args: [getRequiredEnvVar('PAUSER_ADDRESS')] },
   });
   console.log('ACL code set successfully at address:', proxyAddress);
 });

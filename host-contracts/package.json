@@ -8,7 +8,7 @@
   },
   "main": "index.js",
   "scripts": {
-    "compile": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
+    "compile": "HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
     "compile:decryptionOracle": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile:specific --contract decryptionOracle",
     "deploy:emptyProxies": "hardhat task:deployEmptyUUPSProxies",
     "lint": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
