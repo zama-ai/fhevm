@@ -25,6 +25,18 @@ spec:
     spec:
       securityContext:
         {{- toYaml .Values.scDeploy.securityContext | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: debug
           image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}

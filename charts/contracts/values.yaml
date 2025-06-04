@@ -28,6 +28,24 @@ scDeploy:
     runAsUser: 10000
     fsGroup: 10001
 
+# Uncomment to use a specific node selector and toleration
+# nodeSelector:
+#   kubernetes.io/arch: amd64
+# tolerations:
+#   - key: "node.kubernetes.io/arch"
+#     operator: "Equal"
+#     value: "amd64"
+#     effect: "NoSchedule"
+# affinity:
+#   nodeAffinity:
+#     required:
+#       nodeSelectorTerm:
+#         matchExpressions:
+#           - key: kubernetes.io/arch
+#             operator: In
+#             values:
+#               - amd64
+
 scDebug:
   enabled: false
   nameOverride:
