@@ -68,7 +68,14 @@ The directories of this repository are organized in the following way:
 
 - **`test-suite/`**: Integration with docker-compose and tests covering end-to-end FHEVM stack behavior.
 
-- **`docker/`**: Docker base images for Node.js and Rust environments used by the stack.
+- `test-suite/`
+  - Integration with docker-compose and tests covering end-to-end fhevm stack behavior.
+
+- `golden-container-images/`
+  - Docker golden images for Node.js and Rust environments used as base images by the stack.
+
+- `charts/`
+  - Helm charts and deployment configurations for the stack.
 
 - **`charts/`**: Helm charts and deployment configurations for the stack.
   <br></br>
