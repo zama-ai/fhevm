@@ -379,28 +379,3 @@ fn performance_comparison(sdk: &FhevmSdk) -> Result<(), FhevmError> {
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_complete_workflow() {
-        // Test that the main workflow doesn't panic
-        // In a real test, you'd mock the SDK and verify each step
-        match main() {
-            Ok(()) => println!("✅ Complete workflow test passed"),
-            Err(e) => println!("⚠️ Workflow test failed (expected in test env): {}", e),
-        }
-    }
-
-    #[test]
-    fn test_signature_format() {
-        // Test signature format expectations
-        let test_signature = "1234567890abcdef".repeat(8) + "12"; // 130 chars = 65 bytes
-        assert_eq!(test_signature.len(), 130);
-
-        let test_pubkey = "1234567890abcdef".repeat(4); // 64 chars = 32 bytes  
-        assert_eq!(test_pubkey.len(), 64);
-    }
-}

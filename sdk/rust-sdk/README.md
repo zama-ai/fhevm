@@ -38,7 +38,7 @@ The following table shows the current implementation status of features compared
 | bytes256 (ebytes256) | ❌ Missing | Present in JS SDK's `addBytes256()` |
 | **Decryption Operations** | | |
 | Public Decrypt | ⚠️ Partial | Function signatures defined but implementation incomplete |
-| User Decrypt | ⚠️ Partial | Function signatures defined but implementation incomplete |
+| User Decrypt | ✅ Implemented | Builder pattern with UserDecryptionRequest struct |
 | Delegated User Decrypt | ⚠️ Partial | Function signatures defined but implementation incomplete |
 | **Key Management** | | |
 | Key Generation | ✅ Implemented | Can create new key sets |
@@ -46,14 +46,14 @@ The following table shows the current implementation status of features compared
 | Key Export | ✅ Implemented | Can save keys to disk |
 | Key Import | ✅ Implemented | Can load keys from disk |
 | **Other Features** | | |
-| EIP-712 Signatures | ⚠️ Placeholder | API defined but implementation is a placeholder |
-| Signature Verification | ⚠️ Placeholder | API defined but implementation is a placeholder |
+| EIP-712 Signatures | ✅ Implemented | Ability to compute hash - sign |
+| Signature Verification | ✅ Implemented  | Tested |
 | Handle Generation | ✅ Implemented | Matches JS implementation |
 | Zero-knowledge Proofs | ✅ Implemented | Uses TFHE-rs for ZK proofs |
 | Configuration Export | ✅ Implemented | Can export config to YAML |
 | CRS Support | ⚠️ Partial | Only support one CRS size |
 | Auxiliary Data | ✅ Implemented | Properly generates auxiliary data for ZK proofs |
-| Calldata Generation | ⚠️ Placeholder | Function signatures defined but implementation uses placeholder values |
+| Calldata Generation | ⚠️ Partial | Only callback req missing |
 | Error Handling | ⚠️ Partial | Good error type definitions |
 | Logging | ⚠️ Partial | Comprehensive logging support |
 
@@ -64,7 +64,8 @@ cargo run --example minimal-sdk-setup
 cargo run --example minimal-users-key-generation  
 cargo run --example minimal-encrypted-input
 cargo run --example minimal-eip712-signing
-cargo run --example minimal-user-decryption
+cargo run --example minimal-user-decryption-request
+cargo run --example minimal-user-decryption-response
 ```
 
 
@@ -85,6 +86,10 @@ fn main() -> Result<(), FhevmError> {
         .with_gateway_chain_id(43113)
         .with_host_chain_id(11155111)  // Ethereum Sepolia
         .with_gateway_contract("Decryption", "0x1234567890123456789012345678901234567890")
+        .with_gateway_contract(
+            "input-verifier",
+            "0x1234567890123456789012345678901234567aaa",
+        )
         .with_host_contract("acl", "0x0987654321098765432109876543210987654321")
         .build()?;
 
@@ -118,6 +123,10 @@ let sdk_builder = FhevmSdkBuilder::new()
     .with_gateway_chain_id(43113)
     .with_host_chain_id(11155111)
     .with_gateway_contract("Decryption", "0x1234567890123456789012345678901234567890")
+    .with_gateway_contract(
+            "input-verifier",
+            "0x1234567890123456789012345678901234567aaa",
+        )
     .with_host_contract("acl", "0x0987654321098765432109876543210987654321");
 
 // Export configuration to YAML
