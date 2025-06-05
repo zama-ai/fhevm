@@ -86,7 +86,7 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
   for (const [operation, data] of Object.entries(priceData)) {
     const functionName = `checkHCUFor${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
 
-    if (data.supportScalar) {
+    if (data.supportScalar && data.scalar && data.nonScalar) {
       switch (data.numberInputs) {
         case 1:
           output += `    /**
@@ -116,7 +116,25 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     `;
           break;
         default:
-          throw new Error('Number of inputs for scalar must be less than 3');
+          throw new Error('Number of inputs for scalar and non-scalar must be less than 3');
+      }
+    } else if (data.supportScalar && data.scalar && !data.nonScalar) {
+      switch (data.numberInputs) {
+        case 2:
+          output += `    /**
+         * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
+         * @param resultType Result type.
+         * @param scalarByte Scalar byte.
+         * @param lhs The left-hand side operand.
+         * @param result Result.
+         */
+         function ${functionName}(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 /*rhs*/, bytes32 result) external virtual {
+        if(msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        uint256 opHCU;
+           `;
+          break;
+        default:
+          throw new Error('Number of inputs for scalar with only scalar must be 2');
       }
     } else {
       switch (data.numberInputs) {
@@ -169,7 +187,7 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     `;
           break;
         default:
-          throw new Error('Number of inputs for non-scalar must be less than 4');
+          throw new Error('Number of inputs must be less than 4');
       }
     }
 
