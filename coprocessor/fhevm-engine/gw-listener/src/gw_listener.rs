@@ -76,6 +76,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
     ) -> anyhow::Result<()> {
         let input_verification =
             InputVerification::new(self.input_verification_address, &self.provider);
+
         let mut from_block = self.get_last_block_num(db_pool).await?;
         let filter = input_verification
             .VerifyProofRequest_filter()

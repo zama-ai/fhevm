@@ -174,9 +174,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
     }
 
     fn already_allowed_error(&self, err: &RpcError<TransportErrorKind>) -> Option<Address> {
-        let validate = true;
         err.as_error_resp()
-            .and_then(|payload| payload.as_decoded_error::<MultichainAclErrors>(validate))
+            .and_then(|payload| payload.as_decoded_interface_error::<MultichainAclErrors>())
             .map(|error| match error {
                 MultichainAclErrors::CoprocessorAlreadyAllowed(c) => c.coprocessor,
             })
@@ -330,8 +329,7 @@ where
         .fetch_all(&self.db_pool)
         .await?;
 
-        let multichain_acl: MultichainAcl::MultichainAclInstance<(), &P> =
-            MultichainAcl::new(self.multichain_acl_address, self.provider.inner());
+        let multichain_acl = MultichainAcl::new(self.multichain_acl_address, self.provider.inner());
 
         info!("Selected {} rows to process", rows.len());
 

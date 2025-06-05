@@ -44,7 +44,7 @@ async fn emit_events<P, N>(
     for wallet in wallets {
         let provider = ProviderBuilder::new()
             .wallet(wallet.clone())
-            .on_ws(WsConnect::new(url_clone.clone()))
+            .connect_ws(WsConnect::new(url_clone.clone()))
             .await
             .unwrap();
         providers.push(provider);
@@ -124,7 +124,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
 
     let provider = ProviderBuilder::new()
         .wallet(wallets[0].clone())
-        .on_ws(WsConnect::new(url.clone()))
+        .connect_ws(WsConnect::new(url.clone()))
         .await?;
     let tfhe_contract = FHEVMExecutorTest::deploy(provider.clone()).await?;
     let args = Args {

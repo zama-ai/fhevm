@@ -3,6 +3,7 @@ mod ops;
 mod transaction_sender;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use alloy::network::TxSigner;
 use alloy::providers::Provider;
@@ -88,7 +89,17 @@ where
     Arc::new(signer)
 }
 
-pub async fn get_chain_id(ws_url: Url) -> anyhow::Result<u64> {
-    let provider = ProviderBuilder::new().on_ws(WsConnect::new(ws_url)).await?;
+pub async fn get_chain_id(
+    ws_url: Url,
+    max_retries: u32,
+    retry_interval: Duration,
+) -> anyhow::Result<u64> {
+    let provider = ProviderBuilder::new()
+        .connect_ws(
+            WsConnect::new(ws_url)
+                .with_max_retries(max_retries)
+                .with_retry_interval(retry_interval),
+        )
+        .await?;
     Ok(provider.get_chain_id().await?)
 }

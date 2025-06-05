@@ -91,7 +91,12 @@ impl TestEnvironment {
         .await?;
 
         let anvil = Self::new_anvil()?;
-        let chain_id = get_chain_id(anvil.ws_endpoint_url()).await?;
+        let chain_id = get_chain_id(
+            anvil.ws_endpoint_url(),
+            10,
+            std::time::Duration::from_secs(1),
+        )
+        .await?;
         let abstract_signer;
         let localstack;
         match signer_type {

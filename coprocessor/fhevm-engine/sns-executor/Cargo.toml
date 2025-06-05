@@ -32,6 +32,7 @@ opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
+humantime = { workspace = true }
 
 # crates.io dependencies
 aligned-vec = "0.6.4"
@@ -39,7 +40,6 @@ num-traits = "0.2.19"
 aws-sdk-s3 = "1.78.0"
 bytesize = "2.0.1"
 futures = "0.3.31"
-humantime = "2.2.0"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
