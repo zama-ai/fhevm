@@ -490,7 +490,7 @@ function generateDecryptionOracleInterface(): string {
    * @notice This interface contains the only function required from DecryptionOracle. 
    */
   interface IDecryptionOracle {
-    function requestDecryption(uint256 requestID, bytes32[] calldata ctsHandles, bytes4 callbackSelector) external;
+    function requestDecryption(uint256 requestID, bytes32[] calldata ctsHandles, bytes4 callbackSelector) external payable;
   }
   `;
 }
@@ -1210,6 +1210,24 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
       FHEVMConfigStruct storage $$ = Impl.getFHEVMConfig();
       IACL($$.ACLAddress).allowForDecryption(ctsHandles);
       IDecryptionOracle($.DecryptionOracleAddress).requestDecryption(requestID, ctsHandles, callbackSelector);
+      saveRequestedHandles(requestID, ctsHandles);
+      $.counterRequest++;
+    }
+
+    /**
+     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles, with a custom msgValue.
+     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
+     */
+    function requestDecryption(
+        bytes32[] memory ctsHandles,
+        bytes4 callbackSelector,
+        uint256 msgValue
+    ) internal returns (uint256 requestID) {
+      DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
+      requestID = $.counterRequest;
+      FHEVMConfigStruct storage $$ = Impl.getFHEVMConfig();
+      IACL($$.ACLAddress).allowForDecryption(ctsHandles);
+      IDecryptionOracle($.DecryptionOracleAddress).requestDecryption{value: msgValue}(requestID, ctsHandles, callbackSelector);
       saveRequestedHandles(requestID, ctsHandles);
       $.counterRequest++;
     }
