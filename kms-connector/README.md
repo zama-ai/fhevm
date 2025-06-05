@@ -1,9 +1,9 @@
-# KMS Connector
+## Introduction
 
-KMS Connector is a Rust-based service that connects the KMS Core with the fhevm Gateway smart contracts, handling decryption requests and key management operations.
+**KMS Connector** is a Rust-based service that connects the KMS Core with the FHEVM Gateway smart contracts, handling decryption requests and key management operations.
 
-## Features
-
+## Main features
+**Available features**
 - Event-driven architecture with MPSC orchestration
 - Support for public/user decryption operations
 - CLI interface for configuration management and validation
@@ -11,14 +11,52 @@ KMS Connector is a Rust-based service that connects the KMS Core with the fhevm 
 - Optional S3 configuration for flexible deployment scenarios
 - Multiple wallet initialization options (AWS KMS, private key)
 
-### Upcoming
+**Upcoming features**
 
 - Key generation with extended finality support
 - CRS generation and management
 - Arbitrum-specific finality rules
 - Operation status notifications
 
-## CLI Usage
+## Table of Contents
+- [Introduction](#introduction)
+- [Main Features](#main-features)
+  - [Available Features](#available-features)
+  - [Upcoming Features](#upcoming-features)
+- [Get Started](#get-started)
+  - [Start a Connector Instance](#start-a-connector-instance)
+  - [List Available Configurations](#list-available-configurations)
+  - [Validate Configuration](#validate-configuration)
+  - [Environment Variables](#environment-variables)
+  - [Configuration Structure](#configuration-structure)
+- [Configuration](#configuration)
+  - [Configuration Methods](#configuration-methods)
+  - [Configuration Precedence](#configuration-precedence)
+  - [Default Values](#default-values)
+  - [List Of Environment Variables](#list-of-environment-variables)
+  - [Best Practices](#best-practices)
+- [S3 Configuration](#s3-configuration)
+  - [Configuration Options](#configuration-options)
+  - [S3 URL Processing](#s3-url-processing)
+  - [Optional Configuration](#optional-configuration)
+- [Wallet Configuration](#wallet-configuration)
+  - [1. Private Key String](#1-private-key-string)
+  - [2. AWS KMS Wallet](#2-aws-kms-wallet)
+  - [Wallet Initialization Priority](#wallet-initialization-priority)
+  - [Security Considerations](#security-considerations)
+- [Architecture: Adapter-Provider Pattern](#architecture-adapter-provider-pattern)
+  - [1. Provider (Infrastructure Layer)](#1-provider-infrastructure-layer)
+  - [2. Adapters (Domain Layer)](#2-adapters-domain-layer)
+- [Key Points](#key-points)
+- [Current Status](#current-status)
+- [Development](#development)
+  - [Prerequisites](#prerequisites)
+  - [Building](#building)
+  - [Testing](#testing)
+- [Support](#support)
+
+
+## Get Started
 
 The KMS Connector provides a command-line interface with the following commands:
 
@@ -427,3 +465,17 @@ cargo build
 ```bash
 cargo test
 ```
+
+## Support
+
+<a target="_blank" href="https://community.zama.ai">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../library-solidity/docs/.gitbook/assets/support-banner-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="../library-solidity/docs/.gitbook/assets/support-banner-light.png">
+  <img alt="Support">
+</picture>
+</a>
+
+🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
+
+[![GitHub stars](https://img.shields.io/github/stars/zama-ai/fhevm?style=social)](https://github.com/zama-ai/fhevm/)
