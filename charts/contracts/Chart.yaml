@@ -1,6 +1,6 @@
 name: contracts
 description: A helm chart to manage fhevm Smart Contracts Deployment
-version: 0.4.2
+version: 0.4.3
 apiVersion: v2
 keywords:
   - fhevm
