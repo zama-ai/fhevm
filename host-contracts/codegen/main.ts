@@ -3,9 +3,9 @@ import path from 'path';
 
 import { validateFHETypes, validateOperators } from './common';
 import { generateOverloads } from './generateOverloads';
+import { generateSolidityHCULimit } from './hcuLimitGenerator';
 import { ALL_OPERATORS } from './operators';
 import operatorsPrices from './operatorsPrices.json';
-import { generateSolidityHCULimit } from './hcuLimitGenerator';
 import { generateSolidityFHELib, generateSolidityFheType, generateSolidityImplLib } from './templates';
 import {
   generateSolidityOverloadTestFiles,
