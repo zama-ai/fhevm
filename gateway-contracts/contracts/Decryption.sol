@@ -3,17 +3,17 @@ pragma solidity ^0.8.24;
 import { IDecryption } from "./interfaces/IDecryption.sol";
 import { multichainAclAddress } from "../addresses/MultichainAclAddress.sol";
 import { ciphertextCommitsAddress } from "../addresses/CiphertextCommitsAddress.sol";
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
+import { kmsContextsAddress } from "../addresses/KmsContextsAddress.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./interfaces/IGatewayConfig.sol";
+import { IKmsContexts } from "./interfaces/IKmsContexts.sol";
 import "./interfaces/IMultichainAcl.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./shared/GatewayConfigChecks.sol";
-import { GatewayConfigContexts } from "./shared/GatewayConfigContexts.sol";
+import { RefreshContextStatuses } from "./shared/RefreshContextStatuses.sol";
 import "./shared/FheType.sol";
 import "./shared/Pausable.sol";
 import { ContextStatus } from "./shared/Enums.sol";
@@ -28,7 +28,7 @@ contract Decryption is
     UUPSUpgradeable,
     GatewayConfigChecks,
     Pausable,
-    GatewayConfigContexts
+    RefreshContextStatuses
 {
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
@@ -94,8 +94,8 @@ contract Decryption is
         bytes32[] ctHandles;
     }
 
-    /// @notice The address of the GatewayConfig contract for checking if a signer is valid
-    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
+    /// @notice The address of the IKmsContexts contract for checking KMS contexts
+    IKmsContexts private constant KMS_CONTEXTS = IKmsContexts(kmsContextsAddress);
 
     /// @notice The address of the MultichainAcl contract for checking if a decryption requests are allowed
     IMultichainAcl private constant MULTICHAIN_ACL = IMultichainAcl(multichainAclAddress);
@@ -247,7 +247,7 @@ contract Decryption is
         $.publicCtHandles[decryptionId] = ctHandles;
 
         // Get the current active KMS context ID
-        uint256 contextId = GATEWAY_CONFIG.getActiveKmsContextId();
+        uint256 contextId = KMS_CONTEXTS.getActiveKmsContextId();
         $.decryptionContextId[decryptionId] = contextId;
 
         emit PublicDecryptionRequest(decryptionId, contextId, snsCtMaterials);
@@ -575,7 +575,7 @@ contract Decryption is
         address signer = ECDSA.recover(digest, signature);
 
         /// @dev Check that the signer is a KMS signer from the associated context.
-        GATEWAY_CONFIG.checkIsKmsSignerFromContext(contextId, signer);
+        KMS_CONTEXTS.checkIsKmsSignerFromContext(contextId, signer);
 
         /// @dev Check that the signer has not already responded to the user decryption request.
         if ($._kmsNodeAlreadySigned[decryptionId][signer]) {
@@ -606,7 +606,7 @@ contract Decryption is
 
         // Get the current active KMS context ID
         // If no KMS context is active, the function will revert
-        uint256 contextId = GATEWAY_CONFIG.getActiveKmsContextId();
+        uint256 contextId = KMS_CONTEXTS.getActiveKmsContextId();
         $.decryptionContextId[decryptionId] = contextId;
 
         emit UserDecryptionRequest(decryptionId, contextId, snsCtMaterials, userAddress, publicKey);
@@ -738,7 +738,7 @@ contract Decryption is
         uint256 kmsContextId,
         uint256 validResponseCount
     ) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getPublicDecryptionThresholdFromContext(kmsContextId);
+        uint256 consensusThreshold = KMS_CONTEXTS.getPublicDecryptionThresholdFromContext(kmsContextId);
         return validResponseCount >= consensusThreshold;
     }
 
@@ -750,7 +750,7 @@ contract Decryption is
         uint256 kmsContextId,
         uint256 validResponseCount
     ) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getUserDecryptionThresholdFromContext(kmsContextId);
+        uint256 consensusThreshold = KMS_CONTEXTS.getUserDecryptionThresholdFromContext(kmsContextId);
         return validResponseCount >= consensusThreshold;
     }
 
@@ -865,13 +865,10 @@ contract Decryption is
 
     function _checkKmsContextValidityForDecryption(uint256 decryptionId, uint256 contextId) internal view virtual {
         // Only accept KMS transaction senders from this context
-        GATEWAY_CONFIG.checkIsKmsTxSenderFromContext(contextId, msg.sender);
+        KMS_CONTEXTS.checkIsKmsTxSenderFromContext(contextId, msg.sender);
 
-        if (
-            contextId != GATEWAY_CONFIG.getActiveKmsContextId() ||
-            contextId != GATEWAY_CONFIG.getSuspendedKmsContextId()
-        ) {
-            ContextStatus contextStatus = GATEWAY_CONFIG.getKmsContextStatus(contextId);
+        if (contextId != KMS_CONTEXTS.getActiveKmsContextId() || contextId != KMS_CONTEXTS.getSuspendedKmsContextId()) {
+            ContextStatus contextStatus = KMS_CONTEXTS.getKmsContextStatus(contextId);
             revert ContextNotAllowedForDecryption(decryptionId, contextId, contextStatus);
         }
     }

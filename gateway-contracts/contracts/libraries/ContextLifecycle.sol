@@ -80,7 +80,7 @@ library ContextLifecycle {
      * @param contextId The ID of the context to set as active.
      */
     function setActive(ContextLifecycleStorage storage $, uint256 contextId) internal onlyNonNullContextId(contextId) {
-        if (!isPreActivation($, contextId) || !isSuspended($, contextId)) {
+        if (!isPreActivation($, contextId) && !isSuspended($, contextId)) {
             revert ContextNotPreActivatedOrSuspended(contextId);
         }
 

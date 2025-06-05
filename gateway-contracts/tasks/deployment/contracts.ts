@@ -73,6 +73,28 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   // Parse the pauser address
   const pauserAddress = getRequiredEnvVar(`PAUSER_ADDRESS`);
 
+  // Parse the coprocessors
+  const numCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
+  const coprocessors = [];
+  for (let idx = 0; idx < numCoprocessors; idx++) {
+    coprocessors.push({
+      txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
+      signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
+      s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
+    });
+  }
+
+  console.log("Pauser address:", pauserAddress);
+  console.log("Protocol metadata:", protocolMetadata);
+  console.log("Coprocessors:", coprocessors);
+
+  const initializeArgs = [pauserAddress, protocolMetadata, coprocessors];
+
+  await deployContractImplementation("GatewayConfig", hre, initializeArgs);
+});
+
+// Deploy the KmsContexts contract
+task("task:deployKmsContexts").setAction(async function (_, hre) {
   // Parse the decryption response thresholds
   const publicDecryptionThreshold = getRequiredEnvVar("PUBLIC_DECRYPTION_THRESHOLD");
   const userDecryptionThreshold = getRequiredEnvVar("USER_DECRYPTION_THRESHOLD");
@@ -104,19 +126,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     });
   }
 
-  // Parse the coprocessors
-  const numCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
-  const coprocessors = [];
-  for (let idx = 0; idx < numCoprocessors; idx++) {
-    coprocessors.push({
-      txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
-      signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
-      s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
-    });
-  }
-
-  console.log("Pauser address:", pauserAddress);
-  console.log("Protocol metadata:", protocolMetadata);
   console.log("Public decryption threshold:", publicDecryptionThreshold);
   console.log("Generation block period:", kmsGenerationBlockPeriod);
   console.log("Pre-activation block period:", kmsPreActivationBlockPeriod);
@@ -125,11 +134,8 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   console.log("MPC threshold:", mpcThreshold);
   console.log("User decryption threshold:", userDecryptionThreshold);
   console.log("KMS nodes:", kmsNodes);
-  console.log("Coprocessors:", coprocessors);
 
   const initializeArgs = [
-    pauserAddress,
-    protocolMetadata,
     [
       [publicDecryptionThreshold, userDecryptionThreshold],
       [kmsPreActivationBlockPeriod, kmsGenerationBlockPeriod, kmsSuspensionBlockPeriod],
@@ -137,10 +143,9 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
       mpcThreshold,
       kmsNodes,
     ],
-    coprocessors,
   ];
 
-  await deployContractImplementation("GatewayConfig", hre, initializeArgs);
+  await deployContractImplementation("KmsContexts", hre, initializeArgs);
 });
 
 // Deploy the InputVerification contract
@@ -188,6 +193,9 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
 
   console.log("Deploy GatewayConfig contract:");
   await hre.run("task:deployGatewayConfig");
+
+  console.log("Deploy KmsContexts contract:");
+  await hre.run("task:deployKmsContexts");
 
   console.log("Deploy InputVerification contract:");
   await hre.run("task:deployInputVerification");
