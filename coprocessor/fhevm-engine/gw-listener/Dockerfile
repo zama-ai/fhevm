@@ -1,5 +1,5 @@
 # Stage 1: Build GW Listener
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:latest AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.85.0 AS builder
 
 USER root
 
@@ -13,8 +13,8 @@ WORKDIR /app/coprocessor/fhevm-engine
 RUN cargo fetch && \
     SQLX_OFFLINE=true cargo build --release -p gw-listener
 
-# Stage 2: Runtime image
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:latest
+# Stage 3: Runtime image
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.85.0 AS runtime
 
 COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/gw_listener /usr/local/bin/gw_listener
 
