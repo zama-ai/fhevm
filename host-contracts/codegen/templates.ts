@@ -4,51 +4,6 @@ import { AdjustedFheType, AliasFheType, FheType, Operator, OperatorArguments, Re
 import { getUint } from './utils';
 
 /**
- * Generates Solidity type aliases from an array of FHE types.
- *
- * This function filters the provided FHE types to include only those that are supported for
- * binary or unary operations. It then maps these types to Solidity type aliases, where each
- * type is represented as a `bytes32`. Additionally, it includes predefined aliases for
- * `externalEXXX`, which is represented as `bytes32`.
- *
- * @param fheTypes - An array of FHE types to generate Solidity type aliases from.
- * @returns A string containing the Solidity type aliases, each on a new line.
- */
-export function createSolidityTypeAliasesFromFheTypes(fheTypes: FheType[]): string {
-  let res = fheTypes
-    .filter((fheType: FheType) => fheType.supportedOperators.length > 0)
-    .map((fheType: FheType) => `type e${fheType.type.toLowerCase()} is bytes32;`);
-
-  res = res.concat(
-    fheTypes
-      .map((fheType: FheType) =>
-        (fheType.aliases?.filter((fheTypeAlias: AliasFheType) => fheTypeAlias.supportedOperators.length > 0) ?? []).map(
-          (fheTypeAlias: AliasFheType) => `type e${fheTypeAlias.type.toLowerCase()} is bytes32;`,
-        ),
-      )
-      .flat(),
-  );
-
-  res = res.concat(
-    fheTypes
-      .filter((fheType: FheType) => fheType.supportedOperators.length > 0)
-      .map((fheType: FheType) => `type externalE${fheType.type.toLowerCase()} is bytes32;`),
-  );
-
-  res = res.concat(
-    fheTypes
-      .map((fheType: FheType) =>
-        (fheType.aliases?.filter((fheTypeAlias: AliasFheType) => fheTypeAlias.supportedOperators.length > 0) ?? []).map(
-          (fheTypeAlias: AliasFheType) => `type externalE${fheTypeAlias.type.toLowerCase()} is bytes32;`,
-        ),
-      )
-      .flat(),
-  );
-
-  return res.join('\n');
-}
-
-/**
  * Generates a Solidity enum definition from an array of FheType objects.
  *
  * @param {FheType[]} fheTypes - An array of FheType objects to be converted into a Solidity enum.
@@ -504,7 +459,7 @@ export function generateSolidityFHELib(operators: Operator[], fheTypes: FheType[
   import "./Impl.sol";
   import {FheType} from "../contracts/FheType.sol";
 
-  ${createSolidityTypeAliasesFromFheTypes(fheTypes)}
+  import "encrypted-types/EncryptedTypes.sol";
 
   ${generateKMSVerifierInterface()}
 

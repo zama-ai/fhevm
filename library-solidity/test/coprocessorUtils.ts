@@ -603,10 +603,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
   }
 }
 
-export function getTxHCUFromTxReceipt(
-  receipt: ethers.TransactionReceipt,
-  FheTypes: FheType[] = ALL_FHE_TYPES,
-): number {
+export function getTxHCUFromTxReceipt(receipt: ethers.TransactionReceipt, FheTypes: FheType[] = ALL_FHE_TYPES): number {
   if (receipt.status === 0) {
     throw new Error('Transaction reverted');
   }
