@@ -4,11 +4,21 @@ use alloy::{
     network::EthereumWallet,
     node_bindings::{Anvil, AnvilInstance},
     primitives::U256,
-    providers::{Provider, ProviderBuilder, WsConnect},
+    providers::{
+        fillers::{
+            BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
+            WalletFiller,
+        },
+        Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
+    },
     signers::local::PrivateKeySigner,
     sol,
+    transports::http::reqwest::Url,
 };
-use gw_listener::{gw_listener::GatewayListener, ConfigSettings};
+use gw_listener::{
+    gw_listener::{Builder, GatewayListener},
+    ConfigSettings,
+};
 use serial_test::serial;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio::time::sleep;
@@ -68,20 +78,54 @@ impl TestEnvironment {
     }
 }
 
+type TestProvider = FillProvider<
+    JoinFill<
+        JoinFill<
+            Identity,
+            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+        >,
+        WalletFiller<EthereumWallet>,
+    >,
+    RootProvider,
+>;
+
+#[derive(Debug, Clone, Default)]
+pub struct TestProviderBuilderImpl {
+    wallet: EthereumWallet,
+}
+
+impl TestProviderBuilderImpl {
+    pub fn new(wallet: EthereumWallet) -> Self {
+        Self { wallet }
+    }
+}
+
+impl Builder<TestProvider> for TestProviderBuilderImpl {
+    async fn create_provider(&self, gw_url: Url) -> anyhow::Result<TestProvider> {
+        let provider = ProviderBuilder::new()
+            .wallet(self.wallet.clone())
+            .on_ws(WsConnect::new(gw_url))
+            .await?;
+        Ok(provider)
+    }
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::new()
-        .wallet(env.wallet)
+        .wallet(env.wallet.clone())
         .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
         .await?;
+
     let input_verification = InputVerification::deploy(&provider).await?;
-    let gw_listener = GatewayListener::new(
+    let mut gw_listener = GatewayListener::new(
         *input_verification.address(),
         env.conf.clone(),
         env.cancel_token.clone(),
         provider.clone(),
+        TestProviderBuilderImpl::new(env.wallet.clone()),
     );
 
     let run_handle = tokio::spawn(async move { gw_listener.run().await });
