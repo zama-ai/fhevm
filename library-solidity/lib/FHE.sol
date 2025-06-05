@@ -9447,13 +9447,7 @@ library FHE {
         bytes32[] memory ctsHandles,
         bytes4 callbackSelector
     ) internal returns (uint256 requestID) {
-        DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
-        requestID = $.counterRequest;
-        FHEVMConfigStruct storage $$ = Impl.getFHEVMConfig();
-        IACL($$.ACLAddress).allowForDecryption(ctsHandles);
-        IDecryptionOracle($.DecryptionOracleAddress).requestDecryption(requestID, ctsHandles, callbackSelector);
-        saveRequestedHandles(requestID, ctsHandles);
-        $.counterRequest++;
+        requestID = requestDecryption(ctsHandles, callbackSelector, 0);
     }
 
     /**
