@@ -100,10 +100,10 @@ struct Conf {
     review_after_unlimited_retries: u16,
 
     #[arg(long, default_value = "1000000")]
-    max_retries_provider: u32,
+    provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
-    retry_interval: Duration,
+    provider_retry_interval: Duration,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -125,8 +125,8 @@ async fn main() -> anyhow::Result<()> {
     let conf = Conf::parse();
     let chain_id = get_chain_id(
         conf.gateway_url.clone(),
-        conf.max_retries_provider,
-        conf.retry_interval,
+        conf.provider_max_retries,
+        conf.provider_retry_interval,
     )
     .await?;
     let abstract_signer: AbstractSigner;
@@ -162,8 +162,8 @@ async fn main() -> anyhow::Result<()> {
             .wallet(wallet.clone())
             .connect_ws(
                 WsConnect::new(conf.gateway_url)
-                    .with_max_retries(conf.max_retries_provider)
-                    .with_retry_interval(conf.retry_interval),
+                    .with_max_retries(conf.provider_max_retries)
+                    .with_retry_interval(conf.provider_retry_interval),
             )
             .await?,
         Some(wallet.default_signer().address()),
