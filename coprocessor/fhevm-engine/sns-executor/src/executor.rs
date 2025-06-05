@@ -559,7 +559,7 @@ fn decompress_ct(
 ) -> Result<SupportedFheCiphertexts, ExecutionError> {
     let ct_type = get_ct_type(handle)?;
 
-    let result = SupportedFheCiphertexts::decompress(ct_type, compressed_ct)?;
+    let result = SupportedFheCiphertexts::decompress_no_memcheck(ct_type, compressed_ct)?;
     Ok(result)
 }
 #[cfg(feature = "test_decrypt_128")]
