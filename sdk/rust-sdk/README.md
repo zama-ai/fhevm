@@ -57,7 +57,10 @@ The following table shows the current implementation status of features compared
 | Error Handling | ⚠️ Partial | Good error type definitions |
 | Logging | ⚠️ Partial | Comprehensive logging support |
 
-### Learn with minimal examples
+
+
+### Learn with minimal examples
+
 
 ```bash
 cargo run --example minimal-sdk-setup

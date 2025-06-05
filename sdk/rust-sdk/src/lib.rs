@@ -436,7 +436,6 @@ pub mod encryption;
 pub mod logging;
 pub mod signature;
 pub mod utils;
-pub mod verification;
 
 pub use encryption::input::{EncryptedInput, EncryptedInputBuilder, InputBuilderFactory};
 
