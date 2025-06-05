@@ -1,3 +1,4 @@
+pub mod gpu_memory;
 pub mod keys;
 pub mod telemetry;
 pub mod tenant_keys;

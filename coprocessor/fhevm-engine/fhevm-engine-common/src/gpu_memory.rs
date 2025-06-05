@@ -1,0 +1,2377 @@
+use crate::{
+    tfhe_ops::*,
+    types::{SupportedFheCiphertexts, SupportedFheOperations},
+};
+use tfhe::{prelude::*, FheUint2};
+
+impl SupportedFheCiphertexts {
+    pub fn move_to_current_device(&mut self) {
+        match self {
+            SupportedFheCiphertexts::FheBool(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::FheUint4(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::FheUint8(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::FheUint16(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::FheUint32(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::FheUint64(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::FheUint128(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::FheUint160(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::FheUint256(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::FheBytes64(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::FheBytes128(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::FheBytes256(v) => v.move_to_current_device(),
+            SupportedFheCiphertexts::Scalar(_) => {} // TODO No need to move scalars
+        };
+    }
+
+    pub fn get_size_on_gpu(&mut self) -> u64 {
+        match self {
+            SupportedFheCiphertexts::FheBool(v) => {
+                let v: FheUint2 = v.to_owned().cast_into();
+                v.get_size_on_gpu()
+            } // TODO fix when available
+            SupportedFheCiphertexts::FheUint4(v) => v.get_size_on_gpu(),
+            SupportedFheCiphertexts::FheUint8(v) => v.get_size_on_gpu(),
+            SupportedFheCiphertexts::FheUint16(v) => v.get_size_on_gpu(),
+            SupportedFheCiphertexts::FheUint32(v) => v.get_size_on_gpu(),
+            SupportedFheCiphertexts::FheUint64(v) => v.get_size_on_gpu(),
+            SupportedFheCiphertexts::FheUint128(v) => v.get_size_on_gpu(),
+            SupportedFheCiphertexts::FheUint160(v) => v.get_size_on_gpu(),
+            SupportedFheCiphertexts::FheUint256(v) => v.get_size_on_gpu(),
+            SupportedFheCiphertexts::FheBytes64(v) => v.get_size_on_gpu(),
+            SupportedFheCiphertexts::FheBytes128(v) => v.get_size_on_gpu(),
+            SupportedFheCiphertexts::FheBytes256(v) => v.get_size_on_gpu(),
+            SupportedFheCiphertexts::Scalar(v) => v.len() as u64, // TODO Might need fixing
+        }
+    }
+}
+
+// TODO: boolean ops & missing (Mul, Div, Rem, Eq, Ne, ...)
+pub fn get_op_size_on_gpu(
+    fhe_operation_int: i16,
+    input_operands: &[SupportedFheCiphertexts],
+    // for deterministc randomness functions
+) -> u64 {
+    let fhe_operation: SupportedFheOperations =
+        fhe_operation_int.try_into().expect("Invalid operation");
+    match fhe_operation {
+        SupportedFheOperations::FheAdd => {
+            assert_eq!(input_operands.len(), 2);
+
+            // fhe add
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_add_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_add_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_add_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_add_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_add_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_add_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_add_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_add_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_add_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_add_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_add_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_add_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_add_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_add_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_add_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_add_size_on_gpu(to_be_u256_bit(b))
+                }
+                _ => 0,
+            }
+        }
+
+        SupportedFheOperations::FheSub => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_sub_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_sub_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_sub_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_sub_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_sub_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_sub_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_sub_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_sub_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_sub_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_sub_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_sub_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_sub_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_sub_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_sub_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_sub_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_sub_size_on_gpu(to_be_u256_bit(b))
+                }
+                _ => 0,
+            }
+        }
+
+        SupportedFheOperations::FheMul => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_mul_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_mul_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_mul_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_mul_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_mul_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_mul_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_mul_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_mul_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_mul_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_mul_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_mul_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_mul_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_mul_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_mul_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_mul_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_mul_size_on_gpu(to_be_u256_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheDiv => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_div_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_div_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_div_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_div_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_div_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_div_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_div_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_div_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_div_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_div_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_div_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_div_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_div_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_div_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_div_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_div_size_on_gpu(to_be_u256_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheRem => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_rem_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_rem_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_rem_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_rem_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_rem_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_rem_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_rem_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_rem_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rem_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rem_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rem_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rem_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rem_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rem_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rem_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rem_size_on_gpu(to_be_u256_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheBitAnd => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
+                    a.get_bitand_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_bitand_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_bitand_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_bitand_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_bitand_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_bitand_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_bitand_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_bitand_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_bitand_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_bitand_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_bitand_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_bitand_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u4_bit(b) > 0)
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u256_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u512_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u1024_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitand_size_on_gpu(to_be_u2048_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheBitOr => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
+                    a.get_bitor_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_bitor_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_bitor_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_bitor_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_bitor_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_bitor_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_bitor_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_bitor_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_bitor_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_bitor_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_bitor_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_bitor_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let a: FheUint2 = a.to_owned().cast_into();
+                    a.get_bitor_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitor_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitor_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitor_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitor_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitor_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitor_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitor_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitor_size_on_gpu(to_be_u256_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitor_size_on_gpu(to_be_u512_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitor_size_on_gpu(to_be_u1024_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitor_size_on_gpu(to_be_u2048_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheBitXor => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
+                    a.get_bitxor_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_bitxor_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_bitxor_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_bitxor_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_bitxor_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_bitxor_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_bitxor_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_bitxor_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_bitxor_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_bitxor_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_bitxor_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_bitxor_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let a: FheUint2 = a.to_owned().cast_into();
+                    a.get_bitxor_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitxor_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitxor_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitxor_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitxor_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitxor_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitxor_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitxor_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitxor_size_on_gpu(to_be_u256_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitxor_size_on_gpu(to_be_u512_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitxor_size_on_gpu(to_be_u1024_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_bitxor_size_on_gpu(to_be_u2048_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheShl => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_left_shift_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_left_shift_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_left_shift_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_left_shift_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_left_shift_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_left_shift_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_left_shift_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_left_shift_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_left_shift_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_left_shift_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_left_shift_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_left_shift_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_left_shift_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_left_shift_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_left_shift_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_left_shift_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_left_shift_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_left_shift_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_left_shift_size_on_gpu(to_be_u256_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_left_shift_size_on_gpu(to_be_u512_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_left_shift_size_on_gpu(to_be_u1024_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_left_shift_size_on_gpu(to_be_u2048_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheShr => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_right_shift_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_right_shift_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_right_shift_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_right_shift_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_right_shift_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_right_shift_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_right_shift_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_right_shift_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_right_shift_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_right_shift_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_right_shift_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_right_shift_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_right_shift_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_right_shift_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_right_shift_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_right_shift_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_right_shift_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_right_shift_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_right_shift_size_on_gpu(to_be_u256_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_right_shift_size_on_gpu(to_be_u512_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_right_shift_size_on_gpu(to_be_u1024_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_right_shift_size_on_gpu(to_be_u2048_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheRotl => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_rotate_left_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_rotate_left_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_rotate_left_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_rotate_left_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_rotate_left_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_rotate_left_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_rotate_left_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_rotate_left_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_rotate_left_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_rotate_left_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_rotate_left_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_left_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_left_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_left_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_left_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_left_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_left_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_left_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_left_size_on_gpu(to_be_u256_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_left_size_on_gpu(to_be_u512_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_left_size_on_gpu(to_be_u1024_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_left_size_on_gpu(to_be_u2048_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheRotr => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_rotate_right_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_rotate_right_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_rotate_right_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_rotate_right_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_rotate_right_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_rotate_right_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_rotate_right_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_rotate_right_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_rotate_right_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_rotate_right_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_rotate_right_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_right_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_right_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_right_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_right_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_right_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_right_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_right_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_right_size_on_gpu(to_be_u256_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_right_size_on_gpu(to_be_u512_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_right_size_on_gpu(to_be_u1024_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_rotate_right_size_on_gpu(to_be_u2048_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheMin => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_min_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_min_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_min_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_min_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_min_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_min_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_min_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_min_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_min_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_min_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_min_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_min_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_min_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_min_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_min_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_min_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_min_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_min_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_min_size_on_gpu(to_be_u256_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheMax => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_max_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_max_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_max_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_max_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_max_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_max_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_max_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_max_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_max_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_max_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_max_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_max_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_max_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_max_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_max_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_max_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_max_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_max_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_max_size_on_gpu(to_be_u256_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheEq => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
+                    a.get_eq_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_eq_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_eq_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_eq_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_eq_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_eq_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_eq_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_eq_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_eq_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_eq_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_eq_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_eq_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let a: FheUint2 = a.to_owned().cast_into();
+                    a.get_eq_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_eq_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_eq_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_eq_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_eq_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_eq_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_eq_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_eq_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_eq_size_on_gpu(to_be_u256_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_eq_size_on_gpu(to_be_u512_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_eq_size_on_gpu(to_be_u1024_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_eq_size_on_gpu(to_be_u2048_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheNe => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
+                    a.get_ne_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_ne_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_ne_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_ne_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_ne_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_ne_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_ne_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_ne_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_ne_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_ne_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_ne_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_ne_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let a: FheUint2 = a.to_owned().cast_into();
+                    a.get_ne_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ne_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ne_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ne_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ne_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ne_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ne_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ne_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ne_size_on_gpu(to_be_u256_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ne_size_on_gpu(to_be_u512_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ne_size_on_gpu(to_be_u1024_bit(b))
+                }
+                (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ne_size_on_gpu(to_be_u2048_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheGe => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_ge_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_ge_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_ge_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_ge_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_ge_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_ge_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_ge_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_ge_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_ge_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_ge_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_ge_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let a: FheUint2 = a.to_owned().cast_into();
+                    a.get_ge_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ge_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ge_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ge_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ge_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ge_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ge_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ge_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_ge_size_on_gpu(to_be_u256_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheGt => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_gt_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_gt_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_gt_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_gt_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_gt_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_gt_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_gt_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_gt_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_gt_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_gt_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_gt_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let a: FheUint2 = a.to_owned().cast_into();
+                    a.get_gt_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_gt_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_gt_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_gt_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_gt_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_gt_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_gt_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_gt_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_gt_size_on_gpu(to_be_u256_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheLe => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_le_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_le_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_le_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_le_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_le_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_le_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_le_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_le_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_le_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_le_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_le_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let a: FheUint2 = a.to_owned().cast_into();
+                    a.get_le_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_le_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_le_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_le_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_le_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_le_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_le_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_le_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_le_size_on_gpu(to_be_u256_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheLt => {
+            assert_eq!(input_operands.len(), 2);
+
+            match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    a.get_lt_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    a.get_lt_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    a.get_lt_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    a.get_lt_size_on_gpu(b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    a.get_lt_size_on_gpu(b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => a.get_lt_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => a.get_lt_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => a.get_lt_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => a.get_lt_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => a.get_lt_size_on_gpu(b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => a.get_lt_size_on_gpu(b),
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let a: FheUint2 = a.to_owned().cast_into();
+                    a.get_lt_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_lt_size_on_gpu(to_be_u4_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_lt_size_on_gpu(to_be_u8_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_lt_size_on_gpu(to_be_u16_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_lt_size_on_gpu(to_be_u32_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_lt_size_on_gpu(to_be_u64_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_lt_size_on_gpu(to_be_u128_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_lt_size_on_gpu(to_be_u160_bit(b))
+                }
+                (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    a.get_lt_size_on_gpu(to_be_u256_bit(b))
+                }
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheNot => {
+            assert_eq!(input_operands.len(), 1);
+
+            match &input_operands[0] {
+                SupportedFheCiphertexts::FheBool(a) => a.get_bitnot_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint4(a) => a.get_bitnot_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint8(a) => a.get_bitnot_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint16(a) => a.get_bitnot_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint32(a) => a.get_bitnot_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint64(a) => a.get_bitnot_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint128(a) => a.get_bitnot_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint160(a) => a.get_bitnot_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint256(a) => a.get_bitnot_size_on_gpu(),
+                SupportedFheCiphertexts::FheBytes64(a) => a.get_bitnot_size_on_gpu(),
+                SupportedFheCiphertexts::FheBytes128(a) => a.get_bitnot_size_on_gpu(),
+                SupportedFheCiphertexts::FheBytes256(a) => a.get_bitnot_size_on_gpu(),
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheNeg => {
+            assert_eq!(input_operands.len(), 1);
+
+            match &input_operands[0] {
+                SupportedFheCiphertexts::FheUint4(a) => a.get_neg_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint8(a) => a.get_neg_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint16(a) => a.get_neg_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint32(a) => a.get_neg_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint64(a) => a.get_neg_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint128(a) => a.get_neg_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint160(a) => a.get_neg_size_on_gpu(),
+                SupportedFheCiphertexts::FheUint256(a) => a.get_neg_size_on_gpu(),
+                _ => 0,
+            }
+        }
+        SupportedFheOperations::FheIfThenElse => {
+            assert_eq!(input_operands.len(), 3);
+
+            let SupportedFheCiphertexts::FheBool(flag) = &input_operands[0] else {
+                return 0;
+            };
+
+            match (&input_operands[1], &input_operands[2]) {
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
+                    let a: FheUint2 = a.to_owned().cast_into();
+                    let b: FheUint2 = b.to_owned().cast_into();
+                    flag.get_if_then_else_size_on_gpu(&a, &b)
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    flag.get_if_then_else_size_on_gpu(a, b)
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    flag.get_if_then_else_size_on_gpu(a, b)
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    flag.get_if_then_else_size_on_gpu(a, b)
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    flag.get_if_then_else_size_on_gpu(a, b)
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    flag.get_if_then_else_size_on_gpu(a, b)
+                }
+                (
+                    SupportedFheCiphertexts::FheUint128(a),
+                    SupportedFheCiphertexts::FheUint128(b),
+                ) => flag.get_if_then_else_size_on_gpu(a, b),
+                (
+                    SupportedFheCiphertexts::FheUint160(a),
+                    SupportedFheCiphertexts::FheUint160(b),
+                ) => flag.get_if_then_else_size_on_gpu(a, b),
+                (
+                    SupportedFheCiphertexts::FheUint256(a),
+                    SupportedFheCiphertexts::FheUint256(b),
+                ) => flag.get_if_then_else_size_on_gpu(a, b),
+                (
+                    SupportedFheCiphertexts::FheBytes64(a),
+                    SupportedFheCiphertexts::FheBytes64(b),
+                ) => flag.get_if_then_else_size_on_gpu(a, b),
+                (
+                    SupportedFheCiphertexts::FheBytes128(a),
+                    SupportedFheCiphertexts::FheBytes128(b),
+                ) => flag.get_if_then_else_size_on_gpu(a, b),
+                (
+                    SupportedFheCiphertexts::FheBytes256(a),
+                    SupportedFheCiphertexts::FheBytes256(b),
+                ) => flag.get_if_then_else_size_on_gpu(a, b),
+                _ => 0,
+            }
+        }
+        //TODO
+        // SupportedFheOperations::FheCast => match (&input_operands[0], &input_operands[1]) {
+        //     (SupportedFheCiphertexts::FheBool(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheBool(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 1 => {
+        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
+        //                 }
+        //                 2 => {
+        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
+        //                 }
+        //                 3 => {
+        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
+        //                 }
+        //                 4 => {
+        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
+        //                 }
+        //                 5 => {
+        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
+        //                 }
+        //                 6 => {
+        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
+        //                 }
+        //                 7 => {
+        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
+        //                 }
+        //                 8 => {
+        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
+        //                 }
+        //                 9 => {
+        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
+        //                 }
+        //                 10 => {
+        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
+        //                 }
+        //                 11 => {
+        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
+        //                 }
+        //                 other => Err(FhevmError::UnknownCastType {
+        //                     fhe_operation: format!("{:?}", fhe_operation),
+        //                     type_to_cast_to: other,
+        //                 }),
+        //             }
+        //         }
+        //     }
+        //     (SupportedFheCiphertexts::FheUint4(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheUint4(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 0 => {
+        //                     let out: tfhe::FheBool = inp.gt(0);
+        //                     Ok(SupportedFheCiphertexts::FheBool(out))
+        //                 }
+        //                 2 => {
+        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
+        //                 }
+        //                 3 => {
+        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
+        //                 }
+        //                 4 => {
+        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
+        //                 }
+        //                 5 => {
+        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
+        //                 }
+        //                 6 => {
+        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
+        //                 }
+        //                 7 => {
+        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
+        //                 }
+        //                 8 => {
+        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
+        //                 }
+        //                 9 => {
+        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
+        //                 }
+        //                 10 => {
+        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
+        //                 }
+        //                 11 => {
+        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
+        //                 }
+        //                 other => Err(FhevmError::UnknownCastType {
+        //                     fhe_operation: format!("{:?}", fhe_operation),
+        //                     type_to_cast_to: other,
+        //                 }),
+        //             }
+        //         }
+        //     }
+        //     (SupportedFheCiphertexts::FheUint8(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheUint8(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 0 => {
+        //                     let out: tfhe::FheBool = inp.gt(0);
+        //                     Ok(SupportedFheCiphertexts::FheBool(out))
+        //                 }
+        //                 1 => {
+        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
+        //                 }
+        //                 3 => {
+        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
+        //                 }
+        //                 4 => {
+        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
+        //                 }
+        //                 5 => {
+        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
+        //                 }
+        //                 6 => {
+        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
+        //                 }
+        //                 7 => {
+        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
+        //                 }
+        //                 8 => {
+        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
+        //                 }
+        //                 9 => {
+        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
+        //                 }
+        //                 10 => {
+        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
+        //                 }
+        //                 11 => {
+        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
+        //                 }
+        //                 other => Err(FhevmError::UnknownCastType {
+        //                     fhe_operation: format!("{:?}", fhe_operation),
+        //                     type_to_cast_to: other,
+        //                 }),
+        //             }
+        //         }
+        //     }
+        //     (SupportedFheCiphertexts::FheUint16(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheUint16(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 0 => {
+        //                     let out: tfhe::FheBool = inp.gt(0);
+        //                     Ok(SupportedFheCiphertexts::FheBool(out))
+        //                 }
+        //                 1 => {
+        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
+        //                 }
+        //                 2 => {
+        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
+        //                 }
+        //                 4 => {
+        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
+        //                 }
+        //                 5 => {
+        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
+        //                 }
+        //                 6 => {
+        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
+        //                 }
+        //                 7 => {
+        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
+        //                 }
+        //                 8 => {
+        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
+        //                 }
+        //                 9 => {
+        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
+        //                 }
+        //                 10 => {
+        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
+        //                 }
+        //                 11 => {
+        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
+        //                 }
+        //                 other => Err(FhevmError::UnknownCastType {
+        //                     fhe_operation: format!("{:?}", fhe_operation),
+        //                     type_to_cast_to: other,
+        //                 }),
+        //             }
+        //         }
+        //     }
+        //     (SupportedFheCiphertexts::FheUint32(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheUint32(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 0 => {
+        //                     let out: tfhe::FheBool = inp.gt(0);
+        //                     Ok(SupportedFheCiphertexts::FheBool(out))
+        //                 }
+        //                 1 => {
+        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
+        //                 }
+        //                 2 => {
+        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
+        //                 }
+        //                 3 => {
+        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
+        //                 }
+        //                 5 => {
+        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
+        //                 }
+        //                 6 => {
+        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
+        //                 }
+        //                 7 => {
+        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
+        //                 }
+        //                 8 => {
+        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
+        //                 }
+        //                 9 => {
+        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
+        //                 }
+        //                 10 => {
+        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
+        //                 }
+        //                 11 => {
+        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
+        //                 }
+        //                 other => Err(FhevmError::UnknownCastType {
+        //                     fhe_operation: format!("{:?}", fhe_operation),
+        //                     type_to_cast_to: other,
+        //                 }),
+        //             }
+        //         }
+        //     }
+        //     (SupportedFheCiphertexts::FheUint64(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheUint64(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 0 => {
+        //                     let out: tfhe::FheBool = inp.gt(0);
+        //                     Ok(SupportedFheCiphertexts::FheBool(out))
+        //                 }
+        //                 1 => {
+        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
+        //                 }
+        //                 2 => {
+        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
+        //                 }
+        //                 3 => {
+        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
+        //                 }
+        //                 4 => {
+        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
+        //                 }
+        //                 6 => {
+        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
+        //                 }
+        //                 7 => {
+        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
+        //                 }
+        //                 8 => {
+        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
+        //                 }
+        //                 9 => {
+        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
+        //                 }
+        //                 10 => {
+        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
+        //                 }
+        //                 11 => {
+        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
+        //                 }
+        //                 other => Err(FhevmError::UnknownCastType {
+        //                     fhe_operation: format!("{:?}", fhe_operation),
+        //                     type_to_cast_to: other,
+        //                 }),
+        //             }
+        //         }
+        //     }
+        //     (SupportedFheCiphertexts::FheUint128(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheUint128(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 0 => {
+        //                     let out: tfhe::FheBool = inp.gt(0);
+        //                     Ok(SupportedFheCiphertexts::FheBool(out))
+        //                 }
+        //                 1 => {
+        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
+        //                 }
+        //                 2 => {
+        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
+        //                 }
+        //                 3 => {
+        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
+        //                 }
+        //                 4 => {
+        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
+        //                 }
+        //                 5 => {
+        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
+        //                 }
+        //                 7 => {
+        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
+        //                 }
+        //                 8 => {
+        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
+        //                 }
+        //                 9 => {
+        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
+        //                 }
+        //                 10 => {
+        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
+        //                 }
+        //                 11 => {
+        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
+        //                 }
+        //                 other => Err(FhevmError::UnknownCastType {
+        //                     fhe_operation: format!("{:?}", fhe_operation),
+        //                     type_to_cast_to: other,
+        //                 }),
+        //             }
+        //         }
+        //     }
+        //     (SupportedFheCiphertexts::FheUint160(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheUint160(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 0 => {
+        //                     let out: tfhe::FheBool = inp.gt(0);
+        //                     Ok(SupportedFheCiphertexts::FheBool(out))
+        //                 }
+        //                 1 => {
+        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
+        //                 }
+        //                 2 => {
+        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
+        //                 }
+        //                 3 => {
+        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
+        //                 }
+        //                 4 => {
+        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
+        //                 }
+        //                 5 => {
+        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
+        //                 }
+        //                 6 => {
+        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
+        //                 }
+        //                 8 => {
+        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
+        //                 }
+        //                 9 => {
+        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
+        //                 }
+        //                 10 => {
+        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
+        //                 }
+        //                 11 => {
+        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
+        //                 }
+        //                 other => Err(FhevmError::UnknownCastType {
+        //                     fhe_operation: format!("{:?}", fhe_operation),
+        //                     type_to_cast_to: other,
+        //                 }),
+        //             }
+        //         }
+        //     }
+        //     (SupportedFheCiphertexts::FheUint256(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheUint256(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 0 => {
+        //                     let out: tfhe::FheBool = inp.gt(0);
+        //                     Ok(SupportedFheCiphertexts::FheBool(out))
+        //                 }
+        //                 1 => {
+        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
+        //                 }
+        //                 2 => {
+        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
+        //                 }
+        //                 3 => {
+        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
+        //                 }
+        //                 4 => {
+        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
+        //                 }
+        //                 5 => {
+        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
+        //                 }
+        //                 6 => {
+        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
+        //                 }
+        //                 7 => {
+        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
+        //                 }
+        //                 9 => {
+        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
+        //                 }
+        //                 10 => {
+        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
+        //                 }
+        //                 11 => {
+        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
+        //                 }
+        //                 other => Err(FhevmError::UnknownCastType {
+        //                     fhe_operation: format!("{:?}", fhe_operation),
+        //                     type_to_cast_to: other,
+        //                 }),
+        //             }
+        //         }
+        //     }
+        //     (SupportedFheCiphertexts::FheBytes64(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheBytes64(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 0 => {
+        //                     let out: tfhe::FheBool = inp.gt(0);
+        //                     Ok(SupportedFheCiphertexts::FheBool(out))
+        //                 }
+        //                 1 => {
+        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
+        //                 }
+        //                 2 => {
+        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
+        //                 }
+        //                 3 => {
+        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
+        //                 }
+        //                 4 => {
+        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
+        //                 }
+        //                 5 => {
+        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
+        //                 }
+        //                 6 => {
+        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
+        //                 }
+        //                 7 => {
+        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
+        //                 }
+        //                 8 => {
+        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
+        //                 }
+        //                 10 => {
+        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
+        //                 }
+        //                 11 => {
+        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
+        //                 }
+        //                 other => Err(FhevmError::UnknownCastType {
+        //                     fhe_operation: format!("{:?}", fhe_operation),
+        //                     type_to_cast_to: other,
+        //                 }),
+        //             }
+        //         }
+        //     }
+        //     (SupportedFheCiphertexts::FheBytes128(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheBytes128(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 0 => {
+        //                     let out: tfhe::FheBool = inp.gt(0);
+        //                     Ok(SupportedFheCiphertexts::FheBool(out))
+        //                 }
+        //                 1 => {
+        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
+        //                 }
+        //                 2 => {
+        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
+        //                 }
+        //                 3 => {
+        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
+        //                 }
+        //                 4 => {
+        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
+        //                 }
+        //                 5 => {
+        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
+        //                 }
+        //                 6 => {
+        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
+        //                 }
+        //                 7 => {
+        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
+        //                 }
+        //                 8 => {
+        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
+        //                 }
+        //                 9 => {
+        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
+        //                 }
+        //                 11 => {
+        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
+        //                 }
+        //                 other => Err(FhevmError::UnknownCastType {
+        //                     fhe_operation: format!("{:?}", fhe_operation),
+        //                     type_to_cast_to: other,
+        //                 }),
+        //             }
+        //         }
+        //     }
+        //     (SupportedFheCiphertexts::FheBytes256(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         let l = to_be_u16_bit(op) as i16;
+        //         let type_id = input_operands[0].type_num();
+        //         if l == type_id {
+        //             Ok(SupportedFheCiphertexts::FheBytes256(inp.clone()))
+        //         } else {
+        //             match l {
+        //                 0 => {
+        //                     let out: tfhe::FheBool = inp.gt(0);
+        //                     Ok(SupportedFheCiphertexts::FheBool(out))
+        //                 }
+        //                 1 => {
+        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
+        //                 }
+        //                 2 => {
+        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
+        //                 }
+        //                 3 => {
+        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
+        //                 }
+        //                 4 => {
+        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
+        //                 }
+        //                 5 => {
+        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
+        //                 }
+        //                 6 => {
+        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
+        //                 }
+        //                 7 => {
+        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
+        //                 }
+        //                 8 => {
+        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
+        //                 }
+        //                 9 => {
+        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
+        //                 }
+        //                 10 => {
+        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
+        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
+        //                 }
+        //                 other => panic!("unexpected type: {other}"),
+        //             }
+        //         }
+        //     }
+        //     _ => Err(FhevmError::UnsupportedFheTypes {
+        //         fhe_operation: format!("{:?}", fhe_operation),
+        //         input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+        //     }),
+        // },
+        // SupportedFheOperations::FheTrivialEncrypt => match (&input_operands[0], &input_operands[1])
+        // {
+        //     (SupportedFheCiphertexts::Scalar(inp), SupportedFheCiphertexts::Scalar(op)) => {
+        //         Ok(trivial_encrypt_be_bytes(to_be_u16_bit(op) as i16, inp))
+        //     }
+        //     _ => Err(FhevmError::UnsupportedFheTypes {
+        //         fhe_operation: format!("{:?}", fhe_operation),
+        //         input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+        //     }),
+        // },
+        // SupportedFheOperations::FheRand => {
+        //     let SupportedFheCiphertexts::Scalar(rand_counter) = &input_operands[0] else {
+        //         return Err(FhevmError::UnsupportedFheTypes {
+        //             fhe_operation: format!("{:?}", fhe_operation),
+        //             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+        //         });
+        //     };
+        //     let SupportedFheCiphertexts::Scalar(to_type) = &input_operands[1] else {
+        //         return Err(FhevmError::UnsupportedFheTypes {
+        //             fhe_operation: format!("{:?}", fhe_operation),
+        //             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+        //         });
+        //     };
+        //     let rand_seed = to_be_u128_bit(rand_counter);
+        //     let to_type = to_be_u16_bit(to_type) as i16;
+        //     Ok(generate_random_number(to_type as i16, rand_seed, None))
+        // }
+        // SupportedFheOperations::FheRandBounded => {
+        //     let SupportedFheCiphertexts::Scalar(rand_counter) = &input_operands[0] else {
+        //         return Err(FhevmError::UnsupportedFheTypes {
+        //             fhe_operation: format!("{:?}", fhe_operation),
+        //             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+        //         });
+        //     };
+        //     let SupportedFheCiphertexts::Scalar(upper_bound) = &input_operands[1] else {
+        //         return Err(FhevmError::UnsupportedFheTypes {
+        //             fhe_operation: format!("{:?}", fhe_operation),
+        //             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+        //         });
+        //     };
+        //     let SupportedFheCiphertexts::Scalar(to_type) = &input_operands[2] else {
+        //         return Err(FhevmError::UnsupportedFheTypes {
+        //             fhe_operation: format!("{:?}", fhe_operation),
+        //             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+        //         });
+        //     };
+        //     let rand_seed = to_be_u128_bit(rand_counter);
+        //     let to_type = to_be_u16_bit(to_type) as i16;
+        //     Ok(generate_random_number(
+        //         to_type as i16,
+        //         rand_seed,
+        //         Some(upper_bound),
+        //     ))
+        // }
+        // SupportedFheOperations::FheGetInputCiphertext => todo!("Implement FheGetInputCiphertext"),
+        _ => 0,
+    }
+}

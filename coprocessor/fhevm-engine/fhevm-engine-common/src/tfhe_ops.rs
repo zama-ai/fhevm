@@ -3131,7 +3131,7 @@ fn to_constant_size_array<const SIZE: usize>(inp: &[u8]) -> [u8; SIZE] {
 macro_rules! to_be_function {
     ( $x:ty ) => {
         paste::paste! {
-            fn [<to_be_ $x _bit>](inp: &[u8]) -> $x {
+            pub fn [<to_be_ $x _bit>](inp: &[u8]) -> $x {
                 $x::from_be_bytes(to_constant_size_array::<{ std::mem::size_of::<$x>() }>(inp))
             }
         }
@@ -3144,7 +3144,7 @@ to_be_function!(u64);
 to_be_function!(u128);
 
 // return U256 because that's supported from tfhe-rs and will need cast later
-fn to_be_u160_bit(inp: &[u8]) -> U256 {
+pub fn to_be_u160_bit(inp: &[u8]) -> U256 {
     const SIZE: usize = 160 / 8;
     // truncate first
     let arr = to_constant_size_array::<SIZE>(inp);
@@ -3156,7 +3156,7 @@ fn to_be_u160_bit(inp: &[u8]) -> U256 {
     res
 }
 
-fn to_be_u256_bit(inp: &[u8]) -> U256 {
+pub fn to_be_u256_bit(inp: &[u8]) -> U256 {
     const FINAL_SIZE: usize = 256 / 8;
     // final value
     let arr = to_constant_size_array::<FINAL_SIZE>(inp);
@@ -3165,7 +3165,7 @@ fn to_be_u256_bit(inp: &[u8]) -> U256 {
     res
 }
 
-fn to_be_u512_bit(inp: &[u8]) -> StaticUnsignedBigInt<8> {
+pub fn to_be_u512_bit(inp: &[u8]) -> StaticUnsignedBigInt<8> {
     type TheType = StaticUnsignedBigInt<8>;
     const FINAL_SIZE: usize = std::mem::size_of::<TheType>();
     // final value
@@ -3175,7 +3175,7 @@ fn to_be_u512_bit(inp: &[u8]) -> StaticUnsignedBigInt<8> {
     res
 }
 
-fn to_be_u1024_bit(inp: &[u8]) -> StaticUnsignedBigInt<16> {
+pub fn to_be_u1024_bit(inp: &[u8]) -> StaticUnsignedBigInt<16> {
     type TheType = StaticUnsignedBigInt<16>;
     const FINAL_SIZE: usize = std::mem::size_of::<TheType>();
     // final value
@@ -3185,7 +3185,7 @@ fn to_be_u1024_bit(inp: &[u8]) -> StaticUnsignedBigInt<16> {
     res
 }
 
-fn to_be_u2048_bit(inp: &[u8]) -> StaticUnsignedBigInt<32> {
+pub fn to_be_u2048_bit(inp: &[u8]) -> StaticUnsignedBigInt<32> {
     type TheType = StaticUnsignedBigInt<32>;
     const FINAL_SIZE: usize = std::mem::size_of::<TheType>();
     // final value
