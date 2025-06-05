@@ -26,7 +26,6 @@ start-local-node: clean
 
 deploy-contracts-local:
 	cp $(ENV_PATH) .env
-	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:faucetToPrivate --private-key $(DEPLOYER_PRIVATE_KEY)
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:deployAllGatewayContracts
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:addHostChainsToGatewayConfig --use-internal-gateway-config-address true
 
@@ -51,6 +50,9 @@ check-bindings: ensure-addresses
 update-bindings: ensure-addresses
 	python3 scripts/bindings_update.py update
 
+lint-bindings:
+	cd rust_bindings && cargo clippy -- -D warnings && cd ..
+
 check-mocks:
 	node scripts/mock_contracts_cli.js check
 
@@ -73,11 +75,15 @@ update-selectors: ensure-addresses
 # Conform to pre-commit checks
 conformance: prettier update-bindings update-mocks update-selectors
 
-# Ensure that the empty proxy addresses exists. These are required for contract compilation.
+# Deploy the empty proxy addresses
+deploy-empty-proxies:
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployEmptyUUPSProxies
+
+# Ensure that the empty proxy addresses exists as these are required for contract compilation.
+# In addition, ensure that the addresses match the ones used in local development in order to
+# avoid discrepancies between local and CI (e.g., when generating and checking rust bindings).
 ensure-addresses:
-	@if [ ! -d addresses ]; then \
-		DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployEmptyUUPSProxies; \
-	fi
+	ENV_PATH=$(ENV_PATH) npx ts-node scripts/ensure_proxy_addresses.ts
 
 # Make sure we only use allowed licenses for dependencies
 check-licenses:
@@ -97,3 +103,7 @@ prerelease:
 	npm version prerelease
 	$(MAKE) update-bindings
 	git add ./rust_bindings && git commit --amend --no-edit
+
+# Get the size of the contracts
+get-contracts-sized: 
+	forge build --sizes

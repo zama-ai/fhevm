@@ -14,8 +14,8 @@ printf "> make check-selectors\n\n"
 make check-selectors
 
 # Lints the crate's code.
-printf "> cd rust_bindings && cargo clippy -- -D warnings && cd ..\n\n"
-cd rust_bindings && cargo clippy -- -D warnings && cd ..
+printf "> make lint-bindings\n\n"
+make lint-bindings
 
 # Check license compliance
 printf "> make check-licenses\n\n"
