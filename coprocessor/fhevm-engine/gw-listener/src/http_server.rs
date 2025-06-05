@@ -8,8 +8,8 @@ use axum::{
     routing::get,
     Router,
 };
-use tokio::net::TcpListener;
 use serde::Serialize;
+use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -19,6 +19,7 @@ use alloy::{network::Ethereum, providers::Provider};
 
 #[derive(Serialize)]
 struct HealthResponse {
+    status_code: String,
     status: String,
     database_connected: bool,
     blockchain_connected: bool,
@@ -28,7 +29,12 @@ struct HealthResponse {
 impl From<HealthStatus> for HealthResponse {
     fn from(status: HealthStatus) -> Self {
         Self {
-            status: if status.healthy { "healthy".to_string() } else { "unhealthy".to_string() },
+            status_code: if status.healthy { "200" } else { "503" }.to_string(),
+            status: if status.healthy {
+                "healthy".to_string()
+            } else {
+                "unhealthy".to_string()
+            },
             database_connected: status.database_connected,
             blockchain_connected: status.blockchain_connected,
             details: status.details,
@@ -43,7 +49,11 @@ pub struct HttpServer<P: Provider<Ethereum> + Clone + Send + Sync + 'static> {
 }
 
 impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
-    pub fn new(listener: Arc<GatewayListener<P>>, port: u16, cancel_token: CancellationToken) -> Self {
+    pub fn new(
+        listener: Arc<GatewayListener<P>>,
+        port: u16,
+        cancel_token: CancellationToken,
+    ) -> Self {
         Self {
             listener,
             port,
@@ -67,10 +77,8 @@ impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
         };
 
         let listener = TcpListener::bind(addr).await?;
-        let server = axum::serve(
-            listener,
-            app.into_make_service()
-        ).with_graceful_shutdown(shutdown);
+        let server =
+            axum::serve(listener, app.into_make_service()).with_graceful_shutdown(shutdown);
 
         if let Err(err) = server.await {
             error!("HTTP server error: {}", err);
@@ -81,19 +89,29 @@ impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
     }
 }
 
-// Health handler always returns 200 OK but includes accurate health status in the response body
+// Health handler returns appropriate HTTP status code based on health
 async fn health_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>(
     State(listener): State<Arc<GatewayListener<P>>>,
 ) -> impl IntoResponse {
-    // Always return 200 OK with health status in JSON body
     let status = listener.health_check().await;
-    (StatusCode::OK, Json(HealthResponse::from(status)))
+    let http_status = if status.healthy {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    // Return HTTP status code that matches the health status
+    (http_status, Json(HealthResponse::from(status)))
 }
 
-// Liveness handler continues to serve as a lightweight ping endpoint
 async fn liveness_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>(
     State(_listener): State<Arc<GatewayListener<P>>>,
 ) -> impl IntoResponse {
-    // Basic liveness check doesn't need to check database/blockchain
-    (StatusCode::OK, Json(serde_json::json!({"status": "alive"})))
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status_code": "200",
+            "status": "alive"
+        })),
+    )
 }
