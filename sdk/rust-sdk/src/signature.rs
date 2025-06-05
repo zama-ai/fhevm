@@ -128,6 +128,7 @@ impl Eip712Result {
 }
 
 /// EIP-712 builder for creating typed data structures
+/// The struct parameters are persistent across all requests
 pub struct Eip712Builder {
     gateway_chain_id: u64,
     verifying_contract: Address,
@@ -300,7 +301,7 @@ impl Eip712Builder {
                     "contractsChainId": self.contracts_chain_id.to_string(),
                     "startTimestamp": start_timestamp.to_string(),
                     "durationDays": duration_days.to_string(),
-                    "delegatedAccount": delegated.to_string(),  // Use Display trait
+                    "delegatedAccount": delegated.to_string(),
                 },
             })
         } else {
@@ -364,8 +365,6 @@ pub fn generate_keypair() -> Result<Keypair> {
 /// Sign an EIP-712 hash with a private key
 ///
 /// Signs the provided hash using ECDSA with the given private key
-/// This function is used to test compatiblity with previous js
-/// version
 pub fn sign_eip712_hash(hash: B256, private_key: &str) -> Result<Bytes> {
     use alloy::signers::{Signer, local::PrivateKeySigner};
 
@@ -688,7 +687,7 @@ mod tests {
         assert_eq!(typed_data["domain"]["version"].as_str().unwrap(), "1");
         assert_eq!(typed_data["domain"]["chainId"].as_u64().unwrap(), 54321);
 
-        // For addresses, verify they match our input (checksum might differ between implementations)
+        // For addresses, verify they match our input
         let actual_verifying_contract = typed_data["domain"]["verifyingContract"].as_str().unwrap();
         assert_eq!(
             actual_verifying_contract.to_lowercase(),
