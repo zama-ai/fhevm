@@ -28,19 +28,19 @@ impl PublicDecryptRequestJson {
 }
 
 /// Represents the response from the '/input-proof' endpoint.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PublicDecryptResponseJson {
     pub response: Vec<PublicDecryptResponsePayloadJson>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct PublicDecryptResponsePayloadJson {
     pub decrypted_value: Bytes,
     pub signatures: Vec<Bytes>,
 }
 
 /// Represents the error response from the '/input-proof' endpoint.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct PublicDecryptErrorResponseJson {
     pub message: String,
 }
@@ -144,24 +144,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
                         info!("Received public decrypt response event");
                         info!("Response event type {:?}", event.data);
                         match event.data {
-                            RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
-                                decrypt_response,
-                            }) => match PublicDecryptResponseJson::try_from(decrypt_response) {
-                                Ok(response_json) => {
-                                    info!("Sending success reponse to public");
-                                    (StatusCode::OK, Json(response_json)).into_response()
-                                }
-                                Err(error) => {
-                                    info!(
-                                        "sending error reponse to public as response event cannot be decoded: {}",
-                                        error
-                                    );
-                                    let error_response = PublicDecryptErrorResponseJson {
-                                        message: "request could not be completed".to_string(),
-                                    };
-                                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
-                                }
-                            },
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
+                decrypt_response,
+            }) => {
+                let response_json = PublicDecryptResponseJson::from(decrypt_response);
+                info!("Sending success reponse to public");
+                (StatusCode::OK, Json(response_json)).into_response()
+            },
                             _ => {
                                 let error_response = PublicDecryptErrorResponseJson {
                                     message: "unexpected error".to_string(),

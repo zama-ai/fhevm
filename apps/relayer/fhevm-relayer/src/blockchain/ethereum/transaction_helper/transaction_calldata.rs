@@ -227,8 +227,8 @@ impl ComputeCalldata {
         for sns_ct_material in req.snsCtMaterials.clone() {
             let handle: [u8; 32] = sns_ct_material.ctHandle.into();
 
+            // TODO: figure out what this is ???
             // Using a hardcoded value for now
-
             let clear_text = match get_clear_text("hardhat/contracts/sql.db", &handle) {
                 Ok(Some(text)) => text,
                 // TODO: remove?

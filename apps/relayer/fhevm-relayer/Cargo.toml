@@ -40,9 +40,12 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-chrome = { version = "0.7.2", optional = true }
 clap = { version = "4", features = ["derive"] }
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-sqs = { version = "1" }
 
 
 [dev-dependencies]
 ctor = { version = "0.4" }
 alloy-provider = { version = "1.0.3", features = ["anvil-node"] }
 nix = { version = "0.30.1", features = ["process", "signal"] }
+aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }

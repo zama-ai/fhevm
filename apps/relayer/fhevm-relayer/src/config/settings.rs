@@ -41,6 +41,7 @@ impl NetworkConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct NetworksConfig {
+    // TODO: should be a list of networks unless we assume 1:1 between relayer and fhevm
     pub fhevm: NetworkConfig,
     pub gateway: Option<NetworkConfig>,
 }
@@ -171,9 +172,17 @@ pub struct Settings {
     /// Logging configuration
     pub log: LogConfig,
     /// HTTP endpoint address
-    pub http_endpoint: String,
+    pub http_endpoint: Option<String>,
     /// Hard-coded data (from config for keyurl)
     pub keyurl: KeyUrl,
+    /// SQS endpoints
+    pub sqs_endpoint: Option<SQSEndpointConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SQSEndpointConfig {
+    pub inbound_queue: String,
+    pub outbound_queue: String,
 }
 
 // Error type for application-specific configuration errors

@@ -136,6 +136,9 @@ pub mod test_utils {
                 Command::new("docker")
                     .current_dir(&project_root)
                     .env("MNEMONIC", mnemonic)
+                    .env("AWS_ACCESS_KEY_ID", "test")
+                    .env("AWS_SECRET_ACCESS_KEY", "test")
+                    .env("AWS_DEFAULT_REGION", "eu-central-1")
                     .args([
                         "compose",
                         "-f",
@@ -230,6 +233,18 @@ pub mod test_utils {
                         "RUST_LOG",
                         env::var("RUST_LOG").unwrap_or("info,fhevm_relayer=debug".to_string()),
                     )
+                    .env(
+                        "APP_SQS_ENDPOINT__INBOUND_QUEUE",
+                        "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/relayer-queue",
+                    )
+                    .env(
+                        "APP_SQS_ENDPOINT__OUTBOUND_QUEUE",
+                        "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/orchestrator-queue",
+                    )
+                    .env("AWS_ACCESS_KEY_ID", "test")
+                    .env("AWS_SECRET_ACCESS_KEY", "test")
+                    .env("AWS_DEFAULT_REGION", "eu-central-1")
+                    .env("AWS_ENDPOINT_URL", "http://sqs.eu-central-1.localhost.localstack.cloud:4566")
                     .current_dir(&project_root)
                     .spawn()
                     .expect("Failed to start relayer-mock"),
@@ -261,6 +276,8 @@ pub mod test_utils {
         // Shutdown docker compose
         let project_root = env::var("CARGO_MANIFEST_DIR")
             .expect("CARGO_MANIFEST_DIR environment variable not set");
+
+        // TODO: remove condition
         let docker_compose_command = Some(
             Command::new("docker")
                 .current_dir(&project_root)

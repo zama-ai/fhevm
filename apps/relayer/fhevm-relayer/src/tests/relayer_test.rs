@@ -6,6 +6,79 @@ mod tests {
     use reqwest;
     use serde_json::json;
 
+    use crate::sqs::sqs_listener::{send_message_to_sqs_queue, wait_for_response_with_id};
+    use aws_credential_types::Credentials;
+
+    // Add method to await response from sqs for given id
+    //
+
+    // TODO: add tests going through SQS
+    #[tokio::test]
+    async fn test_input_url_sqs_endpoint() {
+        let inbound_queue =
+            "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/relayer-queue"
+                .to_string();
+        let outbound_queue = "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/orchestrator-queue".to_string();
+        let aws_access_key_id = "test";
+        let aws_secret_access_key = "test";
+        let aws_region = "eu-central-1";
+        let aws_endpoint_url = "http://sqs.eu-central-1.localhost.localstack.cloud:4566";
+        let credentials = Credentials::from_keys(aws_access_key_id, aws_secret_access_key, None);
+
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(aws_region)
+            .endpoint_url(aws_endpoint_url)
+            .credentials_provider(credentials)
+            .load()
+            .await;
+        let sqs_client = aws_sdk_sqs::Client::new(&config);
+
+        // TODO: fix this payload
+        let request_id = uuid::Uuid::new_v4();
+        let message = &json!({
+            "payload":{
+            "contractChainId": "123456",
+            "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
+            "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+            "ciphertextWithInputVerification": "abcdef",
+            },
+            "request_id": request_id.to_string(),
+            "type": "relayer:input-registration:input-registration-request",
+        });
+
+        // Post message
+        match send_message_to_sqs_queue(&sqs_client, &inbound_queue, &message).await {
+            Ok(_) => println!("success sending response back to sqs: {outbound_queue}"),
+            Err(error) => {
+                panic!("Couldn't send request to sqs: {outbound_queue} with error: {error:?}");
+            }
+        };
+
+        // TODO: await response
+        let timeout = tokio::time::Duration::from_secs(6);
+        let response = tokio::time::timeout(
+            timeout,
+            wait_for_response_with_id(&sqs_client, request_id, outbound_queue),
+        )
+        .await;
+        match response {
+            Err(_) => {
+                panic!(
+                    "Relayer didn't respond through SQS in less than {:?}",
+                    timeout
+                );
+            }
+            Ok(value) => match value {
+                Err(error) => {
+                    panic!("Relayer didn't respond correctly {:?}", error);
+                }
+                Ok(sub_value) => {
+                    assert_eq!(sub_value.request_id, request_id);
+                }
+            },
+        }
+    }
+
     // TODO: split in multiple tests
     #[tokio::test]
     async fn test_input_url_endpoint_on_chain_rejection() {
@@ -33,7 +106,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_input_url_endpoint() {
+    async fn test_input_url_http_endpoint() {
         let before_time = tokio::time::Instant::now();
         let client = reqwest::Client::new();
         let res = client

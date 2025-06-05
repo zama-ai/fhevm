@@ -12,7 +12,7 @@ use tokio::sync::oneshot;
 use tracing::{info, instrument, span, Level};
 
 /// Represents the payload coming into the endpoint for input proof.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 #[allow(non_snake_case)]
 pub struct InputProofRequestJson {
     pub contractChainId: String, // Hex encoded uint256 string with 0x prefix.
@@ -33,19 +33,19 @@ impl InputProofRequestJson {
 }
 
 /// Represents the response from the endpoint for input proof.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InputProofResponseJson {
     pub response: InputProofResponsePayloadJson,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InputProofResponsePayloadJson {
     pub handles: Vec<String>, // Ordered List of hex encoded handles with 0x prefix.
     pub signatures: Vec<String>, // Attestation signatures for Input verification for the ordered list of handles.
 }
 
 /// Represents the error response from the endpoint for input proof.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct InputProofErrorResponseJson {
     pub message: String,
 }
@@ -116,7 +116,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         let request_data: InputProofRequest = match payload.try_into() {
             Ok(event_data) => event_data,
             Err(message) => {
-                let error_response = InputProofErrorResponseJson { message };
+                let error_response = InputProofErrorResponseJson {
+                    message: message.to_string(),
+                };
                 return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
             }
         };
@@ -150,21 +152,10 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
                             RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
                                 input_proof_response,
                             }) => {
-                                match InputProofResponseJson::try_from(input_proof_response) {
-                                    Ok(response_json) => {
-                                        info!("Sending success response to user");
-                                        (StatusCode::OK, Json(response_json)).into_response()
-                                    }
-                                    Err(_) => {
-                                        info!("sending error reponse to user as response event cannot be decoded");
-                                        let error_response = InputProofErrorResponseJson {
-                                            message: "request could not be completed 2".to_string(),
-                                        };
-                                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
-                                            .into_response()
-                                    }
-                                }
-                            }
+                                let response_json = InputProofResponseJson::from(input_proof_response);
+                                info!("Sending success reponse to user");
+                                (StatusCode::OK, Json(response_json)).into_response()
+                            },
                             _ => {
                                 info!(
                                     "sending error reponse to user as response event is not expected type"

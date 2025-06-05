@@ -18,6 +18,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 use uuid::Uuid;
 
+// TODO: add test to make sure that there is no id conflict
+
 #[repr(u8)]
 #[derive(Debug)]
 /// Event Ids corresponding the events of GenericEvent type.
@@ -271,6 +273,12 @@ impl GenericEventData {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PublicDecryptEventData {
+    /// TODO: support this one
+    /// Event representing a public decryption request for ciphertexts from user.
+    // ReqRcvdFromUser {
+    //     decrypt_request: PublicDecryptRequest,
+    // },
+
     /// Event representing a public decryption request for ciphertexts on fhevm.
     ReqRcvdFromFhevm {
         decrypt_request: PublicDecryptRequest,
@@ -450,10 +458,8 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
     }
 }
 
-impl TryFrom<UserDecryptResponse> for UserDecryptResponseJson {
-    type Error = String;
-
-    fn try_from(response: UserDecryptResponse) -> Result<Self, Self::Error> {
+impl From<UserDecryptResponse> for UserDecryptResponseJson {
+    fn from(response: UserDecryptResponse) -> Self {
         let mut json_response: Vec<UserDecryptResponsePayloadJson> = Vec::new();
 
         for (share, signature) in response
@@ -467,9 +473,9 @@ impl TryFrom<UserDecryptResponse> for UserDecryptResponseJson {
             });
         }
 
-        Ok(UserDecryptResponseJson {
+        UserDecryptResponseJson {
             response: json_response,
-        })
+        }
     }
 }
 
@@ -498,16 +504,14 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
     }
 }
 
-impl TryFrom<PublicDecryptResponse> for PublicDecryptResponseJson {
-    type Error = String;
-
-    fn try_from(response: PublicDecryptResponse) -> Result<Self, Self::Error> {
-        Ok(PublicDecryptResponseJson {
+impl From<PublicDecryptResponse> for PublicDecryptResponseJson {
+    fn from(response: PublicDecryptResponse) -> Self {
+        PublicDecryptResponseJson {
             response: vec![PublicDecryptResponsePayloadJson {
                 decrypted_value: response.decrypted_value,
                 signatures: response.signatures,
             }],
-        })
+        }
     }
 }
 
@@ -585,23 +589,24 @@ impl InputProofResponse {
 }
 
 impl TryFrom<InputProofRequestJson> for InputProofRequest {
-    type Error = String;
+    type Error = anyhow::Error;
 
     fn try_from(json: InputProofRequestJson) -> Result<Self, Self::Error> {
         info!("json.contractChainId: {:?}", json.contractChainId);
         let contract_chain_id = parse_chain_id(&json.contractChainId)
-            .map_err(|e| format!("Error parsing contractChainId: {:?}", e))?;
+            .map_err(|e| anyhow::anyhow!("Error parsing contractChainId: {:?}", e))?;
         info!("contract_chain_id decoded: {:?}", contract_chain_id);
 
         let contract_address = Address::from_str(&json.contractAddress)
-            .map_err(|e| format!("Error parsing contractAddress: {:?}", e))?;
+            .map_err(|e| anyhow::anyhow!("Error parsing contractAddress: {:?}", e))?;
 
         let user_address = Address::from_str(&json.userAddress)
-            .map_err(|e| format!("Error parsing userAddress: {:?}", e))?;
+            .map_err(|e| anyhow::anyhow!("Error parsing userAddress: {:?}", e))?;
 
         // Should be hex string without a "0x" prefix.
-        let proof_bytes = hex::decode(&json.ciphertextWithInputVerification)
-            .map_err(|e| format!("Error decoding ciphertextWithInputVerification: {}", e))?;
+        let proof_bytes = hex::decode(&json.ciphertextWithInputVerification).map_err(|e| {
+            anyhow::anyhow!("Error decoding ciphertextWithInputVerification: {}", e)
+        })?;
         let ciphetext_with_zk_proof = Bytes::from(proof_bytes);
 
         Ok(InputProofRequest {
@@ -629,11 +634,9 @@ fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
     }
 }
 
-impl TryFrom<InputProofResponse> for InputProofResponseJson {
-    type Error = String;
-
-    fn try_from(response: InputProofResponse) -> Result<Self, Self::Error> {
-        Ok(InputProofResponseJson {
+impl From<InputProofResponse> for InputProofResponseJson {
+    fn from(response: InputProofResponse) -> Self {
+        InputProofResponseJson {
             response: InputProofResponsePayloadJson {
                 handles: response
                     .handles
@@ -646,7 +649,7 @@ impl TryFrom<InputProofResponse> for InputProofResponseJson {
                     .map(|sig| format!("{:#x}", sig))
                     .collect(),
             },
-        })
+        }
     }
 }
 

@@ -77,6 +77,7 @@ use fhevm_relayer::{
         traits::{EventHandler, HandlerRegistry, HookRegistry},
         Orchestrator, TokioEventDispatcher,
     },
+    sqs::sqs_listener::run_sqs_server,
     store::{key_value_db::InMemoryKVStore, EventStore},
     transaction::{TransactionService, TxConfig},
 };
@@ -115,8 +116,9 @@ async fn main() -> eyre::Result<()> {
                 .validate_addresses()
                 .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
 
+            // TODO: change this to accomodate generic signers
+            // as it should already be supported in the lib
             let mut fhevm_signer = parse_private_key(&settings.transaction.private_key_fhevm_env)?;
-
             fhevm_signer.set_chain_id(Some(settings.networks.fhevm.chain_id));
 
             // TODO: prepare for multi-chain support
@@ -138,7 +140,6 @@ async fn main() -> eyre::Result<()> {
 
             let mut gateway_signer =
                 parse_private_key(&settings.transaction.private_key_gateway_env)?;
-
             gateway_signer.set_chain_id(Some(gateway_settings.chain_id));
 
             // Prepare tx service for gateway
@@ -312,6 +313,7 @@ async fn main() -> eyre::Result<()> {
             let filter_fhevm =
                 ContractAndTopicsFilter::new(vec![decryption_oracle_address], vec![]);
             let subscription_fhevm = fhevm.new_subscription(filter_fhevm, None).await?;
+            info!("Starting Relayer fhevm Listener");
             task_set.spawn(ethereum_listener(
                 subscription_fhevm,
                 fhevm_event_log_converter,
@@ -334,21 +336,35 @@ async fn main() -> eyre::Result<()> {
                 vec![],
             );
             let subscription_gateway = gateway.new_subscription(filter_gateway, None).await?;
+            info!("Starting Relayer Gateway Listener");
             task_set.spawn(ethereum_listener(
                 subscription_gateway,
                 gateway_event_log_converter,
                 Arc::clone(&orchestrator),
             ));
 
-            let addr: SocketAddr = settings
-                .http_endpoint
-                .parse()
-                .expect("Invalid http-endpoint address");
-            task_set.spawn(run_http_server(
-                addr,
-                Arc::clone(&orchestrator),
-                settings.keyurl,
-            ));
+            // HTTP endpoint
+            if let Some(http_config) = settings.http_endpoint {
+                info!("Starting Relayer HTTP server");
+                let addr: SocketAddr = http_config.parse().expect("Invalid http-endpoint address");
+                task_set.spawn(run_http_server(
+                    addr,
+                    Arc::clone(&orchestrator),
+                    settings.keyurl,
+                ));
+            };
+
+            // SQS endpoint
+            if let Some(sqs_config) = settings.sqs_endpoint {
+                // Start sqs listener
+                info!("Starting Relayer SQS server");
+                task_set.spawn(run_sqs_server(
+                    sqs_config.inbound_queue,
+                    sqs_config.outbound_queue,
+                    Arc::clone(&orchestrator),
+                ));
+            }
+
             drop(setup_span);
 
             // === Wait for ctrl + c signal to stop the application

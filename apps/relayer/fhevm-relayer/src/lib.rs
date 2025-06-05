@@ -5,6 +5,7 @@ pub mod core;
 pub mod gateway_processors_mock;
 pub mod http;
 pub mod orchestrator;
+pub mod sqs;
 pub mod store;
 pub mod tests;
 pub mod transaction;

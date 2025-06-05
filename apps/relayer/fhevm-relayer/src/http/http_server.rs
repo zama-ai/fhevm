@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tracing::info;
 
 pub async fn run_http_server<D>(
-    addr: SocketAddr,
+    http_endpoint: SocketAddr,
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     key_url: KeyUrl,
 ) where
@@ -70,11 +70,10 @@ pub async fn run_http_server<D>(
                 }),
             );
 
-    // Define the socket address for the server to listen on.
-    println!("Server listening on http://{}", addr);
+    println!("Server listening on http://{}", http_endpoint);
 
     // Start the server with hyper underneath.
-    axum::Server::bind(&addr)
+    axum::Server::bind(&http_endpoint)
         .serve(app.into_make_service())
         .await
         .unwrap();

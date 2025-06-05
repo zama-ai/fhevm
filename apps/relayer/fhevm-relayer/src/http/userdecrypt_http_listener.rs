@@ -59,7 +59,7 @@ impl UserDecryptRequestJson {
 }
 
 /// Represents the response from the endpoint for user decrypt.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UserDecryptResponseJson {
     pub response: Vec<UserDecryptResponsePayloadJson>,
 }
@@ -71,7 +71,7 @@ pub struct UserDecryptResponsePayloadJson {
 }
 
 /// Represents the error response from the endpoint for user decrypt.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct UserDecryptErrorResponseJson {
     pub message: String,
 }
@@ -180,21 +180,10 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
                         match event.data {
                             RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
                                 decrypt_response,
-                            }) => match UserDecryptResponseJson::try_from(decrypt_response) {
-                                Ok(response_json) => {
-                                    info!("Sending success reponse to user");
-                                    (StatusCode::OK, Json(response_json)).into_response()
-                                }
-                                Err(error) => {
-                                    info!(
-                                        "sending error reponse to user as response event cannot be decoded: {}",
-                                        error
-                                    );
-                                    let error_response = UserDecryptErrorResponseJson {
-                                        message: "request could not be completed".to_string(),
-                                    };
-                                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
-                                }
+                            }) => {
+                                let response_json = UserDecryptResponseJson::from(decrypt_response);
+                                info!("Sending success reponse to user");
+                                (StatusCode::OK, Json(response_json)).into_response()
                             },
                             _ => {
                                 let error_response = UserDecryptErrorResponseJson {

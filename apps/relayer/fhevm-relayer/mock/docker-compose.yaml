@@ -1,8 +1,10 @@
 # TODO: make sure that all of this can co-exist with a locally running fhevm stack
 # mainly avoid using the same ports and container names
 # TODO: shouldn't we also deploy httpz contracts (decryption oracle, ...)
+# TODO: httpz -> fhevm
 name: anvil
 services:
+  # fhevm bc
   anvil-httpz:
     container_name: anvil-httpz-mock
     image: ghcr.io/foundry-rs/foundry:stable
@@ -27,6 +29,7 @@ services:
     ports:
       - "8756:8756"
 
+  # Gateway bc
   anvil-gateway:
     container_name: anvil-gateway-mock
     image: ghcr.io/foundry-rs/foundry:stable
@@ -51,7 +54,7 @@ services:
     ports:
       - "8757:8757"
 
-
+  # Deploy gateway mock smart contracts
   gateway-sc-deploy:
     container_name: fhevm-gateway-sc-deploy-mock
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:v0.7.0-rc0
@@ -62,3 +65,34 @@ services:
     depends_on:
       anvil-gateway:
         condition: service_started
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    restart: always
+    ports:
+      - "127.0.0.1:4566:4566" # LocalStack Gateway
+      - "127.0.0.1:4510-4559:4510-4559" # external services port range
+    environment:
+      - SERVICES=sqs,iam,sts
+      - DEBUG=${DEBUG:-0}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-eu-central-1}
+    volumes:
+      - "localstack:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      # Here we mount our setup file so it will be executed when
+      # the container start
+      - ./localstack-setup.sh:/etc/localstack/init/ready.d/script.sh
+    healthcheck:
+      test: [ "CMD", "test", "-f", "/tmp/done" ]
+      interval: 5s
+      timeout: 1s
+      retries: 240
+      start_period: 60s
+
+
+volumes:
+  localstack:
+
