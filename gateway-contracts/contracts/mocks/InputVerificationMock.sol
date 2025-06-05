@@ -30,6 +30,7 @@ contract InputVerificationMock {
 
     function verifyProofResponse(uint256 zkProofId, bytes32[] calldata ctHandles, bytes calldata signature) external {
         bytes[] memory signatures = new bytes[](1);
+
         emit VerifyProofResponse(zkProofId, ctHandles, signatures);
     }
 
