@@ -389,7 +389,7 @@ impl FhevmSdk {
     /// # ];
     /// # let timestamp = 1640995200u64;
     /// #
-    /// let calldata = sdk.create_user_decrypt_builder()
+    /// let calldata = sdk.create_user_decrypt_request_builder()
     ///     .add_handles_from_bytes(&handles, &contracts)?
     ///     .user_address_from_str("0x742d35Cc6634C0...")?
     ///     .signature_from_hex("0x1234567890abc5678...")?
