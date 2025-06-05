@@ -47,7 +47,7 @@ data:
       if [[ -n "${configmap_value}" ]]; then
         echo "skipping: ${configmap_name} already contains ${name}:${configmap_value}"
       else
-          kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
+        kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
       fi
     }
     add_annotation_to_configmap() {
@@ -71,11 +71,13 @@ data:
     echo "creating kubernetes configmap for smart contract configuration outputs"
     create_configmap "${CONFIGMAP_NAME}"
 
+    {{- if .Values.scDeploy.skipIfVersionExists }}
     # Prevent smart contract deployment if already done for current version
     if [[ "$DEPLOYED_SMART_CONTRACTS_VERSION" == "{{ .Values.scDeploy.image.tag }}" ]]; then
       echo "contracts already deployed with version: ${DEPLOYED_SMART_CONTRACTS_VERSION}, aborting deployment" 1>&2
       exit 0
     fi
+    {{- end }}
 
     echo "executing deploy commands"
     {{- range .Values.scDeploy.deployCommands }}

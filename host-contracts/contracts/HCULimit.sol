@@ -228,14 +228,13 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param resultType Result type.
      * @param scalarByte Scalar byte.
      * @param lhs The left-hand side operand.
-     * @param rhs The right-hand side operand.
      * @param result Result.
      */
     function checkHCUForFheDiv(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
-        bytes32 rhs,
+        bytes32 /*rhs*/,
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
@@ -262,14 +261,13 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param resultType Result type.
      * @param scalarByte Scalar byte.
      * @param lhs The left-hand side operand.
-     * @param rhs The right-hand side operand.
      * @param result Result.
      */
     function checkHCUForFheRem(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
-        bytes32 rhs,
+        bytes32 /*rhs*/,
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
