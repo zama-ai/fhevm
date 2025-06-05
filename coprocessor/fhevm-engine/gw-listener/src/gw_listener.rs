@@ -8,7 +8,7 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::ConfigSettings;
+use crate::{ConfigSettings, HealthStatus};
 
 sol!(
     #[sol(rpc)]
@@ -196,5 +196,57 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         .execute(db_pool)
         .await?;
         Ok(())
+    }
+
+    /// Checks the health of the gateway listener's connections
+    pub async fn health_check(&self) -> HealthStatus {
+        let mut database_connected = false;
+        let mut blockchain_connected = false;
+        let mut error_details = Vec::new();
+
+        // Check database connection
+        let db_pool_result = PgPoolOptions::new()
+            .max_connections(self.conf.database_pool_size)
+            .connect(&self.conf.database_url)
+            .await;
+
+        match db_pool_result {
+            Ok(pool) => {
+                // Simple query to verify connection is working
+                match sqlx::query("SELECT 1").execute(&pool).await {
+                    Ok(_) => {
+                        database_connected = true;
+                    }
+                    Err(e) => {
+                        error_details.push(format!("Database query error: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                error_details.push(format!("Database connection error: {}", e));
+            }
+        }
+
+        // Check blockchain connection
+        match self.provider.get_block_number().await {
+            Ok(block_num) => {
+                blockchain_connected = true;
+                info!("Blockchain connection healthy, current block: {}", block_num);
+            }
+            Err(e) => {
+                error_details.push(format!("Blockchain connection error: {}", e));
+            }
+        }
+
+        // Determine overall health status
+        if database_connected && blockchain_connected {
+            HealthStatus::healthy()
+        } else {
+            HealthStatus::unhealthy(
+                database_connected,
+                blockchain_connected,
+                error_details.join("; "),
+            )
+        }
     }
 }
