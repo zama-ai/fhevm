@@ -30,8 +30,8 @@ They serve different purposes, which are described below.
 
 ### KMS Node
 
-A KMS node is part of a set of multiple nodes. Often called the KMS, this service refers to a Multi-Party Computation
-(MPC) protocol that manages Fully Homomorphic Encryption (FHE) keys in a decentralized manner. It is used to :
+A KMS node is part of a set of multiple nodes. Often called the KMS, it refers to a Multi-Party Computation (MPC)
+protocol that manages Fully Homomorphic Encryption (FHE) keys in a decentralized manner. It is used to :
 
 - decrypt ciphertexts based on requests from the `Decryption` contract.
 - generate [KMS public materials](./kms_management.md#public-material-generation) based on requests from the
