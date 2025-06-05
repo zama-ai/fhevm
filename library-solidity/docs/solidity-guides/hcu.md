@@ -69,6 +69,7 @@ Maximum transaction HCU depth: 397000
 The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. If either HCU limit is exceeded, the transaction will revert.
 
 To resolve this, you must do one of the following:
+
 - Refactor your code to reduce the number of FHE operations in your transaction.
 - Split your FHE operations across multiple independent transactions.
 
