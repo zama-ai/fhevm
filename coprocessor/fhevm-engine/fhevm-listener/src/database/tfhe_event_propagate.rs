@@ -418,6 +418,18 @@ impl Database {
             AclContractEvents::Upgraded(upgraded) => {
                 println!("unhandled Acl::Upgraded event {:?}", upgraded);
             }
+            AclContractEvents::Paused(paused) => {
+                println!("unhandled Acl::Paused event {:?}", paused);
+            }
+            AclContractEvents::Unpaused(unpaused) => {
+                println!("unhandled Acl::Unpaused event {:?}", unpaused);
+            }
+            AclContractEvents::UpdatePauser(update_pauser) => {
+                println!(
+                    "unhandled Acl::UpdatePauser event {:?}",
+                    update_pauser
+                );
+            }
         }
 
         Ok(())
