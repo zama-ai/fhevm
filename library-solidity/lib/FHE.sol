@@ -4,28 +4,7 @@ pragma solidity ^0.8.24;
 import "./Impl.sol";
 import {FheType} from "./FheType.sol";
 
-type ebool is bytes32;
-type euint8 is bytes32;
-type euint16 is bytes32;
-type euint32 is bytes32;
-type euint64 is bytes32;
-type euint128 is bytes32;
-type euint256 is bytes32;
-type eaddress is bytes32;
-type ebytes64 is bytes32;
-type ebytes128 is bytes32;
-type ebytes256 is bytes32;
-type externalEbool is bytes32;
-type externalEuint8 is bytes32;
-type externalEuint16 is bytes32;
-type externalEuint32 is bytes32;
-type externalEuint64 is bytes32;
-type externalEuint128 is bytes32;
-type externalEuint256 is bytes32;
-type externalEaddress is bytes32;
-type externalEbytes64 is bytes32;
-type externalEbytes128 is bytes32;
-type externalEbytes256 is bytes32;
+import "encrypted-types/EncryptedTypes.sol";
 
 /**
  * @title IKMSVerifier
