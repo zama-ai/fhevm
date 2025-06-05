@@ -60,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     let cancel_token = CancellationToken::new();
-    let gw_listener = GatewayListener::new(
+    let mut gw_listener = GatewayListener::new(
         conf.input_verification_address,
         ConfigSettings {
             database_url,
@@ -72,6 +72,7 @@ async fn main() -> anyhow::Result<()> {
         },
         cancel_token.clone(),
         provider,
+        gw_listener::gw_listener::ProviderBuilderImpl,
     );
 
     // Run gw_listener thread

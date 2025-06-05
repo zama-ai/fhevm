@@ -1,7 +1,16 @@
 use std::time::Duration;
 
 use alloy::{
-    eips::BlockNumberOrTag, network::Ethereum, primitives::Address, providers::Provider, sol,
+    eips::BlockNumberOrTag,
+    network::Ethereum,
+    primitives::Address,
+    providers::Provider,
+    providers::{
+        fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
+        Identity, ProviderBuilder, RootProvider, WsConnect,
+    },
+    sol,
+    transports::http::reqwest::Url,
 };
 use futures_util::StreamExt;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
@@ -16,29 +25,78 @@ sol!(
     "artifacts/InputVerification.sol/InputVerification.json"
 );
 
-pub struct GatewayListener<P: Provider<Ethereum> + Clone + 'static> {
+pub trait Builder<P: Provider<Ethereum> + Clone + 'static> {
+    fn create_provider(
+        &self,
+        gw_url: Url,
+    ) -> impl std::future::Future<Output = anyhow::Result<P>> + Send;
+}
+
+type DefaultProvider = FillProvider<
+    JoinFill<
+        Identity,
+        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+    >,
+    RootProvider,
+>;
+
+#[derive(Debug, Clone, Default)]
+pub struct ProviderBuilderImpl;
+
+impl Builder<DefaultProvider> for ProviderBuilderImpl {
+    async fn create_provider(&self, gw_url: Url) -> anyhow::Result<DefaultProvider> {
+        let provider = ProviderBuilder::new().on_ws(WsConnect::new(gw_url)).await?;
+        Ok(provider)
+    }
+}
+
+pub struct GatewayListener<P: Provider<Ethereum> + Clone + 'static, B: Builder<P>> {
     input_verification_address: Address,
     conf: ConfigSettings,
     cancel_token: CancellationToken,
-    provider: P,
+    provider: Option<P>,
+    builder: B,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
+impl<P: Provider<Ethereum> + Clone + 'static, B: Builder<P>> GatewayListener<P, B> {
     pub fn new(
         input_verification_address: Address,
         conf: ConfigSettings,
         cancel_token: CancellationToken,
         provider: P,
+        builder: B,
     ) -> Self {
         GatewayListener {
             input_verification_address,
             conf,
             cancel_token,
-            provider,
+            provider: Some(provider),
+            builder,
         }
     }
 
-    pub async fn run(&self) -> anyhow::Result<()> {
+    pub async fn try_recreate_provider(&mut self) {
+        info!(
+            "Attempting to create a provider for gw_url: {} ...",
+            self.conf.gw_url
+        );
+
+        // If the provider creation is successful, replace the existing provider.
+        // If it fails, log the error and continue retrying.
+        match self.builder.create_provider(self.conf.gw_url.clone()).await {
+            Ok(provider) => {
+                self.provider.replace(provider);
+                info!("Provider created successfully");
+            }
+            Err(e) => {
+                // Continue retrying
+                self.provider.take();
+                error!("Failed to recreate provider: {:?}", e);
+            }
+        }
+    }
+
+    pub async fn run(&mut self) -> anyhow::Result<()> {
         info!(
             "Starting Gateway Listener with: {:?}, InputVerification: {}",
             self.conf, self.input_verification_address
@@ -63,6 +121,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                         e, sleep_duration
                     );
                     self.sleep_with_backoff(&mut sleep_duration).await;
+
+                    // This will attempt to recreate the provider with the same configuration.
+                    // If the attempt times out, it will log the error and continue retrying
+                    // after sleep_with_backoff.
+
+                    self.try_recreate_provider().await;
                 }
             }
         }
@@ -74,8 +138,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         db_pool: &Pool<Postgres>,
         sleep_duration: &mut u64,
     ) -> anyhow::Result<()> {
-        let input_verification =
-            InputVerification::new(self.input_verification_address, &self.provider);
+        let provider = self
+            .provider
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Provider is not initialized"))?;
+
+        let input_verification = InputVerification::new(self.input_verification_address, provider);
         let mut from_block = self.get_last_block_num(db_pool).await?;
         let filter = input_verification
             .VerifyProofRequest_filter()
