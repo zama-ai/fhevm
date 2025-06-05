@@ -1,6 +1,6 @@
 FROM cgr.dev/chainguard/glibc-dynamic:latest-dev AS builder
 
-ARG RUST_IMAGE_VERSION=1.85.0
+ARG RUST_IMAGE_VERSION=1.87.0
 
 USER root
 
