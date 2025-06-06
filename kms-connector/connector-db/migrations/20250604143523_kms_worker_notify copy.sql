@@ -2,11 +2,11 @@
 --             Decryption contract section            --
 --------------------------------------------------------
 
--- Create functions to notify listeners when decryption requests are received
+-- Create functions to notify KmsWorker when decryption requests are received
 CREATE OR REPLACE FUNCTION notify_public_decryption_request()
     RETURNS trigger AS $$
 BEGIN
-    NOTIFY public_decryption_available;
+    NOTIFY public_decryption_request_available;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -14,7 +14,7 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION notify_user_decryption_request()
     RETURNS trigger AS $$
 BEGIN
-    NOTIFY user_decryption_available;
+    NOTIFY user_decryption_request_available;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -36,7 +36,7 @@ CREATE TRIGGER trigger_from_user_decryption_requests_insertions
 --           KmsManagement contract section           --
 --------------------------------------------------------
 
--- Create functions to notify listeners when kms management requests are received
+-- Create functions to notify kms-workers when kms management requests are received
 CREATE OR REPLACE FUNCTION notify_preprocess_keygen_request()
     RETURNS trigger AS $$
 BEGIN
