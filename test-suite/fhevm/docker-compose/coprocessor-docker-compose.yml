@@ -66,15 +66,26 @@ services:
 
   gw-listener:
     container_name: fhevm-gw-listener
-    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:latest
+    # build:
+    #   context: ../../..
+    #   dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/liveness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
       - gw_listener
       - --database-url=${DATABASE_URL}
+      - --database-pool-size=16
+      - --verify-proof-req-database-channel="event_zkpok_new_work"
       - --gw-url=${GATEWAY_WS_URL}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
-      - --verify-proof-req-database-channel="event_zkpok_new_work"
+      - --error-sleep-initial-secs=1
+      - --error-sleep-max-secs=10
     depends_on:
       db:
         condition: service_healthy

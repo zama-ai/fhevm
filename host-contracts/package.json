@@ -1,6 +1,6 @@
 {
   "name": "@fhevm/core-contracts",
-  "version": "0.7.0-9",
+  "version": "0.7.0-10",
   "description": "fhevm backend contracts",
   "repository": {
     "type": "git",
@@ -24,6 +24,7 @@
   "author": "",
   "license": "BSD-3-Clause",
   "devDependencies": {
+    "@fhevm/sdk": "^0.7.0-21",
     "@nomicfoundation/hardhat-toolbox": "5.0.0",
     "@nomicfoundation/solidity-analyzer": "0.1.2",
     "@openzeppelin/contracts-upgradeable": "5.1.0",
@@ -37,7 +38,6 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "extra-bigint": "^1.2.0",
-    "@fhevm/sdk": "^0.7.0-21",
     "hardhat": "2.22.18",
     "hardhat-deploy": "^0.11.29",
     "hardhat-ignore-warnings": "^0.2.11",
@@ -51,5 +51,8 @@
   "optionalDependencies": {
     "solidity-comments-darwin-arm64": "0.1.1",
     "solidity-comments-linux-x64-gnu": "0.1.1"
+  },
+  "dependencies": {
+    "encrypted-types": "^0.0.2"
   }
 }
