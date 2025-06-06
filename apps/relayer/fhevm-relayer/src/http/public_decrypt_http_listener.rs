@@ -93,16 +93,32 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         info!("Validated and assigned request id: {}", request_id);
 
         // Register once handlers for receiving the decryption response from the gateway
-        let (handler, rx): (OnceHandler<RelayerEvent>, oneshot::Receiver<RelayerEvent>) =
-            OnceHandler::new();
-        let handler = Arc::new(handler);
+        let (response_handler, response_rx): (
+            OnceHandler<RelayerEvent>,
+            oneshot::Receiver<RelayerEvent>,
+        ) = OnceHandler::new();
+        let response_handler = Arc::new(response_handler);
 
         self.orchestrator.register_once_handler(
             PublicDecryptEventId::RespRcvdFromGw.into(),
             request_id,
-            handler,
+            response_handler,
         );
-        info!("Registered once handler");
+        info!("Registered once handler for response");
+
+        // Register once handler for error/failure event
+        let (error_handler, error_rx): (
+            OnceHandler<RelayerEvent>,
+            oneshot::Receiver<RelayerEvent>,
+        ) = OnceHandler::new();
+        let error_handler = Arc::new(error_handler);
+
+        self.orchestrator.register_once_handler(
+            PublicDecryptEventId::Failed.into(),
+            request_id,
+            error_handler,
+        );
+        info!("Registered once handler for error");
 
         let request_data = PublicDecryptEventData::ReqRcvdFromFhevm {
             decrypt_request: public_decrypt_request,
@@ -115,48 +131,71 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         let _ = self.orchestrator.dispatch_event(event).await;
         info!("Dispatched event to orchestrator to initiate processing");
 
-        info!("Waiting for public decrypt reponse event");
-        // TODO(Mano): Handle failed event as well.
-        // Wait for response on the rx of Onshot channel.
-        let event = match rx.await {
-            Ok(event) => {
-                info!("Received public decrypt response event");
-                event
-            }
-            Err(_) => {
-                info!("Received errror while waiting for response event");
-                let error_response = PublicDecryptErrorResponseJson {
-                    message: "Failed to receive response from the gateway.".to_string(),
-                };
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response();
-            }
-        };
+        info!("Waiting for public decrypt response or error event");
 
-        info!("Response event type {:?}", event.data);
-        match event.data {
-            RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
-                decrypt_response,
-            }) => match PublicDecryptResponseJson::try_from(decrypt_response) {
-                Ok(response_json) => {
-                    info!("Sending success reponse to public");
-                    (StatusCode::OK, Json(response_json)).into_response()
+        use futures::pin_mut;
+        pin_mut!(response_rx);
+        pin_mut!(error_rx);
+
+        tokio::select! {
+            res = &mut response_rx => {
+                match res {
+                    Ok(event) => {
+                        info!("Received public decrypt response event");
+                        info!("Response event type {:?}", event.data);
+                        match event.data {
+                            RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
+                                decrypt_response,
+                            }) => match PublicDecryptResponseJson::try_from(decrypt_response) {
+                                Ok(response_json) => {
+                                    info!("Sending success reponse to public");
+                                    (StatusCode::OK, Json(response_json)).into_response()
+                                }
+                                Err(error) => {
+                                    info!(
+                                        "sending error reponse to public as response event cannot be decoded: {}",
+                                        error
+                                    );
+                                    let error_response = PublicDecryptErrorResponseJson {
+                                        message: "request could not be completed".to_string(),
+                                    };
+                                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                                }
+                            },
+                            _ => {
+                                let error_response = PublicDecryptErrorResponseJson {
+                                    message: "unexpected error".to_string(),
+                                };
+                                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        info!("Received error while waiting for response event");
+                        let error_response = PublicDecryptErrorResponseJson {
+                            message: "Failed to receive response from the gateway.".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
                 }
-                Err(error) => {
-                    info!(
-                        "sending error reponse to public as response event cannot be decoded: {}",
-                        error
-                    );
-                    let error_response = PublicDecryptErrorResponseJson {
-                        message: "request could not be completed".to_string(),
-                    };
-                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+            }
+            res = &mut error_rx => {
+                match res {
+                    Ok(_event) => {
+                        info!("Received error event on error_rx");
+                        let error_response = PublicDecryptErrorResponseJson {
+                            message: "REQUEST FAILED RESPONSE".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
+                    Err(_) => {
+                        info!("Received error while waiting for error event on error_rx");
+                        let error_response = PublicDecryptErrorResponseJson {
+                            message: "Failed to receive error response from the gateway.".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
                 }
-            },
-            _ => {
-                let error_response = PublicDecryptErrorResponseJson {
-                    message: "unexpected error".to_string(),
-                };
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
             }
         }
     }

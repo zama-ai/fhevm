@@ -86,16 +86,32 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         info!("Validated and assigned request id: {}", request_id);
 
         // Register once handlers for receiving the decryption response from the gateway
-        let (handler, rx): (OnceHandler<RelayerEvent>, oneshot::Receiver<RelayerEvent>) =
-            OnceHandler::new();
-        let handler = Arc::new(handler);
+        let (gateway_response_handler, gateway_response_rx): (
+            OnceHandler<RelayerEvent>,
+            oneshot::Receiver<RelayerEvent>,
+        ) = OnceHandler::new();
+        let gateway_response_handler = Arc::new(gateway_response_handler);
 
         self.orchestrator.register_once_handler(
             InputProofEventId::RespRcvdFromGw.into(),
             request_id,
-            handler,
+            gateway_response_handler,
         );
-        info!("Registered once handler");
+        info!("Registered once handler for handling input proof gateway response");
+
+        // Register once handlers for receiving the decryption response from the gateway
+        let (error_handler, error_rx): (
+            OnceHandler<RelayerEvent>,
+            oneshot::Receiver<RelayerEvent>,
+        ) = OnceHandler::new();
+        let error_handler = Arc::new(error_handler);
+
+        self.orchestrator.register_once_handler(
+            InputProofEventId::Failed.into(),
+            request_id,
+            error_handler,
+        );
+        info!("Registered once handler for handling input proof failure");
 
         let request_data: InputProofRequest = match payload.try_into() {
             Ok(event_data) => event_data,
@@ -115,51 +131,77 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         );
         let _ = self.orchestrator.dispatch_event(event).await;
         info!("dispatched event to orchestrator to initiate processing");
-        let event = {
-            let _waiting_for_response_span =
-                span!(Level::INFO, "waiting-for-response", request_id = %request_id);
-            info!("waiting for reponse event");
 
-            // Wait for response on the rx of Onshot channel.
-            match rx.await {
-                Ok(event) => {
-                    info!("received response event");
-                    event
-                }
-                Err(_) => {
-                    info!("received errror while waiting for response event");
-                    let error_response = InputProofErrorResponseJson {
-                        message: "Failed to receive response from the gateway.".to_string(),
-                    };
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
-                        .into_response();
+        let _waiting_for_response_span =
+            span!(Level::INFO, "waiting-for-response", request_id = %request_id);
+        info!("waiting for reponse event");
+
+        // Wait for response or error on the rx of Oneshot channels concurrently.
+        use futures::pin_mut;
+        pin_mut!(gateway_response_rx);
+        pin_mut!(error_rx);
+
+        tokio::select! {
+            res = &mut gateway_response_rx => {
+                match res {
+                    Ok(event) => {
+                        info!("Response event type {:?}", event.data);
+                        match event.data {
+                            RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
+                                input_proof_response,
+                            }) => {
+                                match InputProofResponseJson::try_from(input_proof_response) {
+                                    Ok(response_json) => {
+                                        info!("Sending success response to user");
+                                        (StatusCode::OK, Json(response_json)).into_response()
+                                    }
+                                    Err(_) => {
+                                        info!("sending error reponse to user as response event cannot be decoded");
+                                        let error_response = InputProofErrorResponseJson {
+                                            message: "request could not be completed 2".to_string(),
+                                        };
+                                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
+                                            .into_response()
+                                    }
+                                }
+                            }
+                            _ => {
+                                info!(
+                                    "sending error reponse to user as response event is not expected type"
+                                );
+                                let error_response = InputProofErrorResponseJson {
+                                    message: "request could not be completed 3".to_string(),
+                                };
+                                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        info!("received errror while waiting for response event");
+                        let error_response = InputProofErrorResponseJson {
+                            message: "Failed to receive response from the gateway.".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
                 }
             }
-        };
-
-        info!("Response event type {:?}", event.data);
-        match event.data {
-            RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
-                input_proof_response,
-            }) => match InputProofResponseJson::try_from(input_proof_response) {
-                Ok(response_json) => {
-                    info!("Sending success reponse to user");
-                    (StatusCode::OK, Json(response_json)).into_response()
+            res = &mut error_rx => {
+                match res {
+                    Ok(_event) => {
+                        info!("received error event on error_rx");
+                        let error_response = InputProofErrorResponseJson {
+                            message: "REQUEST FAILED RESPONSE".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
+                    Err(_) => {
+                        info!("received error while waiting for error event on error_rx");
+                        let error_response = InputProofErrorResponseJson {
+                            message: "Failed to receive error response from the gateway.".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
                 }
-                Err(_) => {
-                    info!("sending error reponse to user as response event cannot be decoded");
-                    let error_response = InputProofErrorResponseJson {
-                        message: "request could not be completed 2".to_string(),
-                    };
-                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
-                }
-            },
-            _ => {
-                info!("sending error reponse to user as response event is not expected type");
-                let error_response = InputProofErrorResponseJson {
-                    message: "request could not be completed 3".to_string(),
-                };
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
             }
         }
     }

@@ -128,16 +128,32 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         info!("Validated and assigned request id: {}", request_id);
 
         // Register once handlers for receiving the decryption response from the gateway.
-        let (handler, rx): (OnceHandler<RelayerEvent>, oneshot::Receiver<RelayerEvent>) =
-            OnceHandler::new();
-        let handler = Arc::new(handler);
+        let (response_handler, response_rx): (
+            OnceHandler<RelayerEvent>,
+            oneshot::Receiver<RelayerEvent>,
+        ) = OnceHandler::new();
+        let response_handler = Arc::new(response_handler);
 
         self.orchestrator.register_once_handler(
             UserDecryptEventId::RespRcvdFromGw.into(),
             request_id,
-            handler,
+            response_handler,
         );
-        info!("Registered once handler");
+        info!("Registered once handler for user decrypt response");
+
+        // Register once handler for error/failure event
+        let (error_handler, error_rx): (
+            OnceHandler<RelayerEvent>,
+            oneshot::Receiver<RelayerEvent>,
+        ) = OnceHandler::new();
+        let error_handler = Arc::new(error_handler);
+
+        self.orchestrator.register_once_handler(
+            UserDecryptEventId::Failed.into(),
+            request_id,
+            error_handler,
+        );
+        info!("Registered once handler for user decrypt failure");
 
         let request_data = UserDecryptEventData::ReqRcvdFromUser {
             decrypt_request: user_decrypt_request,
@@ -150,46 +166,70 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         let _ = self.orchestrator.dispatch_event(event).await;
         info!("Dispatched event to orchestrator to initiate processing");
 
-        info!("Waiting for user decrypt reponse event");
-        let event = match rx.await {
-            Ok(event) => {
-                info!("Received user decrypt response event");
-                event
-            }
-            Err(_) => {
-                info!("Received errror while waiting for response event");
-                let error_response = UserDecryptErrorResponseJson {
-                    message: "Failed to receive response from the gateway.".to_string(),
-                };
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response();
-            }
-        };
+        use futures::pin_mut;
+        pin_mut!(response_rx);
+        pin_mut!(error_rx);
 
-        info!("Response event type {:?}", event.data);
-        match event.data {
-            RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
-                decrypt_response,
-            }) => match UserDecryptResponseJson::try_from(decrypt_response) {
-                Ok(response_json) => {
-                    info!("Sending success reponse to user");
-                    (StatusCode::OK, Json(response_json)).into_response()
+        info!("Waiting for user decrypt response or error event");
+        tokio::select! {
+            res = &mut response_rx => {
+                match res {
+                    Ok(event) => {
+                        info!("Received user decrypt response event");
+                        info!("Response event type {:?}", event.data);
+                        match event.data {
+                            RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
+                                decrypt_response,
+                            }) => match UserDecryptResponseJson::try_from(decrypt_response) {
+                                Ok(response_json) => {
+                                    info!("Sending success reponse to user");
+                                    (StatusCode::OK, Json(response_json)).into_response()
+                                }
+                                Err(error) => {
+                                    info!(
+                                        "sending error reponse to user as response event cannot be decoded: {}",
+                                        error
+                                    );
+                                    let error_response = UserDecryptErrorResponseJson {
+                                        message: "request could not be completed".to_string(),
+                                    };
+                                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                                }
+                            },
+                            _ => {
+                                let error_response = UserDecryptErrorResponseJson {
+                                    message: "unexpected error".to_string(),
+                                };
+                                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        info!("Received error while waiting for user decrypt response event");
+                        let error_response = UserDecryptErrorResponseJson {
+                            message: "Failed to receive response from the gateway.".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
                 }
-                Err(error) => {
-                    info!(
-                        "sending error reponse to user as response event cannot be decoded: {}",
-                        error
-                    );
-                    let error_response = UserDecryptErrorResponseJson {
-                        message: "request could not be completed".to_string(),
-                    };
-                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+            }
+            res = &mut error_rx => {
+                match res {
+                    Ok(_event) => {
+                        info!("Received error event on error_rx");
+                        let error_response = UserDecryptErrorResponseJson {
+                            message: "REQUEST FAILED RESPONSE".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
+                    Err(_) => {
+                        info!("Received error while waiting for error event on error_rx");
+                        let error_response = UserDecryptErrorResponseJson {
+                            message: "Failed to receive error response from the gateway.".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
                 }
-            },
-            _ => {
-                let error_response = UserDecryptErrorResponseJson {
-                    message: "unexpected error".to_string(),
-                };
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
             }
         }
     }
