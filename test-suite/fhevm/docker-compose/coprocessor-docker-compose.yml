@@ -66,7 +66,8 @@ services:
 
   gw-listener:
     container_name: fhevm-gw-listener
-    image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:latest
+    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
+    # image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:latest
     # build:
     #   context: ../../..
     #   dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
@@ -144,10 +145,17 @@ services:
       - --pg-listen-channels=["event_pbs_computations" "event_ciphertext_computed"]
       - --pg-notify-channel="event_ciphertext128_computed"
       - --work-items-batch-size=20
-      - --pg-polling-interval=3
+      - --pg-polling-interval=30
       - --pg-pool-connections=10
       - --bucket-name-ct64=ct64
       - --bucket-name-ct128=ct128
+      # # uncomment if you are using release => v0.7.0-rc2
+      # - --s3-max-concurrent-uploads=100
+      # - --s3-max-retries-per-upload=100
+      # - --s3-max-backoff=10s
+      # - --s3-max-retries-timeout=120s
+      # - --s3-recheck-duration=2s
+      # - --s3-regular-recheck-duration=120s
     depends_on:
       db:
         condition: service_healthy
@@ -174,6 +182,8 @@ services:
       - --verify-proof-resp-batch-limit=128
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
+      # # uncomment if you are using release => v0.7.0-rc2
+      # - --signer-type=private-key
     depends_on:
       db:
         condition: service_healthy
