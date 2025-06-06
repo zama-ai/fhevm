@@ -203,9 +203,9 @@ export type Operator = {
   hasEncrypted: boolean;
 
   /**
-   * The arguments required by the operator.
+   * The number of arguments required by the operator.
    */
-  arguments: OperatorArguments;
+  arity: number;
 
   /**
    * The return type of the operator.
@@ -242,18 +242,6 @@ export type Operator = {
    */
   rotateOperator?: boolean;
 };
-
-/**
- * Enum representing the types of operator arguments.
- *
- * @enum {number}
- * @property {number} Binary - Represents a binary operator argument.
- * @property {number} Unary - Represents a unary operator argument.
- */
-export enum OperatorArguments {
-  Binary,
-  Unary,
-}
 
 /**
  * Enum representing the possible return types.
@@ -367,7 +355,7 @@ export function validateOperators(operators: Operator[]): void {
       throw new Error(`Invalid hasEncrypted value for operator: ${op.name}`);
     }
 
-    if (op.arguments === null || !Object.values(OperatorArguments).includes(op.arguments)) {
+    if (op.arity === null || op.arity < 0 || op.arity > 2) {
       throw new Error(`Invalid arguments for operator: ${op.name}`);
     }
 

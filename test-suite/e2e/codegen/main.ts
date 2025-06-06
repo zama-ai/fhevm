@@ -36,8 +36,10 @@ function generateAllFiles() {
   /// Generate overloads, split them into shards, and generate Solidity contracts to be used for TypeScript unit test files.
   writeFileSync(
     `${path.resolve(__dirname)}/overloads.json`,
-    JSON.stringify(generateOverloads(ALL_FHE_TYPES), (_key, value) =>
-      typeof value === 'bigint' ? value.toString() : value,
+    JSON.stringify(
+      generateOverloads(ALL_FHE_TYPES),
+      (_key, value) => (typeof value === 'bigint' ? value.toString() : value),
+      '  ',
     ),
   );
   const overloadShards = splitOverloadsToShards(generateSolidityOverloadTestFiles(ALL_OPERATORS, ALL_FHE_TYPES));
@@ -45,6 +47,10 @@ function generateAllFiles() {
   overloadShards.forEach((os) => {
     writeFileSync(`contracts/operations/FHEVMTestSuite${os.shardNumber}.sol`, generateSolidityUnitTestContracts(os));
   });
+  writeFileSync(
+    `contracts/operations/debug.json`,
+    JSON.stringify(overloadShards, (_key, value) => (typeof value === 'bigint' ? value.toString() : value), '  '),
+  );
 
   const tsSplits: string[] = generateTypeScriptTestCode(overloadShards, numberOfTestSplits);
   tsSplits.forEach((split, splitIdx) => writeFileSync(`test/fhevmOperations/fhevmOperations${splitIdx + 1}.ts`, split));

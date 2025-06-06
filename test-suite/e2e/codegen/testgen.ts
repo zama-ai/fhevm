@@ -1,15 +1,6 @@
 import { strict as assert } from 'node:assert';
 
-import {
-  ArgumentType,
-  FheType,
-  FunctionType,
-  Operator,
-  OperatorArguments,
-  OverloadShard,
-  OverloadSignature,
-  ReturnType,
-} from './common';
+import { ArgumentType, FheType, FunctionType, Operator, OverloadShard, OverloadSignature, ReturnType } from './common';
 import { overloadTests } from './overloadTests';
 import { getUint } from './utils';
 
@@ -47,7 +38,13 @@ export function generateSolidityOverloadTestFiles(operators: Operator[], fheType
     generateOverloadsForTFHEUnaryOperators(fheType, operators, signatures),
   );
 
+  // Generate overloads zero-ary operators for all supported types.
+  adjustedFheTypes.forEach((fheType: FheType) =>
+    generateOverloadsForTFHEZeroaryOperators(fheType, operators, signatures),
+  );
+
   // TODO Add tests for conversion from plaintext and externalEXXX to all supported types (e.g., externalEXXX --> ebool, bytes memory --> ebytes64, uint32 --> euint32)
+  console.log(signatures[signatures.length - 1]);
   return signatures;
 }
 
@@ -61,7 +58,7 @@ function generateOverloadsForTFHEEncryptedOperatorForTwoEncryptedTypes(
     return;
   }
 
-  if (!operator.hasEncrypted || operator.arguments != OperatorArguments.Binary) {
+  if (!operator.hasEncrypted || operator.arity != 2) {
     return;
   }
 
@@ -99,7 +96,7 @@ function generateOverloadsForTFHEScalarOperator(fheType: FheType, operator: Oper
     return;
   }
 
-  if (operator.arguments != OperatorArguments.Binary) {
+  if (operator.arity != 2) {
     return;
   }
 
@@ -181,11 +178,31 @@ function generateOverloadsForTFHEUnaryOperators(
   signatures: OverloadSignature[],
 ) {
   operators.forEach((op) => {
-    if (op.arguments == OperatorArguments.Unary && fheType.supportedOperators.includes(op.name)) {
+    if (op.arity == 1 && fheType.supportedOperators.includes(op.name)) {
       if (fheType.type.startsWith('Uint')) {
         signatures.push({
           name: op.name,
           arguments: [{ type: ArgumentType.Euint, bits: fheType.bitLength }],
+          returnType: { type: ArgumentType.Euint, bits: fheType.bitLength },
+        });
+      }
+    }
+  });
+}
+
+function generateOverloadsForTFHEZeroaryOperators(
+  fheType: FheType,
+  operators: Operator[],
+  signatures: OverloadSignature[],
+) {
+  operators.forEach((op) => {
+    if (op.arity == 0 && fheType.supportedOperators.includes(op.name)) {
+      console.log('ADD', op.name, fheType.type);
+      if (fheType.type.startsWith('Uint')) {
+        console.log('PUSH');
+        signatures.push({
+          name: op.name,
+          arguments: [],
           returnType: { type: ArgumentType.Euint, bits: fheType.bitLength },
         });
       }
@@ -347,7 +364,7 @@ export function generateTypeScriptTestCode(shards: OverloadShard[], numTsSplits:
       tests.forEach((t) => {
         assert(
           t.inputs.length == o.arguments.length,
-          `Test argument count is different to operator arguments, arguments: ${t.inputs}, expected count: ${o.arguments.length}`,
+          `Test argument count for '${o.name}' is different to operator arguments, arguments: ${t.inputs.length}, expected count: ${o.arguments.length}`,
         );
         t.inputs.forEach((input, inputIndex) => ensureNumberAcceptableInBitRange(o.arguments[inputIndex].bits, input));
         t.inputs.forEach((input, index) => ensureNumberAcceptableInBitRange(o.arguments[index].bits, input));
@@ -373,24 +390,39 @@ export function generateTypeScriptTestCode(shards: OverloadShard[], numTsSplits:
             }
           })
           .join('\n');
-        let expectedOutput = t.output.toString();
+        let expectedOutput = t.output === undefined ? '()' : t.output.toString();
         if (typeof t.output === 'bigint') expectedOutput += 'n';
 
-        res.push(`
-                it('${testName} test ${testIndex} (${testArgs})', async function () {
-                    const input = this.instance.createEncryptedInput(this.contract${os.shardNumber}Address, this.signer.address);
-                    ${inputsAdd}
-                    const encryptedAmount = await input.encrypt();
-                    const tx = await this.contract${os.shardNumber}.${methodName}(${testArgsEncrypted}, encryptedAmount.inputProof);
-                    await tx.wait();
-                    const handle = await this.contract${os.shardNumber}.res${o.returnType.type === 1 ? `Euint${o.returnType.bits}` : 'Ebool'}();
-                    const res = await this.instance.publicDecrypt([handle]);
-                    const expectedRes = {
-                      [handle]: ${expectedOutput},
-                    };
-                    assert.deepEqual(res, expectedRes);
-                });
-            `);
+        if (testArgsEncrypted.length > 0) {
+          res.push(`
+                  it('${testName} test ${testIndex} (${testArgs})', async function () {
+                      const input = this.instance.createEncryptedInput(this.contract${os.shardNumber}Address, this.signer.address);
+                      ${inputsAdd}
+                      const encryptedAmount = await input.encrypt();
+                      const tx = await this.contract${os.shardNumber}.${methodName}(${testArgsEncrypted}, encryptedAmount.inputProof);
+                      await tx.wait();
+                      const handle = await this.contract${os.shardNumber}.res${o.returnType.type === 1 ? `Euint${o.returnType.bits}` : 'Ebool'}();
+                      const res = await this.instance.publicDecrypt([handle]);
+                      const expectedRes = {
+                        [handle]: ${expectedOutput},
+                      };
+                      assert.deepEqual(res, expectedRes);
+                  });
+              `);
+        } else {
+          res.push(`
+            it('${testName} test ${testIndex} (${testArgs})', async function () {
+                const tx = await this.contract${os.shardNumber}.${methodName}();
+                await tx.wait();
+                const handle = await this.contract${os.shardNumber}.res${o.returnType.type === 1 ? `Euint${o.returnType.bits}` : 'Ebool'}();
+                const res = await this.instance.publicDecrypt([handle]);
+                const expectedRes = {
+                  [handle]: ${expectedOutput},
+                };
+                console.log("TEST RAND");
+            });
+        `);
+        }
         testIndex++;
       });
       idxTsTest++;
@@ -504,7 +536,12 @@ function generateLibCallTest(os: OverloadShard, res: string[]) {
       res.push(`${functionTypeToEncryptedType(o.returnType)} result = ${o.unaryOperator}aProc;`);
       res.push('\n');
     } else {
-      res.push(`${functionTypeToEncryptedType(o.returnType)} result = FHE.${o.name}(${tfheArgs});`);
+      if (procArgs.length == 0) {
+        const name = `${o.name}${functionTypeToEncryptedType(o.returnType)}`;
+        res.push(`${functionTypeToEncryptedType(o.returnType)} result = FHE.${name}(${tfheArgs});\n`);
+      } else {
+        res.push(`${functionTypeToEncryptedType(o.returnType)} result = FHE.${o.name}(${tfheArgs});\n`);
+      }
       res.push('\n');
     }
     res.push('FHE.makePubliclyDecryptable(result);');
@@ -524,7 +561,11 @@ export function signatureContractMethodName(s: OverloadSignature): string {
   const res: string[] = [];
 
   res.push(s.name);
-  s.arguments.forEach((a) => res.push(functionTypeToString(a)));
+  if (s.arguments.length > 0) {
+    s.arguments.forEach((a) => res.push(functionTypeToString(a)));
+  } else {
+    res.push(functionTypeToString(s.returnType));
+  }
 
   return res.join('_');
 }
@@ -667,4 +708,5 @@ function functionTypeToString(t: FunctionType): string {
     // case ArgumentType.Ebytes:
     //  return `ebytes${t.bits}`;
   }
+  console.log('TROU DANS LA RAQUETTE');
 }

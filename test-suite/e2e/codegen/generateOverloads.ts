@@ -35,19 +35,25 @@ type SupportedFunctionParams = {
   lhsHigher?: boolean;
   scalarOnly?: boolean;
   limit?: 'bits';
+  arity?: number;
 };
 
 type SupportedFunction = SupportedFunctionParams &
   (
     | {
         // Represents a binary function (e.g., addition, subtraction) that operates on two inputs.
-        unary?: false;
         evalTest: (lhsNumber: bigint, rhsNumber: bigint, lhs: number, rhs: number) => number | boolean | bigint;
+        arity: 2;
       }
     | {
         // Represents a unary function (e.g., negation, bitwise NOT) that operates on a single input.
-        unary: true;
+        arity: 1;
         evalTest: (lhs: bigint, bits: number) => number | boolean | bigint;
+      }
+    | {
+        // Represents a random function that operates on no input.
+        evalTest: () => number | boolean | bigint;
+        arity: 0;
       }
   );
 
@@ -88,44 +94,56 @@ const safeEval = (
 export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   add: {
     safeMin: true,
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => BigInt(lhsNumber) + BigInt(rhsNumber),
   },
   sub: {
     lhsHigher: true,
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber - rhsNumber,
   },
   mul: {
     safeMin: true,
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => BigInt(lhsNumber) * BigInt(rhsNumber),
   },
   div: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber / rhsNumber,
     scalarOnly: true,
   },
   rem: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber % rhsNumber,
     scalarOnly: true,
   },
   le: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber <= rhsNumber,
   },
   lt: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber < rhsNumber,
   },
   ge: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber >= rhsNumber,
   },
   gt: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber > rhsNumber,
   },
   eq: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber === rhsNumber,
   },
   ne: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber !== rhsNumber,
   },
   shl: {
     limit: 'bits',
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber, lhs, _rhs) => {
       // Perform a left shift operation by manipulating the bit positions of the binary representation.
       const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
@@ -138,6 +156,7 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   },
   shr: {
     limit: 'bits',
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber, lhs, _rhs) => {
       const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
       const r = bits.map((_, index) => {
@@ -149,6 +168,7 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   },
   rotl: {
     limit: 'bits',
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber, lhs, _rhs) => {
       const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
       const r = bits.map((_, index) => {
@@ -161,6 +181,7 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   },
   rotr: {
     limit: 'bits',
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber, lhs, _rhs) => {
       const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
       const r = bits.map((_, index) => {
@@ -172,23 +193,27 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
     },
   },
   max: {
-    unary: false,
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => (lhsNumber > rhsNumber ? lhsNumber : rhsNumber),
   },
   min: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => (lhsNumber < rhsNumber ? lhsNumber : rhsNumber),
   },
   or: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber | rhsNumber,
   },
   and: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber & rhsNumber,
   },
   xor: {
+    arity: 2,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber ^ rhsNumber,
   },
   not: {
-    unary: true,
+    arity: 1,
     evalTest: (lhsNumber, bits) => {
       const val = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-bits).split('');
       return BigInt(
@@ -202,7 +227,7 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
     },
   },
   neg: {
-    unary: true,
+    arity: 1,
     evalTest: (lhsNumber, bits) => {
       const val = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-bits).split('');
       return (
@@ -215,6 +240,12 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
             .join('')}`,
         ) + 1n
       );
+    },
+  },
+  rand: {
+    arity: 0,
+    evalTest: () => {
+      return 0;
     },
   },
 };
@@ -232,7 +263,15 @@ export const generateOverloads = (fheTypes: FheType[]) => {
 
     fheTypes.forEach((lhsFheType: FheType) => {
       if (lhsFheType.type.startsWith('Uint') && lhsFheType.supportedOperators.includes(functionName)) {
-        if (test.unary) {
+        if (test.arity == 0) {
+          const encryptedTestName = [functionName, `e${lhsFheType.type.toLowerCase()}`].join('_');
+          const encryptedTests: Test[] = [];
+          encryptedTests.push({
+            inputs: [],
+            output: test.evalTest(),
+          });
+          generatedTests[encryptedTestName] = encryptedTests;
+        } else if (test.arity == 1) {
           let lhsNumber = generateRandomNumber(lhsFheType.bitLength);
           const encryptedTestName = [functionName, `e${lhsFheType.type.toLowerCase()}`].join('_');
           const encryptedTests: Test[] = [];
