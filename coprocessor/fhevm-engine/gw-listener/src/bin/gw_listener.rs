@@ -39,6 +39,9 @@ struct Conf {
     #[arg(long, default_value_t = 8080)]
     health_check_port: u16,
 
+    #[arg(long, default_value = "4s", value_parser = parse_duration)]
+    health_check_timeout: Duration,
+
     #[arg(long, default_value = "1000000")]
     provider_max_retries: u32,
 
@@ -90,6 +93,7 @@ async fn main() -> anyhow::Result<()> {
         error_sleep_initial_secs: conf.error_sleep_initial_secs,
         error_sleep_max_secs: conf.error_sleep_max_secs,
         health_check_port: conf.health_check_port,
+        health_check_timeout: conf.health_check_timeout,
     };
 
     let gw_listener = GatewayListener::new(

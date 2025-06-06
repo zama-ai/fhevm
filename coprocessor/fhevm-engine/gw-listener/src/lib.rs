@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use alloy::transports::http::reqwest::Url;
 
 pub mod gw_listener;
@@ -14,6 +16,7 @@ pub struct ConfigSettings {
     pub error_sleep_initial_secs: u16,
     pub error_sleep_max_secs: u16,
     pub health_check_port: u16,
+    pub health_check_timeout: Duration,
 }
 
 impl Default for ConfigSettings {
@@ -27,6 +30,7 @@ impl Default for ConfigSettings {
             error_sleep_initial_secs: 1,
             error_sleep_max_secs: 10,
             health_check_port: 8080,
+            health_check_timeout: Duration::from_secs(4),
         }
     }
 }
@@ -54,7 +58,11 @@ impl HealthStatus {
         }
     }
 
-    pub fn unhealthy(database_connected: bool, blockchain_connected: bool, details: String) -> Self {
+    pub fn unhealthy(
+        database_connected: bool,
+        blockchain_connected: bool,
+        details: String,
+    ) -> Self {
         Self {
             healthy: false,
             database_connected,
