@@ -14,6 +14,8 @@ use alloy_sol_types::SolEventInterface;
 
 use clap::Parser;
 
+use rustls;
+
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::tfhe_event_propagate::{ChainId, Database};
 
@@ -344,6 +346,8 @@ impl InfiniteLogIter {
 }
 
 pub async fn main(args: Args) {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     if let Some(acl_contract_address) = &args.acl_contract_address {
         if let Err(err) = Address::from_str(acl_contract_address) {
             panic!("Invalid acl contract address: {err}");
