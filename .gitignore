@@ -1,0 +1,85 @@
+# General ignores
+#-------------------------------------------------------------------------------
+# Operating System files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# IDE and editor specific files
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.project.json
+*.tmproj
+*.sublime-project
+*.sublime-workspace
+
+# Log files (generic, will catch logs from any tool/language)
+*.log
+logs/
+*.log.*
+
+# Environment files - typically sensitive, should not be committed
+.env
+.env.*
+!.env.example
+!.env.sample
+# If you have .env files specific to subprojects, e.g. subproject/.env,
+# the .env rule above will catch them.
+
+# Build output & temporary directories (generic)
+.cache/
+temp/
+tmp/
+
+# Archives
+*.zip
+*.tar
+*.gz
+*.rar
+*.7z
+
+# Local configuration files
+*-local.*
+
+# Node.js specific
+#-------------------------------------------------------------------------------
+# Dependency directories
+node_modules/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Compiled TypeScript files info
+*.tsbuildinfo
+
+# Build output directories
+build/
+dist/
+out/
+public/ # If serving static assets from a 'public' dir built by a framework
+.next/
+.nuxt/
+.svelte-kit/
+
+# Test reports and coverage (often from Node.js tools like Jest, Mocha)
+coverage/
+.nyc_output/
+junit/
+mochawesome-report/
+
+# Rust specific
+#-------------------------------------------------------------------------------
+# Build artifacts directory
+target/
