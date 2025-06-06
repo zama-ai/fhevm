@@ -142,6 +142,17 @@ impl ComputeCalldata {
         Ok(Bytes::from(calldata))
     }
 
+    pub fn reject_proof_response(
+        input_verification_id: U256,
+    ) -> Result<Bytes, EventProcessingError> {
+        let calldata =
+            InputVerification::rejectProofResponseCall::new((input_verification_id,)).abi_encode();
+
+        debug!("Raw calldata: 0x{}", hex::encode(&calldata));
+
+        Ok(Bytes::from(calldata))
+    }
+
     /// Computes calldata for verifyProofResponse function with multiple signatures
     /// Used in gateway_processors_mock
     ///

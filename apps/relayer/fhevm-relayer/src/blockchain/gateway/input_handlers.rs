@@ -510,13 +510,15 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
 
             RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
                 if let Some(topic0) = log.topic0() {
-                    if FixedBytes::<32>::from_slice(topic0.as_slice())
-                        != InputVerification::VerifyProofResponse::SIGNATURE_HASH
+                    let sig = FixedBytes::<32>::from_slice(topic0.as_slice());
+                    if (sig != InputVerification::VerifyProofResponse::SIGNATURE_HASH)
+                        & (sig != InputVerification::RejectProofResponse::SIGNATURE_HASH)
                     {
                         debug!(
-                            "Ignore this event: expected event: {:?}, received {} ",
-                            log.topic0(),
-                            InputVerification::VerifyProofResponse::SIGNATURE_HASH
+                            "Ignore this event: expected event: {:?} or {:?}, received {} ",
+                            InputVerification::VerifyProofResponse::SIGNATURE_HASH,
+                            InputVerification::RejectProofResponse::SIGNATURE_HASH,
+                            sig,
                         );
                         self.noop_handle_input_reponse_event_log(&event).await;
                     } else {

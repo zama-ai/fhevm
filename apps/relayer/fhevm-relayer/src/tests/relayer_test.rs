@@ -8,6 +8,31 @@ mod tests {
 
     // TODO: split in multiple tests
     #[tokio::test]
+    async fn test_input_url_endpoint_on_chain_rejection() {
+        let client = reqwest::Client::new();
+        let res = client
+            .post("http://localhost:3000/v1/input-proof")
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(5))
+            .json(&json!({
+                "contractChainId": "123456",
+                "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
+                "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+                "ciphertextWithInputVerification": "aaaaaaaaaaaa"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let status_code = res.status();
+        let res_text = res.text().await;
+        assert_eq!(status_code, 500);
+        if let Ok(ok_text) = res_text {
+            assert_eq!(ok_text, "{\"message\":\"REQUEST FAILED RESPONSE\"}");
+        }
+    }
+
+    #[tokio::test]
     async fn test_input_url_endpoint() {
         let before_time = tokio::time::Instant::now();
         let client = reqwest::Client::new();

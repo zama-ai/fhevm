@@ -82,6 +82,16 @@ impl GatewayProcessorsHandler {
                         "Processing InputRequest event"
                     );
 
+                    if request_event
+                        .ciphertextWithZKProof
+                        .to_string()
+                        .contains("aaaaaaaaaaa")
+                    {
+                        self.send_input_proof_rejection_response(request_event.zkProofId)
+                            .await?;
+                        return Ok(());
+                    }
+
                     // Simulate some computation time
                     // TODO: make it configurable
                     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -140,6 +150,29 @@ impl GatewayProcessorsHandler {
                 "Input request log not found".to_owned(),
             ))
         }
+    }
+
+    /// Send RejectInputResponse transaction
+    async fn send_input_proof_rejection_response(
+        &self,
+        input_verification_id: U256,
+    ) -> Result<(), EventProcessingError> {
+        info!(?input_verification_id, "Sending InputResponse transaction");
+        let input_verification_address =
+            Address::from_str(&self.contracts.input_verification_address).map_err(|_| {
+                EventProcessingError::ConfigError(
+                    crate::config::settings::AppConfigError::InvalidAddress(
+                        "self.contracts.input_verification_address".to_owned(),
+                    ),
+                )
+            })?;
+        self.tx_helper
+            .send_transaction_simple("input_response", input_verification_address, || {
+                ComputeCalldata::reject_proof_response(input_verification_id)
+            })
+            .await?;
+
+        Ok(())
     }
 
     /// Send InputResponse transaction
