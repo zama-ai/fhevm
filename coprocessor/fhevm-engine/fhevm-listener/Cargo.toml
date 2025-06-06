@@ -22,6 +22,7 @@ alloy = { workspace = true, features = ["contract", "json", "providers", "provid
 alloy-primitives = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
+rustls = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }

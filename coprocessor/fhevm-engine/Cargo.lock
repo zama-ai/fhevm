@@ -3461,6 +3461,7 @@ dependencies = [
  "foundry-compilers-artifacts",
  "futures-util",
  "humantime",
+ "rustls 0.23.24",
  "semver 1.0.26",
  "serde",
  "serial_test",
@@ -6165,6 +6166,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96bf61953b1bc045820a2b947e6e9771c58c8c4b15242425b03f783ede1b34fe"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",

@@ -99,7 +99,7 @@ allow = [
     "ISC",
     "MIT",
     "MPL-2.0",
-    # "OpenSSL", no longer used
+    "OpenSSL",
     "Unicode-3.0",
     "Unlicense",
     "Zlib",
