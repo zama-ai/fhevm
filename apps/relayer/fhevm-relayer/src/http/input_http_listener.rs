@@ -136,7 +136,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
 
         let _waiting_for_response_span =
             span!(Level::INFO, "waiting-for-response", request_id = %request_id);
-        info!("waiting for reponse event");
+        info!("waiting for response event");
 
         // Wait for response or error on the rx of Oneshot channels concurrently.
         use futures::pin_mut;
@@ -168,7 +168,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
                         }
                     }
                     Err(_) => {
-                        info!("received errror while waiting for response event");
+                        info!("received error while waiting for response event");
                         let error_response = InputProofErrorResponseJson {
                             message: "Failed to receive response from the gateway.".to_string(),
                         };
