@@ -71,15 +71,6 @@ describe(ProcessInputProof, () => {
         }),
       )
     })
-
-    test(`forward the right correlationId`, async () => {
-      await task.toPromise()
-      expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({
-          meta: { correlationId: event.meta.correlationId },
-        }),
-      )
-    })
   })
 
   describe(`when receiving a 'relayer:input-registration:input-registration-response' event`, () => {
@@ -89,7 +80,6 @@ describe(ProcessInputProof, () => {
       relayer.RelayerEvent,
       { type: 'relayer:input-registration:input-registration-response' }
     >['payload']
-    let correlationId: string
 
     beforeEach(() => {
       payload = {
@@ -97,11 +87,8 @@ describe(ProcessInputProof, () => {
         handles: [faker.string.hexadecimal(), faker.string.hexadecimal()],
         signatures: [faker.string.hexadecimal(), faker.string.hexadecimal()],
       }
-      correlationId = faker.string.uuid()
 
-      task = pubsub.publish(
-        relayer.inputRegistrationResponse(payload, { correlationId }),
-      )
+      task = pubsub.publish(relayer.inputRegistrationResponse(payload))
     })
 
     test(`then it publishes a 'back:httpz:input-proof:completed' event`, async () => {
@@ -126,7 +113,7 @@ describe(ProcessInputProof, () => {
       await task.toPromise()
       expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          meta: { correlationId },
+          meta: { correlationId: payload.requestId },
         }),
       )
     })

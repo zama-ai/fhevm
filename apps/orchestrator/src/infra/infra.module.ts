@@ -53,6 +53,7 @@ import { CronModule } from './cron/cron.module.js'
     uc.ProcessDAppStats,
     uc.ProcessInputProof,
     uc.ProcessPasswordReset,
+    uc.ProcessPrivateDecrypt,
   ],
 })
 export class InfraModule {}

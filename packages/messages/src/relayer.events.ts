@@ -1,8 +1,6 @@
 import { z } from 'zod'
 import {
   chainId,
-  Meta,
-  meta,
   requestId,
   web3Address,
   requestValidity,
@@ -70,9 +68,7 @@ const schemas = [
   }),
 ] as const
 
-export const schema = z
-  .discriminatedUnion('type', [...schemas])
-  .and(z.object({ meta: meta.optional() }))
+export const schema = z.discriminatedUnion('type', [...schemas])
 export type RelayerEvent = z.infer<typeof schema>
 
 /**
@@ -86,14 +82,12 @@ function factory<
   Event extends {
     type: `relayer:${K}`
     payload: object
-    meta?: Meta
   } = Extract<RelayerEvent, { type: `relayer:${K}` }>,
 >(type: K) {
-  return function (payload: Event['payload'], meta?: Meta) {
+  return function (payload: Event['payload']) {
     return {
       type: `relayer:${type}`,
       payload,
-      meta,
     } as Event
   }
 }

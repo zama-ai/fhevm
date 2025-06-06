@@ -1,23 +1,23 @@
 import { back, relayer } from 'messages'
-import { type Actor, createActor, setup } from 'xstate'
+import { Actor, createActor, setup } from 'xstate'
 
 export const EVENT_TYPES = [
-  'back:httpz:input-proof:requested',
-  'relayer:input-registration:input-registration-response',
+  'back:httpz:private-decrypt:requested',
+  'relayer:private-decryption:operation-response',
 ] as const
 
-export type InputProofEvents = Extract<
+export type PrivateDecryptEvents = Extract<
   back.BackEvent | relayer.RelayerEvent,
   { type: (typeof EVENT_TYPES)[number] }
 >
 
-export function isInputProofEvent(
+export function isPrivateDecrypt(
   event: back.BackEvent | relayer.RelayerEvent,
-): event is InputProofEvents {
+): event is PrivateDecryptEvents {
   return (EVENT_TYPES as readonly string[]).includes(event.type)
 }
 
-type InputProofMachine = ReturnType<typeof factory>
+type PrivateDecryptMachine = ReturnType<typeof factory>
 
 function factory({
   notifyMessage,
@@ -26,7 +26,7 @@ function factory({
 }) {
   return setup({
     types: {
-      events: {} as InputProofEvents,
+      events: {} as PrivateDecryptEvents,
     },
   }).createMachine({
     id: 'inputProof',
@@ -34,23 +34,19 @@ function factory({
     states: {
       Idle: {
         on: {
-          'back:httpz:input-proof:requested': {
+          'back:httpz:private-decrypt:requested': {
             actions: [
               ({ event: { payload } }) =>
                 notifyMessage(
-                  relayer.inputRegistrationRequest({
-                    ...payload,
-                    // NOTE: Relayer expects a number
-                    contractChainId: chainIdToNumber(payload.contractChainId),
-                  }),
+                  relayer.privateDecryptionOperationRequest(payload),
                 ),
             ],
           },
-          'relayer:input-registration:input-registration-response': {
+          'relayer:private-decryption:operation-response': {
             actions: [
               ({ event: { payload } }) =>
                 notifyMessage(
-                  back.httpzInputProofCompleted(payload, {
+                  back.httpzPrivateDecryptCompleted(payload, {
                     correlationId: payload.requestId,
                   }),
                 ),
@@ -69,8 +65,8 @@ function chainIdToNumber(chainId: string | number): number {
   return chainId
 }
 
-export class InputProof {
-  #actor: Actor<InputProofMachine>
+export class PrivateDecrypt {
+  #actor: Actor<PrivateDecryptMachine>
 
   constructor() {
     this.#actor = createActor(
@@ -83,7 +79,7 @@ export class InputProof {
     this.messages.push(message)
   }
 
-  send(event: InputProofEvents): (back.BackEvent | relayer.RelayerEvent)[] {
+  send(event: PrivateDecryptEvents): (back.BackEvent | relayer.RelayerEvent)[] {
     this.messages = []
     this.#actor.send(event)
     return this.messages
