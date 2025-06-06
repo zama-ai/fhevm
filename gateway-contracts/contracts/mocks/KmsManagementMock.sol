@@ -38,6 +38,7 @@ contract KmsManagementMock {
         _preKeygenRequestCounter++;
         uint256 preKeygenRequestId = _preKeygenRequestCounter;
         bytes32 fheParamsDigest;
+
         emit PreprocessKeygenRequest(preKeygenRequestId, fheParamsDigest);
     }
 
@@ -49,6 +50,7 @@ contract KmsManagementMock {
         _preKskgenRequestCounter++;
         uint256 preKskgenRequestId = _preKskgenRequestCounter;
         bytes32 fheParamsDigest;
+
         emit PreprocessKskgenRequest(preKskgenRequestId, fheParamsDigest);
     }
 
@@ -58,12 +60,14 @@ contract KmsManagementMock {
 
     function keygenRequest(uint256 preKeyId) external {
         bytes32 fheParamsDigest;
+
         emit KeygenRequest(preKeyId, fheParamsDigest);
     }
 
     function keygenResponse(uint256 preKeyId, uint256 keyId) external {
         uint256 keygenId;
         bytes32 fheParamsDigest;
+
         emit KeygenResponse(preKeyId, keygenId, fheParamsDigest);
     }
 
@@ -71,21 +75,25 @@ contract KmsManagementMock {
         _crsgenRequestCounter++;
         uint256 crsgenRequestId = _crsgenRequestCounter;
         bytes32 fheParamsDigest;
+
         emit CrsgenRequest(crsgenRequestId, fheParamsDigest);
     }
 
     function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external {
         bytes32 fheParamsDigest;
+
         emit CrsgenResponse(crsgenRequestId, crsId, fheParamsDigest);
     }
 
     function kskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId) external {
         bytes32 fheParamsDigest;
+
         emit KskgenRequest(preKskId, sourceKeyId, destKeyId, fheParamsDigest);
     }
 
     function kskgenResponse(uint256 preKskId, uint256 kskId) external {
         bytes32 fheParamsDigest;
+
         emit KskgenResponse(preKskId, kskId, fheParamsDigest);
     }
 

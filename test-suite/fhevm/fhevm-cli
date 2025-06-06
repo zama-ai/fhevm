@@ -26,6 +26,7 @@ export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"59ea08b"}
 export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc17"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc8"}
 
+
 function print_logo() {
   echo -e "${LIGHT_BLUE}"
   echo "  ______   _    _   ______  __      __  __  __"

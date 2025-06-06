@@ -4,28 +4,7 @@ pragma solidity ^0.8.24;
 import "./Impl.sol";
 import {FheType} from "./FheType.sol";
 
-type ebool is bytes32;
-type euint8 is bytes32;
-type euint16 is bytes32;
-type euint32 is bytes32;
-type euint64 is bytes32;
-type euint128 is bytes32;
-type euint256 is bytes32;
-type eaddress is bytes32;
-type ebytes64 is bytes32;
-type ebytes128 is bytes32;
-type ebytes256 is bytes32;
-type externalEbool is bytes32;
-type externalEuint8 is bytes32;
-type externalEuint16 is bytes32;
-type externalEuint32 is bytes32;
-type externalEuint64 is bytes32;
-type externalEuint128 is bytes32;
-type externalEuint256 is bytes32;
-type externalEaddress is bytes32;
-type externalEbytes64 is bytes32;
-type externalEbytes128 is bytes32;
-type externalEbytes256 is bytes32;
+import "encrypted-types/EncryptedTypes.sol";
 
 /**
  * @title IKMSVerifier
@@ -44,7 +23,11 @@ interface IKMSVerifier {
  * @notice This interface contains the only function required from DecryptionOracle.
  */
 interface IDecryptionOracle {
-    function requestDecryption(uint256 requestID, bytes32[] calldata ctsHandles, bytes4 callbackSelector) external;
+    function requestDecryption(
+        uint256 requestID,
+        bytes32[] calldata ctsHandles,
+        bytes4 callbackSelector
+    ) external payable;
 }
 
 /**
@@ -9443,11 +9426,27 @@ library FHE {
         bytes32[] memory ctsHandles,
         bytes4 callbackSelector
     ) internal returns (uint256 requestID) {
+        requestID = requestDecryption(ctsHandles, callbackSelector, 0);
+    }
+
+    /**
+     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles, with a custom msgValue.
+     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
+     */
+    function requestDecryption(
+        bytes32[] memory ctsHandles,
+        bytes4 callbackSelector,
+        uint256 msgValue
+    ) internal returns (uint256 requestID) {
         DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
         requestID = $.counterRequest;
         FHEVMConfigStruct storage $$ = Impl.getFHEVMConfig();
         IACL($$.ACLAddress).allowForDecryption(ctsHandles);
-        IDecryptionOracle($.DecryptionOracleAddress).requestDecryption(requestID, ctsHandles, callbackSelector);
+        IDecryptionOracle($.DecryptionOracleAddress).requestDecryption{value: msgValue}(
+            requestID,
+            ctsHandles,
+            callbackSelector
+        );
         saveRequestedHandles(requestID, ctsHandles);
         $.counterRequest++;
     }

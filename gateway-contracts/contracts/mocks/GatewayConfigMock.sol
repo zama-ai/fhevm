@@ -35,6 +35,7 @@ contract GatewayConfigMock {
         uint256 mpcThreshold;
         KmsNode[] memory kmsNodes = new KmsNode[](1);
         Coprocessor[] memory coprocessors = new Coprocessor[](1);
+
         emit Initialization(pauser, metadata, mpcThreshold, kmsNodes, coprocessors);
     }
 
