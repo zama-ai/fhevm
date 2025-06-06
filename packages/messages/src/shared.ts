@@ -59,8 +59,8 @@ export const web3Address = z
   .string()
   .regex(/^0x[\da-f]{40}$/i, 'Address should be an hex string of length 42')
 
-export const ctHandleContractPairs = z.object({
-  ctHandle: z.string(),
+export const handleContractPair = z.object({
+  handle: z.string(),
   contractAddress: z.string(),
 })
 

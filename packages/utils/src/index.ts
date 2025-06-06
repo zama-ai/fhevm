@@ -35,6 +35,7 @@ export { Entity } from './entity.js'
 export { isNone, isSome, none, some, fromNullable } from './option.js'
 export { PubSub } from './pubsub.js'
 export {
+  any,
   isFail,
   isOk,
   every,

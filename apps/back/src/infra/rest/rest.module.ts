@@ -12,6 +12,7 @@ import {
   API_KEY_ALLOWS_REQUEST,
   IApiKeyAllowsRequest,
 } from '#dapps/use-cases/api-key-allows-request.use-case.js'
+import { PRODUCER } from '#constants.js'
 
 @Module({
   imports: [SharedModule, DappsModule],
@@ -40,7 +41,11 @@ import {
         apiKeyAllowsRequest: IApiKeyAllowsRequest,
       ) => new uc.InputProofWithApiKey(inputProof, apiKeyAllowsRequest),
     },
+    {
+      provide: uc.PRIVATE_DECRYPT,
+      useClass: uc.PrivateDecrypt,
+    },
     uc.GetKeyUrl,
   ],
 })
-export class RestModule { }
+export class RestModule {}

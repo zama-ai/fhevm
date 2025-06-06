@@ -6,4 +6,8 @@ export {
   InputProofWithApiKey,
   InputProofWithSync,
 } from './input-proof.use-case.js'
-export { PrivateDecrypt } from './private-decrypt.use-case.js'
+export {
+  type IPrivateDecrypt,
+  PRIVATE_DECRYPT,
+  PrivateDecrypt,
+} from './private-decrypt.use-case.js'

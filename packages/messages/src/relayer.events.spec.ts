@@ -19,9 +19,9 @@ describe('relayer', () => {
                 length: 40,
               }) as `0x${string}`,
             ],
-            ctHandleContractPairs: [
+            handleContractPairs: [
               {
-                ctHandle: faker.string.hexadecimal({
+                handle: faker.string.hexadecimal({
                   length: { min: 10, max: 50 },
                 }) as `0x${string}`,
                 contractAddress: faker.string.hexadecimal({

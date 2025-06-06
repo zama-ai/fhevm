@@ -3,7 +3,11 @@ import {
   IInputProof,
   INPUT_PROOF,
 } from '#httpz/use-cases/input-proof.use-case.js'
-// import { IPrivateDecrypt, PRIVATE_DECRYPT, PrivateDecrypt } from '#httpz/use-cases/private-decrypt.use-case.js'
+import {
+  IPrivateDecrypt,
+  PRIVATE_DECRYPT,
+  PrivateDecrypt,
+} from '#httpz/use-cases/private-decrypt.use-case.js'
 import {
   Body,
   Controller,
@@ -17,11 +21,15 @@ import {
 import { ZodValidationPipe } from './pipes/zod-validation.pipe.js'
 import {
   InputProofRequest,
-  schema as inputProofSchema,
+  inputProofSchema,
 } from './dtos/input-proof-request.dto.js'
 import { ApiKeyGuard } from './guards/api-key.guard.js'
 import { CurrentApiKey } from './decorators/current-api-key.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
+import {
+  UserDecryptRequest,
+  userDecryptSchema,
+} from './dtos/user-decrypt-request.dto.js'
 
 @Controller('')
 export class HttpzController {
@@ -30,7 +38,7 @@ export class HttpzController {
   constructor(
     private readonly getKeyUrlUC: GetKeyUrl,
     @Inject(INPUT_PROOF) private readonly inputProofUC: IInputProof,
-    // @Inject(PRIVATE_DECRYPT) private readonly privateDecryptUC: IPrivateDecrypt,
+    @Inject(PRIVATE_DECRYPT) private readonly privateDecryptUC: IPrivateDecrypt,
   ) {}
 
   @Get('/healthcheck')
@@ -59,17 +67,17 @@ export class HttpzController {
     return { response }
   }
 
-  // @Post('/v1/user-decrypt')
-  // @UseGuards(ApiKeyGuard)
-  // @UsePipes(new ZodValidationPipe(privateDecryptSchema))
-  // async postPrivateDecrypt(
-  //   @CurrentApiKey() apiKey: ApiKey,
-  //   @Body() input: PrivateDecryptRequest,
-  // ) {
-  //   this.logger.log('POST /v1/user-decrypt')
-  //   const response = await this.privateDecryptUC
-  //     .execute(input, { apiKey })
-  //     .toPromise()
-  //   return { response }
-  // }
+  @Post('/v1/user-decrypt')
+  @UseGuards(ApiKeyGuard)
+  @UsePipes(new ZodValidationPipe(userDecryptSchema))
+  async postPrivateDecrypt(
+    @CurrentApiKey() apiKey: ApiKey,
+    @Body() input: UserDecryptRequest,
+  ) {
+    this.logger.log('POST /v1/user-decrypt')
+    const response = await this.privateDecryptUC
+      .execute(input, { apiKey })
+      .toPromise()
+    return { response }
+  }
 }

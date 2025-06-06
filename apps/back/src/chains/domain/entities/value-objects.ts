@@ -9,6 +9,22 @@ export class ChainId extends ValueObject('ChainId', chainId) {
       : fail(fromZodError(check.error))
   }
 
+  /**
+   * It converts a string to a ChainId
+   *
+   * @param value a positive integer string
+   * @returns
+   */
+  static fromString(value: string): Result<ChainId, AppError> {
+    return ChainId.from(parseInt(value, 10))
+  }
+
+  /**
+   * It converts a string to a ChainId
+   *
+   * @param value an hexadecimal string
+   * @returns
+   */
   static fromHex(value: string): Result<ChainId, AppError> {
     return ChainId.from(parseInt(value, 16))
   }

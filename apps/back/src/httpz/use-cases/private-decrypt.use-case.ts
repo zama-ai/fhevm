@@ -1,6 +1,9 @@
 import { ChainId } from '#chains/domain/entities/value-objects.js'
 import { PRODUCER } from '#constants.js'
-import { ApiKeyAllowsRequest } from '#dapps/use-cases/api-key-allows-request.use-case.js'
+import {
+  API_KEY_ALLOWS_REQUEST,
+  IApiKeyAllowsRequest,
+} from '#dapps/use-cases/api-key-allows-request.use-case.js'
 import { Web3Address } from '#shared/entities/value-objects/web3-address.js'
 import { IProducer } from '#shared/services/producer.js'
 import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
@@ -8,21 +11,21 @@ import { SyncInstances } from '#shared/use-cases/sync-instances.use-case.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
 import { back, generateRequestId } from 'messages'
-import { AppError, every, Task, unknownError, UseCase } from 'utils'
+import { any, AppError, every, Task, unknownError, UseCase } from 'utils'
 
 type RequestValidity = {
   startTimestamp: string
   durationDays: string
 }
 
-type CtHandleContractPair = {
-  ctHandle: string
+type HandleContractPair = {
+  handle: string
   contractAddress: string
 }
 
 type Input = {
-  contractsChainId: string
-  ctHandleContractPairs: CtHandleContractPair[]
+  contractsChainId: string | number
+  handleContractPairs: HandleContractPair[]
   requestValidity: RequestValidity
   contractsAddresses: string[]
   userAddress: string
@@ -50,7 +53,8 @@ export class PrivateDecrypt implements UseCase<Input, Output> {
     private readonly producer: IProducer,
     @Inject(SYNC_SERVICE)
     private readonly syncService: SyncService,
-    private readonly apiKeyAllowsRequest: ApiKeyAllowsRequest,
+    @Inject(API_KEY_ALLOWS_REQUEST)
+    private readonly apiKeyAllowsRequest: IApiKeyAllowsRequest,
     syncInstances: SyncInstances,
   ) {
     // NOTE: I need to instruct the SyncInstances to listen to this event
@@ -64,29 +68,31 @@ export class PrivateDecrypt implements UseCase<Input, Output> {
     this.logger.debug(`input=${JSON.stringify(input)}`)
 
     return every([
-      ChainId.fromHex(input.contractsChainId),
+      typeof input.contractsChainId === 'string'
+        ? any([
+            ChainId.fromString(input.contractsChainId),
+            ChainId.fromHex(input.contractsChainId),
+          ])
+        : ChainId.from(input.contractsChainId),
       Web3Address.from(input.contractsAddresses[0]),
     ])
       .asyncChain(([chainId, address]) =>
-        this.apiKeyAllowsRequest.execute(
-          {
-            // FIXME: change this to consider all couples chain-id, contract-address
-            // TODO: add input verification that both attributes have the same length
-            chainId,
-            address,
-          },
-          context,
-        ),
+        this.apiKeyAllowsRequest
+          .execute(
+            {
+              // FIXME: change this to consider all couples chain-id, contract-address
+              // TODO: add input verification that both attributes have the same length
+              chainId,
+              address,
+            },
+            context,
+          )
+          .map(() => chainId),
       )
       .tap(() => {
         this.logger.debug(`apiKey=${context.apiKey}}`)
       })
-      .chain(() => {
-        // every<ChainId, Web3Address, Web3Address, AppError>([
-        //   ChainId.parse(input.contractChainId),
-        //   Web3Address.parse(input.contractAddress),
-        //   Web3Address.parse(input.userAddress),
-        // ]).asyncChain(([contractChainId, contractAddress, userAddress]) => {
+      .chain(chainId => {
         const requestId = generateRequestId()
         this.logger.verbose(`executing for ${requestId}`)
 
@@ -97,9 +103,7 @@ export class PrivateDecrypt implements UseCase<Input, Output> {
                 {
                   requestId,
                   ...input,
-                  contractsChainId: ChainId.fromHex(
-                    input.contractsChainId,
-                  ).unwrap().value,
+                  contractsChainId: chainId.value,
                 },
                 {
                   correlationId: randomUUID(),

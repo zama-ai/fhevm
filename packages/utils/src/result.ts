@@ -236,3 +236,13 @@ export function every<T, E>(values: Result<T, E>[]): Result<T[], E> {
     ok([]) as Result<T[], E>,
   )
 }
+
+export function any<T, E>(values: Result<T, E>[]): Result<T, E> {
+  return values.reduce(
+    (acc, item) => {
+      if (acc.isOk()) return acc
+      return item.isOk() ? ok(item.value) : fail(item.error)
+    },
+    fail([]) as Result<T, E>,
+  )
+}

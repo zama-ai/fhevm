@@ -1,5 +1,13 @@
 import { z } from 'zod'
-import { chainId, Meta, meta, requestId, web3Address, requestValidity, ctHandleContractPairs } from './shared.js'
+import {
+  chainId,
+  Meta,
+  meta,
+  requestId,
+  web3Address,
+  requestValidity,
+  handleContractPair,
+} from './shared.js'
 
 // prefixed hex encoded
 // const hexEncoded = z.string().startsWith('0x').and(z.custom<`0x${string}`>())
@@ -38,7 +46,7 @@ const schemas = [
   }),
   genSchema('private-decryption:operation-request', {
     contractsChainId: chainId,
-    ctHandleContractPairs: z.array(ctHandleContractPairs),
+    handleContractPairs: z.array(handleContractPair),
     requestValidity: requestValidity,
     contractsAddresses: z.array(web3Address),
     userAddress: web3Address,
@@ -81,7 +89,7 @@ function factory<
     meta?: Meta
   } = Extract<RelayerEvent, { type: `relayer:${K}` }>,
 >(type: K) {
-  return function(payload: Event['payload'], meta?: Meta) {
+  return function (payload: Event['payload'], meta?: Meta) {
     return {
       type: `relayer:${type}`,
       payload,

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'vitest'
-import { schema } from './input-proof-request.dto.js'
+import { inputProofSchema } from './input-proof-request.dto.js'
 import { faker } from '@faker-js/faker'
 
 describe('InputProofRequest', () => {
@@ -9,20 +9,23 @@ describe('InputProofRequest', () => {
       contractChainId: faker.string.hexadecimal({ length: 3 }),
       contractAddress: faker.string.hexadecimal({ length: 40 }),
       userAddress: faker.string.hexadecimal({ length: 40 }),
-      ciphertextWithInputVerification: faker.string.hexadecimal({ length: 40, prefix: '' }),
+      ciphertextWithInputVerification: faker.string.hexadecimal({
+        length: 40,
+        prefix: '',
+      }),
     }
   })
 
   describe('given a valid input proof request', () => {
     test('then it should be valid', () => {
-      const result = schema.safeParse(inputProofRequest)
+      const result = inputProofSchema.safeParse(inputProofRequest)
       expect(result.success).toBe(true)
     })
   })
 
   describe('contractChainId', () => {
     test('should be an hexadecimal number with 0x prefix', () => {
-      const result = schema.safeParse({
+      const result = inputProofSchema.safeParse({
         ...inputProofRequest,
         contractChainId: faker.string.hexadecimal({ length: 5 }),
       })
@@ -30,7 +33,7 @@ describe('InputProofRequest', () => {
     })
 
     test('then it should not be a generic string', () => {
-      const result = schema.safeParse({
+      const result = inputProofSchema.safeParse({
         ...inputProofRequest,
         contractChainId: faker.string.alphanumeric(10),
       })
@@ -38,7 +41,7 @@ describe('InputProofRequest', () => {
     })
 
     test('should not be a negative number', () => {
-      const result = schema.safeParse({
+      const result = inputProofSchema.safeParse({
         ...inputProofRequest,
         contractChainId: faker.number.int({ min: -Infinity, max: -1 }),
       })

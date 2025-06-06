@@ -6,7 +6,7 @@ import {
   requestId,
   web3Address,
   operationEnum,
-  ctHandleContractPairs,
+  handleContractPair,
   requestValidity,
 } from './shared.js'
 
@@ -100,7 +100,7 @@ const schemas = [
   }),
   genSchema('httpz:private-decrypt:requested', {
     contractsChainId: chainId,
-    ctHandleContractPairs: z.array(ctHandleContractPairs),
+    handleContractPairs: z.array(handleContractPair),
     requestValidity: requestValidity,
     contractsAddresses: z.array(web3Address),
     userAddress: web3Address,
