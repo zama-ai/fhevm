@@ -39,6 +39,7 @@ rand = "0.9.0"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-chrome = { version = "0.7.2", optional = true }
+clap = { version = "4", features = ["derive"] }
 
 
 [dev-dependencies]

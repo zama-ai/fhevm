@@ -37,7 +37,7 @@ use fhevm_relayer::{
 async fn main() -> eyre::Result<()> {
     // === Initialize settings
     let settings =
-        Settings::new().map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))?;
+        Settings::new(None).map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))?;
 
     init_tracing(&settings.log)?;
 

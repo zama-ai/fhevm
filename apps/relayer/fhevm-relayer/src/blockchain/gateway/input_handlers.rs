@@ -547,7 +547,7 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
     println!("\n========== INPUT VERIFICATION (ZK PROOF) TEST ==========\n");
 
     // Load configuration
-    let settings = Settings::new().expect("Failed to load configuration");
+    let settings = Settings::new(None).expect("Failed to load configuration");
 
     // Get network settings
     let gateway_settings = settings

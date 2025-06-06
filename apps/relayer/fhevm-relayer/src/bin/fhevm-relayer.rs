@@ -34,6 +34,8 @@
 
 use alloy::primitives::Address;
 use alloy::signers::Signer;
+use clap::Parser;
+use std::net::SocketAddr;
 use std::{str::FromStr, sync::Arc};
 use tracing::{info, span, Level};
 #[cfg(feature = "tracing-chrome")]
@@ -79,6 +81,13 @@ use fhevm_relayer::{
     transaction::{TransactionService, TxConfig},
 };
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+pub struct Args {
+    #[arg(short, long)]
+    config_file: Option<String>,
+}
+
 /// Main entry point for the FHE Event Relayer service.
 ///
 /// This function performs the following initialization steps:
@@ -91,9 +100,10 @@ use fhevm_relayer::{
 /// TODO: properly shutdown tasks
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    let args: Args = Args::parse();
     // === Initialize settings
-    let settings =
-        Settings::new().map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))?;
+    let settings = Settings::new(args.config_file)
+        .map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))?;
     // We need to keep the guard to force-flush on SIGINT
     {
         let chrome_tracing_guard = init_tracing(&settings.log)?;
@@ -330,7 +340,15 @@ async fn main() -> eyre::Result<()> {
                 Arc::clone(&orchestrator),
             ));
 
-            task_set.spawn(run_http_server(Arc::clone(&orchestrator)));
+            let addr: SocketAddr = settings
+                .http_endpoint
+                .parse()
+                .expect("Invalid http-endpoint address");
+            task_set.spawn(run_http_server(
+                addr,
+                Arc::clone(&orchestrator),
+                settings.keyurl,
+            ));
             drop(setup_span);
 
             // === Wait for ctrl + c signal to stop the application

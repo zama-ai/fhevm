@@ -504,7 +504,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     use std::str::FromStr;
 
     // Load configuration
-    let settings = Settings::new().expect("Failed to load configuration");
+    let settings = Settings::new(None).expect("Failed to load configuration");
 
     // Get network settings
     let gateway_settings = settings
@@ -623,7 +623,7 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
     println!("========== RUNNING DIAGNOSTIC TEST FOR USER DECRYPTION REQUEST ==========");
 
     // Load configuration
-    let settings = Settings::new().expect("Failed to load configuration");
+    let settings = Settings::new(None).expect("Failed to load configuration");
     let gateway_settings = settings
         .get_network("gateway")
         .cloned()

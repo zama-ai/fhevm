@@ -1,4 +1,4 @@
-use crate::config::settings::Settings;
+use crate::config::settings::KeyUrl;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -24,18 +24,14 @@ pub struct KeyData {
     pub urls: Vec<String>,
 }
 
-impl KeyUrlResponseJson {
-    pub fn from_settings() -> KeyUrlResponseJson {
-        let settings = Settings::new()
-            .map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))
-            .unwrap(); // TODO(mano): Handle error properly.
-
+impl From<KeyUrl> for KeyUrlResponseJson {
+    fn from(value: KeyUrl) -> Self {
         KeyUrlResponseJson {
             response: Response {
                 fhe_key_info: vec![FheKeyInfo {
                     fhe_public_key: KeyData {
-                        data_id: settings.keyurl.fhe_public_key.data_id,
-                        urls: vec![settings.keyurl.fhe_public_key.url],
+                        data_id: value.fhe_public_key.data_id,
+                        urls: vec![value.fhe_public_key.url],
                     },
                 }],
                 crs: {
@@ -43,8 +39,8 @@ impl KeyUrlResponseJson {
                     map.insert(
                         "2048".to_string(),
                         KeyData {
-                            data_id: settings.keyurl.crs.data_id,
-                            urls: vec![settings.keyurl.crs.url],
+                            data_id: value.crs.data_id,
+                            urls: vec![value.crs.url],
                         },
                     );
                     map

@@ -1,4 +1,4 @@
-use crate::config::settings::Settings;
+use crate::config::settings::KeyUrl;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::http::input_http_listener::{InputProofHandler, InputProofRequestJson};
 use crate::http::keyurl_http_listener::KeyUrlResponseJson;
@@ -13,8 +13,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
 
-pub async fn run_http_server<D>(orchestrator: Arc<Orchestrator<D, RelayerEvent>>)
-where
+pub async fn run_http_server<D>(
+    addr: SocketAddr,
+    orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+    key_url: KeyUrl,
+) where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
     let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
@@ -62,16 +65,12 @@ where
                 format!("/{}/keyurl", api_version).as_str(),
                 get(|| async {
                     info!("Enabling handler for GET request to '/keyurl'");
-                    let keyurl_response = KeyUrlResponseJson::from_settings();
+                    let keyurl_response = KeyUrlResponseJson::from(key_url);
                     Json(keyurl_response)
                 }),
             );
 
     // Define the socket address for the server to listen on.
-    let settings = Settings::new()
-        .map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))
-        .unwrap(); // TODO(mano): Handle error properly.
-    let addr: SocketAddr = settings.http_endpoint.parse().expect("Invalid address");
     println!("Server listening on http://{}", addr);
 
     // Start the server with hyper underneath.

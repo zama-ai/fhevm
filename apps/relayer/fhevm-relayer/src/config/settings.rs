@@ -193,22 +193,25 @@ pub enum AppConfigError {
 }
 
 impl Settings {
-    pub fn new() -> Result<Self, AppConfigError> {
+    pub fn new(config_file: Option<String>) -> Result<Self, AppConfigError> {
         let run_mode = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
         // First get base config from files
         let s = Config::builder()
             .add_source(File::with_name(&format!("config/{}", run_mode)).required(false))
-            .add_source(File::with_name("config/local").required(false))
-            // Change how we specify environment variables
-            .add_source(
-                Environment::with_prefix("APP")
-                    .separator("__") // Use double underscore
-                    .prefix_separator("_"), // Separator between APP and the rest
-            )
-            .build()?;
+            .add_source(File::with_name("config/local").required(false));
+        let s = match config_file {
+            Some(config_file) => s.add_source(File::with_name(&config_file).required(true)),
+            None => s,
+        };
+        // Change how we specify environment variables
+        let s = s.add_source(
+            Environment::with_prefix("APP")
+                .separator("__") // Use double underscore
+                .prefix_separator("_"), // Separator between APP and the rest
+        );
 
-        let settings: Settings = s.try_deserialize()?;
+        let settings: Settings = s.build()?.try_deserialize()?;
 
         // Validate network configurations
         settings.networks.validate()?;
