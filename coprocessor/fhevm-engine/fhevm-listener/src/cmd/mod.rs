@@ -76,10 +76,10 @@ pub struct Args {
     pub initial_block_time: u64,
 
     #[arg(long, default_value = "1000000")]
-    provider_max_retries: u32,
+    pub provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
-    provider_retry_interval: Duration,
+    pub provider_retry_interval: Duration,
 }
 
 type RProvider = FillProvider<

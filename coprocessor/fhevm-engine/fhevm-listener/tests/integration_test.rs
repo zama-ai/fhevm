@@ -1,6 +1,7 @@
 use futures_util::future::try_join_all;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use alloy::network::EthereumWallet;
 use alloy::node_bindings::Anvil;
@@ -32,7 +33,7 @@ const NB_EVENTS_PER_WALLET: i64 = 400;
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
     url: &String,
-    tfhe_contract: FHEVMExecutorTestInstance<(), P, N>,
+    tfhe_contract: FHEVMExecutorTestInstance<P, N>,
 ) where
     P: Clone + alloy_provider::Provider<N> + 'static,
     N: Clone
@@ -140,6 +141,8 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         start_at_block: None,
         end_at_block: None,
         catchup_margin: 5,
+        provider_max_retries: 5,
+        provider_retry_interval: Duration::from_secs(1),
     };
 
     // Start listener in background task
