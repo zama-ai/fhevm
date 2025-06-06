@@ -23,9 +23,12 @@ export default () => {
   )
 }
 
-function toCamelCase(str: string, separator: string = '_'): string {
+function toCamelCase(
+  str: string | undefined,
+  separator: string = '_',
+): string | undefined {
   return str
-    .toLowerCase()
+    ?.toLowerCase()
     .split(separator)
     .reduce((acc, t) => acc + t[0].toUpperCase() + t.slice(1))
 }
@@ -36,6 +39,7 @@ function nestingVar(
   separator: string = '_',
 ): Record<string, any> {
   const current = toCamelCase(keys[0], separator)
+  if (!current) return {}
   return keys.length === 1
     ? { [current]: value }
     : { [current]: nestingVar(keys.slice(1), value) }
