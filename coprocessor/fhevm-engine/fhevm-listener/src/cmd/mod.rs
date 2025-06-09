@@ -1,4 +1,7 @@
-use alloy_provider::fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller};
+use alloy_provider::fillers::{
+    BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
+    NonceFiller,
+};
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
 use std::collections::VecDeque;
@@ -13,6 +16,7 @@ use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
 use alloy_sol_types::SolEventInterface;
 
 use clap::Parser;
+use humantime::parse_duration;
 
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::tfhe_event_propagate::{ChainId, Database};
@@ -35,7 +39,10 @@ pub struct Args {
     #[arg(long, default_value = None)]
     pub tfhe_contract_address: Option<String>,
 
-    #[arg(long, default_value = "postgresql://postgres:testmdp@localhost:5432/postgres")]
+    #[arg(
+        long,
+        default_value = "postgresql://postgres:testmdp@localhost:5432/postgres"
+    )]
     pub database_url: String,
 
     #[arg(long, default_value = None, help = "Can be negative from last block", allow_hyphen_values = true)]
@@ -47,20 +54,41 @@ pub struct Args {
     #[arg(long, default_value = None, help = "A Coprocessor API key is needed for database access")]
     pub coprocessor_api_key: Option<Uuid>,
 
-    #[arg(long, default_value = "5", help = "Catchup margin relative the last seen block")]
+    #[arg(
+        long,
+        default_value = "5",
+        help = "Catchup margin relative the last seen block"
+    )]
     pub catchup_margin: u64,
 
-    #[arg(long, default_value = "false", help = "Disable block immediate recheck")]
+    #[arg(
+        long,
+        default_value = "false",
+        help = "Disable block immediate recheck"
+    )]
     pub no_block_immediate_recheck: bool,
 
-    #[arg(long, default_value = "5", help = "Initial block time, refined on each block")]
+    #[arg(
+        long,
+        default_value = "5",
+        help = "Initial block time, refined on each block"
+    )]
     pub initial_block_time: u64,
+
+    #[arg(long, default_value = "1000000")]
+    pub provider_max_retries: u32,
+
+    #[arg(long, default_value = "4s", value_parser = parse_duration)]
+    pub provider_retry_interval: Duration,
 }
 
 type RProvider = FillProvider<
     JoinFill<
         alloy::providers::Identity,
-        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+        JoinFill<
+            GasFiller,
+            JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>,
+        >,
     >,
     RootProvider,
 >;
@@ -68,7 +96,11 @@ type RProvider = FillProvider<
 // TODO: to merge with Levent works
 struct InfiniteLogIter {
     url: String,
-    block_time: u64,  // A default value that is refined with real-time events data
+    max_retries: u32,
+    retry_interval: Duration,
+
+    block_time: u64, /* A default value that is refined with real-time
+                      * events data */
     no_block_immediate_recheck: bool,
     contract_addresses: Vec<Address>,
     catchup_logs: VecDeque<Log>,
@@ -92,10 +124,12 @@ impl InfiniteLogIter {
     fn new(args: &Args) -> Self {
         let mut contract_addresses = vec![];
         if let Some(acl_contract_address) = &args.acl_contract_address {
-            contract_addresses.push(Address::from_str(acl_contract_address).unwrap());
+            contract_addresses
+                .push(Address::from_str(acl_contract_address).unwrap());
         };
         if let Some(tfhe_contract_address) = &args.tfhe_contract_address {
-            contract_addresses.push(Address::from_str(tfhe_contract_address).unwrap());
+            contract_addresses
+                .push(Address::from_str(tfhe_contract_address).unwrap());
         };
         Self {
             url: args.url.clone(),
@@ -113,22 +147,37 @@ impl InfiniteLogIter {
             current_event: None,
             last_block_event_count: 0,
             last_block_recheck_planned: 0,
+            max_retries: args.provider_max_retries,
+            retry_interval: args.provider_retry_interval,
         }
     }
 
     async fn get_chain_id_or_panic(&self) -> ChainId {
         let ws = WsConnect::new(&self.url);
-        let provider = ProviderBuilder::new().on_ws(ws).await.expect("Cannot connect to host chain");
-        provider.get_chain_id().await.expect("Cannot retrieve chain id")
+        let provider = ProviderBuilder::new()
+            .connect_ws(ws)
+            .await
+            .expect("Cannot connect to host chain");
+        provider
+            .get_chain_id()
+            .await
+            .expect("Cannot retrieve chain id")
     }
 
-    async fn catchup_block_from(&self, provider: &RProvider) -> BlockNumberOrTag {
+    async fn catchup_block_from(
+        &self,
+        provider: &RProvider,
+    ) -> BlockNumberOrTag {
         if let Some(last_seen_block) = self.last_valid_block {
-            return BlockNumberOrTag::Number(last_seen_block - self.catchup_margin + 1);
+            return BlockNumberOrTag::Number(
+                last_seen_block - self.catchup_margin + 1,
+            );
         }
         if let Some(start_at_block) = self.start_at_block {
             if start_at_block >= 0 {
-                return BlockNumberOrTag::Number(start_at_block.try_into().unwrap());
+                return BlockNumberOrTag::Number(
+                    start_at_block.try_into().unwrap(),
+                );
             }
         }
         let Ok(last_block) = provider.get_block_number().await else {
@@ -142,7 +191,11 @@ impl InfiniteLogIter {
         BlockNumberOrTag::Number(last_block - catch_size.min(last_block))
     }
 
-    async fn fill_catchup_events(&mut self, provider: &RProvider, filter: &Filter) {
+    async fn fill_catchup_events(
+        &mut self,
+        provider: &RProvider,
+        filter: &Filter,
+    ) {
         let logs = provider.get_logs(&filter).await.expect("BLA2");
         self.catchup_logs.extend(logs);
     }
@@ -164,9 +217,7 @@ impl InfiniteLogIter {
             // no need to replan anything
             return false;
         }
-        let mut filter = Filter::new()
-            .from_block(block)
-            .to_block(block); // inclusive
+        let mut filter = Filter::new().from_block(block).to_block(block); // inclusive
         if !self.contract_addresses.is_empty() {
             filter = filter.address(self.contract_addresses.clone())
         }
@@ -179,7 +230,11 @@ impl InfiniteLogIter {
         if logs.len() as u64 == last_block_event_count {
             return false;
         }
-        eprintln!("Replaying Block {block} with {} events (vs {})", logs.len(), last_block_event_count);
+        eprintln!(
+            "Replaying Block {block} with {} events (vs {})",
+            logs.len(),
+            last_block_event_count
+        );
         self.catchup_logs.extend(logs);
         if let Some(event) = self.current_event.take() {
             self.catchup_logs.push_back(event);
@@ -191,10 +246,14 @@ impl InfiniteLogIter {
     async fn new_log_stream(&mut self, not_initialized: bool) {
         let mut retry = 20;
         loop {
-            let ws = WsConnect::new(&self.url);
-            match ProviderBuilder::new().on_ws(ws).await {
+            let ws = WsConnect::new(&self.url)
+                .with_max_retries(self.max_retries)
+                .with_retry_interval(self.retry_interval);
+
+            match ProviderBuilder::new().connect_ws(ws).await {
                 Ok(provider) => {
-                    let catch_up_from = self.catchup_block_from(&provider).await;
+                    let catch_up_from =
+                        self.catchup_block_from(&provider).await;
                     let mut filter = Filter::new().from_block(catch_up_from);
                     if let Some(end_at_block) = self.end_at_block {
                         filter = filter
@@ -206,8 +265,10 @@ impl InfiniteLogIter {
                     }
                     eprintln!("Listening on {}", &self.url);
                     eprintln!("Contracts {:?}", &self.contract_addresses);
-                    // note subcribing to real-time before reading catchup events to have the minimal gap between the two
-                    // TODO: but it does not guarantee no gap for now (implementation dependant)
+                    // note subcribing to real-time before reading catchup
+                    // events to have the minimal gap between the two
+                    // TODO: but it does not guarantee no gap for now
+                    // (implementation dependant)
                     self.stream = Some(
                         provider
                             .subscribe_logs(&filter)
@@ -252,12 +313,19 @@ impl InfiniteLogIter {
     async fn next_event_or_block_end(&mut self) -> LogOrBlockTimeout {
         let Some(stream) = &mut self.stream else {
             eprintln!("No stream, inconsistent state");
-            return LogOrBlockTimeout::Log(None) // simulate a stream end to force reinit
+            return LogOrBlockTimeout::Log(None); // simulate a stream end to
+                                                 // force reinit
         };
         let next_opt_event = stream.next();
-        // it assume the eventual discard of next_opt_event is handled correctly by alloy
-        // if not the case, the recheck mecanism ensures it's only extra latency
-        match tokio::time::timeout(Duration::from_secs(self.block_time + 2), next_opt_event).await {
+        // it assume the eventual discard of next_opt_event is handled correctly
+        // by alloy if not the case, the recheck mecanism ensures it's
+        // only extra latency
+        match tokio::time::timeout(
+            Duration::from_secs(self.block_time + 2),
+            next_opt_event,
+        )
+        .await
+        {
             Err(_) => LogOrBlockTimeout::BlockTimeout,
             Ok(opt_log) => LogOrBlockTimeout::Log(opt_log),
         }
@@ -281,9 +349,12 @@ impl InfiniteLogIter {
             };
             match self.next_event_or_block_end().await {
                 LogOrBlockTimeout::Log(None) => {
-                    // the stream ends, could be a restart of the full node, or just a temporary gap
+                    // the stream ends, could be a restart of the full node, or
+                    // just a temporary gap
                     self.stream = None;
-                    if let (Some(end_at_block), Some(last_seen_block)) = (self.end_at_block, self.last_valid_block) {
+                    if let (Some(end_at_block), Some(last_seen_block)) =
+                        (self.end_at_block, self.last_valid_block)
+                    {
                         if end_at_block == last_seen_block {
                             return None;
                         }
@@ -294,13 +365,16 @@ impl InfiniteLogIter {
                 }
                 LogOrBlockTimeout::Log(Some(log)) => {
                     self.current_event = Some(log);
-                    let recheck_planned = if !self.no_block_immediate_recheck && self.is_first_of_block() {
+                    let recheck_planned = if !self.no_block_immediate_recheck
+                        && self.is_first_of_block()
+                    {
                         self.recheck_prev_block().await
                     } else {
                         false
                     };
                     if recheck_planned {
-                        // current log is delayed and pushed to be replayed after the previous block in catchup
+                        // current log is delayed and pushed to be replayed
+                        // after the previous block in catchup
                         continue; // jump to the first event of catchup phase
                     } else {
                         break;
@@ -315,9 +389,11 @@ impl InfiniteLogIter {
         let Some(current_event) = &self.current_event else {
             return None;
         };
-        if let Some(block_number) = current_event.block_number  {
+        if let Some(block_number) = current_event.block_number {
             // we subtract one because the current block is on going
-            self.last_valid_block = Some(block_number.max(self.last_valid_block.unwrap_or_default()) - 1);
+            self.last_valid_block = Some(
+                block_number.max(self.last_valid_block.unwrap_or_default()) - 1,
+            );
         }
         self.last_block_event_count += 1;
         return self.current_event.clone();
@@ -335,8 +411,16 @@ impl InfiniteLogIter {
     fn reestimated_block_time(&mut self) {
         match (&self.current_event, &self.prev_event) {
             (
-                Some(Log {block_timestamp:Some(curr_t), block_number:Some(curr_n), ..}),
-                Some(Log {block_timestamp:Some(prev_t), block_number:Some(prev_n), ..})
+                Some(Log {
+                    block_timestamp: Some(curr_t),
+                    block_number: Some(curr_n),
+                    ..
+                }),
+                Some(Log {
+                    block_timestamp: Some(prev_t),
+                    block_number: Some(prev_n),
+                    ..
+                }),
             ) => self.block_time = (curr_t - prev_t) / (curr_n - prev_n),
             _ => (),
         }
@@ -411,7 +495,7 @@ pub async fn main(args: Args) {
         }
         if !args.ignore_tfhe_events {
             if let Ok(event) =
-                TfheContract::TfheContractEvents::decode_log(&log.inner, true)
+                TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
                 // TODO: filter on contract address if known
                 println!("TFHE {event:#?}");
@@ -427,7 +511,7 @@ pub async fn main(args: Args) {
         }
         if !args.ignore_acl_events {
             if let Ok(event) =
-                AclContract::AclContractEvents::decode_log(&log.inner, true)
+                AclContract::AclContractEvents::decode_log(&log.inner)
             {
                 println!("ACL {event:#?}");
                 if let Some(ref mut db) = db {

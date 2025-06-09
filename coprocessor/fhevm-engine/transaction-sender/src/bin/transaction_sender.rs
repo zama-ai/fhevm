@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use alloy::{
     network::EthereumWallet,
@@ -15,6 +15,8 @@ use transaction_sender::{
     get_chain_id, make_abstract_signer, AbstractSigner, ConfigSettings,
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
+
+use humantime::parse_duration;
 
 #[derive(Parser, Debug, Clone, ValueEnum)]
 enum SignerType {
@@ -96,6 +98,12 @@ struct Conf {
 
     #[arg(long, default_value = "30")]
     review_after_unlimited_retries: u16,
+
+    #[arg(long, default_value = "1000000")]
+    provider_max_retries: u32,
+
+    #[arg(long, default_value = "4s", value_parser = parse_duration)]
+    provider_retry_interval: Duration,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -115,7 +123,12 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().json().with_level(true).init();
     let conf = Conf::parse();
-    let chain_id = get_chain_id(conf.gateway_url.clone()).await?;
+    let chain_id = get_chain_id(
+        conf.gateway_url.clone(),
+        conf.provider_max_retries,
+        conf.provider_retry_interval,
+    )
+    .await?;
     let abstract_signer: AbstractSigner;
     match conf.signer_type {
         SignerType::PrivateKey => {
@@ -147,7 +160,11 @@ async fn main() -> anyhow::Result<()> {
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet.clone())
-            .on_ws(WsConnect::new(conf.gateway_url))
+            .connect_ws(
+                WsConnect::new(conf.gateway_url)
+                    .with_max_retries(conf.provider_max_retries)
+                    .with_retry_interval(conf.provider_retry_interval),
+            )
             .await?,
         Some(wallet.default_signer().address()),
     );

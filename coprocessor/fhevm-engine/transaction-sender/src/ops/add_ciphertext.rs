@@ -150,9 +150,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
     }
 
     fn already_added_error(&self, err: &RpcError<TransportErrorKind>) -> Option<Address> {
-        let validate = true;
         err.as_error_resp()
-            .and_then(|payload| payload.as_decoded_error::<CiphertextCommitsErrors>(validate))
+            .and_then(|payload| payload.as_decoded_interface_error::<CiphertextCommitsErrors>())
             .map(|error| match error {
                 CiphertextCommitsErrors::CoprocessorTxSenderAlreadyAdded(c) => {
                     c.coprocessorTxSenderAddress
@@ -298,7 +297,7 @@ where
         .fetch_all(&self.db_pool)
         .await?;
 
-        let ciphertext_manager: CiphertextCommits::CiphertextCommitsInstance<(), &P> =
+        let ciphertext_manager =
             CiphertextCommits::new(self.ciphertext_commits_address, self.provider.inner());
 
         info!("Selected {} rows to process", rows.len());

@@ -74,7 +74,7 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::new()
         .wallet(env.wallet)
-        .on_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
         .await?;
     let input_verification = InputVerification::deploy(&provider).await?;
     let gw_listener = GatewayListener::new(

@@ -1,12 +1,15 @@
+use std::time::Duration;
+
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
 use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
 use gw_listener::ConfigSettings;
+use humantime::parse_duration;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, error};
+use tracing::{error, info};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -35,6 +38,12 @@ struct Conf {
     /// HTTP server port for health checks
     #[arg(long, default_value_t = 8080)]
     health_check_port: u16,
+
+    #[arg(long, default_value = "1000000")]
+    provider_max_retries: u32,
+
+    #[arg(long, default_value = "4s", value_parser = parse_duration)]
+    provider_retry_interval: Duration,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -64,7 +73,11 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
 
     let provider = ProviderBuilder::new()
-        .on_ws(WsConnect::new(conf.gw_url.clone()))
+        .connect_ws(
+            WsConnect::new(conf.gw_url.clone())
+                .with_max_retries(conf.provider_max_retries)
+                .with_retry_interval(conf.provider_retry_interval),
+        )
         .await?;
 
     let cancel_token = CancellationToken::new();
@@ -90,7 +103,11 @@ async fn main() -> anyhow::Result<()> {
     let gw_listener = std::sync::Arc::new(gw_listener);
 
     // Create HTTP server with the Arc-wrapped listener
-    let http_server = HttpServer::new(gw_listener.clone(), conf.health_check_port, cancel_token.clone());
+    let http_server = HttpServer::new(
+        gw_listener.clone(),
+        conf.health_check_port,
+        cancel_token.clone(),
+    );
 
     // Install signal handlers
     install_signal_handlers(cancel_token.clone())?;
@@ -98,10 +115,7 @@ async fn main() -> anyhow::Result<()> {
     info!("Starting HTTP server on port {}", conf.health_check_port);
 
     // Run both services concurrently - note we now have to deref the Arc for run()
-    let (listener_result, http_result) = tokio::join!(
-        gw_listener.run(),
-        http_server.start()
-    );
+    let (listener_result, http_result) = tokio::join!(gw_listener.run(), http_server.start());
 
     // Check results
     if let Err(e) = listener_result {

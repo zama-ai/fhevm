@@ -15,7 +15,8 @@ fn build_contracts() {
     if env_example.exists() {
         // CI build
         if !env_dest.exists() {
-            fs::copy(env_example, env_dest).expect("Failed to copy .env.example to .env");
+            fs::copy(env_example, env_dest)
+                .expect("Failed to copy .env.example to .env");
             println!("Copied .env.example to .env");
         }
     } else if artefacts.exists() {
@@ -31,7 +32,8 @@ fn build_contracts() {
     if !contracts_dir.exists() {
         panic!("Error: contracts directory not found");
     }
-    env::set_current_dir(contracts_dir).expect("Failed to change to contracts directory");
+    env::set_current_dir(contracts_dir)
+        .expect("Failed to change to contracts directory");
 
     // Step 2: Run `npm ci --include=optional` in ../../contracts
     let npm_ci_status = Command::new("npm")
@@ -43,7 +45,8 @@ fn build_contracts() {
     }
     println!("Ran npm ci successfully");
 
-    // Step 3: Run `npm install && HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && npx hardhat compile` in ../../contracts
+    // Step 3: Run `npm install && HARDHAT_NETWORK=hardhat npm run
+    // deploy:emptyProxies && npx hardhat compile` in ../../contracts
     let npm_install_status = Command::new("npm")
         .arg("install")
         .status()
@@ -80,7 +83,8 @@ fn main() {
     let paths =
         ProjectPathsConfig::hardhat(Path::new(env!("CARGO_MANIFEST_DIR")))
             .unwrap();
-    // Use a specific version due to an issue with libc and libstdc++ in the rust Docker image we use to run it.
+    // Use a specific version due to an issue with libc and libstdc++ in the
+    // rust Docker image we use to run it.
     let solc = Solc::find_or_install(&Version::new(0, 8, 28)).unwrap();
     let project = Project::builder()
         .paths(paths)
