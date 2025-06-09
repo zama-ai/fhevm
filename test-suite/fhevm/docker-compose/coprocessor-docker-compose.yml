@@ -142,7 +142,9 @@ services:
       - sns_worker
       - --database-url=${DATABASE_URL}
       - --tenant-api-key=${TENANT_API_KEY}
-      - --pg-listen-channels=["event_pbs_computations" "event_ciphertext_computed"]
+      - --pg-listen-channels
+      - event_pbs_computations
+      - event_ciphertext_computed
       - --pg-notify-channel="event_ciphertext128_computed"
       - --work-items-batch-size=20
       - --pg-polling-interval=30
