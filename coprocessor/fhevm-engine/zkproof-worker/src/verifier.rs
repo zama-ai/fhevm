@@ -11,6 +11,7 @@ use sha3::Digest;
 use sha3::Keccak256;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{postgres::PgListener, PgPool, Row};
+use sqlx::{Postgres, Transaction};
 use std::num::NonZero;
 use std::str::FromStr;
 use tokio::sync::RwLock;
@@ -206,7 +207,7 @@ async fn execute_verify_proof_routine(
                 });
                 verified = true;
                 let count = cts.len();
-                insert_ciphertexts(pool, tenant_id, cts, blob_hash).await?;
+                insert_ciphertexts(&mut txn, tenant_id, cts, blob_hash).await?;
 
                 info!(message = "Ciphertexts inserted", request_id);
                 t.set_attribute("count", count.to_string());
@@ -384,13 +385,11 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
 }
 
 pub(crate) async fn insert_ciphertexts(
-    pool: &PgPool,
+    db_txn: &mut Transaction<'_, Postgres>,
     tenant_id: i32,
     cts: Vec<Ciphertext>,
     blob_hash: Vec<u8>,
 ) -> Result<(), ExecutionError> {
-    let mut tx = pool.begin().await?;
-
     for (i, ct) in cts.iter().enumerate() {
         sqlx::query!(
             r#"
@@ -408,7 +407,7 @@ pub(crate) async fn insert_ciphertexts(
             &blob_hash,
             i as i32,
         )
-        .execute(&mut *tx)
+        .execute(db_txn.as_mut())
         .await?;
     }
 
@@ -418,9 +417,7 @@ pub(crate) async fn insert_ciphertexts(
         "SELECT pg_notify($1, 'zk-worker')",
         EVENT_CIPHERTEXT_COMPUTED
     )
-    .execute(&mut *tx)
+    .execute(db_txn.as_mut())
     .await?;
-
-    tx.commit().await?;
     Ok(())
 }
