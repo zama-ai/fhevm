@@ -228,14 +228,26 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             }
         }
 
-        // Check blockchain connection
-        match self.provider.get_block_number().await {
-            Ok(block_num) => {
+        // The provider internal retry may last a long time, so we set a timeout
+        match tokio::time::timeout(
+            self.conf.health_check_timeout,
+            self.provider.get_block_number(),
+        )
+        .await
+        {
+            Ok(Ok(block_num)) => {
                 blockchain_connected = true;
-                info!("Blockchain connection healthy, current block: {}", block_num);
+                info!(
+                    "Blockchain connection healthy, current block: {}",
+                    block_num
+                );
             }
-            Err(e) => {
+
+            Ok(Err(e)) => {
                 error_details.push(format!("Blockchain connection error: {}", e));
+            }
+            Err(_) => {
+                error_details.push("Blockchain connection timeout".to_string());
             }
         }
 
