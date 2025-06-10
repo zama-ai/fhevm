@@ -78,6 +78,15 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             InputVerification::new(self.input_verification_address, &self.provider);
 
         let mut from_block = self.get_last_block_num(db_pool).await?;
+
+        // We call `from_block` here, but we expect that most nodes will not honour it. That doesn't lead to issues as described below.
+        //
+        // We assume that the provider will reconnect internally if the connection is lost and stream.next() will eventually return successfully.
+        // We ensure that by requiring the `provider_max_retries` and `provider_retry_interval` to be set to high enough values in the configuration s.t. retry is essentially infinite.
+        //
+        // That might lead to skipped events, but that is acceptable for input verification requests as the client will eventually retry.
+        // Furthermore, replaying old input verification requests is unnecessary as input verification is a synchronous request/response interaction on the client side.
+        // Finally, no data on the GW will be left in an inconsistent state.
         let filter = input_verification
             .VerifyProofRequest_filter()
             .from_block(from_block)
