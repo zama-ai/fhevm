@@ -13,7 +13,7 @@ import { IKmsContexts } from "./interfaces/IKmsContexts.sol";
 import "./interfaces/IMultichainAcl.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./shared/GatewayConfigChecks.sol";
-import { RefreshContextStatuses } from "./shared/RefreshContextStatuses.sol";
+import { ContextChecks } from "./shared/ContextChecks.sol";
 import "./shared/FheType.sol";
 import "./shared/Pausable.sol";
 import { ContextStatus } from "./shared/Enums.sol";
@@ -28,7 +28,7 @@ contract Decryption is
     UUPSUpgradeable,
     GatewayConfigChecks,
     Pausable,
-    RefreshContextStatuses
+    ContextChecks
 {
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
@@ -264,12 +264,10 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Get the KMS context ID associated with the decryption request
-        uint256 requestKmsContextId = $.decryptionContextId[decryptionId];
+        uint256 contextId = $.decryptionContextId[decryptionId];
 
-        // Check that the KMS context associated with the decryption is valid. This step includes
-        // checking that the KMS transaction sender is allowed to send a KMS transaction for this
-        // context.
-        _checkKmsContextValidityForDecryption(decryptionId, requestKmsContextId);
+        // Check that the context is still valid
+        _checkKmsContextValidity(contextId, decryptionId);
 
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
         PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
@@ -282,7 +280,7 @@ contract Decryption is
 
         /// @dev Recover the signer address from the signature and validate that it corresponds to a
         /// @dev KMS node that has not already signed.
-        _validateDecryptionResponseEIP712Signature(decryptionId, requestKmsContextId, digest, signature);
+        _validateDecryptionResponseEIP712Signature(decryptionId, contextId, digest, signature);
 
         /// @dev Store the signature for the public decryption response.
         /// @dev This list is then used to check the consensus. Important: the mapping considers
@@ -294,9 +292,7 @@ contract Decryption is
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (
-            !$.decryptionDone[decryptionId] && _isConsensusReachedPublic(requestKmsContextId, verifiedSignatures.length)
-        ) {
+        if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(contextId, verifiedSignatures.length)) {
             $.decryptionDone[decryptionId] = true;
 
             emit PublicDecryptionResponse(decryptionId, decryptedResult, verifiedSignatures);
@@ -442,12 +438,10 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Get the KMS context ID associated with the decryption request
-        uint256 requestKmsContextId = $.decryptionContextId[decryptionId];
+        uint256 contextId = $.decryptionContextId[decryptionId];
 
-        // Check that the KMS context associated with the decryption is valid. This step includes
-        // checking that the KMS transaction sender is allowed to send a KMS transaction for this
-        // context.
-        _checkKmsContextValidityForDecryption(decryptionId, requestKmsContextId);
+        // Check that the context is still valid
+        _checkKmsContextValidity(contextId, decryptionId);
 
         /// @dev Initialize the UserDecryptResponseVerification structure for the signature validation.
         UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
@@ -462,7 +456,7 @@ contract Decryption is
 
         /// @dev Recover the signer address from the signature and validate that it corresponds to a
         /// @dev KMS node that has not already signed.
-        _validateDecryptionResponseEIP712Signature(decryptionId, requestKmsContextId, digest, signature);
+        _validateDecryptionResponseEIP712Signature(decryptionId, contextId, digest, signature);
 
         /// @dev Store the signature for the user decryption response.
         /// @dev This list is then used to check the consensus. Important: the mapping should not
@@ -476,9 +470,7 @@ contract Decryption is
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (
-            !$.decryptionDone[decryptionId] && _isConsensusReachedUser(requestKmsContextId, verifiedSignatures.length)
-        ) {
+        if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(contextId, verifiedSignatures.length)) {
             $.decryptionDone[decryptionId] = true;
 
             emit UserDecryptionResponse(decryptionId, $.userDecryptedShares[decryptionId], verifiedSignatures);
@@ -605,7 +597,6 @@ contract Decryption is
         $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         // Get the current active KMS context ID
-        // If no KMS context is active, the function will revert
         uint256 contextId = KMS_CONTEXTS.getActiveKmsContextId();
         $.decryptionContextId[decryptionId] = contextId;
 
@@ -731,26 +722,26 @@ contract Decryption is
     }
 
     /// @notice Checks if the consensus is reached among the KMS nodes from a KMS context.
-    /// @param kmsContextId The KMS context ID
+    /// @param contextId The KMS context ID
     /// @param validResponseCount The number of unique valid public decryption responses
     /// @return Whether the consensus is reached
     function _isConsensusReachedPublic(
-        uint256 kmsContextId,
+        uint256 contextId,
         uint256 validResponseCount
     ) internal view virtual returns (bool) {
-        uint256 consensusThreshold = KMS_CONTEXTS.getPublicDecryptionThresholdFromContext(kmsContextId);
+        uint256 consensusThreshold = KMS_CONTEXTS.getPublicDecryptionThresholdFromContext(contextId);
         return validResponseCount >= consensusThreshold;
     }
 
     /// @notice Checks if the consensus for user decryption is reached among the KMS nodes from a KMS context.
-    /// @param kmsContextId The KMS context ID
+    /// @param contextId The KMS context ID
     /// @param validResponseCount The number of unique valid user decryption responses
     /// @return Whether the consensus is reached.
     function _isConsensusReachedUser(
-        uint256 kmsContextId,
+        uint256 contextId,
         uint256 validResponseCount
     ) internal view virtual returns (bool) {
-        uint256 consensusThreshold = KMS_CONTEXTS.getUserDecryptionThresholdFromContext(kmsContextId);
+        uint256 consensusThreshold = KMS_CONTEXTS.getUserDecryptionThresholdFromContext(contextId);
         return validResponseCount >= consensusThreshold;
     }
 
@@ -863,13 +854,13 @@ contract Decryption is
         }
     }
 
-    function _checkKmsContextValidityForDecryption(uint256 decryptionId, uint256 contextId) internal view virtual {
+    function _checkKmsContextValidity(uint256 contextId, uint256 decryptionId) internal view virtual {
         // Only accept KMS transaction senders from this context
         KMS_CONTEXTS.checkIsKmsTxSenderFromContext(contextId, msg.sender);
 
-        if (contextId != KMS_CONTEXTS.getActiveKmsContextId() || contextId != KMS_CONTEXTS.getSuspendedKmsContextId()) {
+        if (contextId != KMS_CONTEXTS.getActiveKmsContextId() && contextId != KMS_CONTEXTS.getSuspendedKmsContextId()) {
             ContextStatus contextStatus = KMS_CONTEXTS.getKmsContextStatus(contextId);
-            revert ContextNotAllowedForDecryption(decryptionId, contextId, contextStatus);
+            revert InvalidKmsContextDecryption(decryptionId, contextId, contextStatus);
         }
     }
 

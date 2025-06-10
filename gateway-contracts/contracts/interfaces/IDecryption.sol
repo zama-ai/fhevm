@@ -77,7 +77,7 @@ interface IDecryption {
      * @param contextId The ID of the KMS context.
      * @param contextStatus The status of the KMS context.
      */
-    error ContextNotAllowedForDecryption(uint256 decryptionId, uint256 contextId, ContextStatus contextStatus);
+    error InvalidKmsContextDecryption(uint256 decryptionId, uint256 contextId, ContextStatus contextStatus);
 
     /// @notice Error indicating that the input list of ctHandleContractPairs is empty.
     error EmptyCtHandleContractPairs();

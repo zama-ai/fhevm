@@ -5,10 +5,10 @@ import { kmsContextsAddress } from "../../addresses/KmsContextsAddress.sol";
 import { IKmsContexts } from "../interfaces/IKmsContexts.sol";
 
 /**
- * @title Refresh Statuses of Contexts
- * @dev Base contract that provides modifiers that refresh context statuses
+ * @title Context Checks
+ * @dev Base contract that provides modifiers associated with context checks
  */
-abstract contract RefreshContextStatuses {
+abstract contract ContextChecks {
     /// @notice The address of the KmsContexts contract
     IKmsContexts private constant KMS_CONTEXT = IKmsContexts(kmsContextsAddress);
 

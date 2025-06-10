@@ -7,8 +7,8 @@ import {
     Coprocessor,
     HostChain,
     ProtocolMetadata,
-    KmsConfiguration,
-    DecryptionThresholds
+    DecryptionThresholds,
+    KmsBlockPeriods
 } from "../shared/Structs.sol";
 import { ContextStatus } from "../shared/Enums.sol";
 /**
@@ -28,9 +28,19 @@ import { ContextStatus } from "../shared/Enums.sol";
 interface IKmsContexts {
     /**
      * @notice Emitted when the KmsContexts initialization is completed.
-     * @param kmsConfiguration KMS configuration parameters.
+     * @param decryptionThresholds The decryption thresholds for the KMS context
+     * @param blockPeriods The block periods for the KMS context
+     * @param softwareVersion The software version of the KMS context
+     * @param mpcThreshold The MPC threshold for the KMS context
+     * @param kmsNodes The KMS nodes for the KMS context
      */
-    event Initialization(KmsConfiguration kmsConfiguration);
+    event Initialization(
+        DecryptionThresholds decryptionThresholds,
+        KmsBlockPeriods blockPeriods,
+        bytes8 softwareVersion,
+        uint256 mpcThreshold,
+        KmsNode[] kmsNodes
+    );
 
     /**
      * @notice Emitted when the public decryption threshold has been updated.
@@ -69,7 +79,7 @@ interface IKmsContexts {
      */
     event ValidateKeyResharing(KmsContext newKmsContext);
 
-    event InvalidateKeyResharing(uint256 kmsContextId);
+    event InvalidateKeyResharing(uint256 contextId);
 
     /**
      * @notice Emitted when a new KMS context is being pre-activated.
@@ -78,43 +88,43 @@ interface IKmsContexts {
      */
     event PreActivateKmsContext(KmsContext newKmsContext, uint256 preActivationBlockNumber);
 
-    event ActivateKmsContext(uint256 kmsContextId);
+    event ActivateKmsContext(uint256 contextId);
 
-    event SuspendKmsContext(uint256 kmsContextId);
+    event SuspendKmsContext(uint256 contextId);
 
-    event CompromiseKmsContext(uint256 kmsContextId);
+    event CompromiseKmsContext(uint256 contextId);
 
-    event DeactivateKmsContext(uint256 kmsContextId);
+    event DeactivateKmsContext(uint256 contextId);
 
-    event DestroyKmsContext(uint256 kmsContextId);
+    event DestroyKmsContext(uint256 contextId);
 
-    error KmsContextNotInitialized(uint256 kmsContextId);
+    error KmsContextNotInitialized(uint256 contextId);
 
     /// @notice Error emitted when the KMS nodes list is empty.
     error EmptyKmsNodes();
 
     /**
      * @notice Error emitted when an address is not a KMS transaction sender from a context.
-     * @param kmsContextId The KMS context ID.
+     * @param contextId The KMS context ID.
      * @param txSenderAddress The address to check.
      */
-    error NotKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress);
+    error NotKmsTxSenderFromContext(uint256 contextId, address txSenderAddress);
 
     /**
      * @notice Error emitted when an address is not a KMS signer from a context.
-     * @param kmsContextId The KMS context ID.
+     * @param contextId The KMS context ID.
      * @param signerAddress The address to check.
      */
-    error NotKmsSignerFromContext(uint256 kmsContextId, address signerAddress);
+    error NotKmsSignerFromContext(uint256 contextId, address signerAddress);
 
     /**
      * @notice Error emitted when the MPC threshold is greater or equal to the number of KMS nodes
      * within the KMS context.
-     * @param kmsContextId The KMS context ID.
+     * @param contextId The KMS context ID.
      * @param mpcThreshold The MPC threshold.
      * @param nKmsNodes The number of KMS nodes.
      */
-    error InvalidHighMpcThreshold(uint256 kmsContextId, uint256 mpcThreshold, uint256 nKmsNodes);
+    error InvalidHighMpcThreshold(uint256 contextId, uint256 mpcThreshold, uint256 nKmsNodes);
 
     /// @notice Error emitted when the public decryption threshold is null.
     error InvalidNullPublicDecryptionThreshold();
@@ -136,36 +146,36 @@ interface IKmsContexts {
 
     error SuspendedKmsContextOngoing(uint256 suspendedContextId);
 
-    error CompromiseActiveKmsContextNotAllowed(uint256 kmsContextId);
+    error CompromiseActiveKmsContextNotAllowed(uint256 contextId);
 
-    error DestroyActiveKmsContextNotAllowed(uint256 kmsContextId);
+    error DestroyActiveKmsContextNotAllowed(uint256 contextId);
 
-    error KmsContextNotGenerating(uint256 kmsContextId);
+    error KmsContextNotGenerating(uint256 contextId);
 
-    error KmsNodeAlreadyValidatedKeyResharing(uint256 kmsContextId, address kmsSigner);
+    error KmsNodeAlreadyValidatedKeyResharing(uint256 contextId, address kmsSigner);
 
     error NoSuspendedKmsContext();
 
     /**
-     * @notice Error emitted when an transaction sender address is not associated with a registered KMS node within.
-     * @param kmsContextId The KMS context ID.
+     * @notice Error emitted when an transaction sender address is not associated with a registered KMS node within a context.
+     * @param contextId The KMS context ID.
      * @param kmsTxSenderAddress The transaction sender address that is not associated with a registered KMS node.
      */
-    error NotKmsNode(uint256 kmsContextId, address kmsTxSenderAddress);
+    error NotKmsNodeFromContext(uint256 contextId, address kmsTxSenderAddress);
 
     /**
      * @notice Check if an address is a registered KMS transaction sender from a context.
-     * @param kmsContextId The KMS context ID.
+     * @param contextId The KMS context ID.
      * @param txSenderAddress The address to check.
      */
-    function checkIsKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress) external view;
+    function checkIsKmsTxSenderFromContext(uint256 contextId, address txSenderAddress) external view;
 
     /**
      * @notice Check if an address is a registered KMS signer from a context.
-     * @param kmsContextId The KMS context ID.
+     * @param contextId The KMS context ID.
      * @param signerAddress The address to check.
      */
-    function checkIsKmsSignerFromContext(uint256 kmsContextId, address signerAddress) external view;
+    function checkIsKmsSignerFromContext(uint256 contextId, address signerAddress) external view;
 
     function getActiveKmsContextId() external view returns (uint256);
 
@@ -204,29 +214,29 @@ interface IKmsContexts {
         DecryptionThresholds calldata decryptionThresholds
     ) external;
 
-    function validateKeyResharing(uint256 kmsContextId, bytes calldata signature) external;
+    function validateKeyResharing(uint256 contextId, bytes calldata signature) external;
 
     function refreshKmsContextStatuses() external;
 
-    function compromiseKmsContext(uint256 kmsContextId) external;
+    function compromiseKmsContext(uint256 contextId) external;
 
-    function destroyKmsContext(uint256 kmsContextId) external;
+    function destroyKmsContext(uint256 contextId) external;
 
     function moveSuspendedKmsContextToActive() external;
 
     /**
      * @notice Get the public decryption threshold.
-     * @param kmsContextId The KMS context ID.
+     * @param contextId The KMS context ID.
      * @return The public decryption threshold.
      */
-    function getPublicDecryptionThresholdFromContext(uint256 kmsContextId) external view returns (uint256);
+    function getPublicDecryptionThresholdFromContext(uint256 contextId) external view returns (uint256);
 
     /**
      * @notice Get the user decryption threshold.
-     * @param kmsContextId The KMS context ID.
+     * @param contextId The KMS context ID.
      * @return The user decryption threshold.
      */
-    function getUserDecryptionThresholdFromContext(uint256 kmsContextId) external view returns (uint256);
+    function getUserDecryptionThresholdFromContext(uint256 contextId) external view returns (uint256);
 
     function getKmsContextGenerationBlockPeriod() external view returns (uint256);
 
@@ -253,7 +263,7 @@ interface IKmsContexts {
      */
     function getKmsSigners() external view returns (address[] memory);
 
-    function getKmsContextStatus(uint256 kmsContextId) external view returns (ContextStatus);
+    function getKmsContextStatus(uint256 contextId) external view returns (ContextStatus);
 
     /**
      * @notice Returns the versions of the KmsContexts contract in SemVer format.

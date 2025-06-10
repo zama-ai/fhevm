@@ -163,6 +163,9 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /// @dev See {IKmsManagement-preprocessKeygenResponse}.
     function preprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId) external virtual whenNotPaused {
+        /// @dev TODO: This function should only be called by a KMS transaction sender,
+        /// @dev update this once integrating keygen in the gateway
+        /// @dev See https://github.com/zama-ai/fhevm/issues/33
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -209,6 +212,9 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /// @dev See {IKmsManagement-preprocessKskgenResponse}.
     function preprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId) external virtual whenNotPaused {
+        /// @dev TODO: This function should only be called by a KMS transaction sender,
+        /// @dev update this once integrating keygen in the gateway
+        /// @dev See https://github.com/zama-ai/fhevm/issues/33
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -253,6 +259,9 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /// @dev See {IKmsManagement-keygenResponse}.
     function keygenResponse(uint256 preKeyId, uint256 keyId) external virtual whenNotPaused {
+        /// @dev TODO: This function should only be called by a KMS transaction sender,
+        /// @dev update this once integrating keygen in the gateway
+        /// @dev See https://github.com/zama-ai/fhevm/issues/33
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -298,6 +307,9 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /// @dev See {IKmsManagement-crsgenResponse}.
     function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external virtual whenNotPaused {
+        /// @dev TODO: This function should only be called by a KMS transaction sender,
+        /// @dev update this once integrating keygen in the gateway
+        /// @dev See https://github.com/zama-ai/fhevm/issues/33
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -328,6 +340,9 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 sourceKeyId,
         uint256 destKeyId
     ) external virtual onlyOwner whenNotPaused {
+        /// @dev TODO: This function should only be called by a KMS transaction sender,
+        /// @dev update this once integrating keygen in the gateway
+        /// @dev See https://github.com/zama-ai/fhevm/issues/33
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KSK generation request can only be sent once

@@ -100,8 +100,8 @@ task("task:deployKmsContexts").setAction(async function (_, hre) {
   const userDecryptionThreshold = getRequiredEnvVar("USER_DECRYPTION_THRESHOLD");
 
   // Parse the KMS context block periods
-  const kmsGenerationBlockPeriod = getRequiredEnvVar("KMS_GENERATION_BLOCK_PERIOD");
   const kmsPreActivationBlockPeriod = getRequiredEnvVar("KMS_PRE_ACTIVATION_BLOCK_PERIOD");
+  const kmsGenerationBlockPeriod = getRequiredEnvVar("KMS_GENERATION_BLOCK_PERIOD");
   const kmsSuspensionBlockPeriod = getRequiredEnvVar("KMS_SUSPENSION_BLOCK_PERIOD");
 
   // Parse the KMS software version
@@ -136,13 +136,11 @@ task("task:deployKmsContexts").setAction(async function (_, hre) {
   console.log("KMS nodes:", kmsNodes);
 
   const initializeArgs = [
-    [
-      [publicDecryptionThreshold, userDecryptionThreshold],
-      [kmsPreActivationBlockPeriod, kmsGenerationBlockPeriod, kmsSuspensionBlockPeriod],
-      kmsSoftwareVersion,
-      mpcThreshold,
-      kmsNodes,
-    ],
+    [publicDecryptionThreshold, userDecryptionThreshold],
+    [kmsPreActivationBlockPeriod, kmsGenerationBlockPeriod, kmsSuspensionBlockPeriod],
+    kmsSoftwareVersion,
+    mpcThreshold,
+    kmsNodes,
   ];
 
   await deployContractImplementation("KmsContexts", hre, initializeArgs);

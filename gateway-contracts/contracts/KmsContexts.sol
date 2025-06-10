@@ -24,11 +24,11 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
     /// @dev EIP712_KEY_RESHARING_TYPE is, but we keep it the same for clarity.
     struct KeyResharingVerification {
         /// @notice The KMS context ID
-        uint256 kmsContextId;
+        uint256 contextId;
     }
 
     /// @notice The definition of the KeyResharingVerification structure typed data.
-    string private constant EIP712_KEY_RESHARING_TYPE = "KeyResharingVerification(uint256 kmsContextId)";
+    string private constant EIP712_KEY_RESHARING_TYPE = "KeyResharingVerification(uint256 contextId)";
 
     /// @notice The hash of the KeyResharingVerification structure typed data definition used for signature validation.
     bytes32 private constant EIP712_KEY_RESHARING_TYPE_HASH = keccak256(bytes(EIP712_KEY_RESHARING_TYPE));
@@ -47,34 +47,34 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         /// @notice The KMS context lifecycle
         ContextLifecycle.ContextLifecycleStorage kmsContextLifecycle;
         uint256 kmsContextGenerationBlockPeriod;
-        mapping(uint256 kmsContextId => uint256 kmsContextPreActivationBlockPeriod) kmsContextPreActivationBlockPeriod;
+        mapping(uint256 contextId => uint256 kmsContextPreActivationBlockPeriod) kmsContextPreActivationBlockPeriod;
         uint256 kmsContextSuspensionBlockPeriod;
         /// @notice The KMS contexts
-        mapping(uint256 kmsContextId => KmsContext kmsContext) kmsContexts;
+        mapping(uint256 contextId => KmsContext kmsContext) kmsContexts;
         /// @notice The number of KMS contexts
         uint256 kmsContextCount;
         /// @notice Wether a KMS node is done with key resharing
-        mapping(uint256 kmsContextId => mapping(address kmsSignerAddress => bool doneKeyResharing)) kmsNodeDoneKeyResharing;
-        mapping(uint256 kmsContextId => uint256 activationBlockNumber) kmsContextActivationBlockNumber;
+        mapping(uint256 contextId => mapping(address kmsSignerAddress => bool doneKeyResharing)) kmsNodeDoneKeyResharing;
+        mapping(uint256 contextId => uint256 activationBlockNumber) kmsContextActivationBlockNumber;
         /// @notice Verified signatures for key resharing responses
-        mapping(uint256 kmsContextId => bytes[] verifiedSignatures) verifiedKeyResharingSignatures;
+        mapping(uint256 contextId => bytes[] verifiedSignatures) verifiedKeyResharingSignatures;
         /// @notice The KMS nodes' metadata
-        mapping(uint256 kmsContextId => mapping(address kmsTxSenderAddress => KmsNode kmsNode)) kmsNodes;
+        mapping(uint256 contextId => mapping(address kmsTxSenderAddress => KmsNode kmsNode)) kmsNodes;
         /// @notice The KMS nodes' transaction sender addresses
-        mapping(uint256 kmsContextId => mapping(address kmsTxSenderAddress => bool isKmsTxSender)) isKmsTxSender;
+        mapping(uint256 contextId => mapping(address kmsTxSenderAddress => bool isKmsTxSender)) isKmsTxSender;
         /// @notice The KMS nodes' signer addresses
-        mapping(uint256 kmsContextId => mapping(address kmsSignerAddress => bool isKmsSigner)) isKmsSigner;
+        mapping(uint256 contextId => mapping(address kmsSignerAddress => bool isKmsSigner)) isKmsSigner;
         /// @notice The KMS nodes' transaction sender address list
-        mapping(uint256 kmsContextId => address[] kmsTxSenderAddresses) kmsTxSenderAddresses;
+        mapping(uint256 contextId => address[] kmsTxSenderAddresses) kmsTxSenderAddresses;
         /// @notice The KMS nodes' signer address list
-        mapping(uint256 kmsContextId => address[] kmsSignerAddresses) kmsSignerAddresses;
-        mapping(uint256 kmsContextId => uint256 generationBlockNumber) kmsContextGenerationBlockNumber;
-        mapping(uint256 kmsContextId => uint256 preActivationBlockNumber) kmsContextPreActivationBlockNumber;
-        mapping(uint256 kmsContextId => uint256 suspensionBlockNumber) kmsContextSuspensionBlockNumber;
+        mapping(uint256 contextId => address[] kmsSignerAddresses) kmsSignerAddresses;
+        mapping(uint256 contextId => uint256 generationBlockNumber) kmsContextGenerationBlockNumber;
+        mapping(uint256 contextId => uint256 preActivationBlockNumber) kmsContextPreActivationBlockNumber;
+        mapping(uint256 contextId => uint256 suspensionBlockNumber) kmsContextSuspensionBlockNumber;
         /// @notice The public decryption threshold per KMS context
-        mapping(uint256 kmsContextId => uint256 threshold) publicDecryptionThreshold;
+        mapping(uint256 contextId => uint256 threshold) publicDecryptionThreshold;
         /// @notice The user decryption threshold per KMS context
-        mapping(uint256 kmsContextId => uint256 threshold) userDecryptionThreshold;
+        mapping(uint256 contextId => uint256 threshold) userDecryptionThreshold;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -88,65 +88,77 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         _disableInitializers();
     }
 
-    modifier ensureKmsContextInitialized(uint256 kmsContextId) {
+    modifier ensureContextInitialized(uint256 contextId) {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
-        if ($.kmsContexts[kmsContextId].contextId == 0) {
-            revert KmsContextNotInitialized(kmsContextId);
+        if ($.kmsContexts[contextId].contextId == 0) {
+            revert KmsContextNotInitialized(contextId);
         }
         _;
     }
 
     /// @notice Initializes the contract
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
-    /// @param initialKmsConfiguration KMS configuration parameters
-    function initialize(KmsConfiguration calldata initialKmsConfiguration) public virtual reinitializer(2) {
+    /// @param initialDecryptionThresholds The decryption thresholds for the KMS context
+    /// @param initialBlockPeriods The block periods for the KMS context
+    /// @param initialSoftwareVersion The software version of the KMS context
+    /// @param initialMpcThreshold The MPC threshold for the KMS context
+    /// @param initialKmsNodes The KMS nodes for the KMS context
+    function initialize(
+        DecryptionThresholds calldata initialDecryptionThresholds,
+        KmsBlockPeriods calldata initialBlockPeriods,
+        bytes8 initialSoftwareVersion,
+        uint256 initialMpcThreshold,
+        KmsNode[] calldata initialKmsNodes
+    ) public virtual reinitializer(2) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
         __Pausable_init();
 
-        if (initialKmsConfiguration.kmsNodes.length == 0) {
-            revert EmptyKmsNodes();
-        }
-
         // The first KMS context is the initial KMS context and thus does not have a previous context
         KmsContext memory newKmsContext = _addKmsContext(
             0,
-            initialKmsConfiguration.softwareVersion,
-            initialKmsConfiguration.mpcThreshold,
-            initialKmsConfiguration.kmsNodes,
-            initialKmsConfiguration.decryptionThresholds
+            initialSoftwareVersion,
+            initialMpcThreshold,
+            initialKmsNodes,
+            initialDecryptionThresholds
         );
 
         KmsContextsStorage storage $ = _getKmsContextsStorage();
 
-        ContextLifecycle.setGenerating($.kmsContextLifecycle, newKmsContext.contextId);
-        ContextLifecycle.setPreActivation($.kmsContextLifecycle, newKmsContext.contextId);
+        // It is exceptionally allowed to set the active context directly at initialization. In other
+        // cases, the context must be pre-activated first.
         ContextLifecycle.setActive($.kmsContextLifecycle, newKmsContext.contextId);
 
-        _setKmsBlockPeriods(initialKmsConfiguration.blockPeriods, newKmsContext.contextId);
+        _setKmsBlockPeriods(initialBlockPeriods, newKmsContext.contextId);
 
-        emit Initialization(initialKmsConfiguration);
+        emit Initialization(
+            initialDecryptionThresholds,
+            initialBlockPeriods,
+            initialSoftwareVersion,
+            initialMpcThreshold,
+            initialKmsNodes
+        );
     }
 
     /// @dev See {IKmsContexts-checkIsKmsTxSenderFromContext}.
     function checkIsKmsTxSenderFromContext(
-        uint256 kmsContextId,
+        uint256 contextId,
         address txSenderAddress
-    ) public view virtual ensureKmsContextInitialized(kmsContextId) {
+    ) public view virtual ensureContextInitialized(contextId) {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
-        if (!$.isKmsTxSender[kmsContextId][txSenderAddress]) {
-            revert NotKmsTxSenderFromContext(kmsContextId, txSenderAddress);
+        if (!$.isKmsTxSender[contextId][txSenderAddress]) {
+            revert NotKmsTxSenderFromContext(contextId, txSenderAddress);
         }
     }
 
     /// @dev See {IKmsContexts-checkIsKmsSignerFromContext}.
     function checkIsKmsSignerFromContext(
-        uint256 kmsContextId,
+        uint256 contextId,
         address signerAddress
-    ) public view virtual ensureKmsContextInitialized(kmsContextId) {
+    ) public view virtual ensureContextInitialized(contextId) {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
-        if (!$.isKmsSigner[kmsContextId][signerAddress]) {
-            revert NotKmsSignerFromContext(kmsContextId, signerAddress);
+        if (!$.isKmsSigner[contextId][signerAddress]) {
+            revert NotKmsSignerFromContext(contextId, signerAddress);
         }
     }
 
@@ -259,10 +271,10 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
             decryptionThresholds
         );
 
-        // Get the current active KMS context
-
         // Emit the `NewKmsContext` event in any case
         emit NewKmsContext(activeKmsContext, newKmsContext);
+
+        ContextLifecycle.setGenerating($.kmsContextLifecycle, newKmsContext.contextId);
 
         // If the `reshareKeys` flag is set or if the number of KMS nodes has changed, a key resharing is triggered
         // TODO: We should not trigger key resharing in case of parties having too many compromised parties
@@ -271,8 +283,6 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         // this is supported by the KMS
         // See https://github.com/zama-ai/fhevm/issues/134
         if (reshareKeys) {
-            ContextLifecycle.setGenerating($.kmsContextLifecycle, newKmsContext.contextId);
-
             // Store the pre-activation block period that will be taken into account once the key resharing is validated
             $.kmsContextPreActivationBlockPeriod[newKmsContext.contextId] = preActivationBlockPeriod;
 
@@ -287,35 +297,35 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         }
     }
 
-    function validateKeyResharing(uint256 kmsContextId, bytes calldata signature) external virtual {
+    function validateKeyResharing(uint256 contextId, bytes calldata signature) external virtual {
         // Only accept KMS transaction senders from the associated context
-        checkIsKmsTxSenderFromContext(kmsContextId, msg.sender);
+        checkIsKmsTxSenderFromContext(contextId, msg.sender);
 
         KmsContextsStorage storage $ = _getKmsContextsStorage();
 
         // Key resharing can only be validated if the KMS context is being generated
-        if (!ContextLifecycle.isGenerating($.kmsContextLifecycle, kmsContextId)) {
-            revert KmsContextNotGenerating(kmsContextId);
+        if (!ContextLifecycle.isGenerating($.kmsContextLifecycle, contextId)) {
+            revert KmsContextNotGenerating(contextId);
         }
 
         /// @dev Initialize the KeyResharingVerification structure for the signature validation.
-        KeyResharingVerification memory keyResharingVerification = KeyResharingVerification(kmsContextId);
+        KeyResharingVerification memory keyResharingVerification = KeyResharingVerification(contextId);
 
         /// @dev Compute the digest of the KeyResharingVerification structure.
         bytes32 digest = _hashKeyResharingVerification(keyResharingVerification);
 
         /// @dev Recover the signer address from the signature and validate that it corresponds to a
         /// @dev KMS node that has not already validated the key resharing.
-        _validateKeyResharingEIP712Signature(kmsContextId, digest, signature);
+        _validateKeyResharingEIP712Signature(contextId, digest, signature);
 
         /// @dev Store the signature for the key resharing.
         /// @dev This list is then used to check the consensus.
-        bytes[] storage verifiedSignatures = $.verifiedKeyResharingSignatures[kmsContextId];
+        bytes[] storage verifiedSignatures = $.verifiedKeyResharingSignatures[contextId];
         verifiedSignatures.push(signature);
 
-        KmsContext memory newKmsContext = $.kmsContexts[kmsContextId];
+        KmsContext memory newKmsContext = $.kmsContexts[contextId];
         if (_isConsensusReachedKeyResharing(newKmsContext, verifiedSignatures.length)) {
-            uint256 preActivationBlockPeriod = $.kmsContextPreActivationBlockPeriod[kmsContextId];
+            uint256 preActivationBlockPeriod = $.kmsContextPreActivationBlockPeriod[contextId];
             _preActivateKmsContext(newKmsContext, preActivationBlockPeriod);
             emit ValidateKeyResharing(newKmsContext);
         }
@@ -358,36 +368,32 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         }
     }
 
-    function compromiseKmsContext(
-        uint256 kmsContextId
-    ) external virtual onlyOwner ensureKmsContextInitialized(kmsContextId) {
+    function compromiseKmsContext(uint256 contextId) external virtual onlyOwner ensureContextInitialized(contextId) {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
 
         // Do not allow compromising an active KMS context in order to ensure that the gateway can
         // always provide an active KMS context
         // If too many parties are compromised for this KMS context, then the relevant functions
         // should be paused instead
-        if (ContextLifecycle.isActive($.kmsContextLifecycle, kmsContextId)) {
-            revert CompromiseActiveKmsContextNotAllowed(kmsContextId);
+        if (ContextLifecycle.isActive($.kmsContextLifecycle, contextId)) {
+            revert CompromiseActiveKmsContextNotAllowed(contextId);
         }
 
-        ContextLifecycle.setCompromised($.kmsContextLifecycle, kmsContextId);
-        emit CompromiseKmsContext(kmsContextId);
+        ContextLifecycle.setCompromised($.kmsContextLifecycle, contextId);
+        emit CompromiseKmsContext(contextId);
     }
 
-    function destroyKmsContext(
-        uint256 kmsContextId
-    ) external virtual onlyOwner ensureKmsContextInitialized(kmsContextId) {
+    function destroyKmsContext(uint256 contextId) external virtual onlyOwner ensureContextInitialized(contextId) {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
 
         // Do not allow destroying an active KMS context in order to ensure that the gateway can
         // always provide an active KMS context
-        if (ContextLifecycle.isActive($.kmsContextLifecycle, kmsContextId)) {
-            revert DestroyActiveKmsContextNotAllowed(kmsContextId);
+        if (ContextLifecycle.isActive($.kmsContextLifecycle, contextId)) {
+            revert DestroyActiveKmsContextNotAllowed(contextId);
         }
 
-        ContextLifecycle.setDestroyed($.kmsContextLifecycle, kmsContextId);
-        emit DestroyKmsContext(kmsContextId);
+        ContextLifecycle.setDestroyed($.kmsContextLifecycle, contextId);
+        emit DestroyKmsContext(contextId);
     }
 
     function moveSuspendedKmsContextToActive() external virtual onlyOwner {
@@ -407,18 +413,18 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
 
     /// @dev See {IKmsContexts-getPublicDecryptionThresholdFromContext}.
     function getPublicDecryptionThresholdFromContext(
-        uint256 kmsContextId
-    ) external view virtual ensureKmsContextInitialized(kmsContextId) returns (uint256) {
+        uint256 contextId
+    ) external view virtual ensureContextInitialized(contextId) returns (uint256) {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
-        return $.publicDecryptionThreshold[kmsContextId];
+        return $.publicDecryptionThreshold[contextId];
     }
 
     /// @dev See {IKmsContexts-getUserDecryptionThresholdFromContext}.
     function getUserDecryptionThresholdFromContext(
-        uint256 kmsContextId
-    ) external view virtual ensureKmsContextInitialized(kmsContextId) returns (uint256) {
+        uint256 contextId
+    ) external view virtual ensureContextInitialized(contextId) returns (uint256) {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
-        return $.userDecryptionThreshold[kmsContextId];
+        return $.userDecryptionThreshold[contextId];
     }
 
     /// @dev See {IKmsContexts-getKmsContextGenerationBlockPeriod}.
@@ -435,8 +441,13 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
 
     /// @dev See {IKmsContexts-getKmsNode}.
     function getKmsNode(address kmsTxSenderAddress) external view virtual returns (KmsNode memory) {
-        uint256 activeKmsContextId = getActiveKmsContextId();
-        return _getKmsNodeFromContext(activeKmsContextId, kmsTxSenderAddress);
+        uint256 activeContextId = getActiveKmsContextId();
+        KmsContextsStorage storage $ = _getKmsContextsStorage();
+        KmsNode memory kmsNode = $.kmsNodes[activeContextId][kmsTxSenderAddress];
+        if (kmsNode.txSenderAddress == address(0)) {
+            revert NotKmsNodeFromContext(activeContextId, kmsTxSenderAddress);
+        }
+        return kmsNode;
     }
 
     /// @dev See {IKmsContexts-getKmsNodes}.
@@ -446,19 +457,21 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
 
     /// @dev See {IKmsContexts-getKmsTxSenders}.
     function getKmsTxSenders() external view virtual returns (address[] memory) {
-        uint256 activeKmsContextId = getActiveKmsContextId();
-        return _getKmsTxSendersFromContext(activeKmsContextId);
+        uint256 activeContextId = getActiveKmsContextId();
+        KmsContextsStorage storage $ = _getKmsContextsStorage();
+        return $.kmsTxSenderAddresses[activeContextId];
     }
 
     /// @dev See {IKmsContexts-getKmsSigners}.
     function getKmsSigners() external view virtual returns (address[] memory) {
-        uint256 activeKmsContextId = getActiveKmsContextId();
-        return _getKmsSignersFromContext(activeKmsContextId);
+        uint256 activeContextId = getActiveKmsContextId();
+        KmsContextsStorage storage $ = _getKmsContextsStorage();
+        return $.kmsSignerAddresses[activeContextId];
     }
 
-    function getKmsContextStatus(uint256 kmsContextId) external view virtual returns (ContextStatus) {
+    function getKmsContextStatus(uint256 contextId) external view virtual returns (ContextStatus) {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
-        return ContextLifecycle.getContextStatus($.kmsContextLifecycle, kmsContextId);
+        return ContextLifecycle.getContextStatus($.kmsContextLifecycle, contextId);
     }
 
     /// @dev See {IKmsContexts-getVersion}.
@@ -477,40 +490,40 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
             );
     }
 
-    function _setKmsBlockPeriods(KmsBlockPeriods calldata kmsBlockPeriods, uint256 kmsContextId) internal virtual {
+    function _setKmsBlockPeriods(KmsBlockPeriods calldata kmsBlockPeriods, uint256 contextId) internal virtual {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
-        $.kmsContextPreActivationBlockPeriod[kmsContextId] = kmsBlockPeriods.preActivationBlockPeriod;
+        $.kmsContextPreActivationBlockPeriod[contextId] = kmsBlockPeriods.preActivationBlockPeriod;
         $.kmsContextGenerationBlockPeriod = kmsBlockPeriods.generationBlockPeriod;
         $.kmsContextSuspensionBlockPeriod = kmsBlockPeriods.suspensionBlockPeriod;
     }
 
     /**
      * @dev Sets the MPC threshold for a KMS context.
-     * @param kmsContextId The KMS context ID
+     * @param contextId The KMS context ID
      * @param newMpcThreshold The new MPC threshold.
      * @param nKmsNodes The number of KMS nodes associated to this context
      */
-    function _setMpcThreshold(uint256 kmsContextId, uint256 newMpcThreshold, uint256 nKmsNodes) internal virtual {
+    function _setMpcThreshold(uint256 contextId, uint256 newMpcThreshold, uint256 nKmsNodes) internal virtual {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
 
         /// @dev Check that the MPC threshold `t` is valid. It must verify:
         /// @dev - `t >= 0` : this is always true as it's an uint256
         /// @dev - `t < n` : it must be strictly less than the number of registered KMS nodes
         if (newMpcThreshold >= nKmsNodes) {
-            revert InvalidHighMpcThreshold(kmsContextId, newMpcThreshold, nKmsNodes);
+            revert InvalidHighMpcThreshold(contextId, newMpcThreshold, nKmsNodes);
         }
 
-        $.kmsContexts[kmsContextId].mpcThreshold = newMpcThreshold;
+        $.kmsContexts[contextId].mpcThreshold = newMpcThreshold;
     }
 
     /**
      * @dev Sets the public decryption threshold for a KMS context.
-     * @param kmsContextId The KMS context ID
+     * @param contextId The KMS context ID
      * @param publicDecryptionThreshold The public decryption threshold.
      * @param nKmsNodes The number of KMS nodes associated to this context
      */
     function _setPublicDecryptionThreshold(
-        uint256 kmsContextId,
+        uint256 contextId,
         uint256 publicDecryptionThreshold,
         uint256 nKmsNodes
     ) internal virtual {
@@ -526,17 +539,17 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
             revert InvalidHighPublicDecryptionThreshold(publicDecryptionThreshold, nKmsNodes);
         }
 
-        $.publicDecryptionThreshold[kmsContextId] = publicDecryptionThreshold;
+        $.publicDecryptionThreshold[contextId] = publicDecryptionThreshold;
     }
 
     /**
      * @dev Sets the user decryption threshold for a KMS context.
-     * @param kmsContextId The KMS context ID
+     * @param contextId The KMS context ID
      * @param userDecryptionThreshold The user decryption threshold.
      * @param nKmsNodes The number of KMS nodes associated to this context
      */
     function _setUserDecryptionThreshold(
-        uint256 kmsContextId,
+        uint256 contextId,
         uint256 userDecryptionThreshold,
         uint256 nKmsNodes
     ) internal virtual {
@@ -552,26 +565,26 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
             revert InvalidHighUserDecryptionThreshold(userDecryptionThreshold, nKmsNodes);
         }
 
-        $.userDecryptionThreshold[kmsContextId] = userDecryptionThreshold;
+        $.userDecryptionThreshold[contextId] = userDecryptionThreshold;
     }
 
     /**
      * @dev Sets the decryption thresholds for a KMS context.
-     * @param kmsContextId The KMS context ID
+     * @param contextId The KMS context ID
      * @param decryptionThresholds The decryption thresholds.
      * @param nKmsNodes The number of KMS nodes associated to this context
      */
     function _setDecryptionThresholds(
-        uint256 kmsContextId,
+        uint256 contextId,
         DecryptionThresholds calldata decryptionThresholds,
         uint256 nKmsNodes
     ) internal virtual {
-        _setPublicDecryptionThreshold(kmsContextId, decryptionThresholds.publicDecryptionThreshold, nKmsNodes);
-        _setUserDecryptionThreshold(kmsContextId, decryptionThresholds.userDecryptionThreshold, nKmsNodes);
+        _setPublicDecryptionThreshold(contextId, decryptionThresholds.publicDecryptionThreshold, nKmsNodes);
+        _setUserDecryptionThreshold(contextId, decryptionThresholds.userDecryptionThreshold, nKmsNodes);
     }
 
     function _addKmsContext(
-        uint256 previousKmsContextId,
+        uint256 previousContextId,
         bytes8 softwareVersion,
         uint256 mpcThreshold,
         KmsNode[] calldata kmsNodes,
@@ -579,44 +592,48 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
     ) internal virtual returns (KmsContext memory) {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
 
+        if (kmsNodes.length == 0) {
+            revert EmptyKmsNodes();
+        }
+
         // A KMS context ID is never null
         $.kmsContextCount++;
-        uint256 kmsContextId = $.kmsContextCount;
+        uint256 contextId = $.kmsContextCount;
 
         // Solidity doesn't support directly copying complex data structures like KmsNodes (array
         // of structs), so we need to instead create the struct field by field
-        $.kmsContexts[kmsContextId].contextId = kmsContextId;
-        $.kmsContexts[kmsContextId].previousContextId = previousKmsContextId;
-        $.kmsContexts[kmsContextId].softwareVersion = softwareVersion;
-        _setMpcThreshold(kmsContextId, mpcThreshold, kmsNodes.length);
+        $.kmsContexts[contextId].contextId = contextId;
+        $.kmsContexts[contextId].previousContextId = previousContextId;
+        $.kmsContexts[contextId].softwareVersion = softwareVersion;
+        _setMpcThreshold(contextId, mpcThreshold, kmsNodes.length);
 
         // Then, we need copy each KMS node struct one by one
         for (uint256 i = 0; i < kmsNodes.length; i++) {
-            $.kmsContexts[kmsContextId].kmsNodes.push(kmsNodes[i]);
+            $.kmsContexts[contextId].kmsNodes.push(kmsNodes[i]);
         }
 
         // Register several mappings for faster lookups
         for (uint256 i = 0; i < kmsNodes.length; i++) {
-            $.kmsNodes[kmsContextId][kmsNodes[i].txSenderAddress] = kmsNodes[i];
-            $.isKmsTxSender[kmsContextId][kmsNodes[i].txSenderAddress] = true;
-            $.kmsTxSenderAddresses[kmsContextId].push(kmsNodes[i].txSenderAddress);
-            $.isKmsSigner[kmsContextId][kmsNodes[i].signerAddress] = true;
-            $.kmsSignerAddresses[kmsContextId].push(kmsNodes[i].signerAddress);
+            $.kmsNodes[contextId][kmsNodes[i].txSenderAddress] = kmsNodes[i];
+            $.isKmsTxSender[contextId][kmsNodes[i].txSenderAddress] = true;
+            $.kmsTxSenderAddresses[contextId].push(kmsNodes[i].txSenderAddress);
+            $.isKmsSigner[contextId][kmsNodes[i].signerAddress] = true;
+            $.kmsSignerAddresses[contextId].push(kmsNodes[i].signerAddress);
         }
 
-        _setDecryptionThresholds(kmsContextId, decryptionThresholds, kmsNodes.length);
+        _setDecryptionThresholds(contextId, decryptionThresholds, kmsNodes.length);
 
-        return $.kmsContexts[kmsContextId];
+        return $.kmsContexts[contextId];
     }
 
     /**
      * @notice Validates the EIP712 signature for key resharing.
-     * @param kmsContextId The decryption request ID.
+     * @param contextId The decryption request ID.
      * @param digest The hashed EIP712 struct.
      * @param signature The signature to validate.
      */
     function _validateKeyResharingEIP712Signature(
-        uint256 kmsContextId,
+        uint256 contextId,
         bytes32 digest,
         bytes calldata signature
     ) internal virtual {
@@ -624,18 +641,20 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         address signer = ECDSA.recover(digest, signature);
 
         /// @dev Check that the signer is a KMS signer from the KMS context.
-        checkIsKmsSignerFromContext(kmsContextId, signer);
+        checkIsKmsSignerFromContext(contextId, signer);
 
         /// @dev Check that the signer has not already validated the key resharing.
-        if ($.kmsNodeDoneKeyResharing[kmsContextId][signer]) {
-            revert KmsNodeAlreadyValidatedKeyResharing(kmsContextId, signer);
+        if ($.kmsNodeDoneKeyResharing[contextId][signer]) {
+            revert KmsNodeAlreadyValidatedKeyResharing(contextId, signer);
         }
 
-        $.kmsNodeDoneKeyResharing[kmsContextId][signer] = true;
+        $.kmsNodeDoneKeyResharing[contextId][signer] = true;
     }
 
     function _preActivateKmsContext(KmsContext memory kmsContext, uint256 preActivationBlockPeriod) internal virtual {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
+
+        ContextLifecycle.setPreActivation($.kmsContextLifecycle, kmsContext.contextId);
 
         uint256 preActivationBlockNumber = block.number + preActivationBlockPeriod;
         $.kmsContextPreActivationBlockNumber[kmsContext.contextId] = preActivationBlockNumber;
@@ -656,51 +675,7 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         KeyResharingVerification memory keyResharingVerification
     ) internal view virtual returns (bytes32) {
         return
-            _hashTypedDataV4(
-                keccak256(abi.encode(EIP712_KEY_RESHARING_TYPE_HASH, keyResharingVerification.kmsContextId))
-            );
-    }
-
-    /**
-     * @notice Returns the KMS node from the KMS context associated to the transaction sender address.
-     * @param kmsContextId The KMS context ID.
-     * @param kmsTxSenderAddress The KMS transaction sender address.
-     * @return The KMS node.
-     */
-    function _getKmsNodeFromContext(
-        uint256 kmsContextId,
-        address kmsTxSenderAddress
-    ) internal view virtual ensureKmsContextInitialized(kmsContextId) returns (KmsNode memory) {
-        KmsContextsStorage storage $ = _getKmsContextsStorage();
-        KmsNode memory kmsNode = $.kmsNodes[kmsContextId][kmsTxSenderAddress];
-        if (kmsNode.txSenderAddress == address(0)) {
-            revert NotKmsNode(kmsContextId, kmsTxSenderAddress);
-        }
-        return kmsNode;
-    }
-
-    /**
-     * @notice Returns the KMS transaction senders from the KMS context.
-     * @param kmsContextId The KMS context ID.
-     * @return The KMS transaction senders.
-     */
-    function _getKmsTxSendersFromContext(
-        uint256 kmsContextId
-    ) internal view virtual ensureKmsContextInitialized(kmsContextId) returns (address[] memory) {
-        KmsContextsStorage storage $ = _getKmsContextsStorage();
-        return $.kmsTxSenderAddresses[kmsContextId];
-    }
-
-    /**
-     * @notice Returns the KMS signers from the KMS context.
-     * @param kmsContextId The KMS context ID.
-     * @return The KMS signers.
-     */
-    function _getKmsSignersFromContext(
-        uint256 kmsContextId
-    ) internal view virtual ensureKmsContextInitialized(kmsContextId) returns (address[] memory) {
-        KmsContextsStorage storage $ = _getKmsContextsStorage();
-        return $.kmsSignerAddresses[kmsContextId];
+            _hashTypedDataV4(keccak256(abi.encode(EIP712_KEY_RESHARING_TYPE_HASH, keyResharingVerification.contextId)));
     }
 
     /**

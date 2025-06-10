@@ -77,10 +77,12 @@ library ContextLifecycle {
      * In a normal situation, a suspended context should not be set back as active. However, we still
      * allow this to happen in case of emergency. This pattern should be used with caution and should
      * remain exceptional.
+     * Additionally, if the active context is not set, it means that the context is not initialized.
+     * In this very specific case, we allow the context to be set as active directly.
      * @param contextId The ID of the context to set as active.
      */
     function setActive(ContextLifecycleStorage storage $, uint256 contextId) internal onlyNonNullContextId(contextId) {
-        if (!isPreActivation($, contextId) && !isSuspended($, contextId)) {
+        if (!isPreActivation($, contextId) && !isSuspended($, contextId) && $.activeContextId != 0) {
             revert ContextNotPreActivatedOrSuspended(contextId);
         }
 

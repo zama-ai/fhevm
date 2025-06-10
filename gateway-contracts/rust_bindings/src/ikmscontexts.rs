@@ -13,13 +13,6 @@ interface IKmsContexts {
         uint256 generationBlockPeriod;
         uint256 suspensionBlockPeriod;
     }
-    struct KmsConfiguration {
-        DecryptionThresholds decryptionThresholds;
-        KmsBlockPeriods blockPeriods;
-        bytes8 softwareVersion;
-        uint256 mpcThreshold;
-        KmsNode[] kmsNodes;
-    }
     struct KmsContext {
         uint256 contextId;
         uint256 previousContextId;
@@ -38,34 +31,34 @@ interface IKmsContexts {
         bytes tlsCertificate;
     }
 
-    error CompromiseActiveKmsContextNotAllowed(uint256 kmsContextId);
-    error DestroyActiveKmsContextNotAllowed(uint256 kmsContextId);
+    error CompromiseActiveKmsContextNotAllowed(uint256 contextId);
+    error DestroyActiveKmsContextNotAllowed(uint256 contextId);
     error EmptyKmsNodes();
-    error InvalidHighMpcThreshold(uint256 kmsContextId, uint256 mpcThreshold, uint256 nKmsNodes);
+    error InvalidHighMpcThreshold(uint256 contextId, uint256 mpcThreshold, uint256 nKmsNodes);
     error InvalidHighPublicDecryptionThreshold(uint256 publicDecryptionThreshold, uint256 nKmsNodes);
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
     error InvalidNullPublicDecryptionThreshold();
     error InvalidNullUserDecryptionThreshold();
-    error KmsContextNotGenerating(uint256 kmsContextId);
-    error KmsContextNotInitialized(uint256 kmsContextId);
-    error KmsNodeAlreadyValidatedKeyResharing(uint256 kmsContextId, address kmsSigner);
+    error KmsContextNotGenerating(uint256 contextId);
+    error KmsContextNotInitialized(uint256 contextId);
+    error KmsNodeAlreadyValidatedKeyResharing(uint256 contextId, address kmsSigner);
     error NoSuspendedKmsContext();
-    error NotKmsNode(uint256 kmsContextId, address kmsTxSenderAddress);
-    error NotKmsSignerFromContext(uint256 kmsContextId, address signerAddress);
-    error NotKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress);
+    error NotKmsNodeFromContext(uint256 contextId, address kmsTxSenderAddress);
+    error NotKmsSignerFromContext(uint256 contextId, address signerAddress);
+    error NotKmsTxSenderFromContext(uint256 contextId, address txSenderAddress);
     error NumberOfKmsNodesChanged(uint256 activeKmsNodesLength, uint256 newKmsNodesLength);
     error SuspendedKmsContextOngoing(uint256 suspendedContextId);
 
-    event ActivateKmsContext(uint256 kmsContextId);
-    event CompromiseKmsContext(uint256 kmsContextId);
-    event DeactivateKmsContext(uint256 kmsContextId);
-    event DestroyKmsContext(uint256 kmsContextId);
-    event Initialization(KmsConfiguration kmsConfiguration);
-    event InvalidateKeyResharing(uint256 kmsContextId);
+    event ActivateKmsContext(uint256 contextId);
+    event CompromiseKmsContext(uint256 contextId);
+    event DeactivateKmsContext(uint256 contextId);
+    event DestroyKmsContext(uint256 contextId);
+    event Initialization(DecryptionThresholds decryptionThresholds, KmsBlockPeriods blockPeriods, bytes8 softwareVersion, uint256 mpcThreshold, KmsNode[] kmsNodes);
+    event InvalidateKeyResharing(uint256 contextId);
     event NewKmsContext(KmsContext activeKmsContext, KmsContext newKmsContext);
     event PreActivateKmsContext(KmsContext newKmsContext, uint256 preActivationBlockNumber);
     event StartKeyResharing(KmsContext activeKmsContext, KmsContext newKmsContext, uint256 generationBlockNumber);
-    event SuspendKmsContext(uint256 kmsContextId);
+    event SuspendKmsContext(uint256 contextId);
     event UpdateKmsContextGenerationBlockPeriod(uint256 newKmsContextGenerationBlockPeriod);
     event UpdateKmsContextSuspensionBlockPeriod(uint256 newKmsContextSuspensionBlockPeriod);
     event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
@@ -73,28 +66,28 @@ interface IKmsContexts {
     event ValidateKeyResharing(KmsContext newKmsContext);
 
     function addKmsContext(uint256 preActivationBlockPeriod, bytes8 softwareVersion, bool reshareKeys, uint256 mpcThreshold, KmsNode[] memory kmsNodes, DecryptionThresholds memory decryptionThresholds) external;
-    function checkIsKmsSignerFromContext(uint256 kmsContextId, address signerAddress) external view;
-    function checkIsKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress) external view;
-    function compromiseKmsContext(uint256 kmsContextId) external;
-    function destroyKmsContext(uint256 kmsContextId) external;
+    function checkIsKmsSignerFromContext(uint256 contextId, address signerAddress) external view;
+    function checkIsKmsTxSenderFromContext(uint256 contextId, address txSenderAddress) external view;
+    function compromiseKmsContext(uint256 contextId) external;
+    function destroyKmsContext(uint256 contextId) external;
     function getActiveKmsContext() external view returns (KmsContext memory);
     function getActiveKmsContextId() external view returns (uint256);
     function getKmsContextGenerationBlockPeriod() external view returns (uint256);
-    function getKmsContextStatus(uint256 kmsContextId) external view returns (ContextStatus);
+    function getKmsContextStatus(uint256 contextId) external view returns (ContextStatus);
     function getKmsContextSuspensionBlockPeriod() external view returns (uint256);
     function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
     function getKmsNodes() external view returns (KmsNode[] memory);
     function getKmsSigners() external view returns (address[] memory);
     function getKmsTxSenders() external view returns (address[] memory);
-    function getPublicDecryptionThresholdFromContext(uint256 kmsContextId) external view returns (uint256);
+    function getPublicDecryptionThresholdFromContext(uint256 contextId) external view returns (uint256);
     function getSuspendedKmsContextId() external view returns (uint256);
-    function getUserDecryptionThresholdFromContext(uint256 kmsContextId) external view returns (uint256);
+    function getUserDecryptionThresholdFromContext(uint256 contextId) external view returns (uint256);
     function getVersion() external pure returns (string memory);
     function moveSuspendedKmsContextToActive() external;
     function refreshKmsContextStatuses() external;
     function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external;
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
-    function validateKeyResharing(uint256 kmsContextId, bytes memory signature) external;
+    function validateKeyResharing(uint256 contextId, bytes memory signature) external;
 }
 ```
 
@@ -198,7 +191,7 @@ interface IKmsContexts {
     "name": "checkIsKmsSignerFromContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -216,7 +209,7 @@ interface IKmsContexts {
     "name": "checkIsKmsTxSenderFromContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -234,7 +227,7 @@ interface IKmsContexts {
     "name": "compromiseKmsContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -247,7 +240,7 @@ interface IKmsContexts {
     "name": "destroyKmsContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -368,7 +361,7 @@ interface IKmsContexts {
     "name": "getKmsContextStatus",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -542,7 +535,7 @@ interface IKmsContexts {
     "name": "getPublicDecryptionThresholdFromContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -574,7 +567,7 @@ interface IKmsContexts {
     "name": "getUserDecryptionThresholdFromContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -646,7 +639,7 @@ interface IKmsContexts {
     "name": "validateKeyResharing",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -664,7 +657,7 @@ interface IKmsContexts {
     "name": "ActivateKmsContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -677,7 +670,7 @@ interface IKmsContexts {
     "name": "CompromiseKmsContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -690,7 +683,7 @@ interface IKmsContexts {
     "name": "DeactivateKmsContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -703,7 +696,7 @@ interface IKmsContexts {
     "name": "DestroyKmsContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -716,106 +709,103 @@ interface IKmsContexts {
     "name": "Initialization",
     "inputs": [
       {
-        "name": "kmsConfiguration",
+        "name": "decryptionThresholds",
         "type": "tuple",
         "indexed": false,
-        "internalType": "struct KmsConfiguration",
+        "internalType": "struct DecryptionThresholds",
         "components": [
           {
-            "name": "decryptionThresholds",
-            "type": "tuple",
-            "internalType": "struct DecryptionThresholds",
-            "components": [
-              {
-                "name": "publicDecryptionThreshold",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "userDecryptionThreshold",
-                "type": "uint256",
-                "internalType": "uint256"
-              }
-            ]
-          },
-          {
-            "name": "blockPeriods",
-            "type": "tuple",
-            "internalType": "struct KmsBlockPeriods",
-            "components": [
-              {
-                "name": "preActivationBlockPeriod",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "generationBlockPeriod",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "suspensionBlockPeriod",
-                "type": "uint256",
-                "internalType": "uint256"
-              }
-            ]
-          },
-          {
-            "name": "softwareVersion",
-            "type": "bytes8",
-            "internalType": "bytes8"
-          },
-          {
-            "name": "mpcThreshold",
+            "name": "publicDecryptionThreshold",
             "type": "uint256",
             "internalType": "uint256"
           },
           {
-            "name": "kmsNodes",
-            "type": "tuple[]",
-            "internalType": "struct KmsNode[]",
-            "components": [
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "signerAddress",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "txSenderAddress",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "partyId",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "backupEncryptionKey",
-                "type": "bytes",
-                "internalType": "bytes"
-              },
-              {
-                "name": "externalUrl",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "publicStorageUrl",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "tlsCertificate",
-                "type": "bytes",
-                "internalType": "bytes"
-              }
-            ]
+            "name": "userDecryptionThreshold",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "blockPeriods",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct KmsBlockPeriods",
+        "components": [
+          {
+            "name": "preActivationBlockPeriod",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "generationBlockPeriod",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "suspensionBlockPeriod",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "softwareVersion",
+        "type": "bytes8",
+        "indexed": false,
+        "internalType": "bytes8"
+      },
+      {
+        "name": "mpcThreshold",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "kmsNodes",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct KmsNode[]",
+        "components": [
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "partyId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "backupEncryptionKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "externalUrl",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "publicStorageUrl",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "tlsCertificate",
+            "type": "bytes",
+            "internalType": "bytes"
           }
         ]
       }
@@ -827,7 +817,7 @@ interface IKmsContexts {
     "name": "InvalidateKeyResharing",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1248,7 +1238,7 @@ interface IKmsContexts {
     "name": "SuspendKmsContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1395,7 +1385,7 @@ interface IKmsContexts {
     "name": "CompromiseActiveKmsContextNotAllowed",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1406,7 +1396,7 @@ interface IKmsContexts {
     "name": "DestroyActiveKmsContextNotAllowed",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1422,7 +1412,7 @@ interface IKmsContexts {
     "name": "InvalidHighMpcThreshold",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -1485,7 +1475,7 @@ interface IKmsContexts {
     "name": "KmsContextNotGenerating",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1496,7 +1486,7 @@ interface IKmsContexts {
     "name": "KmsContextNotInitialized",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1507,7 +1497,7 @@ interface IKmsContexts {
     "name": "KmsNodeAlreadyValidatedKeyResharing",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -1525,10 +1515,10 @@ interface IKmsContexts {
   },
   {
     "type": "error",
-    "name": "NotKmsNode",
+    "name": "NotKmsNodeFromContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -1544,7 +1534,7 @@ interface IKmsContexts {
     "name": "NotKmsSignerFromContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -1560,7 +1550,7 @@ interface IKmsContexts {
     "name": "NotKmsTxSenderFromContext",
     "inputs": [
       {
-        "name": "kmsContextId",
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -2260,326 +2250,6 @@ struct KmsBlockPeriods { uint256 preActivationBlockPeriod; uint256 generationBlo
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct KmsConfiguration { DecryptionThresholds decryptionThresholds; KmsBlockPeriods blockPeriods; bytes8 softwareVersion; uint256 mpcThreshold; KmsNode[] kmsNodes; }
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct KmsConfiguration {
-        #[allow(missing_docs)]
-        pub decryptionThresholds: <DecryptionThresholds as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub blockPeriods: <KmsBlockPeriods as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub softwareVersion: alloy::sol_types::private::FixedBytes<8>,
-        #[allow(missing_docs)]
-        pub mpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub kmsNodes: alloy::sol_types::private::Vec<
-            <KmsNode as alloy::sol_types::SolType>::RustType,
-        >,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (
-            DecryptionThresholds,
-            KmsBlockPeriods,
-            alloy::sol_types::sol_data::FixedBytes<8>,
-            alloy::sol_types::sol_data::Uint<256>,
-            alloy::sol_types::sol_data::Array<KmsNode>,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            <DecryptionThresholds as alloy::sol_types::SolType>::RustType,
-            <KmsBlockPeriods as alloy::sol_types::SolType>::RustType,
-            alloy::sol_types::private::FixedBytes<8>,
-            alloy::sol_types::private::primitives::aliases::U256,
-            alloy::sol_types::private::Vec<
-                <KmsNode as alloy::sol_types::SolType>::RustType,
-            >,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<KmsConfiguration> for UnderlyingRustTuple<'_> {
-            fn from(value: KmsConfiguration) -> Self {
-                (
-                    value.decryptionThresholds,
-                    value.blockPeriods,
-                    value.softwareVersion,
-                    value.mpcThreshold,
-                    value.kmsNodes,
-                )
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsConfiguration {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    decryptionThresholds: tuple.0,
-                    blockPeriods: tuple.1,
-                    softwareVersion: tuple.2,
-                    mpcThreshold: tuple.3,
-                    kmsNodes: tuple.4,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolValue for KmsConfiguration {
-            type SolType = Self;
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::SolTypeValue<Self> for KmsConfiguration {
-            #[inline]
-            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
-                (
-                    <DecryptionThresholds as alloy_sol_types::SolType>::tokenize(
-                        &self.decryptionThresholds,
-                    ),
-                    <KmsBlockPeriods as alloy_sol_types::SolType>::tokenize(
-                        &self.blockPeriods,
-                    ),
-                    <alloy::sol_types::sol_data::FixedBytes<
-                        8,
-                    > as alloy_sol_types::SolType>::tokenize(&self.softwareVersion),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.mpcThreshold),
-                    <alloy::sol_types::sol_data::Array<
-                        KmsNode,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodes),
-                )
-            }
-            #[inline]
-            fn stv_abi_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
-                    return size;
-                }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
-            }
-            #[inline]
-            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
-            }
-            #[inline]
-            fn stv_abi_encode_packed_to(
-                &self,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
-            }
-            #[inline]
-            fn stv_abi_packed_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
-                    return size;
-                }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolType for KmsConfiguration {
-            type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
-            #[inline]
-            fn valid_token(token: &Self::Token<'_>) -> bool {
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
-            }
-            #[inline]
-            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::detokenize(token);
-                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolStruct for KmsConfiguration {
-            const NAME: &'static str = "KmsConfiguration";
-            #[inline]
-            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "KmsConfiguration(DecryptionThresholds decryptionThresholds,KmsBlockPeriods blockPeriods,bytes8 softwareVersion,uint256 mpcThreshold,KmsNode[] kmsNodes)",
-                )
-            }
-            #[inline]
-            fn eip712_components() -> alloy_sol_types::private::Vec<
-                alloy_sol_types::private::Cow<'static, str>,
-            > {
-                let mut components = alloy_sol_types::private::Vec::with_capacity(3);
-                components
-                    .push(
-                        <DecryptionThresholds as alloy_sol_types::SolStruct>::eip712_root_type(),
-                    );
-                components
-                    .extend(
-                        <DecryptionThresholds as alloy_sol_types::SolStruct>::eip712_components(),
-                    );
-                components
-                    .push(
-                        <KmsBlockPeriods as alloy_sol_types::SolStruct>::eip712_root_type(),
-                    );
-                components
-                    .extend(
-                        <KmsBlockPeriods as alloy_sol_types::SolStruct>::eip712_components(),
-                    );
-                components
-                    .push(<KmsNode as alloy_sol_types::SolStruct>::eip712_root_type());
-                components
-                    .extend(
-                        <KmsNode as alloy_sol_types::SolStruct>::eip712_components(),
-                    );
-                components
-            }
-            #[inline]
-            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
-                [
-                    <DecryptionThresholds as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.decryptionThresholds,
-                        )
-                        .0,
-                    <KmsBlockPeriods as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.blockPeriods,
-                        )
-                        .0,
-                    <alloy::sol_types::sol_data::FixedBytes<
-                        8,
-                    > as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.softwareVersion,
-                        )
-                        .0,
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.mpcThreshold)
-                        .0,
-                    <alloy::sol_types::sol_data::Array<
-                        KmsNode,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.kmsNodes)
-                        .0,
-                ]
-                    .concat()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::EventTopic for KmsConfiguration {
-            #[inline]
-            fn topic_preimage_length(rust: &Self::RustType) -> usize {
-                0usize
-                    + <DecryptionThresholds as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.decryptionThresholds,
-                    )
-                    + <KmsBlockPeriods as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.blockPeriods,
-                    )
-                    + <alloy::sol_types::sol_data::FixedBytes<
-                        8,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.softwareVersion,
-                    )
-                    + <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.mpcThreshold,
-                    )
-                    + <alloy::sol_types::sol_data::Array<
-                        KmsNode,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.kmsNodes,
-                    )
-            }
-            #[inline]
-            fn encode_topic_preimage(
-                rust: &Self::RustType,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                out.reserve(
-                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
-                );
-                <DecryptionThresholds as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.decryptionThresholds,
-                    out,
-                );
-                <KmsBlockPeriods as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.blockPeriods,
-                    out,
-                );
-                <alloy::sol_types::sol_data::FixedBytes<
-                    8,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.softwareVersion,
-                    out,
-                );
-                <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.mpcThreshold,
-                    out,
-                );
-                <alloy::sol_types::sol_data::Array<
-                    KmsNode,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.kmsNodes,
-                    out,
-                );
-            }
-            #[inline]
-            fn encode_topic(
-                rust: &Self::RustType,
-            ) -> alloy_sol_types::abi::token::WordToken {
-                let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    rust,
-                    &mut out,
-                );
-                alloy_sol_types::abi::token::WordToken(
-                    alloy_sol_types::private::keccak256(out),
-                )
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**```solidity
 struct KmsContext { uint256 contextId; uint256 previousContextId; bytes8 softwareVersion; uint256 mpcThreshold; KmsNode[] kmsNodes; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -3242,13 +2912,13 @@ struct KmsNode { string name; address signerAddress; address txSenderAddress; ui
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CompromiseActiveKmsContextNotAllowed(uint256)` and selector `0x77d05ea7`.
 ```solidity
-error CompromiseActiveKmsContextNotAllowed(uint256 kmsContextId);
+error CompromiseActiveKmsContextNotAllowed(uint256 contextId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct CompromiseActiveKmsContextNotAllowed {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -3280,7 +2950,7 @@ error CompromiseActiveKmsContextNotAllowed(uint256 kmsContextId);
         impl ::core::convert::From<CompromiseActiveKmsContextNotAllowed>
         for UnderlyingRustTuple<'_> {
             fn from(value: CompromiseActiveKmsContextNotAllowed) -> Self {
-                (value.kmsContextId,)
+                (value.contextId,)
             }
         }
         #[automatically_derived]
@@ -3288,7 +2958,7 @@ error CompromiseActiveKmsContextNotAllowed(uint256 kmsContextId);
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
         for CompromiseActiveKmsContextNotAllowed {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { kmsContextId: tuple.0 }
+                Self { contextId: tuple.0 }
             }
         }
         #[automatically_derived]
@@ -3310,7 +2980,7 @@ error CompromiseActiveKmsContextNotAllowed(uint256 kmsContextId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
         }
@@ -3319,13 +2989,13 @@ error CompromiseActiveKmsContextNotAllowed(uint256 kmsContextId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `DestroyActiveKmsContextNotAllowed(uint256)` and selector `0xb25e4eb3`.
 ```solidity
-error DestroyActiveKmsContextNotAllowed(uint256 kmsContextId);
+error DestroyActiveKmsContextNotAllowed(uint256 contextId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct DestroyActiveKmsContextNotAllowed {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -3357,7 +3027,7 @@ error DestroyActiveKmsContextNotAllowed(uint256 kmsContextId);
         impl ::core::convert::From<DestroyActiveKmsContextNotAllowed>
         for UnderlyingRustTuple<'_> {
             fn from(value: DestroyActiveKmsContextNotAllowed) -> Self {
-                (value.kmsContextId,)
+                (value.contextId,)
             }
         }
         #[automatically_derived]
@@ -3365,7 +3035,7 @@ error DestroyActiveKmsContextNotAllowed(uint256 kmsContextId);
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
         for DestroyActiveKmsContextNotAllowed {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { kmsContextId: tuple.0 }
+                Self { contextId: tuple.0 }
             }
         }
         #[automatically_derived]
@@ -3387,7 +3057,7 @@ error DestroyActiveKmsContextNotAllowed(uint256 kmsContextId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
         }
@@ -3462,13 +3132,13 @@ error EmptyKmsNodes();
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidHighMpcThreshold(uint256,uint256,uint256)` and selector `0x8789a6ca`.
 ```solidity
-error InvalidHighMpcThreshold(uint256 kmsContextId, uint256 mpcThreshold, uint256 nKmsNodes);
+error InvalidHighMpcThreshold(uint256 contextId, uint256 mpcThreshold, uint256 nKmsNodes);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InvalidHighMpcThreshold {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub mpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -3509,7 +3179,7 @@ error InvalidHighMpcThreshold(uint256 kmsContextId, uint256 mpcThreshold, uint25
         #[doc(hidden)]
         impl ::core::convert::From<InvalidHighMpcThreshold> for UnderlyingRustTuple<'_> {
             fn from(value: InvalidHighMpcThreshold) -> Self {
-                (value.kmsContextId, value.mpcThreshold, value.nKmsNodes)
+                (value.contextId, value.mpcThreshold, value.nKmsNodes)
             }
         }
         #[automatically_derived]
@@ -3517,7 +3187,7 @@ error InvalidHighMpcThreshold(uint256 kmsContextId, uint256 mpcThreshold, uint25
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidHighMpcThreshold {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    kmsContextId: tuple.0,
+                    contextId: tuple.0,
                     mpcThreshold: tuple.1,
                     nKmsNodes: tuple.2,
                 }
@@ -3542,7 +3212,7 @@ error InvalidHighMpcThreshold(uint256 kmsContextId, uint256 mpcThreshold, uint25
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.mpcThreshold),
@@ -3875,13 +3545,13 @@ error InvalidNullUserDecryptionThreshold();
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsContextNotGenerating(uint256)` and selector `0x5e51a2e1`.
 ```solidity
-error KmsContextNotGenerating(uint256 kmsContextId);
+error KmsContextNotGenerating(uint256 contextId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct KmsContextNotGenerating {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -3912,14 +3582,14 @@ error KmsContextNotGenerating(uint256 kmsContextId);
         #[doc(hidden)]
         impl ::core::convert::From<KmsContextNotGenerating> for UnderlyingRustTuple<'_> {
             fn from(value: KmsContextNotGenerating) -> Self {
-                (value.kmsContextId,)
+                (value.contextId,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsContextNotGenerating {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { kmsContextId: tuple.0 }
+                Self { contextId: tuple.0 }
             }
         }
         #[automatically_derived]
@@ -3941,7 +3611,7 @@ error KmsContextNotGenerating(uint256 kmsContextId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
         }
@@ -3950,13 +3620,13 @@ error KmsContextNotGenerating(uint256 kmsContextId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsContextNotInitialized(uint256)` and selector `0x82b1fbda`.
 ```solidity
-error KmsContextNotInitialized(uint256 kmsContextId);
+error KmsContextNotInitialized(uint256 contextId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct KmsContextNotInitialized {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -3988,7 +3658,7 @@ error KmsContextNotInitialized(uint256 kmsContextId);
         impl ::core::convert::From<KmsContextNotInitialized>
         for UnderlyingRustTuple<'_> {
             fn from(value: KmsContextNotInitialized) -> Self {
-                (value.kmsContextId,)
+                (value.contextId,)
             }
         }
         #[automatically_derived]
@@ -3996,7 +3666,7 @@ error KmsContextNotInitialized(uint256 kmsContextId);
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
         for KmsContextNotInitialized {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { kmsContextId: tuple.0 }
+                Self { contextId: tuple.0 }
             }
         }
         #[automatically_derived]
@@ -4018,7 +3688,7 @@ error KmsContextNotInitialized(uint256 kmsContextId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
         }
@@ -4027,13 +3697,13 @@ error KmsContextNotInitialized(uint256 kmsContextId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsNodeAlreadyValidatedKeyResharing(uint256,address)` and selector `0x99b158c1`.
 ```solidity
-error KmsNodeAlreadyValidatedKeyResharing(uint256 kmsContextId, address kmsSigner);
+error KmsNodeAlreadyValidatedKeyResharing(uint256 contextId, address kmsSigner);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct KmsNodeAlreadyValidatedKeyResharing {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub kmsSigner: alloy::sol_types::private::Address,
     }
@@ -4071,7 +3741,7 @@ error KmsNodeAlreadyValidatedKeyResharing(uint256 kmsContextId, address kmsSigne
         impl ::core::convert::From<KmsNodeAlreadyValidatedKeyResharing>
         for UnderlyingRustTuple<'_> {
             fn from(value: KmsNodeAlreadyValidatedKeyResharing) -> Self {
-                (value.kmsContextId, value.kmsSigner)
+                (value.contextId, value.kmsSigner)
             }
         }
         #[automatically_derived]
@@ -4080,7 +3750,7 @@ error KmsNodeAlreadyValidatedKeyResharing(uint256 kmsContextId, address kmsSigne
         for KmsNodeAlreadyValidatedKeyResharing {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    kmsContextId: tuple.0,
+                    contextId: tuple.0,
                     kmsSigner: tuple.1,
                 }
             }
@@ -4104,7 +3774,7 @@ error KmsNodeAlreadyValidatedKeyResharing(uint256 kmsContextId, address kmsSigne
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.kmsSigner,
                     ),
@@ -4180,15 +3850,15 @@ error NoSuspendedKmsContext();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotKmsNode(uint256,address)` and selector `0xa4d4367b`.
+    /**Custom error with signature `NotKmsNodeFromContext(uint256,address)` and selector `0x0494d3c0`.
 ```solidity
-error NotKmsNode(uint256 kmsContextId, address kmsTxSenderAddress);
+error NotKmsNodeFromContext(uint256 contextId, address kmsTxSenderAddress);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct NotKmsNode {
+    pub struct NotKmsNodeFromContext {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub kmsTxSenderAddress: alloy::sol_types::private::Address,
     }
@@ -4223,29 +3893,29 @@ error NotKmsNode(uint256 kmsContextId, address kmsTxSenderAddress);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<NotKmsNode> for UnderlyingRustTuple<'_> {
-            fn from(value: NotKmsNode) -> Self {
-                (value.kmsContextId, value.kmsTxSenderAddress)
+        impl ::core::convert::From<NotKmsNodeFromContext> for UnderlyingRustTuple<'_> {
+            fn from(value: NotKmsNodeFromContext) -> Self {
+                (value.contextId, value.kmsTxSenderAddress)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotKmsNode {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotKmsNodeFromContext {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    kmsContextId: tuple.0,
+                    contextId: tuple.0,
                     kmsTxSenderAddress: tuple.1,
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for NotKmsNode {
+        impl alloy_sol_types::SolError for NotKmsNodeFromContext {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotKmsNode(uint256,address)";
-            const SELECTOR: [u8; 4] = [164u8, 212u8, 54u8, 123u8];
+            const SIGNATURE: &'static str = "NotKmsNodeFromContext(uint256,address)";
+            const SELECTOR: [u8; 4] = [4u8, 148u8, 211u8, 192u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4257,7 +3927,7 @@ error NotKmsNode(uint256 kmsContextId, address kmsTxSenderAddress);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.kmsTxSenderAddress,
                     ),
@@ -4269,13 +3939,13 @@ error NotKmsNode(uint256 kmsContextId, address kmsTxSenderAddress);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotKmsSignerFromContext(uint256,address)` and selector `0x89b45e5d`.
 ```solidity
-error NotKmsSignerFromContext(uint256 kmsContextId, address signerAddress);
+error NotKmsSignerFromContext(uint256 contextId, address signerAddress);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotKmsSignerFromContext {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub signerAddress: alloy::sol_types::private::Address,
     }
@@ -4312,7 +3982,7 @@ error NotKmsSignerFromContext(uint256 kmsContextId, address signerAddress);
         #[doc(hidden)]
         impl ::core::convert::From<NotKmsSignerFromContext> for UnderlyingRustTuple<'_> {
             fn from(value: NotKmsSignerFromContext) -> Self {
-                (value.kmsContextId, value.signerAddress)
+                (value.contextId, value.signerAddress)
             }
         }
         #[automatically_derived]
@@ -4320,7 +3990,7 @@ error NotKmsSignerFromContext(uint256 kmsContextId, address signerAddress);
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotKmsSignerFromContext {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    kmsContextId: tuple.0,
+                    contextId: tuple.0,
                     signerAddress: tuple.1,
                 }
             }
@@ -4344,7 +4014,7 @@ error NotKmsSignerFromContext(uint256 kmsContextId, address signerAddress);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.signerAddress,
                     ),
@@ -4356,13 +4026,13 @@ error NotKmsSignerFromContext(uint256 kmsContextId, address signerAddress);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotKmsTxSenderFromContext(uint256,address)` and selector `0xfdf8a05d`.
 ```solidity
-error NotKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress);
+error NotKmsTxSenderFromContext(uint256 contextId, address txSenderAddress);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotKmsTxSenderFromContext {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub txSenderAddress: alloy::sol_types::private::Address,
     }
@@ -4400,7 +4070,7 @@ error NotKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress);
         impl ::core::convert::From<NotKmsTxSenderFromContext>
         for UnderlyingRustTuple<'_> {
             fn from(value: NotKmsTxSenderFromContext) -> Self {
-                (value.kmsContextId, value.txSenderAddress)
+                (value.contextId, value.txSenderAddress)
             }
         }
         #[automatically_derived]
@@ -4409,7 +4079,7 @@ error NotKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress);
         for NotKmsTxSenderFromContext {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    kmsContextId: tuple.0,
+                    contextId: tuple.0,
                     txSenderAddress: tuple.1,
                 }
             }
@@ -4433,7 +4103,7 @@ error NotKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.txSenderAddress,
                     ),
@@ -4611,7 +4281,7 @@ error SuspendedKmsContextOngoing(uint256 suspendedContextId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ActivateKmsContext(uint256)` and selector `0x4f54a6ac981cc8dc83142b3eb4d120be7c70fc5de6477a14eae3e9ca647644bc`.
 ```solidity
-event ActivateKmsContext(uint256 kmsContextId);
+event ActivateKmsContext(uint256 contextId);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4622,7 +4292,7 @@ event ActivateKmsContext(uint256 kmsContextId);
     #[derive(Clone)]
     pub struct ActivateKmsContext {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -4652,7 +4322,7 @@ event ActivateKmsContext(uint256 kmsContextId);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { kmsContextId: data.0 }
+                Self { contextId: data.0 }
             }
             #[inline]
             fn check_signature(
@@ -4674,7 +4344,7 @@ event ActivateKmsContext(uint256 kmsContextId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -4716,7 +4386,7 @@ event ActivateKmsContext(uint256 kmsContextId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `CompromiseKmsContext(uint256)` and selector `0xbc1114fa9a77648cd097ee6cf149c344fa278b9b983f30dd65b6fd6a9d464a07`.
 ```solidity
-event CompromiseKmsContext(uint256 kmsContextId);
+event CompromiseKmsContext(uint256 contextId);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4727,7 +4397,7 @@ event CompromiseKmsContext(uint256 kmsContextId);
     #[derive(Clone)]
     pub struct CompromiseKmsContext {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -4757,7 +4427,7 @@ event CompromiseKmsContext(uint256 kmsContextId);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { kmsContextId: data.0 }
+                Self { contextId: data.0 }
             }
             #[inline]
             fn check_signature(
@@ -4779,7 +4449,7 @@ event CompromiseKmsContext(uint256 kmsContextId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -4821,7 +4491,7 @@ event CompromiseKmsContext(uint256 kmsContextId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DeactivateKmsContext(uint256)` and selector `0x8fb75858a565aee117342d93196a7f0b54c1c8519885eddda6a01f477359b363`.
 ```solidity
-event DeactivateKmsContext(uint256 kmsContextId);
+event DeactivateKmsContext(uint256 contextId);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4832,7 +4502,7 @@ event DeactivateKmsContext(uint256 kmsContextId);
     #[derive(Clone)]
     pub struct DeactivateKmsContext {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -4862,7 +4532,7 @@ event DeactivateKmsContext(uint256 kmsContextId);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { kmsContextId: data.0 }
+                Self { contextId: data.0 }
             }
             #[inline]
             fn check_signature(
@@ -4884,7 +4554,7 @@ event DeactivateKmsContext(uint256 kmsContextId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -4926,7 +4596,7 @@ event DeactivateKmsContext(uint256 kmsContextId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DestroyKmsContext(uint256)` and selector `0x3e8f02dc7af6e3a67f3af0bc99bcf11b4deb46105e9ba7f1ac6da82322e9025e`.
 ```solidity
-event DestroyKmsContext(uint256 kmsContextId);
+event DestroyKmsContext(uint256 contextId);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4937,7 +4607,7 @@ event DestroyKmsContext(uint256 kmsContextId);
     #[derive(Clone)]
     pub struct DestroyKmsContext {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -4967,7 +4637,7 @@ event DestroyKmsContext(uint256 kmsContextId);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { kmsContextId: data.0 }
+                Self { contextId: data.0 }
             }
             #[inline]
             fn check_signature(
@@ -4989,7 +4659,7 @@ event DestroyKmsContext(uint256 kmsContextId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -5029,9 +4699,9 @@ event DestroyKmsContext(uint256 kmsContextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `Initialization(((uint256,uint256),(uint256,uint256,uint256),bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]))` and selector `0xe9f0944f8f5177dd81fb66115ee6e3156189230a83241f9547d99e03e0f75b82`.
+    /**Event with signature `Initialization((uint256,uint256),(uint256,uint256,uint256),bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[])` and selector `0x016ee9c16213ed67f33222abad4dfe46eb951ead30a10a1a72db3316ffb664e0`.
 ```solidity
-event Initialization(KmsConfiguration kmsConfiguration);
+event Initialization(DecryptionThresholds decryptionThresholds, KmsBlockPeriods blockPeriods, bytes8 softwareVersion, uint256 mpcThreshold, KmsNode[] kmsNodes);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -5042,7 +4712,17 @@ event Initialization(KmsConfiguration kmsConfiguration);
     #[derive(Clone)]
     pub struct Initialization {
         #[allow(missing_docs)]
-        pub kmsConfiguration: <KmsConfiguration as alloy::sol_types::SolType>::RustType,
+        pub decryptionThresholds: <DecryptionThresholds as alloy::sol_types::SolType>::RustType,
+        #[allow(missing_docs)]
+        pub blockPeriods: <KmsBlockPeriods as alloy::sol_types::SolType>::RustType,
+        #[allow(missing_docs)]
+        pub softwareVersion: alloy::sol_types::private::FixedBytes<8>,
+        #[allow(missing_docs)]
+        pub mpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub kmsNodes: alloy::sol_types::private::Vec<
+            <KmsNode as alloy::sol_types::SolType>::RustType,
+        >,
     }
     #[allow(
         non_camel_case_types,
@@ -5054,16 +4734,22 @@ event Initialization(KmsConfiguration kmsConfiguration);
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for Initialization {
-            type DataTuple<'a> = (KmsConfiguration,);
+            type DataTuple<'a> = (
+                DecryptionThresholds,
+                KmsBlockPeriods,
+                alloy::sol_types::sol_data::FixedBytes<8>,
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Array<KmsNode>,
+            );
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "Initialization(((uint256,uint256),(uint256,uint256,uint256),bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[]))";
+            const SIGNATURE: &'static str = "Initialization((uint256,uint256),(uint256,uint256,uint256),bytes8,uint256,(string,address,address,uint256,bytes,string,string,bytes)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                233u8, 240u8, 148u8, 79u8, 143u8, 81u8, 119u8, 221u8, 129u8, 251u8,
-                102u8, 17u8, 94u8, 230u8, 227u8, 21u8, 97u8, 137u8, 35u8, 10u8, 131u8,
-                36u8, 31u8, 149u8, 71u8, 217u8, 158u8, 3u8, 224u8, 247u8, 91u8, 130u8,
+                1u8, 110u8, 233u8, 193u8, 98u8, 19u8, 237u8, 103u8, 243u8, 50u8, 34u8,
+                171u8, 173u8, 77u8, 254u8, 70u8, 235u8, 149u8, 30u8, 173u8, 48u8, 161u8,
+                10u8, 26u8, 114u8, 219u8, 51u8, 22u8, 255u8, 182u8, 100u8, 224u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -5072,7 +4758,13 @@ event Initialization(KmsConfiguration kmsConfiguration);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { kmsConfiguration: data.0 }
+                Self {
+                    decryptionThresholds: data.0,
+                    blockPeriods: data.1,
+                    softwareVersion: data.2,
+                    mpcThreshold: data.3,
+                    kmsNodes: data.4,
+                }
             }
             #[inline]
             fn check_signature(
@@ -5092,9 +4784,21 @@ event Initialization(KmsConfiguration kmsConfiguration);
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <KmsConfiguration as alloy_sol_types::SolType>::tokenize(
-                        &self.kmsConfiguration,
+                    <DecryptionThresholds as alloy_sol_types::SolType>::tokenize(
+                        &self.decryptionThresholds,
                     ),
+                    <KmsBlockPeriods as alloy_sol_types::SolType>::tokenize(
+                        &self.blockPeriods,
+                    ),
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        8,
+                    > as alloy_sol_types::SolType>::tokenize(&self.softwareVersion),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.mpcThreshold),
+                    <alloy::sol_types::sol_data::Array<
+                        KmsNode,
+                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodes),
                 )
             }
             #[inline]
@@ -5136,7 +4840,7 @@ event Initialization(KmsConfiguration kmsConfiguration);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `InvalidateKeyResharing(uint256)` and selector `0x009fe8f0db45996decf7b06fc7b6ec5f887d5f04db2e0c4ad7f4e4ee5eefc5a3`.
 ```solidity
-event InvalidateKeyResharing(uint256 kmsContextId);
+event InvalidateKeyResharing(uint256 contextId);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -5147,7 +4851,7 @@ event InvalidateKeyResharing(uint256 kmsContextId);
     #[derive(Clone)]
     pub struct InvalidateKeyResharing {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -5177,7 +4881,7 @@ event InvalidateKeyResharing(uint256 kmsContextId);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { kmsContextId: data.0 }
+                Self { contextId: data.0 }
             }
             #[inline]
             fn check_signature(
@@ -5199,7 +4903,7 @@ event InvalidateKeyResharing(uint256 kmsContextId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -5592,7 +5296,7 @@ event StartKeyResharing(KmsContext activeKmsContext, KmsContext newKmsContext, u
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `SuspendKmsContext(uint256)` and selector `0x851a08c16b15959c338ac4b56466d06c9f9d5ff8d715168aa125d5ccaf538320`.
 ```solidity
-event SuspendKmsContext(uint256 kmsContextId);
+event SuspendKmsContext(uint256 contextId);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -5603,7 +5307,7 @@ event SuspendKmsContext(uint256 kmsContextId);
     #[derive(Clone)]
     pub struct SuspendKmsContext {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -5633,7 +5337,7 @@ event SuspendKmsContext(uint256 kmsContextId);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { kmsContextId: data.0 }
+                Self { contextId: data.0 }
             }
             #[inline]
             fn check_signature(
@@ -5655,7 +5359,7 @@ event SuspendKmsContext(uint256 kmsContextId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -6443,13 +6147,13 @@ function addKmsContext(uint256 preActivationBlockPeriod, bytes8 softwareVersion,
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkIsKmsSignerFromContext(uint256,address)` and selector `0xdfe36aee`.
 ```solidity
-function checkIsKmsSignerFromContext(uint256 kmsContextId, address signerAddress) external view;
+function checkIsKmsSignerFromContext(uint256 contextId, address signerAddress) external view;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkIsKmsSignerFromContextCall {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub signerAddress: alloy::sol_types::private::Address,
     }
@@ -6492,7 +6196,7 @@ function checkIsKmsSignerFromContext(uint256 kmsContextId, address signerAddress
             impl ::core::convert::From<checkIsKmsSignerFromContextCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: checkIsKmsSignerFromContextCall) -> Self {
-                    (value.kmsContextId, value.signerAddress)
+                    (value.contextId, value.signerAddress)
                 }
             }
             #[automatically_derived]
@@ -6501,7 +6205,7 @@ function checkIsKmsSignerFromContext(uint256 kmsContextId, address signerAddress
             for checkIsKmsSignerFromContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        kmsContextId: tuple.0,
+                        contextId: tuple.0,
                         signerAddress: tuple.1,
                     }
                 }
@@ -6567,7 +6271,7 @@ function checkIsKmsSignerFromContext(uint256 kmsContextId, address signerAddress
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.signerAddress,
                     ),
@@ -6589,13 +6293,13 @@ function checkIsKmsSignerFromContext(uint256 kmsContextId, address signerAddress
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkIsKmsTxSenderFromContext(uint256,address)` and selector `0xdefba06a`.
 ```solidity
-function checkIsKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAddress) external view;
+function checkIsKmsTxSenderFromContext(uint256 contextId, address txSenderAddress) external view;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkIsKmsTxSenderFromContextCall {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub txSenderAddress: alloy::sol_types::private::Address,
     }
@@ -6638,7 +6342,7 @@ function checkIsKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAdd
             impl ::core::convert::From<checkIsKmsTxSenderFromContextCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: checkIsKmsTxSenderFromContextCall) -> Self {
-                    (value.kmsContextId, value.txSenderAddress)
+                    (value.contextId, value.txSenderAddress)
                 }
             }
             #[automatically_derived]
@@ -6647,7 +6351,7 @@ function checkIsKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAdd
             for checkIsKmsTxSenderFromContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        kmsContextId: tuple.0,
+                        contextId: tuple.0,
                         txSenderAddress: tuple.1,
                     }
                 }
@@ -6713,7 +6417,7 @@ function checkIsKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAdd
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.txSenderAddress,
                     ),
@@ -6735,13 +6439,13 @@ function checkIsKmsTxSenderFromContext(uint256 kmsContextId, address txSenderAdd
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `compromiseKmsContext(uint256)` and selector `0x9ee77af3`.
 ```solidity
-function compromiseKmsContext(uint256 kmsContextId) external;
+function compromiseKmsContext(uint256 contextId) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct compromiseKmsContextCall {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     ///Container type for the return parameters of the [`compromiseKmsContext(uint256)`](compromiseKmsContextCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -6778,7 +6482,7 @@ function compromiseKmsContext(uint256 kmsContextId) external;
             impl ::core::convert::From<compromiseKmsContextCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: compromiseKmsContextCall) -> Self {
-                    (value.kmsContextId,)
+                    (value.contextId,)
                 }
             }
             #[automatically_derived]
@@ -6786,7 +6490,7 @@ function compromiseKmsContext(uint256 kmsContextId) external;
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for compromiseKmsContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { kmsContextId: tuple.0 }
+                    Self { contextId: tuple.0 }
                 }
             }
         }
@@ -6847,7 +6551,7 @@ function compromiseKmsContext(uint256 kmsContextId) external;
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -6866,13 +6570,13 @@ function compromiseKmsContext(uint256 kmsContextId) external;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `destroyKmsContext(uint256)` and selector `0xc0ae64f7`.
 ```solidity
-function destroyKmsContext(uint256 kmsContextId) external;
+function destroyKmsContext(uint256 contextId) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct destroyKmsContextCall {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     ///Container type for the return parameters of the [`destroyKmsContext(uint256)`](destroyKmsContextCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -6909,7 +6613,7 @@ function destroyKmsContext(uint256 kmsContextId) external;
             impl ::core::convert::From<destroyKmsContextCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: destroyKmsContextCall) -> Self {
-                    (value.kmsContextId,)
+                    (value.contextId,)
                 }
             }
             #[automatically_derived]
@@ -6917,7 +6621,7 @@ function destroyKmsContext(uint256 kmsContextId) external;
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for destroyKmsContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { kmsContextId: tuple.0 }
+                    Self { contextId: tuple.0 }
                 }
             }
         }
@@ -6978,7 +6682,7 @@ function destroyKmsContext(uint256 kmsContextId) external;
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -7384,13 +7088,13 @@ function getKmsContextGenerationBlockPeriod() external view returns (uint256);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsContextStatus(uint256)` and selector `0x4d694260`.
 ```solidity
-function getKmsContextStatus(uint256 kmsContextId) external view returns (ContextStatus);
+function getKmsContextStatus(uint256 contextId) external view returns (ContextStatus);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getKmsContextStatusCall {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
@@ -7432,7 +7136,7 @@ function getKmsContextStatus(uint256 kmsContextId) external view returns (Contex
             impl ::core::convert::From<getKmsContextStatusCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: getKmsContextStatusCall) -> Self {
-                    (value.kmsContextId,)
+                    (value.contextId,)
                 }
             }
             #[automatically_derived]
@@ -7440,7 +7144,7 @@ function getKmsContextStatus(uint256 kmsContextId) external view returns (Contex
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for getKmsContextStatusCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { kmsContextId: tuple.0 }
+                    Self { contextId: tuple.0 }
                 }
             }
         }
@@ -7503,7 +7207,7 @@ function getKmsContextStatus(uint256 kmsContextId) external view returns (Contex
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -8174,13 +7878,13 @@ function getKmsTxSenders() external view returns (address[] memory);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getPublicDecryptionThresholdFromContext(uint256)` and selector `0xb8715d4d`.
 ```solidity
-function getPublicDecryptionThresholdFromContext(uint256 kmsContextId) external view returns (uint256);
+function getPublicDecryptionThresholdFromContext(uint256 contextId) external view returns (uint256);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getPublicDecryptionThresholdFromContextCall {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
@@ -8222,7 +7926,7 @@ function getPublicDecryptionThresholdFromContext(uint256 kmsContextId) external 
             impl ::core::convert::From<getPublicDecryptionThresholdFromContextCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: getPublicDecryptionThresholdFromContextCall) -> Self {
-                    (value.kmsContextId,)
+                    (value.contextId,)
                 }
             }
             #[automatically_derived]
@@ -8230,7 +7934,7 @@ function getPublicDecryptionThresholdFromContext(uint256 kmsContextId) external 
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for getPublicDecryptionThresholdFromContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { kmsContextId: tuple.0 }
+                    Self { contextId: tuple.0 }
                 }
             }
         }
@@ -8293,7 +7997,7 @@ function getPublicDecryptionThresholdFromContext(uint256 kmsContextId) external 
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -8441,13 +8145,13 @@ function getSuspendedKmsContextId() external view returns (uint256);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getUserDecryptionThresholdFromContext(uint256)` and selector `0x64b00cc5`.
 ```solidity
-function getUserDecryptionThresholdFromContext(uint256 kmsContextId) external view returns (uint256);
+function getUserDecryptionThresholdFromContext(uint256 contextId) external view returns (uint256);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getUserDecryptionThresholdFromContextCall {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
@@ -8489,7 +8193,7 @@ function getUserDecryptionThresholdFromContext(uint256 kmsContextId) external vi
             impl ::core::convert::From<getUserDecryptionThresholdFromContextCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: getUserDecryptionThresholdFromContextCall) -> Self {
-                    (value.kmsContextId,)
+                    (value.contextId,)
                 }
             }
             #[automatically_derived]
@@ -8497,7 +8201,7 @@ function getUserDecryptionThresholdFromContext(uint256 kmsContextId) external vi
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for getUserDecryptionThresholdFromContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { kmsContextId: tuple.0 }
+                    Self { contextId: tuple.0 }
                 }
             }
         }
@@ -8560,7 +8264,7 @@ function getUserDecryptionThresholdFromContext(uint256 kmsContextId) external vi
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -9216,13 +8920,13 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `validateKeyResharing(uint256,bytes)` and selector `0x1079ebeb`.
 ```solidity
-function validateKeyResharing(uint256 kmsContextId, bytes memory signature) external;
+function validateKeyResharing(uint256 contextId, bytes memory signature) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct validateKeyResharingCall {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub signature: alloy::sol_types::private::Bytes,
     }
@@ -9265,7 +8969,7 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
             impl ::core::convert::From<validateKeyResharingCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: validateKeyResharingCall) -> Self {
-                    (value.kmsContextId, value.signature)
+                    (value.contextId, value.signature)
                 }
             }
             #[automatically_derived]
@@ -9274,7 +8978,7 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
             for validateKeyResharingCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        kmsContextId: tuple.0,
+                        contextId: tuple.0,
                         signature: tuple.1,
                     }
                 }
@@ -9340,7 +9044,7 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.signature,
                     ),
@@ -10146,7 +9850,7 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
         #[allow(missing_docs)]
         NoSuspendedKmsContext(NoSuspendedKmsContext),
         #[allow(missing_docs)]
-        NotKmsNode(NotKmsNode),
+        NotKmsNodeFromContext(NotKmsNodeFromContext),
         #[allow(missing_docs)]
         NotKmsSignerFromContext(NotKmsSignerFromContext),
         #[allow(missing_docs)]
@@ -10165,6 +9869,7 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [4u8, 148u8, 211u8, 192u8],
             [6u8, 140u8, 141u8, 64u8],
             [32u8, 126u8, 163u8, 243u8],
             [94u8, 81u8, 162u8, 225u8],
@@ -10175,7 +9880,6 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
             [135u8, 137u8, 166u8, 202u8],
             [137u8, 180u8, 94u8, 93u8],
             [153u8, 177u8, 88u8, 193u8],
-            [164u8, 212u8, 54u8, 123u8],
             [177u8, 174u8, 146u8, 234u8],
             [178u8, 94u8, 78u8, 179u8],
             [210u8, 83u8, 94u8, 17u8],
@@ -10228,8 +9932,8 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                 Self::NoSuspendedKmsContext(_) => {
                     <NoSuspendedKmsContext as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::NotKmsNode(_) => {
-                    <NotKmsNode as alloy_sol_types::SolError>::SELECTOR
+                Self::NotKmsNodeFromContext(_) => {
+                    <NotKmsNodeFromContext as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotKmsSignerFromContext(_) => {
                     <NotKmsSignerFromContext as alloy_sol_types::SolError>::SELECTOR
@@ -10264,6 +9968,19 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                 &[u8],
                 bool,
             ) -> alloy_sol_types::Result<IKmsContextsErrors>] = &[
+                {
+                    fn NotKmsNodeFromContext(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IKmsContextsErrors> {
+                        <NotKmsNodeFromContext as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IKmsContextsErrors::NotKmsNodeFromContext)
+                    }
+                    NotKmsNodeFromContext
+                },
                 {
                     fn EmptyKmsNodes(
                         data: &[u8],
@@ -10397,19 +10114,6 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                             .map(IKmsContextsErrors::KmsNodeAlreadyValidatedKeyResharing)
                     }
                     KmsNodeAlreadyValidatedKeyResharing
-                },
-                {
-                    fn NotKmsNode(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IKmsContextsErrors> {
-                        <NotKmsNode as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IKmsContextsErrors::NotKmsNode)
-                    }
-                    NotKmsNode
                 },
                 {
                     fn InvalidNullPublicDecryptionThreshold(
@@ -10563,8 +10267,10 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                         inner,
                     )
                 }
-                Self::NotKmsNode(inner) => {
-                    <NotKmsNode as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                Self::NotKmsNodeFromContext(inner) => {
+                    <NotKmsNodeFromContext as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::NotKmsSignerFromContext(inner) => {
                     <NotKmsSignerFromContext as alloy_sol_types::SolError>::abi_encoded_size(
@@ -10663,8 +10369,11 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                         out,
                     )
                 }
-                Self::NotKmsNode(inner) => {
-                    <NotKmsNode as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                Self::NotKmsNodeFromContext(inner) => {
+                    <NotKmsNodeFromContext as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::NotKmsSignerFromContext(inner) => {
                     <NotKmsSignerFromContext as alloy_sol_types::SolError>::abi_encode_raw(
@@ -10743,6 +10452,11 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                 12u8, 74u8, 215u8, 244u8, 228u8, 238u8, 94u8, 239u8, 197u8, 163u8,
             ],
             [
+                1u8, 110u8, 233u8, 193u8, 98u8, 19u8, 237u8, 103u8, 243u8, 50u8, 34u8,
+                171u8, 173u8, 77u8, 254u8, 70u8, 235u8, 149u8, 30u8, 173u8, 48u8, 161u8,
+                10u8, 26u8, 114u8, 219u8, 51u8, 22u8, 255u8, 182u8, 100u8, 224u8,
+            ],
+            [
                 54u8, 98u8, 236u8, 49u8, 109u8, 118u8, 230u8, 167u8, 94u8, 183u8, 196u8,
                 80u8, 1u8, 168u8, 173u8, 116u8, 195u8, 235u8, 148u8, 62u8, 135u8, 120u8,
                 17u8, 28u8, 2u8, 37u8, 242u8, 169u8, 253u8, 94u8, 0u8, 230u8,
@@ -10807,11 +10521,6 @@ function validateKeyResharing(uint256 kmsContextId, bytes memory signature) exte
                 228u8, 24u8, 2u8, 175u8, 114u8, 87u8, 41u8, 173u8, 203u8, 140u8, 21u8,
                 30u8, 41u8, 55u8, 56u8, 10u8, 37u8, 198u8, 145u8, 85u8, 117u8, 126u8,
                 58u8, 245u8, 211u8, 151u8, 154u8, 218u8, 181u8, 3u8, 88u8, 0u8,
-            ],
-            [
-                233u8, 240u8, 148u8, 79u8, 143u8, 81u8, 119u8, 221u8, 129u8, 251u8,
-                102u8, 17u8, 94u8, 230u8, 227u8, 21u8, 97u8, 137u8, 35u8, 10u8, 131u8,
-                36u8, 31u8, 149u8, 71u8, 217u8, 158u8, 3u8, 224u8, 247u8, 91u8, 130u8,
             ],
         ];
     }
@@ -11276,12 +10985,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`checkIsKmsSignerFromContext`] function.
         pub fn checkIsKmsSignerFromContext(
             &self,
-            kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
             signerAddress: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<T, &P, checkIsKmsSignerFromContextCall, N> {
             self.call_builder(
                 &checkIsKmsSignerFromContextCall {
-                    kmsContextId,
+                    contextId,
                     signerAddress,
                 },
             )
@@ -11289,7 +10998,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`checkIsKmsTxSenderFromContext`] function.
         pub fn checkIsKmsTxSenderFromContext(
             &self,
-            kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
             txSenderAddress: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<
             T,
@@ -11299,7 +11008,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         > {
             self.call_builder(
                 &checkIsKmsTxSenderFromContextCall {
-                    kmsContextId,
+                    contextId,
                     txSenderAddress,
                 },
             )
@@ -11307,24 +11016,20 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`compromiseKmsContext`] function.
         pub fn compromiseKmsContext(
             &self,
-            kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<T, &P, compromiseKmsContextCall, N> {
             self.call_builder(
                 &compromiseKmsContextCall {
-                    kmsContextId,
+                    contextId,
                 },
             )
         }
         ///Creates a new call builder for the [`destroyKmsContext`] function.
         pub fn destroyKmsContext(
             &self,
-            kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<T, &P, destroyKmsContextCall, N> {
-            self.call_builder(
-                &destroyKmsContextCall {
-                    kmsContextId,
-                },
-            )
+            self.call_builder(&destroyKmsContextCall { contextId })
         }
         ///Creates a new call builder for the [`getActiveKmsContext`] function.
         pub fn getActiveKmsContext(
@@ -11355,11 +11060,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`getKmsContextStatus`] function.
         pub fn getKmsContextStatus(
             &self,
-            kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<T, &P, getKmsContextStatusCall, N> {
             self.call_builder(
                 &getKmsContextStatusCall {
-                    kmsContextId,
+                    contextId,
                 },
             )
         }
@@ -11409,7 +11114,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`getPublicDecryptionThresholdFromContext`] function.
         pub fn getPublicDecryptionThresholdFromContext(
             &self,
-            kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<
             T,
             &P,
@@ -11418,7 +11123,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         > {
             self.call_builder(
                 &getPublicDecryptionThresholdFromContextCall {
-                    kmsContextId,
+                    contextId,
                 },
             )
         }
@@ -11431,7 +11136,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`getUserDecryptionThresholdFromContext`] function.
         pub fn getUserDecryptionThresholdFromContext(
             &self,
-            kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<
             T,
             &P,
@@ -11440,7 +11145,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         > {
             self.call_builder(
                 &getUserDecryptionThresholdFromContextCall {
-                    kmsContextId,
+                    contextId,
                 },
             )
         }
@@ -11505,12 +11210,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`validateKeyResharing`] function.
         pub fn validateKeyResharing(
             &self,
-            kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
             signature: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<T, &P, validateKeyResharingCall, N> {
             self.call_builder(
                 &validateKeyResharingCall {
-                    kmsContextId,
+                    contextId,
                     signature,
                 },
             )

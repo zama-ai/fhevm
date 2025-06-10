@@ -23,7 +23,6 @@ interface IDecryption {
         address[] coprocessorTxSenderAddresses;
     }
 
-    error ContextNotAllowedForDecryption(uint256 decryptionId, uint256 contextId, ContextStatus contextStatus);
     error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
     error ContractNotInContractAddresses(address contractAddress, address[] contractAddresses);
     error DecryptionNotDone(uint256 decryptionId);
@@ -32,6 +31,7 @@ interface IDecryption {
     error EmptyContractAddresses();
     error EmptyCtHandleContractPairs();
     error EmptyCtHandles();
+    error InvalidKmsContextDecryption(uint256 decryptionId, uint256 contextId, ContextStatus contextStatus);
     error InvalidNullDurationDays();
     error InvalidUserSignature(bytes signature);
     error KmsNodeAlreadySigned(uint256 decryptionId, address signer);
@@ -546,27 +546,6 @@ interface IDecryption {
   },
   {
     "type": "error",
-    "name": "ContextNotAllowedForDecryption",
-    "inputs": [
-      {
-        "name": "decryptionId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "contextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "contextStatus",
-        "type": "uint8",
-        "internalType": "enum ContextStatus"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "ContractAddressesMaxLengthExceeded",
     "inputs": [
       {
@@ -698,6 +677,27 @@ interface IDecryption {
     "type": "error",
     "name": "EmptyCtHandles",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidKmsContextDecryption",
+    "inputs": [
+      {
+        "name": "decryptionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "contextStatus",
+        "type": "uint8",
+        "internalType": "enum ContextStatus"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1942,103 +1942,6 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `ContextNotAllowedForDecryption(uint256,uint256,uint8)` and selector `0x255f3b1b`.
-```solidity
-error ContextNotAllowedForDecryption(uint256 decryptionId, uint256 contextId, ContextStatus contextStatus);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct ContextNotAllowedForDecryption {
-        #[allow(missing_docs)]
-        pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub contextStatus: <ContextStatus as alloy::sol_types::SolType>::RustType,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Uint<256>,
-            alloy::sol_types::sol_data::Uint<256>,
-            ContextStatus,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-            alloy::sol_types::private::primitives::aliases::U256,
-            <ContextStatus as alloy::sol_types::SolType>::RustType,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<ContextNotAllowedForDecryption>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: ContextNotAllowedForDecryption) -> Self {
-                (value.decryptionId, value.contextId, value.contextStatus)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for ContextNotAllowedForDecryption {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    decryptionId: tuple.0,
-                    contextId: tuple.1,
-                    contextStatus: tuple.2,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for ContextNotAllowedForDecryption {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "ContextNotAllowedForDecryption(uint256,uint256,uint8)";
-            const SELECTOR: [u8; 4] = [37u8, 95u8, 59u8, 27u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.decryptionId),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
-                    <ContextStatus as alloy_sol_types::SolType>::tokenize(
-                        &self.contextStatus,
-                    ),
-                )
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContractAddressesMaxLengthExceeded(uint8,uint256)` and selector `0xc5ab467e`.
 ```solidity
 error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
@@ -2666,6 +2569,103 @@ error EmptyCtHandles();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidKmsContextDecryption(uint256,uint256,uint8)` and selector `0xf26dbc58`.
+```solidity
+error InvalidKmsContextDecryption(uint256 decryptionId, uint256 contextId, ContextStatus contextStatus);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidKmsContextDecryption {
+        #[allow(missing_docs)]
+        pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub contextStatus: <ContextStatus as alloy::sol_types::SolType>::RustType,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+            ContextStatus,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+            <ContextStatus as alloy::sol_types::SolType>::RustType,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidKmsContextDecryption>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidKmsContextDecryption) -> Self {
+                (value.decryptionId, value.contextId, value.contextStatus)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for InvalidKmsContextDecryption {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    decryptionId: tuple.0,
+                    contextId: tuple.1,
+                    contextStatus: tuple.2,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidKmsContextDecryption {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidKmsContextDecryption(uint256,uint256,uint8)";
+            const SELECTOR: [u8; 4] = [242u8, 109u8, 188u8, 88u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.decryptionId),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                    <ContextStatus as alloy_sol_types::SolType>::tokenize(
+                        &self.contextStatus,
+                    ),
+                )
             }
         }
     };
@@ -5831,8 +5831,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IDecryptionErrors {
         #[allow(missing_docs)]
-        ContextNotAllowedForDecryption(ContextNotAllowedForDecryption),
-        #[allow(missing_docs)]
         ContractAddressesMaxLengthExceeded(ContractAddressesMaxLengthExceeded),
         #[allow(missing_docs)]
         ContractNotInContractAddresses(ContractNotInContractAddresses),
@@ -5848,6 +5846,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         EmptyCtHandleContractPairs(EmptyCtHandleContractPairs),
         #[allow(missing_docs)]
         EmptyCtHandles(EmptyCtHandles),
+        #[allow(missing_docs)]
+        InvalidKmsContextDecryption(InvalidKmsContextDecryption),
         #[allow(missing_docs)]
         InvalidNullDurationDays(InvalidNullDurationDays),
         #[allow(missing_docs)]
@@ -5875,7 +5875,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [11u8, 240u8, 20u8, 6u8],
-            [37u8, 95u8, 59u8, 27u8],
             [42u8, 135u8, 61u8, 39u8],
             [45u8, 231u8, 84u8, 56u8],
             [48u8, 52u8, 128u8, 64u8],
@@ -5891,6 +5890,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [222u8, 40u8, 89u8, 193u8],
             [231u8, 244u8, 137u8, 93u8],
             [242u8, 76u8, 8u8, 135u8],
+            [242u8, 109u8, 188u8, 88u8],
         ];
     }
     #[automatically_derived]
@@ -5901,9 +5901,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::ContextNotAllowedForDecryption(_) => {
-                    <ContextNotAllowedForDecryption as alloy_sol_types::SolError>::SELECTOR
-                }
                 Self::ContractAddressesMaxLengthExceeded(_) => {
                     <ContractAddressesMaxLengthExceeded as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -5927,6 +5924,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::EmptyCtHandles(_) => {
                     <EmptyCtHandles as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::InvalidKmsContextDecryption(_) => {
+                    <InvalidKmsContextDecryption as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidNullDurationDays(_) => {
                     <InvalidNullDurationDays as alloy_sol_types::SolError>::SELECTOR
@@ -5985,19 +5985,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionErrors::DecryptionNotDone)
                     }
                     DecryptionNotDone
-                },
-                {
-                    fn ContextNotAllowedForDecryption(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
-                        <ContextNotAllowedForDecryption as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IDecryptionErrors::ContextNotAllowedForDecryption)
-                    }
-                    ContextNotAllowedForDecryption
                 },
                 {
                     fn InvalidUserSignature(
@@ -6194,6 +6181,19 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     }
                     StartTimestampInFuture
                 },
+                {
+                    fn InvalidKmsContextDecryption(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <InvalidKmsContextDecryption as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionErrors::InvalidKmsContextDecryption)
+                    }
+                    InvalidKmsContextDecryption
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -6208,11 +6208,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
-                Self::ContextNotAllowedForDecryption(inner) => {
-                    <ContextNotAllowedForDecryption as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::ContractAddressesMaxLengthExceeded(inner) => {
                     <ContractAddressesMaxLengthExceeded as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -6250,6 +6245,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::EmptyCtHandles(inner) => {
                     <EmptyCtHandles as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::InvalidKmsContextDecryption(inner) => {
+                    <InvalidKmsContextDecryption as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -6298,12 +6298,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
-                Self::ContextNotAllowedForDecryption(inner) => {
-                    <ContextNotAllowedForDecryption as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::ContractAddressesMaxLengthExceeded(inner) => {
                     <ContractAddressesMaxLengthExceeded as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -6348,6 +6342,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::EmptyCtHandles(inner) => {
                     <EmptyCtHandles as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::InvalidKmsContextDecryption(inner) => {
+                    <InvalidKmsContextDecryption as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

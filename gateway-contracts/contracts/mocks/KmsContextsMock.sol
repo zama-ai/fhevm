@@ -4,7 +4,13 @@ import "../shared/Structs.sol";
 import "../shared/Enums.sol";
 
 contract KmsContextsMock {
-    event Initialization(KmsConfiguration kmsConfiguration);
+    event Initialization(
+        DecryptionThresholds decryptionThresholds,
+        KmsBlockPeriods blockPeriods,
+        bytes8 softwareVersion,
+        uint256 mpcThreshold,
+        KmsNode[] kmsNodes
+    );
 
     event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
 
@@ -20,26 +26,36 @@ contract KmsContextsMock {
 
     event ValidateKeyResharing(KmsContext newKmsContext);
 
-    event InvalidateKeyResharing(uint256 kmsContextId);
+    event InvalidateKeyResharing(uint256 contextId);
 
     event PreActivateKmsContext(KmsContext newKmsContext, uint256 preActivationBlockNumber);
 
-    event ActivateKmsContext(uint256 kmsContextId);
+    event ActivateKmsContext(uint256 contextId);
 
-    event SuspendKmsContext(uint256 kmsContextId);
+    event SuspendKmsContext(uint256 contextId);
 
-    event CompromiseKmsContext(uint256 kmsContextId);
+    event CompromiseKmsContext(uint256 contextId);
 
-    event DeactivateKmsContext(uint256 kmsContextId);
+    event DeactivateKmsContext(uint256 contextId);
 
-    event DestroyKmsContext(uint256 kmsContextId);
+    event DestroyKmsContext(uint256 contextId);
 
     uint256 kmsContextCount;
 
-    function initialize(KmsConfiguration calldata initialKmsConfiguration) public {
-        KmsConfiguration memory kmsConfiguration;
+    function initialize(
+        DecryptionThresholds calldata initialDecryptionThresholds,
+        KmsBlockPeriods calldata initialBlockPeriods,
+        bytes8 initialSoftwareVersion,
+        uint256 initialMpcThreshold,
+        KmsNode[] calldata initialKmsNodes
+    ) public {
+        DecryptionThresholds memory decryptionThresholds;
+        KmsBlockPeriods memory blockPeriods;
+        bytes8 softwareVersion;
+        uint256 mpcThreshold;
+        KmsNode[] memory kmsNodes = new KmsNode[](1);
 
-        emit Initialization(kmsConfiguration);
+        emit Initialization(decryptionThresholds, blockPeriods, softwareVersion, mpcThreshold, kmsNodes);
     }
 
     function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external {
@@ -75,39 +91,39 @@ contract KmsContextsMock {
         emit StartKeyResharing(activeKmsContext, newKmsContext, generationBlockNumber);
     }
 
-    function validateKeyResharing(uint256 kmsContextId, bytes calldata signature) external {
+    function validateKeyResharing(uint256 contextId, bytes calldata signature) external {
         KmsContext memory newKmsContext;
 
         emit ValidateKeyResharing(newKmsContext);
     }
 
     function refreshKmsContextStatuses() external {
-        uint256 kmsContextId;
+        uint256 contextId;
 
-        emit InvalidateKeyResharing(kmsContextId);
+        emit InvalidateKeyResharing(contextId);
 
-        emit DestroyKmsContext(kmsContextId);
+        emit DestroyKmsContext(contextId);
 
-        emit SuspendKmsContext(kmsContextId);
+        emit SuspendKmsContext(contextId);
 
-        emit ActivateKmsContext(kmsContextId);
+        emit ActivateKmsContext(contextId);
 
-        emit DeactivateKmsContext(kmsContextId);
+        emit DeactivateKmsContext(contextId);
     }
 
-    function compromiseKmsContext(uint256 kmsContextId) external {
-        emit CompromiseKmsContext(kmsContextId);
+    function compromiseKmsContext(uint256 contextId) external {
+        emit CompromiseKmsContext(contextId);
     }
 
-    function destroyKmsContext(uint256 kmsContextId) external {
-        emit DestroyKmsContext(kmsContextId);
+    function destroyKmsContext(uint256 contextId) external {
+        emit DestroyKmsContext(contextId);
     }
 
     function moveSuspendedKmsContextToActive() external {
-        uint256 kmsContextId;
+        uint256 contextId;
 
-        emit DeactivateKmsContext(kmsContextId);
+        emit DeactivateKmsContext(contextId);
 
-        emit ActivateKmsContext(kmsContextId);
+        emit ActivateKmsContext(contextId);
     }
 }

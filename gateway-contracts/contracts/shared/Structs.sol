@@ -48,19 +48,6 @@ struct KmsBlockPeriods {
     uint256 suspensionBlockPeriod;
 }
 
-/**
- * @dev This struct needs to be defined in the shared file instead of the GatewayConfig's interface
- * else `alloy` is enable to properly import the nested types (KmsBlockPeriods, KmsNode, ...) and
- * the linter check fails
- */
-struct KmsConfiguration {
-    DecryptionThresholds decryptionThresholds;
-    KmsBlockPeriods blockPeriods;
-    bytes8 softwareVersion;
-    uint256 mpcThreshold;
-    KmsNode[] kmsNodes;
-}
-
 /// @notice Struct that represents a coprocessor
 struct Coprocessor {
     /// @notice Address of the coprocessor's transaction sender
