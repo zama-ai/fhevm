@@ -37,8 +37,6 @@ struct Custodian {
     bytes encryptionKey;
     /// @notice Address of the custodian's transaction sender.
     address txSenderAddress;
-    /// @notice Address of the custodian's signer (used for signing inputs with EIP712 signatures).
-    address signerAddress;
 }
 
 /// @notice Struct that represents a host chain
