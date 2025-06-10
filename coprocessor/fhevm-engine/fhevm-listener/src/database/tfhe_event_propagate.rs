@@ -292,15 +292,15 @@ impl Database {
         &mut self,
         opt_event: &Option<alloy_rpc_types::Log>,
         opt_prev_event: &Option<alloy_rpc_types::Log>,
-    ) {
+    ) -> Option<u64> {
         let Some(prev_event) = opt_prev_event else {
-            return;
+            return None;
         };
         let Some(event) = opt_event else {
-            return;
+            return None;
         };
         if prev_event.block_number == event.block_number {
-            return;
+            return None;
         }
         let prev_event = if prev_event.block_number < event.block_number {
             event
@@ -308,10 +308,10 @@ impl Database {
             prev_event
         };
         let Some(block_number) = prev_event.block_number else {
-            return;
+            return None;
         };
         let Some(block_hash) = prev_event.block_hash else {
-            return;
+            return Some(block_number); // but cannot write to db
         };
         let _ = sqlx::query!(
             r#"
@@ -325,6 +325,7 @@ impl Database {
         )
         .execute(&self.pool)
         .await;
+        return Some(block_number);
     }
 
     pub async fn read_last_valid_block(&mut self) -> Option<i64> {
