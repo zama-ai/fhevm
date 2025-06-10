@@ -30,7 +30,7 @@ export class ComplexityPlugin implements ApolloServerPlugin {
     private gqlSchemaHost: GraphQLSchemaHost,
     private config: ConfigService,
   ) {
-    this.maxComplexity = config.get<number>('common.graphqlMaxComplexity') ?? 0
+    this.maxComplexity = config.get<number>('common.graphqlMaxComplexity', 150)
   }
 
   async requestDidStart(

@@ -4,14 +4,14 @@ import { randomUUID } from 'crypto'
 import { LoggerModule } from 'nestjs-pino'
 import { InfraModule } from './infra/infra.module.js'
 import { MS_NAME } from '#constants.js'
-import config from '#config/index.js'
+import configuration from '#config/configuration.js'
 
 // Note: I need to override the default behavior of ConfigModule in the tests,
 // and, as we use a dynamic module, we need to store the current instance to
 // override it in the tests.
 export const configModule = ConfigModule.forRoot({
   isGlobal: true,
-  load: config,
+  load: [configuration],
 })
 
 @Module({

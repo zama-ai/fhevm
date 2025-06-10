@@ -15,24 +15,19 @@ import { ViemContractService } from './viem-contract.service.js'
 
 export class ProxyContractService implements ContractService {
   private readonly services = new Map<ChainId, ContractService>()
-
-  constructor(private readonly configs: Map<ChainId, EtherConfig>) {}
+  constructor(configs: EtherConfig[]) {
+    this.services = configs.reduce((acc, config) => {
+      const service =
+        config.provider === 'Ethers'
+          ? new EtherscanContractService(config)
+          : new ViemContractService(config)
+      return acc.set(ChainId.from(config.chainId).unwrap(), service)
+    }, new Map<ChainId, ContractService>())
+  }
 
   private getService = (
     chainId: ChainId,
   ): Result<ContractService, AppError> => {
-    if (!this.services.has(chainId) && this.configs.has(chainId)) {
-      const config = this.configs.get(chainId)!
-      switch (config.provider) {
-        case 'Ethers':
-          this.services.set(chainId, new ViemContractService(config))
-          break
-
-        case 'Etherscan':
-          this.services.set(chainId, new EtherscanContractService(config))
-          break
-      }
-    }
     const service = this.services.get(chainId)
     return service
       ? ok(service)

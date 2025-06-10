@@ -1,0 +1,11 @@
+aws:
+  accessKeyId: 'test'
+  secretAccessKey: 'test'
+  region: 'eu-central-1'
+  endpoint: 'http://localhost:4566'
+  orchestrator:
+    queueUrl: 'http://localhost:4566/000000000000/orchestrator-queue'
+  email:
+    queueUrl: 'http://localhost:4566/000000000000/email-queue'
+ses:
+  fromEmail: support@zama.ai

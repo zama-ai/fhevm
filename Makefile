@@ -1,4 +1,5 @@
 TOP := $(dir $(firstword $(MAKEFILE_LIST)))
+UUID := $(shell uuidgen)
 
 # simulate the event of the smart contract address being validated
 .PHONY: back-address-validation-confirmed
@@ -33,6 +34,13 @@ publish-web3-fhe-event-requested:
 		--region eu-central-1 \
 		--message-body '{"type": "web3:fhe-event:detected", "payload": {"chainId": "123456", "address": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}, "meta": {"correlationId": "ea0ca1c2-3fde-4f80-8abb-08aecee4107c"}}'
 	
+.PHONY: publish-email-reset-created
+publish-email-reset-requested:
+	aws --endpoint=http://localhost:4566 sqs send-message \
+		--queue-url 'http://localhost:4566/000000000000/email-queue' \
+		--region eu-central-1 \
+		--message-body '{"type": "email:password-reset:requested", "payload": {"email": "test@example.com", "token": "token", "requestId": "${UUID}"}, "meta": {"correlationId": "${UUID}"}}'
+
 # fhevm
 .PHONY: fhevm-up fhevm-down
 fhevm-up:

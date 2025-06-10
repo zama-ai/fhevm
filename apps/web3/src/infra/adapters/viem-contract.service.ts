@@ -11,7 +11,7 @@ export class ViemContractService implements ContractService {
   private readonly chainId: ChainId
   private readonly providerUrl: string
   constructor(config: EtherConfig) {
-    this.chainId = config.chainId
+    this.chainId = ChainId.from(config.chainId).unwrap()
     this.providerUrl = config.rpcEndpoint
   }
 

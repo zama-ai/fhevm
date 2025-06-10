@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Password Reset</title>
+    <style>
+      body {
+        font-family: Telegraf, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #ffd209;
+      }
+      .email-container {
+        max-width: 600px;
+        margin: 20px auto;
+        background-color: #ffd209;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 24px;
+        color: #333333;
+        text-align: left;
+        flex-grow: 1; /* Allows the title to take up available space */
+      }
+      .header .logo {
+        text-align: right;
+      }
+      .header .logo img {
+        max-width: 150px; /* Adjust logo size as needed */
+        height: auto;
+      }
+      .content {
+        color: #555555;
+        line-height: 1.6;
+      }
+      .button-container {
+        text-align: center;
+        margin: 30px 0;
+      }
+      .button {
+        background-color: #007bff; /* Blue button */
+        color: #ffffff;
+        padding: 12px 25px;
+        border-radius: 5px;
+        text-decoration: none;
+        font-size: 16px;
+        display: inline-block;
+      }
+      .footer {
+        color: #777777;
+        font-size: 12px;
+        text-align: center;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-container">
+      <div class="header">
+        <div class="logo">
+          <img
+            src="https://cdn.prod.website-files.com/61bc21e3a843412266a08eb3/646eaa9b9a4784ac233a2025_zama%20logo%20black.png"
+            alt="Zama Logo"
+          />
+        </div>
+        <h1>Zama Console Password Reset Request</h1>
+      </div>
+      <div class="content">
+        <p>
+          We received a request to reset the password for an account associated
+          with this email address.
+        </p>
+        <p>To reset your password, please click the link below:</p>
+      </div>
+      <div class="button-container">
+        <a href="<%= frontendUrl %>reset-password/<%= token %>" class="button"
+          >Reset Password</a
+        >
+      </div>
+      <div class="content">
+        <p>
+          If you did not request a password reset, please ignore this message.
+          This link will expire in 24 hours for your security.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

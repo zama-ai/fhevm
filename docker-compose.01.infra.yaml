@@ -49,7 +49,7 @@ services:
       - "127.0.0.1:4566:4566" # LocalStack Gateway
       - "127.0.0.1:4510-4559:4510-4559" # external services port range
     environment:
-      - SERVICES=sqs,sns
+      - SERVICES=sqs,ses,s3 # I need S3 to store the sent emails
       - DEBUG=${DEBUG:-0}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
@@ -63,7 +63,7 @@ services:
     networks:
       - console-net
     healthcheck:
-      test: [ "CMD", "test", "-f", "/tmp/done" ]
+      test: ["CMD", "test", "-f", "/tmp/done"]
       interval: 5s
       timeout: 1s
       retries: 240

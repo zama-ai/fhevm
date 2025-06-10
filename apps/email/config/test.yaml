@@ -1,0 +1,10 @@
+aws:
+  accessKeyId: 'test'
+  secretAccessKey: 'test'
+  region: 'eu-central-1'
+  endpoint: 'http://localhost:4566'
+common:
+  logLevel: trace
+ses:
+  fromEmail: support@zama.ai
+  frontendUrl: http://localhost:5173/

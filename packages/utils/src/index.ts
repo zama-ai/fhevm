@@ -32,6 +32,7 @@ export {
 } from './app-error.js'
 export * from './chains.js'
 export { Entity } from './entity.js'
+export * from './functions/index.js'
 export { isNone, isSome, none, some, fromNullable } from './option.js'
 export { PubSub } from './pubsub.js'
 export {

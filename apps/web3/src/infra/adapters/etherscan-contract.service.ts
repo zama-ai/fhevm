@@ -34,7 +34,7 @@ export class EtherscanContractService implements ContractService {
   private readonly apiKey: string | undefined
 
   constructor({ chainId, apiEndpoint, rpcEndpoint, apiKey }: EtherConfig) {
-    this.chainId = chainId
+    this.chainId = ChainId.from(chainId).unwrap()
     this.apiEndpoint = apiEndpoint
     this.rpcEndpoint = rpcEndpoint
     this.apiKey = apiKey

@@ -2,6 +2,7 @@ common:
   address: '127.0.0.1'
   logLevel: 'debug'
   prettify: true
+  graphqlMaxComplexity: 150
 aws:
   accessKeyId: 'test'
   secretAccessKey: 'test'
@@ -25,3 +26,4 @@ jwt:
   secret: 'JWTSecretPassPhrase'
 redis:
   host: '127.0.0.1'
+  port: 6379

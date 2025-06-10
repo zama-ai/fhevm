@@ -9,9 +9,7 @@ import { ChainId } from '#domain/entities/value-objects.js'
 export class PrismaFheEventRepository implements FheEventRepository {
   logger = new Logger(PrismaFheEventRepository.name)
 
-  constructor(private readonly db: PrismaService) {
-    this.logger.debug('new', db)
-  }
+  constructor(private readonly db: PrismaService) {}
 
   getLastBlockNumber = (chainId: ChainId): Task<number, AppError> => {
     this.logger.debug(`getting last block for chain ${chainId.value}`)

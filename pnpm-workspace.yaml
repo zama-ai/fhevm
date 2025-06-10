@@ -22,6 +22,7 @@ catalog:
   "@ssut/nestjs-sqs": "3.0.1"
   unplugin-swc: "1.5.1"
   vite-tsconfig-paths: "5.1.3"
+  yaml: "2.8.0"
   zod: "3.24.2"
   # Nest JS
   "@nestjs/schematics": "11.0.5"

@@ -1,7 +1,7 @@
 import { AppModule, configModule } from '#app.module.js'
 // import commonConfig from '#config/common.config.js'
 // import dbConfig from '#config/db.config.js'
-import config from '#config/index.js'
+import configuration from '#config/configuration.js'
 import { PrismaClient } from '#prisma/client/index.js'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { INestApplication } from '@nestjs/common'
@@ -167,7 +167,7 @@ export class SetupManager {
         ConfigModule.forRoot({
           isGlobal: true,
           load: [
-            ...config,
+            configuration,
             // commonConfig,
             registerAs('aws', () => ({
               endpoint: this.awsEndpoint,

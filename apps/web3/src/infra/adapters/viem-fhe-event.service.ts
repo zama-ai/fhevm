@@ -12,22 +12,21 @@ export class ViemFheEventService implements FheEventService {
   private readonly logger = new Logger(ViemFheEventService.name)
   #implementations = new Map<number, ViemFheEventServiceImpl>()
 
-  constructor(private readonly config: Map<number, FheConfig>) {}
+  constructor(config: FheConfig[]) {
+    this.#implementations = config.reduce(
+      (acc, config) =>
+        acc.set(config.chainId, new ViemFheEventServiceImpl(config)),
+      new Map<number, ViemFheEventServiceImpl>(),
+    )
+  }
 
   fetchEvents(chainId: ChainId, fromBlock: number): Task<FheEvent[], AppError> {
     this.logger.debug(
       `fetch events for chainId ${chainId.value} from block ${fromBlock}`,
     )
     if (!this.#implementations.has(chainId.value)) {
-      const config = this.config.get(chainId.value)
-      if (!config) {
-        return Task.reject(
-          unknownError(`Service not found for chain ${chainId.value}`),
-        )
-      }
-      this.#implementations.set(
-        chainId.value,
-        new ViemFheEventServiceImpl(config),
+      return Task.reject(
+        unknownError(`Service not found for chain ${chainId.value}`),
       )
     }
     return this.#implementations
@@ -64,21 +63,13 @@ class ViemFheEventServiceImpl implements FheEventService {
 
       client
         .getContractEvents({
-          address: this.config.contractAddress.value as Hex,
+          address: this.config.contractAddress as Hex,
           abi: THFEExecutor.abi,
           fromBlock: BigInt(fromBlock),
           toBlock: 'latest',
         })
         .then(events =>
           events
-            .map(event => {
-              console.log(
-                `event: ${JSON.stringify(event, (_, v) =>
-                  typeof v === 'bigint' ? v.toString() : v,
-                )}`,
-              )
-              return event
-            })
             .map(event =>
               FheEvent.parse({
                 chainId: chainId.value,

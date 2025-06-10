@@ -1,33 +1,30 @@
 import { ChainId, Web3Address } from '#domain/entities/value-objects.js'
-import { registerAs } from '@nestjs/config'
-import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
+import { Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
+import { z } from 'zod'
 
-export default registerAs('fhe', () => {
-  return {
-    chainIds: process.env.FHE_CHAIN_IDS?.split(',').map(id => id.trim()) ?? [],
-  }
+const schema = z.object({
+  chainId: ChainId.schema,
+  contractAddress: Web3Address.schema,
+  providerUrl: z.string(),
 })
 
-export interface FheConfig {
-  chainId: ChainId
-  contractAddress: Web3Address
-  providerUrl: string
-}
-
-const configs: Record<string, () => FheConfig> = {
-  [LOCAL_FHEVM_CHAIN_ID]: () => ({
-    chainId: ChainId.from(LOCAL_FHEVM_CHAIN_ID).unwrap(),
-    contractAddress: Web3Address.from(
-      process.env.LOCAL_TFHE_EXECUTOR_CONTRACT_ADDRESS!,
-    ).unwrap(),
-    // providerUrl: 'ws://localhost:8756',
-    providerUrl: 'http://localhost:8756',
-  }),
-}
+export type FheConfig = z.infer<typeof schema>
 
 export class FheConfigFactory {
-  static getFheConfig(chainId: ChainId): FheConfig | null {
-    const config = configs[chainId.value]
-    return config ? config() : null
+  private static logger = new Logger(FheConfigFactory.name)
+  static getFheConfig(config: ConfigService): FheConfig[] {
+    const configs = config.get<unknown[]>('fhe', [])
+    if (!Array.isArray(configs)) {
+      this.logger.warn(
+        `fhe config is not an array, config: ${JSON.stringify(configs)}`,
+      )
+      return []
+    }
+
+    return configs
+      .map(c => schema.safeParse(c))
+      .filter(c => c.success)
+      .map(c => c.data)
   }
 }

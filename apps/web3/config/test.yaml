@@ -1,0 +1,36 @@
+common:
+  address: '127.0.0.1'
+  logLevel: 'silent'
+  prettify: true
+  port: 3002
+aws:
+  accessKeyId: 'test'
+  secretAccessKey: 'test'
+  region: 'eu-central-1'
+  endpoint: 'http://localhost:4566'
+  orchestrator:
+    queueUrl: 'http://localhost:4566/000000000000/orchestrator-queue'
+  web3:
+    queueUrl: 'http://localhost:4566/000000000000/web3-queue'
+db:
+  url: 'postgresql://postgres:postgres@localhost:5434/console?schema=web3'
+redis:
+  host: '127.0.0.1'
+  port: 6379
+fhe:
+  chainIds:
+    - chainId: 123456
+      contractAddress: %{{ LOCAL_TFHE_EXECUTOR_CONTRACT_ADDRESS }}
+      providerUrl: 'ws://localhost:8756'
+
+ethers:
+  chainIds:
+    - id: 123456
+      provider: Ethers
+      apiEndpoint: 'ws://localhost:8545'
+      rpcEndpoint: 'ws://localhost:8545'
+    - id: 11155111
+      provider: Etherscan
+      apiEndpoint: https://api-sepolia.etherscan.io/api
+      rpcEndpoint: https://rpc.sepolia.org
+      apiKey: %{{ ETHERSCAN_SEPOLIA_APIKEY }}

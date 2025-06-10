@@ -144,6 +144,7 @@ export class SetupManager {
         this.#prismaClients[WORKER_ID].invitation.deleteMany(),
         this.#prismaClients[WORKER_ID].dapp.deleteMany(),
         this.#prismaClients[WORKER_ID].apiKey.deleteMany(),
+        this.#prismaClients[WORKER_ID].chain.deleteMany(),
       ]),
     ])
   }

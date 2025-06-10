@@ -34,5 +34,8 @@ awslocal sqs create-queue --queue-name tx-manager-dlq
 awslocal sqs create-queue --queue-name tx-manager-queue \
   --attributes '{"RedrivePolicy":"{\"deadLetterTargetArn\":\"arn:aws:sqs:eu-central-1:000000000000:tx-manager-dlq\",\"maxReceiveCount\":\"1\"}"}'
 
+echo "Verifying email identity"
+awslocal ses verify-email-identity --email support@zama.ai
+
 # Used in docker compose to check the health of the container
  touch /tmp/done
