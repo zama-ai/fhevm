@@ -166,6 +166,8 @@ Options:
           Print version
 ```
 
+For more info, please check [gw-listener README](fhevm-engine/gw-listener/README.md)
+
 ##### sns-worker
 
 ```bash
