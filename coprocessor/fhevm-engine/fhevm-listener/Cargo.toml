@@ -26,8 +26,6 @@ rustls = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
-humantime = { workspace = true }
-
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
