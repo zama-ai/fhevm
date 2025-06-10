@@ -200,26 +200,34 @@ impl InfiniteLogIter {
         self.catchup_logs.extend(logs);
     }
 
-    async fn recheck_prev_block(&mut self) -> bool {
+    async fn recheck_prev_blocks(&mut self) -> bool {
         let Some(provider) = &self.provider else {
             eprintln!("No provider, inconsistent state");
             return false;
         };
-        let Some(event) = &self.prev_event else {
+        let Some(prev_event) = &self.prev_event else {
             return false;
         };
-        let Some(block) = event.block_number else {
+        let Some(from_block) = prev_event.block_number else {
             return false;
+        };
+        let to_block_inclusive = match &self.current_event {
+            Some(Log {block_number: Some(to_block), ..}) if from_block < *to_block => Some(*to_block - 1),
+            // Timeout or any inconsistent case, we will check up to last block
+            _ => None,
         };
         let last_block_event_count = self.last_block_event_count;
         self.last_block_event_count = 0;
-        if self.last_block_recheck_planned == block {
+        if self.last_block_recheck_planned == from_block && to_block_inclusive.is_none() {
             // no need to replan anything
             return false;
         }
-        let mut filter = Filter::new().from_block(block).to_block(block); // inclusive
+        let mut filter = Filter::new().from_block(from_block);
+        if let Some(to_block_inclusive) = to_block_inclusive {
+            filter = filter.to_block(to_block_inclusive);
+        }
         if !self.contract_addresses.is_empty() {
-            filter = filter.address(self.contract_addresses.clone())
+            filter = filter.address(self.contract_addresses.clone());
         }
         let Ok(logs) = provider.get_logs(&filter).await else {
             return false;
@@ -227,11 +235,12 @@ impl InfiniteLogIter {
         if logs.is_empty() {
             return false;
         }
-        if logs.len() as u64 == last_block_event_count {
+        let only_1_block_to_recheck = Some(from_block) == to_block_inclusive;
+        if only_1_block_to_recheck && logs.len() as u64 == last_block_event_count {
             return false;
         }
         eprintln!(
-            "Replaying Block {block} with {} events (vs {})",
+            "Replaying Block {from_block}-{to_block_inclusive:?} with {} events (vs {})",
             logs.len(),
             last_block_event_count
         );
@@ -239,7 +248,7 @@ impl InfiniteLogIter {
         if let Some(event) = self.current_event.take() {
             self.catchup_logs.push_back(event);
         }
-        self.last_block_recheck_planned = block;
+        self.last_block_recheck_planned = from_block;
         true
     }
 
@@ -368,7 +377,7 @@ impl InfiniteLogIter {
                     let recheck_planned = if !self.no_block_immediate_recheck
                         && self.is_first_of_block()
                     {
-                        self.recheck_prev_block().await
+                        self.recheck_prev_blocks().await
                     } else {
                         false
                     };
@@ -381,7 +390,7 @@ impl InfiniteLogIter {
                     }
                 }
                 LogOrBlockTimeout::BlockTimeout => {
-                    self.recheck_prev_block().await;
+                    self.recheck_prev_blocks().await;
                     continue;
                 }
             }
