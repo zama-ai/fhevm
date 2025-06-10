@@ -6,6 +6,7 @@ import path from "path";
 
 import { ADDRESSES_DIR } from "../../hardhat.config";
 import { getRequiredEnvVar } from "../../tasks/utils/loadVariables";
+import { CoprocessorStruct } from "../../typechain-types/contracts/interfaces/ICoprocessorContexts";
 import { fund } from "./wallets";
 
 // Loads the host chains' chain IDs
@@ -30,7 +31,7 @@ async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
 
 // Creates the wallets used for the tests from the private keys in the .env file.
 // Adds some funds to these wallets.
-async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCustodians: number) {
+async function initTestingWallets(nKmsNodes: number, nCustodians: number) {
   // Get signers
   // - the owner owns the contracts and can initialize the protocol, update FHE params
   // - the pauser can pause the protocol
@@ -63,19 +64,33 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
   }
 
   // Load the coprocessor transaction senders
+  // Load the number of coprocessors
+  const nCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
+
+  // Load the coprocessors, and their transaction senders and signers
+  const coprocessorSigners = [];
   const coprocessorTxSenders = [];
+  const coprocessors: CoprocessorStruct[] = [];
   for (let idx = 0; idx < nCoprocessors; idx++) {
-    const coprocessorTxSender = await hre.ethers.getSigner(getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`));
+    // Load the coprocessor transaction sender
+    const txSenderAddress = getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`);
+    const coprocessorTxSender = await hre.ethers.getSigner(txSenderAddress);
     await checkIsHardhatSigner(coprocessorTxSender);
     coprocessorTxSenders.push(coprocessorTxSender);
-  }
 
-  // Load the coprocessor signers
-  const coprocessorSigners = [];
-  for (let idx = 0; idx < nCoprocessors; idx++) {
-    const coprocessorSigner = await hre.ethers.getSigner(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
+    // Load the coprocessor signer
+    const signerAddress = getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`);
+    const coprocessorSigner = await hre.ethers.getSigner(signerAddress);
     await checkIsHardhatSigner(coprocessorSigner);
     coprocessorSigners.push(coprocessorSigner);
+
+    // Load the coprocessor
+    coprocessors.push({
+      name: getRequiredEnvVar(`COPROCESSOR_NAME_${idx}`),
+      txSenderAddress,
+      signerAddress,
+      s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
+    });
   }
 
   // Load the coprocessor S3 buckets
@@ -114,6 +129,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     kmsTxSenders,
     kmsSigners,
     kmsNodeIps,
+    coprocessors,
     coprocessorTxSenders,
     coprocessorSigners,
     coprocessorS3Buckets,
@@ -125,22 +141,27 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
 
 // Loads the addresses of the deployed contracts, and the values required for the tests.
 export async function loadTestVariablesFixture() {
-  // Load the number of KMS nodes and coprocessors
+  // Load the number of KMS nodes
   const nKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
-  const nCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
   const nCustodians = parseInt(getRequiredEnvVar("NUM_CUSTODIANS"));
 
   // Load the host chains' chain IDs
   const chainIds = loadHostChainIds();
 
   // Load the transaction senders and signers
-  const fixtureData = await initTestingWallets(nKmsNodes, nCoprocessors, nCustodians);
+  const fixtureData = await initTestingWallets(nKmsNodes, nCustodians);
 
   // Load the environment variables for the /addresses directory
   dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
 
   // Load the GatewayConfig contract
   const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS"));
+
+  // Load the CoprocessorContexts contract
+  const coprocessorContexts = await hre.ethers.getContractAt(
+    "CoprocessorContexts",
+    getRequiredEnvVar("COPROCESSOR_CONTEXTS_ADDRESS"),
+  );
 
   // Load the InputVerification contract
   const inputVerification = await hre.ethers.getContractAt(
@@ -170,6 +191,7 @@ export async function loadTestVariablesFixture() {
   return {
     ...fixtureData,
     gatewayConfig,
+    coprocessorContexts,
     kmsManagement,
     ciphertextCommits,
     multichainAcl,
@@ -177,7 +199,6 @@ export async function loadTestVariablesFixture() {
     inputVerification,
     chainIds,
     nKmsNodes,
-    nCoprocessors,
     nCustodians,
     fheParamsName,
     fheParamsDigest,

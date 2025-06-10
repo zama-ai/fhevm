@@ -20,12 +20,6 @@ abstract contract GatewayConfigChecks {
      */
     error NotGatewayOwner(address sender);
 
-    /// @notice Checks if the sender is a coprocessor transaction sender.
-    modifier onlyCoprocessorTxSender() {
-        _GATEWAY_CONFIG.checkIsCoprocessorTxSender(msg.sender);
-        _;
-    }
-
     /// @notice Checks if the sender is a KMS transaction sender.
     modifier onlyKmsTxSender() {
         _GATEWAY_CONFIG.checkIsKmsTxSender(msg.sender);

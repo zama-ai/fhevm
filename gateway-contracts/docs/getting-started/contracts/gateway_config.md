@@ -5,7 +5,7 @@ This section describes the `GatewayConfig` contract. It is used to configure set
 Several settings are stored in the contract, which can be separated in several categories:
 
 - [Protocol metadata](#protocol-metadata)
-- [Operators](#operators)
+- [KMS Nodes](#kms-nodes)
 - [Governance accounts](#governance-accounts)
 - [Host chains](#host-chains)
 
@@ -89,7 +89,7 @@ Currently, they are set at deployment and it is currently _not_ possible to add 
 
 ### Sender and signer
 
-Despite the above differences, each operator has both a transaction sender and a signer assigned to it:
+A KMS node has both a transaction sender and a signer assigned to it:
 
 - `txSenderAddress` : address of the account that will send transactions to the fhevm Gateway.
 - `signerAddress` : address associated to the public key used to sign results sent to the fhevm Gateway.
@@ -98,15 +98,12 @@ The current list of transaction senders and signers can be retrieved using the f
 
 - `getKmsTxSenders()`: get all the KMS nodes' transaction senders.
 - `getKmsSigners()`: get all the KMS nodes' signers.
-- `getCoprocessorTxSenders()`: get all the coprocessors' transaction senders.
-- `getCoprocessorSigners()`: get all the coprocessors' signers.
 
-The transaction sender and signer addresses are allowed to be the same for a given operator.
+The transaction sender and signer addresses are allowed to be the same for a given KMS node.
 
 Additionally, the transaction sender address is used for identifying an operator and may be referred to its "identity". In particular, these addresses can be used as inputs to following view functions in the `GatewayConfig` contract:
 
 - `getKmsNode(address kmsTxSenderAddress)`: get a KMS node's metadata.
-- `getCoprocessor(address coprocessorTxSenderAddress)`: get a coprocessor's metadata.
 
 ## Governance accounts
 
