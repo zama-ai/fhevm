@@ -226,7 +226,7 @@
     "numberInputs": 2,
     "scalar": {
       "Bool": 49000,
-      "Uint8": 54000,
+      "Uint8": 52000,
       "Uint16": 52000,
       "Uint32": 81000,
       "Uint64": 83000,
@@ -314,7 +314,7 @@
     "numberInputs": 2,
     "scalar": {
       "Uint8": 60000,
-      "Uint16": 57000,
+      "Uint16": 60000,
       "Uint32": 81000,
       "Uint64": 112000,
       "Uint128": 144000

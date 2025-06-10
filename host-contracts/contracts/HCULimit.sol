@@ -707,7 +707,7 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             if (resultType == FheType.Bool) {
                 opHCU = 49000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 54000;
+                opHCU = 52000;
             } else if (resultType == FheType.Uint16) {
                 opHCU = 52000;
             } else if (resultType == FheType.Uint32) {
@@ -931,7 +931,7 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             if (resultType == FheType.Uint8) {
                 opHCU = 60000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 57000;
+                opHCU = 60000;
             } else if (resultType == FheType.Uint32) {
                 opHCU = 81000;
             } else if (resultType == FheType.Uint64) {
