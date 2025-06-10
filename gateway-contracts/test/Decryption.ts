@@ -182,6 +182,7 @@ describe("Decryption", function () {
   let coprocessorTxSenders: HardhatEthersSigner[];
   let keyId1: BigNumberish;
   let fheParamsName: string;
+  let coprocessorContextId: BigNumberish;
 
   // Trigger a key generation in KmsManagement contract and activate the key
   async function prepareAddCiphertextFixture() {
@@ -223,6 +224,9 @@ describe("Decryption", function () {
       await kmsManagement.connect(coprocessorTxSenders[i]).activateKeyResponse(keyId1);
     }
 
+    // Define the first coprocessor context ID
+    const coprocessorContextId = 1;
+
     let snsCiphertextMaterials: SnsCiphertextMaterialStruct[] = [];
 
     // Allow public decryption
@@ -239,10 +243,11 @@ describe("Decryption", function () {
         keyId: keyId1,
         snsCiphertextDigest,
         coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+        coprocessorContextId,
       });
     }
 
-    return { ...fixtureData, snsCiphertextMaterials, keyId1 };
+    return { ...fixtureData, snsCiphertextMaterials, keyId1, coprocessorContextId };
   }
 
   describe("Deployment", function () {
@@ -317,6 +322,7 @@ describe("Decryption", function () {
       eip712Message = fixtureData.eip712Message;
       keyId1 = fixtureData.keyId1;
       fheParamsName = fixtureData.fheParamsName;
+      coprocessorContextId = fixtureData.coprocessorContextId;
     });
 
     it("Should request a public decryption with multiple ctHandles", async function () {
@@ -473,6 +479,7 @@ describe("Decryption", function () {
             keyId: keyId2,
             snsCiphertextDigest,
             coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+            coprocessorContextId: coprocessorContextId,
           }),
         );
     });
@@ -1224,6 +1231,7 @@ describe("Decryption", function () {
             keyId: keyId2,
             snsCiphertextDigest,
             coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+            coprocessorContextId: coprocessorContextId,
           }),
         );
     });
@@ -1970,6 +1978,7 @@ describe("Decryption", function () {
             keyId: keyId2,
             snsCiphertextDigest,
             coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+            coprocessorContextId: coprocessorContextId,
           }),
         );
     });
