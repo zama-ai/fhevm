@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
+import "../shared/Enums.sol";
 
 contract InputVerificationMock {
     event VerifyProofRequest(
         uint256 indexed zkProofId,
+        uint256 indexed contextId,
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,
@@ -26,9 +28,11 @@ contract InputVerificationMock {
     ) external {
         zkProofIdCounter++;
         uint256 zkProofId = zkProofIdCounter;
+        uint256 contextId;
 
         emit VerifyProofRequest(
             zkProofId,
+            contextId,
             contractChainId,
             contractAddress,
             userAddress,
