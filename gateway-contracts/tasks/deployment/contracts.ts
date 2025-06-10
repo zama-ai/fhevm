@@ -6,6 +6,7 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import path from "path";
 
 import { ADDRESSES_DIR } from "../../hardhat.config";
+import { CoprocessorV2Struct } from "../../typechain-types/contracts/CoprocessorContexts";
 import { getRequiredEnvVar } from "../utils/loadVariables";
 import { pascalCaseToSnakeCase } from "../utils/stringOps";
 import { GATEWAY_CONFIG_EMPTY_PROXY_NAME, REGULAR_EMPTY_PROXY_NAME } from "./utils";
@@ -94,17 +95,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     });
   }
 
-  // Parse the coprocessors
-  const numCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
-  const coprocessors = [];
-  for (let idx = 0; idx < numCoprocessors; idx++) {
-    coprocessors.push({
-      txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
-      signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
-      s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
-    });
-  }
-
   // Parse the custodians
   const numCustodians = parseInt(getRequiredEnvVar("NUM_CUSTODIANS"));
   const custodians = [];
@@ -120,7 +110,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   console.log("Public decryption threshold:", publicDecryptionThreshold);
   console.log("User decryption threshold:", userDecryptionThreshold);
   console.log("KMS nodes:", kmsNodes);
-  console.log("Coprocessors:", coprocessors);
   console.log("Custodians:", custodians);
 
   // The GatewayConfig contract is not deployed using the same empty proxy as the other contracts,
@@ -132,8 +121,31 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     userDecryptionThreshold,
     kmsGenThreshold,
     kmsNodes,
-    coprocessors,
     custodians,
+  ]);
+});
+
+// Deploy the CoprocessorContexts contract
+task("task:deployCoprocessorContexts").setAction(async function (_, hre) {
+  // Parse the coprocessor feature set
+  const coprocessorsFeatureSet = getRequiredEnvVar("COPROCESSORS_FEATURE_SET");
+
+  // Parse the coprocessors
+  const numCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
+  const coprocessors: CoprocessorV2Struct[] = [];
+  for (let idx = 0; idx < numCoprocessors; idx++) {
+    coprocessors.push({
+      name: getRequiredEnvVar(`COPROCESSOR_NAME_${idx}`),
+      txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
+      signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
+      storageUrl: getRequiredEnvVar(`COPROCESSOR_STORAGE_URL_${idx}`),
+    });
+  }
+  console.log("Coprocessors:", coprocessors);
+
+  await deployContractImplementation("CoprocessorContexts", hre, REGULAR_EMPTY_PROXY_NAME, [
+    coprocessorsFeatureSet,
+    coprocessors,
   ]);
 });
 
@@ -179,6 +191,9 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
 
   console.log("Deploy GatewayConfig contract:");
   await hre.run("task:deployGatewayConfig");
+
+  console.log("Deploy CoprocessorContexts contract:");
+  await hre.run("task:deployCoprocessorContexts");
 
   console.log("Deploy InputVerification contract:");
   await hre.run("task:deployInputVerification");

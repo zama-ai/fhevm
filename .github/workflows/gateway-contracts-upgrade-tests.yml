@@ -33,10 +33,7 @@ jobs:
   sc-upgrade:
     name: gateway-contracts-upgrade-tests/sc-upgrade (bpr)
     needs: check-changes
-    # if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
-    # TODO: Re-enable the upgrade tests once fhevm 0.9 is released
-    # See https://github.com/zama-ai/fhevm-internal/issues/439
-    if: false
+    if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     permissions:
       contents: 'read' # Required to checkout repository code
       checks: 'write' # Required to create GitHub checks for test results
@@ -48,7 +45,7 @@ jobs:
         with:
           # This version should be updated whenever we release new contract versions or
           # touch a contract upgrade path.
-          ref: v0.8.0-6
+          ref: v0.9.0
           path: previous-fhevm
           persist-credentials: 'false'
 
@@ -209,15 +206,17 @@ jobs:
       # See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade KMSGeneration contract
         working-directory: current-fhevm/gateway-contracts
+        # TODO: Re-enable the upgrade tests once the contract needs an upgrade
+        if: false
         env:
           DOTENV_CONFIG_PATH: .env
           HARDHAT_NETWORK: staging
           CHAIN_ID_GATEWAY: 54321
           RPC_URL: http://localhost:8546
         run: |
-          npx hardhat task:upgradeKmsGeneration \
-            --current-implementation previous-contracts/KmsGeneration.sol:KmsGeneration \
-            --new-implementation contracts/KmsGeneration.sol:KmsGeneration \
+          npx hardhat task:upgradeKMSGeneration \
+            --current-implementation previous-contracts/KMSGeneration.sol:KMSGeneration \
+            --new-implementation contracts/KMSGeneration.sol:KMSGeneration \
             --use-internal-proxy-address true \
             --verify-contract false
 

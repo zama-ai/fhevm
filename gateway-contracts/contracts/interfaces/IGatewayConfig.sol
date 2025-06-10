@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { ProtocolMetadata, KmsNode, Coprocessor, Custodian, HostChain } from "../shared/Structs.sol";
+import { ProtocolMetadata, KmsNode, Custodian, HostChain } from "../shared/Structs.sol";
 
 /**
  * @title Interface for the GatewayConfig contract.
@@ -9,11 +9,10 @@ import { ProtocolMetadata, KmsNode, Coprocessor, Custodian, HostChain } from "..
  * components from the fhevm Gateway.
  * @dev In particular, the GatewayConfig contract contains:
  * - the list of KMS nodes used exclusively by this fhevm Gateway
- * - the list of coprocessors used exclusively by this fhevm Gateway
  * - the list of host chains using this fhevm Gateway
  *
  * The GatewayConfig contract has an owner and a pauser.
- * The owner can call some restricted functions, such as adding or removing KMS nodes, coprocessors
+ * The owner can call some restricted functions, such as adding or removing KMS nodes
  * and host chains.
  * The pauser can pause all contracts.
  * Some view functions are accessible to everyone (ex: getting the number of KMS nodes).
@@ -24,14 +23,12 @@ interface IGatewayConfig {
      * @param metadata Metadata of the protocol.
      * @param mpcThreshold The MPC threshold.
      * @param kmsNodes List of KMS nodes.
-     * @param coprocessors List of coprocessors.
      * @param custodians List of custodians.
      */
     event InitializeGatewayConfig(
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes,
-        Coprocessor[] coprocessors,
         Custodian[] custodians
     );
 
@@ -75,11 +72,6 @@ interface IGatewayConfig {
      * @notice Error emitted when the KMS nodes list is empty.
      */
     error EmptyKmsNodes();
-
-    /**
-     * @notice Error emitted when the coprocessors list is empty.
-     */
-    error EmptyCoprocessors();
 
     /**
      * @notice Error emitted when the custodians list is empty.
@@ -214,18 +206,6 @@ interface IGatewayConfig {
     function isKmsSigner(address signerAddress) external view returns (bool);
 
     /**
-     * @notice Indicates if an address is a registered coprocessor transaction sender.
-     * @param coprocessorTxSenderAddress The address to check.
-     */
-    function isCoprocessorTxSender(address coprocessorTxSenderAddress) external view returns (bool);
-
-    /**
-     * @notice Indicates if an address is a registered coprocessor signer.
-     * @param signerAddress The address to check.
-     */
-    function isCoprocessorSigner(address signerAddress) external view returns (bool);
-
-    /**
      * @notice Indicates if an address is a registered custodian transaction sender.
      * @param txSenderAddress The address to check.
      */
@@ -280,12 +260,6 @@ interface IGatewayConfig {
     function getKmsGenThreshold() external view returns (uint256);
 
     /**
-     * @notice Get the coprocessor majority threshold
-     * @return The coprocessor majority threshold.
-     */
-    function getCoprocessorMajorityThreshold() external view returns (uint256);
-
-    /**
      * @notice Get the metadata of the KMS node with the given transaction sender address.
      * @return The KMS node's metadata.
      */
@@ -302,24 +276,6 @@ interface IGatewayConfig {
      * @return The list of KMS nodes' signer addresses.
      */
     function getKmsSigners() external view returns (address[] memory);
-
-    /**
-     * @notice Get the metadata of the coprocessor with the given transaction sender address.
-     * @return The coprocessor's metadata.
-     */
-    function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
-
-    /**
-     * @notice Get the list of all coprocessors' transaction sender addresses currently registered.
-     * @return The list of coprocessors' transaction sender addresses.
-     */
-    function getCoprocessorTxSenders() external view returns (address[] memory);
-
-    /**
-     * @notice Get the list of all coprocessors' signer addresses currently registered.
-     * @return The list of coprocessors' signer addresses.
-     */
-    function getCoprocessorSigners() external view returns (address[] memory);
 
     /**
      * @notice Get the metadata of the host chain with the given index.

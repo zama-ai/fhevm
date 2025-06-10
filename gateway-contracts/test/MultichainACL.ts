@@ -1,20 +1,24 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
-import { Wallet } from "ethers";
+import { HDNodeWallet, Wallet } from "ethers";
 import hre from "hardhat";
 
-import { GatewayConfig, MultichainACL, MultichainACL__factory } from "../typechain-types";
+import { CoprocessorContexts, GatewayConfig, MultichainACL, MultichainACL__factory } from "../typechain-types";
+import { CoprocessorContextTimePeriodsStruct } from "../typechain-types/contracts/interfaces/ICoprocessorContexts";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IMultichainACL interface
 import { DelegationAccountsStruct } from "../typechain-types/contracts/interfaces/IMultichainACL";
 import {
+  ContextStatus,
+  addNewCoprocessorContext,
   createCtHandle,
   createRandomAddress,
   createRandomAddresses,
   createRandomWallet,
   loadHostChainIds,
   loadTestVariablesFixture,
+  refreshCoprocessorContextAfterTimePeriod,
   toValues,
 } from "./utils";
 
@@ -31,6 +35,9 @@ describe("MultichainACL", function () {
   // Define a new ctHandle (it won't be allowed for public decryption or account access by default)
   const newCtHandle = createCtHandle(hostChainId);
 
+  // Define the first context ID
+  const contextId = 1;
+
   // Define fake values
   const fakeHostChainId = 123;
   const ctHandleFakeChainId = createCtHandle(fakeHostChainId);
@@ -41,6 +48,7 @@ describe("MultichainACL", function () {
 
   let gatewayConfig: GatewayConfig;
   let MultichainACL: MultichainACL;
+  let coprocessorContexts: CoprocessorContexts;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
   let pauser: Wallet;
@@ -50,6 +58,7 @@ describe("MultichainACL", function () {
     const fixture = await loadFixture(loadTestVariablesFixture);
     gatewayConfig = fixture.gatewayConfig;
     MultichainACL = fixture.MultichainACL;
+    coprocessorContexts = fixture.coprocessorContexts;
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     owner = fixture.owner;
     pauser = fixture.pauser;
@@ -183,8 +192,8 @@ describe("MultichainACL", function () {
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
       await expect(MultichainACL.connect(fakeTxSender).allowAccount(ctHandle, newAccountAddress, extraDataV0))
-        .revertedWithCustomError(MultichainACL, "NotCoprocessorTxSender")
-        .withArgs(fakeTxSender.address);
+        .revertedWithCustomError(MultichainACL, "NotCoprocessorTxSenderFromContext")
+        .withArgs(contextId, fakeTxSender.address);
     });
 
     it("Should be true because the account is allowed to use the ciphertext", async function () {
@@ -200,6 +209,72 @@ describe("MultichainACL", function () {
     it("Should be false because the handle has not been allowed to be used by anyone", async function () {
       expect(await MultichainACL.connect(coprocessorTxSenders[0]).isAccountAllowed(newCtHandle, accountAddress)).to.be
         .false;
+    });
+
+    describe("Context changes", async function () {
+      let timePeriods: CoprocessorContextTimePeriodsStruct;
+
+      // Define the new expected context ID
+      const newContextId = 2;
+
+      beforeEach(async function () {
+        // Allow the new account with the first coprocessor transaction sender. This should
+        // register the request under the first active context (ID 1)
+        await MultichainACL.connect(coprocessorTxSenders[0]).allowAccount(newCtHandle, accountAddress, extraDataV0);
+
+        // Add a new coprocessor context using a bigger set of coprocessors with different tx sender
+        // and signer addresses
+        const newCoprocessorContext = await addNewCoprocessorContext(10, coprocessorContexts, owner);
+        timePeriods = newCoprocessorContext.timePeriods;
+      });
+
+      it("Should allow account with suspended context", async function () {
+        // The second transaction should reach consensus and thus emit the expected event
+        // This is because the consensus is reached amongst the suspended context (3 coprocessors)
+        // and not the new one (10 coprocessors)
+        const result = await MultichainACL.connect(coprocessorTxSenders[1]).allowAccount(
+          newCtHandle,
+          accountAddress,
+          extraDataV0,
+        );
+
+        await expect(result).to.emit(MultichainACL, "AllowAccount").withArgs(newCtHandle, accountAddress);
+      });
+
+      it("Should revert because the context is no longer valid", async function () {
+        // Wait for the pre activation period to pass
+        await refreshCoprocessorContextAfterTimePeriod(timePeriods.preActivationTimePeriod, coprocessorContexts);
+
+        // Wait for the suspended period to pass
+        await refreshCoprocessorContextAfterTimePeriod(timePeriods.suspendedTimePeriod, coprocessorContexts);
+
+        // Check that allow account request that has already been registered under an active context
+        // reverts because this context is no longer valid
+        await expect(
+          MultichainACL.connect(coprocessorTxSenders[1]).allowAccount(newCtHandle, accountAddress, extraDataV0),
+        )
+          .revertedWithCustomError(MultichainACL, "InvalidCoprocessorContextAllowAccount")
+          .withArgs(newCtHandle, accountAddress, contextId, ContextStatus.Deactivated);
+      });
+
+      it("Should revert because the transaction sender is a coprocessor from the suspended context", async function () {
+        // Define another new handle
+        // It is used to create a set of inputs different from the one used in the beforeEach block
+        const newCtHandle2 = createCtHandle(hostChainId);
+
+        // Wait for the pre activation period to pass
+        await refreshCoprocessorContextAfterTimePeriod(timePeriods.preActivationTimePeriod, coprocessorContexts);
+
+        // Make sure the old context has been suspended
+        expect(await coprocessorContexts.getCoprocessorContextStatus(contextId)).to.equal(ContextStatus.Suspended);
+
+        // Make sure that a new account can't be allowed by a coprocessor from the suspended context
+        await expect(
+          MultichainACL.connect(coprocessorTxSenders[0]).allowAccount(newCtHandle2, accountAddress, extraDataV0),
+        )
+          .revertedWithCustomError(MultichainACL, "NotCoprocessorTxSenderFromContext")
+          .withArgs(newContextId, coprocessorTxSenders[0].address);
+      });
     });
   });
 
@@ -289,8 +364,8 @@ describe("MultichainACL", function () {
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
       await expect(MultichainACL.connect(fakeTxSender).allowPublicDecrypt(newCtHandle, extraDataV0))
-        .revertedWithCustomError(MultichainACL, "NotCoprocessorTxSender")
-        .withArgs(fakeTxSender.address);
+        .revertedWithCustomError(MultichainACL, "NotCoprocessorTxSenderFromContext")
+        .withArgs(contextId, fakeTxSender.address);
     });
 
     it("Should be true because the public decrypt is allowed", async function () {
@@ -299,6 +374,111 @@ describe("MultichainACL", function () {
 
     it("Should be false because the handle is not allowed to be publicly decrypted", async function () {
       expect(await MultichainACL.connect(coprocessorTxSenders[0]).isPublicDecryptAllowed(newCtHandle)).to.be.false;
+    });
+
+    describe("Context changes", async function () {
+      let timePeriods: CoprocessorContextTimePeriodsStruct;
+      let newCoprocessorTxSenders: HDNodeWallet[];
+
+      // Define the new expected context ID
+      const newContextId = 2;
+
+      beforeEach(async function () {
+        // Allow a new handle for public decryption with the first coprocessor transaction sender. This should
+        // register the request under the first active context (ID 1)
+        await MultichainACL.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle, extraDataV0);
+
+        // Add a new coprocessor context using a bigger set of coprocessors with different tx sender
+        // and signer addresses
+        const newCoprocessorContext = await addNewCoprocessorContext(10, coprocessorContexts, owner, true);
+        timePeriods = newCoprocessorContext.timePeriods;
+        newCoprocessorTxSenders = newCoprocessorContext.coprocessorTxSenders;
+      });
+
+      it("Should activate the new context and suspend the old one", async function () {
+        // Define another new handle. This is needed for the test to pass because `newCtHandle` is already
+        // registered under the first active context (ID 1)
+        const newCtHandle2 = createCtHandle(hostChainId);
+
+        // Increase the block timestamp to reach the end of the pre-activation period
+        await time.increase(timePeriods.preActivationTimePeriod);
+
+        // Allow a new handle with the first new coprocessor transaction sender
+        await MultichainACL.connect(newCoprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle2, extraDataV0);
+
+        // Make sure the old context has been suspended
+        expect(await coprocessorContexts.getCoprocessorContextStatus(contextId)).to.equal(ContextStatus.Suspended);
+
+        // Make sure the new context has been activated
+        expect(await coprocessorContexts.getCoprocessorContextStatus(newContextId)).to.equal(ContextStatus.Active);
+      });
+
+      it("Should deactivate the suspended context", async function () {
+        // Define another new handle. This is needed for the test to pass because `newCtHandle` is already
+        // registered under the first active context (ID 1)
+        const newCtHandle2 = createCtHandle(hostChainId);
+
+        // Increase the block timestamp to reach the end of the pre-activation period
+        await time.increase(timePeriods.preActivationTimePeriod);
+
+        // Allow a new handle with the first new coprocessor transaction sender
+        await MultichainACL.connect(newCoprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle2, extraDataV0);
+
+        // Increase the block timestamp to reach the end of the suspended period
+        await time.increase(timePeriods.suspendedTimePeriod);
+
+        // Allow a new handle with the second new coprocessor transaction sender
+        await MultichainACL.connect(newCoprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle2, extraDataV0);
+
+        // Make sure the old context has been deactivated
+        expect(await coprocessorContexts.getCoprocessorContextStatus(contextId)).to.equal(ContextStatus.Deactivated);
+      });
+
+      it("Should allow public decryption with suspended context", async function () {
+        // Wait for the pre activation period to pass
+        await refreshCoprocessorContextAfterTimePeriod(timePeriods.preActivationTimePeriod, coprocessorContexts);
+
+        // The second transaction should reach consensus and thus emit the expected event
+        // This is because the consensus is reached amongst the suspended context (3 coprocessors)
+        // and not the new one (10 coprocessors)
+        const result = await MultichainACL.connect(coprocessorTxSenders[1]).allowPublicDecrypt(
+          newCtHandle,
+          extraDataV0,
+        );
+
+        await expect(result).to.emit(MultichainACL, "AllowPublicDecrypt").withArgs(newCtHandle);
+      });
+
+      it("Should revert because the context is no longer valid", async function () {
+        // Wait for the pre activation period to pass
+        await refreshCoprocessorContextAfterTimePeriod(timePeriods.preActivationTimePeriod, coprocessorContexts);
+
+        // Wait for the suspended period to pass
+        await refreshCoprocessorContextAfterTimePeriod(timePeriods.suspendedTimePeriod, coprocessorContexts);
+
+        // Check that allow public decrypt request that has already been registered under an active context
+        // reverts because this context is no longer valid
+        await expect(MultichainACL.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle, extraDataV0))
+          .revertedWithCustomError(MultichainACL, "InvalidCoprocessorContextAllowPublicDecrypt")
+          .withArgs(newCtHandle, contextId, ContextStatus.Deactivated);
+      });
+
+      it("Should revert because the transaction sender is a coprocessor from the suspended context", async function () {
+        // Define another new handle
+        // It is used to create a set of inputs different from the one used in the beforeEach block
+        const newCtHandle2 = createCtHandle(hostChainId);
+
+        // Wait for the pre activation period to pass
+        await refreshCoprocessorContextAfterTimePeriod(timePeriods.preActivationTimePeriod, coprocessorContexts);
+
+        // Make sure the old context has been suspended
+        expect(await coprocessorContexts.getCoprocessorContextStatus(contextId)).to.equal(ContextStatus.Suspended);
+
+        // Make sure that a new handle can't be allowed for public decryption by a coprocessor from the suspended context
+        await expect(MultichainACL.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle2, extraDataV0))
+          .revertedWithCustomError(MultichainACL, "NotCoprocessorTxSenderFromContext")
+          .withArgs(newContextId, coprocessorTxSenders[0].address);
+      });
     });
   });
 });

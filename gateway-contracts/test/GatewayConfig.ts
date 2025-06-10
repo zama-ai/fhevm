@@ -1,7 +1,7 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
-import { ContractFactory, EventLog, Wallet } from "ethers";
+import { ContractFactory, Wallet } from "ethers";
 import hre from "hardhat";
 
 import {
@@ -16,11 +16,7 @@ import {
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
-import {
-  CoprocessorStruct,
-  CustodianStruct,
-  KmsNodeStruct,
-} from "../typechain-types/contracts/interfaces/IGatewayConfig";
+import { CustodianStruct, KmsNodeStruct } from "../typechain-types/contracts/interfaces/IGatewayConfig";
 import { UINT64_MAX, createRandomWallet, loadHostChainIds, loadTestVariablesFixture, toValues } from "./utils";
 
 describe("GatewayConfig", function () {
@@ -47,10 +43,7 @@ describe("GatewayConfig", function () {
   let kmsNodes: KmsNodeStruct[];
   let kmsTxSenders: HardhatEthersSigner[];
   let kmsSigners: HardhatEthersSigner[];
-  let coprocessors: CoprocessorStruct[];
   let custodians: CustodianStruct[];
-  let coprocessorTxSenders: HardhatEthersSigner[];
-  let coprocessorSigners: HardhatEthersSigner[];
   let custodianTxSenders: HardhatEthersSigner[];
   let custodianSigners: HardhatEthersSigner[];
 
@@ -62,10 +55,6 @@ describe("GatewayConfig", function () {
       kmsNodeIps,
       kmsNodeStorageUrls,
       nKmsNodes,
-      coprocessorTxSenders,
-      coprocessorSigners,
-      coprocessorS3Buckets,
-      nCoprocessors,
       custodianTxSenders,
       custodianSigners,
       custodianEncryptionKeys,
@@ -83,16 +72,6 @@ describe("GatewayConfig", function () {
       });
     }
 
-    // Create coprocessors with the tx sender and signer addresses
-    coprocessors = [];
-    for (let i = 0; i < nCoprocessors; i++) {
-      coprocessors.push({
-        txSenderAddress: coprocessorTxSenders[i].address,
-        signerAddress: coprocessorSigners[i].address,
-        s3BucketUrl: coprocessorS3Buckets[i],
-      });
-    }
-
     // Create custodians with the tx sender addresses
     custodians = [];
     for (let i = 0; i < nCustodians; i++) {
@@ -103,7 +82,7 @@ describe("GatewayConfig", function () {
       });
     }
 
-    return fixtureData;
+    return { ...fixtureData, kmsNodes, custodians };
   }
 
   before(async function () {
@@ -113,11 +92,10 @@ describe("GatewayConfig", function () {
     pauserSet = fixtureData.pauserSet;
     owner = fixtureData.owner;
     pauser = fixtureData.pauser;
+    kmsNodes = fixtureData.kmsNodes;
     nKmsNodes = fixtureData.nKmsNodes;
     kmsTxSenders = fixtureData.kmsTxSenders;
     kmsSigners = fixtureData.kmsSigners;
-    coprocessorTxSenders = fixtureData.coprocessorTxSenders;
-    coprocessorSigners = fixtureData.coprocessorSigners;
   });
 
   describe("Deployment", function () {
@@ -137,46 +115,6 @@ describe("GatewayConfig", function () {
       newGatewayConfigFactory = await hre.ethers.getContractFactory("GatewayConfig", owner);
     });
 
-    // This test is not here for making sure the deployment works, as all contracts are deployed in the
-    // hardhat "test" pre-hook, but rather to verify that the event is emitted correctly (since it
-    // contains several parameters).
-    it("Should deploy the GatewayConfig contract", async function () {
-      // Upgrade the proxy contract to the GatewayConfig contract
-      const upgradeTx = await hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
-        call: {
-          fn: "initializeFromEmptyProxy",
-          args: [
-            protocolMetadata,
-            mpcThreshold,
-            publicDecryptionThreshold,
-            userDecryptionThreshold,
-            kmsGenThreshold,
-            kmsNodes,
-            coprocessors,
-            custodians,
-          ],
-        },
-      });
-
-      // Extract event args and convert to strings. This is needed as the "upgradeProxy()" method above
-      // returns an GatewayConfig instance instead of a ContractTransactionResponse, so the expect() function
-      // from chaijs fails on the evaluation of the transaction events.
-      const initializeGatewayConfigEvents = await upgradeTx.queryFilter(upgradeTx.filters.InitializeGatewayConfig);
-      const stringifiedEventArgs = (initializeGatewayConfigEvents[0] as EventLog).args.map((arg: any) =>
-        arg.toString(),
-      );
-
-      // It should emit one event containing the initialization parameters
-      expect(initializeGatewayConfigEvents.length).to.equal(1);
-      expect(stringifiedEventArgs).to.deep.equal([
-        toValues(protocolMetadata).toString(),
-        mpcThreshold,
-        toValues(kmsNodes).toString(),
-        toValues(coprocessors).toString(),
-        toValues(custodians).toString(),
-      ]);
-    });
-
     it("Should revert because the KMS nodes list is empty", async function () {
       const emptyKmsNodes: KmsNodeStruct[] = [];
 
@@ -191,34 +129,11 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsGenThreshold,
               emptyKmsNodes,
-              coprocessors,
               custodians,
             ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "EmptyKmsNodes");
-    });
-
-    it("Should revert because the coprocessors list is empty", async function () {
-      const emptyCoprocessors: CoprocessorStruct[] = [];
-
-      await expect(
-        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
-          call: {
-            fn: "initializeFromEmptyProxy",
-            args: [
-              protocolMetadata,
-              mpcThreshold,
-              publicDecryptionThreshold,
-              userDecryptionThreshold,
-              kmsGenThreshold,
-              kmsNodes,
-              emptyCoprocessors,
-              custodians,
-            ],
-          },
-        }),
-      ).to.be.revertedWithCustomError(gatewayConfig, "EmptyCoprocessors");
     });
 
     it("Should revert because the custodians list is empty", async function () {
@@ -235,7 +150,6 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsGenThreshold,
               kmsNodes,
-              coprocessors,
               emptyCustodians,
             ],
           },
@@ -258,7 +172,6 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsGenThreshold,
               kmsNodes,
-              coprocessors,
               custodians,
             ],
           },
@@ -283,7 +196,6 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsGenThreshold,
               kmsNodes,
-              coprocessors,
               custodians,
             ],
           },
@@ -306,7 +218,6 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsGenThreshold,
               kmsNodes,
-              coprocessors,
               custodians,
             ],
           },
@@ -331,7 +242,6 @@ describe("GatewayConfig", function () {
               nullUserDecryptionThreshold,
               kmsGenThreshold,
               kmsNodes,
-              coprocessors,
               custodians,
             ],
           },
@@ -354,7 +264,6 @@ describe("GatewayConfig", function () {
               highUserDecryptionThreshold,
               kmsGenThreshold,
               kmsNodes,
-              coprocessors,
               custodians,
             ],
           },
@@ -379,7 +288,6 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               nullKmsGenThreshold,
               kmsNodes,
-              coprocessors,
               custodians,
             ],
           },
@@ -402,7 +310,6 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               highKmsGenThreshold,
               kmsNodes,
-              coprocessors,
               custodians,
             ],
           },
@@ -424,7 +331,6 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsGenThreshold,
               kmsNodes,
-              coprocessors,
               custodians,
             ],
           },
@@ -440,7 +346,6 @@ describe("GatewayConfig", function () {
       pauser = fixture.pauser;
       kmsTxSenders = fixture.kmsTxSenders;
       kmsSigners = fixture.kmsSigners;
-      coprocessorTxSenders = fixture.coprocessorTxSenders;
       custodianTxSenders = fixture.custodianTxSenders;
       custodianSigners = fixture.custodianSigners;
     });
@@ -456,26 +361,6 @@ describe("GatewayConfig", function () {
         for (const kmsSigner of kmsSigners) {
           expect(await gatewayConfig.isKmsSigner(kmsSigner.address)).to.be.true;
         }
-      });
-
-      it("Should be registered as coprocessors transaction senders", async function () {
-        for (const coprocessorTxSender of coprocessorTxSenders) {
-          expect(await gatewayConfig.isCoprocessorTxSender(coprocessorTxSender.address)).to.be.true;
-        }
-      });
-
-      it("Should not be registered as coprocessors transaction senders", async function () {
-        expect(await gatewayConfig.isCoprocessorTxSender(fakeTxSender)).to.be.false;
-      });
-
-      it("Should be registered as coprocessors signers", async function () {
-        for (const coprocessorSigner of coprocessorSigners) {
-          expect(await gatewayConfig.isCoprocessorSigner(coprocessorSigner.address)).to.be.true;
-        }
-      });
-
-      it("Should not be registered as coprocessors signers", async function () {
-        expect(await gatewayConfig.isCoprocessorSigner(fakeSigner)).to.be.false;
       });
 
       it("Should be registered as custodian transaction senders", async function () {
@@ -543,30 +428,6 @@ describe("GatewayConfig", function () {
         // Check that all KMS node signer addresses are in the list
         for (const kmsSigner of kmsSigners) {
           expect(kmsSignerAddresses).to.include(kmsSigner.address);
-        }
-      });
-
-      it("Should get all coprocessor transaction sender addresses", async function () {
-        const coprocessorTxSenderAddresses = await gatewayConfig.getCoprocessorTxSenders();
-
-        // Check that the number of coprocessor transaction sender addresses is correct
-        expect(coprocessorTxSenderAddresses.length).to.equal(coprocessorTxSenders.length);
-
-        // Check that all coprocessor transaction sender addresses are in the list
-        for (const coprocessorTxSender of coprocessorTxSenders) {
-          expect(coprocessorTxSenderAddresses).to.include(coprocessorTxSender.address);
-        }
-      });
-
-      it("Should get all coprocessor signer addresses", async function () {
-        const coprocessorSignerAddresses = await gatewayConfig.getCoprocessorSigners();
-
-        // Check that the number of coprocessor signer addresses is correct
-        expect(coprocessorSignerAddresses.length).to.equal(coprocessorSigners.length);
-
-        // Check that all coprocessor signer addresses are in the list
-        for (const coprocessorSigner of coprocessorSigners) {
-          expect(coprocessorSignerAddresses).to.include(coprocessorSigner.address);
         }
       });
 

@@ -57,6 +57,13 @@ function getDateInSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+// Get the storage URLs for the given ctHandles
+function getStorageUrls(ctHandles: string[], storageUrlsPerHandle: Record<string, string[]>) {
+  const storageUrls = ctHandles.map((handle) => storageUrlsPerHandle[handle]);
+
+  return storageUrls;
+}
+
 describe("Decryption", function () {
   // Get the registered host chains' chain IDs
   const hostChainIds = loadHostChainIds();
@@ -116,6 +123,7 @@ describe("Decryption", function () {
   let kmsTxSenders: HardhatEthersSigner[];
   let kmsSigners: HardhatEthersSigner[];
   let coprocessorTxSenders: HardhatEthersSigner[];
+  let coprocessorStorageUrlsPerHandle: Record<string, string[]>;
 
   // Add ciphertext materials
   async function prepareAddCiphertextFixture() {
@@ -124,7 +132,7 @@ describe("Decryption", function () {
 
     let snsCiphertextMaterials: SnsCiphertextMaterialStruct[] = [];
 
-    // Allow public decryption
+    // Add the ciphertext materials for each handle
     for (const ctHandle of ctHandles) {
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await ciphertextCommits
@@ -137,11 +145,17 @@ describe("Decryption", function () {
         ctHandle,
         keyId,
         snsCiphertextDigest,
-        coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
       });
     }
 
-    return { ...fixtureData, snsCiphertextMaterials, keyId };
+    // Create a mapping from handles to their consensus storage URLs
+    const coprocessorStorageUrls = await ciphertextCommits.getConsensusStorageUrls(ctHandles);
+    const coprocessorStorageUrlsPerHandle: Record<string, string[]> = {};
+    ctHandles.forEach((handle, idx) => {
+      coprocessorStorageUrlsPerHandle[handle] = coprocessorStorageUrls[idx];
+    });
+
+    return { ...fixtureData, snsCiphertextMaterials, coprocessorStorageUrlsPerHandle };
   }
 
   describe("Deployment", function () {
@@ -223,28 +237,37 @@ describe("Decryption", function () {
       kmsSigners = fixtureData.kmsSigners;
       coprocessorTxSenders = fixtureData.coprocessorTxSenders;
       eip712Message = fixtureData.eip712Message;
+      coprocessorStorageUrlsPerHandle = fixtureData.coprocessorStorageUrlsPerHandle;
     });
 
     it("Should request a public decryption with multiple ctHandles", async function () {
       // Request public decryption
       const requestTx = await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
+      // Get the storage URLs for the given ctHandles
+      const storageUrls = getStorageUrls(ctHandles, coprocessorStorageUrlsPerHandle);
+
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), extraDataV0);
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), storageUrls, extraDataV0);
     });
 
     it("Should request a public decryption with a single ctHandle", async function () {
+      const singleCtHandles = [ctHandles[0]];
+
       // Request public decryption with a single ctHandle
-      const requestTx = await decryption.publicDecryptionRequest([ctHandles[0]], extraDataV0);
+      const requestTx = await decryption.publicDecryptionRequest(singleCtHandles, extraDataV0);
 
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
+
+      // Get the storage URLs for the given ctHandles
+      const storageUrls = getStorageUrls(singleCtHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), extraDataV0);
+        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), storageUrls, extraDataV0);
     });
 
     it("Should revert because ctHandles list is empty", async function () {
@@ -379,7 +402,6 @@ describe("Decryption", function () {
             ctHandle: newCtHandle,
             keyId: newKeyId,
             snsCiphertextDigest,
-            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
           }),
         );
     });
@@ -753,6 +775,7 @@ describe("Decryption", function () {
       userDecryptedShares = fixtureData.userDecryptedShares;
       eip712RequestMessage = fixtureData.eip712RequestMessage;
       eip712ResponseMessages = fixtureData.eip712ResponseMessages;
+      coprocessorStorageUrlsPerHandle = fixtureData.coprocessorStorageUrlsPerHandle;
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
@@ -767,16 +790,20 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
+      // Get the storage URLs for the given ctHandles
+      const storageUrls = getStorageUrls(ctHandles, coprocessorStorageUrlsPerHandle);
+
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey, extraDataV0);
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), storageUrls, user.address, publicKey, extraDataV0);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
       // Create single list of inputs
       const singleCtHandleContractPair: CtHandleContractPairStruct[] = ctHandleContractPairs.slice(0, 1);
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
+      const singleCtHandles = [ctHandles[0]];
 
       // Request user decryption
       const requestTx = await decryption.userDecryptionRequest(
@@ -789,10 +816,20 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
+      // Get the storage URLs for the given ctHandles
+      const storageUrls = getStorageUrls(singleCtHandles, coprocessorStorageUrlsPerHandle);
+
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey, extraDataV0);
+        .withArgs(
+          decryptionId,
+          toValues(singleSnsCiphertextMaterials),
+          storageUrls,
+          user.address,
+          publicKey,
+          extraDataV0,
+        );
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
@@ -1236,7 +1273,6 @@ describe("Decryption", function () {
             ctHandle: newCtHandle,
             keyId: newKeyId,
             snsCiphertextDigest,
-            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
           }),
         );
     });

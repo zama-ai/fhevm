@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
+import { ContextStatus } from "../shared/Enums.sol";
+
 /**
  * @title Interface for the InputVerification contract.
  * @notice The InputVerification contract handles Zero-Knowledge Proof of Knowledge (ZKPoK)
@@ -30,16 +32,43 @@ interface IInputVerification {
     /**
      * @notice Emitted once a correct ZK Proof verification is completed.
      * @param zkProofId The ID of the ZK Proof.
+     * @param coprocessorContextId The ID of the coprocessor context.
      * @param ctHandles The coprocessor's computed ciphertext handles.
      * @param signatures The coprocessor's signature.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
+    event VerifyProofResponse(
+        uint256 indexed zkProofId,
+        uint256 indexed coprocessorContextId,
+        bytes32[] ctHandles,
+        bytes[] signatures,
+        bytes extraData
+    );
 
     /**
      * @notice Emitted once an ZK Proof verification is rejected.
      * @param zkProofId The ID of the ZK Proof.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    event RejectProofResponse(uint256 indexed zkProofId);
+    event RejectProofResponse(uint256 indexed zkProofId, bytes extraData);
+
+    /**
+     * @notice Error indicating that the coprocessor context is no longer valid for verifying the ZK Proof.
+     * A context is valid if it is active or suspended.
+     * @param zkProofId The ID of the ZK Proof.
+     * @param contextId The context ID of the coprocessor.
+     * @param contextStatus The status of the coprocessor context.
+     */
+    error InvalidCoprocessorContextProofVerification(uint256 zkProofId, uint256 contextId, ContextStatus contextStatus);
+
+    /**
+     * @notice Error indicating that the coprocessor context is no longer valid for rejecting the ZK Proof.
+     * A context is valid if it is active or suspended.
+     * @param zkProofId The ID of the ZK Proof.
+     * @param contextId The context ID of the coprocessor.
+     * @param contextStatus The status of the coprocessor context.
+     */
+    error InvalidCoprocessorContextProofRejection(uint256 zkProofId, uint256 contextId, ContextStatus contextStatus);
 
     /**
      * @notice Error indicating that the coprocessor has already verified the ZKPoK.

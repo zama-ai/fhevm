@@ -38,60 +38,12 @@ contract Decryption is
     Pausable
 {
     /**
-     * @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
-     * @dev The name of this struct is not relevant for the signature validation, only the one defined
-     * EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
-     */
-    struct PublicDecryptVerification {
-        /// @notice The handles of the ciphertexts that have been decrypted.
-        bytes32[] ctHandles;
-        /// @notice The decrypted result of the public decryption.
-        bytes decryptedResult;
-        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
-        bytes extraData;
-    }
-
-    /**
-     * @notice The typed data structure for the EIP712 signature to validate in user decryption requests.
-     * @dev The name of this struct is not relevant for the signature validation, only the one defined
-     * EIP712_USER_DECRYPT_REQUEST_TYPE is, but we keep it the same for clarity.
-     */
-    struct UserDecryptRequestVerification {
-        /// @notice The user's public key to be used for reencryption.
-        bytes publicKey;
-        /// @notice The contract addresses that verification is requested for.
-        address[] contractAddresses;
-        /// @notice The start timestamp of the user decryption request.
-        uint256 startTimestamp;
-        /// @notice The duration in days of the user decryption request after the start timestamp.
-        uint256 durationDays;
-        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
-        bytes extraData;
-    }
-
-    /**
-     * @notice The typed data structure for the EIP712 signature to validate in user decryption responses.
-     * @dev The name of this struct is not relevant for the signature validation, only the one defined
-     * EIP712_USER_DECRYPT_RESPONSE_TYPE is, but we keep it the same for clarity.
-     */
-    struct UserDecryptResponseVerification {
-        /// @notice The user's public key used for the reencryption.
-        bytes publicKey;
-        /// @notice The handles of the ciphertexts that have been decrypted.
-        bytes32[] ctHandles;
-        /// @notice The partial decryption share reencrypted with the user's public key.
-        bytes userDecryptedShare;
-        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
-        bytes extraData;
-    }
-
-    /**
      * @notice The publicKey and ctHandles from user decryption requests used for validations during responses.
      */
     struct UserDecryptionPayload {
         /// @notice The user's public key to be used for reencryption.
         bytes publicKey;
-        /// @notice The handles of the ciphertexts requested for a user decryption
+        /// @notice The handles of the ciphertexts requested for a user decryption.
         bytes32[] ctHandles;
     }
 
@@ -132,7 +84,11 @@ contract Decryption is
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
     /**
-     * @notice The definition of the PublicDecryptVerification structure typed data.
+     * @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
+     * @dev The following fields are used for the PublicDecryptVerification struct:
+     * - ctHandles: The handles of the ciphertexts to be decrypted.
+     * - decryptedResult: The decrypted result.
+     * - extraData: Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     string private constant EIP712_PUBLIC_DECRYPT_TYPE =
         "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
@@ -144,7 +100,14 @@ contract Decryption is
     bytes32 private constant EIP712_PUBLIC_DECRYPT_TYPE_HASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
 
     /**
-     * @notice The definition of the UserDecryptRequestVerification structure typed data.
+     * @notice The typed data structure for the EIP712 signature to validate in user decryption requests.
+     * @dev The following fields are used for the UserDecryptRequestVerification struct:
+     * - publicKey: The user's public key to be used for reencryption.
+     * - contractAddresses: The contract addresses that verification is requested for.
+     * - contractsChainId: The chain ID of the contract addresses.
+     * - startTimestamp: The start timestamp of the user decryption request.
+     * - durationDays: The duration in days of the user decryption request after the start timestamp.
+     * - extraData: Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     string private constant EIP712_USER_DECRYPT_REQUEST_TYPE =
         "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 startTimestamp,"
@@ -157,7 +120,12 @@ contract Decryption is
     bytes32 private constant EIP712_USER_DECRYPT_REQUEST_TYPE_HASH = keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE));
 
     /**
-     * @notice The definition of the UserDecryptResponseVerification structure typed data.
+     * @notice The typed data structure for the EIP712 signature to validate in user decryption responses.
+     * @dev The following fields are used for the UserDecryptResponseVerification struct:
+     * - publicKey: The user's public key used for the reencryption.
+     * - ctHandles: The handles of the ciphertexts that have been decrypted.
+     * - userDecryptedShare: The partial decryption share reencrypted with the user's public key.
+     * - extraData: Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     string private constant EIP712_USER_DECRYPT_RESPONSE_TYPE =
         "UserDecryptResponseVerification(bytes publicKey,bytes32[] ctHandles,bytes userDecryptedShare,bytes extraData)";
@@ -176,7 +144,7 @@ contract Decryption is
      */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -185,7 +153,7 @@ contract Decryption is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -266,11 +234,10 @@ contract Decryption is
 
     /**
      * @notice Re-initializes the contract from V1.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IDecryption-publicDecryptionRequest}.
@@ -299,6 +266,9 @@ contract Decryption is
         // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
         _checkCtMaterialKeyIds(snsCtMaterials);
 
+        // Fetch the storage URLs that have reached consensus for the ciphertexts
+        string[][] memory storageUrls = CIPHERTEXT_COMMITS.getConsensusStorageUrls(ctHandles);
+
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Generate a globally unique decryptionId for the public decryption request.
@@ -313,7 +283,7 @@ contract Decryption is
         // The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[publicDecryptionId] = ctHandles;
 
-        emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, extraData);
+        emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, storageUrls, extraData);
     }
 
     /**
@@ -336,15 +306,8 @@ contract Decryption is
             revert DecryptionNotRequested(decryptionId);
         }
 
-        // Initialize the PublicDecryptVerification structure for the signature validation.
-        PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
-            $.publicCtHandles[decryptionId],
-            decryptedResult,
-            extraData
-        );
-
         // Compute the digest of the PublicDecryptVerification structure.
-        bytes32 digest = _hashPublicDecryptVerification(publicDecryptVerification);
+        bytes32 digest = _hashPublicDecryptVerification($.publicCtHandles[decryptionId], decryptedResult, extraData);
 
         // Recover the signer address from the signature and validate that corresponds to a
         // KMS node that has not already signed.
@@ -408,28 +371,21 @@ contract Decryption is
             revert UserAddressInContractAddresses(userAddress, contractsInfo.addresses);
         }
 
-        // - Extract the handles and check their conformance
+        // Extract the handles and check their conformance
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
             ctHandleContractPairs,
             contractsInfo.addresses,
             userAddress
         );
 
-        // Initialize the UserDecryptRequestVerification structure for the signature validation.
-        UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
-            publicKey,
-            contractsInfo.addresses,
-            requestValidity.startTimestamp,
-            requestValidity.durationDays,
-            extraData
-        );
-
         // Validate the received EIP712 signature on the user decryption request.
         _validateUserDecryptRequestEIP712Signature(
-            userDecryptRequestVerification,
+            requestValidity,
+            contractsInfo,
             userAddress,
+            publicKey,
             signature,
-            contractsInfo.chainId
+            extraData
         );
 
         // Fetch the ciphertexts from the CiphertextCommits contract
@@ -443,6 +399,9 @@ contract Decryption is
         // TODO: This should be removed once batched decryption requests with different keys is
         // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
         _checkCtMaterialKeyIds(snsCtMaterials);
+
+        // Fetch the storage URLs that have reached consensus for the ciphertexts
+        string[][] memory storageUrls = CIPHERTEXT_COMMITS.getConsensusStorageUrls(ctHandles);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
 
@@ -459,7 +418,7 @@ contract Decryption is
         // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, storageUrls, userAddress, publicKey, extraData);
     }
 
     /**
@@ -482,20 +441,14 @@ contract Decryption is
             revert DecryptionNotRequested(decryptionId);
         }
 
-        UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
-        // Initialize the UserDecryptResponseVerification structure for the signature validation.
-        UserDecryptResponseVerification memory userDecryptResponseVerification = UserDecryptResponseVerification(
-            userDecryptionPayload.publicKey,
-            userDecryptionPayload.ctHandles,
+        // Compute the digest of the UserDecryptResponseVerification structure.
+        bytes32 digest = _hashUserDecryptResponseVerification(
+            $.userDecryptionPayloads[decryptionId],
             userDecryptedShare,
             extraData
         );
 
-        // Compute the digest of the UserDecryptResponseVerification structure.
-        bytes32 digest = _hashUserDecryptResponseVerification(userDecryptResponseVerification);
-
-        // Recover the signer address from the signature and validate that it corresponds to a
-        // KMS node that has not already signed.
+        // Validate the received EIP712 signature on the user decryption response.
         _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
 
         // Store the KMS transaction sender address for the public decryption response
@@ -650,18 +603,22 @@ contract Decryption is
     /**
      * @notice Validates the EIP712 signature for a given user decryption request
      * @dev This function checks that the signer address is the same as the user address.
-     * @param userDecryptRequestVerification The signed UserDecryptRequestVerification structure
-     * @param userAddress The address of the user.
+     * @param requestValidity The validity period of the user decryption request.
+     * @param contractsInfo The chain ID and contract addresses to be used in the decryption.
+     * @param userAddress The user's address.
+     * @param publicKey The user's public key to be used for reencryption.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @param signature The signature to be validated
-     * @param contractsChainId The chain ID of the contracts.
      */
     function _validateUserDecryptRequestEIP712Signature(
-        UserDecryptRequestVerification memory userDecryptRequestVerification,
+        RequestValidity memory requestValidity,
+        ContractsInfo memory contractsInfo,
         address userAddress,
+        bytes memory publicKey,
         bytes calldata signature,
-        uint256 contractsChainId
+        bytes memory extraData
     ) internal view virtual {
-        bytes32 digest = _hashUserDecryptRequestVerification(userDecryptRequestVerification, contractsChainId);
+        bytes32 digest = _hashUserDecryptRequestVerification(requestValidity, contractsInfo, publicKey, extraData);
         address signer = ECDSA.recover(digest, signature);
         if (signer != userAddress) {
             revert InvalidUserSignature(signature);
@@ -669,21 +626,24 @@ contract Decryption is
     }
 
     /**
-     * @notice Computes the hash of a given PublicDecryptVerification structured data
-     * @param publicDecryptVerification The PublicDecryptVerification structure
-     * @return The hash of the PublicDecryptVerification structure
+     * @notice Computes the hash of a PublicDecryptVerification structured data
+     * @param ctHandles The handles of the ciphertexts to be decrypted.
+     * @param decryptedResult The decrypted result.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function _hashPublicDecryptVerification(
-        PublicDecryptVerification memory publicDecryptVerification
+        bytes32[] memory ctHandles,
+        bytes memory decryptedResult,
+        bytes memory extraData
     ) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
                     abi.encode(
                         EIP712_PUBLIC_DECRYPT_TYPE_HASH,
-                        keccak256(abi.encodePacked(publicDecryptVerification.ctHandles)),
-                        keccak256(publicDecryptVerification.decryptedResult),
-                        keccak256(abi.encodePacked(publicDecryptVerification.extraData))
+                        keccak256(abi.encodePacked(ctHandles)),
+                        keccak256(decryptedResult),
+                        keccak256(abi.encodePacked(extraData))
                     )
                 )
             );
@@ -706,45 +666,53 @@ contract Decryption is
     }
 
     /**
-     * @notice Computes the hash of a given UserDecryptRequestVerification structured data.
-     * @param userDecryptRequestVerification The UserDecryptRequestVerification structure to hash.
-     * @param contractsChainId The chain ID of the contracts.
+     * @notice Computes the hash of a UserDecryptRequestVerification structured data.
+     * @param requestValidity The validity period of the user decryption request.
+     * @param contractsInfo The chain ID and contract addresses to be used in the decryption.
+     * @param publicKey The user's public key to be used for reencryption.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @return The hash of the UserDecryptRequestVerification structure.
      */
     function _hashUserDecryptRequestVerification(
-        UserDecryptRequestVerification memory userDecryptRequestVerification,
-        uint256 contractsChainId
+        RequestValidity memory requestValidity,
+        ContractsInfo memory contractsInfo,
+        bytes memory publicKey,
+        bytes memory extraData
     ) internal view virtual returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
                 EIP712_USER_DECRYPT_REQUEST_TYPE_HASH,
-                keccak256(userDecryptRequestVerification.publicKey),
-                keccak256(abi.encodePacked(userDecryptRequestVerification.contractAddresses)),
-                userDecryptRequestVerification.startTimestamp,
-                userDecryptRequestVerification.durationDays,
-                keccak256(abi.encodePacked(userDecryptRequestVerification.extraData))
+                keccak256(publicKey),
+                keccak256(abi.encodePacked(contractsInfo.addresses)),
+                requestValidity.startTimestamp,
+                requestValidity.durationDays,
+                keccak256(abi.encodePacked(extraData))
             )
         );
-        return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
+        return _hashTypedDataV4CustomChainId(contractsInfo.chainId, structHash);
     }
 
     /**
-     * @notice Computes the hash of a given UserDecryptResponseVerification structured data.
-     * @param userDecryptResponseVerification The UserDecryptResponseVerification structure to hash.
+     * @notice Computes the hash of a UserDecryptResponseVerification structured data.
+     * @param userDecryptionPayload The UserDecryptionPayload structure to hash.
+     * @param userDecryptedShare The user decrypted share.
+     * @param extraData The extra data.
      * @return The hash of the UserDecryptResponseVerification structure.
      */
     function _hashUserDecryptResponseVerification(
-        UserDecryptResponseVerification memory userDecryptResponseVerification
+        UserDecryptionPayload memory userDecryptionPayload,
+        bytes memory userDecryptedShare,
+        bytes memory extraData
     ) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
                     abi.encode(
                         EIP712_USER_DECRYPT_RESPONSE_TYPE_HASH,
-                        keccak256(userDecryptResponseVerification.publicKey),
-                        keccak256(abi.encodePacked(userDecryptResponseVerification.ctHandles)),
-                        keccak256(userDecryptResponseVerification.userDecryptedShare),
-                        keccak256(abi.encodePacked(userDecryptResponseVerification.extraData))
+                        keccak256(userDecryptionPayload.publicKey),
+                        keccak256(abi.encodePacked(userDecryptionPayload.ctHandles)),
+                        keccak256(userDecryptedShare),
+                        keccak256(abi.encodePacked(extraData))
                     )
                 )
             );

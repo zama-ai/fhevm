@@ -28,13 +28,35 @@ struct KmsNode {
 /**
  * @notice Struct that represents a coprocessor.
  */
-struct Coprocessor {
+struct CoprocessorV2 {
+    /// @notice Name of the coprocessor, as a human-readable identifier
+    string name;
     /// @notice Address of the coprocessor's transaction sender
     address txSenderAddress;
     /// @notice Address of the coprocessor's signer (used for signing inputs with EIP712 signatures)
     address signerAddress;
-    /// @notice URL address of the coprocessor's S3 bucket where ciphertexts are stored
-    string s3BucketUrl;
+    /// @notice URL address of the coprocessor's storage where ciphertexts are stored
+    string storageUrl;
+}
+
+/// @notice Struct that represents a coprocessor context
+struct CoprocessorContext {
+    /// @notice The ID of the coprocessor context
+    uint256 contextId;
+    /// @notice The ID of the previous (active)coprocessor context
+    uint256 previousContextId;
+    /// @notice The feature set of the coprocessor context
+    uint256 featureSet;
+    /// @notice The coprocessors in the coprocessor context
+    CoprocessorV2[] coprocessors;
+}
+
+/// @notice Struct that represents the time periods for a coprocessor context
+struct CoprocessorContextTimePeriods {
+    /// @notice The time period for the pre-activation period (before activating the coprocessor context)
+    uint256 preActivationTimePeriod;
+    /// @notice The time period for the suspended period (before deactivating the previous coprocessor context)
+    uint256 suspendedTimePeriod;
 }
 
 /**
@@ -70,10 +92,12 @@ struct HostChain {
  * the Gateway contracts.
  */
 struct SnsCiphertextMaterial {
+    /// @notice The handle of the ciphertext
     bytes32 ctHandle;
+    /// @notice The key ID that was used to generate the ciphertext
     uint256 keyId;
+    /// @notice The digest of the SNS ciphertext
     bytes32 snsCiphertextDigest;
-    address[] coprocessorTxSenderAddresses;
 }
 
 /**
@@ -81,10 +105,12 @@ struct SnsCiphertextMaterial {
  * the Gateway contracts.
  */
 struct CiphertextMaterial {
+    /// @notice The handle of the ciphertext
     bytes32 ctHandle;
+    /// @notice The key ID that was used to generate the ciphertext
     uint256 keyId;
+    /// @notice The digest of the regular ciphertext
     bytes32 ciphertextDigest;
-    address[] coprocessorTxSenderAddresses;
 }
 
 /**
@@ -96,4 +122,14 @@ struct CtHandleContractPair {
     bytes32 ctHandle;
     /// @notice The address of the contract
     address contractAddress;
+}
+
+// ----------------------------------------------------------------------------------------------
+// DEPRECATED
+// ----------------------------------------------------------------------------------------------
+
+struct CoprocessorV1 {
+    address txSenderAddress;
+    address signerAddress;
+    string s3BucketUrl;
 }

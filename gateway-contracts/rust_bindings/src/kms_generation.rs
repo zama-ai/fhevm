@@ -661,8 +661,6 @@ interface KMSGeneration {
     error KmsAlreadySignedForCrsgen(uint256 crsId, address kmsSigner);
     error KmsAlreadySignedForKeygen(uint256 keyId, address kmsSigner);
     error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
-    error NotCoprocessorSigner(address signerAddress);
-    error NotCoprocessorTxSender(address txSenderAddress);
     error NotCustodianSigner(address signerAddress);
     error NotCustodianTxSender(address txSenderAddress);
     error NotGatewayOwner(address sender);
@@ -1373,28 +1371,6 @@ interface KMSGeneration {
       },
       {
         "name": "kmsSigner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotCoprocessorSigner",
-    "inputs": [
-      {
-        "name": "signerAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotCoprocessorTxSender",
-    "inputs": [
-      {
-        "name": "txSenderAddress",
         "type": "address",
         "internalType": "address"
       }
@@ -2653,166 +2629,6 @@ error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
                     > as alloy_sol_types::SolType>::tokenize(&self.prepKeygenId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.kmsSigner,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotCoprocessorSigner(address)` and selector `0x26cd75dc`.
-```solidity
-error NotCoprocessorSigner(address signerAddress);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NotCoprocessorSigner {
-        #[allow(missing_docs)]
-        pub signerAddress: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NotCoprocessorSigner> for UnderlyingRustTuple<'_> {
-            fn from(value: NotCoprocessorSigner) -> Self {
-                (value.signerAddress,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotCoprocessorSigner {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { signerAddress: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NotCoprocessorSigner {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotCoprocessorSigner(address)";
-            const SELECTOR: [u8; 4] = [38u8, 205u8, 117u8, 220u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.signerAddress,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotCoprocessorTxSender(address)` and selector `0x52d725f5`.
-```solidity
-error NotCoprocessorTxSender(address txSenderAddress);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NotCoprocessorTxSender {
-        #[allow(missing_docs)]
-        pub txSenderAddress: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NotCoprocessorTxSender> for UnderlyingRustTuple<'_> {
-            fn from(value: NotCoprocessorTxSender) -> Self {
-                (value.txSenderAddress,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotCoprocessorTxSender {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { txSenderAddress: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NotCoprocessorTxSender {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotCoprocessorTxSender(address)";
-            const SELECTOR: [u8; 4] = [82u8, 215u8, 37u8, 245u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.txSenderAddress,
                     ),
                 )
             }
@@ -8203,10 +8019,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         #[allow(missing_docs)]
         KmsAlreadySignedForPrepKeygen(KmsAlreadySignedForPrepKeygen),
         #[allow(missing_docs)]
-        NotCoprocessorSigner(NotCoprocessorSigner),
-        #[allow(missing_docs)]
-        NotCoprocessorTxSender(NotCoprocessorTxSender),
-        #[allow(missing_docs)]
         NotCustodianSigner(NotCustodianSigner),
         #[allow(missing_docs)]
         NotCustodianTxSender(NotCustodianTxSender),
@@ -8235,12 +8047,10 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [14u8, 86u8, 207u8, 61u8],
-            [38u8, 205u8, 117u8, 220u8],
             [42u8, 124u8, 110u8, 246u8],
             [51u8, 202u8, 31u8, 227u8],
             [57u8, 22u8, 114u8, 167u8],
             [76u8, 156u8, 140u8, 227u8],
-            [82u8, 215u8, 37u8, 245u8],
             [111u8, 79u8, 115u8, 31u8],
             [132u8, 222u8, 19u8, 49u8],
             [152u8, 251u8, 149u8, 125u8],
@@ -8265,7 +8075,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
     impl alloy_sol_types::SolInterface for KMSGenerationErrors {
         const NAME: &'static str = "KMSGenerationErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 25usize;
+        const COUNT: usize = 23usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -8310,12 +8120,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::KmsAlreadySignedForPrepKeygen(_) => {
                     <KmsAlreadySignedForPrepKeygen as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NotCoprocessorSigner(_) => {
-                    <NotCoprocessorSigner as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NotCoprocessorTxSender(_) => {
-                    <NotCoprocessorTxSender as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotCustodianSigner(_) => {
                     <NotCustodianSigner as alloy_sol_types::SolError>::SELECTOR
@@ -8375,17 +8179,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     NotGatewayOwner
                 },
                 {
-                    fn NotCoprocessorSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<KMSGenerationErrors> {
-                        <NotCoprocessorSigner as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(KMSGenerationErrors::NotCoprocessorSigner)
-                    }
-                    NotCoprocessorSigner
-                },
-                {
                     fn NotKmsSigner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<KMSGenerationErrors> {
@@ -8426,17 +8219,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(KMSGenerationErrors::ERC1967InvalidImplementation)
                     }
                     ERC1967InvalidImplementation
-                },
-                {
-                    fn NotCoprocessorTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<KMSGenerationErrors> {
-                        <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(KMSGenerationErrors::NotCoprocessorTxSender)
-                    }
-                    NotCoprocessorTxSender
                 },
                 {
                     fn NotInitializingFromEmptyProxy(
@@ -8666,17 +8448,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     NotGatewayOwner
                 },
                 {
-                    fn NotCoprocessorSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<KMSGenerationErrors> {
-                        <NotCoprocessorSigner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(KMSGenerationErrors::NotCoprocessorSigner)
-                    }
-                    NotCoprocessorSigner
-                },
-                {
                     fn NotKmsSigner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<KMSGenerationErrors> {
@@ -8719,17 +8490,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(KMSGenerationErrors::ERC1967InvalidImplementation)
                     }
                     ERC1967InvalidImplementation
-                },
-                {
-                    fn NotCoprocessorTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<KMSGenerationErrors> {
-                        <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(KMSGenerationErrors::NotCoprocessorTxSender)
-                    }
-                    NotCoprocessorTxSender
                 },
                 {
                     fn NotInitializingFromEmptyProxy(
@@ -9011,16 +8771,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
-                Self::NotCoprocessorSigner(inner) => {
-                    <NotCoprocessorSigner as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::NotCoprocessorTxSender(inner) => {
-                    <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::NotCustodianSigner(inner) => {
                     <NotCustodianSigner as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -9146,18 +8896,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::KmsAlreadySignedForPrepKeygen(inner) => {
                     <KmsAlreadySignedForPrepKeygen as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NotCoprocessorSigner(inner) => {
-                    <NotCoprocessorSigner as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NotCoprocessorTxSender(inner) => {
-                    <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

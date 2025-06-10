@@ -5,7 +5,10 @@
 //! These files may be overwritten by the codegen system at any time.
 pub mod r#address;
 pub mod r#ciphertext_commits;
+pub mod r#context_checks;
+pub mod r#context_lifecycle;
 pub mod r#context_upgradeable;
+pub mod r#coprocessor_contexts;
 pub mod r#decryption;
 pub mod r#ecdsa;
 pub mod r#eip712_upgradeable;
@@ -20,6 +23,7 @@ pub mod r#gateway_ownable;
 pub mod r#handle_ops;
 pub mod r#i_beacon;
 pub mod r#i_ciphertext_commits;
+pub mod r#i_coprocessor_contexts;
 pub mod r#i_decryption;
 pub mod r#ierc1967;
 pub mod r#ierc5267;
