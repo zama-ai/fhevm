@@ -1,16 +1,16 @@
-[package]
-name = "kms-connector"
+[workspace]
+resolver = "2"
+members = ["simple-connector"]
+
+[workspace.package]
 authors = ["Zama"]
-publish = true
 edition = "2024"
 license = "BSD-3-Clause-Clear"
+publish = true
 version = "0.1.0-rc6"
 
-[dependencies]
-alloy = { version = "=0.13.0", default-features = true,  features = [
-    "provider-ws",
-    "signer-aws",
-] }
+[workspace.dependencies]
+alloy = { version = "=0.13.0", default-features = true,  features = ["provider-ws", "signer-aws"] }
 anyhow = { version = "=1.0.98", default-features = false }
 aws-sdk-kms = { version = "=1.65.0", default-features = true }
 bincode = { version = "=1.3.3", default-features = false }  # Couldn't be upgraded because of kms-grpc
@@ -42,10 +42,5 @@ tracing-subscriber = { version = "=0.3.19", default-features = true, features = 
 fhevm_gateway_rust_bindings = { path = "../gateway-contracts/rust_bindings" }
 kms-grpc = { git = "ssh://git@github.com/zama-ai/kms-core.git", tag = "v0.11.0-rc15", default-features = true, features = ["insecure"] }
 
-[dev-dependencies]
 tempfile = "=3.19.1"
 serial_test = "3.2.0"
-
-[[bin]]
-name = "kms-connector"
-path = "src/bin/kms-connector.rs"
