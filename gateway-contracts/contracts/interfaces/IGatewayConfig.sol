@@ -76,6 +76,9 @@ interface IGatewayConfig {
     /// @notice Error emitted when the coprocessors list is empty.
     error EmptyCoprocessors();
 
+    /// @notice Error emitted when the custodians list is empty.
+    error EmptyCustodians();
+
     /**
      * @notice Error emitted when the MPC threshold is greater or equal to the number of KMS nodes.
      * @param mpcThreshold The MPC threshold.

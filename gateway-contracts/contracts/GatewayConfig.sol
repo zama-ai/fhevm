@@ -112,6 +112,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert EmptyCoprocessors();
         }
 
+        if (initialCustodians.length == 0) {
+            revert EmptyCustodians();
+        }
+
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         $.protocolMetadata = initialMetadata;
 
