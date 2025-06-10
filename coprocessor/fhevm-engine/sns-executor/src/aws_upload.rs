@@ -29,6 +29,11 @@ use tracing::{debug, error, info, warn};
 // TODO: Use a config TOML to set these values
 pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
 
+// Default batch size for fetching pending uploads
+// There might be pending uploads in the database
+// with sizes of 32MiB so the batch size is set to 10
+const DEFAULT_BATCH_SIZE: usize = 10;
+
 /// Process the S3 uploads
 pub(crate) async fn process_s3_uploads(
     conf: &Config,
@@ -441,11 +446,17 @@ async fn do_resubmits_loop(
     is_ready: Arc<AtomicBool>,
 ) -> Result<(), ExecutionError> {
     // Retry to resubmit all upload tasks at the start-up
-    try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone())
-        .await
-        .unwrap_or_else(|err| {
-            error!("Failed to resubmit tasks: {}", err);
-        });
+    try_resubmit(
+        &pool,
+        is_ready.clone(),
+        tasks.clone(),
+        token.clone(),
+        DEFAULT_BATCH_SIZE,
+    )
+    .await
+    .unwrap_or_else(|err| {
+        error!("Failed to resubmit tasks: {}", err);
+    });
 
     let retry_conf = &conf.s3.retry_policy;
 
@@ -462,7 +473,7 @@ async fn do_resubmits_loop(
                     if is_ready_res {
                         info!("Reconnected to S3, buckets exist");
                         is_ready.store(true, Ordering::Release);
-                        try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone()).await
+                        try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE).await
                             .unwrap_or_else(|err| {
                                 error!("Failed to resubmit tasks: {}", err);
                             });
@@ -472,7 +483,7 @@ async fn do_resubmits_loop(
 
             // A regular resubmit to ensure there no left over tasks
             _ = tokio::time::sleep(retry_conf.regular_recheck_duration) => {
-                try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone()).await
+                try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE).await
                     .unwrap_or_else(|err| {
                         error!("Failed to resubmit tasks: {}", err);
                     });
@@ -481,41 +492,60 @@ async fn do_resubmits_loop(
     }
 }
 
+/// Attempts to resubmit all pending uploads from the database.
+///
+/// If the S3 setup is not ready, it will skip resubmitting.
+///
+/// This function will keep fetching pending uploads in batches until there are no more
 async fn try_resubmit(
     pool: &PgPool,
     is_ready: Arc<AtomicBool>,
     tasks: mpsc::Sender<UploadJob>,
     token: CancellationToken,
+    batch_size: usize,
 ) -> Result<(), ExecutionError> {
-    if !is_ready.load(Ordering::SeqCst) {
-        info!("S3 setup is not ready, skipping resubmit");
-        return Ok(());
-    }
+    loop {
+        if !is_ready.load(Ordering::SeqCst) {
+            info!("S3 setup is not ready, skipping resubmit");
+            return Ok(());
+        }
 
-    match fetch_pending_uploads(pool, 10).await {
-        // TODO: const, token
-        Ok(jobs) => {
-            info!(
-                target: "worker",
-                action = "retry_s3_uploads",
-                "Fetched {} pending uploads from the database",
-                jobs.len()
-            );
-            // Resubmit for uploading ciphertexts
-            for task in jobs {
-                select! {
-                    _ = tasks.send(task.clone()) => {
-                        // TODO: debug!("Task sent to upload worker, handle: {}", hex::encode(&task.handle));
-                    },
-                    _ = token.cancelled() => {
-                        return Ok(())
+        match fetch_pending_uploads(pool, batch_size as i64).await {
+            Ok(jobs) => {
+                info!(
+                    target: "worker",
+                    action = "retry_s3_uploads",
+                    "Fetched {} pending uploads from the database",
+                    jobs.len()
+                );
+                let jobs_count = jobs.len();
+                // Resubmit for uploading ciphertexts
+                for task in jobs {
+                    select! {
+                        _ = tasks.send(task.clone()) => {
+                            info!("resubmitted, handle: {}", compact_hex(task.handle()));
+                        },
+                        _ = token.cancelled() => {
+                            return Ok(());
+                        }
                     }
                 }
+
+                if jobs_count < batch_size {
+                    info!(
+                        target: "worker",
+                        action = "retry_s3_uploads",
+                        "No (more) pending uploads to resubmit"
+                    );
+                    return Ok(());
+                }
+            }
+            Err(err) => {
+                error!("Failed to fetch pending uploads: {}", err);
+                return Err(err);
             }
         }
-        Err(err) => error!("Failed to fetch pending uploads: {}", err),
-    };
-    Ok(())
+    }
 }
 
 /// Configure and create the S3 client.

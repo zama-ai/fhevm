@@ -229,6 +229,15 @@ pub enum UploadJob {
     DatabaseLock(HandleItem),
 }
 
+impl UploadJob {
+    pub fn handle(&self) -> &Vec<u8> {
+        match self {
+            UploadJob::Normal(item) => &item.handle,
+            UploadJob::DatabaseLock(item) => &item.handle,
+        }
+    }
+}
+
 /// Runs the SnS worker loop
 pub async fn compute_128bit_ct(
     conf: &Config,
