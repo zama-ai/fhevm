@@ -1,5 +1,7 @@
 scDeploy:
   enabled: true
+  # prevent redeployment if already done for current version
+  # preventRedeployment: false
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm-gateway/sc-bundle

@@ -71,7 +71,7 @@ data:
     echo "creating kubernetes configmap for smart contract configuration outputs"
     create_configmap "${CONFIGMAP_NAME}"
 
-    {{- if .Values.scDeploy.skipIfVersionExists }}
+    {{- if .Values.scDeploy.preventRedeployment }}
     # Prevent smart contract deployment if already done for current version
     if [[ "$DEPLOYED_SMART_CONTRACTS_VERSION" == "{{ .Values.scDeploy.image.tag }}" ]]; then
       echo "contracts already deployed with version: ${DEPLOYED_SMART_CONTRACTS_VERSION}, aborting deployment" 1>&2
