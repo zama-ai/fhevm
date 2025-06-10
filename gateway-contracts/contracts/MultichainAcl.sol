@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
+import { coprocessorContextsAddress } from "../addresses/CoprocessorContextsAddress.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IMultichainAcl.sol";
 import "./interfaces/ICiphertextCommits.sol";
-import "./interfaces/IGatewayConfig.sol";
+import { ICoprocessorContexts } from "./interfaces/ICoprocessorContexts.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
+import { ContextChecks } from "./shared/ContextChecks.sol";
 
 /// @title MultichainAcl smart contract
 /// @dev See {IMultichainAcl}
@@ -18,10 +19,11 @@ contract MultichainAcl is
     Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
-    Pausable
+    Pausable,
+    ContextChecks
 {
-    /// @notice The address of the GatewayConfig contract for protocol state calls.
-    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
+    /// @notice The address of the CoprocessorContexts contract, used for fetching information about coprocessors.
+    ICoprocessorContexts private constant COPROCESSOR_CONTEXTS = ICoprocessorContexts(coprocessorContextsAddress);
 
     /// @notice The maximum number of contracts that can be requested for delegation.
     uint8 internal constant MAX_CONTRACT_ADDRESSES = 10;
@@ -37,6 +39,9 @@ contract MultichainAcl is
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.MultichainAcl
     struct MultichainAclStorage {
+        // ----------------------------------------------------------------------------------------------
+        // Allow account state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice Accounts allowed to use the ciphertext handle.
         mapping(bytes32 ctHandle => mapping(address accountAddress => bool isAllowed)) allowedAccounts;
         /// @notice The counter used for the allowAccount consensus.
@@ -46,6 +51,9 @@ contract MultichainAcl is
         mapping(bytes32 ctHandle => mapping(address accountAddress =>
             mapping(address coprocessorTxSenderAddress => bool hasAllowed)))
                 _allowAccountCoprocessors;
+        // ----------------------------------------------------------------------------------------------
+        // Allow public decryption state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice Allowed public decryptions.
         mapping(bytes32 ctHandle => bool isAllowed) allowedPublicDecrypts;
         /// @notice The counter used for the public decryption consensus.
@@ -54,6 +62,9 @@ contract MultichainAcl is
         /// @notice Coprocessors that have already allowed a public decryption.
         mapping(bytes32 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAllowed)) 
             _allowPublicDecryptCoprocessors;
+        // ----------------------------------------------------------------------------------------------
+        // Delegate account state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @dev Tracks the computed delegateAccountHash that has already been delegated.
         mapping(bytes32 delegateAccountHash => bool isDelegated) _delegatedAccountHashes;
         /// @dev Tracks the number of times a delegateAccountHash has received confirmations.
@@ -68,6 +79,13 @@ contract MultichainAcl is
         mapping(address delegator => mapping(address delegated =>
             mapping(uint256 chainId => mapping(address contractAddress => bool isDelegated))))
                 _delegatedContracts;
+        // ----------------------------------------------------------------------------------------------
+        // Coprocessor context state variables:
+        // ----------------------------------------------------------------------------------------------
+        mapping(bytes32 delegateAccountHash => uint256 contextId) delegateAccountContextId;
+        /// @notice The context ID for the allowAccount consensus.
+        mapping(bytes32 ctHandle => mapping(address accountAddress => uint256 contextId)) allowAccountContextId;
+        mapping(bytes32 ctHandle => uint256 contextId) allowPublicDecryptContextId;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -84,16 +102,39 @@ contract MultichainAcl is
     /// @notice Initializes the contract.
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(2) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(3) {
         __Ownable_init(owner());
         __Pausable_init();
     }
 
+    /// @notice Reinitializes the contract.
+    function reinitializeV2() external reinitializer(3) {}
+
     /// @dev See {IMultichainAcl-allowPublicDecrypt}.
     function allowPublicDecrypt(
         bytes32 ctHandle
-    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused {
+    ) external virtual onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused refreshCoprocessorContextStatuses {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
+
+        // Get the context ID from the allow public decryption context ID mapping
+        uint256 contextId = $.allowPublicDecryptContextId[ctHandle];
+
+        // If the context ID is not set, get the active coprocessor context's ID and associate it to
+        // this public decryption allow
+        if (contextId == 0) {
+            contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
+            $.allowPublicDecryptContextId[ctHandle] = contextId;
+
+            // Else, that means a coprocessor already started to allow the public decryption and we need
+            // to check that the context is active or suspended
+            // If it is not, that means the context is no longer valid for this operation and we revert
+        } else if (!COPROCESSOR_CONTEXTS.isCoprocessorContextActiveOrSuspended(contextId)) {
+            ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
+            revert InvalidCoprocessorContextAllowPublicDecrypt(ctHandle, contextId, contextStatus);
+        }
+
+        // Only accept coprocessor transaction senders from the same context
+        COPROCESSOR_CONTEXTS.checkIsCoprocessorTxSenderFromContext(contextId, msg.sender);
 
         /**
          * @dev Check if the coprocessor has already allowed the ciphertext handle for public decryption.
@@ -106,10 +147,13 @@ contract MultichainAcl is
         $._allowPublicDecryptCounters[ctHandle]++;
         $._allowPublicDecryptCoprocessors[ctHandle][msg.sender] = true;
 
-        /// @dev Only send the event if consensus has not been reached in a previous call
-        /// @dev and the consensus is reached in the current call.
-        /// @dev This means a "late" allow will not be reverted, just ignored
-        if (!$.allowedPublicDecrypts[ctHandle] && _isConsensusReached($._allowPublicDecryptCounters[ctHandle])) {
+        // Only send the event if consensus has not been reached in a previous call and the consensus
+        // is reached in the current call. This means a "late" addition will not be reverted, just ignored
+        // Besides, consensus only considers the coprocessors of the same context
+        if (
+            !$.allowedPublicDecrypts[ctHandle] &&
+            _isConsensusReached(contextId, $._allowPublicDecryptCounters[ctHandle])
+        ) {
             $.allowedPublicDecrypts[ctHandle] = true;
             emit AllowPublicDecrypt(ctHandle);
         }
@@ -119,8 +163,28 @@ contract MultichainAcl is
     function allowAccount(
         bytes32 ctHandle,
         address accountAddress
-    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused {
+    ) external virtual onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused refreshCoprocessorContextStatuses {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
+
+        // Get the context ID from the allow account context ID mapping
+        uint256 contextId = $.allowAccountContextId[ctHandle][accountAddress];
+
+        // If the context ID is not set, get the active coprocessor context's ID and associate it to
+        // this account allow
+        if (contextId == 0) {
+            contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
+            $.allowAccountContextId[ctHandle][accountAddress] = contextId;
+
+            // Else, that means a coprocessor already started to allow the account and we need to check
+            // that the context is active or suspended
+            // If it is not, that means the context is no longer valid for this operation and we revert
+        } else if (!COPROCESSOR_CONTEXTS.isCoprocessorContextActiveOrSuspended(contextId)) {
+            ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
+            revert InvalidCoprocessorContextAllowAccount(ctHandle, accountAddress, contextId, contextStatus);
+        }
+
+        // Only accept coprocessor transaction senders from the same context
+        COPROCESSOR_CONTEXTS.checkIsCoprocessorTxSenderFromContext(contextId, msg.sender);
 
         /**
          * @dev Check if the coprocessor has already allowed the account to use the ciphertext handle.
@@ -133,12 +197,12 @@ contract MultichainAcl is
         $._allowAccountCounters[ctHandle][accountAddress]++;
         $._allowAccountCoprocessors[ctHandle][accountAddress][msg.sender] = true;
 
-        /// @dev Only send the event if consensus has not been reached in a previous call
-        /// @dev and the consensus is reached in the current call.
-        /// @dev This means a "late" allow will not be reverted, just ignored
+        // Only send the event if consensus has not been reached in a previous call and the consensus
+        // is reached in the current call. This means a "late" addition will not be reverted, just ignored
+        // Besides, consensus only considers the coprocessors of the same context
         if (
             !$.allowedAccounts[ctHandle][accountAddress] &&
-            _isConsensusReached($._allowAccountCounters[ctHandle][accountAddress])
+            _isConsensusReached(contextId, $._allowAccountCounters[ctHandle][accountAddress])
         ) {
             $.allowedAccounts[ctHandle][accountAddress] = true;
             emit AllowAccount(ctHandle, accountAddress);
@@ -150,7 +214,7 @@ contract MultichainAcl is
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
-    ) external virtual onlyCoprocessorTxSender whenNotPaused {
+    ) external virtual whenNotPaused refreshCoprocessorContextStatuses {
         if (contractAddresses.length == 0) {
             revert EmptyContractAddresses();
         }
@@ -160,11 +224,39 @@ contract MultichainAcl is
 
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
-        /// @dev The delegateAccountHash is the hash of all input arguments.
-        /// @dev This hash is used to track the delegation consensus over the whole contractAddresses list,
-        /// @dev and assumes that the Coprocessors will delegate the same list of contracts and keep the same order.
+        // Compute the hash of the ciphertext material to differentiate different ciphertext
+        // material additions
         bytes32 delegateAccountHash = keccak256(abi.encode(chainId, delegationAccounts, contractAddresses));
 
+        // Get the context ID from the delegate account context ID mapping
+        uint256 contextId = $.delegateAccountContextId[delegateAccountHash];
+
+        // If the context ID is not set, get the active coprocessor context's ID and associate it to
+        // this account delegation
+        if (contextId == 0) {
+            contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
+            $.delegateAccountContextId[delegateAccountHash] = contextId;
+
+            // Else, that means a coprocessor already started to delegate the account and we need to check
+            // that the context is active or suspended
+            // If it is not, that means the context is no longer valid for this operation and we revert
+        } else if (!COPROCESSOR_CONTEXTS.isCoprocessorContextActiveOrSuspended(contextId)) {
+            ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
+            revert InvalidCoprocessorContextDelegateAccount(
+                chainId,
+                delegationAccounts,
+                contractAddresses,
+                contextId,
+                contextStatus
+            );
+        }
+
+        // Only accept coprocessor transaction senders from the same context
+        COPROCESSOR_CONTEXTS.checkIsCoprocessorTxSenderFromContext(contextId, msg.sender);
+
+        // The delegateAccountHash is the hash of all input arguments.
+        // This hash is used to track the delegation consensus over the whole contractAddresses list.
+        // It assumes that the coprocessors will delegate the same list of contracts and keep the same order.
         mapping(address => bool) storage alreadyDelegatedCoprocessors = $._alreadyDelegatedCoprocessors[
             delegateAccountHash
         ];
@@ -177,11 +269,12 @@ contract MultichainAcl is
         $._delegateAccountHashCounters[delegateAccountHash]++;
         alreadyDelegatedCoprocessors[msg.sender] = true;
 
-        /// @dev Send the event if and only if the consensus is reached in the current response call.
-        /// @dev This means a "late" response will not be reverted, just ignored
+        // Only send the event if consensus has not been reached in a previous call and the consensus
+        // is reached in the current call. This means a "late" addition will not be reverted, just ignored
+        // Besides, consensus only considers the coprocessors of the same context
         if (
             !$._delegatedAccountHashes[delegateAccountHash] &&
-            _isConsensusReached($._delegateAccountHashCounters[delegateAccountHash])
+            _isConsensusReached(contextId, $._delegateAccountHashCounters[delegateAccountHash])
         ) {
             mapping(address => bool) storage delegatedContracts = $._delegatedContracts[
                 delegationAccounts.delegatorAddress
@@ -257,11 +350,14 @@ contract MultichainAcl is
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
-    /// @notice Checks if the consensus is reached among the Coprocessors.
-    /// @param coprocessorCounter The number of coprocessors that agreed
-    /// @return Whether the consensus is reached
-    function _isConsensusReached(uint8 coprocessorCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
+    /**
+     * @notice Checks if the consensus is reached among the coprocessors from the same context.
+     * @param contextId The coprocessor context ID
+     * @param coprocessorCounter The number of coprocessors that agreed
+     * @return Whether the consensus is reached
+     */
+    function _isConsensusReached(uint256 contextId, uint8 coprocessorCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = COPROCESSOR_CONTEXTS.getCoprocessorMajorityThresholdFromContext(contextId);
         return coprocessorCounter >= consensusThreshold;
     }
 

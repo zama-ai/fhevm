@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "../shared/Structs.sol";
+import { ContextStatus } from "../shared/Enums.sol";
 
 /**
  * @title Interface for the MultichainAcl contract.
@@ -30,11 +31,36 @@ interface IMultichainAcl {
     event DelegateAccount(uint256 indexed chainId, DelegationAccounts delegationAccounts, address[] contractAddresses);
 
     /**
+     * @notice Error indicating that the coprocessor context is no longer valid for allowing public decryption.
+     * A context is valid if it is active or suspended.
+     * @param ctHandle The ciphertext handle that the coprocessor has already allowed access to.
+     * @param contextId The context ID of the coprocessor.
+     * @param contextStatus The status of the coprocessor context.
+     */
+    error InvalidCoprocessorContextAllowPublicDecrypt(bytes32 ctHandle, uint256 contextId, ContextStatus contextStatus);
+
+    /**
      * @notice Error indicating that the coprocessor has already allowed public decryption to the ciphertext.
      * @param ctHandle The ciphertext handle that the coprocessor has already allowed access to.
      * @param txSender The transaction sender address of the coprocessor that has already allowed access.
      */
     error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
+
+    /**
+     * @notice Error indicating that the coprocessor context is no longer valid for allowing the
+     * account to use the ciphertext handle.
+     * A context is valid if it is active or suspended.
+     * @param ctHandle The ciphertext handle that the coprocessor has already allowed access to.
+     * @param accountAddress The address of the account that has already been allowed access.
+     * @param contextId The context ID of the coprocessor.
+     * @param contextStatus The status of the coprocessor context.
+     */
+    error InvalidCoprocessorContextAllowAccount(
+        bytes32 ctHandle,
+        address accountAddress,
+        uint256 contextId,
+        ContextStatus contextStatus
+    );
 
     /**
      * @notice Error indicating that the coprocessor has already allowed the account to use the ciphertext handle.
@@ -43,6 +69,24 @@ interface IMultichainAcl {
      * @param txSender The transaction sender address of the coprocessor that has already allowed access.
      */
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
+
+    /**
+     * @notice Error indicating that the coprocessor context is no longer valid for delegating access
+     * to another account.
+     * A context is valid if it is active or suspended.
+     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
+     * @param delegationAccounts The delegator and the delegated addresses.
+     * @param contractAddresses The addresses of the contracts that the coprocessor has already delegated.
+     * @param contextId The context ID of the coprocessor.
+     * @param contextStatus The status of the coprocessor context.
+     */
+    error InvalidCoprocessorContextDelegateAccount(
+        uint256 chainId,
+        DelegationAccounts delegationAccounts,
+        address[] contractAddresses,
+        uint256 contextId,
+        ContextStatus contextStatus
+    );
 
     /**
      * @notice Error indicating that the coprocessor has already delegated access to another account.

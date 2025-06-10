@@ -1,12 +1,15 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, mine } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { GatewayConfig, InputVerification, InputVerification__factory } from "../typechain-types";
+import { CoprocessorContexts, GatewayConfig, InputVerification, InputVerification__factory } from "../typechain-types";
+import { CoprocessorContextBlockPeriodsStruct } from "../typechain-types/contracts/CoprocessorContexts";
 import {
+  ContextStatus,
   EIP712,
+  addNewCoprocessorContext,
   createBytes32,
   createCtHandles,
   createEIP712ResponseZKPoK,
@@ -14,6 +17,7 @@ import {
   createRandomWallet,
   getSignaturesZKPoK,
   loadTestVariablesFixture,
+  refreshCoprocessorContextAfterBlockPeriod,
 } from "./utils";
 
 describe("InputVerification", function () {
@@ -27,6 +31,9 @@ describe("InputVerification", function () {
 
   // Expected ZK proof id (after first request)
   const zkProofId = 1;
+
+  // Define the first context ID
+  const contextId = 1;
 
   // Define 3 new valid ctHandles
   const newCtHandles = createCtHandles(3);
@@ -63,12 +70,14 @@ describe("InputVerification", function () {
   describe("Verify proof request", async function () {
     let gatewayConfig: GatewayConfig;
     let inputVerification: InputVerification;
+    let coprocessorContexts: CoprocessorContexts;
     let contractChainId: number;
     let owner: Wallet;
 
-    before(async function () {
+    beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
       gatewayConfig = fixture.gatewayConfig;
+      coprocessorContexts = fixture.coprocessorContexts;
       inputVerification = fixture.inputVerification;
       contractChainId = fixture.chainIds[0];
       owner = fixture.owner;
@@ -85,7 +94,7 @@ describe("InputVerification", function () {
 
       await expect(txResponse)
         .to.emit(inputVerification, "VerifyProofRequest")
-        .withArgs(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
+        .withArgs(zkProofId, contextId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     });
 
     it("Should revert because the contract's chain ID does not correspond to a registered host chain", async function () {
@@ -107,10 +116,70 @@ describe("InputVerification", function () {
           .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof),
       ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
     });
+
+    describe("Context changes", async function () {
+      let blockPeriods: CoprocessorContextBlockPeriodsStruct;
+
+      // Define the new expected context ID
+      const newContextId = 2;
+
+      beforeEach(async function () {
+        // Add a new coprocessor context
+        const newCoprocessorContext = await addNewCoprocessorContext(3, coprocessorContexts, owner);
+        blockPeriods = newCoprocessorContext.blockPeriods;
+      });
+
+      it("Should activate the new context and suspend the old one", async function () {
+        // Mine the number of blocks required for the pre-activation period to pass
+        await mine(blockPeriods.preActivationBlockPeriod);
+
+        // Trigger a proof verification request to refresh the statuses of the coprocessor contexts
+        await inputVerification.verifyProofRequest(
+          contractChainId,
+          contractAddress,
+          userAddress,
+          ciphertextWithZKProof,
+        );
+
+        // Make sure the old context has been suspended
+        expect(await coprocessorContexts.getCoprocessorContextStatus(contextId)).to.equal(ContextStatus.Suspended);
+
+        // Make sure the new context has been activated
+        expect(await coprocessorContexts.getCoprocessorContextStatus(newContextId)).to.equal(ContextStatus.Active);
+      });
+
+      it("Should deactivate the suspended context", async function () {
+        // Mine the number of blocks required for the pre-activation period to pass
+        await mine(blockPeriods.preActivationBlockPeriod);
+
+        // Trigger a proof verification request to refresh the status of the coprocessor context
+        await inputVerification.verifyProofRequest(
+          contractChainId,
+          contractAddress,
+          userAddress,
+          ciphertextWithZKProof,
+        );
+
+        // Then mine the number of blocks required for the suspended period to pass
+        await mine(blockPeriods.suspendedBlockPeriod);
+
+        // Trigger an additional proof verification request to refresh the status of the coprocessor context
+        await inputVerification.verifyProofRequest(
+          contractChainId,
+          contractAddress,
+          userAddress,
+          ciphertextWithZKProof,
+        );
+
+        // Make sure the old context has been deactivated
+        expect(await coprocessorContexts.getCoprocessorContextStatus(contextId)).to.equal(ContextStatus.Deactivated);
+      });
+    });
   });
 
   describe("Proof verification response", async function () {
     let gatewayConfig: GatewayConfig;
+    let coprocessorContexts: CoprocessorContexts;
     let inputVerification: InputVerification;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
@@ -123,6 +192,7 @@ describe("InputVerification", function () {
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
       gatewayConfig = fixture.gatewayConfig;
+      coprocessorContexts = fixture.coprocessorContexts;
       inputVerification = fixture.inputVerification;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
@@ -294,14 +364,14 @@ describe("InputVerification", function () {
       await expect(
         inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, fakeSignature),
       )
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorSigner")
-        .withArgs(fakeSigner.address);
+        .revertedWithCustomError(coprocessorContexts, "NotCoprocessorSignerFromContext")
+        .withArgs(contextId, fakeSigner.address);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
       await expect(inputVerification.connect(fakeTxSender).verifyProofResponse(zkProofId, ctHandles, signatures[0]))
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
-        .withArgs(fakeTxSender.address);
+        .revertedWithCustomError(coprocessorContexts, "NotCoprocessorTxSenderFromContext")
+        .withArgs(contextId, fakeTxSender.address);
     });
 
     it("Should check that a proof has been verified", async function () {
@@ -330,10 +400,97 @@ describe("InputVerification", function () {
         inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signatures[0]),
       ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
     });
+
+    describe("Context changes", async function () {
+      let blockPeriods: CoprocessorContextBlockPeriodsStruct;
+
+      // Define the new expected context ID
+      const newContextId = 2;
+
+      beforeEach(async function () {
+        // Add a new coprocessor context
+        const newCoprocessorContext = await addNewCoprocessorContext(3, coprocessorContexts, owner);
+        blockPeriods = newCoprocessorContext.blockPeriods;
+      });
+
+      it("Should activate the new context and suspend the old one", async function () {
+        // Mine the number of blocks required for the pre-activation period to pass
+        await mine(blockPeriods.preActivationBlockPeriod);
+
+        // Trigger a proof verification response to refresh the statuses of the coprocessor contexts
+        await inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(zkProofId, ctHandles, signatures[0]);
+
+        // Make sure the old context has been suspended
+        expect(await coprocessorContexts.getCoprocessorContextStatus(contextId)).to.equal(ContextStatus.Suspended);
+
+        // Make sure the new context has been activated
+        expect(await coprocessorContexts.getCoprocessorContextStatus(newContextId)).to.equal(ContextStatus.Active);
+      });
+
+      it("Should deactivate the suspended context", async function () {
+        // Mine the number of blocks required for the pre-activation period to pass
+        await mine(blockPeriods.preActivationBlockPeriod);
+
+        // Trigger a proof verification response to refresh the status of the coprocessor context
+        await inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(zkProofId, ctHandles, signatures[0]);
+
+        // Then mine the number of blocks required for the suspended period to pass and refresh the status
+        // Here we cannot call the `verifyProofResponse` anymore because the context will be deactivated
+        // at the beginning of it, making it invalid and thus reverting the transaction. Another option
+        // would be to call another request, or a response based on a different zkProofId.
+        await refreshCoprocessorContextAfterBlockPeriod(blockPeriods.suspendedBlockPeriod, coprocessorContexts);
+
+        // Make sure the old context has been deactivated
+        expect(await coprocessorContexts.getCoprocessorContextStatus(contextId)).to.equal(ContextStatus.Deactivated);
+      });
+
+      it("Should verify proof with suspended context", async function () {
+        // Trigger a first valid proof verification response
+        await inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(zkProofId, ctHandles, signatures[0]);
+
+        // Wait for the pre activation period to pass: this suspends the old context
+        await refreshCoprocessorContextAfterBlockPeriod(blockPeriods.preActivationBlockPeriod, coprocessorContexts);
+
+        // Trigger a second valid proof verification response
+        let txResponse = await inputVerification
+          .connect(coprocessorTxSenders[1])
+          .verifyProofResponse(zkProofId, ctHandles, signatures[1]);
+
+        // Consensus should be reached at the second response
+        // This is because the consensus is reached amongst the suspended context (3 coprocessors)
+        // and not the new one (1 coprocessor)
+        await expect(txResponse)
+          .to.emit(inputVerification, "VerifyProofResponse")
+          .withArgs(zkProofId, ctHandles, signatures.slice(0, 2));
+      });
+
+      it("Should revert because the context is no longer valid", async function () {
+        // Wait for the pre activation period to pass: this suspends the old context
+        await refreshCoprocessorContextAfterBlockPeriod(blockPeriods.preActivationBlockPeriod, coprocessorContexts);
+
+        // Wait for the suspended period to pass: this deactivates the old context
+        await refreshCoprocessorContextAfterBlockPeriod(blockPeriods.suspendedBlockPeriod, coprocessorContexts);
+
+        // Check that allow verifying a proof associated to a request that have been registered under
+        // an active context reverts because this context is no longer valid
+        await expect(
+          inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signatures[0]),
+        )
+          .revertedWithCustomError(inputVerification, "InvalidCoprocessorContextProofVerification")
+          .withArgs(zkProofId, contextId, ContextStatus.Deactivated);
+      });
+    });
   });
 
   describe("Proof rejection response", async function () {
     let gatewayConfig: GatewayConfig;
+    let coprocessorContexts: CoprocessorContexts;
     let inputVerification: InputVerification;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
@@ -344,6 +501,7 @@ describe("InputVerification", function () {
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
       gatewayConfig = fixture.gatewayConfig;
+      coprocessorContexts = fixture.coprocessorContexts;
       inputVerification = fixture.inputVerification;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
@@ -457,8 +615,8 @@ describe("InputVerification", function () {
     it("Should revert because the sender is not a coprocessor transaction sender", async function () {
       // Check that triggering a proof response with a non-coprocessor transaction sender reverts
       await expect(inputVerification.connect(fakeTxSender).rejectProofResponse(zkProofId))
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
-        .withArgs(fakeTxSender.address);
+        .revertedWithCustomError(coprocessorContexts, "NotCoprocessorTxSenderFromContext")
+        .withArgs(contextId, fakeTxSender.address);
     });
 
     it("Should check that a proof has been rejected", async function () {
@@ -484,6 +642,80 @@ describe("InputVerification", function () {
       await expect(
         inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId),
       ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
+    });
+
+    describe("Context refresh", async function () {
+      let blockPeriods: CoprocessorContextBlockPeriodsStruct;
+
+      // Define the new expected context ID
+      const newContextId = 2;
+
+      beforeEach(async function () {
+        // Add a new coprocessor context
+        const newCoprocessorContext = await addNewCoprocessorContext(3, coprocessorContexts, owner);
+        blockPeriods = newCoprocessorContext.blockPeriods;
+      });
+
+      it("Should activate the new context and suspend the old one", async function () {
+        // Mine the number of blocks required for the pre-activation period to pass
+        await mine(blockPeriods.preActivationBlockPeriod);
+
+        // Trigger a proof rejection response to refresh the statuses of the coprocessor contexts
+        await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId);
+
+        // Make sure the old context has been suspended
+        expect(await coprocessorContexts.getCoprocessorContextStatus(contextId)).to.equal(ContextStatus.Suspended);
+
+        // Make sure the new context has been activated
+        expect(await coprocessorContexts.getCoprocessorContextStatus(newContextId)).to.equal(ContextStatus.Active);
+      });
+
+      it("Should deactivate the suspended context", async function () {
+        // Mine the number of blocks required for the pre-activation period to pass
+        await mine(blockPeriods.preActivationBlockPeriod);
+
+        // Trigger a proof rejection response to refresh the status of the coprocessor context
+        await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId);
+
+        // Then mine the number of blocks required for the suspended period to pass and refresh the status
+        // Here we cannot call the `verifyProofResponse` anymore because the context will be deactivated
+        // at the beginning of it, making it invalid and thus reverting the transaction. Another option
+        // would be to call another request, or a response based on a different zkProofId.
+        await refreshCoprocessorContextAfterBlockPeriod(blockPeriods.suspendedBlockPeriod, coprocessorContexts);
+
+        // Make sure the old context has been deactivated
+        expect(await coprocessorContexts.getCoprocessorContextStatus(contextId)).to.equal(ContextStatus.Deactivated);
+      });
+
+      it("Should reject proof with suspended context", async function () {
+        // Trigger a first valid proof rejection response
+        await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId);
+
+        // Wait for the pre activation period to pass: this suspends the old context
+        await refreshCoprocessorContextAfterBlockPeriod(blockPeriods.preActivationBlockPeriod, coprocessorContexts);
+
+        // Trigger a second valid proof rejection response
+        let txResponse = await inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(zkProofId);
+
+        // Consensus should be reached at the second response
+        // This is because the consensus is reached amongst the suspended context (3 coprocessors)
+        // and not the new one (1 coprocessor)
+        await expect(txResponse).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId);
+      });
+
+      it("Should revert because the context is no longer valid", async function () {
+        // Wait for the pre activation period to pass: this suspends the old context
+        await refreshCoprocessorContextAfterBlockPeriod(blockPeriods.preActivationBlockPeriod, coprocessorContexts);
+
+        // Wait for the suspended period to pass: this deactivates the old context
+        await refreshCoprocessorContextAfterBlockPeriod(blockPeriods.suspendedBlockPeriod, coprocessorContexts);
+
+        // Check that allow rejecting a proof associated to a request that have been registered under
+        // an active context reverts because this context is no longer valid
+        await expect(inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId))
+          .revertedWithCustomError(inputVerification, "InvalidCoprocessorContextProofRejection")
+          .withArgs(zkProofId, contextId, ContextStatus.Deactivated);
+      });
     });
   });
 
