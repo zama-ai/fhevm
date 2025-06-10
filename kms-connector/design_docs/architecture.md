@@ -23,6 +23,8 @@ In order to achieve this, the KMS Connector has been divided into 3 components:
  
 - **KmsWorker**
   - One or multiple workers
+    - In the first place, we will probably start with only one worker
+    - But we should be able to scale the number of worker to handle more events if required
   - Get notified by the Postgres DB when new events are stored
   - Forward the events' requests to the KMS Core, and store its responses to DB
   - Remove the events from the DB once handled
