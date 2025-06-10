@@ -125,11 +125,47 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trigger_from_public_decryption_responses_insertions
+CREATE OR REPLACE TRIGGER trigger_from_public_decryption_responses_insertions
     AFTER INSERT
     ON public_decryption_responses
     FOR EACH STATEMENT
     EXECUTE FUNCTION notify_public_decryption_response();
+```
+
+Queries to insert events/responses in the DB use `ON CONFLICT DO NOTHING` to ignore concurrency errors:
+
+```rust
+sqlx::query!(
+    "INSERT INTO public_decryption_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    id, sns_ciphertexts
+)
+.execute(&db_pool)
+.await?;
+```
+
+When a `KmsWorker` picks events in the DB to process them, it uses a database transaction and
+`FOR UPDATE SKIP LOCKED` in its query to lock these events from other workers. Then it can remove
+them when processed without concurrency issue:
+
+```rust
+let mut db_tx = db_pool.begin().await?;
+let event = sqlx::query!(
+    "SELECT (decryption_id, sns_ct_materials) FROM public_decryption_requests WHERE decryption_id = $1 FOR UPDATE SKIP LOCKED",
+    id
+)
+.fetch_one(&mut db_tx)
+.await?;
+
+// Process event...
+
+sqlx::query!(
+    "DELETE FROM public_decryption_requests WHERE decryption_id = $1",
+    id
+)
+.execute(&db_pool)
+.await?;
+
+db_tx.commit().await?;
 ```
 
 ## Reliability
