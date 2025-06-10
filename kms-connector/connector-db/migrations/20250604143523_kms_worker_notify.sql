@@ -107,4 +107,3 @@ CREATE OR REPLACE TRIGGER trigger_from_crsgen_requests_insertions
     ON crsgen_requests
     FOR EACH STATEMENT
     EXECUTE FUNCTION notify_crsgen_request();
-
