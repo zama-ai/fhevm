@@ -21,12 +21,26 @@ struct KmsNode {
 
 /// @notice Struct that represents a coprocessor
 struct Coprocessor {
+    /// @notice Name of the coprocessor, as a human-readable identifier
+    string name;
     /// @notice Address of the coprocessor's transaction sender
     address txSenderAddress;
     /// @notice Address of the coprocessor's signer (used for signing inputs with EIP712 signatures)
     address signerAddress;
     /// @notice URL address of the coprocessor's S3 bucket where ciphertexts are stored
     string s3BucketUrl;
+}
+
+struct CoprocessorContext {
+    uint256 contextId;
+    uint256 previousContextId;
+    string featureSet;
+    Coprocessor[] coprocessors;
+}
+
+struct CoprocessorContextBlockPeriods {
+    uint256 preActivationBlockPeriod;
+    uint256 suspensionBlockPeriod;
 }
 
 /// @notice Struct that represents a host chain

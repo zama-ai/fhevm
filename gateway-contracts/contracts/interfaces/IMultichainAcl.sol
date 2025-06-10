@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "../shared/Structs.sol";
+import { ContextStatus } from "../shared/Enums.sol";
 
 /**
  * @title Interface for the MultichainAcl contract.
@@ -29,12 +30,21 @@ interface IMultichainAcl {
      */
     event DelegateAccount(uint256 indexed chainId, DelegationAccounts delegationAccounts, address[] contractAddresses);
 
+    error InvalidCoprocessorContextAllowPublicDecrypt(bytes32 ctHandle, uint256 contextId, ContextStatus contextStatus);
+
     /**
      * @notice Error indicating that the coprocessor has already allowed public decryption to the ciphertext.
      * @param ctHandle The ciphertext handle that the coprocessor has already allowed access to.
      * @param txSender The transaction sender address of the coprocessor that has already allowed access.
      */
     error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
+
+    error InvalidCoprocessorContextAllowAccount(
+        bytes32 ctHandle,
+        address accountAddress,
+        uint256 contextId,
+        ContextStatus contextStatus
+    );
 
     /**
      * @notice Error indicating that the coprocessor has already allowed the account to use the ciphertext handle.
@@ -43,6 +53,14 @@ interface IMultichainAcl {
      * @param txSender The transaction sender address of the coprocessor that has already allowed access.
      */
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
+
+    error InvalidCoprocessorContextDelegateAccount(
+        uint256 chainId,
+        DelegationAccounts delegationAccounts,
+        address[] contractAddresses,
+        uint256 contextId,
+        ContextStatus contextStatus
+    );
 
     /**
      * @notice Error indicating that the coprocessor has already delegated access to another account.
