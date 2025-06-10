@@ -28,7 +28,7 @@ import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 **Purpose:**
 
 - Sets encryption parameters such as cryptographic keys and supported ciphertext types.
-- Ensures proper initialization of the fhevm environment.
+- Ensures proper initialization of the FHEVM environment.
 
 **Example: using Sepolia configuration**
 
@@ -71,7 +71,7 @@ import "fhevm/gateway/GatewayCaller.sol";
 
 contract Test is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, GatewayCaller {
   constructor() {
-    // Gateway and fhevm environment initialized automatically
+    // Gateway and FHEVM environment initialized automatically
   }
 }
 ```

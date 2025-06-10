@@ -22,7 +22,7 @@ Encrypted inputs are data values submitted by users in ciphertext form. These in
 
 When a function in a smart contract is called, it may accept two types of parameters for encrypted inputs:
 
-1. **`einput`**: Refers to the index of the encrypted parameter, representing a specific encrypted input handle.
+1. **`externalEbool`, `externalEaddress`,`externalEuintXX`**: Refers to the index of the encrypted parameter, representing a specific encrypted input handle.
 2. **`bytes`**: Contains the ciphertext and the associated zero-knowledge proof used for validation.
 
 Here’s an example of a Solidity function accepting multiple encrypted parameters:
@@ -136,7 +136,7 @@ function transfer(
 1. **Input verification**:\
    The `FHE.asEuintXX` function ensures that the input is a valid ciphertext with a corresponding ZKPoK.
 2. **Type conversion**:\
-   The function transforms the `einput` into the appropriate encrypted type (`euintXX`, `ebool`, etc.) for further operations within the contract.
+   The function transforms `externalEbool`, `externalEaddress`, `externalEuintXX` into the appropriate encrypted type (`ebool`, `eaddress`, `euintXX`) for further operations within the contract.
 
 ## Best Practices
 

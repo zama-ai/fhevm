@@ -1,6 +1,6 @@
 # Access Control List
 
-This document describes the Access Control List (ACL) system in fhevm, a core feature that governs access to encrypted data. The ACL ensures that only authorized accounts or contracts can interact with specific ciphertexts, preserving confidentiality while enabling composable smart contracts. This overview provides a high-level understanding of what the ACL is, why it's essential, and how it works.
+This document describes the Access Control List (ACL) system in FHEVM, a core feature that governs access to encrypted data. The ACL ensures that only authorized accounts or contracts can interact with specific ciphertexts, preserving confidentiality while enabling composable smart contracts. This overview provides a high-level understanding of what the ACL is, why it's essential, and how it works.
 
 ## What is the ACL?
 
@@ -8,7 +8,7 @@ The ACL is a permission management system designed to control who can access, co
 
 ## Why is the ACL important?
 
-Encrypted data in fhevm is entirely confidential, meaning that without proper access control, even the contract holding the ciphertext cannot interact with it. The ACL enables:
+Encrypted data in FHEVM is entirely confidential, meaning that without proper access control, even the contract holding the ciphertext cannot interact with it. The ACL enables:
 
 - **Granular permissions**: Define specific access rules for individual accounts or contracts.
 - **Secure computations**: Ensure that only authorized entities can manipulate or decrypt encrypted data.
@@ -27,6 +27,10 @@ Encrypted data in fhevm is entirely confidential, meaning that without proper ac
   - Grants access to the ciphertext only for the duration of the current transaction.
   - Stored in transient storage, reducing gas costs.
   - Ideal for temporary operations like passing ciphertexts to external functions.
+- **Permanent public allowance**:
+  - Configured using `FHE.makePubliclyDecryptable(ciphertext)`.
+  - Grants long-term access to the ciphertext for any user.
+  - Stored in a dedicated contract for persistent storage.
 
 **Syntactic sugar**:
 

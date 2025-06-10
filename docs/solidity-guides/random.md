@@ -53,25 +53,6 @@ function randomBoundedNumber(uint16 upperBound) public returns (euint16) {
 }
 ```
 
-## **Random encrypted bytes**
-
-To generate larger random values, you can use encrypted bytes. These are ideal for scenarios requiring high-precision or high-entropy data.
-
-```solidity
-// Generate random encrypted bytes
-ebytes64 rb64 = FHE.randEbytes64();    // 64 bytes (512 bits)
-ebytes128 rb128 = FHE.randEbytes128(); // 128 bytes (1024 bits)
-ebytes256 rb256 = FHE.randEbytes256(); // 256 bytes (2048 bits)
-```
-
-### **Example: Random Bytes**
-
-```solidity
-function randomBytes256() public returns (ebytes256) {
-  return FHE.randEbytes256();
-}
-```
-
 ## **Security Considerations**
 
 - **Cryptographic security**:\

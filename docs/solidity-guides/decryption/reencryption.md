@@ -1,16 +1,16 @@
-# Re-encryption
+# User decryption
 
-This document explains how to perform re-encryption. Re-encryption is required when you want a user to access their private data without it being exposed to the blockchain.
+This document explains how to perform user decryption. User decryption required when you want a user to access their private data without it being exposed to the blockchain.
 
-Re-encryption in fhevm enables the secure sharing or reuse of encrypted data under a new public key without exposing the plaintext. This feature is essential for scenarios where encrypted data must be transferred between contracts, dApps, or users while maintaining its confidentiality.
+Re-encryption in FHEVM enables the secure sharing or reuse of encrypted data under a new public key without exposing the plaintext. This feature is essential for scenarios where encrypted data must be transferred between contracts, dApps, or users while maintaining its confidentiality.
 
 {% hint style="info" %}
 Before implementing re-encryption, ensure you are familiar with the foundational concepts of encryption, re-encryption and computation. Refer to [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md).
 {% endhint %}
 
-## When to use re-encryption
+## When to use user decryption
 
-Re-encryption is particularly useful for **allowing individual users to securely access and decrypt their private data**, such as balances or counters, while maintaining data confidentiality.
+User decryption is particularly useful for **allowing individual users to securely access and decrypt their private data**, such as balances or counters, while maintaining data confidentiality.
 
 ## Overview
 
@@ -32,7 +32,7 @@ import "fhevm/lib/FHE.sol";
 
 contract ConfidentialERC20 {
   ...
-  function balanceOf(account address) public view returns (bytes euint64) {
+  function balanceOf(account address) public view returns (euint64) {
     return balances[msg.sender];
   }
   ...
