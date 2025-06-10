@@ -50,6 +50,12 @@ describe("Mock contracts", function () {
     s3BucketUrl: DefaultString,
   };
 
+  const DefaultCustodian = {
+    verificationKey: DefaultBytes,
+    encryptionKey: DefaultBytes,
+    txSenderAddress: DefaultAddress,
+  };
+
   const DefaultHostChain = {
     chainId: DefaultUint256,
     fhevmExecutorAddress: DefaultAddress,
@@ -185,6 +191,7 @@ describe("Mock contracts", function () {
           DefaultUint256,
           [DefaultKmsNode],
           [DefaultCoprocessor],
+          [DefaultCustodian],
         ),
       )
         .to.emit(gatewayConfigMock, "InitializeGatewayConfig")
@@ -194,6 +201,7 @@ describe("Mock contracts", function () {
           DefaultUint256,
           toValues([DefaultKmsNode]),
           toValues([DefaultCoprocessor]),
+          toValues([DefaultCustodian]),
         );
     });
 
