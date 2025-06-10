@@ -391,12 +391,6 @@ impl InfiniteLogIter {
         let Some(current_event) = &self.current_event else {
             return None;
         };
-        if let Some(block_number) = current_event.block_number {
-            // we subtract one because the current block is on going
-            self.last_valid_block = Some(
-                block_number.max(self.last_valid_block.unwrap_or_default()) - 1,
-            );
-        }
         self.last_block_event_count += 1;
         return self.current_event.clone();
     }
@@ -478,11 +472,14 @@ pub async fn main(args: Args) {
             if let Some(block_number) = log.block_number {
                 if block_error_event_fthe == 0 {
                     if let Some(ref mut db) = db {
-                        db.mark_prev_block_as_valid(
+                        let last_valid_block = db.mark_prev_block_as_valid(
                             &log_iter.current_event,
                             &log_iter.prev_event,
                         )
                         .await;
+                        if last_valid_block.is_some() {
+                            log_iter.last_valid_block = last_valid_block;
+                        }
                     }
                 } else {
                     eprintln!(
