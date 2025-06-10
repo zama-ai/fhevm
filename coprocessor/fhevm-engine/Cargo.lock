@@ -3460,7 +3460,6 @@ dependencies = [
  "foundry-compilers",
  "foundry-compilers-artifacts",
  "futures-util",
- "humantime",
  "semver 1.0.26",
  "serde",
  "serial_test",
