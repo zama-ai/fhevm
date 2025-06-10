@@ -4,61 +4,62 @@ import { Wallet } from "ethers";
 import { ethers, upgrades } from "hardhat";
 
 import {
-  CiphertextCommitsUpgradedExample__factory,
+  CiphertextCommitsV2Example__factory,
   CiphertextCommits__factory,
-  DecryptionUpgradedExample__factory,
+  DecryptionV2Example__factory,
   Decryption__factory,
-  GatewayConfigUpgradedExample__factory,
+  EmptyUUPSProxy__factory,
+  GatewayConfigV2Example__factory,
   GatewayConfigV3Example__factory,
   GatewayConfig__factory,
-  InputVerificationUpgradedExample__factory,
+  InputVerificationV2Example__factory,
   InputVerification__factory,
-  KmsManagementUpgradedExample__factory,
+  KmsManagementV2Example__factory,
   KmsManagement__factory,
-  MultichainAclUpgradedExample__factory,
+  MultichainAclV2Example__factory,
   MultichainAcl__factory,
 } from "../../typechain-types";
 import { createAndFundRandomWallet, loadTestVariablesFixture, toValues } from "../utils";
 
 describe("Upgrades", function () {
   let owner: Wallet;
-  let emptyUUPSFactory: any;
+  let emptyUUPSFactory: EmptyUUPSProxy__factory;
   let ciphertextCommitsFactoryV1: CiphertextCommits__factory;
-  let ciphertextCommitsFactoryV2: CiphertextCommitsUpgradedExample__factory;
+  let ciphertextCommitsFactoryV2: CiphertextCommitsV2Example__factory;
   let decryptionFactoryV1: Decryption__factory;
-  let decryptionFactoryV2: DecryptionUpgradedExample__factory;
+  let decryptionFactoryV2: DecryptionV2Example__factory;
   let gatewayConfigFactoryV1: GatewayConfig__factory;
-  let gatewayConfigFactoryV2: GatewayConfigUpgradedExample__factory;
+  let gatewayConfigFactoryV2: GatewayConfigV2Example__factory;
   let gatewayConfigFactoryV3: GatewayConfigV3Example__factory;
   let inputVerificationFactoryV1: InputVerification__factory;
-  let inputVerificationFactoryV2: InputVerificationUpgradedExample__factory;
+  let inputVerificationFactoryV2: InputVerificationV2Example__factory;
   let kmsManagementFactoryV1: KmsManagement__factory;
-  let kmsManagementFactoryV2: KmsManagementUpgradedExample__factory;
+  let kmsManagementFactoryV2: KmsManagementV2Example__factory;
   let multichainAclFactoryV1: MultichainAcl__factory;
-  let multichainAclFactoryV2: MultichainAclUpgradedExample__factory;
+  let multichainAclFactoryV2: MultichainAclV2Example__factory;
 
   before(async function () {
     owner = new Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     emptyUUPSFactory = await ethers.getContractFactory("EmptyUUPSProxy", owner);
 
     ciphertextCommitsFactoryV1 = await ethers.getContractFactory("CiphertextCommits", owner);
-    ciphertextCommitsFactoryV2 = await ethers.getContractFactory("CiphertextCommitsUpgradedExample", owner);
+    ciphertextCommitsFactoryV2 = await ethers.getContractFactory("CiphertextCommitsV2Example", owner);
 
     decryptionFactoryV1 = await ethers.getContractFactory("Decryption", owner);
-    decryptionFactoryV2 = await ethers.getContractFactory("DecryptionUpgradedExample", owner);
+    decryptionFactoryV2 = await ethers.getContractFactory("DecryptionV2Example", owner);
 
     gatewayConfigFactoryV1 = await ethers.getContractFactory("GatewayConfig", owner);
-    gatewayConfigFactoryV2 = await ethers.getContractFactory("GatewayConfigUpgradedExample", owner);
+    gatewayConfigFactoryV2 = await ethers.getContractFactory("GatewayConfigV2Example", owner);
     gatewayConfigFactoryV3 = await ethers.getContractFactory("GatewayConfigV3Example", owner);
 
     inputVerificationFactoryV1 = await ethers.getContractFactory("InputVerification", owner);
-    inputVerificationFactoryV2 = await ethers.getContractFactory("InputVerificationUpgradedExample", owner);
+    inputVerificationFactoryV2 = await ethers.getContractFactory("InputVerificationV2Example", owner);
 
     kmsManagementFactoryV1 = await ethers.getContractFactory("KmsManagement", owner);
-    kmsManagementFactoryV2 = await ethers.getContractFactory("KmsManagementUpgradedExample", owner);
+    kmsManagementFactoryV2 = await ethers.getContractFactory("KmsManagementV2Example", owner);
 
     multichainAclFactoryV1 = await ethers.getContractFactory("MultichainAcl", owner);
-    multichainAclFactoryV2 = await ethers.getContractFactory("MultichainAclUpgradedExample", owner);
+    multichainAclFactoryV2 = await ethers.getContractFactory("MultichainAclV2Example", owner);
   });
 
   it("Should deploy upgradable MultichainAcl", async function () {
@@ -162,7 +163,7 @@ describe("Upgrades", function () {
     const originalGatewayConfigAddress = await originalGatewayConfig.getAddress();
     const deployer = owner;
 
-    const newGatewayConfigFactoryUpgraded = await ethers.getContractFactory("GatewayConfigUpgradedExample", deployer);
+    const newGatewayConfigFactoryUpgraded = await ethers.getContractFactory("GatewayConfigV2Example", deployer);
     const gatewayConfig2 = await upgrades.upgradeProxy(originalGatewayConfig, newGatewayConfigFactoryUpgraded);
     await gatewayConfig2.waitForDeployment();
     expect(await gatewayConfig2.getVersion()).to.equal("GatewayConfig v0.2.0");
@@ -172,13 +173,10 @@ describe("Upgrades", function () {
     await gatewayConfig2.transferOwnership(newSigner);
     await gatewayConfig2.connect(newSigner).acceptOwnership();
 
-    const newGatewayConfigFactoryUpgraded2 = await ethers.getContractFactory("GatewayConfigUpgradedExample2", deployer);
+    const newGatewayConfigFactoryUpgraded2 = await ethers.getContractFactory("GatewayConfigV3Example", deployer);
     await expect(upgrades.upgradeProxy(gatewayConfig2, newGatewayConfigFactoryUpgraded2)).to.be.reverted; // old owner can no longer upgrade ACL
 
-    const newGatewayConfigFactoryUpgraded3 = await ethers.getContractFactory(
-      "GatewayConfigUpgradedExample2",
-      newSigner,
-    );
+    const newGatewayConfigFactoryUpgraded3 = await ethers.getContractFactory("GatewayConfigV3Example", newSigner);
     const gatewayConfig3 = await upgrades.upgradeProxy(gatewayConfig2, newGatewayConfigFactoryUpgraded3); // new owner can upgrade ACL
 
     await gatewayConfig3.waitForDeployment();

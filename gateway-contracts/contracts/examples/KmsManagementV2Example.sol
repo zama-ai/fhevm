@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 
 import "../KmsManagement.sol";
 
-contract KmsManagementUpgradedExample is KmsManagement {
+contract KmsManagementV2Example is KmsManagement {
     /// @notice Name of the contract
     string private constant CONTRACT_NAME = "KmsManagement";
 

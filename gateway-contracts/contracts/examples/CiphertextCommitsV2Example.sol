@@ -2,11 +2,11 @@
 
 pragma solidity ^0.8.24;
 
-import "../Decryption.sol";
+import "../CiphertextCommits.sol";
 
-contract DecryptionUpgradedExample is Decryption {
+contract CiphertextCommitsV2Example is CiphertextCommits {
     /// @notice Name of the contract
-    string private constant CONTRACT_NAME = "Decryption";
+    string private constant CONTRACT_NAME = "CiphertextCommits";
 
     /// @notice Version of the contract
     uint256 private constant MAJOR_VERSION = 0;

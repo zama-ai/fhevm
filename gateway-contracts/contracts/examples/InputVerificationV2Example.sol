@@ -2,11 +2,11 @@
 
 pragma solidity ^0.8.24;
 
-import "../MultichainAcl.sol";
+import "../InputVerification.sol";
 
-contract MultichainAclUpgradedExample is MultichainAcl {
+contract InputVerificationV2Example is InputVerification {
     /// @notice Name of the contract
-    string private constant CONTRACT_NAME = "MultichainAcl";
+    string private constant CONTRACT_NAME = "InputVerification";
 
     /// @notice Version of the contract
     uint256 private constant MAJOR_VERSION = 0;

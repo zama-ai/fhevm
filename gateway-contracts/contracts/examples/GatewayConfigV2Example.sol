@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 
 import "../GatewayConfig.sol";
 
-contract GatewayConfigUpgradedExample is GatewayConfig {
+contract GatewayConfigV2Example is GatewayConfig {
     /// @notice Name of the contract
     string private constant CONTRACT_NAME = "GatewayConfig";
 

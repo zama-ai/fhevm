@@ -2,11 +2,11 @@
 
 pragma solidity ^0.8.24;
 
-import "../CiphertextCommits.sol";
+import "../MultichainAcl.sol";
 
-contract CiphertextCommitsUpgradedExample is CiphertextCommits {
+contract MultichainAclV2Example is MultichainAcl {
     /// @notice Name of the contract
-    string private constant CONTRACT_NAME = "CiphertextCommits";
+    string private constant CONTRACT_NAME = "MultichainAcl";
 
     /// @notice Version of the contract
     uint256 private constant MAJOR_VERSION = 0;
