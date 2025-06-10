@@ -16,13 +16,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create triggers to fire once per statement on decryption responses inserts
-CREATE TRIGGER trigger_from_public_decryption_responses_insertions
+CREATE OR REPLACE TRIGGER trigger_from_public_decryption_responses_insertions
     AFTER INSERT
     ON public_decryption_responses
     FOR EACH STATEMENT
     EXECUTE FUNCTION notify_public_decryption_response();
 
-CREATE TRIGGER trigger_from_user_decryption_responses_insertions
+CREATE OR REPLACE TRIGGER trigger_from_user_decryption_responses_insertions
     AFTER INSERT
     ON user_decryption_responses
     FOR EACH STATEMENT

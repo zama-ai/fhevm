@@ -20,13 +20,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create triggers to fire once per statement on decryption requests inserts
-CREATE TRIGGER trigger_from_public_decryption_requests_insertions
+CREATE OR REPLACE TRIGGER trigger_from_public_decryption_requests_insertions
     AFTER INSERT
     ON public_decryption_requests
     FOR EACH STATEMENT
     EXECUTE FUNCTION notify_public_decryption_request();
 
-CREATE TRIGGER trigger_from_user_decryption_requests_insertions
+CREATE OR REPLACE TRIGGER trigger_from_user_decryption_requests_insertions
     AFTER INSERT
     ON user_decryption_requests
     FOR EACH STATEMENT
@@ -78,31 +78,31 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create triggers to fire once per statement on kms management requests inserts
-CREATE TRIGGER trigger_from_preprocess_keygen_requests_insertions
+CREATE OR REPLACE TRIGGER trigger_from_preprocess_keygen_requests_insertions
     AFTER INSERT
     ON preprocess_keygen_requests
     FOR EACH STATEMENT
     EXECUTE FUNCTION notify_preprocess_keygen_request();
 
-CREATE TRIGGER trigger_from_preprocess_kskgen_requests_insertions
+CREATE OR REPLACE TRIGGER trigger_from_preprocess_kskgen_requests_insertions
     AFTER INSERT
     ON preprocess_kskgen_requests
     FOR EACH STATEMENT
     EXECUTE FUNCTION notify_preprocess_kskgen_request();
 
-CREATE TRIGGER trigger_from_keygen_requests_insertions
+CREATE OR REPLACE TRIGGER trigger_from_keygen_requests_insertions
     AFTER INSERT
     ON keygen_requests
     FOR EACH STATEMENT
     EXECUTE FUNCTION notify_keygen_request();
 
-CREATE TRIGGER trigger_from_kskgen_requests_insertions
+CREATE OR REPLACE TRIGGER trigger_from_kskgen_requests_insertions
     AFTER INSERT
     ON kskgen_requests
     FOR EACH STATEMENT
     EXECUTE FUNCTION notify_kskgen_request();
 
-CREATE TRIGGER trigger_from_crsgen_requests_insertions
+CREATE OR REPLACE TRIGGER trigger_from_crsgen_requests_insertions
     AFTER INSERT
     ON crsgen_requests
     FOR EACH STATEMENT
