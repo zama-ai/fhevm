@@ -17,7 +17,9 @@ In order to achieve this, the KMS Connector has been divided into 3 components:
 - **GatewayListener**
   - Multiple listeners, so we do not miss Gateway events if one is down
   - Each listener listens to a RPC node of the Gateway
+    - Each listener can have backup RPC nodes URL in case the connection with the first one is lost
   - Each listener tries to write the events it catches in a Postgres DB (only 1 will succeed, the other will ignore the duplicate key error)
+  - The number of listeners should be able to scale up to avoid missing events but also to scale down to not overspend resources when it is not required
  
 - **KmsWorker**
   - One or multiple workers
