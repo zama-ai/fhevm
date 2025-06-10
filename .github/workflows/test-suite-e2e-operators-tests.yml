@@ -104,6 +104,11 @@ jobs:
         run: |
           ./fhevm-cli test operators
 
+      - name: Random operators tests
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test random
+
       - name: Extra operators tests
         working-directory: test-suite/fhevm
         run: |

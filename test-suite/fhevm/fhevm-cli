@@ -180,6 +180,10 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] EXTRA OPERATORS${RESET}"
           docker_args+=("-g" "FHEVM revert paths")
           ;;
+        random)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
+          docker_args+=("-g" "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt")
+          ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
           docker exec -it fhevm-test-suite-e2e-debug bash
