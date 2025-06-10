@@ -22,7 +22,7 @@ export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc2"}
 export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"v0.7.0-rc1"}
 export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc1"}
 export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.7.0-rc1"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"59ea08b"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"a45484d"}
 export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc17"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc8"}
 
@@ -179,6 +179,10 @@ case $COMMAND in
         extra-operators)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] EXTRA OPERATORS${RESET}"
           docker_args+=("-g" "FHEVM revert paths")
+          ;;
+        random)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
+          docker_args+=("-g" "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt")
           ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
