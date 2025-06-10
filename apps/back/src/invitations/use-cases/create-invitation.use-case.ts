@@ -7,6 +7,7 @@ import {
   INVITATION_REPOSITORY,
   InvitationRepository,
 } from '../domain/repositories/invitation.repository.js'
+import { ConfigService } from '@nestjs/config'
 
 export const EXPIRATION_TIME_IN_MILLISECONDS =
   parseInt(process.env.INVITATION_EXPIRATION_TIME ?? '', 10) || 86400 * 1000 * 7
@@ -18,10 +19,15 @@ interface Input {
 
 @Injectable()
 export class CreateInvitation implements UseCase<Input, Invitation> {
+  #secret: string
+
   constructor(
     @Inject(INVITATION_REPOSITORY)
     private readonly invitationRepository: InvitationRepository,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.#secret = config.getOrThrow('invitation.secret')
+  }
 
   /**
    * It checks the supplied secret matches with the stored one.
@@ -29,7 +35,7 @@ export class CreateInvitation implements UseCase<Input, Invitation> {
    * @param secret - The external secret to check
    */
   private checkSecret(secret: string): Result<void, AppError> {
-    return secret !== process.env.INVITATION_SECRET
+    return secret !== this.#secret
       ? fail(unauthorizedError('Invalid secret'))
       : ok(void 0)
   }
