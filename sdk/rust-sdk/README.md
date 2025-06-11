@@ -54,8 +54,8 @@ The following table shows the current implementation status of features compared
 | CRS Support | ⚠️ Partial | Only support one CRS size |
 | Auxiliary Data | ✅ Implemented | Properly generates auxiliary data for ZK proofs |
 | Calldata Generation | ⚠️ Partial | Only callback req missing |
-| Error Handling | ⚠️ Partial | Good error type definitions |
-| Logging | ⚠️ Partial | Comprehensive logging support |
+| Error Handling | ✅ Implemented | Good error type definitions |
+| Logging | ✅ Implemented | Comprehensive logging support |
 
 
 
@@ -126,9 +126,9 @@ let sdk_builder = FhevmSdkBuilder::new()
     .with_keys_directory(PathBuf::from("./keys"))
     .with_gateway_chain_id(43113)
     .with_host_chain_id(11155111)
-    .with_gateway_contract("Decryption", "0x1234567890123456789012345678901234567890")
+    .with_gateway_contract("decryption", "0x1234567890123456789012345678901234567890")
     .with_gateway_contract(
-            "input-verifier",
+            "input-verification",
             "0x1234567890123456789012345678901234567aaa",
         )
     .with_host_contract("ACL", "0x0987654321098765432109876543210987654321");
