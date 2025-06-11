@@ -5,42 +5,34 @@ on:
     inputs:
       gateway_version:
         description: "Gateway Image Version"
-        required: true
         default: ""
         type: string
       host_version:
         description: "Host Image Version"
-        required: true
         default: ""
         type: string
       coprocessor_version:
         description: "Coprocessor Image Version"
-        required: true
         default: ""
         type: string
       db_migration_version:
         description: "Coprocessor DB Migration Image Version"
-        required: true
         default: ""
         type: string
       connector_version:
         description: "Connector Version"
-        required: true
         default: ""
         type: string
       test_suite_version:
         description: "Test Suite E2E Image Version"
-        required: true
         default: ""
         type: string
       core_version:
         description: "KMS Core Version"
-        required: true
         default: ""
         type: string
       relayer_version:
         description: "Relayer Image Version"
-        required: true
         default: ""
         type: string
   pull_request:
