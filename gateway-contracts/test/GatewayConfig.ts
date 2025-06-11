@@ -77,9 +77,9 @@ describe("GatewayConfig", function () {
     custodians = [];
     for (let i = 0; i < nCustodians; i++) {
       custodians.push({
-        encryptionKey: hre.ethers.hexlify(hre.ethers.randomBytes(64)),
         txSenderAddress: custodianTxSenders[i].address,
         signerAddress: custodianSigners[i].address,
+        encryptionKey: hre.ethers.hexlify(hre.ethers.randomBytes(64)),
       });
     }
 

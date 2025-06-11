@@ -9,9 +9,9 @@ interface IGatewayConfig {
         string s3BucketUrl;
     }
     struct Custodian {
-        bytes verificationKey;
-        bytes encryptionKey;
         address txSenderAddress;
+        address signerAddress;
+        bytes encryptionKey;
     }
     struct HostChain {
         uint256 chainId;
@@ -299,19 +299,19 @@ interface IGatewayConfig {
         "internalType": "struct Custodian",
         "components": [
           {
-            "name": "verificationKey",
-            "type": "bytes",
-            "internalType": "bytes"
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
           },
           {
             "name": "encryptionKey",
             "type": "bytes",
             "internalType": "bytes"
-          },
-          {
-            "name": "txSenderAddress",
-            "type": "address",
-            "internalType": "address"
           }
         ]
       }
@@ -735,19 +735,19 @@ interface IGatewayConfig {
         "internalType": "struct Custodian[]",
         "components": [
           {
-            "name": "verificationKey",
-            "type": "bytes",
-            "internalType": "bytes"
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
           },
           {
             "name": "encryptionKey",
             "type": "bytes",
             "internalType": "bytes"
-          },
-          {
-            "name": "txSenderAddress",
-            "type": "address",
-            "internalType": "address"
           }
         ]
       }
@@ -1251,17 +1251,17 @@ struct Coprocessor { address txSenderAddress; address signerAddress; string s3Bu
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct Custodian { bytes verificationKey; bytes encryptionKey; address txSenderAddress; }
+struct Custodian { address txSenderAddress; address signerAddress; bytes encryptionKey; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct Custodian {
         #[allow(missing_docs)]
-        pub verificationKey: alloy::sol_types::private::Bytes,
+        pub txSenderAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub signerAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
         pub encryptionKey: alloy::sol_types::private::Bytes,
-        #[allow(missing_docs)]
-        pub txSenderAddress: alloy::sol_types::private::Address,
     }
     #[allow(
         non_camel_case_types,
@@ -1273,15 +1273,15 @@ struct Custodian { bytes verificationKey; bytes encryptionKey; address txSenderA
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Bytes,
-            alloy::sol_types::sol_data::Bytes,
             alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Bytes,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::Bytes,
-            alloy::sol_types::private::Bytes,
             alloy::sol_types::private::Address,
+            alloy::sol_types::private::Address,
+            alloy::sol_types::private::Bytes,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -1298,7 +1298,7 @@ struct Custodian { bytes verificationKey; bytes encryptionKey; address txSenderA
         #[doc(hidden)]
         impl ::core::convert::From<Custodian> for UnderlyingRustTuple<'_> {
             fn from(value: Custodian) -> Self {
-                (value.verificationKey, value.encryptionKey, value.txSenderAddress)
+                (value.txSenderAddress, value.signerAddress, value.encryptionKey)
             }
         }
         #[automatically_derived]
@@ -1306,9 +1306,9 @@ struct Custodian { bytes verificationKey; bytes encryptionKey; address txSenderA
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for Custodian {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    verificationKey: tuple.0,
-                    encryptionKey: tuple.1,
-                    txSenderAddress: tuple.2,
+                    txSenderAddress: tuple.0,
+                    signerAddress: tuple.1,
+                    encryptionKey: tuple.2,
                 }
             }
         }
@@ -1321,14 +1321,14 @@ struct Custodian { bytes verificationKey; bytes encryptionKey; address txSenderA
             #[inline]
             fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.verificationKey,
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.txSenderAddress,
+                    ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.signerAddress,
                     ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.encryptionKey,
-                    ),
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.txSenderAddress,
                     ),
                 )
             }
@@ -1404,7 +1404,7 @@ struct Custodian { bytes verificationKey; bytes encryptionKey; address txSenderA
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "Custodian(bytes verificationKey,bytes encryptionKey,address txSenderAddress)",
+                    "Custodian(address txSenderAddress,address signerAddress,bytes encryptionKey)",
                 )
             }
             #[inline]
@@ -1420,16 +1420,16 @@ struct Custodian { bytes verificationKey; bytes encryptionKey; address txSenderA
             #[inline]
             fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
                 [
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.verificationKey,
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.txSenderAddress,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.signerAddress,
                         )
                         .0,
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::eip712_data_word(
                             &self.encryptionKey,
-                        )
-                        .0,
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.txSenderAddress,
                         )
                         .0,
                 ]
@@ -1441,14 +1441,14 @@ struct Custodian { bytes verificationKey; bytes encryptionKey; address txSenderA
             #[inline]
             fn topic_preimage_length(rust: &Self::RustType) -> usize {
                 0usize
-                    + <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.verificationKey,
+                    + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.txSenderAddress,
+                    )
+                    + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.signerAddress,
                     )
                     + <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.encryptionKey,
-                    )
-                    + <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.txSenderAddress,
                     )
             }
             #[inline]
@@ -1459,16 +1459,16 @@ struct Custodian { bytes verificationKey; bytes encryptionKey; address txSenderA
                 out.reserve(
                     <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
                 );
-                <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.verificationKey,
+                <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.txSenderAddress,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.signerAddress,
                     out,
                 );
                 <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.encryptionKey,
-                    out,
-                );
-                <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.txSenderAddress,
                     out,
                 );
             }
@@ -3663,7 +3663,7 @@ event AddHostChain(HostChain hostChain);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `Initialization(address,(string,string),uint256,(address,address,string)[],(address,address,string)[],(bytes,bytes,address)[])` and selector `0xec693cebb1be8f7dbf0d6838c3e9bbf69e100ac83296d4af0ecae9419fa31159`.
+    /**Event with signature `Initialization(address,(string,string),uint256,(address,address,string)[],(address,address,string)[],(address,address,bytes)[])` and selector `0x2dda887689f3789637f294bd754dc4b0c318cf7342e3b61b8e4d25a3ace88b29`.
 ```solidity
 event Initialization(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
 ```*/
@@ -3716,11 +3716,11 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 mpcThres
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "Initialization(address,(string,string),uint256,(address,address,string)[],(address,address,string)[],(bytes,bytes,address)[])";
+            const SIGNATURE: &'static str = "Initialization(address,(string,string),uint256,(address,address,string)[],(address,address,string)[],(address,address,bytes)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                236u8, 105u8, 60u8, 235u8, 177u8, 190u8, 143u8, 125u8, 191u8, 13u8,
-                104u8, 56u8, 195u8, 233u8, 187u8, 246u8, 158u8, 16u8, 10u8, 200u8, 50u8,
-                150u8, 212u8, 175u8, 14u8, 202u8, 233u8, 65u8, 159u8, 163u8, 17u8, 89u8,
+                45u8, 218u8, 136u8, 118u8, 137u8, 243u8, 120u8, 150u8, 55u8, 242u8,
+                148u8, 189u8, 117u8, 77u8, 196u8, 176u8, 195u8, 24u8, 207u8, 115u8, 66u8,
+                227u8, 182u8, 27u8, 142u8, 77u8, 37u8, 163u8, 172u8, 232u8, 139u8, 41u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -9253,6 +9253,11 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
+                45u8, 218u8, 136u8, 118u8, 137u8, 243u8, 120u8, 150u8, 55u8, 242u8,
+                148u8, 189u8, 117u8, 77u8, 196u8, 176u8, 195u8, 24u8, 207u8, 115u8, 66u8,
+                227u8, 182u8, 27u8, 142u8, 77u8, 37u8, 163u8, 172u8, 232u8, 139u8, 41u8,
+            ],
+            [
                 53u8, 113u8, 23u8, 42u8, 73u8, 231u8, 45u8, 119u8, 36u8, 190u8, 56u8,
                 76u8, 221u8, 89u8, 244u8, 242u8, 26u8, 33u8, 108u8, 112u8, 53u8, 46u8,
                 165u8, 156u8, 176u8, 37u8, 67u8, 252u8, 118u8, 48u8, 132u8, 55u8,
@@ -9276,11 +9281,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 228u8, 24u8, 2u8, 175u8, 114u8, 87u8, 41u8, 173u8, 203u8, 140u8, 21u8,
                 30u8, 41u8, 55u8, 56u8, 10u8, 37u8, 198u8, 145u8, 85u8, 117u8, 126u8,
                 58u8, 245u8, 211u8, 151u8, 154u8, 218u8, 181u8, 3u8, 88u8, 0u8,
-            ],
-            [
-                236u8, 105u8, 60u8, 235u8, 177u8, 190u8, 143u8, 125u8, 191u8, 13u8,
-                104u8, 56u8, 195u8, 233u8, 187u8, 246u8, 158u8, 16u8, 10u8, 200u8, 50u8,
-                150u8, 212u8, 175u8, 14u8, 202u8, 233u8, 65u8, 159u8, 163u8, 17u8, 89u8,
             ],
         ];
     }
