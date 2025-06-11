@@ -3,6 +3,7 @@ use gateway_sdk::utils::validate_address_from_str;
 use gateway_sdk::{FhevmError, FhevmSdk, FhevmSdkBuilder};
 use serde_json::json;
 use std::path::PathBuf;
+use tracing::{Level, error, info, warn};
 
 /// Complete user decrypt example - from encrypted input to curl command
 ///
@@ -13,41 +14,41 @@ use std::path::PathBuf;
 /// 4. Prepare curl command for relayer
 fn main() -> Result<(), FhevmError> {
     // Initialize logging
-    gateway_sdk::logging::init_from_env(log::LevelFilter::Info);
+    gateway_sdk::logging::init_from_env(Level::INFO);
 
-    log::info!("🚀 Complete User Decrypt Example");
+    info!("🚀 Complete User Decrypt Example");
 
     // Create SDK instance with proper configuration
     let mut sdk = create_configured_sdk()?;
 
     // Step 1: Create some encrypted inputs to get handles
-    log::info!("=== Step 1: Creating Encrypted Inputs ===");
+    info!("=== Step 1: Creating Encrypted Inputs ===");
     let handles = create_sample_encrypted_inputs(&mut sdk)?;
 
     // Step 2: Generate EIP-712 signature for user decrypt
-    log::info!("=== Step 2: Generating EIP-712 Signature ===");
+    info!("=== Step 2: Generating EIP-712 Signature ===");
     let eip712_result = generate_user_decrypt_signature(&sdk)?;
 
     // Step 3: Generate user decrypt calldata
-    log::info!("=== Step 3: Generating User Decrypt Calldata ===");
+    info!("=== Step 3: Generating User Decrypt Calldata ===");
     let calldata = generate_user_decrypt_calldata(&sdk, &handles, &eip712_result)?;
-    log::info!(
+    info!(
         "Generated user decrypt calldata ({} bytes): 0x{}",
         calldata.len(),
         hex::encode(&calldata[..std::cmp::min(64, calldata.len())])
     );
 
     // Step 4: Prepare curl command for relayer
-    log::info!("=== Step 4: Preparing Relayer Request ===");
+    info!("=== Step 4: Preparing Relayer Request ===");
     prepare_relayer_curl_command(&handles, &eip712_result)?;
 
-    log::info!("🎉 Complete user decrypt example finished successfully!");
+    info!("🎉 Complete user decrypt example finished successfully!");
     Ok(())
 }
 
 /// Create a properly configured SDK instance
 fn create_configured_sdk() -> Result<FhevmSdk, FhevmError> {
-    log::info!("Creating SDK with configuration...");
+    info!("Creating SDK with configuration...");
 
     let sdk = FhevmSdkBuilder::new()
         .with_keys_directory(PathBuf::from("./keys"))
@@ -61,13 +62,13 @@ fn create_configured_sdk() -> Result<FhevmSdk, FhevmError> {
         .with_host_contract("ACL", "0x0987654321098765432109876543210987654321")
         .build()?;
 
-    log::info!("✅ SDK configured successfully");
+    info!("✅ SDK configured successfully");
     Ok(sdk)
 }
 
 /// Create sample encrypted inputs and return their handles
 fn create_sample_encrypted_inputs(sdk: &mut FhevmSdk) -> Result<Vec<Vec<u8>>, FhevmError> {
-    log::info!("Creating encrypted inputs...");
+    info!("Creating encrypted inputs...");
 
     // Set up addresses
     let contract_address = validate_address_from_str("0x7777777777777777777777777777777777777777")?;
@@ -91,9 +92,9 @@ fn create_sample_encrypted_inputs(sdk: &mut FhevmSdk) -> Result<Vec<Vec<u8>>, Fh
         .map(|handle| handle.to_vec())
         .collect();
 
-    log::info!("✅ Created {} encrypted handles", handles.len());
+    info!("✅ Created {} encrypted handles", handles.len());
     for (i, handle) in handles.iter().enumerate() {
-        log::info!("   Handle {}: 0x{}", i, hex::encode(handle));
+        info!("   Handle {}: 0x{}", i, hex::encode(handle));
     }
 
     Ok(handles)
@@ -103,7 +104,7 @@ fn create_sample_encrypted_inputs(sdk: &mut FhevmSdk) -> Result<Vec<Vec<u8>>, Fh
 fn generate_user_decrypt_signature(
     sdk: &FhevmSdk,
 ) -> Result<gateway_sdk::signature::Eip712Result, FhevmError> {
-    log::info!("Generating EIP-712 signature for user decrypt...");
+    info!("Generating EIP-712 signature for user decrypt...");
 
     // Test parameters (matching the JS example pattern)
     let public_key =
@@ -138,18 +139,18 @@ fn generate_user_decrypt_signature(
     }
 
     if !eip712_result.is_verified() {
-        log::warn!("⚠️ Signature was not verified successfully");
+        warn!("⚠️ Signature was not verified successfully");
     } else {
-        log::info!("✅ Signature generated and verified successfully");
+        info!("✅ Signature generated and verified successfully");
     }
 
-    log::info!("EIP-712 Results:");
-    log::info!("   Hash: {}", eip712_result.hash);
-    log::info!("   Signer: {}", eip712_result.signer.unwrap_or_default());
-    log::info!("   Verification: {}", eip712_result.verification_status());
+    info!("EIP-712 Results:");
+    info!("   Hash: {}", eip712_result.hash);
+    info!("   Signer: {}", eip712_result.signer.unwrap_or_default());
+    info!("   Verification: {}", eip712_result.verification_status());
 
     if let Ok(signature) = eip712_result.require_signature() {
-        log::info!("   Signature: 0x{}", hex::encode(signature));
+        info!("   Signature: 0x{}", hex::encode(signature));
     }
 
     Ok(eip712_result)
@@ -161,7 +162,7 @@ fn generate_user_decrypt_calldata(
     handles: &[Vec<u8>],
     eip712_result: &gateway_sdk::signature::Eip712Result,
 ) -> Result<Vec<u8>, FhevmError> {
-    log::info!("Generating user decrypt calldata...");
+    info!("Generating user decrypt calldata...");
 
     // Parameters for calldata generation
     let user_address = "0xfCefe53c7012a075b8a711df391100d9c431c468"; // Expected signer address
@@ -189,15 +190,15 @@ fn generate_user_decrypt_calldata(
         .build_and_generate_calldata()
     {
         Ok(calldata) => {
-            log::info!("✅ Calldata generated: {} bytes", calldata.len());
-            log::info!(
+            info!("✅ Calldata generated: {} bytes", calldata.len());
+            info!(
                 "   First 32 bytes: 0x{}",
                 hex::encode(&calldata[..32.min(calldata.len())])
             );
             return Ok(calldata);
         }
         Err(e) => {
-            log::error!("❌ Calldata generation error: {}", e);
+            error!("❌ Calldata generation error: {}", e);
             return Err(e);
         }
     }
@@ -208,7 +209,7 @@ fn prepare_relayer_curl_command(
     handles: &[Vec<u8>],
     eip712_result: &gateway_sdk::signature::Eip712Result,
 ) -> Result<(), FhevmError> {
-    log::info!("Preparing relayer curl command...");
+    info!("Preparing relayer curl command...");
 
     // Prepare handle-contract pairs (matching JS HandleContractPairs format)
     let handle_contract_pairs: Vec<serde_json::Value> = handles
@@ -254,20 +255,20 @@ fn prepare_relayer_curl_command(
         compact_payload
     );
 
-    log::info!("📋 Compact version:");
+    info!("📋 Compact version:");
     println!("{}", compact_curl);
-    log::info!("");
+    info!("");
 
     // Show payload details
-    log::info!("📊 Payload details:");
-    log::info!("   Handle pairs: {}", handle_contract_pairs.len());
-    log::info!(
+    info!("📊 Payload details:");
+    info!("   Handle pairs: {}", handle_contract_pairs.len());
+    info!(
         "   Contract addresses: {}",
         payload["contractAddresses"].as_array().unwrap().len()
     );
-    log::info!("   User address: {}", payload["userAddress"]);
-    log::info!("   Signature length: {} chars", signature_hex.len());
-    log::info!(
+    info!("   User address: {}", payload["userAddress"]);
+    info!("   Signature length: {} chars", signature_hex.len());
+    info!(
         "   Public key length: {} chars",
         payload["publicKey"].as_str().unwrap().len()
     );
@@ -275,7 +276,7 @@ fn prepare_relayer_curl_command(
     // Validation check
     if signature_hex.len() != 130 {
         // 65 bytes * 2 hex chars
-        log::warn!(
+        warn!(
             "⚠️ Signature length is unexpected: {} (expected 130)",
             signature_hex.len()
         );
@@ -283,13 +284,13 @@ fn prepare_relayer_curl_command(
 
     if payload["publicKey"].as_str().unwrap().len() != 80 {
         // 40 bytes * 2 hex chars
-        log::warn!(
+        warn!(
             "⚠️ Public key length is unexpected: {} (expected 64)",
             payload["publicKey"].as_str().unwrap().len()
         );
     }
 
-    log::info!("✅ Relayer curl command prepared successfully");
+    info!("✅ Relayer curl command prepared successfully");
 
     Ok(())
 }
@@ -297,7 +298,7 @@ fn prepare_relayer_curl_command(
 /// Demonstrate error handling scenarios
 #[allow(dead_code)]
 fn demonstrate_error_scenarios(sdk: &FhevmSdk) -> Result<(), FhevmError> {
-    log::info!("=== Error Scenarios Demo ===");
+    info!("=== Error Scenarios Demo ===");
 
     let public_key =
         "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331";
@@ -306,7 +307,7 @@ fn demonstrate_error_scenarios(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     )?];
 
     // Scenario 1: Try to verify without wallet key
-    log::info!("Testing verification without wallet key...");
+    info!("Testing verification without wallet key...");
     match sdk.generate_eip712_for_user_decrypt(
         &public_key,
         &contracts,
@@ -315,8 +316,8 @@ fn demonstrate_error_scenarios(sdk: &FhevmSdk) -> Result<(), FhevmError> {
         None,
         Some(true),
     ) {
-        Ok(_) => log::error!("❌ Should have failed"),
-        Err(e) => log::info!("✅ Correctly caught error: {}", e),
+        Ok(_) => error!("❌ Should have failed"),
+        Err(e) => info!("✅ Correctly caught error: {}", e),
     }
 
     Ok(())
@@ -325,7 +326,7 @@ fn demonstrate_error_scenarios(sdk: &FhevmSdk) -> Result<(), FhevmError> {
 /// Performance comparison between different approaches
 #[allow(dead_code)]
 fn performance_comparison(sdk: &FhevmSdk) -> Result<(), FhevmError> {
-    log::info!("=== Performance Comparison ===");
+    info!("=== Performance Comparison ===");
 
     let public_key =
         "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331";
@@ -364,14 +365,14 @@ fn performance_comparison(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     )?;
     let verify_time = start.elapsed();
 
-    log::info!("⚡ Performance Results:");
-    log::info!("   Hash only:        {:?}", hash_time);
-    log::info!(
+    info!("⚡ Performance Results:");
+    info!("   Hash only:        {:?}", hash_time);
+    info!(
         "   Hash + Sign:      {:?} (+ {:?})",
         sign_time,
         sign_time.saturating_sub(hash_time)
     );
-    log::info!(
+    info!(
         "   Hash + Sign + Verify: {:?} (+ {:?})",
         verify_time,
         verify_time.saturating_sub(sign_time)

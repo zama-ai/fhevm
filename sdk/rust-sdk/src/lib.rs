@@ -17,6 +17,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use thiserror::Error;
+use tracing::{debug, info, warn};
 use utils::parse_hex_string;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,7 +97,7 @@ pub struct FhevmSdk {
 impl FhevmSdk {
     /// Create a new SDK instance
     pub fn new(config: FhevmConfig) -> Self {
-        log::info!("Creating new FHEVM SDK instance");
+        info!("Creating new FHEVM SDK instance");
         Self {
             config,
             public_key: None,
@@ -108,12 +109,12 @@ impl FhevmSdk {
     /// Ensure keys are loaded from the configured path
     fn ensure_keys_loaded(&mut self) -> Result<()> {
         if self.public_key.is_none() || self.crs.is_none() {
-            log::debug!("Loading keys from {}", self.config.keys_directory.display());
+            debug!("Loading keys from {}", self.config.keys_directory.display());
 
             let (public_key, _client_key, _server_key, crs) =
                 utils::load_fhe_keyset(&self.config.keys_directory)?;
 
-            log::info!("Keys loaded successfully");
+            info!("Keys loaded successfully");
             self.public_key = Some(Arc::new(public_key));
             self.crs = Some(Arc::new(crs));
         }
@@ -186,7 +187,7 @@ impl FhevmSdk {
         wallet_private_key: Option<&str>,
         verify: Option<bool>,
     ) -> Result<Eip712Result> {
-        log::debug!(
+        debug!(
             "Generating EIP-712 for user decrypt with {} contracts",
             contract_addresses.len()
         );
@@ -219,7 +220,7 @@ impl FhevmSdk {
             duration_days,
         )?;
 
-        log::debug!("Generated EIP-712 hash: {}", hash);
+        debug!("Generated EIP-712 hash: {}", hash);
 
         let should_verify = verify.unwrap_or(false);
 
@@ -231,39 +232,39 @@ impl FhevmSdk {
 
         // Handle optional signing
         if let Some(wallet_key) = wallet_private_key {
-            log::info!("🔑 Wallet private key provided, will generate signature");
+            info!("🔑 Wallet private key provided, will generate signature");
 
             // Validate the wallet key format using helper function
             validate_private_key_format(wallet_key)?;
 
             // Sign the hash using helper function from signature module
-            log::debug!("Signing EIP-712 hash with wallet key");
+            debug!("Signing EIP-712 hash with wallet key");
             let signature = sign_eip712_hash(hash, wallet_key)?;
 
             // Recover the signer address using helper function
             let signer = recover_signer(&signature, hash)?;
-            log::debug!("Recovered signer address: {}", signer);
+            debug!("Recovered signer address: {}", signer);
 
             // Handle optional verification
             let should_verify = verify.unwrap_or(false); // Default to false for performance
             let verification_result = if should_verify {
-                log::debug!("Performing signature verification (requested by user)");
+                debug!("Performing signature verification (requested by user)");
                 match verify_eip712_signature(&signature, hash, signer) {
                     Ok(is_valid) => {
                         if is_valid {
-                            log::debug!("✅ Signature verification passed");
+                            debug!("✅ Signature verification passed");
                         } else {
-                            log::warn!("❌ Signature verification failed");
+                            warn!("❌ Signature verification failed");
                         }
                         Some(is_valid)
                     }
                     Err(e) => {
-                        log::warn!("Signature verification error: {}", e);
+                        warn!("Signature verification error: {}", e);
                         Some(false)
                     }
                 }
             } else {
-                log::debug!("Skipping signature verification (default behavior)");
+                debug!("Skipping signature verification (default behavior)");
                 None
             };
 
@@ -274,7 +275,7 @@ impl FhevmSdk {
                 verified: verification_result,
             })
         } else {
-            log::info!("ℹ️ No wallet private key provided, returning hash only");
+            info!("ℹ️ No wallet private key provided, returning hash only");
 
             Ok(Eip712Result {
                 hash,
@@ -351,7 +352,7 @@ impl FhevmSdk {
 
     /// Create a new encrypted input builder
     pub fn create_input_builder(&mut self) -> Result<EncryptedInputBuilder> {
-        log::debug!("Creating encrypted input builder");
+        debug!("Creating encrypted input builder");
         let factory = self.get_input_factory()?;
         Ok(factory.create_builder())
     }
@@ -493,7 +494,7 @@ impl FhevmSdkBuilder {
 
         // Check if keys exist, generate if not
         if !path_buf.exists() || !path_buf.join("public_key.bin").exists() {
-            log::info!(
+            info!(
                 "Keys not found at {}, generating new keys...",
                 path_buf.display()
             );
@@ -530,7 +531,7 @@ impl FhevmSdkBuilder {
                 self.gateway_contracts.decryption = Some(addr);
             }
             _ => {
-                log::warn!(
+                warn!(
                     "Unknown gateway contract name: '{}'. Valid names are: 'input_verification', 'decryption'",
                     name
                 );
@@ -552,7 +553,7 @@ impl FhevmSdkBuilder {
                 self.host_contracts.acl = Some(addr);
             }
             _ => {
-                log::warn!(
+                warn!(
                     "Unknown host contract name: '{}'. Valid names are: 'acl'",
                     name
                 );
@@ -621,10 +622,10 @@ impl FhevmSdkBuilder {
 
     pub fn build(self) -> Result<FhevmSdk> {
         // Convert to config and create the SDK
-        log::debug!("Building FhevmSdk from builder");
+        debug!("Building FhevmSdk from builder");
         let config = self.to_config()?;
 
-        log::info!("SDK configuration validated successfully");
+        info!("SDK configuration validated successfully");
         // Create and return the SDK
         Ok(FhevmSdk::new(config))
     }

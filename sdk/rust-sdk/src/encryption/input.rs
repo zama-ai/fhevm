@@ -5,6 +5,7 @@
 use crate::utils::chain_id_to_bytes;
 use crate::{FhevmError, Result};
 use alloy::primitives::{Address, keccak256};
+use tracing::debug;
 
 use crate::encryption::CIPHERTEXT_VERSION;
 use crate::encryption::IntoU256;
@@ -269,11 +270,11 @@ impl EncryptedInputBuilder {
 
         // Build the ciphertext with ZK proof
         let ciphertext = self.build_with_proof(&aux_data)?;
-        log::debug!("Ciphertext built successfully: {} bytes", ciphertext.len());
+        debug!("Ciphertext built successfully: {} bytes", ciphertext.len());
 
         // Generate handles for each value in the ciphertext
         let bit_widths = self.get_bits();
-        log::debug!("Generating handles for {} values", bit_widths.len());
+        debug!("Generating handles for {} values", bit_widths.len());
         let handles = Self::compute_handles(
             &ciphertext,
             bit_widths,
@@ -480,8 +481,6 @@ mod tests {
 
     #[test]
     fn test_input_builder_factory() {
-        log::info!("Testing InputBuilderFactory");
-
         // Load encryption parameters
         let (public_key, client_key, _server_key, crs) =
             get_default_encryption_parameters().unwrap();
@@ -565,8 +564,6 @@ mod tests {
 
     #[test]
     fn test_input_builder_with_all_types() {
-        log::info!("Testing InputBuilder with all supported types");
-
         // Load encryption parameters
         let (public_key, _client_key, _server_key, crs) =
             get_default_encryption_parameters().unwrap();
@@ -624,18 +621,13 @@ mod tests {
                 i
             );
         }
-
-        log::info!("All types encrypted successfully");
     }
 
     #[test]
     fn test_input_builder_with_real_data() {
-        log::info!("Testing InputBuilder with real data");
-
         // Load encryption parameters
         let (public_key, client_key, server_key, crs) =
             get_default_encryption_parameters().unwrap();
-        log::info!("Encryption keys loaded successfully");
 
         // Set up test addresses
         let contract_address =
@@ -675,7 +667,7 @@ mod tests {
             "Should have 3 handles for 3 values"
         );
 
-        log::info!(
+        println!(
             "Encrypted data size: {} bytes",
             encrypted_input.ciphertext.len()
         );
@@ -761,8 +753,6 @@ mod tests {
             "Fourth value should decrypt to the correct address"
         );
 
-        log::info!("All decrypted values match original inputs");
-
         // Test the utility methods on EncryptedInput
         let handles_hex = encrypted_input.handles_as_hex();
         assert_eq!(handles_hex.len(), 3, "Should have 4 hex handles");
@@ -783,7 +773,5 @@ mod tests {
             ciphertext_hex.starts_with("0x"),
             "Ciphertext hex should start with 0x"
         );
-
-        log::info!("Test passed successfully");
     }
 }
