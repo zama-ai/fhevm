@@ -129,6 +129,5 @@ while maintaining usability:
 | **Decryption**      | Private Key             | Smart contract requests plaintext → Gateway forwards to KMS → result returned on-chain              |
 | **User decryption** | Private and Target Keys | User requests result → KMS decrypts and encrypts with user’s public key → frontend decrypts locally |
 
-This architecture ensures that sensitive data remains encrypted throughout its lifecycle, with decryption or
-re-encryption only occurring in controlled, secure environments. By separating key roles and processing
-responsibilities, fhevm provides a scalable and robust framework for private smart contracts.
+This architecture ensures that sensitive data remains encrypted throughout its lifecycle, with decryption only occurring in controlled, secure environments. By separating key roles and processing
+responsibilities, FHEVM provides a scalable and robust framework for private smart contracts.
