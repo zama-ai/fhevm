@@ -428,6 +428,67 @@ impl FhevmSdk {
     pub fn user_decrypt_response_builder(&self) -> UserDecryptionResponseBuilder {
         self.create_user_decrypt_response_builder()
     }
+
+    /// Builder pattern for creating PublicDecryptRequest instances
+    ///
+    /// This builder provides a fluent API for constructing public decrypt requests
+    /// with comprehensive validation and clear error messages.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use gateway_sdk::{FhevmSdk, FhevmError};
+    /// # use std::path::PathBuf;
+    /// # use gateway_sdk::FhevmSdkBuilder;
+    /// #
+    /// # fn example() -> Result<(), FhevmError> {
+    /// # let sdk = FhevmSdkBuilder::new()
+    /// #     .with_keys_directory(PathBuf::from("./test_keys"))
+    /// #     .with_gateway_chain_id(31337)
+    /// #     .with_host_chain_id(31337)
+    /// #     .with_gateway_contract("decryption", "0x1111111111111111111111111111111111111111")
+    /// #     .with_gateway_contract("input-verification", "0x2222222222222222222222222222222222222222")
+    /// #     .with_host_contract("ACL", "0x3333333333333333333333333333333333333333")
+    /// #     .build()?;
+    /// #
+    /// # // Sample data
+    /// # let handles = vec![vec![1u8; 32], vec![2u8; 32]]; // Your encrypted handles
+    /// #
+    /// let calldata = sdk.create_public_decrypt_request_builder()
+    ///     .add_handles_from_bytes(&handles)?
+    ///     .build_and_generate_calldata()?;
+    ///
+    /// println!("Generated calldata: {} bytes", calldata.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn create_public_decrypt_request_builder(
+        &self,
+    ) -> decryption::public::PublicDecryptRequestBuilder {
+        decryption::public::PublicDecryptRequestBuilder::new()
+    }
+
+    /// Alternative shorter name for discoverability
+    pub fn public_decrypt_request_builder(
+        &self,
+    ) -> decryption::public::PublicDecryptRequestBuilder {
+        self.create_public_decrypt_request_builder()
+    }
+
+    /// Create a public decrypt response builder
+    pub fn create_public_decrypt_response_builder(
+        &self,
+    ) -> decryption::public::PublicDecryptionResponseBuilder {
+        decryption::public::PublicDecryptionResponseBuilder::new()
+            .gateway_chain_id(self.config.gateway_chain_id)
+    }
+
+    /// Alternative shorter name for discoverability  
+    pub fn public_decrypt_response_builder(
+        &self,
+    ) -> decryption::public::PublicDecryptionResponseBuilder {
+        self.create_public_decrypt_response_builder()
+    }
 }
 
 // Define modules
