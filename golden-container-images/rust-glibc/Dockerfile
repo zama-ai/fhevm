@@ -1,6 +1,6 @@
 FROM cgr.dev/chainguard/glibc-dynamic:latest-dev AS builder
 
-ARG RUST_IMAGE_VERSION=1.87.0
+ARG RUST_IMAGE_VERSION=1.85.0
 
 USER root
 
@@ -25,7 +25,9 @@ RUN apk add --no-cache \
     openssl-dev \
     protoc \
     protobuf \
-    openssh && \
+    openssh \
+    postgresql-client \
+    vim && \
     rm -rf /var/cache/apk/*
 
 # Install Rust in a location accessible to all users
@@ -85,6 +87,7 @@ ENV RUSTFLAGS="-C target-feature=-crt-static"
 
 USER fhevm:fhevm
 
-WORKDIR /app
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD cargo --version || exit 1
 
 ENTRYPOINT ["/bin/bash", "-c"]

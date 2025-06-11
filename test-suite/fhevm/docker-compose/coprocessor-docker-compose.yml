@@ -39,6 +39,8 @@ services:
       - ../env/staging/.env.coprocessor.local
     environment:
       - KEY_ID=${FHE_KEY_ID}
+    command:
+      - /initialize_db.sh
     volumes:
       - keys-cache:/fhevm-keys
     depends_on:
