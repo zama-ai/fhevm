@@ -15,7 +15,7 @@ A Rust SDK for interacting with Fully Homomorphic Encryption Virtual Machine (fh
 ```toml
 # Add to your Cargo.toml
 [dependencies]
-fhevm_sdk = "0.1.0"
+gateway_sdk = "0.1.0"
 ```
 
 ## Implementation Status
@@ -75,13 +75,13 @@ cargo run --example minimal-user-decryption-response
 ### Basic Usage
 
 ```rust
-use fhevm_sdk::{FhevmSdkBuilder, FhevmError};
+use gateway_sdk::{FhevmSdkBuilder, FhevmError};
 use std::path::PathBuf;
 use alloy::primitives::address;
 
 fn main() -> Result<(), FhevmError> {
     // Initialize logging
-    fhevm_sdk::logging::init_from_env(log::LevelFilter::Info);
+    gateway_sdk::logging::init_from_env(log::LevelFilter::Info);
 
     // Create SDK using builder
     let mut sdk = FhevmSdkBuilder::new()
