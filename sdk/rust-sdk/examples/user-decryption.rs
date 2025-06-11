@@ -82,7 +82,7 @@ fn create_sample_encrypted_inputs(sdk: &mut FhevmSdk) -> Result<Vec<Vec<u8>>, Fh
     builder.add_u64(18446744073709550042)?;
 
     // Encrypt for the specific contract and user
-    let encrypted_input = builder.encrypt_for(contract_address, user_address)?;
+    let encrypted_input = builder.encrypt_and_prove_for(contract_address, user_address)?;
 
     // Convert handles to Vec<Vec<u8>> format
     let handles: Vec<Vec<u8>> = encrypted_input

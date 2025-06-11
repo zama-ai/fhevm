@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     let mut builder = sdk.create_input_builder()?;
     builder.add_u8(42)?;
 
-    let encrypted = builder.encrypt_for(
+    let encrypted = builder.encrypt_and_prove_for(
         validate_address_from_str("0xa3f4D50ebfea1237316b4377F0fff4831F2D1c46")?,
         validate_address_from_str("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80")?,
     )?;

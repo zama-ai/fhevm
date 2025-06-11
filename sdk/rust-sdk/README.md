@@ -105,7 +105,7 @@ fn main() -> Result<(), FhevmError> {
     builder.add_u64(18446744073709550042)?;
     
     // Encrypt for a specific contract and user
-    let encrypted = builder.encrypt_for(contract_address, user_address)?;
+    let encrypted = builder.encrypt_and_prove_for(contract_address, user_address)?;
     
     // Use the encrypted data (handles) for blockchain interaction
     log::info!("Encryption successful!");
@@ -166,7 +166,7 @@ builder.add_address("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
 builder.add_u256(my_u256_value)?;
 
 // Encrypt for contract and user
-let encrypted = builder.encrypt_for(contract_address, user_address)?;
+let encrypted = builder.encrypt_and_prove_for(contract_address, user_address)?;
 ```
 
 
