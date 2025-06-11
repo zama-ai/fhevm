@@ -1,7 +1,7 @@
 <p align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="library-solidity/docs/.gitbook/assets/fhevm-header-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="library-solidity/docs/.gitbook/assets/fhevm-header-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/.gitbook/assets/fhevm-header-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/.gitbook/assets/fhevm-header-light.png">
   <img width=600 alt="fhevm">
 </picture>
 </p>
@@ -169,8 +169,8 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 <a target="_blank" href="https://community.zama.ai">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="library-solidity/docs/.gitbook/assets/support-banner-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="library-solidity/docs/.gitbook/assets/support-banner-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/.gitbook/assets/support-banner-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/.gitbook/assets/support-banner-light.png">
   <img alt="Support">
 </picture>
 </a>
