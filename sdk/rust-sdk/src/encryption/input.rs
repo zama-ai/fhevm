@@ -259,7 +259,7 @@ impl EncryptedInputBuilder {
     }
 
     /// Builds the final ciphertext with proof and generates handles
-    pub fn encrypt_for(
+    pub fn encrypt_and_prove_for(
         &mut self,
         contract_address: Address,
         user_address: Address,
@@ -511,7 +511,7 @@ mod tests {
         builder1.add_bool(true).unwrap();
         builder1.add_u8(45).unwrap();
         let encrypted1 = builder1
-            .encrypt_for(contract_address1, user_address1)
+            .encrypt_and_prove_for(contract_address1, user_address1)
             .unwrap();
         let aux_data1 = builder1
             .create_auxiliary_data(contract_address1, user_address1)
@@ -522,7 +522,7 @@ mod tests {
         builder1.add_bool(false).unwrap();
         builder1.add_u8(125).unwrap();
         let encrypted2 = builder1
-            .encrypt_for(contract_address2, user_address2)
+            .encrypt_and_prove_for(contract_address2, user_address2)
             .unwrap();
 
         let aux_data2 = builder1
@@ -603,7 +603,9 @@ mod tests {
         input_builder.add_u256(u256_value).unwrap();
 
         // Encrypt
-        let encrypted_input = input_builder.encrypt_for(addresses, addresses).unwrap();
+        let encrypted_input = input_builder
+            .encrypt_and_prove_for(addresses, addresses)
+            .unwrap();
 
         // Verify we got the expected number of handles
         assert_eq!(
@@ -659,7 +661,7 @@ mod tests {
 
         // Encrypt the input
         let encrypted_input = input_builder
-            .encrypt_for(contract_address, user_address)
+            .encrypt_and_prove_for(contract_address, user_address)
             .unwrap();
 
         // Verify we got the ciphertext and handles

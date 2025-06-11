@@ -71,7 +71,8 @@ fn demo_sdk_functionality(sdk: &mut FhevmSdk) -> Result<(), FhevmError> {
     }
 
     // Encrypt for a specific contract and user
-    let encrypted: EncryptedInput = builder.encrypt_for(contract_address, user_address)?;
+    let encrypted: EncryptedInput =
+        builder.encrypt_and_prove_for(contract_address, user_address)?;
     log::info!("Encryption successful!");
     log::info!("  - Handles: {}", encrypted.handles.len());
     log::info!("  - Ciphertext size: {} bytes", encrypted.ciphertext.len());

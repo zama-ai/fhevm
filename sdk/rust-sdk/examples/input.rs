@@ -38,7 +38,7 @@ fn example_encrypt_bool() -> Result<()> {
     input_builder.add_bool(true)?;
 
     // Generate the encrypted value with proof
-    let encrypted_value = input_builder.encrypt_for(contract_address, user_address)?;
+    let encrypted_value = input_builder.encrypt_and_prove_for(contract_address, user_address)?;
 
     log::info!(
         "  Encrypted boolean value (size: {} bytes)",
@@ -73,7 +73,7 @@ fn example_encrypt_u64() -> Result<()> {
     input_builder.add_u64(18446744073709550042)?;
 
     // Generate the encrypted value with proof
-    let encrypted_value = input_builder.encrypt_for(contract_address, user_address)?;
+    let encrypted_value = input_builder.encrypt_and_prove_for(contract_address, user_address)?;
 
     log::info!("Encryption successful!");
     log::info!("  - Handles: {}", encrypted_value.handles.len());
@@ -149,7 +149,7 @@ fn example_create_complex_input() -> Result<()> {
     log::info!("  Added values with bit widths: {:?}", bit_widths);
 
     // Generate the encrypted value with proof
-    let encrypted_value = input_builder.encrypt_for(contract_address, user_address)?;
+    let encrypted_value = input_builder.encrypt_and_prove_for(contract_address, user_address)?;
 
     log::info!(
         "  Encrypted complex input (size: {} bytes)",
