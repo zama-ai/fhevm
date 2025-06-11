@@ -1,6 +1,6 @@
 use alloy::primitives::address;
-use fhevm_sdk::utils::validate_address_from_str;
-use fhevm_sdk::{FhevmError, FhevmSdk, FhevmSdkBuilder};
+use gateway_sdk::utils::validate_address_from_str;
+use gateway_sdk::{FhevmError, FhevmSdk, FhevmSdkBuilder};
 use serde_json::json;
 use std::path::PathBuf;
 
@@ -13,7 +13,7 @@ use std::path::PathBuf;
 /// 4. Prepare curl command for relayer
 fn main() -> Result<(), FhevmError> {
     // Initialize logging
-    fhevm_sdk::logging::init_from_env(log::LevelFilter::Info);
+    gateway_sdk::logging::init_from_env(log::LevelFilter::Info);
 
     log::info!("🚀 Complete User Decrypt Example");
 
@@ -102,7 +102,7 @@ fn create_sample_encrypted_inputs(sdk: &mut FhevmSdk) -> Result<Vec<Vec<u8>>, Fh
 /// Generate EIP-712 signature for user decrypt (matching JS pattern)
 fn generate_user_decrypt_signature(
     sdk: &FhevmSdk,
-) -> Result<fhevm_sdk::signature::Eip712Result, FhevmError> {
+) -> Result<gateway_sdk::signature::Eip712Result, FhevmError> {
     log::info!("Generating EIP-712 signature for user decrypt...");
 
     // Test parameters (matching the JS example pattern)
@@ -159,7 +159,7 @@ fn generate_user_decrypt_signature(
 fn generate_user_decrypt_calldata(
     sdk: &FhevmSdk,
     handles: &[Vec<u8>],
-    eip712_result: &fhevm_sdk::signature::Eip712Result,
+    eip712_result: &gateway_sdk::signature::Eip712Result,
 ) -> Result<Vec<u8>, FhevmError> {
     log::info!("Generating user decrypt calldata...");
 
@@ -206,7 +206,7 @@ fn generate_user_decrypt_calldata(
 /// Prepare curl command for relayer (matching JS userDecrypt call)
 fn prepare_relayer_curl_command(
     handles: &[Vec<u8>],
-    eip712_result: &fhevm_sdk::signature::Eip712Result,
+    eip712_result: &gateway_sdk::signature::Eip712Result,
 ) -> Result<(), FhevmError> {
     log::info!("Preparing relayer curl command...");
 

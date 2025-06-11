@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use alloy::primitives::address;
-use fhevm_sdk::{
+use gateway_sdk::{
     FhevmError, Result,
     encryption::{
         EncryptedInputBuilder, input::get_default_encryption_parameters,

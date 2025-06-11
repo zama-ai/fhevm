@@ -8,7 +8,7 @@
 //! ```
 
 use alloy::primitives::{U256, address};
-use fhevm_sdk::{
+use gateway_sdk::{
     FhevmSdkBuilder, Result, blockchain::bindings::Decryption::CtHandleContractPair,
     utils::validate_address_from_str,
 };

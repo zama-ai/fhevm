@@ -6,7 +6,7 @@
 //! cargo run --example minimal-key-generation
 //! ```
 
-use fhevm_sdk::{Result, signature::generate_keypair};
+use gateway_sdk::{Result, signature::generate_keypair};
 
 fn main() -> Result<()> {
     println!("🔑 Generating keypair...");

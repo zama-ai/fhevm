@@ -1,8 +1,8 @@
-use fhevm_sdk::{FhevmError, FhevmSdkBuilder};
+use gateway_sdk::{FhevmError, FhevmSdkBuilder};
 use std::path::PathBuf;
 
 // Import our keygen functions
-use fhevm_sdk::utils::generate_fhe_keyset;
+use gateway_sdk::utils::generate_fhe_keyset;
 
 fn main() -> Result<(), FhevmError> {
     // Initialize logging
