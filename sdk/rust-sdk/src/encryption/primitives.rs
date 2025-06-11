@@ -2,6 +2,7 @@ use crate::{FhevmError, Result, utils};
 use std::path::Path;
 use tfhe::zk::CompactPkeCrs;
 use tfhe::{ProvenCompactCiphertextList, set_server_key};
+use tracing::info;
 
 /// Defines the bit width for different encryption types
 #[derive(Debug, Clone, Copy)]
@@ -125,12 +126,12 @@ pub fn create_encryption_parameters(
         && keys_path.join("crs.bin").exists()
     {
         // Load the keys from the existing directory
-        log::info!("Loading existing keys from: {}", keys_path.display());
+        info!("Loading existing keys from: {}", keys_path.display());
         return utils::load_fhe_keyset(keys_path);
     }
 
     // If path doesn't exist or is missing files, generate new keys
-    log::info!("Generating new keys and saving to: {}", keys_path.display());
+    info!("Generating new keys and saving to: {}", keys_path.display());
 
     // First, ensure the directory exists
     if !keys_path.exists() {

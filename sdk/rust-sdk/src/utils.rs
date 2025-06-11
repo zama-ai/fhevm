@@ -12,6 +12,7 @@ use tfhe::zk::CompactPkeCrs;
 use tfhe::{ClientKey, CompactPublicKey};
 
 use kms_grpc::kms::v1::UserDecryptionResponsePayload;
+use tracing::{debug, info};
 
 // Add validation helper
 pub fn validate_address(addr: &Address) -> Result<()> {
@@ -31,13 +32,13 @@ pub fn validate_address_from_str(addr_str: &str) -> Result<Address> {
             "Address string cannot be empty".to_string(),
         ));
     }
-    log::debug!("Parsing address: {}", addr_str);
+    debug!("Parsing address: {}", addr_str);
 
     let address = Address::from_str(addr_str.trim()).map_err(|e| {
         FhevmError::InvalidParams(format!("Invalid address format '{}': {}", addr_str, e))
     })?;
 
-    log::debug!("Parsed address: {}", address);
+    debug!("Parsed address: {}", address);
 
     // Validate the parsed address
     validate_address(&address)?;
@@ -115,17 +116,17 @@ pub fn generate_fhe_keyset(output_dir: &Path) -> Result<()> {
         .write_all(&serialized_server_key)
         .map_err(|e| FhevmError::FileError(format!("Failed to write server key: {}", e)))?;
 
-    log::info!(
+    info!(
         "FHE keyset generated and saved successfully to: {}",
         output_dir.display()
     );
 
     // Print file sizes for information
-    log::info!("File sizes:");
-    log::info!("  Public key: {} bytes", serialized_pub_key.len());
-    log::info!("  Client key: {} bytes", serialized_client_key.len());
-    log::info!("  Server key: {} bytes", serialized_server_key.len());
-    log::info!("  CRS: {} bytes", serialized_crs.len());
+    info!("File sizes:");
+    info!("  Public key: {} bytes", serialized_pub_key.len());
+    info!("  Client key: {} bytes", serialized_client_key.len());
+    info!("  Server key: {} bytes", serialized_server_key.len());
+    info!("  CRS: {} bytes", serialized_crs.len());
 
     Ok(())
 }
@@ -137,7 +138,7 @@ pub fn load_fhe_keyset(
     tfhe::ServerKey,
     CompactPkeCrs,
 )> {
-    log::info!("Loading FHE keyset from: {}", input_dir.display());
+    info!("Loading FHE keyset from: {}", input_dir.display());
 
     // Indicate which parameters to use for the Compact Public Key encryption
     let cpk_params = tfhe::shortint::parameters::PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
@@ -176,7 +177,7 @@ pub fn load_fhe_keyset(
     let crs = safe_deserialize(crs_data.as_slice(), 1 << 30)
         .map_err(|e| FhevmError::EncryptionError(format!("Failed to deserialize CRS: {}", e)))?;
 
-    log::info!("FHE keyset loaded successfully");
+    info!("FHE keyset loaded successfully");
 
     Ok((public_key, client_key, server_key, crs))
 }
@@ -189,16 +190,16 @@ pub fn chain_id_to_bytes(chain_id: u64) -> [u8; 32] {
     // Direct big-endian placement
     let chain_id_bytes = chain_id.to_be_bytes(); // 8 bytes for u64
 
-    log::debug!("chain_id_bytes length: {}", chain_id_bytes.len());
-    log::debug!("chain_id_bytes hex: {}", hex::encode(chain_id_bytes));
+    debug!("chain_id_bytes length: {}", chain_id_bytes.len());
+    debug!("chain_id_bytes hex: {}", hex::encode(chain_id_bytes));
 
     let start_idx = 32 - chain_id_bytes.len();
-    log::debug!("start_idx: {}", start_idx);
+    debug!("start_idx: {}", start_idx);
 
     buffer[start_idx..].copy_from_slice(&chain_id_bytes);
 
-    log::debug!("final buffer hex: {}", hex::encode(buffer));
-    log::debug!("final buffer length: {}", buffer.len());
+    debug!("final buffer hex: {}", hex::encode(buffer));
+    debug!("final buffer length: {}", buffer.len());
 
     buffer
 }

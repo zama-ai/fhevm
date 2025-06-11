@@ -15,7 +15,7 @@ use kms_lib::client::js_api::{
     new_client, process_user_decryption_resp, u8vec_to_cryptobox_pk, u8vec_to_cryptobox_sk,
 };
 
-use log::{debug, info};
+use tracing::{debug, info};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UserDecryptRequest {
@@ -358,11 +358,11 @@ impl UserDecryptRequestBuilder {
             public_key,
         };
 
-        log::debug!("✅ UserDecryptRequest built successfully");
-        log::debug!("   📊 Handles: {}", request.ct_handle_contract_pairs.len());
-        log::debug!("   👤 User: {}", request.user_address);
-        log::debug!("   🏢 Contracts: {}", request.contract_addresses.len());
-        log::debug!(
+        debug!("✅ UserDecryptRequest built successfully");
+        debug!("   📊 Handles: {}", request.ct_handle_contract_pairs.len());
+        debug!("   👤 User: {}", request.user_address);
+        debug!("   🏢 Contracts: {}", request.contract_addresses.len());
+        debug!(
             "   ⏰ Duration: {} days",
             request.request_validity.durationDays
         );
@@ -678,7 +678,7 @@ impl UserDecryptionResponseBuilder {
         )
         .map_err(|e| FhevmError::DecryptionError(format!("KMS decryption failed: {:?}", e)))?;
 
-        log::info!(
+        info!(
             "✅ User decryption processed successfully: {} results",
             decryption_result.len()
         );

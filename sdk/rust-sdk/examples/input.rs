@@ -12,10 +12,11 @@ use gateway_sdk::{
     logging,
 };
 use serde_json::json;
+use tracing::{Level, info};
 
 /// Example: Basic encryption of a boolean value
 fn example_encrypt_bool() -> Result<()> {
-    log::info!("Example 1: Encrypting a boolean value");
+    info!("Example 1: Encrypting a boolean value");
 
     // Set up test addresses
     let contract_address = address!("0x7777777777777777777777777777777777777777");
@@ -40,7 +41,7 @@ fn example_encrypt_bool() -> Result<()> {
     // Generate the encrypted value with proof
     let encrypted_value = input_builder.encrypt_and_prove_for(contract_address, user_address)?;
 
-    log::info!(
+    info!(
         "  Encrypted boolean value (size: {} bytes)",
         encrypted_value.ciphertext.len()
     );
@@ -49,7 +50,7 @@ fn example_encrypt_bool() -> Result<()> {
 }
 
 fn example_encrypt_u64() -> Result<()> {
-    log::info!("Example 1: Encrypting a u64 value");
+    info!("Example 1: Encrypting a u64 value");
 
     // Set up test addresses
     let contract_address = address!("0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C");
@@ -75,9 +76,9 @@ fn example_encrypt_u64() -> Result<()> {
     // Generate the encrypted value with proof
     let encrypted_value = input_builder.encrypt_and_prove_for(contract_address, user_address)?;
 
-    log::info!("Encryption successful!");
-    log::info!("  - Handles: {}", encrypted_value.handles.len());
-    log::info!(
+    info!("Encryption successful!");
+    info!("  - Handles: {}", encrypted_value.handles.len());
+    info!(
         "  - Ciphertext size: {} bytes",
         encrypted_value.ciphertext.len()
     );
@@ -97,8 +98,8 @@ fn example_encrypt_u64() -> Result<()> {
         relayer_url
     );
 
-    log::info!("\n Curl command using the saved payload file:");
-    log::info!("{}", curl_file_command);
+    info!("\n Curl command using the saved payload file:");
+    info!("{}", curl_file_command);
 
     // If you want to save the payload to a file for later use
     let json_string = match serde_json::to_string_pretty(&payload) {
@@ -112,14 +113,14 @@ fn example_encrypt_u64() -> Result<()> {
     };
     std::fs::write("payload.json", json_string)?;
 
-    log::info!("\nPayload saved to payload.json");
+    info!("\nPayload saved to payload.json");
 
     Ok(())
 }
 
 /// Example: Creating an encrypted input with multiple values
 fn example_create_complex_input() -> Result<()> {
-    log::info!("Example 2: Creating an encrypted input with multiple values");
+    info!("Example 2: Creating an encrypted input with multiple values");
 
     // Set up test addresses
     let contract_address = address!("0x7777777777777777777777777777777777777777");
@@ -146,12 +147,12 @@ fn example_create_complex_input() -> Result<()> {
 
     // Get the bit widths for reference
     let bit_widths = input_builder.get_bits();
-    log::info!("  Added values with bit widths: {:?}", bit_widths);
+    info!("  Added values with bit widths: {:?}", bit_widths);
 
     // Generate the encrypted value with proof
     let encrypted_value = input_builder.encrypt_and_prove_for(contract_address, user_address)?;
 
-    log::info!(
+    info!(
         "  Encrypted complex input (size: {} bytes)",
         encrypted_value.ciphertext.len()
     );
@@ -161,19 +162,19 @@ fn example_create_complex_input() -> Result<()> {
 
 /// Main function (required for examples directory)
 fn main() -> Result<()> {
-    logging::init_from_env(log::LevelFilter::Info);
+    logging::init_from_env(Level::INFO);
     // Run all examples
-    log::info!("FHEVM SDK Encryption Examples");
-    log::info!("==============================");
-    log::info!("Example: Encrypt a boolean value");
+    info!("FHEVM SDK Encryption Examples");
+    info!("==============================");
+    info!("Example: Encrypt a boolean value");
     example_encrypt_bool()?;
 
-    log::info!("Example: Encrypt a complex value");
+    info!("Example: Encrypt a complex value");
     example_create_complex_input()?;
 
     // Example: Encrypt a u64 value with a curl command ready to
     // be sent to the relayer
-    log::info!("Example: Encrypt a u64 value, with curl command example to relayer");
+    info!("Example: Encrypt a u64 value, with curl command example to relayer");
     example_encrypt_u64()?;
 
     Ok(())

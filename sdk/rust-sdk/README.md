@@ -78,10 +78,11 @@ cargo run --example minimal-user-decryption-response
 use gateway_sdk::{FhevmSdkBuilder, FhevmError};
 use std::path::PathBuf;
 use alloy::primitives::address;
+use tracing::{Level, info};
 
 fn main() -> Result<(), FhevmError> {
     // Initialize logging
-    gateway_sdk::logging::init_from_env(log::LevelFilter::Info);
+    gateway_sdk::logging::init_from_env(Level::INFO);
 
     // Create SDK using builder
     let mut sdk = FhevmSdkBuilder::new()
@@ -108,9 +109,9 @@ fn main() -> Result<(), FhevmError> {
     let encrypted = builder.encrypt_and_prove_for(contract_address, user_address)?;
     
     // Use the encrypted data (handles) for blockchain interaction
-    log::info!("Encryption successful!");
-    log::info!("  - Handles: {}", encrypted.handles.len());
-    log::info!("  - Ciphertext size: {} bytes", encrypted.ciphertext.len());
+    info!("Encryption successful!");
+    info!("  - Handles: {}", encrypted.handles.len());
+    info!("  - Ciphertext size: {} bytes", encrypted.ciphertext.len());
 
     Ok(())
 }

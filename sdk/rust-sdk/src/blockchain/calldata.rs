@@ -7,7 +7,7 @@ use crate::blockchain::bindings::InputVerification;
 use crate::decryption::user::UserDecryptRequest;
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::sol_types::SolCall;
-use log::info;
+use tracing::info;
 
 pub fn public_decryption_req(handles: Vec<FixedBytes<32>>) -> Result<Bytes> {
     info!("Generating public decryption request calldata");
