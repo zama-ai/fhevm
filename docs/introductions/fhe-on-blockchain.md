@@ -1,34 +1,39 @@
 # FHE on blockchain
 
-This page gives an overview of Fully Homomorphic Encryption (FHE) and its implementation on the blockchain by fhevm. It provides the essential architectural concepts needed to start building with fhevm.
+This page provides an overview of FHE and its implementation in the blockchain context via FHEVM. It introduces the
+essential cryptographic concepts and architecture needed to start building confidential smart contracts.
 
 ## **FHE overview**
 
-FHE is an advanced cryptographic technique that allows computations to be performed directly on encrypted data, without the need for decryption. This ensures that data remains confidential throughout its entire lifecycle, even during processing.
+Fully Homomorphic Encryption (FHE) is an advanced cryptographic technique that allows computations to be performed
+directly on encrypted data, without requiring decryption. This enables data to remain confidential throughout its entire
+lifecycle — at rest, in transit, and during computation.
 
 With FHE:
 
-- Sensitive data can be securely encrypted while still being useful for computations.
-- The results of computations are encrypted, maintaining end-to-end privacy.
+- Data can be securely encrypted and still usable for meaningful computation.
+- Computation results are also encrypted, maintaining end-to-end confidentiality.
 
-FHE operates using three types of keys, each playing a crucial role in its functionality:
+FHE relies on three core cryptographic keys, each with a distinct role:
 
 ### **Private key**
 
-- **Purpose**: - for securely decrypting results - Decrypts ciphertexts to recover the original plaintext.
-- **Usage in fhevm**: Managed securely by the Key Management System (KMS) using a threshold MPC protocol. This ensures no single entity ever possesses the full private key.
+- **Purpose**: Decrypts ciphertexts to recover the original plaintext.
+- **Usage in FHEVM**: Managed by the Key Management System (KMS) using threshold MPC, ensuring no single party ever
+  holds the complete key.
 
 ### **Public key**
 
-- **Purpose**: - for encrypting data. - Encrypts plaintexts into ciphertexts.
-- **Usage in fhevm**: Shared globally to allow users and smart contracts to encrypt inputs or states. It ensures that encrypted data can be processed without revealing the underlying information.
+- **Purpose**: Encrypts plaintext inputs.
+- **Usage in FHEVM**: Globally available to encrypt data from frontend apps and users.
 
 ### **Evaluation key**
 
-- **Purpose**: - for performing encrypted computations - Enables efficient homomorphic operations (e.g., addition, multiplication) on ciphertexts.
-- **Usage in fhevm**: Provided to FHE nodes (on-chain validators or off-chain coprocessors) to perform computations on encrypted data while preserving confidentiality.
+- **Purpose**: Enables homomorphic operations (e.g., _add_, _mul_) on encrypted data.
+- **Usage in FHEVM**: Stored on coprocessors to perform encrypted computations without exposing data.
 
-These three keys work together to facilitate private and secure computations, forming the foundation of FHE-based systems like fhevm.
+These keys are the foundation of FHEVM’s secure computation model, enabling a system where confidentiality,
+programmability, and composability can coexist.
 
 <figure><img src="../../.gitbook/assets/keys_fhe.png" alt="FHE Keys Overview"><figcaption><p>Overview of FHE Keys and their roles</p></figcaption></figure>
 
@@ -36,22 +41,44 @@ These three keys work together to facilitate private and secure computations, fo
 
 ### **Building on Zama's FHE library**
 
-At its core, the fhevm is built on Zama's high-performance FHE library, **TFHE-rs**, written in Rust. This library implements the TFHE (Torus Fully Homomorphic Encryption) scheme and is designed to perform secure computations on encrypted data efficiently.
+At its core, FHEVM is powered by Zama’s high-performance FHE library, **TFHE-rs** — a Rust implementation of the Torus
+Fully Homomorphic Encryption (TFHE) scheme. TFHE-rs is optimized for fast, secure computation on encrypted data, forming
+the cryptographic backbone of FHEVM.
 
-> **Info**: For detailed documentation and implementation examples on the `tfhe-rs` library, visit the [TFHE-rs documentation](https://docs.zama.ai/tfhe-rs).
+> **Info**: For detailed documentation and implementation examples on the `tfhe-rs` library, visit the
+> [TFHE-rs documentation](https://docs.zama.ai/tfhe-rs).
 
-However, integrating a standalone FHE library like TFHE-rs into a blockchain environment involves unique challenges. Blockchain systems demand efficient processing, public verifiability, and seamless interoperability, all while preserving their decentralized nature. To address these requirements, Zama designed the fhevm, a system that bridges the computational power of TFHE-rs with the transparency and scalability of blockchain technology.
+However, integrating a standalone FHE library like TFHE-rs into a blockchain environment involves unique challenges.
+Blockchain systems demand efficient processing, public verifiability, and seamless interoperability, all while
+preserving their decentralized nature. To address these requirements, Zama designed the FHEVM, a system that bridges the
+computational power of TFHE-rs with the transparency and scalability of blockchain technology.
 
 ### **Challenges in blockchain integration**
 
-Integrating FHE into blockchain systems posed several challenges that needed to be addressed to achieve the goals of confidentiality, composability, and scalability:
+Integrating FHE into blockchain required solving several key problems:
 
-1. **Transparency and privacy**: Blockchains are inherently transparent, where all on-chain data is publicly visible. FHE solves this by keeping all sensitive data encrypted, ensuring privacy without sacrificing usability.
-2. **Public verifiability**: On-chain computations need to be verifiable by all participants. This required a mechanism to confirm the correctness of encrypted computations without revealing their inputs or outputs.
-3. **Composability**: Smart contracts needed to interact seamlessly with each other, even when operating on encrypted data.
-4. **Performance and scalability**: FHE computations are resource-intensive, and blockchain systems require high throughput to remain practical.
+1. **Transparency and privacy**: Blockchains are public by default. FHE enables privacy by keeping data encrypted
+   throughout contract execution.
+2. **Public verifiability**: Operations must be verifiable without revealing inputs. FHEVM uses symbolic execution and
+   proofs to maintain trust.
+3. **Composability**: Encrypted smart contracts must interoperate like standard ones. FHEVM allows encrypted state to be
+   shared, composed, and reused across contracts.
+4. **Performance and scalability**: FHE is computationally heavy. To keep contracts efficient, compute is offloaded to
+   specialized nodes — coprocessors.
 
-To overcome these challenges, Zama introduced a hybrid architecture for fhevm that combines:
+To overcome these challenges, Zama introduced a hybrid architecture for FHEVM that combines:
 
-- **On-chain** functionality for managing state and enforcing access controls.
-- **Off-chain** processing via a coprocessor to execute resource-intensive FHE computations.
+- **On-chain**
+  - Smart contracts written in Solidity using encrypted types (`euint`, `ebool`, etc.).
+  - Manages encrypted state and emits symbolic events to trigger off-chain execution.
+- **Off-chain**
+  - Coprocessors execute FHE operations using the evaluation key.
+  - Results are stored off-chain, and only references (handles) are returned on-chain.
+- **Gateway & KMS**
+
+  - The Gateway coordinates between the blockchain, users, and the KMS.
+  - The Key Management System securely handles decryption via threshold MPC, supporting both smart contract and user
+    decryption.
+
+  This architecture provides a scalable and secure foundation for confidential, composable smart contracts — without
+  modifying the EVM or breaking developer workflows.

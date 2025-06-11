@@ -1,79 +1,85 @@
-# fhevm components
+# Fhevm components
 
-This document gives a detailed explanantion of each component of fhevm and illustrate how they work together to perform computations.&#x20;
+This document provides a detailed explanation of each major component in the FHEVM architecture, and how they interact
+to enable private, verifiable, and composable smart contract execution on EVM-compatible blockchains.
 
 ## Overview
 
-The fhevm architecture is built around four primary components, each contributing to the system's functionality and performance. These components work together to enable the development and execution of private, composable smart contracts on EVM-compatible blockchains. Below is an overview of these components and their responsibilities:
+The FHEVM system is composed of four core components, each responsible for a distinct part of the privacy-preserving
+workflow. Together, they enable developers to build confidential smart contracts without modifying the underlying EVM.
 
-| [**fhevm Smart Contracts**](fhevm-components.md#fhevm-smart-contracts)           | Smart contracts deployed on the blockchain to manage encrypted data and interactions.                     | Includes the Access Control List (ACL) contract, `FHE.sol` Solidity library, `Gateway.sol` and other FHE-enabled smart contracts. |
-| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| [**Gateway**](fhevm-components.md#gateway)                                       | An off-chain service that bridges the blockchain with the cryptographic systems like KMS and coprocessor. | Acts as an intermediary to forward the necessary requests and results between the blockchain, the KMS, and users.                 |
-| [**Coprocessor**](fhevm-components.md#coprocessor)                               | An off-chain computational engine designed to execute resource-intensive FHE operations.                  | Executes symbolic FHE operations, manages ciphertext storage, and ensures efficient computation handling.                         |
-| [**Key Management System (KMS)**](fhevm-components.md#key-management-system-kms) | A decentralized cryptographic service that securely manages FHE keys and validates operations.            | Manages the global FHE key (public, private, evaluation), performs threshold decryption, and validates ZKPoKs.                    |
+| [**Fhevm Smart Contracts**](fhevm-components.md#fhevm-smart-contracts)           | Solidity contracts managing encrypted state and symbolic execution | Include `FHEVMExecutor.sol`, Access Control List (`ACL.sol`), and user-defined FHE-enabled contracts |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| [**Gateway**](fhevm-components.md#gateway)                                       | Off-chain coordinator between blockchain, KMS, and coprocessors    | Handles encrypted input submission, proof validation, and decryption/user decryption requests        |
+| [**Coprocessor**](fhevm-components.md#coprocessor)                               | Off-chain FHE compute engine                                       | Executes encrypted operations and manages ciphertext storage                                         |
+| [**Key Management System (KMS)**](fhevm-components.md#key-management-system-kms) | Decentralized cryptographic service                                | Manages FHE keys, validates ZK proofs, and performs threshold decryption                             |
 
-<figure><img src="../../.gitbook/assets/architecture.png" alt="FHE Keys Overview"><figcaption><p>High level overview of the fhevm Architecture</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/architecture.png" alt="FHE Keys Overview"><figcaption><p>High level overview of the FHEVM Architecture</p></figcaption></figure>
 
 ## **Developer workflow:**
 
-As a developer working with fhevm, your workflow typically involves two key elements:
+As a developer, working with FHEVM involves two main areas:
 
 1. **Frontend development**:\
-   You create a frontend interface for users to interact with your confidential application. This includes encrypting inputs using the public FHE key and submitting them to the blockchain.
+   Encrypt user inputs using the public key and submit them to the blockchain or Gateway for processing.
 2. **Smart contract development**:\
-   You write Solidity contracts deployed on the same blockchain as the fhevm smart contracts. These contracts leverage the `FHE.sol` library to perform operations on encrypted data. Below, we explore the major components involved.
+   Write Solidity contracts using the `FHE.sol` library to perform symbolic operations on encrypted values via FHE
+   handles.
 
-## **fhevm smart contracts**
+## **Fhevm smart contracts**
 
-fhevm smart contracts include the Access Control List (ACL) contract, `FHE.sol` library, and related FHE-enabled contracts.
+FHEVM smart contracts are Solidity contracts that interact with encrypted values through symbolic execution.
 
 ### **Symbolic execution in Solidity**
 
-fhevm implements **symbolic execution** to optimize FHE computations:
+- **Handles**: Smart contract operations return handles (references to ciphertexts), rather than directly manipulating
+  encrypted data.
+- **Lazy Execution**: Actual computation is done off-chain by the coprocessor after the contract emits symbolic
+  instructions.
 
-- **Handles**: Operations on encrypted data return "handles" (references to ciphertexts) instead of immediate results.
-- **Lazy Execution**: Actual computations are performed asynchronously, offloading resource-intensive tasks to the coprocessor.
-
-This approach ensures high throughput and flexibility in managing encrypted data.
+This allows efficient, gas-minimized interaction with encrypted data, while preserving EVM compatibility.
 
 ### **Zero-Knowledge proofs of knowledge (ZKPoKs)**
 
-fhevm incorporates ZKPoKs to verify the correctness of encrypted inputs and outputs:
+FHEVM incorporates ZKPoKs to verify the correctness of encrypted inputs and outputs:
 
-- **Validation**: ZKPoKs ensure that inputs are correctly formed and correspond to known plaintexts without revealing sensitive data.
+- **Validation**: ZKPoKs ensure that inputs are correctly formed and correspond to known plaintexts without revealing
+  sensitive data.
 - **Integrity**: They prevent misuse of ciphertexts and ensure the correctness of computations.
 
-By combining symbolic execution and ZKPoKs, fhevm smart contracts maintain both privacy and verifiability.
+By combining symbolic execution and ZKPoKs, FHEVM smart contracts maintain both privacy and verifiability.
 
 ## **Coprocessor**
 
-The coprocessor is the backbone for handling computationally intensive FHE tasks.
+The coprocessor is the compute engine of FHEVM, designed to handle resource-intensive homomorphic operations.
 
 ### **Key functions**:
 
-1. **Execution**: Performs operations such as addition, multiplication, and comparison on encrypted data.
-2. **Ciphertext management**: Stores encrypted inputs, states, and outputs securely, either off-chain or in a dedicated on-chain database.
+1. **Execution**: Performs encrypted operations (e.g., _add_, _mul_) on ciphertexts using the evaluation key.
+2. **Ciphertext management**: Stores and retrieves ciphertexts securely in an off-chain database. Only handles are
+   returned on-chain.
 
 ## **Gateway**
 
-The Gateway acts as the bridge between the blockchain, coprocessor, and KMS.
+The Gateway acts as the communication hub between the blockchain, the coprocessor, the KMS, and user-facing
+applications.
 
 ### **Key functions**:
 
-- **API for developers**: Exposes endpoints for submitting encrypted inputs, retrieving outputs, and managing ciphertexts.
-- **Proof validation**: Forwards ZKPoKs to the KMS for verification.
-- **Off-chain coordination**: Relays encrypted data and computation results between on-chain and off-chain systems.
+- **API for developers**: Exposes endpoints to submit encrypted inputs, request decryption, and manage user decryption.
+- **Proof validation**: Forwards ZKPoKs to the Coprocessor for verification.
+- **Off-chain coordination**: Handles smart contract and user decryption workflows in a verifiable and secure manner.
 
-The Gateway simplifies the development process by abstracting the complexity of cryptographic operations.
+The Gateway abstracts complex cryptographic flows, simplifying developer integration.
 
 ## **Key management system (KMS)**
 
-The KMS securely manages the cryptographic backbone of fhevm by maintaining and distributing the global FHE keys.
+The KMS is a decentralized threshold-MPC-based service that manages the FHE key lifecycle and cryptographic security.
 
 ### **Key functions**:
 
-- **Threshold decryption**: Uses Multi-Party Computation (MPC) to securely decrypt ciphertexts without exposing the private key to any single entity.
-- **ZKPoK validation**: Verifies proofs of plaintext knowledge to ensure that encrypted inputs are valid.
+- **Threshold decryption**: Uses Multi-Party Computation (MPC) to securely decrypt ciphertexts without exposing the
+  private key to any single entity.
 - **Key distribution**: Maintains the global FHE keys, which include:
   - **Public key**: Used for encrypting data (accessible to the frontend and smart contracts).
   - **Private key**: Stored securely in the KMS and used for decryption.
@@ -81,4 +87,6 @@ The KMS securely manages the cryptographic backbone of fhevm by maintaining and 
 
 The KMS ensures robust cryptographic security, preventing single points of failure and maintaining public verifiability.
 
-In the next section, we will dive deeper into encryption, re-encryption, and decryption processes, including how they interact with the KMS and Gateway services. For more details, see [Decrypt and re-encrypt](../d_re_ecrypt_compute.md).
+In the next section, we will dive deeper into encryption, re-encryption, and decryption processes, including how they
+interact with the KMS and Gateway services. For more details, see
+[Encryption, decryption, and computation](./d_re_ecrypt_compute.md).
