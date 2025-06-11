@@ -12,7 +12,7 @@ static INIT: Once = Once::new();
 /// # Example
 ///
 /// ```
-/// use fhevm_sdk::logging;
+/// use gateway_sdk::logging;
 ///
 /// // Initialize logging with info level
 /// logging::init(log::LevelFilter::Info);
@@ -41,7 +41,7 @@ pub fn init(level: LevelFilter) {
 /// # Example
 ///
 /// ```
-/// use fhevm_sdk::logging;
+/// use gateway_sdk::logging;
 /// use log::LevelFilter;
 ///
 /// // Initialize logging with Info as default level

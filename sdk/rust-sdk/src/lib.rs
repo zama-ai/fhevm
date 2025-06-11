@@ -13,11 +13,23 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::{collections::HashMap, path::PathBuf};
 use thiserror::Error;
 use utils::parse_hex_string;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GatewayContracts {
+    pub input_verification: Option<Address>,
+    pub decryption: Option<Address>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostContracts {
+    pub acl: Option<Address>,
+}
+
 /// Configuration for the FHEVM SDK.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FhevmConfig {
@@ -28,9 +40,9 @@ pub struct FhevmConfig {
     /// Host chain ID
     pub host_chain_id: u64,
     /// Contract addresses on Gateway chain
-    pub gateway_contracts: HashMap<String, String>,
+    pub gateway_contracts: GatewayContracts,
     /// Contract addresses on Host chain
-    pub host_contracts: HashMap<String, String>,
+    pub host_contracts: HostContracts,
 }
 
 /// Errors that can occur in the SDK
@@ -180,17 +192,14 @@ impl FhevmSdk {
         );
 
         // Get and validate the input verifier contract address from SDK config
-        let input_verifier_address_str = self
+        let input_verifier_address = self
             .config
             .gateway_contracts
-            .get("input-verifier")
+            .input_verification
             .ok_or_else(|| {
-                FhevmError::InvalidParams("Input verifier contract address is not set".to_string())
-            })?;
-
-        let input_verifier_address =
-            Address::from_str(input_verifier_address_str).map_err(|_| {
-                FhevmError::InvalidParams("Invalid input verifier contract address".to_string())
+                FhevmError::InvalidParams(
+                    "Input verification contract address is not set".to_string(),
+                )
             })?;
 
         // Create the EIP-712 builder with SDK configuration
@@ -311,18 +320,9 @@ impl FhevmSdk {
             self.ensure_keys_loaded()?;
 
             // Get ACL contract address from config
-            let acl_address_str = self.config.host_contracts.get("acl").ok_or_else(|| {
+            let acl_address = self.config.host_contracts.acl.ok_or_else(|| {
                 FhevmError::InvalidParams("ACL contract address is not set".to_string())
             })?;
-
-            let acl_address = match alloy::primitives::Address::from_str(acl_address_str) {
-                Ok(addr) => addr,
-                Err(_) => {
-                    return Err(FhevmError::InvalidParams(
-                        "Invalid ACL contract address".to_string(),
-                    ));
-                }
-            };
 
             let public_key = self
                 .public_key
@@ -366,19 +366,19 @@ impl FhevmSdk {
     /// # Example
     ///
     /// ```no_run
-    /// # use fhevm_sdk::{FhevmSdk, FhevmError};
+    /// # use gateway_sdk::{FhevmSdk, FhevmError};
     /// # use alloy::primitives::Address;
     /// # use std::str::FromStr;
     /// # use std::path::PathBuf;
-    /// # use fhevm_sdk::FhevmSdkBuilder;
+    /// # use gateway_sdk::FhevmSdkBuilder;
     /// #
     /// # fn example() -> Result<(), FhevmError> {
     /// # let sdk = FhevmSdkBuilder::new()
     /// #     .with_keys_directory(PathBuf::from("./test_keys"))
     /// #     .with_gateway_chain_id(31337)
     /// #     .with_host_chain_id(31337)
-    /// #     .with_gateway_contract("Decryption", "0x1111111111111111111111111111111111111111")
-    /// #     .with_gateway_contract("input-verifier", "0x2222222222222222222222222222222222222222")
+    /// #     .with_gateway_contract("decryption", "0x1111111111111111111111111111111111111111")
+    /// #     .with_gateway_contract("input-verification", "0x2222222222222222222222222222222222222222")
     /// #     .with_host_contract("acl", "0x3333333333333333333333333333333333333333")
     /// #     .build()?;
     /// #
@@ -458,8 +458,8 @@ pub struct FhevmSdkBuilder {
     keys_directory: Option<PathBuf>,
     gateway_chain_id: Option<u64>,
     host_chain_id: Option<u64>,
-    gateway_contracts: HashMap<String, String>,
-    host_contracts: HashMap<String, String>,
+    gateway_contracts: GatewayContracts,
+    host_contracts: HostContracts,
 }
 
 impl Default for FhevmSdkBuilder {
@@ -474,8 +474,11 @@ impl FhevmSdkBuilder {
             keys_directory: None,
             gateway_chain_id: None,
             host_chain_id: None,
-            gateway_contracts: HashMap::new(),
-            host_contracts: HashMap::new(),
+            gateway_contracts: GatewayContracts {
+                input_verification: None,
+                decryption: None,
+            },
+            host_contracts: HostContracts { acl: None },
         }
     }
 
@@ -512,14 +515,49 @@ impl FhevmSdkBuilder {
     }
 
     pub fn with_gateway_contract(mut self, name: &str, address: &str) -> Self {
-        self.gateway_contracts
-            .insert(name.to_string(), address.to_string());
+        let addr = Address::from_str(address).unwrap_or_else(|_| {
+            panic!(
+                "Invalid address provided for gateway contract '{}': {}",
+                name, address
+            )
+        });
+
+        match name {
+            "input_verification" | "input-verifier" => {
+                self.gateway_contracts.input_verification = Some(addr);
+            }
+            "decryption" => {
+                self.gateway_contracts.decryption = Some(addr);
+            }
+            _ => {
+                log::warn!(
+                    "Unknown gateway contract name: '{}'. Valid names are: 'input_verification', 'decryption'",
+                    name
+                );
+            }
+        }
         self
     }
 
     pub fn with_host_contract(mut self, name: &str, address: &str) -> Self {
-        self.host_contracts
-            .insert(name.to_string(), address.to_string());
+        let addr = Address::from_str(address).unwrap_or_else(|_| {
+            panic!(
+                "Invalid address provided for host contract '{}': {}",
+                name, address
+            )
+        });
+
+        match name {
+            "acl" => {
+                self.host_contracts.acl = Some(addr);
+            }
+            _ => {
+                log::warn!(
+                    "Unknown host contract name: '{}'. Valid names are: 'acl'",
+                    name
+                );
+            }
+        }
         self
     }
 
@@ -557,16 +595,15 @@ impl FhevmSdkBuilder {
             .host_chain_id
             .ok_or_else(|| FhevmError::InvalidParams("Host chain ID is required".to_string()))?;
 
-        // Ensure ACL contract is defined
-        if !self.host_contracts.contains_key("acl") {
+        if self.host_contracts.acl.is_none() {
             return Err(FhevmError::InvalidParams(
                 "ACL contract address is required in host_contracts".to_string(),
             ));
         }
 
-        if !self.gateway_contracts.contains_key("input-verifier") {
+        if self.gateway_contracts.input_verification.is_none() {
             return Err(FhevmError::InvalidParams(
-                "Input verifier contract address is required in gateway_contracts".to_string(),
+                "Input verification contract address is required in gateway_contracts".to_string(),
             ));
         }
 

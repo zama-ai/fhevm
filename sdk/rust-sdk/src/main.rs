@@ -1,11 +1,11 @@
 use std::path;
 
-use fhevm_sdk::utils::validate_address_from_str;
-use fhevm_sdk::{EncryptedInput, FhevmError, FhevmSdk, FhevmSdkBuilder};
+use gateway_sdk::utils::validate_address_from_str;
+use gateway_sdk::{EncryptedInput, FhevmError, FhevmSdk, FhevmSdkBuilder};
 
 use alloy::primitives::address;
-use fhevm_sdk::EncryptedInputBuilder;
-use fhevm_sdk::logging;
+use gateway_sdk::EncryptedInputBuilder;
+use gateway_sdk::logging;
 
 fn main() -> Result<(), FhevmError> {
     // Initialize logging (if needed)
