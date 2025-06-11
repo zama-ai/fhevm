@@ -1,13 +1,13 @@
 
 
 [package]
-name = "relayer-sdk-rust"
+name = "gateway-sdk"
 version = "0.1.0"
 edition = "2024"
 
 # Library configuration
 [lib]
-name = "fhevm_sdk"
+name = "gateway_sdk"
 path = "src/lib.rs"
 
 # Binary configuration for the demo service
