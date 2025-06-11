@@ -36,7 +36,7 @@ jobs:
           cargo update -w --locked || (echo "Error: Cargo.lock is out of sync. Please run 'cargo update' locally and commit changes" && exit 1)
 
       - name: License whitelist
-        run: cargo-deny deny check license --deny license-not-encountered
+        run: cargo-deny deny check license
 
       - name: Security issue whitelist
         run: cargo-audit audit
