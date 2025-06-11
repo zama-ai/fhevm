@@ -2635,6 +2635,7 @@ name = "fhevm_gateway_rust_bindings"
 version = "0.1.0-rc14"
 dependencies = [
  "alloy 0.13.0",
+ "serde",
 ]
 
 [[package]]
