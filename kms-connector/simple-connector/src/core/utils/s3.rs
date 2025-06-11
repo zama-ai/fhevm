@@ -151,8 +151,8 @@ async fn direct_http_retrieval(url: &str) -> Result<Vec<u8>> {
 
     // Create a reqwest client with appropriate timeouts
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(1))
-        .connect_timeout(Duration::from_millis(750))
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(None) // no overall deadline to allow for long-running requests
         .build()
         .map_err(|e| Error::S3Error(format!("Failed to create HTTP client: {}", e)))?;
 
