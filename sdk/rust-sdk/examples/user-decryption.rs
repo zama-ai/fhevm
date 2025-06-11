@@ -58,7 +58,7 @@ fn create_configured_sdk() -> Result<FhevmSdk, FhevmError> {
             "input-verifier",
             "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e",
         )
-        .with_host_contract("acl", "0x0987654321098765432109876543210987654321")
+        .with_host_contract("ACL", "0x0987654321098765432109876543210987654321")
         .build()?;
 
     log::info!("✅ SDK configured successfully");
