@@ -9,7 +9,7 @@ name = "fhevm_relayer"
 path = "src/lib.rs"
 
 [features]
-default = ["tracing-chrome"]
+default = []
 tracing-chrome = ["dep:tracing-chrome"]
 ci = []
 
@@ -42,6 +42,9 @@ tracing-chrome = { version = "0.7.2", optional = true }
 clap = { version = "4", features = ["derive"] }
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-sqs = { version = "1" }
+rustls = { version = "0.23", features = [
+  "aws-lc-rs",
+], default-features = false } #, features = ["ring", "aws-lc-rs", "std", "tls12"]
 
 
 [dev-dependencies]

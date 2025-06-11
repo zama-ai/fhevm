@@ -13,6 +13,7 @@ allow = [
   "Unlicense",
   "BSD-3-Clause-Clear",
   "Zlib",
+  "OpenSSL",
 ]
 
 unused-allowed-license = "allow"

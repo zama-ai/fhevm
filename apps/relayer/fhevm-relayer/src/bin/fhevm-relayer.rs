@@ -101,6 +101,10 @@ pub struct Args {
 /// TODO: properly shutdown tasks
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install AWS-LC crypto provider");
+
     let args: Args = Args::parse();
     // === Initialize settings
     let settings = Settings::new(args.config_file)
