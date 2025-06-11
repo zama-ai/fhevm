@@ -174,13 +174,6 @@ impl UserDecryptRequestBuilder {
             .unwrap()
             .as_secs();
 
-        if start_timestamp > now + 300 {
-            // 5 minute tolerance
-            return Err(FhevmError::InvalidParams(
-                "Start timestamp cannot be more than 5 minutes in the future".to_string(),
-            ));
-        }
-
         self.start_timestamp = Some(start_timestamp);
         self.duration_days = Some(duration_days);
         Ok(self)
