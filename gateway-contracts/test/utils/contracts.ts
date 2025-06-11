@@ -78,7 +78,24 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     custodianTxSenders.push(custodianTxSender);
   }
 
-  return { owner, pauser, kmsTxSenders, kmsSigners, coprocessorTxSenders, coprocessorSigners, custodianTxSenders };
+  // Load the custodian signers
+  const custodianSigners = [];
+  for (let idx = 0; idx < nCustodians; idx++) {
+    const custodianSigner = await hre.ethers.getSigner(getRequiredEnvVar(`CUSTODIAN_SIGNER_ADDRESS_${idx}`));
+    await checkIsHardhatSigner(custodianSigner);
+    custodianSigners.push(custodianSigner);
+  }
+
+  return {
+    owner,
+    pauser,
+    kmsTxSenders,
+    kmsSigners,
+    coprocessorTxSenders,
+    coprocessorSigners,
+    custodianTxSenders,
+    custodianSigners,
+  };
 }
 
 // Loads the addresses of the deployed contracts, and the values required for the tests.

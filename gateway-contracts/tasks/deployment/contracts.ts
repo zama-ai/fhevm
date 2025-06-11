@@ -107,9 +107,9 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   const custodians = [];
   for (let idx = 0; idx < numCustodians; idx++) {
     custodians.push({
-      verificationKey: getRequiredEnvVar(`CUSTODIAN_VERIFICATION_KEY_${idx}`),
       encryptionKey: getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`),
       txSenderAddress: getRequiredEnvVar(`CUSTODIAN_TX_SENDER_ADDRESS_${idx}`),
+      signerAddress: getRequiredEnvVar(`CUSTODIAN_SIGNER_ADDRESS_${idx}`),
     });
   }
 
