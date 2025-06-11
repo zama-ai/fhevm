@@ -1,6 +1,6 @@
 ---
 description: >-
-  fhevm is a technology that enables confidential smart contracts on the EVM using Fully Homomorphic Encryption (FHE).
+  FHEVM is a technology that enables confidential smart contracts on the EVM using Fully Homomorphic Encryption (FHE).
 layout:
   title:
     visible: true
@@ -14,9 +14,9 @@ layout:
     visible: false
 ---
 
-# Welcome to fhevm
+# Welcome to FHEVM
 
-## Why fhevm?
+## Why FHEVM?
 
 <table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th></tr></thead><tbody><tr><td><strong>Guard Privacy</strong></td><td>Keep data encrypted during onchain computation.</td><td></td></tr><tr><td><strong>Build Fast</strong></td><td>Use Solidity, SDKs, templates, etc.</td><td></td></tr><tr><td><strong>Deploy Anywhere</strong></td><td>Compatible with all EVM chains.</td><td></td></tr></tbody></table>
 
@@ -24,7 +24,7 @@ layout:
 
 ## Explore the doc
 
-<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Solidity Guides</strong></td><td>Write encrypted logic with Solidity tools.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/mIaweK9iiWMF773uuVPP/">Solidity</a></td></tr><tr><td><strong>SKD Guides</strong></td><td>Build frontends with encrypted user data.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/2wDODARNL7cfrn1fsPcS/">SDK</a></td></tr><tr><td><strong>Examples</strong></td><td>Explore real dApps and code templates.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/hBX9KO0dtJnFLDRNYCZX/">Examples</a></td></tr></tbody></table>
+<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Solidity Guides</strong></td><td>Write encrypted logic with Solidity tools.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/mIaweK9iiWMF773uuVPP/">Solidity</a></td></tr><tr><td><strong>SDK Guides</strong></td><td>Build frontends with encrypted user data.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/2wDODARNL7cfrn1fsPcS/">SDK</a></td></tr><tr><td><strong>Examples</strong></td><td>Explore real dApps and code templates.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/hBX9KO0dtJnFLDRNYCZX/">Examples</a></td></tr></tbody></table>
 
 ## Path to Build
 
@@ -40,24 +40,6 @@ developing confidential smart contracts.
 
 {% step %}
 
-### **Install dependencies**
-
-Navigate into your project directory and run:
-
-```solidity
-npm install
-```
-
-Also, install the fhevm Solidity library:
-
-```solidity
-npm install fhevm-contracts
-```
-
-{% endstep %}
-
-{% step %}
-
 ### Write your first confidential smart contract
 
 Use the provided contract examples, like `ConfidentialERC20`, to begin. A basic confidential token contract might look
@@ -67,12 +49,17 @@ like this:
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-import { ConfidentialERC20 } from "fhevm-contracts/contracts/token/ERC20/ConfidentialERC20.sol";
+import { FHE } from "@fhevm/solidity/lib/FHE.sol";
+import { SepoliaZamaFHEVMConfig } from "@fhevm/solidity/config/ZamaFHEVMConfig.sol";
 
-contract MyERC20 is SepoliaZamaFHEVMConfig, ConfidentialERC20 {
-  constructor() ConfidentialERC20("MyToken", "MYTOKEN") {
-    _unsafeMint(1000000, msg.sender);
+contract MyCounter is SepoliaZamaFHEVMConfig {
+  euint64 counter;
+  constructor() {
+    counter = FHE.asEuint64(0);
+  }
+
+  function add() public {
+    counter = FHE.add(counter, 1);
   }
 }
 ```
@@ -82,7 +69,7 @@ Solidity guide</a> {% endstep %}
 
 {% step %}
 
-### Build your frontend with `fhevmjs`
+### Build your frontend with `@zama-ai/relayer-sdk`
 
 Start from Zama's ready-to-use React template.
 

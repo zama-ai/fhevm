@@ -18,13 +18,13 @@ coprocessors, and a secure Key Management System (KMS) operated via threshold MP
    - **Location**: Hosted on coprocessors.
    - **Role**: Usage: Enables encrypted computation without decrypting any data.
 
-<figure><img src="../.gitbook/assets/architecture.png" alt="FHE Keys Overview"><figcaption><p>High level overview of the fhevm Architecture</p></figcaption></figure>
+<figure><img src="../.gitbook/assets/architecture.png" alt="FHE Keys Overview"><figcaption><p>High level overview of the FHEVM Architecture</p></figcaption></figure>
 
 ## **Workflow: encryption, decryption, and processing**
 
 ### **Encryption**
 
-Encryption is the starting point for any interaction with the fhevm system, ensuring that data is protected before it is
+Encryption is the starting point for any interaction with the FHEVM system, ensuring that data is protected before it is
 transmitted or processed.
 
 - **How It Works**:
@@ -119,7 +119,7 @@ You can read [our re-encryption guide explaining how to use it](solidity-guides/
 
 ## **Tying It All Together**
 
-The flow of information across the fhevm components during these operations highlights how the system ensures privacy
+The flow of information across the FHEVM components during these operations highlights how the system ensures privacy
 while maintaining usability:
 
 | Operation           |                         |                                                                                                     |
@@ -129,5 +129,6 @@ while maintaining usability:
 | **Decryption**      | Private Key             | Smart contract requests plaintext → Gateway forwards to KMS → result returned on-chain              |
 | **User decryption** | Private and Target Keys | User requests result → KMS decrypts and encrypts with user’s public key → frontend decrypts locally |
 
-This architecture ensures that sensitive data remains encrypted throughout its lifecycle, with decryption only occurring in controlled, secure environments. By separating key roles and processing
-responsibilities, FHEVM provides a scalable and robust framework for private smart contracts.
+This architecture ensures that sensitive data remains encrypted throughout its lifecycle, with decryption only occurring
+in controlled, secure environments. By separating key roles and processing responsibilities, FHEVM provides a scalable
+and robust framework for private smart contracts.
