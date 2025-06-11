@@ -28,7 +28,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zama-ai/fhevm-solidity.git"
+    "url": "git+https://github.com/zama-ai/fhevm.git"
   },
   "author": "",
   "license": "BSD-3-Clause-Clear",
