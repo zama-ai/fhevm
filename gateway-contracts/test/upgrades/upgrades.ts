@@ -85,10 +85,10 @@ describe("Upgrades", function () {
     });
     const gatewayConfig = await upgrades.upgradeProxy(emptyUUPS, this.gatewayConfigFactory);
     await gatewayConfig.waitForDeployment();
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
+    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.2.0");
     const gatewayConfig2 = await upgrades.upgradeProxy(gatewayConfig, this.gatewayConfigFactoryUpgraded);
     await gatewayConfig2.waitForDeployment();
-    expect(await gatewayConfig2.getVersion()).to.equal("GatewayConfig v0.2.0");
+    expect(await gatewayConfig2.getVersion()).to.equal("GatewayConfig v0.3.0");
   });
 
   it("deploy upgradable KmsManagement", async function () {
@@ -126,7 +126,7 @@ describe("Upgrades", function () {
     });
     const originalGatewayConfig = await upgrades.upgradeProxy(emptyUUPS, this.gatewayConfigFactory);
     await originalGatewayConfig.waitForDeployment();
-    expect(await originalGatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
+    expect(await originalGatewayConfig.getVersion()).to.equal("GatewayConfig v0.2.0");
 
     const originalGatewayConfigAddress = await originalGatewayConfig.getAddress();
     const deployer = this.owner;
@@ -134,7 +134,7 @@ describe("Upgrades", function () {
     const newGatewayConfigFactoryUpgraded = await ethers.getContractFactory("GatewayConfigUpgradedExample", deployer);
     const gatewayConfig2 = await upgrades.upgradeProxy(originalGatewayConfig, newGatewayConfigFactoryUpgraded);
     await gatewayConfig2.waitForDeployment();
-    expect(await gatewayConfig2.getVersion()).to.equal("GatewayConfig v0.2.0");
+    expect(await gatewayConfig2.getVersion()).to.equal("GatewayConfig v0.3.0");
     expect(await gatewayConfig2.getAddress()).to.equal(originalGatewayConfigAddress);
 
     const newSigner = await createAndFundRandomWallet();
@@ -151,6 +151,6 @@ describe("Upgrades", function () {
     const gatewayConfig3 = await upgrades.upgradeProxy(gatewayConfig2, newGatewayConfigFactoryUpgraded3); // new owner can upgrade ACL
 
     await gatewayConfig3.waitForDeployment();
-    expect(await gatewayConfig3.getVersion()).to.equal("GatewayConfig v0.3.0");
+    expect(await gatewayConfig3.getVersion()).to.equal("GatewayConfig v0.4.0");
   });
 });

@@ -51,9 +51,9 @@ describe("Mock contracts", function () {
   };
 
   const DefaultCustodian = {
-    verificationKey: DefaultBytes,
     encryptionKey: DefaultBytes,
     txSenderAddress: DefaultAddress,
+    signerAddress: DefaultAddress,
   };
 
   const DefaultHostChain = {

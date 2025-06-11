@@ -49,6 +49,7 @@ describe("GatewayConfig", function () {
       coprocessorSigners,
       nCoprocessors,
       custodianTxSenders,
+      custodianSigners,
       nCustodians,
     } = fixtureData;
 
@@ -76,9 +77,9 @@ describe("GatewayConfig", function () {
     custodians = [];
     for (let i = 0; i < nCustodians; i++) {
       custodians.push({
-        verificationKey: hre.ethers.hexlify(hre.ethers.randomBytes(64)),
         encryptionKey: hre.ethers.hexlify(hre.ethers.randomBytes(64)),
         txSenderAddress: custodianTxSenders[i].address,
+        signerAddress: custodianSigners[i].address,
       });
     }
 

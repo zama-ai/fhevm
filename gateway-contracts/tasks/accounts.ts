@@ -1,12 +1,14 @@
 import { task, types } from "hardhat/config";
 import { HardhatNetworkHDAccountsConfig } from "hardhat/types";
 
+import { NUM_ACCOUNTS } from "../hardhat.config";
+
 // Use this task to get the list of accounts (addresses, private keys, public keys)
 task("get-accounts", "Prints the list of accounts")
-  .addParam("numAccounts", "Number of accounts to return (1-20)", 3, types.int)
+  .addParam("numAccounts", `Number of accounts to return (1-${NUM_ACCOUNTS})`, 3, types.int)
   .setAction(async ({ numAccounts }, hre) => {
     // Validate input
-    if (numAccounts < 1 || numAccounts > 20) {
+    if (numAccounts < 1 || numAccounts > NUM_ACCOUNTS) {
       throw new Error("Number of accounts must be between 1 and 20");
     }
 
