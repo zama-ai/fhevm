@@ -24,14 +24,7 @@ jobs:
           filters: |
             gw-contracts:
               - .github/workflows/gateway-contracts-deployment-tests.yml
-              - gateway-contracts/contracts/**
-              - gateway-contracts/tasks/**
-              - gateway-contracts/package*.json
-              - gateway-contracts/hardhat.config.ts
-              - gateway-contracts/tsconfig.json
-              - gateway-contracts/Dockerfile
-              - gateway-contracts/docker-compose.yml
-              - gateway-contracts/Makefile
+              - gateway-contracts/**
   fhevm-gateway-sc-deploy:
     name: Fhevm Gateway Contracts Deployment Tests
     needs: check-changes

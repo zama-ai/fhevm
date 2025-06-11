@@ -29,14 +29,7 @@ jobs:
           filters: |
             gw-contracts:
               - .github/workflows/gateway-contracts-hardhat-tests.yml
-              - gateway-contracts/contracts/**
-              - gateway-contracts/tasks/**
-              - gateway-contracts/package*.json
-              - gateway-contracts/hardhat.config.ts
-              - gateway-contracts/tsconfig.json
-              - gateway-contracts/Makefile
-              - gateway-contracts/test/**
-              - gateway-contracts/.env.example
+              - gateway-contracts/**
   hardhat-tests:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
