@@ -47,9 +47,11 @@ jobs:
           connector:
             - '.github/workflows/kms-connector-*'
             - 'kms-connector/config/**'
-            - 'docker/kms-connector/**'
-            - 'kms-connector/src/**'
+            - 'kms-connector/connector-db/**'
+            - 'kms-connector/crates/**'
+            - 'kms-connector/simple-connector/**'
             - 'kms-connector/Cargo.toml'
+            - 'kms-connector/Dockerfile'
 
 
   ############################################################################
