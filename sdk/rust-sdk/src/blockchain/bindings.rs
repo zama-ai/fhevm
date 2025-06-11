@@ -35,37 +35,3 @@ sol! {
     #[derive(Debug)]
     event Transfer(address indexed from, address indexed to, uint256 value);
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloy::sol_types::SolEvent;
-
-    #[test]
-    fn test_decryption() {
-        println!(
-            "DecryptionManager UserDecryptionRequest:\n{}\n{}\n",
-            Decryption::UserDecryptionRequest::SIGNATURE,
-            Decryption::UserDecryptionRequest::SIGNATURE_HASH
-        );
-        println!(
-            "DecryptionManager UserDecryptionResponse:\n{}\n{}\n",
-            Decryption::UserDecryptionResponse::SIGNATURE,
-            Decryption::UserDecryptionResponse::SIGNATURE_HASH
-        );
-    }
-
-    #[test]
-    fn test_input_verification() {
-        println!(
-            "InputVerification VerifyProofRequest:\n{}\n{}\n",
-            InputVerification::VerifyProofRequest::SIGNATURE,
-            InputVerification::VerifyProofRequest::SIGNATURE_HASH
-        );
-        println!(
-            "InputVerification VerifyProofResponse:\n{}\n{}\n",
-            InputVerification::VerifyProofResponse::SIGNATURE,
-            InputVerification::VerifyProofResponse::SIGNATURE_HASH
-        );
-    }
-}
