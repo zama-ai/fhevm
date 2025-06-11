@@ -379,7 +379,7 @@ impl FhevmSdk {
     /// #     .with_host_chain_id(31337)
     /// #     .with_gateway_contract("decryption", "0x1111111111111111111111111111111111111111")
     /// #     .with_gateway_contract("input-verification", "0x2222222222222222222222222222222222222222")
-    /// #     .with_host_contract("acl", "0x3333333333333333333333333333333333333333")
+    /// #     .with_host_contract("ACL", "0x3333333333333333333333333333333333333333")
     /// #     .build()?;
     /// #
     /// # // Sample data
@@ -522,8 +522,8 @@ impl FhevmSdkBuilder {
             )
         });
 
-        match name {
-            "input_verification" | "input-verifier" => {
+        match name.to_lowercase().as_str() {
+            "input_verification" | "input-verifier" | "input-verification" => {
                 self.gateway_contracts.input_verification = Some(addr);
             }
             "decryption" => {
@@ -547,7 +547,7 @@ impl FhevmSdkBuilder {
             )
         });
 
-        match name {
+        match name.to_lowercase().as_str() {
             "acl" => {
                 self.host_contracts.acl = Some(addr);
             }

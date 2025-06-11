@@ -168,12 +168,6 @@ impl UserDecryptRequestBuilder {
             ));
         }
 
-        // Validate timestamp is not in the future (with 5 minute tolerance)
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
         self.start_timestamp = Some(start_timestamp);
         self.duration_days = Some(duration_days);
         Ok(self)

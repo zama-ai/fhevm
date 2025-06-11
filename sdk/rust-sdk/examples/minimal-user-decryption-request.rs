@@ -33,7 +33,7 @@ fn main() -> Result<()> {
             "input-verifier",
             "0x1234567890123456789012345678901234567aaa",
         )
-        .with_host_contract("acl", "0x0987654321098765432109876543210987654321")
+        .with_host_contract("ACL", "0x0987654321098765432109876543210987654321")
         .build()?;
 
     let signature = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";

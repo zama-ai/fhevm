@@ -20,7 +20,7 @@ fn main() -> Result<()> {
             "input-verifier",
             "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e",
         )
-        .with_host_contract("acl", "0x9999999999999999999999999999999999999999")
+        .with_host_contract("ACL", "0x9999999999999999999999999999999999999999")
         .build()?;
 
     println!("✅ SDK ready!");

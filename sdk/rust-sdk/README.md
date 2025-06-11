@@ -93,7 +93,7 @@ fn main() -> Result<(), FhevmError> {
             "input-verifier",
             "0x1234567890123456789012345678901234567aaa",
         )
-        .with_host_contract("acl", "0x0987654321098765432109876543210987654321")
+        .with_host_contract("ACL", "0x0987654321098765432109876543210987654321")
         .build()?;
 
     // Set up test addresses
@@ -130,7 +130,7 @@ let sdk_builder = FhevmSdkBuilder::new()
             "input-verifier",
             "0x1234567890123456789012345678901234567aaa",
         )
-    .with_host_contract("acl", "0x0987654321098765432109876543210987654321");
+    .with_host_contract("ACL", "0x0987654321098765432109876543210987654321");
 
 // Export configuration to YAML
 let yaml_config = sdk_builder.to_yaml()?;
