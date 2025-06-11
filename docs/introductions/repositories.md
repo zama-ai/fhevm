@@ -2,11 +2,15 @@
 
 <figure><img src="../.gitbook/assets/doc_header_fhevm.png" alt=""><figcaption></figcaption></figure>
 
-fhevm is a suite of solutions that enables confidential smart contracts on the EVM using **Fully Homomorphic Encryption (FHE)**. This document provides a high-level overview of the fhevm suite along with onboarding guidance tailored to specific audiences.
+fhevm is a suite of solutions that enables confidential smart contracts on the EVM using **Fully Homomorphic Encryption
+(FHE)**. This document provides a high-level overview of the fhevm suite along with onboarding guidance tailored to
+specific audiences.
 
 ### For dApp developers
 
-The fhevm Protocol provides a **`FHE` Solidity library** for building confidential smart contracts, a **fhevm SDK** to enable front‐end FHE interactions, and a range of developer tools, examples, and templates to streamline the usage for developers.&#x20;
+The fhevm Protocol provides a **`FHE` Solidity library** for building confidential smart contracts, a **fhevm SDK** to
+enable front‐end FHE interactions, and a range of developer tools, examples, and templates to streamline the usage for
+developers.&#x20;
 
 #### Smart contract development
 
@@ -22,6 +26,8 @@ The fhevm Protocol provides a **`FHE` Solidity library** for building confidenti
 
 ### For network builders
 
-To **integrate FHE at the protocol level** or operate an **FHE‐enabled network**, fhevm offers the fhevm backend modules. These repositories include the foundational implementations that enables FHE in blockchain systems, ensuring that privacy remains at the core of your network architecture.
+To **integrate FHE at the protocol level** or operate an **FHE‐enabled network**, fhevm offers the fhevm backend
+modules. These repositories include the foundational implementations that enables FHE in blockchain systems, ensuring
+that privacy remains at the core of your network architecture.
 
 <table><thead><tr><th width="260">Repository</th><th>Description</th></tr></thead><tbody><tr><td><a href="https://github.com/zama-ai/fhevm-backend">fhevm-backend</a></td><td>Rust backend &#x26; Go‐Ethereum modules, enabling native or coprocessor‐based FHE.</td></tr><tr><td><a href="https://github.com/zama-ai/fhevm-go/">fhevm-go</a></td><td>Go implementation of the FHE Virtual Machine</td></tr><tr><td><a href="https://github.com/zama-ai/zbc-go-ethereum/">zbc-go-ethereum</a></td><td>Modified go-ethereum with enhanced FHE support</td></tr></tbody></table>

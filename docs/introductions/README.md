@@ -1,7 +1,6 @@
 ---
 description: >-
-  fhevm is a technology that enables confidential smart contracts on the EVM
-  using Fully Homomorphic Encryption (FHE).
+  fhevm is a technology that enables confidential smart contracts on the EVM using Fully Homomorphic Encryption (FHE).
 layout:
   title:
     visible: true
@@ -29,12 +28,12 @@ layout:
 
 ## Path to Build
 
-{% stepper %}
-{% step %}
+{% stepper %} {% step %}
 
 ### **Set up your development environment**
 
-Use the official Hardhat template from Zama that includes all necessary configurations and dependencies to start developing confidential smart contracts.
+Use the official Hardhat template from Zama that includes all necessary configurations and dependencies to start
+developing confidential smart contracts.
 
 <a href="https://github.com/zama-ai/fhevm-hardhat-template" class="button secondary">Clone the template</a>
 {% endstep %}
@@ -61,7 +60,8 @@ npm install fhevm-contracts
 
 ### Write your first confidential smart contract
 
-Use the provided contract examples, like `ConfidentialERC20`, to begin. A basic confidential token contract might look like this:
+Use the provided contract examples, like `ConfidentialERC20`, to begin. A basic confidential token contract might look
+like this:
 
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -77,8 +77,8 @@ contract MyERC20 is SepoliaZamaFHEVMConfig, ConfidentialERC20 {
 }
 ```
 
-<a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/mIaweK9iiWMF773uuVPP/" class="button primary">See the full Solidity guide</a>
-{% endstep %}
+<a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/mIaweK9iiWMF773uuVPP/" class="button primary">See the full
+Solidity guide</a> {% endstep %}
 
 {% step %}
 
@@ -86,7 +86,8 @@ contract MyERC20 is SepoliaZamaFHEVMConfig, ConfidentialERC20 {
 
 Start from Zama's ready-to-use React template.
 
-<a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/2wDODARNL7cfrn1fsPcS/" class="button primary">See the full SDK guide</a> <a href="https://github.com/zama-ai/fhevm-react-template" class="button secondary">Clone the template</a> ;
+<a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/2wDODARNL7cfrn1fsPcS/" class="button primary">See the full SDK
+guide</a> <a href="https://github.com/zama-ai/fhevm-react-template" class="button secondary">Clone the template</a> ;
 {% endstep %}
 
 {% step %}

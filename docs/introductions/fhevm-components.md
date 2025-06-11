@@ -1,10 +1,13 @@
 # fhevm components
 
-This document gives a detailed explanantion of each component of fhevm and illustrate how they work together to perform computations.&#x20;
+This document gives a detailed explanantion of each component of fhevm and illustrate how they work together to perform
+computations.&#x20;
 
 ## Overview
 
-The fhevm architecture is built around four primary components, each contributing to the system's functionality and performance. These components work together to enable the development and execution of private, composable smart contracts on EVM-compatible blockchains. Below is an overview of these components and their responsibilities:
+The fhevm architecture is built around four primary components, each contributing to the system's functionality and
+performance. These components work together to enable the development and execution of private, composable smart
+contracts on EVM-compatible blockchains. Below is an overview of these components and their responsibilities:
 
 | [**fhevm Smart Contracts**](fhevm-components.md#fhevm-smart-contracts)           | Smart contracts deployed on the blockchain to manage encrypted data and interactions.                     | Includes the Access Control List (ACL) contract, `FHE.sol` Solidity library, `Gateway.sol` and other FHE-enabled smart contracts. |
 | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -19,20 +22,24 @@ The fhevm architecture is built around four primary components, each contributin
 As a developer working with fhevm, your workflow typically involves two key elements:
 
 1. **Frontend development**:\
-   You create a frontend interface for users to interact with your confidential application. This includes encrypting inputs using the public FHE key and submitting them to the blockchain.
+   You create a frontend interface for users to interact with your confidential application. This includes encrypting
+   inputs using the public FHE key and submitting them to the blockchain.
 2. **Smart contract development**:\
-   You write Solidity contracts deployed on the same blockchain as the fhevm smart contracts. These contracts leverage the `FHE.sol` library to perform operations on encrypted data. Below, we explore the major components involved.
+   You write Solidity contracts deployed on the same blockchain as the fhevm smart contracts. These contracts leverage
+   the `FHE.sol` library to perform operations on encrypted data. Below, we explore the major components involved.
 
 ## **fhevm smart contracts**
 
-fhevm smart contracts include the Access Control List (ACL) contract, `FHE.sol` library, and related FHE-enabled contracts.
+fhevm smart contracts include the Access Control List (ACL) contract, `FHE.sol` library, and related FHE-enabled
+contracts.
 
 ### **Symbolic execution in Solidity**
 
 fhevm implements **symbolic execution** to optimize FHE computations:
 
 - **Handles**: Operations on encrypted data return "handles" (references to ciphertexts) instead of immediate results.
-- **Lazy Execution**: Actual computations are performed asynchronously, offloading resource-intensive tasks to the coprocessor.
+- **Lazy Execution**: Actual computations are performed asynchronously, offloading resource-intensive tasks to the
+  coprocessor.
 
 This approach ensures high throughput and flexibility in managing encrypted data.
 
@@ -40,7 +47,8 @@ This approach ensures high throughput and flexibility in managing encrypted data
 
 fhevm incorporates ZKPoKs to verify the correctness of encrypted inputs and outputs:
 
-- **Validation**: ZKPoKs ensure that inputs are correctly formed and correspond to known plaintexts without revealing sensitive data.
+- **Validation**: ZKPoKs ensure that inputs are correctly formed and correspond to known plaintexts without revealing
+  sensitive data.
 - **Integrity**: They prevent misuse of ciphertexts and ensure the correctness of computations.
 
 By combining symbolic execution and ZKPoKs, fhevm smart contracts maintain both privacy and verifiability.
@@ -52,7 +60,8 @@ The coprocessor is the backbone for handling computationally intensive FHE tasks
 ### **Key functions**:
 
 1. **Execution**: Performs operations such as addition, multiplication, and comparison on encrypted data.
-2. **Ciphertext management**: Stores encrypted inputs, states, and outputs securely, either off-chain or in a dedicated on-chain database.
+2. **Ciphertext management**: Stores encrypted inputs, states, and outputs securely, either off-chain or in a dedicated
+   on-chain database.
 
 ## **Gateway**
 
@@ -60,7 +69,8 @@ The Gateway acts as the bridge between the blockchain, coprocessor, and KMS.
 
 ### **Key functions**:
 
-- **API for developers**: Exposes endpoints for submitting encrypted inputs, retrieving outputs, and managing ciphertexts.
+- **API for developers**: Exposes endpoints for submitting encrypted inputs, retrieving outputs, and managing
+  ciphertexts.
 - **Proof validation**: Forwards ZKPoKs to the KMS for verification.
 - **Off-chain coordination**: Relays encrypted data and computation results between on-chain and off-chain systems.
 
@@ -72,7 +82,8 @@ The KMS securely manages the cryptographic backbone of fhevm by maintaining and 
 
 ### **Key functions**:
 
-- **Threshold decryption**: Uses Multi-Party Computation (MPC) to securely decrypt ciphertexts without exposing the private key to any single entity.
+- **Threshold decryption**: Uses Multi-Party Computation (MPC) to securely decrypt ciphertexts without exposing the
+  private key to any single entity.
 - **ZKPoK validation**: Verifies proofs of plaintext knowledge to ensure that encrypted inputs are valid.
 - **Key distribution**: Maintains the global FHE keys, which include:
   - **Public key**: Used for encrypting data (accessible to the frontend and smart contracts).
@@ -81,4 +92,5 @@ The KMS securely manages the cryptographic backbone of fhevm by maintaining and 
 
 The KMS ensures robust cryptographic security, preventing single points of failure and maintaining public verifiability.
 
-In the next section, we will dive deeper into encryption, re-encryption, and decryption processes, including how they interact with the KMS and Gateway services. For more details, see [Decrypt and re-encrypt](../d_re_ecrypt_compute.md).
+In the next section, we will dive deeper into encryption, re-encryption, and decryption processes, including how they
+interact with the KMS and Gateway services. For more details, see [Decrypt and re-encrypt](../d_re_ecrypt_compute.md).
