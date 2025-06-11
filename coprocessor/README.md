@@ -1,15 +1,15 @@
 ## Introduction
-**FHEVM Backend** provides the execution service for FHE computations.
+**FHEVM Coprocessor** provides the execution service for FHE computations.
 
-It includes a **Coprocessor** service [fhEVM-coprocessor](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-coprocessor). The Coprocessor
+It includes a **Coprocessor** service [FHEVM-coprocessor](docs/getting_started/fhevm/coprocessor/coprocessor_backend.md). The Coprocessor
 itself consists of multiple microservices, e.g. for FHE compute, input verify, transaction sending, listenting to events, etc.
 
 ## Main features
 
-- An **Executor** service for FHEVM-native](docs/getting-started/fhevm/fhevm-native)
-- A **Coprocessor** service for [FHEVM-coprocessor](docs/getting-started/fhevm/fhevm-coprocessor)
+- An **Executor** service for [FHEVM-native](docs/getting_started/fhevm/native/executor.md)
+- A **Coprocessor** service for [FHEVM-coprocessor](docs/getting_started/fhevm/coprocessor/coprocessor_backend.md)
 
-_Learn more about FHEVM-backend features in the [documentation](docs)._
+_Learn more about FHEVM Coprocessor features in the [documentation](docs)._
 <br></br>
 
 ## Table of Contents
@@ -119,6 +119,8 @@ Options:
   -h, --help     Print help
   -V, --version  Print version
 ```
+
+For more details on configuration, please check [Coprocessor Configuration](docs/getting_started/fhevm/coprocessor/configuration.md)
 
 ##### fhevm-listener
 
@@ -293,17 +295,16 @@ When using the `aws-kms` signer type, standard `AWS_*` environment variables are
  - **AWS_SECRET_ACCESS_KEY** (i.e. password)
  - etc.
 
-More details on configuration can be found in the [documentation](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-coprocessor/configuration).
 
 ## Resources
 
 ### Documentation
 
-Full, comprehensive documentation is available here: [https://docs.zama.ai/fhevm-backend](https://docs.zama.ai/fhevm-backend).
+Full, comprehensive documentation is available here: [https://docs.zama.ai/fhevm](https://docs.zama.ai/fhevm).
 
 ### FHEVM Demo
 
-A complete demo showcasing an integrated FHEVM blockchain and KMS (Key Management System) is available here: [https://github.com/zama-ai/fhevm-devops/](https://github.com/zama-ai/fhevm-devops/).
+A complete demo showcasing an integrated FHEVM blockchain and KMS (Key Management System) is available here: [https://github.com/zama-ai/fhevm-test-suite/](https://github.com/zama-ai/fhevm-test-suite/).
 
 
 ## Support
