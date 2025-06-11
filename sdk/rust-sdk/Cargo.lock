@@ -2856,6 +2856,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "312d2295c7302019c395cfb90dacd00a82a2eabd700429bba9c7a3f38dbbe11b"
 
 [[package]]
+name = "gateway-sdk"
+version = "0.1.0"
+dependencies = [
+ "alloy 1.0.8",
+ "bincode",
+ "crypto_box",
+ "env",
+ "env_logger",
+ "fhevm_gateway_rust_bindings",
+ "futures-util",
+ "help",
+ "hex",
+ "kms",
+ "kms-grpc",
+ "log",
+ "prost",
+ "rand 0.9.1",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tfhe",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4564,32 +4590,6 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
-
-[[package]]
-name = "relayer-sdk-rust"
-version = "0.1.0"
-dependencies = [
- "alloy 1.0.8",
- "bincode",
- "crypto_box",
- "env",
- "env_logger",
- "fhevm_gateway_rust_bindings",
- "futures-util",
- "help",
- "hex",
- "kms",
- "kms-grpc",
- "log",
- "prost",
- "rand 0.9.1",
- "serde",
- "serde_json",
- "serde_yaml",
- "tfhe",
- "thiserror",
- "tokio",
-]
 
 [[package]]
 name = "reqwest"
