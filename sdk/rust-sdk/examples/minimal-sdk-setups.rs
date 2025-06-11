@@ -6,7 +6,7 @@
 //! cargo run --example minimal-sdk-setup
 //! ```
 
-use fhevm_sdk::{FhevmSdkBuilder, Result};
+use gateway_sdk::{FhevmSdkBuilder, Result};
 
 fn main() -> Result<()> {
     println!("🚀 Setting up FHEVM SDK...");

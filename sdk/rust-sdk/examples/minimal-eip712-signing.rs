@@ -6,7 +6,7 @@
 //! cargo run --example minimal-eip712-signing
 //! ```
 
-use fhevm_sdk::{FhevmSdkBuilder, Result, utils::validate_address_from_str};
+use gateway_sdk::{FhevmSdkBuilder, Result, utils::validate_address_from_str};
 
 fn main() -> Result<()> {
     println!("✍️ Generating EIP-712 signature...");
