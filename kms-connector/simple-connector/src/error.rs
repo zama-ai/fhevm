@@ -44,7 +44,7 @@ pub enum Error {
     Channel(String),
 
     #[error("Wallet error: {0}")]
-    Wallet(#[from] WalletError),
+    Wallet(#[from] Box<WalletError>),
 
     #[error("RPC error: {0}")]
     Rpc(String),
@@ -86,6 +86,12 @@ impl From<SolError> for Error {
 impl From<tonic::Status> for Error {
     fn from(status: tonic::Status) -> Self {
         Error::Other(anyhow::anyhow!("gRPC error: {}", status))
+    }
+}
+
+impl From<WalletError> for Error {
+    fn from(error: WalletError) -> Self {
+        Error::Wallet(Box::new(error))
     }
 }
 

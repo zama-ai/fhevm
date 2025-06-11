@@ -16,7 +16,7 @@ pub enum WalletError {
     #[error("Invalid private key: {0}")]
     InvalidPrivateKey(String),
     #[error("AWS KMS error: {0}")]
-    AwsKmsError(#[from] alloy::signers::aws::AwsSignerError),
+    AwsKmsError(#[from] Box<alloy::signers::aws::AwsSignerError>),
 }
 
 pub type Result<T> = std::result::Result<T, WalletError>;
@@ -111,7 +111,9 @@ impl KmsWallet {
         let kms_client = KmsClient::new(&config);
 
         // Create AWS KMS signer
-        let aws_signer = AwsSigner::new(kms_client, key_id, chain_id).await?;
+        let aws_signer = AwsSigner::new(kms_client, key_id, chain_id)
+            .await
+            .map_err(Box::new)?;
 
         info!(
             "Created wallet from AWS KMS with address: {}",
