@@ -184,6 +184,34 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
           docker_args+=("-g" "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt")
           ;;
+        fhevm-listener-disconnect-erc)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] DISCONNECT${RESET}"
+          docker_args+=("-g" "should transfer tokens between two users.")
+          echo -e "${YELLOW}${BOLD}[SIMULATING] Disconnect fhevm-listener${RESET}"
+          docker network disconnect fhevm_default fhevm-fhevm-listener || echo "Was already disconnected"
+          docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}" &
+          sleep 45
+          echo -e "${YELLOW}${BOLD}[SIMULATING] Reconnect fhevm-listener${RESET}"
+          docker network connect fhevm_default fhevm-fhevm-listener
+          wait
+          exit 0
+          ;;
+        fhevm-listener-disconnect)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] DISCONNECT${RESET}"
+          docker_args+=("-g" "input-proof")
+          echo -e "${YELLOW}${BOLD}[SIMULATING] Disconnect fhevm-listener${RESET}"
+          docker network disconnect fhevm_default fhevm-fhevm-listener || echo "Was already disconnected"
+          docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
+          docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
+          echo -e "${YELLOW}${BOLD}[SIMULATING] Reconnect fhevm-listener${RESET}"
+          docker network connect fhevm_default fhevm-fhevm-listener
+          docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
+          docker logs fhevm-fhevm-listener &> LOGS
+          cat LOGS
+          echo "Allowed filter"
+          grep "data: Allowed" LOGS
+          exit 0
+          ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
           docker exec -it fhevm-test-suite-e2e-debug bash
