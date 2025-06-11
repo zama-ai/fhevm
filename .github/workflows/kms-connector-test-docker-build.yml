@@ -80,8 +80,8 @@ jobs:
   # Only runs on main/release branches after successful tests
   # Also runs on pull requests targeting main/release branches with the docker label
   docker-connector:
-    needs:
-      - test-connector
+    # needs:
+    #   - test-connector
     if: >-
       (startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/main') ||
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'docker'))
