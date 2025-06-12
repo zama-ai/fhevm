@@ -24,6 +24,8 @@ type EventTypes =
   | 'httpz:input-proof:completed'
   | 'httpz:private-decrypt:requested'
   | 'httpz:private-decrypt:completed'
+  | 'httpz:public-decrypt:requested'
+  | 'httpz:public-decrypt:completed'
   | 'user:password-reset:requested'
   | 'user:password-reset:completed'
 
@@ -112,6 +114,17 @@ const schemas = [
     decryptedValue: z.string(),
     signatures: z.array(z.string()),
   }),
+  genSchema('httpz:public-decrypt:requested', {
+    ciphertextHandles: z.array(z.string().startsWith('0x').length(66)).min(1),
+  }),
+  genSchema('httpz:public-decrypt:completed', {
+    response: z.array(
+      z.object({
+        decryptedValue: z.string(),
+        signatures: z.array(z.string()),
+      }),
+    ),
+  }),
   genSchema('user:password-reset:requested', {
     email: z.string().email(),
     token: z.string(),
@@ -150,6 +163,12 @@ export const httpzPrivateDecryptRequested = factory(
 )
 export const httpzPrivateDecryptCompleted = factory(
   'httpz:private-decrypt:completed',
+)
+export const httpzPublicDecryptRequested = factory(
+  'httpz:public-decrypt:requested',
+)
+export const httpzPublicDecryptCompleted = factory(
+  'httpz:public-decrypt:completed',
 )
 export const userPasswordResetRequested = factory(
   'user:password-reset:requested',

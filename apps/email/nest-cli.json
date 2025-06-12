@@ -12,6 +12,7 @@
         "include": "../templates/*.ejs",
         "outDir": "./dist/templates"
       }
-    ]
+    ],
+    "deleteOutDir": true
   }
 }

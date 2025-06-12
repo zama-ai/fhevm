@@ -11,3 +11,10 @@ export {
   PRIVATE_DECRYPT,
   PrivateDecrypt,
 } from './private-decrypt.use-case.js'
+export {
+  type IPublicDecrypt,
+  PUBLIC_DECRYPT,
+  PublicDecrypt,
+  PublicDecryptWithSync,
+  PublicDecryptWithApiKey,
+} from './public-decrypt.use-case.js'

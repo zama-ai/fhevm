@@ -7,7 +7,12 @@
       {
         "include": "../config/*.yaml",
         "outDir": "./dist/config"
+      },
+      {
+        "include": "../generated/**",
+        "outDir": "./dist/generated"
       }
-    ]
+    ],
+    "deleteOutDir": true
   }
 }

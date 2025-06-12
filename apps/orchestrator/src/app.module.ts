@@ -23,7 +23,7 @@ export const configModule = ConfigModule.forRoot({
       useFactory: (config: ConfigService) => {
         return {
           pinoHttp: {
-            level: config.get('common.logLevel'),
+            level: config.get('common.logLevel', 'info'),
             customProps: () => ({ service: MS_NAME }),
             genReqId: request =>
               request.headers['x-correlation-id'] || randomUUID(),

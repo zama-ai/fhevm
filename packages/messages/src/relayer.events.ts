@@ -14,8 +14,8 @@ type EventTypes =
   | 'public-decryption:authorization-request'
   | 'public-decryption:authorization-response'
   // NOTE: add once spec is ready
-  // | 'public-decryption:operation-request'
-  // | 'public-decryption:operation-response'
+  | 'public-decryption:operation-request'
+  | 'public-decryption:operation-response'
   | 'private-decryption:operation-request'
   | 'private-decryption:operation-response'
   | 'input-registration:input-registration-request'
@@ -55,6 +55,17 @@ const schemas = [
     gatewayRequestId: z.number(),
     decryptedValue: z.string(),
     signatures: z.array(z.string()),
+  }),
+  genSchema('public-decryption:operation-request', {
+    ciphertextHandles: z.array(z.string().startsWith('0x').length(66)).min(1),
+  }),
+  genSchema('public-decryption:operation-response', {
+    response: z.array(
+      z.object({
+        decryptedValue: z.string(),
+        signatures: z.array(z.string()),
+      }),
+    ),
   }),
   genSchema('input-registration:input-registration-request', {
     contractChainId: chainId,
@@ -103,6 +114,12 @@ export const privateDecryptionOperationRequest = factory(
 )
 export const privateDecryptionOperationResponse = factory(
   'private-decryption:operation-response',
+)
+export const publicDecryptionOperationRequest = factory(
+  'public-decryption:operation-request',
+)
+export const publicDecryptionOperationResponse = factory(
+  'public-decryption:operation-response',
 )
 export const inputRegistrationRequest = factory(
   'input-registration:input-registration-request',

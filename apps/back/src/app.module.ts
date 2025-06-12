@@ -33,19 +33,16 @@ export const configModule = ConfigModule.forRoot({
       useFactory: (config: ConfigService) => {
         return {
           pinoHttp: {
-            level: config.get('common.logLevel'),
+            level: config.get('common.logLevel', 'info'),
             customProps: () => ({ service: MS_NAME }),
             genReqId: request =>
               request.headers['x-correlation-id'] || randomUUID(),
-            transport:
-              config.get('common.nodeEnv') === 'development'
-                ? {
-                    target: 'pino-pretty',
-                    options: {
-                      singleLine: true,
-                    },
-                  }
-                : undefined,
+            transport: {
+              target: 'pino-pretty',
+              options: {
+                singleLine: true,
+              },
+            },
           },
         }
       },

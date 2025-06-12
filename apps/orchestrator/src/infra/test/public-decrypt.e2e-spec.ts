@@ -12,7 +12,7 @@ import {
   vi,
 } from 'vitest'
 
-describe('input proof', () => {
+describe('public decrypt', () => {
   const manager = new IntegrationManager(false)
 
   beforeAll(async () => {
@@ -31,26 +31,20 @@ describe('input proof', () => {
     await manager.afterAll()
   })
 
-  describe(`when receiving a 'back:httpz:input-proof:requested' event`, () => {
+  describe(`when receiving a 'back:httpz:public-decrypt:requested' event`, () => {
     beforeEach(async () => {
       await manager.sendMessage(
-        back.httpzInputProofRequested(
+        back.httpzPublicDecryptRequested(
           {
             requestId: faker.string.uuid(),
-            contractChainId: faker.number.int({ min: 1, max: 100_000 }),
-            contractAddress: faker.string.hexadecimal({ length: 40 }),
-            userAddress: faker.string.hexadecimal({ length: 40 }),
-            ciphertextWithInputVerification: faker.string.hexadecimal({
-              length: { min: 50, max: 100 },
-              prefix: '',
-            }),
+            ciphertextHandles: [faker.string.hexadecimal({ length: 64 })],
           },
           { correlationId: faker.string.uuid() },
         ),
       )
     })
 
-    test(`then it publish a 'relayer:input-registration:input-registration-request' event`, async () => {
+    test(`then it publish a 'relayer:public-decryption:operation-request' event`, async () => {
       await vi.waitUntil(async () => {
         const size = await manager.getQueueSize('relayer')
         return size > 0
@@ -61,24 +55,31 @@ describe('input proof', () => {
       const message = messages[0]
       expect(message?.event).toEqual(
         expect.objectContaining({
-          type: 'relayer:input-registration:input-registration-request',
+          type: 'relayer:public-decryption:operation-request',
         }),
       )
     })
   })
 
-  describe(`when receiving a 'relayer:input-registration:input-registration-response' event`, () => {
+  describe(`when receiving a 'relayer:public-decryption:operation-response' event`, () => {
     beforeEach(async () => {
       await manager.sendMessage(
-        relayer.inputRegistrationResponse({
+        relayer.publicDecryptionOperationResponse({
           requestId: faker.string.uuid(),
-          handles: [faker.string.hexadecimal(), faker.string.hexadecimal()],
-          signatures: [faker.string.hexadecimal(), faker.string.hexadecimal()],
+          response: [
+            {
+              decryptedValue: faker.string.hexadecimal(),
+              signatures: [
+                faker.string.hexadecimal(),
+                faker.string.hexadecimal(),
+              ],
+            },
+          ],
         }),
       )
     })
 
-    test(`then it publish a 'back:httpz:input-proof:completed' event`, async () => {
+    test(`then it publish a 'back:httpz:public-decrypt:completed' event`, async () => {
       await vi.waitUntil(async () => {
         const size = await manager.getQueueSize('back')
         return size > 0
@@ -89,7 +90,7 @@ describe('input proof', () => {
       const message = messages[0]
       expect(message?.event).toEqual(
         expect.objectContaining({
-          type: 'back:httpz:input-proof:completed',
+          type: 'back:httpz:public-decrypt:completed',
         }),
       )
     })

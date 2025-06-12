@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing'
 import { AppModule, configModule } from '#app.module.js'
 import { PrismaClient } from '#prisma/client/index.js'
 import { ConfigModule, registerAs } from '@nestjs/config'
-import { inject } from 'vitest'
+import { inject, vi } from 'vitest'
 import { randomUUID } from 'crypto'
 import { execSync } from 'child_process'
 import { SQSClient } from '@aws-sdk/client-sqs'
@@ -87,6 +87,8 @@ export class SetupManager {
   async beforeAll() {
     // Start services
     await Promise.all([this.startAws(), this.startPostgres()])
+
+    vi.stubEnv('APP__COMMON__LOG_LEVEL', 'silent')
 
     // TODO: move to @suites
     const moduleRef = await Test.createTestingModule({

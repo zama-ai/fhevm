@@ -41,3 +41,6 @@ catalog:
   # Development and testing
   vitest: 3.2.1
   "@faker-js/faker": "9.8.0"
+  "@testcontainers/localstack": "11.0.3"
+  "@testcontainers/redis": "11.0.3"
+  "@testcontainers/postgresql": "11.0.3"

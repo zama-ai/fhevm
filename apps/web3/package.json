@@ -9,7 +9,7 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "pnpm run copy:generated && nest start --watch",
+    "start": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/src/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
@@ -19,7 +19,6 @@
     "test:debug": "RUN_MODE=test vitest --inspect-brk --inspect --logHeapUsage --threads=false",
     "test:e2e": "RUN_MODE=test vitest run --config ./vitest.e2e.config.mts",
     "test:e2e:watch": "RUN_MODE=test vitest --config ./vitest.e2e.config.mts",
-    "copy:generated": "cpx 'generated/**' 'dist/generated'",
     "prisma:migrate": "pnpx prisma migrate deploy",
     "prisma:generate": "pnpx prisma generate",
     "prestart": "pnpx prisma migrate dev"
@@ -32,7 +31,6 @@
     "@nestjs/platform-express": "catalog:",
     "@prisma/client": "catalog:",
     "@ssut/nestjs-sqs": "catalog:",
-    "cpx": "1.5.0",
     "messages": "workspace:*",
     "nestjs-cls": "catalog:",
     "nestjs-pino": "catalog:",

@@ -17,87 +17,143 @@ let redisContainer: StartedRedisContainer | undefined = undefined
 
 async function startPostresInstance(databaseUrl: string) {
   const schema = randomUUID()
-  console.log(`migrating prisma into schema ${schema}`)
+  console.log(`\x1b[32mmigrating prisma into schema ${schema}\x1b[0m`)
   const url = `${databaseUrl}?schema=${schema}`
 
-  // Execute Prisma migrations
-  execSync('pnpx prisma migrate deploy', {
-    env: { DATABASE_URL: url, PATH: process.env.PATH },
-  })
+  try {
+    // Execute Prisma migrations
+    execSync('pnpx prisma migrate deploy', {
+      env: { APP__DB__URL: url, PATH: process.env.PATH },
+    })
+  } catch (error) {
+    console.error(`\x1b[33m🛑 Failed to migrate prisma: ${error} \x1b[0m`)
+    throw error
+  }
 
   return url
 }
 
 async function startPostgres(maxWorkers: number) {
-  pgContainer = await new PostgreSqlContainer('postgres:17-alpine').start()
-  if (!pgContainer) {
-    throw new Error('Failed to start postgres container')
+  try {
+    console.log(`\x1b[32mstarting postgres:17-alpine container\x1b[0m`)
+    pgContainer = await new PostgreSqlContainer('postgres:17-alpine').start()
+    if (!pgContainer) {
+      throw new Error('\x1b[33m⛔️ Failed to start postgres container\x1b[0m')
+    }
+
+    const host = pgContainer.getHost()
+    const port = pgContainer.getPort()
+    const database = pgContainer.getDatabase()
+    const username = pgContainer.getUsername()
+    const password = pgContainer.getPassword()
+
+    console.log(
+      `\x1b[32m🚛 testcontainer Postgres running on ${host}:${port}/${database}\x1b[0m`,
+    )
+
+    const databaseUrl = `postgresql://${username}:${password}@${host}:${port}/${database}`
+    const urls = await Promise.all(
+      new Array(maxWorkers)
+        .fill(0)
+        .map(() => startPostresInstance(databaseUrl)),
+    )
+
+    try {
+      // NOTE: I need to run the prisma client to generate the prisma client
+      // Sometimes, it doesn't get the last generated client.
+      // I need to run it just once
+      console.log(`\x1b[32mrunning pnpx prisma generate\x1b[0m`)
+      execSync('pnpx prisma generate', {
+        env: { APP__DB__URL: urls[0], PATH: process.env.PATH },
+      })
+    } catch (error) {
+      console.error(
+        `\x1b[33m🛑 Failed to generate prisma client: ${error} \x1b[0m`,
+      )
+      throw error
+    }
+
+    return urls
+  } catch (error) {
+    console.error(`\x1b[33m🛑 Failed to start postgres: ${error} \x1b[0m`)
+    throw error
   }
-
-  const host = pgContainer.getHost()
-  const port = pgContainer.getPort()
-  const database = pgContainer.getDatabase()
-  const username = pgContainer.getUsername()
-  const password = pgContainer.getPassword()
-
-  console.log(
-    `\x1b[32m🚛 testcontainer Postgres running on ${host}:${port}/${database}\x1b[0m`,
-  )
-
-  const databaseUrl = `postgresql://${username}:${password}@${host}:${port}/${database}`
-  const urls = await Promise.all(
-    new Array(maxWorkers).fill(0).map(() => startPostresInstance(databaseUrl)),
-  )
-
-  return urls
 }
 
 async function stopPostgres() {
   if (pgContainer) {
     console.log(`\x1b[33m🛑 testcontainer stopping Postgres\x1b[0m`)
-    await pgContainer.stop()
+    try {
+      await pgContainer.stop()
+    } catch (error) {
+      console.warn(`\x1b[33m🛑 Failed to stop postgres: ${error} \x1b[0m`)
+    }
   }
 }
 
 async function startAws() {
-  awsContainer = await new LocalstackContainer(
-    'localstack/localstack:latest',
-  ).start()
+  try {
+    console.log(
+      `\x1b[32mstarting localstack/localstack:latest container\x1b[0m`,
+    )
+    awsContainer = await new LocalstackContainer(
+      'localstack/localstack:latest',
+    ).start()
 
-  const connectionUri = awsContainer.getConnectionUri()
-  console.log(`\x1b[32m🚛 testcontainer AWS running on ${connectionUri}\x1b[0m`)
+    const connectionUri = awsContainer.getConnectionUri()
+    console.log(
+      `\x1b[32m🚛 testcontainer AWS running on ${connectionUri}\x1b[0m`,
+    )
 
-  return connectionUri
+    return connectionUri
+  } catch (error) {
+    console.error(`\x1b[33m🛑 Failed to start localstack: ${error} \x1b[0m`)
+    throw error
+  }
 }
 
 async function stopAws() {
   if (awsContainer) {
     console.log(`\x1b[33m🛑 testcontainer stopping Postgres\x1b[0m`)
-    await awsContainer.stop()
+    try {
+      await awsContainer.stop()
+    } catch (error) {
+      console.warn(`\x1b[33m🛑 Failed to stop localstack: ${error} \x1b[0m`)
+    }
   }
 }
 
 async function startRedis() {
-  redisContainer = await new RedisContainer('redis:7.4-alpine').start()
+  try {
+    console.log(`\x1b[32mstarting redis:7.4-alpine container\x1b[0m`)
+    redisContainer = await new RedisContainer('redis:7.4-alpine').start()
 
-  if (!redisContainer) {
-    throw new Error('Failed to start postgres container')
+    if (!redisContainer) {
+      throw new Error('Failed to start postgres container')
+    }
+
+    const host = redisContainer.getHost()
+    const port = redisContainer.getPort()
+
+    console.log(
+      `\x1b[32m🚛 testcontainer Redis running on ${host}:${port}\x1b[0m`,
+    )
+
+    return { host, port }
+  } catch (error) {
+    console.error(`\x1b[33m🛑 Failed to start redis: ${error} \x1b[0m`)
+    throw error
   }
-
-  const host = redisContainer.getHost()
-  const port = redisContainer.getPort()
-
-  console.log(
-    `\x1b[32m🚛 testcontainer Redis running on ${host}:${port}\x1b[0m`,
-  )
-
-  return { host, port }
 }
 
 async function stopRedis() {
   if (redisContainer) {
-    await redisContainer.stop()
-    console.log(`\x1b[33m🛑 testcontainer Redis stopped\x1b[0m`)
+    console.log(`\x1b[33m🛑 testcontainer stopping Redis\x1b[0m`)
+    try {
+      await redisContainer.stop()
+    } catch (error) {
+      console.warn(`\x1b[33m🛑 Failed to stop redis: ${error} \x1b[0m`)
+    }
   }
 }
 

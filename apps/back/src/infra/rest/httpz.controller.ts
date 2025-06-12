@@ -30,6 +30,15 @@ import {
   UserDecryptRequest,
   userDecryptSchema,
 } from './dtos/user-decrypt-request.dto.js'
+import {
+  PublicDecryptRequest,
+  publicDecryptSchema,
+} from './dtos/public-decrypt-request.dto.js'
+import {
+  IPublicDecrypt,
+  PUBLIC_DECRYPT,
+} from '#httpz/use-cases/public-decrypt.use-case.js'
+import { PublicDecryptPresenter } from './presenters/public-decrypt.presenter.js'
 import { KeyUrlPresenter } from './presenters/keyurl.presenter.js'
 
 @Controller('')
@@ -40,6 +49,7 @@ export class HttpzController {
     private readonly getKeyUrlUC: GetKeyUrl,
     @Inject(INPUT_PROOF) private readonly inputProofUC: IInputProof,
     @Inject(PRIVATE_DECRYPT) private readonly privateDecryptUC: IPrivateDecrypt,
+    @Inject(PUBLIC_DECRYPT) private readonly publicDecryptUC: IPublicDecrypt,
   ) {}
 
   @Get('/healthcheck')
@@ -80,5 +90,19 @@ export class HttpzController {
       .execute(input, { apiKey })
       .toPromise()
     return { response }
+  }
+
+  @Post('/v1/public-decrypt')
+  @UseGuards(ApiKeyGuard)
+  @UsePipes(new ZodValidationPipe(publicDecryptSchema))
+  async postPublicDecrypt(
+    @CurrentApiKey() apiKey: ApiKey,
+    @Body() input: PublicDecryptRequest,
+  ) {
+    this.logger.log('POST /v1/public-decrypt')
+    const response = await this.publicDecryptUC
+      .execute(input, { apiKey })
+      .toPromise()
+    return { response: PublicDecryptPresenter(response) }
   }
 }

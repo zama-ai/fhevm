@@ -47,10 +47,14 @@ describe('UserDecryptRequest', () => {
     })
 
     test('should not be a generic string', () => {
-      const result = userDecryptSchema.safeParse({
+      const props = {
         ...userDecryptRequest,
-        contractsChainId: 'a' + faker.string.alphanumeric(40),
-      })
+        contractsChainId: faker.string.alphanumeric(40),
+      }
+      const result = userDecryptSchema.safeParse(props)
+      if (result.success) {
+        console.log(`the test should not pass for ${JSON.stringify(props)}`)
+      }
       expect(result.success).toBe(false)
     })
 

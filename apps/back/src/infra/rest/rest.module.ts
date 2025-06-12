@@ -45,6 +45,12 @@ import { PRODUCER } from '#constants.js'
       provide: uc.PRIVATE_DECRYPT,
       useClass: uc.PrivateDecrypt,
     },
+    uc.PublicDecrypt,
+    uc.PublicDecryptWithSync,
+    {
+      provide: uc.PUBLIC_DECRYPT,
+      useClass: uc.PublicDecryptWithApiKey,
+    },
     uc.GetKeyUrl,
   ],
 })

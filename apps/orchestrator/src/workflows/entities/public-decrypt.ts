@@ -2,22 +2,22 @@ import { back, relayer } from 'messages'
 import { Actor, createActor, setup } from 'xstate'
 
 export const EVENT_TYPES = [
-  'back:httpz:private-decrypt:requested',
-  'relayer:private-decryption:operation-response',
+  'back:httpz:public-decrypt:requested',
+  'relayer:public-decryption:operation-response',
 ] as const
 
-export type PrivateDecryptEvents = Extract<
+export type PublicDecryptEvents = Extract<
   back.BackEvent | relayer.RelayerEvent,
   { type: (typeof EVENT_TYPES)[number] }
 >
 
-export function isPrivateDecrypt(
+export function isPublicDecrypt(
   event: back.BackEvent | relayer.RelayerEvent,
-): event is PrivateDecryptEvents {
+): event is PublicDecryptEvents {
   return (EVENT_TYPES as readonly string[]).includes(event.type)
 }
 
-type PrivateDecryptMachine = ReturnType<typeof factory>
+type PublicDecryptMachine = ReturnType<typeof factory>
 
 function factory({
   notifyMessage,
@@ -26,7 +26,7 @@ function factory({
 }) {
   return setup({
     types: {
-      events: {} as PrivateDecryptEvents,
+      events: {} as PublicDecryptEvents,
     },
   }).createMachine({
     id: 'inputProof',
@@ -34,19 +34,19 @@ function factory({
     states: {
       Idle: {
         on: {
-          'back:httpz:private-decrypt:requested': {
+          'back:httpz:public-decrypt:requested': {
             actions: [
               ({ event: { payload } }) =>
                 notifyMessage(
-                  relayer.privateDecryptionOperationRequest(payload),
+                  relayer.publicDecryptionOperationRequest(payload),
                 ),
             ],
           },
-          'relayer:private-decryption:operation-response': {
+          'relayer:public-decryption:operation-response': {
             actions: [
               ({ event: { payload } }) =>
                 notifyMessage(
-                  back.httpzPrivateDecryptCompleted(payload, {
+                  back.httpzPublicDecryptCompleted(payload, {
                     correlationId: payload.requestId,
                   }),
                 ),
@@ -58,8 +58,8 @@ function factory({
   })
 }
 
-export class PrivateDecrypt {
-  #actor: Actor<PrivateDecryptMachine>
+export class PublicDecrypt {
+  #actor: Actor<PublicDecryptMachine>
 
   constructor() {
     this.#actor = createActor(
@@ -72,7 +72,7 @@ export class PrivateDecrypt {
     this.messages.push(message)
   }
 
-  send(event: PrivateDecryptEvents): (back.BackEvent | relayer.RelayerEvent)[] {
+  send(event: PublicDecryptEvents): (back.BackEvent | relayer.RelayerEvent)[] {
     this.messages = []
     this.#actor.send(event)
     return this.messages

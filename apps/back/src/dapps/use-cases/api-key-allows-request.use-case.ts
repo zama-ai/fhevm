@@ -9,10 +9,12 @@ import { FeatureFlagHandler } from '#feature-flag/services/feature-flags.service
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { AppError, Task, unauthorizedError, UseCase } from 'utils'
 
-type Input = {
-  chainId: ChainId
-  address: Web3Address
-}
+type Input =
+  | {
+      chainId: ChainId
+      address: Web3Address
+    }
+  | '*'
 
 export type IApiKeyAllowsRequest = UseCase<Input, void>
 
@@ -37,13 +39,19 @@ export class ApiKeyAllowsRequest implements IApiKeyAllowsRequest {
     }
 
     this.logger.debug(
-      `checking if API key ${apiKey.id} allows request for ${input.chainId}/${input.address}`,
+      `checking if API key ${apiKey.id} allows request for ${typeof input === 'string' ? input : `${input.chainId}/${input.address}`}`,
     )
+
     return this.dappRepository.findById(apiKey.dappId).chain(
       dapp =>
         new Task((resolve, reject) => {
           const chainId = dapp.chainId
           const address = dapp.address
+
+          if (typeof input === 'string' && input === '*') {
+            resolve(void 0)
+            return
+          }
 
           if (
             chainId.isSome() &&
