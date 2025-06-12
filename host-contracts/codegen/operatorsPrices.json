@@ -3,76 +3,76 @@
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 94000,
-      "Uint16": 133000,
-      "Uint32": 162000,
-      "Uint64": 188000,
-      "Uint128": 218000
+      "Uint8": 84000,
+      "Uint16": 87000,
+      "Uint32": 87000,
+      "Uint64": 128000,
+      "Uint128": 159000
     },
     "nonScalar": {
-      "Uint8": 94000,
-      "Uint16": 133000,
-      "Uint32": 162000,
-      "Uint64": 188000,
-      "Uint128": 218000
+      "Uint8": 87000,
+      "Uint16": 87000,
+      "Uint32": 121000,
+      "Uint64": 156000,
+      "Uint128": 249000
     }
   },
   "fheSub": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 94000,
-      "Uint16": 133000,
-      "Uint32": 162000,
-      "Uint64": 188000,
-      "Uint128": 218000
+      "Uint8": 83000,
+      "Uint16": 86000,
+      "Uint32": 87000,
+      "Uint64": 129000,
+      "Uint128": 159000
     },
     "nonScalar": {
-      "Uint8": 94000,
-      "Uint16": 133000,
-      "Uint32": 162000,
-      "Uint64": 188000,
-      "Uint128": 218000
+      "Uint8": 84000,
+      "Uint16": 88000,
+      "Uint32": 120000,
+      "Uint64": 159000,
+      "Uint128": 244000
     }
   },
   "fheMul": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 159000,
-      "Uint16": 208000,
-      "Uint32": 264000,
-      "Uint64": 356000,
-      "Uint128": 480000
+      "Uint8": 117000,
+      "Uint16": 176000,
+      "Uint32": 244000,
+      "Uint64": 346000,
+      "Uint128": 646000
     },
     "nonScalar": {
-      "Uint8": 197000,
-      "Uint16": 262000,
-      "Uint32": 359000,
-      "Uint64": 641000,
-      "Uint128": 1145000
+      "Uint8": 146000,
+      "Uint16": 207000,
+      "Uint32": 313000,
+      "Uint64": 571000,
+      "Uint128": 1671000
     }
   },
   "fheDiv": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 238000,
-      "Uint16": 314000,
-      "Uint32": 398000,
-      "Uint64": 584000,
-      "Uint128": 857000
+      "Uint8": 203000,
+      "Uint16": 283000,
+      "Uint32": 397000,
+      "Uint64": 651000,
+      "Uint128": 1290000
     }
   },
   "fheRem": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 460000,
-      "Uint16": 622000,
-      "Uint32": 805000,
-      "Uint64": 1095000,
-      "Uint128": 1499000
+      "Uint8": 387000,
+      "Uint16": 513000,
+      "Uint32": 714000,
+      "Uint64": 1111000,
+      "Uint128": 1900000
     }
   },
   "fheBitAnd": {
@@ -80,145 +80,145 @@
     "numberInputs": 2,
     "scalar": {
       "Bool": 26000,
-      "Uint8": 34000,
-      "Uint16": 34000,
-      "Uint32": 35000,
-      "Uint64": 38000,
-      "Uint128": 41000,
-      "Uint256": 44000
+      "Uint8": 28000,
+      "Uint16": 29000,
+      "Uint32": 29000,
+      "Uint64": 33000,
+      "Uint128": 33000,
+      "Uint256": 37000
     },
     "nonScalar": {
       "Bool": 26000,
-      "Uint8": 34000,
-      "Uint16": 34000,
-      "Uint32": 35000,
-      "Uint64": 38000,
-      "Uint128": 41000,
-      "Uint256": 44000
+      "Uint8": 29000,
+      "Uint16": 29000,
+      "Uint32": 30000,
+      "Uint64": 33000,
+      "Uint128": 34000,
+      "Uint256": 38000
     }
   },
   "fheBitOr": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Bool": 26000,
-      "Uint8": 34000,
-      "Uint16": 34000,
-      "Uint32": 35000,
-      "Uint64": 38000,
-      "Uint128": 41000,
-      "Uint256": 44000
+      "Bool": 25000,
+      "Uint8": 28000,
+      "Uint16": 29000,
+      "Uint32": 30000,
+      "Uint64": 32000,
+      "Uint128": 34000,
+      "Uint256": 37000
     },
     "nonScalar": {
-      "Bool": 26000,
-      "Uint8": 34000,
-      "Uint16": 34000,
-      "Uint32": 35000,
-      "Uint64": 38000,
-      "Uint128": 41000,
-      "Uint256": 44000
+      "Bool": 25000,
+      "Uint8": 28000,
+      "Uint16": 29000,
+      "Uint32": 31000,
+      "Uint64": 33000,
+      "Uint128": 35000,
+      "Uint256": 37000
     }
   },
   "fheBitXor": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Bool": 26000,
-      "Uint8": 34000,
-      "Uint16": 34000,
-      "Uint32": 35000,
-      "Uint64": 38000,
-      "Uint128": 41000,
-      "Uint256": 44000
+      "Bool": 25000,
+      "Uint8": 29000,
+      "Uint16": 29000,
+      "Uint32": 30000,
+      "Uint64": 33000,
+      "Uint128": 35000,
+      "Uint256": 37000
     },
     "nonScalar": {
-      "Bool": 26000,
-      "Uint8": 34000,
-      "Uint16": 34000,
-      "Uint32": 35000,
-      "Uint64": 38000,
-      "Uint128": 41000,
-      "Uint256": 44000
+      "Bool": 25000,
+      "Uint8": 29000,
+      "Uint16": 29000,
+      "Uint32": 30000,
+      "Uint64": 32000,
+      "Uint128": 35000,
+      "Uint256": 37000
     }
   },
   "fheShl": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 35000,
-      "Uint16": 35000,
-      "Uint32": 35000,
-      "Uint64": 38000,
-      "Uint128": 41000,
-      "Uint256": 44000
+      "Uint8": 29000,
+      "Uint16": 29000,
+      "Uint32": 30000,
+      "Uint64": 33000,
+      "Uint128": 33000,
+      "Uint256": 37000
     },
     "nonScalar": {
-      "Uint8": 133000,
-      "Uint16": 153000,
-      "Uint32": 183000,
-      "Uint64": 227000,
-      "Uint128": 282000,
-      "Uint256": 350000
+      "Uint8": 86000,
+      "Uint16": 118000,
+      "Uint32": 150000,
+      "Uint64": 203000,
+      "Uint128": 251000,
+      "Uint256": 359000
     }
   },
   "fheShr": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 35000,
-      "Uint16": 35000,
-      "Uint32": 35000,
-      "Uint64": 38000,
-      "Uint128": 41000,
-      "Uint256": 44000
+      "Uint8": 28000,
+      "Uint16": 29000,
+      "Uint32": 30000,
+      "Uint64": 34000,
+      "Uint128": 33000,
+      "Uint256": 37000
     },
     "nonScalar": {
-      "Uint8": 133000,
-      "Uint16": 153000,
-      "Uint32": 183000,
-      "Uint64": 227000,
-      "Uint128": 282000,
-      "Uint256": 350000
+      "Uint8": 88000,
+      "Uint16": 118000,
+      "Uint32": 150000,
+      "Uint64": 203000,
+      "Uint128": 254000,
+      "Uint256": 359000
     }
   },
   "fheRotl": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 35000,
-      "Uint16": 35000,
-      "Uint32": 35000,
-      "Uint64": 38000,
-      "Uint128": 41000,
-      "Uint256": 44000
+      "Uint8": 29000,
+      "Uint16": 29000,
+      "Uint32": 30000,
+      "Uint64": 34000,
+      "Uint128": 33000,
+      "Uint256": 37000
     },
     "nonScalar": {
-      "Uint8": 133000,
-      "Uint16": 153000,
-      "Uint32": 183000,
-      "Uint64": 227000,
-      "Uint128": 282000,
-      "Uint256": 350000
+      "Uint8": 87000,
+      "Uint16": 117000,
+      "Uint32": 150000,
+      "Uint64": 203000,
+      "Uint128": 264000,
+      "Uint256": 367000
     }
   },
   "fheRotr": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 35000,
-      "Uint16": 35000,
-      "Uint32": 35000,
-      "Uint64": 38000,
-      "Uint128": 41000,
-      "Uint256": 44000
+      "Uint8": 29000,
+      "Uint16": 30000,
+      "Uint32": 30000,
+      "Uint64": 34000,
+      "Uint128": 34000,
+      "Uint256": 37000
     },
     "nonScalar": {
-      "Uint8": 133000,
-      "Uint16": 153000,
-      "Uint32": 183000,
-      "Uint64": 227000,
-      "Uint128": 282000,
-      "Uint256": 350000
+      "Uint8": 86000,
+      "Uint16": 117000,
+      "Uint32": 149000,
+      "Uint64": 206000,
+      "Uint128": 261000,
+      "Uint256": 367000
     }
   },
   "fheEq": {
@@ -226,28 +226,28 @@
     "numberInputs": 2,
     "scalar": {
       "Bool": 49000,
-      "Uint8": 53000,
-      "Uint16": 54000,
-      "Uint32": 82000,
-      "Uint64": 86000,
-      "Uint128": 88000,
-      "Uint160": 90000,
-      "Uint256": 100000,
-      "Uint512": 150000,
-      "Uint1024": 200000,
+      "Uint8": 52000,
+      "Uint16": 52000,
+      "Uint32": 81000,
+      "Uint64": 83000,
+      "Uint128": 115000,
+      "Uint160": 115000,
+      "Uint256": 117000,
+      "Uint512": 200000,
+      "Uint1024": 250000,
       "Uint2048": 300000
     },
     "nonScalar": {
       "Bool": 49000,
-      "Uint8": 53000,
-      "Uint16": 54000,
+      "Uint8": 49000,
+      "Uint16": 78000,
       "Uint32": 82000,
-      "Uint64": 86000,
-      "Uint128": 88000,
-      "Uint160": 90000,
-      "Uint256": 100000,
-      "Uint512": 150000,
-      "Uint1024": 200000,
+      "Uint64": 116000,
+      "Uint128": 117000,
+      "Uint160": 125000,
+      "Uint256": 151000,
+      "Uint512": 200000,
+      "Uint1024": 250000,
       "Uint2048": 300000
     }
   },
@@ -255,29 +255,13 @@
     "supportScalar": true,
     "numberInputs": 1,
     "scalar": {
-      "Bool": 49000,
-      "Uint8": 53000,
-      "Uint16": 54000,
-      "Uint32": 82000,
-      "Uint64": 86000,
-      "Uint128": 88000,
-      "Uint160": 90000,
-      "Uint256": 100000,
-      "Uint512": 150000,
-      "Uint1024": 200000,
+      "Uint512": 200000,
+      "Uint1024": 250000,
       "Uint2048": 300000
     },
     "nonScalar": {
-      "Bool": 49000,
-      "Uint8": 53000,
-      "Uint16": 54000,
-      "Uint32": 82000,
-      "Uint64": 86000,
-      "Uint128": 88000,
-      "Uint160": 90000,
-      "Uint256": 100000,
-      "Uint512": 150000,
-      "Uint1024": 200000,
+      "Uint512": 200000,
+      "Uint1024": 250000,
       "Uint2048": 300000
     }
   },
@@ -286,28 +270,28 @@
     "numberInputs": 2,
     "scalar": {
       "Bool": 49000,
-      "Uint8": 53000,
-      "Uint16": 54000,
-      "Uint32": 82000,
-      "Uint64": 86000,
-      "Uint128": 88000,
-      "Uint160": 90000,
-      "Uint256": 100000,
-      "Uint512": 150000,
-      "Uint1024": 200000,
+      "Uint8": 49000,
+      "Uint16": 51000,
+      "Uint32": 80000,
+      "Uint64": 84000,
+      "Uint128": 115000,
+      "Uint160": 115000,
+      "Uint256": 117000,
+      "Uint512": 200000,
+      "Uint1024": 250000,
       "Uint2048": 300000
     },
     "nonScalar": {
       "Bool": 49000,
-      "Uint8": 53000,
-      "Uint16": 54000,
-      "Uint32": 82000,
-      "Uint64": 86000,
-      "Uint128": 88000,
-      "Uint160": 90000,
-      "Uint256": 100000,
-      "Uint512": 150000,
-      "Uint1024": 200000,
+      "Uint8": 52000,
+      "Uint16": 82000,
+      "Uint32": 84000,
+      "Uint64": 111000,
+      "Uint128": 116000,
+      "Uint160": 124000,
+      "Uint256": 149000,
+      "Uint512": 200000,
+      "Uint1024": 250000,
       "Uint2048": 300000
     }
   },
@@ -315,29 +299,13 @@
     "supportScalar": true,
     "numberInputs": 1,
     "scalar": {
-      "Bool": 49000,
-      "Uint8": 53000,
-      "Uint16": 54000,
-      "Uint32": 82000,
-      "Uint64": 86000,
-      "Uint128": 88000,
-      "Uint160": 90000,
-      "Uint256": 100000,
-      "Uint512": 150000,
-      "Uint1024": 200000,
+      "Uint512": 200000,
+      "Uint1024": 250000,
       "Uint2048": 300000
     },
     "nonScalar": {
-      "Bool": 49000,
-      "Uint8": 53000,
-      "Uint16": 54000,
-      "Uint32": 82000,
-      "Uint64": 86000,
-      "Uint128": 88000,
-      "Uint160": 90000,
-      "Uint256": 100000,
-      "Uint512": 150000,
-      "Uint1024": 200000,
+      "Uint512": 200000,
+      "Uint1024": 250000,
       "Uint2048": 300000
     }
   },
@@ -345,133 +313,133 @@
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 82000,
-      "Uint16": 105000,
-      "Uint32": 128000,
-      "Uint64": 156000,
-      "Uint128": 190000
+      "Uint8": 60000,
+      "Uint16": 60000,
+      "Uint32": 81000,
+      "Uint64": 112000,
+      "Uint128": 144000
     },
     "nonScalar": {
-      "Uint8": 82000,
-      "Uint16": 105000,
-      "Uint32": 128000,
-      "Uint64": 156000,
-      "Uint128": 190000
+      "Uint8": 55000,
+      "Uint16": 80000,
+      "Uint32": 111000,
+      "Uint64": 146000,
+      "Uint128": 206000
     }
   },
   "fheGt": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 82000,
-      "Uint16": 105000,
-      "Uint32": 128000,
-      "Uint64": 156000,
-      "Uint128": 190000
+      "Uint8": 53000,
+      "Uint16": 53000,
+      "Uint32": 82000,
+      "Uint64": 113000,
+      "Uint128": 144000
     },
     "nonScalar": {
-      "Uint8": 82000,
-      "Uint16": 105000,
-      "Uint32": 128000,
-      "Uint64": 156000,
-      "Uint128": 190000
+      "Uint8": 56000,
+      "Uint16": 83000,
+      "Uint32": 111000,
+      "Uint64": 141000,
+      "Uint128": 206000
     }
   },
   "fheLe": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 82000,
-      "Uint16": 105000,
-      "Uint32": 128000,
-      "Uint64": 156000,
-      "Uint128": 190000
+      "Uint8": 53000,
+      "Uint16": 54000,
+      "Uint32": 80000,
+      "Uint64": 113000,
+      "Uint128": 143000
     },
     "nonScalar": {
-      "Uint8": 82000,
-      "Uint16": 105000,
-      "Uint32": 128000,
-      "Uint64": 156000,
-      "Uint128": 190000
+      "Uint8": 54000,
+      "Uint16": 80000,
+      "Uint32": 113000,
+      "Uint64": 146000,
+      "Uint128": 204000
     }
   },
   "fheLt": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 82000,
-      "Uint16": 105000,
-      "Uint32": 128000,
-      "Uint64": 156000,
-      "Uint128": 190000
+      "Uint8": 51000,
+      "Uint16": 53000,
+      "Uint32": 80000,
+      "Uint64": 113000,
+      "Uint128": 143000
     },
     "nonScalar": {
-      "Uint8": 82000,
-      "Uint16": 105000,
-      "Uint32": 128000,
-      "Uint64": 156000,
-      "Uint128": 190000
+      "Uint8": 56000,
+      "Uint16": 80000,
+      "Uint32": 111000,
+      "Uint64": 142000,
+      "Uint128": 204000
     }
   },
   "fheMin": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 128000,
-      "Uint16": 150000,
-      "Uint32": 164000,
-      "Uint64": 192000,
-      "Uint128": 225000
+      "Uint8": 86000,
+      "Uint16": 86000,
+      "Uint32": 113000,
+      "Uint64": 149000,
+      "Uint128": 180000
     },
     "nonScalar": {
-      "Uint8": 128000,
-      "Uint16": 153000,
-      "Uint32": 183000,
+      "Uint8": 111000,
+      "Uint16": 141000,
+      "Uint32": 177000,
       "Uint64": 210000,
-      "Uint128": 241000
+      "Uint128": 280000
     }
   },
   "fheMax": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": 128000,
-      "Uint16": 150000,
-      "Uint32": 164000,
-      "Uint64": 192000,
-      "Uint128": 225000
+      "Uint8": 81000,
+      "Uint16": 83000,
+      "Uint32": 112000,
+      "Uint64": 147000,
+      "Uint128": 181000
     },
     "nonScalar": {
-      "Uint8": 128000,
-      "Uint16": 153000,
-      "Uint32": 183000,
-      "Uint64": 210000,
-      "Uint128": 241000
+      "Uint8": 111000,
+      "Uint16": 140000,
+      "Uint32": 174000,
+      "Uint64": 211000,
+      "Uint128": 274000
     }
   },
   "fheNeg": {
     "supportScalar": false,
     "numberInputs": 1,
     "types": {
-      "Uint8": 95000,
-      "Uint16": 131000,
-      "Uint32": 160000,
-      "Uint64": 199000,
-      "Uint128": 248000,
-      "Uint256": 309000
+      "Uint8": 72000,
+      "Uint16": 89000,
+      "Uint32": 116000,
+      "Uint64": 150000,
+      "Uint128": 241000,
+      "Uint256": 269000
     }
   },
   "fheNot": {
     "supportScalar": false,
     "numberInputs": 1,
     "types": {
-      "Bool": 30000,
-      "Uint8": 34000,
-      "Uint16": 35000,
-      "Uint32": 36000,
-      "Uint64": 37000,
-      "Uint128": 38000,
-      "Uint256": 39000
+      "Bool": 4000,
+      "Uint8": 8000,
+      "Uint16": 15000,
+      "Uint32": 28000,
+      "Uint64": 84000,
+      "Uint128": 109000,
+      "Uint256": 216000
     }
   },
   "cast": {
@@ -509,13 +477,13 @@
     "numberInputs": 3,
     "types": {
       "Bool": 43000,
-      "Uint8": 47000,
-      "Uint16": 47000,
-      "Uint32": 50000,
-      "Uint64": 53000,
-      "Uint128": 70000,
-      "Uint160": 80000,
-      "Uint256": 90000,
+      "Uint8": 43000,
+      "Uint16": 44000,
+      "Uint32": 45000,
+      "Uint64": 52000,
+      "Uint128": 51000,
+      "Uint160": 56000,
+      "Uint256": 71000,
       "Uint512": 150000,
       "Uint1024": 200000,
       "Uint2048": 300000

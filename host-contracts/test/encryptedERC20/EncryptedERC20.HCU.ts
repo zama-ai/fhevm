@@ -39,13 +39,12 @@ describe('EncryptedERC20:HCU', function () {
     console.log('HCU Depth in transfer', HCUMaxDepthTransfer);
     console.log('Native Gas Consumed in transfer', t2.gasUsed);
 
-    // Le euint64 (156000) +  TrivialEncrypt euint64 (600) + Select euint64 53000 + Add euint64 (188000)
-    /// + TrivialEncrypt euint64(600) (Initialize balance to 0) + Sub euint euint64 188000
-    expect(HCUTransfer).to.eq(586_200, 'HCU incorrect');
+    // Le euint64 (146000) +  TrivialEncrypt euint64 (600) + Select euint64 (52000) + Add euint64 (156000)
+    /// + TrivialEncrypt euint64(600) (Initialize balance to 0) + Sub euint euint64 (159000)
+    expect(HCUTransfer).to.eq(514_200, 'HCU incorrect');
 
-    /// Le euint64 (156000) + Select euint64 (53000) + Add euint64 (188000)
-    /// (or) Le euint64 (156000) + Select euint64 (53000) + Sub euint64 (188000)
-    expect(HCUMaxDepthTransfer).to.eq(397_000, 'HCU Depth incorrect');
+    /// Le euint64 (146000) + Select euint64 (52000) + Sub euint64 (159000)
+    expect(HCUMaxDepthTransfer).to.eq(357_000, 'HCU Depth incorrect');
   });
 
   it('should be able to transferFrom only if allowance is sufficient', async function () {
@@ -80,13 +79,11 @@ describe('EncryptedERC20:HCU', function () {
     console.log('HCU Depth in transferFrom', HCUMaxDepthTransferFrom);
     console.log('Native Gas Consumed in transferFrom', t3.gasUsed);
 
-    // Le euint64 (156000) + Le euint64 (156000) + And ebool (26000) + Sub euint64 (188000) + TrivialEncrypt (600) + Select euint64 (53000) +
-    // Select euint64 (53000) + Add euint64 (188000) + TrivialEncrypt (Initialize balance to 0) + Sub euint64 (188000)
+    // Le euint64 (146000) + Le euint64 (146000) + And ebool (26000) + Sub euint64 (159000) + TrivialEncrypt (600) + Select euint64 (52000) +
+    // Select euint64 (52000) + Add euint64 (156000) + TrivialEncrypt (Initialize balance to 0) (600) + Sub euint64 (159000)
+    expect(HCUTransferFrom).to.eq(897_200, 'HCU incorrect');
 
-    expect(HCUTransferFrom).to.eq(1_009_200, 'HCU incorrect');
-
-    // Le euint64 (156000) + And ebool (26000) + Select euint64 (53000) + Add euint64 (188000)
-    // (or) Le euint64 (156000) + And ebool (26000) + Select euint64 (53000) + Sub euint64 (188000)
-    expect(HCUMaxDepthTransferFrom).to.eq(423_000, 'HCU Depth incorrect');
+    // Le euint64 (146000) + And ebool (26000) + Select euint64 (52000) + Sub euint64 (159000)
+    expect(HCUMaxDepthTransferFrom).to.eq(383_000, 'HCU Depth incorrect');
   });
 });

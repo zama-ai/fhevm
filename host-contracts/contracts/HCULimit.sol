@@ -89,15 +89,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 94000;
+                opHCU = 84000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 133000;
+                opHCU = 87000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 162000;
+                opHCU = 87000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 188000;
+                opHCU = 128000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 218000;
+                opHCU = 159000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -105,15 +105,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 94000;
+                opHCU = 87000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 133000;
+                opHCU = 87000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 162000;
+                opHCU = 121000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 188000;
+                opHCU = 156000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 218000;
+                opHCU = 249000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -140,15 +140,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 94000;
+                opHCU = 83000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 133000;
+                opHCU = 86000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 162000;
+                opHCU = 87000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 188000;
+                opHCU = 129000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 218000;
+                opHCU = 159000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -156,15 +156,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 94000;
+                opHCU = 84000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 133000;
+                opHCU = 88000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 162000;
+                opHCU = 120000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 188000;
+                opHCU = 159000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 218000;
+                opHCU = 244000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -191,15 +191,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 159000;
+                opHCU = 117000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 208000;
+                opHCU = 176000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 264000;
+                opHCU = 244000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 356000;
+                opHCU = 346000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 480000;
+                opHCU = 646000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -207,15 +207,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 197000;
+                opHCU = 146000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 262000;
+                opHCU = 207000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 359000;
+                opHCU = 313000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 641000;
+                opHCU = 571000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 1145000;
+                opHCU = 1671000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -241,15 +241,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
         if (resultType == FheType.Uint8) {
-            opHCU = 238000;
+            opHCU = 203000;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 314000;
+            opHCU = 283000;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 398000;
+            opHCU = 397000;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 584000;
+            opHCU = 651000;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 857000;
+            opHCU = 1290000;
         } else {
             revert UnsupportedOperation();
         }
@@ -274,15 +274,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
         if (resultType == FheType.Uint8) {
-            opHCU = 460000;
+            opHCU = 387000;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 622000;
+            opHCU = 513000;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 805000;
+            opHCU = 714000;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 1095000;
+            opHCU = 1111000;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 1499000;
+            opHCU = 1900000;
         } else {
             revert UnsupportedOperation();
         }
@@ -310,17 +310,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             if (resultType == FheType.Bool) {
                 opHCU = 26000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 34000;
+                opHCU = 28000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 34000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 35000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 38000;
+                opHCU = 33000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 41000;
+                opHCU = 33000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 44000;
+                opHCU = 37000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -330,17 +330,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             if (resultType == FheType.Bool) {
                 opHCU = 26000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 34000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 34000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 35000;
+                opHCU = 30000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 38000;
+                opHCU = 33000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 41000;
+                opHCU = 34000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 44000;
+                opHCU = 38000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -367,19 +367,19 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                opHCU = 26000;
+                opHCU = 25000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 34000;
+                opHCU = 28000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 34000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 35000;
+                opHCU = 30000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 38000;
+                opHCU = 32000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 41000;
+                opHCU = 34000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 44000;
+                opHCU = 37000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -387,19 +387,19 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
-                opHCU = 26000;
+                opHCU = 25000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 34000;
+                opHCU = 28000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 34000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 35000;
+                opHCU = 31000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 38000;
+                opHCU = 33000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 41000;
+                opHCU = 35000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 44000;
+                opHCU = 37000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -426,19 +426,19 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                opHCU = 26000;
+                opHCU = 25000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 34000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 34000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 35000;
+                opHCU = 30000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 38000;
+                opHCU = 33000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 41000;
+                opHCU = 35000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 44000;
+                opHCU = 37000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -446,19 +446,19 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
-                opHCU = 26000;
+                opHCU = 25000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 34000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 34000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 35000;
+                opHCU = 30000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 38000;
+                opHCU = 32000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 41000;
+                opHCU = 35000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 44000;
+                opHCU = 37000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -485,17 +485,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 35000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 35000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 35000;
+                opHCU = 30000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 38000;
+                opHCU = 33000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 41000;
+                opHCU = 33000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 44000;
+                opHCU = 37000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -503,17 +503,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 133000;
+                opHCU = 86000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 153000;
+                opHCU = 118000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 183000;
+                opHCU = 150000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 227000;
+                opHCU = 203000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 282000;
+                opHCU = 251000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 350000;
+                opHCU = 359000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -540,17 +540,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 35000;
+                opHCU = 28000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 35000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 35000;
+                opHCU = 30000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 38000;
+                opHCU = 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 41000;
+                opHCU = 33000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 44000;
+                opHCU = 37000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -558,17 +558,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 133000;
+                opHCU = 88000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 153000;
+                opHCU = 118000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 183000;
+                opHCU = 150000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 227000;
+                opHCU = 203000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 282000;
+                opHCU = 254000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 350000;
+                opHCU = 359000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -595,17 +595,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 35000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 35000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 35000;
+                opHCU = 30000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 38000;
+                opHCU = 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 41000;
+                opHCU = 33000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 44000;
+                opHCU = 37000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -613,17 +613,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 133000;
+                opHCU = 87000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 153000;
+                opHCU = 117000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 183000;
+                opHCU = 150000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 227000;
+                opHCU = 203000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 282000;
+                opHCU = 264000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 350000;
+                opHCU = 367000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -650,17 +650,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 35000;
+                opHCU = 29000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 35000;
+                opHCU = 30000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 35000;
+                opHCU = 30000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 38000;
+                opHCU = 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 41000;
+                opHCU = 34000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 44000;
+                opHCU = 37000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -668,17 +668,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 133000;
+                opHCU = 86000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 153000;
+                opHCU = 117000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 183000;
+                opHCU = 149000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 227000;
+                opHCU = 206000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 282000;
+                opHCU = 261000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 350000;
+                opHCU = 367000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -707,23 +707,23 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             if (resultType == FheType.Bool) {
                 opHCU = 49000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 53000;
+                opHCU = 52000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 54000;
+                opHCU = 52000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 82000;
+                opHCU = 81000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 86000;
+                opHCU = 83000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 88000;
+                opHCU = 115000;
             } else if (resultType == FheType.Uint160) {
-                opHCU = 90000;
+                opHCU = 115000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 100000;
+                opHCU = 117000;
             } else if (resultType == FheType.Uint512) {
-                opHCU = 150000;
-            } else if (resultType == FheType.Uint1024) {
                 opHCU = 200000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 250000;
             } else if (resultType == FheType.Uint2048) {
                 opHCU = 300000;
             } else {
@@ -735,23 +735,23 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             if (resultType == FheType.Bool) {
                 opHCU = 49000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 53000;
+                opHCU = 49000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 54000;
+                opHCU = 78000;
             } else if (resultType == FheType.Uint32) {
                 opHCU = 82000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 86000;
+                opHCU = 116000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 88000;
+                opHCU = 117000;
             } else if (resultType == FheType.Uint160) {
-                opHCU = 90000;
+                opHCU = 125000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 100000;
+                opHCU = 151000;
             } else if (resultType == FheType.Uint512) {
-                opHCU = 150000;
-            } else if (resultType == FheType.Uint1024) {
                 opHCU = 200000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 250000;
             } else if (resultType == FheType.Uint2048) {
                 opHCU = 300000;
             } else {
@@ -772,26 +772,10 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Bool) {
-                opHCU = 49000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 53000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 54000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 82000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 86000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 88000;
-            } else if (resultType == FheType.Uint160) {
-                opHCU = 90000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 100000;
-            } else if (resultType == FheType.Uint512) {
-                opHCU = 150000;
-            } else if (resultType == FheType.Uint1024) {
+            if (resultType == FheType.Uint512) {
                 opHCU = 200000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 250000;
             } else if (resultType == FheType.Uint2048) {
                 opHCU = 300000;
             } else {
@@ -801,26 +785,10 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _updateAndVerifyHCUTransactionLimit(opHCU);
             _setHCUForHandle(result, opHCU);
         } else {
-            if (resultType == FheType.Bool) {
-                opHCU = 49000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 53000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 54000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 82000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 86000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 88000;
-            } else if (resultType == FheType.Uint160) {
-                opHCU = 90000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 100000;
-            } else if (resultType == FheType.Uint512) {
-                opHCU = 150000;
-            } else if (resultType == FheType.Uint1024) {
+            if (resultType == FheType.Uint512) {
                 opHCU = 200000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 250000;
             } else if (resultType == FheType.Uint2048) {
                 opHCU = 300000;
             } else {
@@ -851,23 +819,23 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             if (resultType == FheType.Bool) {
                 opHCU = 49000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 53000;
+                opHCU = 49000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 54000;
+                opHCU = 51000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 82000;
+                opHCU = 80000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 86000;
+                opHCU = 84000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 88000;
+                opHCU = 115000;
             } else if (resultType == FheType.Uint160) {
-                opHCU = 90000;
+                opHCU = 115000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 100000;
+                opHCU = 117000;
             } else if (resultType == FheType.Uint512) {
-                opHCU = 150000;
-            } else if (resultType == FheType.Uint1024) {
                 opHCU = 200000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 250000;
             } else if (resultType == FheType.Uint2048) {
                 opHCU = 300000;
             } else {
@@ -879,23 +847,23 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             if (resultType == FheType.Bool) {
                 opHCU = 49000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 53000;
+                opHCU = 52000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 54000;
-            } else if (resultType == FheType.Uint32) {
                 opHCU = 82000;
+            } else if (resultType == FheType.Uint32) {
+                opHCU = 84000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 86000;
+                opHCU = 111000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 88000;
+                opHCU = 116000;
             } else if (resultType == FheType.Uint160) {
-                opHCU = 90000;
+                opHCU = 124000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 100000;
+                opHCU = 149000;
             } else if (resultType == FheType.Uint512) {
-                opHCU = 150000;
-            } else if (resultType == FheType.Uint1024) {
                 opHCU = 200000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 250000;
             } else if (resultType == FheType.Uint2048) {
                 opHCU = 300000;
             } else {
@@ -916,26 +884,10 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Bool) {
-                opHCU = 49000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 53000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 54000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 82000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 86000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 88000;
-            } else if (resultType == FheType.Uint160) {
-                opHCU = 90000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 100000;
-            } else if (resultType == FheType.Uint512) {
-                opHCU = 150000;
-            } else if (resultType == FheType.Uint1024) {
+            if (resultType == FheType.Uint512) {
                 opHCU = 200000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 250000;
             } else if (resultType == FheType.Uint2048) {
                 opHCU = 300000;
             } else {
@@ -945,26 +897,10 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _updateAndVerifyHCUTransactionLimit(opHCU);
             _setHCUForHandle(result, opHCU);
         } else {
-            if (resultType == FheType.Bool) {
-                opHCU = 49000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 53000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 54000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 82000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 86000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 88000;
-            } else if (resultType == FheType.Uint160) {
-                opHCU = 90000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 100000;
-            } else if (resultType == FheType.Uint512) {
-                opHCU = 150000;
-            } else if (resultType == FheType.Uint1024) {
+            if (resultType == FheType.Uint512) {
                 opHCU = 200000;
+            } else if (resultType == FheType.Uint1024) {
+                opHCU = 250000;
             } else if (resultType == FheType.Uint2048) {
                 opHCU = 300000;
             } else {
@@ -993,15 +929,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 82000;
+                opHCU = 60000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 105000;
+                opHCU = 60000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 128000;
+                opHCU = 81000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 156000;
+                opHCU = 112000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 190000;
+                opHCU = 144000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1009,15 +945,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 82000;
+                opHCU = 55000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 105000;
+                opHCU = 80000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 128000;
+                opHCU = 111000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 156000;
+                opHCU = 146000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 190000;
+                opHCU = 206000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1044,15 +980,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 82000;
+                opHCU = 53000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 105000;
+                opHCU = 53000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 128000;
+                opHCU = 82000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 156000;
+                opHCU = 113000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 190000;
+                opHCU = 144000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1060,15 +996,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 82000;
+                opHCU = 56000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 105000;
+                opHCU = 83000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 128000;
+                opHCU = 111000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 156000;
+                opHCU = 141000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 190000;
+                opHCU = 206000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1095,15 +1031,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 82000;
+                opHCU = 53000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 105000;
+                opHCU = 54000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 128000;
+                opHCU = 80000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 156000;
+                opHCU = 113000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 190000;
+                opHCU = 143000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1111,15 +1047,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 82000;
+                opHCU = 54000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 105000;
+                opHCU = 80000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 128000;
+                opHCU = 113000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 156000;
+                opHCU = 146000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 190000;
+                opHCU = 204000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1146,15 +1082,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 82000;
+                opHCU = 51000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 105000;
+                opHCU = 53000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 128000;
+                opHCU = 80000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 156000;
+                opHCU = 113000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 190000;
+                opHCU = 143000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1162,15 +1098,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 82000;
+                opHCU = 56000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 105000;
+                opHCU = 80000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 128000;
+                opHCU = 111000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 156000;
+                opHCU = 142000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 190000;
+                opHCU = 204000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1197,15 +1133,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 128000;
+                opHCU = 86000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 150000;
+                opHCU = 86000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 164000;
+                opHCU = 113000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 192000;
+                opHCU = 149000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 225000;
+                opHCU = 180000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1213,15 +1149,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 128000;
+                opHCU = 111000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 153000;
+                opHCU = 141000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 183000;
+                opHCU = 177000;
             } else if (resultType == FheType.Uint64) {
                 opHCU = 210000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 241000;
+                opHCU = 280000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1248,15 +1184,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 128000;
+                opHCU = 81000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 150000;
+                opHCU = 83000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 164000;
+                opHCU = 112000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 192000;
+                opHCU = 147000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 225000;
+                opHCU = 181000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1264,15 +1200,15 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 128000;
+                opHCU = 111000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 153000;
+                opHCU = 140000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 183000;
+                opHCU = 174000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 210000;
+                opHCU = 211000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 241000;
+                opHCU = 274000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1289,17 +1225,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Uint8) {
-            opHCU = 95000;
+            opHCU = 72000;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 131000;
+            opHCU = 89000;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 160000;
+            opHCU = 116000;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 199000;
+            opHCU = 150000;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 248000;
+            opHCU = 241000;
         } else if (resultType == FheType.Uint256) {
-            opHCU = 309000;
+            opHCU = 269000;
         } else {
             revert UnsupportedOperation();
         }
@@ -1314,19 +1250,19 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
-            opHCU = 30000;
+            opHCU = 4000;
         } else if (resultType == FheType.Uint8) {
-            opHCU = 34000;
+            opHCU = 8000;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 35000;
+            opHCU = 15000;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 36000;
+            opHCU = 28000;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 37000;
+            opHCU = 84000;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 38000;
+            opHCU = 109000;
         } else if (resultType == FheType.Uint256) {
-            opHCU = 39000;
+            opHCU = 216000;
         } else {
             revert UnsupportedOperation();
         }
@@ -1414,19 +1350,19 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (resultType == FheType.Bool) {
             opHCU = 43000;
         } else if (resultType == FheType.Uint8) {
-            opHCU = 47000;
+            opHCU = 43000;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 47000;
+            opHCU = 44000;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 50000;
+            opHCU = 45000;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 53000;
+            opHCU = 52000;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 70000;
+            opHCU = 51000;
         } else if (resultType == FheType.Uint160) {
-            opHCU = 80000;
+            opHCU = 56000;
         } else if (resultType == FheType.Uint256) {
-            opHCU = 90000;
+            opHCU = 71000;
         } else if (resultType == FheType.Uint512) {
             opHCU = 150000;
         } else if (resultType == FheType.Uint1024) {
