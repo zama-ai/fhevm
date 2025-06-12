@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
+import {SepoliaZamaOracleAddress} from "@zama-fhe/oracle-solidity/address/ZamaOracleAddress.sol";
 import {FHE} from "../lib/FHE.sol";
 import {FHEVMConfigStruct} from "../lib/Impl.sol";
 
@@ -8,7 +9,7 @@ import {FHEVMConfigStruct} from "../lib/Impl.sol";
  * @title   ZamaConfig.
  * @notice  This library returns the FHEVM config for different networks
  *          with the contract addresses for (1) ACL, (2) FHEVMExecutor, (3) KMSVerifier, (4) InputVerifier
- *          which are deployed & maintained by Zama.
+ *          which are deployed & maintained by Zama. It also returns the address of the decryption oracle.
  */
 library ZamaConfig {
     function getSepoliaConfig() internal pure returns (FHEVMConfigStruct memory) {
@@ -21,8 +22,8 @@ library ZamaConfig {
             });
     }
 
-    function getSepoliaDecryptionOracleAddress() internal pure returns (address) {
-        return 0xa02Cda4Ca3a71D7C46997716F4283aa851C28812;
+    function getSepoliaOracleAddress() internal pure returns (address) {
+        return SepoliaZamaOracleAddress;
     }
 
     function getEthereumConfig() internal pure returns (FHEVMConfigStruct memory) {
@@ -37,7 +38,7 @@ library ZamaConfig {
             });
     }
 
-    function getEthereumDecryptionOracleAddress() internal pure returns (address) {
+    function getEthereumOracleAddress() internal pure returns (address) {
         /// @note Placeholder, should be replaced with actual address once deployed.
         return address(0);
     }
@@ -53,7 +54,7 @@ library ZamaConfig {
 contract SepoliaConfig {
     constructor() {
         FHE.setCoprocessor(ZamaConfig.getSepoliaConfig());
-        FHE.setDecryptionOracle(ZamaConfig.getSepoliaDecryptionOracleAddress());
+        FHE.setDecryptionOracle(ZamaConfig.getSepoliaOracleAddress());
     }
 }
 
@@ -67,6 +68,6 @@ contract SepoliaConfig {
 contract EthereumConfig {
     constructor() {
         FHE.setCoprocessor(ZamaConfig.getEthereumConfig());
-        FHE.setDecryptionOracle(ZamaConfig.getEthereumDecryptionOracleAddress());
+        FHE.setDecryptionOracle(ZamaConfig.getEthereumOracleAddress());
     }
 }
