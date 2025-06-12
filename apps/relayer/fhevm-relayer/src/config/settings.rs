@@ -43,24 +43,20 @@ impl NetworkConfig {
 pub struct NetworksConfig {
     // TODO: should be a list of networks unless we assume 1:1 between relayer and fhevm
     pub fhevm: NetworkConfig,
-    pub gateway: Option<NetworkConfig>,
+    pub gateway: NetworkConfig,
 }
 
 impl NetworksConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         self.fhevm.validate()?;
-        if let Some(gateway) = &self.gateway {
-            gateway.validate()?;
-        }
+        self.gateway.validate()?;
         Ok(())
     }
 
     pub fn get_network(&self, network_name: &str) -> Result<&NetworkConfig, AppConfigError> {
         match network_name {
             "fhevm" => Ok(&self.fhevm),
-            "gateway" => self.gateway.as_ref().ok_or_else(|| {
-                AppConfigError::InvalidNetworkConfig("Gateway network not configured".into())
-            }),
+            "gateway" => Ok(&self.gateway),
             _ => Err(AppConfigError::InvalidNetworkConfig(format!(
                 "Unknown network: {network_name}"
             ))),
@@ -246,7 +242,6 @@ impl Settings {
         tracing::info!(
             fhevm_ws = %settings.networks.fhevm.ws_url,
             fhevm_chain_id = %settings.networks.fhevm.chain_id,
-            gateway_configured = settings.networks.gateway.is_some(),
             "Loaded network configurations"
         );
 
