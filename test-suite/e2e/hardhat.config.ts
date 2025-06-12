@@ -60,7 +60,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:deployInputVerifier', {
       privateKey: privKeyFhevmDeployer,
     });
-    await hre.run('task:deployFHEGasLimit', {
+    await hre.run('task:deployHCULimit', {
       privateKey: privKeyFhevmDeployer,
     });
     await hre.run('task:deployDecryptionOracle', {

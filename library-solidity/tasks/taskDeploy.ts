@@ -21,7 +21,7 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
   await hre.run('task:deployFHEVMExecutor');
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:deployInputVerifier');
-  await hre.run('task:deployFHEGasLimit');
+  await hre.run('task:deployHCULimit');
   await hre.run('task:deployDecryptionOracle');
   console.info('Contract deployment done!');
 });
@@ -64,9 +64,9 @@ task('task:deployEmptyUUPSProxies').setAction(async function (
     address: inputVerifierAddress,
   });
 
-  const fheGasLimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setFHEGasLimitAddress', {
-    address: fheGasLimitAddress,
+  const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setHCULimitAddress', {
+    address: HCULimitAddress,
   });
 
   const decryptionOracleAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
@@ -192,19 +192,19 @@ task('task:deployInputVerifier')
     console.info('InputVerifier code set successfully at address:', proxyAddress);
   });
 
-task('task:deployFHEGasLimit').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
+task('task:deployHCULimit').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory(
     'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
     deployer,
   );
-  const newImplem = await ethers.getContractFactory('FHEGasLimit', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.fhegaslimit'));
-  const proxyAddress = parsedEnv.FHE_GASLIMIT_CONTRACT_ADDRESS;
+  const newImplem = await ethers.getContractFactory('HCULimit', deployer);
+  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.hculimit'));
+  const proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem);
-  console.info('FHEGasLimit code set successfully at address:', proxyAddress);
+  console.info('HCULimit code set successfully at address:', proxyAddress);
 });
 
 task('task:setACLAddress')
@@ -324,32 +324,32 @@ address constant inputVerifierAdd = ${taskArguments.address};\n`;
     }
   });
 
-task('task:setFHEGasLimitAddress')
+task('task:setHCULimitAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.fhegaslimit');
-    const content = `FHE_GASLIMIT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.hculimit');
+    const content = `HCU_LIMIT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.info(`FHEGasLimit address ${taskArguments.address} written successfully!`);
+      console.log(`HCULimit address ${taskArguments.address} written successfully!`);
     } catch (err) {
-      console.error('Failed to write FHEGasLimit address:', err);
+      console.error('Failed to write HCULimit address:', err);
     }
 
     const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
 pragma solidity ^0.8.24;
 
-address constant fheGasLimitAdd = ${taskArguments.address};\n`;
+address constant HCULimitAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./fhevmTemp/addresses/FHEGasLimitAddress.sol', solidityTemplate, {
+      fs.writeFileSync('./fhevmTemp/addresses/HCULimitAddress.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.info('./fhevmTemp/addresses/FHEGasLimitAddress.sol file generated successfully!');
+      console.log('./fhevmTemp/addresses/HCULimitAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./fhevmTemp/addresses/FHEGasLimitAddress.sol', error);
+      console.error('Failed to write ./fhevmTemp/addresses/HCULimitAddress.sol', error);
     }
   });
 
