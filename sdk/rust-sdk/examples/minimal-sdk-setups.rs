@@ -15,12 +15,9 @@ fn main() -> Result<()> {
         .with_keys_directory("./keys")
         .with_gateway_chain_id(54321)
         .with_host_chain_id(12345)
-        .with_gateway_contract("Decryption", "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
-        .with_gateway_contract(
-            "input-verifier",
-            "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e",
-        )
-        .with_host_contract("ACL", "0x9999999999999999999999999999999999999999")
+        .with_decryption_contract("0x1234567890123456789012345678901234567bbb")
+        .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")
+        .with_acl_contract("0x0987654321098765432109876543210987654321")
         .build()?;
 
     println!("✅ SDK ready!");

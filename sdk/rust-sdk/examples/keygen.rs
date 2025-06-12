@@ -32,12 +32,9 @@ fn main() -> Result<(), FhevmError> {
         .with_keys_directory(&output_dir)
         .with_gateway_chain_id(43113) // Example chain ID
         .with_host_chain_id(11155111) // Example chain ID
-        .with_gateway_contract("decryption", "0x1234567890123456789012345678901234567890")
-        .with_gateway_contract(
-            "input-verification",
-            "0x1234567890123456789012345678901234567890",
-        )
-        .with_host_contract("ACL", "0x0987654321098765432109876543210987654321")
+        .with_decryption_contract("0x1234567890123456789012345678901234567bbb")
+        .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")
+        .with_acl_contract("0x0987654321098765432109876543210987654321")
         .build()?;
 
     info!("SDK initialized with loaded keys");
