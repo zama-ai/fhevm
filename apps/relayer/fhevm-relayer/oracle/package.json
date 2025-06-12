@@ -1,6 +1,6 @@
 {
   "name": "@zama-fhe/oracle-solidity",
-  "version": "0.0.4-0",
+  "version": "0.1.0",
   "description": "Oracle Solidity smart contract for public decryption",
   "main": "index.js",
   "scripts": {
