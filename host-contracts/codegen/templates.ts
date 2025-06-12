@@ -297,23 +297,6 @@ function coprocessorInterfaceCustomFunctions(): string {
     function trivialEncrypt(uint256 ct, FheType toType) external returns (bytes32 result);
 
     /**
-     * @notice          Does trivial encryption.
-     * @param ct        Value to encrypt.
-     * @param toType    Target type.
-     * @return result   Result value of the target type.
-     */
-    function trivialEncrypt(bytes memory ct, FheType toType) external returns (bytes32 result);
-
-    /**
-     * @notice              Computes FHENe operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
-     */
-    function fheNe(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) external returns (bytes32 result);
-
-    /**
      * @notice              Computes FHEIfThenElse operation.
      * @param control       Control value.
      * @param ifTrue        If true.
