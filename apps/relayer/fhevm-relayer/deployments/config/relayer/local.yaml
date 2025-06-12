@@ -18,12 +18,16 @@ networks:
     chain_id: 12345
     retry_delay: 1000
     max_reconnection_attempts: 3
+    # Optional: set the starting block number for event subscriptions
+    # last_block_number: 0
   gateway:
     ws_url: "ws://layer2-node:8546"
     http_url: "http://layer2-node:8546"
     chain_id: 54321
     retry_delay: 1000
     max_reconnection_attempts: 3
+    # Optional: set the starting block number for event subscriptions
+    # last_block_number: 0
 
 transaction:
   private_key_httpz: HTTPZ_PRIVATE_KEY_PLACEHOLDER

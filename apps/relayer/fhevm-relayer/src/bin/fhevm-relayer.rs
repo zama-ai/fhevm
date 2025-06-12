@@ -341,10 +341,21 @@ async fn main() -> eyre::Result<()> {
             // TODO: Pass the event_dispatcher to the event_listener
             let filter_fhevm =
                 ContractAndTopicsFilter::new(vec![decryption_oracle_address], vec![]);
-            let latest_block_fhevm = fhevm_block_store
-                .get_last_block_number()
-                .await
-                .map_err(|e| eyre::eyre!("Error getting last block number: {}", e))?;
+            // Use config last_block_number if present, otherwise get from store
+
+            let latest_block_fhevm = match settings.networks.fhevm.last_block_number {
+                Some(block_number) => Some(block_number),
+                None => fhevm_block_store
+                    .get_last_block_number()
+                    .await
+                    .map_err(|e| eyre::eyre!("Error getting last block number: {}", e))?,
+            };
+            info!(
+                "start listening from block \"{}\" on host chain",
+                latest_block_fhevm
+                    .map(|b| b.to_string())
+                    .unwrap_or("latest".to_string())
+            );
             let subscription_fhevm = fhevm
                 .new_subscription(filter_fhevm, latest_block_fhevm)
                 .await?;
@@ -371,10 +382,19 @@ async fn main() -> eyre::Result<()> {
                 vec![decryption_address, input_verification_address],
                 vec![],
             );
-            let latest_block_gateway = gateway_block_store
-                .get_last_block_number()
-                .await
-                .map_err(|e| eyre::eyre!("Error getting last block number: {}", e))?;
+            let latest_block_gateway = match settings.networks.gateway.last_block_number {
+                Some(block_number) => Some(block_number),
+                None => gateway_block_store
+                    .get_last_block_number()
+                    .await
+                    .map_err(|e| eyre::eyre!("Error getting last block number: {}", e))?,
+            };
+            info!(
+                "start listening from block \"{}\" on gateway chain",
+                latest_block_gateway
+                    .map(|b| b.to_string())
+                    .unwrap_or("latest".to_string())
+            );
             let subscription_gateway = gateway
                 .new_subscription(filter_gateway, latest_block_gateway)
                 .await?;

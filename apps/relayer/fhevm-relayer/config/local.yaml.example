@@ -12,12 +12,17 @@ networks:
     chain_id: 123456
     retry_delay: 1000
     max_reconnection_attempts: 3
+    # Optional: set the starting block number for event subscriptions
+    # last_block_number: 0
+
   gateway:
     ws_url: "ws://localhost:8757"
     http_url: "http://localhost:8757"
     chain_id: 654321
     retry_delay: 1000
     max_reconnection_attempts: 3
+    # Optional: set the starting block number for event subscriptions
+    # last_block_number: 0
 
 http_endpoint: "0.0.0.0:3000"
 metrics_endpoint: "0.0.0.0:9898"

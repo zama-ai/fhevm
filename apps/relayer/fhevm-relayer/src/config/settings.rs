@@ -18,6 +18,8 @@ pub struct NetworkConfig {
     pub retry_delay: u64,
     /// Maximum number of reconnection attempts
     pub max_reconnection_attempts: u32,
+    /// Optional starting block number for event subscriptions
+    pub last_block_number: Option<u64>,
 }
 
 impl NetworkConfig {
