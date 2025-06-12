@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
+import { coprocessorContextsAddress } from "../addresses/CoprocessorContextsAddress.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IInputVerification.sol";
-import "./interfaces/IGatewayConfig.sol";
+import { ICoprocessorContexts } from "./interfaces/ICoprocessorContexts.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
+import { ContextChecks } from "./shared/ContextChecks.sol";
 
 /**
  * @title InputVerification smart contract
@@ -22,7 +23,8 @@ contract InputVerification is
     Ownable2StepUpgradeable,
     UUPSUpgradeable,
     GatewayConfigChecks,
-    Pausable
+    Pausable,
+    ContextChecks
 {
     /**
      * @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
@@ -50,8 +52,8 @@ contract InputVerification is
         address userAddress;
     }
 
-    /// @notice The address of the GatewayConfig contract for protocol state calls.
-    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
+    /// @notice The address of the CoprocessorContexts contract, used for fetching information about coprocessors.
+    ICoprocessorContexts private constant COPROCESSOR_CONTEXTS = ICoprocessorContexts(coprocessorContextsAddress);
 
     /// @notice The definition of the CiphertextVerification structure typed data.
     string private constant EIP712_ZKPOK_TYPE =
@@ -87,6 +89,8 @@ contract InputVerification is
         mapping(uint256 zkProofId => mapping(address coprocessorSigner => bool hasRejected)) signerRejectedZKPoK;
         /// @notice The ZKPoK request inputs to be used for signature validation in response calls.
         mapping(uint256 zkProofId => ZKProofInput zkProofInput) _zkProofInputs;
+        /// @notice The coprocessor context ID associated to the input verification request
+        mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -115,7 +119,7 @@ contract InputVerification is
         address contractAddress,
         address userAddress,
         bytes calldata ciphertextWithZKProof
-    ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused {
+    ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused refreshCoprocessorContextStatuses {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         $.zkProofIdCounter++;
@@ -124,7 +128,18 @@ contract InputVerification is
         /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
         $._zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
 
-        emit VerifyProofRequest(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
+        // Get the current active coprocessor context ID
+        uint256 contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
+        $.inputVerificationContextId[zkProofId] = contextId;
+
+        emit VerifyProofRequest(
+            zkProofId,
+            contextId,
+            contractChainId,
+            contractAddress,
+            userAddress,
+            ciphertextWithZKProof
+        );
     }
 
     /**
@@ -136,8 +151,17 @@ contract InputVerification is
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
         bytes calldata signature
-    ) external virtual onlyCoprocessorTxSender whenNotPaused {
+    ) external virtual whenNotPaused refreshCoprocessorContextStatuses {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        // Get the coprocessor context ID associated with the input verification request
+        uint256 contextId = $.inputVerificationContextId[zkProofId];
+
+        // Only accept coprocessor transaction senders from this context
+        COPROCESSOR_CONTEXTS.checkIsCoprocessorTxSenderFromContext(contextId, msg.sender);
+
+        // Check that the context is still valid
+        _checkCoprocessorContextValidity(contextId, zkProofId);
 
         /// @dev Retrieve stored ZK Proof verification request inputs.
         ZKProofInput memory zkProofInput = $._zkProofInputs[zkProofId];
@@ -156,9 +180,11 @@ contract InputVerification is
         /// @dev Recover the signer address from the signature,
         address signerAddress = ECDSA.recover(digest, signature);
 
-        GATEWAY_CONFIG.checkIsCoprocessorSigner(signerAddress);
+        COPROCESSOR_CONTEXTS.checkIsCoprocessorSignerFromContext(contextId, signerAddress);
 
-        /// @dev Check that the coprocessor has not already responded to the ZKPoK verification request.
+        /// Check that the coprocessor has not already responded to the ZKPoK verification request.
+        // There is no need to consider the contextId here because there is only one associated to
+        // zkProofId
         _checkCoprocessorAlreadyResponded(zkProofId, msg.sender, signerAddress);
 
         bytes[] storage currentSignatures = $.zkProofSignatures[zkProofId][digest];
@@ -171,7 +197,7 @@ contract InputVerification is
          *
          * This means a "late" response will not be reverted, just ignored.
          */
-        if (!$.verifiedZKProofs[zkProofId] && _isConsensusReached(currentSignatures.length)) {
+        if (!$.verifiedZKProofs[zkProofId] && _isConsensusReached(contextId, currentSignatures.length)) {
             $.verifiedZKProofs[zkProofId] = true;
 
             emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
@@ -179,20 +205,31 @@ contract InputVerification is
     }
 
     /// @dev See {IInputVerification-rejectProofResponse}.
-    function rejectProofResponse(uint256 zkProofId) external virtual onlyCoprocessorTxSender whenNotPaused {
+    function rejectProofResponse(uint256 zkProofId) external virtual whenNotPaused refreshCoprocessorContextStatuses {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
+        // Get the coprocessor context ID associated with the input verification request
+        uint256 contextId = $.inputVerificationContextId[zkProofId];
+
+        // Only accept coprocessor transaction senders from this context
+        COPROCESSOR_CONTEXTS.checkIsCoprocessorTxSenderFromContext(contextId, msg.sender);
+
+        // Check that the context is still valid
+        _checkCoprocessorContextValidity(contextId, zkProofId);
+
         /**
-         * @dev Retrieve the coprocessor signer address from the GatewayConfig contract using the
-         * coprocessor transaction sender address.
+         * @dev Retrieve the coprocessor signer address from the context using the coprocessor
+         * transaction sender address.
          * Extracting the signer address is important in order to prevent potential issues with re-org, as this could
          * lead to situations where a coprocessor can both verify and reject a proof, which is forbidden. This check
          * is directly done within `_checkCoprocessorAlreadyResponded` below.
          */
-        Coprocessor memory coprocessor = GATEWAY_CONFIG.getCoprocessor(msg.sender);
+        Coprocessor memory coprocessor = COPROCESSOR_CONTEXTS.getCoprocessorFromContext(contextId, msg.sender);
         address coprocessorSignerAddress = coprocessor.signerAddress;
 
-        /// @dev Check that the coprocessor has not already responded to the ZKPoK verification request.
+        // Check that the coprocessor has not already responded to the ZKPoK verification request.
+        // There is no need to consider the contextId here because there is only one associated to
+        // zkProofId
         _checkCoprocessorAlreadyResponded(zkProofId, msg.sender, coprocessorSignerAddress);
 
         $.rejectedProofResponseCounter[zkProofId]++;
@@ -204,7 +241,9 @@ contract InputVerification is
          *
          * This means a "late" response will not be reverted, just ignored.
          */
-        if (!$.rejectedZKProofs[zkProofId] && _isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
+        if (
+            !$.rejectedZKProofs[zkProofId] && _isConsensusReached(contextId, $.rejectedProofResponseCounter[zkProofId])
+        ) {
             $.rejectedZKProofs[zkProofId] = true;
 
             emit RejectProofResponse(zkProofId);
@@ -304,12 +343,20 @@ contract InputVerification is
 
     /**
      * @notice Checks if the consensus is reached among the coprocessors.
+     * @param contextId The coprocessor context ID
      * @param coprocessorCounter The number of coprocessors that agreed
      * @return Whether the consensus is reached
      */
-    function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
+    function _isConsensusReached(uint256 contextId, uint256 coprocessorCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = COPROCESSOR_CONTEXTS.getCoprocessorMajorityThresholdFromContext(contextId);
         return coprocessorCounter >= consensusThreshold;
+    }
+
+    function _checkCoprocessorContextValidity(uint256 contextId, uint256 zkProofId) internal view virtual {
+        if (_isCoprocessorContextInvalid(contextId)) {
+            ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
+            revert InvalidCoprocessorContextInputVerification(zkProofId, contextId, contextStatus);
+        }
     }
 
     /**

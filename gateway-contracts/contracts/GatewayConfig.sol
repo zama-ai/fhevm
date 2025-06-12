@@ -10,7 +10,7 @@ import "./shared/Pausable.sol";
 /**
  * @title GatewayConfig contract
  * @dev See {IGatewayConfig}.
- * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and host chains.
+ * @dev Add/remove methods will be added in the future for KMS nodes, host chains.
  * @dev See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
 contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeable, Pausable {
@@ -34,10 +34,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address kmsTxSenderAddress => bool isKmsTxSender) _isKmsTxSender;
         /// @notice The KMS nodes' signer addresses
         mapping(address kmsSignerAddress => bool isKmsSigner) _isKmsSigner;
-        /// @notice The coprocessors' transaction sender addresses
-        mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender) _isCoprocessorTxSender;
-        /// @notice The coprocessors' signer addresses
-        mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner;
         /// @notice The host chains' registered status
         mapping(uint256 chainId => bool isRegistered) _isHostChainRegistered;
         /// @notice The protocol's metadata
@@ -54,12 +50,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 publicDecryptionThreshold;
         /// @notice The threshold to consider for user decryption consensus
         uint256 userDecryptionThreshold;
-        /// @notice The coprocessors' metadata
-        mapping(address coprocessorTxSenderAddress => Coprocessor coprocessor) coprocessors;
-        /// @notice The coprocessors' transaction sender address list
-        address[] coprocessorTxSenderAddresses;
-        /// @notice The coprocessors' signer address list
-        address[] coprocessorSignerAddresses;
         /// @notice The host chains' metadata
         HostChain[] hostChains;
     }
@@ -83,15 +73,13 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @param initialPublicDecryptionThreshold The public decryption threshold
     /// @param initialUserDecryptionThreshold The user decryption threshold
     /// @param initialKmsNodes List of KMS nodes
-    /// @param initialCoprocessors List of coprocessors
     function initialize(
         address initialPauser,
         ProtocolMetadata memory initialMetadata,
         uint256 initialMpcThreshold,
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
-        KmsNode[] memory initialKmsNodes,
-        Coprocessor[] memory initialCoprocessors
+        KmsNode[] memory initialKmsNodes
     ) public virtual reinitializer(2) {
         __Ownable_init(owner());
         __Pausable_init();
@@ -102,10 +90,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         if (initialKmsNodes.length == 0) {
             revert EmptyKmsNodes();
-        }
-
-        if (initialCoprocessors.length == 0) {
-            revert EmptyCoprocessors();
         }
 
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
@@ -129,16 +113,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         _setPublicDecryptionThreshold(initialPublicDecryptionThreshold);
         _setUserDecryptionThreshold(initialUserDecryptionThreshold);
 
-        /// @dev Register the coprocessors
-        for (uint256 i = 0; i < initialCoprocessors.length; i++) {
-            $._isCoprocessorTxSender[initialCoprocessors[i].txSenderAddress] = true;
-            $.coprocessors[initialCoprocessors[i].txSenderAddress] = initialCoprocessors[i];
-            $.coprocessorTxSenderAddresses.push(initialCoprocessors[i].txSenderAddress);
-            $._isCoprocessorSigner[initialCoprocessors[i].signerAddress] = true;
-            $.coprocessorSignerAddresses.push(initialCoprocessors[i].signerAddress);
-        }
-
-        emit Initialization(initialPauser, initialMetadata, initialMpcThreshold, initialKmsNodes, initialCoprocessors);
+        emit Initialization(initialPauser, initialMetadata, initialMpcThreshold, initialKmsNodes);
     }
 
     /// @dev See {IGatewayConfig-updatePauser}.
@@ -216,22 +191,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
     }
 
-    /// @dev See {IGatewayConfig-checkIsCoprocessorTxSender}.
-    function checkIsCoprocessorTxSender(address txSenderAddress) external view virtual {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$._isCoprocessorTxSender[txSenderAddress]) {
-            revert NotCoprocessorTxSender(txSenderAddress);
-        }
-    }
-
-    /// @dev See {IGatewayConfig-checkIsCoprocessorSigner}.
-    function checkIsCoprocessorSigner(address signerAddress) external view virtual {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$._isCoprocessorSigner[signerAddress]) {
-            revert NotCoprocessorSigner(signerAddress);
-        }
-    }
-
     /// @dev See {IGatewayConfig-checkHostChainIsRegistered}.
     function checkHostChainIsRegistered(uint256 chainId) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
@@ -270,12 +229,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         return $.userDecryptionThreshold;
     }
 
-    /// @dev See {IGatewayConfig-getCoprocessorMajorityThreshold}.
-    function getCoprocessorMajorityThreshold() external view virtual returns (uint256) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.coprocessorTxSenderAddresses.length / 2 + 1;
-    }
-
     /// @dev See {IGatewayConfig-getKmsNode}.
     function getKmsNode(address kmsTxSenderAddress) external view virtual returns (KmsNode memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
@@ -292,24 +245,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function getKmsSigners() external view virtual returns (address[] memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.kmsSignerAddresses;
-    }
-
-    /// @dev See {IGatewayConfig-getCoprocessor}.
-    function getCoprocessor(address coprocessorTxSenderAddress) external view virtual returns (Coprocessor memory) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.coprocessors[coprocessorTxSenderAddress];
-    }
-
-    /// @dev See {IGatewayConfig-getCoprocessorTxSenders}.
-    function getCoprocessorTxSenders() external view virtual returns (address[] memory) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.coprocessorTxSenderAddresses;
-    }
-
-    /// @dev See {IGatewayConfig-getCoprocessorSigners}.
-    function getCoprocessorSigners() external view virtual returns (address[] memory) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.coprocessorSignerAddresses;
     }
 
     /// @dev See {IGatewayConfig-getHostChain}.

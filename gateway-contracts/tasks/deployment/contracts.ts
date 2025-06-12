@@ -91,24 +91,12 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     });
   }
 
-  // Parse the coprocessors
-  const numCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
-  const coprocessors = [];
-  for (let idx = 0; idx < numCoprocessors; idx++) {
-    coprocessors.push({
-      txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
-      signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
-      s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
-    });
-  }
-
   console.log("Pauser address:", pauserAddress);
   console.log("Protocol metadata:", protocolMetadata);
   console.log("MPC threshold:", mpcThreshold);
   console.log("Public decryption threshold:", publicDecryptionThreshold);
   console.log("User decryption threshold:", userDecryptionThreshold);
   console.log("KMS nodes:", kmsNodes);
-  console.log("Coprocessors:", coprocessors);
 
   await deployContractImplementation("GatewayConfig", hre, [
     pauserAddress,
@@ -117,6 +105,34 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     publicDecryptionThreshold,
     userDecryptionThreshold,
     kmsNodes,
+  ]);
+});
+
+// Deploy the CoprocessorContexts contract
+task("task:deployCoprocessorContexts").setAction(async function (_, hre) {
+  // Parse the coprocessor context block periods
+  const coprocessorsPreActivationBlockPeriod = getRequiredEnvVar("COPROCESSORS_PRE_ACTIVATION_BLOCK_PERIOD");
+  const coprocessorsSuspensionBlockPeriod = getRequiredEnvVar("COPROCESSORS_SUSPENSION_BLOCK_PERIOD");
+
+  // Parse the coprocessor feature set
+  const coprocessorsFeatureSet = getRequiredEnvVar("COPROCESSORS_FEATURE_SET");
+
+  // Parse the coprocessors
+  const numCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
+  const coprocessors = [];
+  for (let idx = 0; idx < numCoprocessors; idx++) {
+    coprocessors.push({
+      name: getRequiredEnvVar(`COPROCESSOR_NAME_${idx}`),
+      txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
+      signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
+      s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
+    });
+  }
+  console.log("Coprocessors:", coprocessors);
+
+  await deployContractImplementation("CoprocessorContexts", hre, [
+    [coprocessorsPreActivationBlockPeriod, coprocessorsSuspensionBlockPeriod],
+    coprocessorsFeatureSet,
     coprocessors,
   ]);
 });
@@ -166,6 +182,9 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
 
   console.log("Deploy GatewayConfig contract:");
   await hre.run("task:deployGatewayConfig");
+
+  console.log("Deploy CoprocessorContexts contract:");
+  await hre.run("task:deployCoprocessorContexts");
 
   console.log("Deploy InputVerification contract:");
   await hre.run("task:deployInputVerification");

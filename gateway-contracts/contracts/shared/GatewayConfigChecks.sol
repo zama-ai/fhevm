@@ -11,35 +11,29 @@ import "../libraries/HandleOps.sol";
  */
 abstract contract GatewayConfigChecks {
     /// @notice The address of the GatewayConfig contract
-    IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
-
-    /// @notice Checks if the sender is a coprocessor transaction sender.
-    modifier onlyCoprocessorTxSender() {
-        _GATEWAY_CONFIG.checkIsCoprocessorTxSender(msg.sender);
-        _;
-    }
+    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /// @notice Checks if the sender is a KMS transaction sender.
     modifier onlyKmsTxSender() {
-        _GATEWAY_CONFIG.checkIsKmsTxSender(msg.sender);
+        GATEWAY_CONFIG.checkIsKmsTxSender(msg.sender);
         _;
     }
 
     /// @notice Checks if the sender is the pauser.
     modifier onlyPauser() {
-        _GATEWAY_CONFIG.checkIsPauser(msg.sender);
+        GATEWAY_CONFIG.checkIsPauser(msg.sender);
         _;
     }
 
     /// @dev Check that the chain ID corresponds to a registered host chain.
     modifier onlyRegisteredHostChain(uint256 chainId) {
-        _GATEWAY_CONFIG.checkHostChainIsRegistered(chainId);
+        GATEWAY_CONFIG.checkHostChainIsRegistered(chainId);
         _;
     }
 
     /// @dev Check that the chain ID extracted from the handle corresponds to a registered host chain.
     modifier onlyHandleFromRegisteredHostChain(bytes32 handle) {
-        _GATEWAY_CONFIG.checkHostChainIsRegistered(HandleOps.extractChainId(handle));
+        GATEWAY_CONFIG.checkHostChainIsRegistered(HandleOps.extractChainId(handle));
         _;
     }
 }

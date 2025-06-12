@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "../shared/Structs.sol";
+import { ContextStatus } from "../shared/Enums.sol";
 
 /**
  * @title Interface for the CiphertextCommits contract.
@@ -29,6 +30,8 @@ interface ICiphertextCommits {
      * @param txSender The transaction sender address of the coprocessor that has already added the handle.
      */
     error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
+
+    error InvalidCoprocessorContextAddCiphertext(bytes32 ctHandle, uint256 contextId, ContextStatus contextStatus);
 
     /**
      * @notice Error indicating that the given ciphertext material represented by the given handle has not
