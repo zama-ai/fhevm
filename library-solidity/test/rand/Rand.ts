@@ -9,10 +9,7 @@ import {
   decrypt64,
   decrypt128,
   decrypt256,
-  decryptBool,
-  decryptEbytes64,
-  decryptEbytes128,
-  decryptEbytes256,
+  decryptBool
 } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployRandFixture } from './Rand.fixture';
@@ -249,66 +246,6 @@ describe('Rand', function () {
       const value = await decrypt256(valueHandle);
       expect(value).to.be.lessThanOrEqual(2n ** 200n);
       values.push(value);
-    }
-    // Expect at least 5 different generated values.
-    const unique = new Set(values);
-    expect(unique.size).to.be.greaterThanOrEqual(5);
-  });
-
-  it('512 bits generate and decrypt', async function () {
-    const values: bigint[] = [];
-    let has512bit: boolean = false;
-    for (let i = 0; i < 5; i++) {
-      const txn = await this.rand.generate512();
-      await txn.wait();
-      const valueHandle = await this.rand.value512();
-      const value = await decryptEbytes64(valueHandle);
-      expect(value).to.be.lessThan(2n ** 512n);
-      if (value > 2n ** 256n) {
-        has512bit = true;
-      }
-      values.push(value);
-      expect(has512bit).to.be.true;
-    }
-    // Expect at least 5 different generated values.
-    const unique = new Set(values);
-    expect(unique.size).to.be.greaterThanOrEqual(5);
-  });
-
-  it('1024 bits generate and decrypt', async function () {
-    const values: bigint[] = [];
-    let has1024bit: boolean = false;
-    for (let i = 0; i < 5; i++) {
-      const txn = await this.rand.generate1024();
-      await txn.wait();
-      const valueHandle = await this.rand.value1024();
-      const value = await decryptEbytes128(valueHandle);
-      expect(value).to.be.lessThan(2n ** 1024n);
-      if (value > 2n ** 512n) {
-        has1024bit = true;
-      }
-      values.push(value);
-      expect(has1024bit).to.be.true;
-    }
-    // Expect at least 5 different generated values.
-    const unique = new Set(values);
-    expect(unique.size).to.be.greaterThanOrEqual(5);
-  });
-
-  it('2048 bits generate and decrypt', async function () {
-    const values: bigint[] = [];
-    let has2048bit: boolean = false;
-    for (let i = 0; i < 5; i++) {
-      const txn = await this.rand.generate2048();
-      await txn.wait();
-      const valueHandle = await this.rand.value2048();
-      const value = await decryptEbytes256(valueHandle);
-      expect(value).to.be.lessThan(2n ** 2048n);
-      if (value > 2n ** 1024n) {
-        has2048bit = true;
-      }
-      values.push(value);
-      expect(has2048bit).to.be.true;
     }
     // Expect at least 5 different generated values.
     const unique = new Set(values);

@@ -12,9 +12,6 @@ contract FHEVMTestSuite7 {
     euint64 public resEuint64;
     euint128 public resEuint128;
     euint256 public resEuint256;
-    ebytes64 public resEbytes64;
-    ebytes128 public resEbytes128;
-    ebytes256 public resEbytes256;
 
     constructor() {
         FHE.setCoprocessor(FHEVMConfig.defaultConfig());
