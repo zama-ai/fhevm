@@ -297,7 +297,7 @@ export const ALL_FHE_TYPES: FheType[] = [
     aliases: [
       {
         type: 'Bytes64',
-        supportedOperators: ['eq', 'ne', 'select', 'rand'],
+        supportedOperators: [],
         clearMatchingType: '',
       },
     ],
@@ -311,7 +311,7 @@ export const ALL_FHE_TYPES: FheType[] = [
     aliases: [
       {
         type: 'Bytes128',
-        supportedOperators: ['eq', 'ne', 'select', 'rand'],
+        supportedOperators: [],
         clearMatchingType: '',
       },
     ],
@@ -325,7 +325,7 @@ export const ALL_FHE_TYPES: FheType[] = [
     aliases: [
       {
         type: 'Bytes256',
-        supportedOperators: ['eq', 'ne', 'select', 'rand'],
+        supportedOperators: [],
         clearMatchingType: '',
       },
     ],

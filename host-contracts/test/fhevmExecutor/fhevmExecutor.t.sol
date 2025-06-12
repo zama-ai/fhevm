@@ -59,16 +59,9 @@ contract SupportedTypesConstants {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256)) +
-            (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
-
-    uint256 internal supportedTypesFheEqWithBytes =
-        (1 << uint8(FheType.Uint512)) + (1 << uint8(FheType.Uint1024)) + (1 << uint8(FheType.Uint2048));
+            (1 << uint8(FheType.Uint256));
 
     uint256 internal supportedTypesFheNe = supportedTypesFheEq;
-    uint256 internal supportedTypesFheNeWithBytes = supportedTypesFheEqWithBytes;
 
     uint256 internal supportedTypesFheGe =
         (1 << uint8(FheType.Uint8)) +
@@ -108,10 +101,7 @@ contract SupportedTypesConstants {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256)) +
-            (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
+            (1 << uint8(FheType.Uint256));
 
     uint256 internal supportedTypesFheRand =
         (1 << uint8(FheType.Bool)) +
@@ -120,10 +110,7 @@ contract SupportedTypesConstants {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256)) +
-            (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
+            (1 << uint8(FheType.Uint256));
 
     uint256 internal supportedTypesFheRandBounded =
         (1 << uint8(FheType.Uint8)) +
@@ -159,9 +146,6 @@ contract SupportedTypesConstants {
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint160)) +
             (1 << uint8(FheType.Uint256));
-
-    uint256 internal supportedTypesTrivialEncryptWithBytes =
-        (1 << uint8(FheType.Uint512)) + (1 << uint8(FheType.Uint1024)) + (1 << uint8(FheType.Uint2048));
 }
 
 /// @dev This contract is a mock implementation of the ACL interface.
@@ -265,35 +249,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
     function _generateMockPrehandle(FheType fheType) internal returns (bytes32 preHandle) {
         preHandle = keccak256(abi.encodePacked(fheType, randomCounterForMockHandle++));
-    }
-
-    function _generateMockBytes(FheType fheType) internal returns (bytes memory) {
-        assert(fheType == FheType.Uint512 || fheType == FheType.Uint1024 || fheType == FheType.Uint2048);
-
-        uint256 length;
-        if (fheType == FheType.Uint512) {
-            length = 64;
-        } else if (fheType == FheType.Uint1024) {
-            length = 128;
-        } else if (fheType == FheType.Uint2048) {
-            length = 256;
-        }
-
-        bytes memory input = abi.encode(_generateMockHandle(fheType));
-        uint256 inputLength = input.length;
-
-        bytes memory result = new bytes(length);
-        uint256 paddingLength = 64 - inputLength;
-
-        for (uint256 i = 0; i < paddingLength; i++) {
-            result[i] = 0;
-        }
-
-        for (uint256 i = 0; i < inputLength; i++) {
-            result[paddingLength + i] = input[i];
-        }
-
-        return result;
     }
 
     /**
@@ -818,36 +773,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheEqWithBytesSupportedTypesWorkAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        vm.assume(fheType <= uint8(FheType.Int248));
-        vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheEqWithBytes));
-        /// @dev The second operand must be scalar.
-        bytes1 scalarByte = 0x01;
-        address sender = address(123);
-
-        bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes memory rhs = _generateMockBytes(FheType(fheType));
-
-        _approveHandleInACL(lhs, sender);
-
-        bytes32 expectedResult = _computeExpectedResultBinaryOpWithScalar(
-            FHEVMExecutorNoEvents.Operators.fheEq,
-            lhs,
-            rhs, /// @dev Since the rhs is converted to bytes without any modification, it is passed as is.
-            scalarByte,
-            FheType.Bool /// @dev The result type is always Bool for the equality operator.
-        );
-
-        vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheEqBytes(sender, lhs, rhs, scalarByte, expectedResult);
-        }
-        bytes32 result = fhevmExecutor.fheEq(lhs, rhs, scalarByte);
-        assertEq(result, expectedResult);
-    }
-
     function test_FheNeSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
         upgradeProxyAndDeployMockContracts(withEvents);
         vm.assume(fheType <= uint8(FheType.Int248));
@@ -873,36 +798,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         if (withEvents) {
             vm.expectEmit(true, true, true, true);
             emit FHEEvents.FheNe(sender, lhs, rhs, scalarByte, expectedResult);
-        }
-        bytes32 result = fhevmExecutor.fheNe(lhs, rhs, scalarByte);
-        assertEq(result, expectedResult);
-    }
-
-    function test_FheNeWithBytesSupportedTypesWorkAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        vm.assume(fheType <= uint8(FheType.Int248));
-        vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheNeWithBytes));
-        /// @dev The second operand must be scalar.
-        bytes1 scalarByte = 0x01;
-        address sender = address(123);
-
-        bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes memory rhs = _generateMockBytes(FheType(fheType));
-
-        _approveHandleInACL(lhs, sender);
-
-        bytes32 expectedResult = _computeExpectedResultBinaryOpWithScalar(
-            FHEVMExecutorNoEvents.Operators.fheNe,
-            lhs,
-            rhs, /// @dev Since the rhs is converted to bytes without any modification, it is passed as is.
-            scalarByte,
-            FheType.Bool /// @dev The result type is always Bool for the non-equality operator.
-        );
-
-        vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheNeBytes(sender, lhs, rhs, scalarByte, expectedResult);
         }
         bytes32 result = fhevmExecutor.fheNe(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
@@ -1272,27 +1167,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_TrivialEncryptWithBytesSupportedTypesWorkAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        vm.assume(fheType <= uint8(FheType.Int248));
-        vm.assume(_isTypeSupported(FheType(fheType), supportedTypesTrivialEncryptWithBytes));
-        address sender = address(123);
-
-        bytes memory pt = _generateMockBytes(FheType(fheType));
-        bytes32 expectedResult = keccak256(
-            abi.encodePacked(FHEVMExecutorNoEvents.Operators.trivialEncrypt, pt, FheType(fheType), acl, block.chainid)
-        );
-        expectedResult = _appendMetadataToPrehandle(FheType(fheType), expectedResult, block.chainid, HANDLE_VERSION);
-
-        vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.TrivialEncryptBytes(sender, pt, FheType(fheType), expectedResult);
-        }
-        bytes32 result = fhevmExecutor.trivialEncrypt(pt, FheType(fheType));
-        assertEq(result, expectedResult);
-    }
-
     function test_CastWorksAsExpected(uint8 fheInputType, uint8 fheOutputType, bool withEvents) public {
         upgradeProxyAndDeployMockContracts(withEvents);
         vm.assume(fheInputType <= uint8(FheType.Int248));
@@ -1553,27 +1427,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheEq(lhs, rhs, scalarByte);
     }
 
-    function test_FheEqWithBytesNonSupportedTypesRevertAsExpected(
-        uint8 fheType,
-        bytes1 scalarByte,
-        bool withEvents
-    ) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        vm.assume(fheType <= uint8(FheType.Int248));
-        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheEqWithBytes));
-        address sender = address(123);
-
-        bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
-        bytes memory rhsAdjusted = abi.encode(rhs);
-
-        _approveHandleInACL(lhs, sender);
-
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
-        vm.prank(sender);
-        fhevmExecutor.fheEq(lhs, rhsAdjusted, scalarByte);
-    }
-
     function test_FheNeNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
         upgradeProxyAndDeployMockContracts(withEvents);
         vm.assume(fheType <= uint8(FheType.Int248));
@@ -1589,27 +1442,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheNe(lhs, rhs, scalarByte);
-    }
-
-    function test_FheNeWithBytesNonSupportedTypesRevertAsExpected(
-        uint8 fheType,
-        bytes1 scalarByte,
-        bool withEvents
-    ) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        vm.assume(fheType <= uint8(FheType.Int248));
-        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheEqWithBytes));
-        address sender = address(123);
-
-        bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
-        bytes memory rhsAdjusted = abi.encode(rhs);
-
-        _approveHandleInACL(lhs, sender);
-
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
-        vm.prank(sender);
-        fhevmExecutor.fheNe(lhs, rhsAdjusted, scalarByte);
     }
 
     function test_FheGeNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
@@ -1811,39 +1643,11 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.trivialEncrypt(pt, FheType(fheType));
     }
 
-    function test_TrivialEncryptWithBytesNotSupportedTypesRevertAsExpected(
-        bytes memory pt,
-        uint8 fheType,
-        bool withEvents
-    ) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        vm.assume(fheType <= uint8(FheType.Int248));
-        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesTrivialEncryptWithBytes));
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
-        fhevmExecutor.trivialEncrypt(pt, FheType(fheType));
-    }
-
     function test_RevertsIfACLNotAllowed_Cast(bool withEvents) public {
         upgradeProxyAndDeployMockContracts(withEvents);
         vm.expectPartialRevert(FHEVMExecutorNoEvents.ACLNotAllowed.selector);
         bytes32 handle = _generateMockHandle(FheType.Uint128);
         fhevmExecutor.cast(handle, FheType.Uint64);
-    }
-
-    function test_RevertsIfACLNotAllowed_FheEqWithBytes(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.ACLNotAllowed.selector);
-        bytes32 lhs = _generateMockHandle(FheType.Uint512);
-        bytes memory rhs = _generateMockBytes(FheType.Uint512);
-        fhevmExecutor.fheEq(lhs, rhs, 0x01);
-    }
-
-    function test_RevertsIfACLNotAllowed_FheNeWithBytes(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.ACLNotAllowed.selector);
-        bytes32 lhs = _generateMockHandle(FheType.Uint512);
-        bytes memory rhs = _generateMockBytes(FheType.Uint512);
-        fhevmExecutor.fheNe(lhs, rhs, 0x01);
     }
 
     function test_RevertsIfACLNotAllowed_UnaryOp(bool withEvents) public {
@@ -2041,56 +1845,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRem(lhs, rhs, 0x00);
     }
 
-    function test_RevertsIfFheEqWithBytesRHSIsNotScalar(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        bytes32 lhs = _generateMockHandle(FheType.Uint512);
-        bytes memory rhs = _generateMockBytes(FheType.Uint512);
-        address account = address(123);
-        _approveHandleInACL(lhs, account);
-
-        vm.expectRevert(FHEVMExecutorNoEvents.SecondOperandIsNotScalar.selector);
-        vm.prank(account);
-        fhevmExecutor.fheEq(lhs, rhs, 0x00);
-    }
-
-    function test_RevertsIfFheNeWithBytesRHSIsNotScalar(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        bytes32 lhs = _generateMockHandle(FheType.Uint512);
-        bytes memory rhs = _generateMockBytes(FheType.Uint512);
-        address account = address(123);
-        _approveHandleInACL(lhs, account);
-
-        vm.expectRevert(FHEVMExecutorNoEvents.SecondOperandIsNotScalar.selector);
-        vm.prank(account);
-        fhevmExecutor.fheNe(lhs, rhs, 0x00);
-    }
-
-    function test_RevertsIfFheEqRHSIsScalarForEuint512AndAbove(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        bytes32 lhs = _generateMockHandle(FheType.Uint512);
-        bytes32 rhs = _generateMockHandle(FheType.Uint512);
-        address account = address(123);
-        _approveHandleInACL(lhs, account);
-        _approveHandleInACL(rhs, account);
-
-        vm.expectRevert(FHEVMExecutorNoEvents.IsScalar.selector);
-        vm.prank(account);
-        fhevmExecutor.fheEq(lhs, rhs, 0x01);
-    }
-
-    function test_RevertsIfFheNeRHSIsScalarEuint512AndAbove(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        bytes32 lhs = _generateMockHandle(FheType.Uint512);
-        bytes32 rhs = _generateMockHandle(FheType.Uint512);
-        address account = address(123);
-        _approveHandleInACL(lhs, account);
-        _approveHandleInACL(rhs, account);
-
-        vm.expectRevert(FHEVMExecutorNoEvents.IsScalar.selector);
-        vm.prank(account);
-        fhevmExecutor.fheNe(lhs, rhs, 0x01);
-    }
-
     function test_RevertsIfUpperBoundIsNotPowerOfTwo(uint256 upperBound, bool withEvents) public {
         upgradeProxyAndDeployMockContracts(withEvents);
         vm.assume(upperBound > 0 && ((upperBound & (upperBound - 1)) != 0));
@@ -2123,29 +1877,5 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes32 inputHandle = _generateMockHandle(FheType(fheType));
         vm.expectRevert(FHEVMExecutorNoEvents.InvalidType.selector);
         fhevmExecutor.verifyCiphertext(inputHandle, userAddress, mockInputProof, FheType(otherFheType));
-    }
-
-    function test_RevertsIfInvalidByteLengthForUint512(uint16 byteLength, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        vm.assume(byteLength != 64);
-        bytes memory mockPlainText = new bytes(byteLength);
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.InvalidByteLength.selector);
-        fhevmExecutor.trivialEncrypt(mockPlainText, FheType.Uint512);
-    }
-
-    function test_RevertsIfInvalidByteLengthForUint1024(uint16 byteLength, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        vm.assume(byteLength != 128);
-        bytes memory mockPlainText = new bytes(byteLength);
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.InvalidByteLength.selector);
-        fhevmExecutor.trivialEncrypt(mockPlainText, FheType.Uint1024);
-    }
-
-    function test_RevertsIfInvalidByteLengthForUint2048(uint16 byteLength, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        vm.assume(byteLength != 256);
-        bytes memory mockPlainText = new bytes(byteLength);
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.InvalidByteLength.selector);
-        fhevmExecutor.trivialEncrypt(mockPlainText, FheType.Uint2048);
     }
 }

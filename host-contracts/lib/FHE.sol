@@ -36,15 +36,6 @@ interface IDecryptionOracle {
  *          that interact with the FHEVM protocol.
  */
 library FHE {
-    /// @notice Returned if the input's length is greater than 64 bytes.
-    error InputLengthAbove64Bytes(uint256 inputLength);
-
-    /// @notice Returned if the input's length is greater than 128 bytes.
-    error InputLengthAbove128Bytes(uint256 inputLength);
-
-    /// @notice Returned if the input's length is greater than 256 bytes.
-    error InputLengthAbove256Bytes(uint256 inputLength);
-
     /// @notice Returned if some handles were already saved for corresponding ID.
     error HandlesAlreadySavedForRequestID();
 
@@ -130,27 +121,6 @@ library FHE {
      */
     function isInitialized(euint256 v) internal pure returns (bool) {
         return euint256.unwrap(v) != 0;
-    }
-
-    /**
-     * @dev Returns true if the encrypted integer is initialized and false otherwise.
-     */
-    function isInitialized(ebytes64 v) internal pure returns (bool) {
-        return ebytes64.unwrap(v) != 0;
-    }
-
-    /**
-     * @dev Returns true if the encrypted integer is initialized and false otherwise.
-     */
-    function isInitialized(ebytes128 v) internal pure returns (bool) {
-        return ebytes128.unwrap(v) != 0;
-    }
-
-    /**
-     * @dev Returns true if the encrypted integer is initialized and false otherwise.
-     */
-    function isInitialized(ebytes256 v) internal pure returns (bool) {
-        return ebytes256.unwrap(v) != 0;
     }
 
     /**
@@ -5510,84 +5480,6 @@ library FHE {
     }
 
     /**
-     * @dev Evaluates eq(ebytes64 a, ebytes64 b) and returns the result.
-     */
-    function eq(ebytes64 a, ebytes64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes64(padToBytes64(hex""));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes64(padToBytes64(hex""));
-        }
-        return ebool.wrap(Impl.eq(ebytes64.unwrap(a), ebytes64.unwrap(b), false));
-    }
-
-    /**
-     * @dev Evaluates ne(ebytes64 a, ebytes64 b) and returns the result.
-     */
-    function ne(ebytes64 a, ebytes64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes64(padToBytes64(hex""));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes64(padToBytes64(hex""));
-        }
-        return ebool.wrap(Impl.ne(ebytes64.unwrap(a), ebytes64.unwrap(b), false));
-    }
-
-    /**
-     * @dev Evaluates eq(ebytes128 a, ebytes128 b) and returns the result.
-     */
-    function eq(ebytes128 a, ebytes128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes128(padToBytes128(hex""));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes128(padToBytes128(hex""));
-        }
-        return ebool.wrap(Impl.eq(ebytes128.unwrap(a), ebytes128.unwrap(b), false));
-    }
-
-    /**
-     * @dev Evaluates ne(ebytes128 a, ebytes128 b) and returns the result.
-     */
-    function ne(ebytes128 a, ebytes128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes128(padToBytes128(hex""));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes128(padToBytes128(hex""));
-        }
-        return ebool.wrap(Impl.ne(ebytes128.unwrap(a), ebytes128.unwrap(b), false));
-    }
-
-    /**
-     * @dev Evaluates eq(ebytes256 a, ebytes256 b) and returns the result.
-     */
-    function eq(ebytes256 a, ebytes256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes256(padToBytes256(hex""));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes256(padToBytes256(hex""));
-        }
-        return ebool.wrap(Impl.eq(ebytes256.unwrap(a), ebytes256.unwrap(b), false));
-    }
-
-    /**
-     * @dev Evaluates ne(ebytes256 a, ebytes256 b) and returns the result.
-     */
-    function ne(ebytes256 a, ebytes256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes256(padToBytes256(hex""));
-        }
-        if (!isInitialized(b)) {
-            b = asEbytes256(padToBytes256(hex""));
-        }
-        return ebool.wrap(Impl.ne(ebytes256.unwrap(a), ebytes256.unwrap(b), false));
-    }
-
-    /**
      * @dev Evaluates and(ebool a, bool b) and returns the result.
      */
     function and(ebool a, bool b) internal returns (ebool) {
@@ -7333,126 +7225,6 @@ library FHE {
     }
 
     /**
-     * @dev Evaluates eq(ebytes64 a, bytes memory b) and returns the result.
-     */
-    function eq(ebytes64 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes64(padToBytes64(hex""));
-        }
-        return ebool.wrap(Impl.eq(ebytes64.unwrap(a), b, true));
-    }
-
-    /**
-     * @dev Evaluates eq(bytes memory a, ebytes64 b) and returns the result.
-     */
-    function eq(bytes memory a, ebytes64 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes64(padToBytes64(hex""));
-        }
-        return ebool.wrap(Impl.eq(ebytes64.unwrap(b), a, true));
-    }
-
-    /**
-     * @dev Evaluates ne(ebytes64 a, bytes memory b) and returns the result.
-     */
-    function ne(ebytes64 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes64(padToBytes64(hex""));
-        }
-        return ebool.wrap(Impl.ne(ebytes64.unwrap(a), b, true));
-    }
-
-    /**
-     * @dev Evaluates ne(bytes memory a, ebytes64 b) and returns the result.
-     */
-    function ne(bytes memory a, ebytes64 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes64(padToBytes64(hex""));
-        }
-        return ebool.wrap(Impl.ne(ebytes64.unwrap(b), a, true));
-    }
-
-    /**
-     * @dev Evaluates eq(ebytes128 a, bytes memory b) and returns the result.
-     */
-    function eq(ebytes128 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes128(padToBytes128(hex""));
-        }
-        return ebool.wrap(Impl.eq(ebytes128.unwrap(a), b, true));
-    }
-
-    /**
-     * @dev Evaluates eq(bytes memory a, ebytes128 b) and returns the result.
-     */
-    function eq(bytes memory a, ebytes128 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes128(padToBytes128(hex""));
-        }
-        return ebool.wrap(Impl.eq(ebytes128.unwrap(b), a, true));
-    }
-
-    /**
-     * @dev Evaluates ne(ebytes128 a, bytes memory b) and returns the result.
-     */
-    function ne(ebytes128 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes128(padToBytes128(hex""));
-        }
-        return ebool.wrap(Impl.ne(ebytes128.unwrap(a), b, true));
-    }
-
-    /**
-     * @dev Evaluates ne(bytes memory a, ebytes128 b) and returns the result.
-     */
-    function ne(bytes memory a, ebytes128 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes128(padToBytes128(hex""));
-        }
-        return ebool.wrap(Impl.ne(ebytes128.unwrap(b), a, true));
-    }
-
-    /**
-     * @dev Evaluates eq(ebytes256 a, bytes memory b) and returns the result.
-     */
-    function eq(ebytes256 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes256(padToBytes256(hex""));
-        }
-        return ebool.wrap(Impl.eq(ebytes256.unwrap(a), b, true));
-    }
-
-    /**
-     * @dev Evaluates eq(bytes memory a, ebytes256 b) and returns the result.
-     */
-    function eq(bytes memory a, ebytes256 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes256(padToBytes256(hex""));
-        }
-        return ebool.wrap(Impl.eq(ebytes256.unwrap(b), a, true));
-    }
-
-    /**
-     * @dev Evaluates ne(ebytes256 a, bytes memory b) and returns the result.
-     */
-    function ne(ebytes256 a, bytes memory b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbytes256(padToBytes256(hex""));
-        }
-        return ebool.wrap(Impl.ne(ebytes256.unwrap(a), b, true));
-    }
-
-    /**
-     * @dev Evaluates ne(bytes memory a, ebytes256 b) and returns the result.
-     */
-    function ne(bytes memory a, ebytes256 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbytes256(padToBytes256(hex""));
-        }
-        return ebool.wrap(Impl.ne(ebytes256.unwrap(b), a, true));
-    }
-
-    /**
      * @dev Evaluates shl(euint8 a, euint8 b) and returns the result.
      */
     function shl(euint8 a, euint8 b) internal returns (euint8) {
@@ -8061,27 +7833,6 @@ library FHE {
         return euint256.wrap(Impl.select(ebool.unwrap(control), euint256.unwrap(a), euint256.unwrap(b)));
     }
     /**
-     * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
-     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
-     */
-    function select(ebool control, ebytes64 a, ebytes64 b) internal returns (ebytes64) {
-        return ebytes64.wrap(Impl.select(ebool.unwrap(control), ebytes64.unwrap(a), ebytes64.unwrap(b)));
-    }
-    /**
-     * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
-     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
-     */
-    function select(ebool control, ebytes128 a, ebytes128 b) internal returns (ebytes128) {
-        return ebytes128.wrap(Impl.select(ebool.unwrap(control), ebytes128.unwrap(a), ebytes128.unwrap(b)));
-    }
-    /**
-     * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
-     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
-     */
-    function select(ebool control, ebytes256 a, ebytes256 b) internal returns (ebytes256) {
-        return ebytes256.wrap(Impl.select(ebool.unwrap(control), ebytes256.unwrap(a), ebytes256.unwrap(b)));
-    }
-    /**
      * @dev Casts an encrypted integer from 'euint16' to 'euint8'.
      */
     function asEuint8(euint16 value) internal returns (euint8) {
@@ -8585,48 +8336,6 @@ library FHE {
     }
 
     /**
-     * @dev Convert an inputHandle with corresponding inputProof to an encrypted ebytes64 integer.
-     */
-    function fromExternal(externalEbytes64 inputHandle, bytes memory inputProof) internal returns (ebytes64) {
-        return ebytes64.wrap(Impl.verify(externalEbytes64.unwrap(inputHandle), inputProof, FheType.Uint512));
-    }
-
-    /**
-     * @dev Convert the plaintext bytes to a ebytes64 value.
-     */
-    function asEbytes64(bytes memory value) internal returns (ebytes64) {
-        return ebytes64.wrap(Impl.trivialEncrypt(value, FheType.Uint512));
-    }
-
-    /**
-     * @dev Convert an inputHandle with corresponding inputProof to an encrypted ebytes128 integer.
-     */
-    function fromExternal(externalEbytes128 inputHandle, bytes memory inputProof) internal returns (ebytes128) {
-        return ebytes128.wrap(Impl.verify(externalEbytes128.unwrap(inputHandle), inputProof, FheType.Uint1024));
-    }
-
-    /**
-     * @dev Convert the plaintext bytes to a ebytes128 value.
-     */
-    function asEbytes128(bytes memory value) internal returns (ebytes128) {
-        return ebytes128.wrap(Impl.trivialEncrypt(value, FheType.Uint1024));
-    }
-
-    /**
-     * @dev Convert an inputHandle with corresponding inputProof to an encrypted ebytes256 integer.
-     */
-    function fromExternal(externalEbytes256 inputHandle, bytes memory inputProof) internal returns (ebytes256) {
-        return ebytes256.wrap(Impl.verify(externalEbytes256.unwrap(inputHandle), inputProof, FheType.Uint2048));
-    }
-
-    /**
-     * @dev Convert the plaintext bytes to a ebytes256 value.
-     */
-    function asEbytes256(bytes memory value) internal returns (ebytes256) {
-        return ebytes256.wrap(Impl.trivialEncrypt(value, FheType.Uint2048));
-    }
-
-    /**
      * @dev Generates a random encrypted value.
      */
     function randEbool() internal returns (ebool) {
@@ -8721,96 +8430,6 @@ library FHE {
      */
     function randEuint256(uint256 upperBound) internal returns (euint256) {
         return euint256.wrap(Impl.randBounded(upperBound, FheType.Uint256));
-    }
-
-    /**
-     * @dev Generates a random encrypted value.
-     */
-    function randEbytes64() internal returns (ebytes64) {
-        return ebytes64.wrap(Impl.rand(FheType.Uint512));
-    }
-
-    /**
-     * @dev Generates a random encrypted value.
-     */
-    function randEbytes128() internal returns (ebytes128) {
-        return ebytes128.wrap(Impl.rand(FheType.Uint1024));
-    }
-
-    /**
-     * @dev Generates a random encrypted value.
-     */
-    function randEbytes256() internal returns (ebytes256) {
-        return ebytes256.wrap(Impl.rand(FheType.Uint2048));
-    }
-
-    /**
-     * @dev Left-pad a bytes array with zeros such that it becomes of length 64.
-     */
-    function padToBytes64(bytes memory input) internal pure returns (bytes memory) {
-        uint256 inputLength = input.length;
-
-        if (inputLength > 64) {
-            revert InputLengthAbove64Bytes(inputLength);
-        }
-
-        bytes memory result = new bytes(64);
-        uint256 paddingLength = 64 - inputLength;
-
-        for (uint256 i = 0; i < paddingLength; i++) {
-            result[i] = 0;
-        }
-
-        for (uint256 i = 0; i < inputLength; i++) {
-            result[paddingLength + i] = input[i];
-        }
-        return result;
-    }
-
-    /**
-     * @dev Left-pad a bytes array with zeros such that it becomes of length 128.
-     */
-    function padToBytes128(bytes memory input) internal pure returns (bytes memory) {
-        uint256 inputLength = input.length;
-
-        if (inputLength > 128) {
-            revert InputLengthAbove128Bytes(inputLength);
-        }
-
-        bytes memory result = new bytes(128);
-        uint256 paddingLength = 128 - inputLength;
-
-        for (uint256 i = 0; i < paddingLength; i++) {
-            result[i] = 0;
-        }
-
-        for (uint256 i = 0; i < inputLength; i++) {
-            result[paddingLength + i] = input[i];
-        }
-        return result;
-    }
-
-    /**
-     * @dev Left-pad a bytes array with zeros such that it becomes of length 256.
-     */
-    function padToBytes256(bytes memory input) internal pure returns (bytes memory) {
-        uint256 inputLength = input.length;
-
-        if (inputLength > 256) {
-            revert InputLengthAbove256Bytes(inputLength);
-        }
-
-        bytes memory result = new bytes(256);
-        uint256 paddingLength = 256 - inputLength;
-
-        for (uint256 i = 0; i < paddingLength; i++) {
-            result[i] = 0;
-        }
-
-        for (uint256 i = 0; i < inputLength; i++) {
-            result[paddingLength + i] = input[i];
-        }
-        return result;
     }
 
     /**
@@ -9249,165 +8868,6 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the account is allowed to use the value.
-     */
-    function isAllowed(ebytes64 value, address account) internal view returns (bool) {
-        return Impl.isAllowed(ebytes64.unwrap(value), account);
-    }
-
-    /**
-     * @dev Returns whether the sender is allowed to use the value.
-     */
-    function isSenderAllowed(ebytes64 value) internal view returns (bool) {
-        return Impl.isAllowed(ebytes64.unwrap(value), msg.sender);
-    }
-
-    /**
-     * @dev Allows the use of value for the address account.
-     */
-    function allow(ebytes64 value, address account) internal returns (ebytes64) {
-        Impl.allow(ebytes64.unwrap(value), account);
-        return value;
-    }
-
-    /**
-     * @dev Allows the use of value for this address (address(this)).
-     */
-    function allowThis(ebytes64 value) internal returns (ebytes64) {
-        Impl.allow(ebytes64.unwrap(value), address(this));
-        return value;
-    }
-
-    /**
-     * @dev Allows the use of value by address account for this transaction.
-     */
-    function allowTransient(ebytes64 value, address account) internal returns (ebytes64) {
-        Impl.allowTransient(ebytes64.unwrap(value), account);
-        return value;
-    }
-
-    /**
-     * @dev Makes the value publicly decryptable.
-     */
-    function makePubliclyDecryptable(ebytes64 value) internal returns (ebytes64) {
-        Impl.makePubliclyDecryptable(ebytes64.unwrap(value));
-        return value;
-    }
-
-    /**
-     * @dev Returns whether the the value is publicly decryptable.
-     */
-    function isPubliclyDecryptable(ebytes64 value) internal view returns (bool) {
-        return Impl.isPubliclyDecryptable(ebytes64.unwrap(value));
-    }
-
-    /**
-     * @dev Returns whether the account is allowed to use the value.
-     */
-    function isAllowed(ebytes128 value, address account) internal view returns (bool) {
-        return Impl.isAllowed(ebytes128.unwrap(value), account);
-    }
-
-    /**
-     * @dev Returns whether the sender is allowed to use the value.
-     */
-    function isSenderAllowed(ebytes128 value) internal view returns (bool) {
-        return Impl.isAllowed(ebytes128.unwrap(value), msg.sender);
-    }
-
-    /**
-     * @dev Allows the use of value for the address account.
-     */
-    function allow(ebytes128 value, address account) internal returns (ebytes128) {
-        Impl.allow(ebytes128.unwrap(value), account);
-        return value;
-    }
-
-    /**
-     * @dev Allows the use of value for this address (address(this)).
-     */
-    function allowThis(ebytes128 value) internal returns (ebytes128) {
-        Impl.allow(ebytes128.unwrap(value), address(this));
-        return value;
-    }
-
-    /**
-     * @dev Allows the use of value by address account for this transaction.
-     */
-    function allowTransient(ebytes128 value, address account) internal returns (ebytes128) {
-        Impl.allowTransient(ebytes128.unwrap(value), account);
-        return value;
-    }
-
-    /**
-     * @dev Makes the value publicly decryptable.
-     */
-    function makePubliclyDecryptable(ebytes128 value) internal returns (ebytes128) {
-        Impl.makePubliclyDecryptable(ebytes128.unwrap(value));
-        return value;
-    }
-
-    /**
-     * @dev Returns whether the the value is publicly decryptable.
-     */
-    function isPubliclyDecryptable(ebytes128 value) internal view returns (bool) {
-        return Impl.isPubliclyDecryptable(ebytes128.unwrap(value));
-    }
-
-    /**
-     * @dev Returns whether the account is allowed to use the value.
-     */
-    function isAllowed(ebytes256 value, address account) internal view returns (bool) {
-        return Impl.isAllowed(ebytes256.unwrap(value), account);
-    }
-
-    /**
-     * @dev Returns whether the sender is allowed to use the value.
-     */
-    function isSenderAllowed(ebytes256 value) internal view returns (bool) {
-        return Impl.isAllowed(ebytes256.unwrap(value), msg.sender);
-    }
-
-    /**
-     * @dev Allows the use of value for the address account.
-     */
-    function allow(ebytes256 value, address account) internal returns (ebytes256) {
-        Impl.allow(ebytes256.unwrap(value), account);
-        return value;
-    }
-
-    /**
-     * @dev Allows the use of value for this address (address(this)).
-     */
-    function allowThis(ebytes256 value) internal returns (ebytes256) {
-        Impl.allow(ebytes256.unwrap(value), address(this));
-        return value;
-    }
-
-    /**
-     * @dev Allows the use of value by address account for this transaction.
-     */
-    function allowTransient(ebytes256 value, address account) internal returns (ebytes256) {
-        Impl.allowTransient(ebytes256.unwrap(value), account);
-        return value;
-    }
-
-    /**
-     * @dev Makes the value publicly decryptable.
-     */
-    function makePubliclyDecryptable(ebytes256 value) internal returns (ebytes256) {
-        Impl.makePubliclyDecryptable(ebytes256.unwrap(value));
-        return value;
-    }
-
-    /**
-     * @dev Returns whether the the value is publicly decryptable.
-     */
-    function isPubliclyDecryptable(ebytes256 value) internal view returns (bool) {
-        return Impl.isPubliclyDecryptable(ebytes256.unwrap(value));
-    }
-
-    /**
      * @dev Recovers the stored array of handles corresponding to requestID.
      */
     function loadRequestedHandles(uint256 requestID) internal view returns (bytes32[] memory) {
@@ -9506,15 +8966,6 @@ library FHE {
             FheType typeCt = FheType(uint8(handlesList[i][30]));
             if (uint8(typeCt) < 9) {
                 signedDataLength += 32;
-            } else if (typeCt == FheType.Uint512) {
-                //ebytes64
-                signedDataLength += 128;
-            } else if (typeCt == FheType.Uint1024) {
-                //ebytes128
-                signedDataLength += 192;
-            } else if (typeCt == FheType.Uint2048) {
-                //ebytes256
-                signedDataLength += 320;
             } else {
                 revert UnsupportedHandleType();
             }
@@ -9577,26 +9028,5 @@ library FHE {
      */
     function toBytes32(euint256 value) internal pure returns (bytes32 ct) {
         ct = euint256.unwrap(value);
-    }
-
-    /**
-     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
-     */
-    function toBytes32(ebytes64 value) internal pure returns (bytes32 ct) {
-        ct = ebytes64.unwrap(value);
-    }
-
-    /**
-     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
-     */
-    function toBytes32(ebytes128 value) internal pure returns (bytes32 ct) {
-        ct = ebytes128.unwrap(value);
-    }
-
-    /**
-     * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
-     */
-    function toBytes32(ebytes256 value) internal pure returns (bytes32 ct) {
-        ct = ebytes256.unwrap(value);
     }
 }
