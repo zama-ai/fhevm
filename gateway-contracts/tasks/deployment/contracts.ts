@@ -47,7 +47,7 @@ async function deployContractImplementation(
   // Set the upgrade options
   const upgradeOptions = {
     call: {
-      fn: "initialize",
+      fn: "initializeFromEmptyProxy",
       args: [] as unknown[],
     },
   };

@@ -84,7 +84,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @param initialUserDecryptionThreshold The user decryption threshold
     /// @param initialKmsNodes List of KMS nodes
     /// @param initialCoprocessors List of coprocessors
-    function initialize(
+    /// @custom:oz-upgrades-validate-as-initializer
+    function initializeFromEmptyProxy(
         address initialPauser,
         ProtocolMetadata memory initialMetadata,
         uint256 initialMpcThreshold,
