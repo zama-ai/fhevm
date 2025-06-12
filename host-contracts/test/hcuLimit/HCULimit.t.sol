@@ -510,25 +510,11 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheEq(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheEqBytes(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(HCULimit.CallerMustBeFHEVMExecutorContract.selector);
-        hcuLimit.checkHCUForFheEqBytes(FheType.Uint8, 0x01, mockLHS, mockResult);
-    }
-
     function test_OnlyFHEVMExecutorCanCallcheckHCUForFheNe(address randomAccount) public {
         vm.assume(randomAccount != fhevmExecutor);
         vm.prank(randomAccount);
         vm.expectRevert(HCULimit.CallerMustBeFHEVMExecutorContract.selector);
         hcuLimit.checkHCUForFheNe(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
-    }
-
-    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheNeBytes(address randomAccount) public {
-        vm.assume(randomAccount != fhevmExecutor);
-        vm.prank(randomAccount);
-        vm.expectRevert(HCULimit.CallerMustBeFHEVMExecutorContract.selector);
-        hcuLimit.checkHCUForFheNeBytes(FheType.Uint8, 0x01, mockLHS, mockResult);
     }
 
     function test_OnlyFHEVMExecutorCanCallcheckHCUForFheGe(address randomAccount) public {
@@ -726,28 +712,12 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheEq(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheEqBytesRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
-        vm.assume(fheType <= uint8(FheType.Int248));
-        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheEq));
-        vm.expectRevert(HCULimit.UnsupportedOperation.selector);
-        vm.prank(fhevmExecutor);
-        hcuLimit.checkHCUForFheEqBytes(FheType(fheType), scalarByte, mockLHS, mockResult);
-    }
-
     function test_checkHCUForFheNeRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheNe));
         vm.expectRevert(HCULimit.UnsupportedOperation.selector);
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheNe(FheType(fheType), scalarByte, mockLHS, mockRHS, mockResult);
-    }
-
-    function test_checkHCUForFheNeBytesRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
-        vm.assume(fheType <= uint8(FheType.Int248));
-        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheNe));
-        vm.expectRevert(HCULimit.UnsupportedOperation.selector);
-        vm.prank(fhevmExecutor);
-        hcuLimit.checkHCUForFheNeBytes(FheType(fheType), scalarByte, mockLHS, mockResult);
     }
 
     function test_checkHCUForFheGeRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
