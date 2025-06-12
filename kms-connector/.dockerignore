@@ -1,0 +1,6 @@
+**/target/
+
+.gitignore
+
+design_docs
+README.md
