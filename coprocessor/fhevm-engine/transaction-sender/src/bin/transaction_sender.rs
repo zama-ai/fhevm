@@ -11,8 +11,9 @@ use aws_config::BehaviorVersion;
 use clap::{Parser, ValueEnum};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
+use tracing::{error, info}; // Add the missing tracing macros
 use transaction_sender::{
-    get_chain_id, make_abstract_signer, AbstractSigner, ConfigSettings,
+    get_chain_id, http_server::HttpServer, make_abstract_signer, AbstractSigner, ConfigSettings,
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
@@ -104,6 +105,13 @@ struct Conf {
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     provider_retry_interval: Duration,
+
+    /// HTTP server port for health checks
+    #[arg(long, default_value_t = 8080)]
+    health_check_port: u16,
+
+    #[arg(long, default_value = "4s", value_parser = parse_duration)]
+    health_check_timeout: Duration,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -168,36 +176,64 @@ async fn main() -> anyhow::Result<()> {
             .await?,
         Some(wallet.default_signer().address()),
     );
-    let sender = TransactionSender::new(
+    let config = ConfigSettings {
+        database_url,
+        database_pool_size: conf.database_pool_size,
+        verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
+        add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
+        allow_handle_db_channel: conf.allow_handle_database_channel,
+        verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
+        verify_proof_resp_max_retries: conf.verify_proof_resp_max_retries,
+        verify_proof_remove_after_max_retries: conf.verify_proof_remove_after_max_retries,
+        add_ciphertexts_batch_limit: conf.add_ciphertexts_batch_limit,
+        db_polling_interval_secs: conf.database_polling_interval_secs,
+        error_sleep_initial_secs: conf.error_sleep_initial_secs,
+        error_sleep_max_secs: conf.error_sleep_max_secs,
+        add_ciphertexts_max_retries: conf.add_ciphertexts_max_retries,
+        allow_handle_batch_limit: conf.allow_handle_batch_limit,
+        allow_handle_max_retries: conf.allow_handle_max_retries,
+        txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
+        required_txn_confirmations: conf.required_txn_confirmations,
+        review_after_unlimited_retries: conf.review_after_unlimited_retries,
+        health_check_port: conf.health_check_port,
+        health_check_timeout: conf.health_check_timeout,
+    };
+    let transaction_sender = TransactionSender::new(
         conf.input_verification_address,
         conf.ciphertext_commits_address,
         conf.multichain_acl_address,
         abstract_signer,
         provider,
         cancel_token.clone(),
-        ConfigSettings {
-            database_url,
-            database_pool_size: conf.database_pool_size,
-            verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
-            add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
-            allow_handle_db_channel: conf.allow_handle_database_channel,
-            verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
-            verify_proof_resp_max_retries: conf.verify_proof_resp_max_retries,
-            verify_proof_remove_after_max_retries: conf.verify_proof_remove_after_max_retries,
-            add_ciphertexts_batch_limit: conf.add_ciphertexts_batch_limit,
-            db_polling_interval_secs: conf.database_polling_interval_secs,
-            error_sleep_initial_secs: conf.error_sleep_initial_secs,
-            error_sleep_max_secs: conf.error_sleep_max_secs,
-            add_ciphertexts_max_retries: conf.add_ciphertexts_max_retries,
-            allow_handle_batch_limit: conf.allow_handle_batch_limit,
-            allow_handle_max_retries: conf.allow_handle_max_retries,
-            txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
-            required_txn_confirmations: conf.required_txn_confirmations,
-            review_after_unlimited_retries: conf.review_after_unlimited_retries,
-        },
+        config,
         None,
     )
     .await?;
-    install_signal_handlers(cancel_token)?;
-    sender.run().await
+
+    // Wrap the TransactionSender in an Arc
+    let transaction_sender = std::sync::Arc::new(transaction_sender);
+
+    // Create HTTP server with the Arc-wrapped sender
+    let http_server = HttpServer::new(
+        transaction_sender.clone(),
+        conf.health_check_port,
+        cancel_token.clone(),
+    );
+
+    // Run both services concurrently
+    let (sender_result, http_result) = tokio::join!(transaction_sender.run(), http_server.start());
+
+    // Check results
+    if let Err(e) = sender_result {
+        error!("Transaction sender error: {}", e);
+        return Err(e);
+    }
+
+    if let Err(e) = http_result {
+        error!("HTTP server error: {}", e);
+        return Err(e);
+    }
+
+    info!("Transaction sender and HTTP server stopped gracefully");
+    Ok(())
 }

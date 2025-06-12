@@ -7978,7 +7978,7 @@ dependencies = [
 
 [[package]]
 name = "transaction-sender"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "alloy",
  "alloy-eips",
@@ -7989,21 +7989,24 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-kms",
+ "axum",
  "clap",
  "fhevm-engine-common",
  "foundry-compilers",
  "futures-util",
- "hex",
  "humantime",
  "rand 0.9.1",
  "rstest",
  "semver 1.0.26",
+ "serde",
+ "serde_json",
  "serial_test",
  "sqlx",
  "test-harness",
  "testcontainers",
  "tokio",
  "tokio-util",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
 ]
