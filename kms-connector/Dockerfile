@@ -65,7 +65,7 @@ WORKDIR /app/kms-connector
 ENV PATH="$PATH:/app/kms-connector/bin"
 
 # Copy binaries and config
-COPY --from=base /app/kms-connector/bin/ /app/kms-connector/bin/
+COPY --from=base /app/kms-connector/simple-connector/bin/ /app/kms-connector/bin/
 COPY ./kms-connector/config/environments/config-base.toml /app/kms-connector/config/environments/config-base.toml
 
 # Change user to limit root access
