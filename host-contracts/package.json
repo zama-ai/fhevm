@@ -4,7 +4,7 @@
   "description": "fhevm backend contracts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zama-ai/fhevm.git"
+    "url": "git+https://github.com/zama-ai/fhevm-backend.git"
   },
   "main": "index.js",
   "scripts": {
@@ -53,6 +53,6 @@
     "solidity-comments-linux-x64-gnu": "0.1.1"
   },
   "dependencies": {
-    "encrypted-types": "^0.0.2"
+    "encrypted-types": "^0.0.4"
   }
 }
