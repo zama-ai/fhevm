@@ -12,8 +12,8 @@ use tracing::{debug, info};
 ///
 /// # Public Decryption Flow (from JS analysis)
 ///
-/// 1. Check each handle is allowed for public decryption via ACL contract
-/// 2. Send handles to relayer at `/v1/public-decrypt`
+/// 1. Check each handle is allowed for public decryption via ACL contract (this step is not done currently)
+/// 2. Send handles to relayer at `/v1/public-decrypt` (This step will no longer be needed with this sdk)
 /// 3. Receive response with `decrypted_value` and `signatures`
 /// 4. Verify signatures using EIP-712 with KMS signers
 /// 5. Deserialize the decrypted result using ABI decoding
@@ -184,8 +184,7 @@ impl ResponseProcessor {
         // Parse and process the response
         let response_data = parse_json_response(&json_response)?;
 
-        // Check for failure status first
-        check_response_status(&response_data)?;
+        debug!("Parsed JSON response successfully: {}", response_data);
 
         // Extract decrypted value and signatures
         let (decrypted_value, signatures) = extract_response_data(&response_data)?;
@@ -230,26 +229,6 @@ impl ResponseProcessor {
 fn parse_json_response(json_response: &str) -> Result<serde_json::Value> {
     serde_json::from_str(json_response)
         .map_err(|e| FhevmError::DecryptionError(format!("JSON parse error: {}", e)))
-}
-
-fn check_response_status(response_data: &serde_json::Value) -> Result<()> {
-    // Check for explicit failure status
-    if let Some(status) = response_data.get("status") {
-        if status == "failure" {
-            // Try to extract more details about the failure if available
-            let details = response_data
-                .get("error")
-                .or_else(|| response_data.get("message"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown reason");
-
-            return Err(FhevmError::DecryptionError(format!(
-                "Public decrypt failed: {}",
-                details
-            )));
-        }
-    }
-    Ok(())
 }
 
 fn extract_response_data(response_data: &serde_json::Value) -> Result<(String, Vec<String>)> {
