@@ -1,8 +1,7 @@
 use futures_util::future::try_join_all;
+use tracing::Level;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
-
 use alloy::network::EthereumWallet;
 use alloy::node_bindings::Anvil;
 use alloy::signers::local::PrivateKeySigner;
@@ -168,6 +167,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         start_at_block: None,
         end_at_block: None,
         catchup_margin: 5,
+        log_level: Level::DEBUG,
     };
 
     // Start listener in background task

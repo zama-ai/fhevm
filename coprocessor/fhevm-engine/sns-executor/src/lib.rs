@@ -14,7 +14,7 @@ use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::sync::mpsc::{self, Sender};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{info, Level};
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
@@ -58,6 +58,7 @@ pub struct Config {
     pub service_name: String,
     pub db: DBConfig,
     pub s3: S3Config,
+    pub log_level: Level,
 }
 
 /// Implement Display for Config

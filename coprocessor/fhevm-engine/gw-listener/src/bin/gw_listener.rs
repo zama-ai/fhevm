@@ -9,7 +9,7 @@ use gw_listener::ConfigSettings;
 use humantime::parse_duration;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, Level};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -47,6 +47,12 @@ struct Conf {
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     provider_retry_interval: Duration,
+
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(Level),
+        default_value_t = Level::INFO)]
+    log_level: Level,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -64,9 +70,13 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().json().with_level(true).init();
-
     let conf = Conf::parse();
+
+    tracing_subscriber::fmt()
+        .json()
+        .with_level(true)
+        .with_max_level(conf.log_level)
+        .init();
 
     info!("Starting gw_listener with configuration: {:?}", conf);
 
@@ -75,13 +85,28 @@ async fn main() -> anyhow::Result<()> {
         .clone()
         .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
 
-    let provider = ProviderBuilder::new()
-        .connect_ws(
-            WsConnect::new(conf.gw_url.clone())
-                .with_max_retries(conf.provider_max_retries)
-                .with_retry_interval(conf.provider_retry_interval),
-        )
-        .await?;
+    let provider = loop {
+        match ProviderBuilder::new()
+            .connect_ws(
+                WsConnect::new(conf.gw_url.clone())
+                    .with_max_retries(conf.provider_max_retries)
+                    .with_retry_interval(conf.provider_retry_interval),
+            )
+            .await
+        {
+            Ok(provider) => {
+                info!("Connected to Gateway at {}", conf.gw_url);
+                break provider;
+            }
+            Err(e) => {
+                error!(
+                    "Failed to connect to Gateway at {} on startup: {}, retrying in {:?}",
+                    conf.gw_url, e, conf.provider_retry_interval
+                );
+                tokio::time::sleep(conf.provider_retry_interval).await;
+            }
+        }
+    };
 
     let cancel_token = CancellationToken::new();
 
@@ -116,7 +141,10 @@ async fn main() -> anyhow::Result<()> {
     // Install signal handlers
     install_signal_handlers(cancel_token.clone())?;
 
-    info!("Starting HTTP server on port {}", conf.health_check_port);
+    info!(
+        "Starting HTTP health check server on port {}",
+        conf.health_check_port
+    );
 
     // Run both services concurrently - note we now have to deref the Arc for run()
     let (listener_result, http_result) = tokio::join!(gw_listener.run(), http_server.start());

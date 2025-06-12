@@ -51,7 +51,11 @@ pub async fn async_main(
     args: daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     TRACING_INIT.call_once(|| {
-        tracing_subscriber::fmt().json().with_level(true).init();
+        tracing_subscriber::fmt()
+            .json()
+            .with_level(true)
+            .with_max_level(args.log_level)
+            .init();
     });
 
     info!(target: "async_main", "Starting runtime with args: {:?}", args);
