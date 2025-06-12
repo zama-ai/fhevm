@@ -15,15 +15,16 @@ export class SqsProducer implements IProducer {
 
   private get sqs(): SQSClient {
     if (!this._sqs) {
-      this._sqs = new SQSClient({
-        endpoint: this.config.get('aws.endpoint'),
-        region: this.config.get('aws.region'),
-        useQueueUrlAsEndpoint: true,
-        credentials: {
-          accessKeyId: this.config.getOrThrow('aws.accessKeyId'),
-          secretAccessKey: this.config.getOrThrow('aws.secretAccessKey'),
-        },
-      })
+      this._sqs = new SQSClient(this.config.get<boolean>('aws.useConfigCredentials', false)
+        ? {
+            endpoint: this.config.get<string>('aws.endpoint'),
+            region: this.config.get<string>('aws.region'),
+            credentials: {
+              accessKeyId: this.config.getOrThrow<string>('aws.accessKeyId'),
+              secretAccessKey: this.config.getOrThrow<string>('aws.secretAccessKey'),
+            },
+          }
+        : {})
     }
     return this._sqs
   }

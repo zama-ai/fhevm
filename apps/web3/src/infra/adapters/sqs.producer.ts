@@ -13,11 +13,19 @@ export class SqsProducer {
 
   constructor(config: ConfigService) {
     this.logger.debug(`endpoint: ${config.get('aws.endpoint')}`)
-    this.#sns = new SQSClient({
-      endpoint: config.get('aws.endpoint'),
-      region: config.get('aws.region'),
-      useQueueUrlAsEndpoint: true,
-    })
+    this.#sns = new SQSClient(
+      config.get<boolean>('aws.useConfigCredentials', false)
+        ? {
+            endpoint: config.get('aws.endpoint'),
+            region: config.get('aws.region'),
+            useQueueUrlAsEndpoint: true,
+            credentials: {
+              accessKeyId: config.getOrThrow<string>('aws.accessKeyId'),
+              secretAccessKey: config.getOrThrow<string>('aws.secretAccessKey'),
+            },
+          }
+        : {},
+    )
     this.#queueUrl = config.getOrThrow('aws.orchestrator.queueUrl')
   }
 

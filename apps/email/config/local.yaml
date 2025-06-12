@@ -1,4 +1,5 @@
 aws:
+  useConfigCredentials: true
   accessKeyId: 'test'
   secretAccessKey: 'test'
   region: 'eu-central-1'
@@ -8,4 +9,6 @@ aws:
   email:
     queueUrl: 'http://localhost:4566/000000000000/email-queue'
 ses:
+  # TODO: remove this when sqs is ready
+  useConfigCredentials: true
   fromEmail: support@zama.ai

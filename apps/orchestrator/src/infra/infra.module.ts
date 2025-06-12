@@ -24,10 +24,16 @@ import { CronModule } from './cron/cron.module.js'
             name: 'orchestrator',
             queueUrl: config.get<string>('aws.orchestrator.queueUrl')!,
             useQueueUrlAsEndpoint: false,
-            sqs: new SQSClient({
-              endpoint: config.get<string>('aws.endpoint'),
-              region: config.get<string>('aws.region'),
-            }),
+            sqs: new SQSClient(config.get<boolean>('aws.useConfigCredentials', false)
+              ? {
+                  endpoint: config.get<string>('aws.endpoint'),
+                  region: config.get<string>('aws.region'),
+                  credentials: {
+                    accessKeyId: config.getOrThrow<string>('aws.accessKeyId'),
+                    secretAccessKey: config.getOrThrow<string>('aws.secretAccessKey'),
+                  },
+                }
+              : {}),
             messageAttributeNames: ['All'],
             attributeNames: ['All'],
           },

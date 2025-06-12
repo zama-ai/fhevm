@@ -26,14 +26,19 @@ export class SESEmailService implements EmailService {
   private get client(): SESClient {
     if (!this._client) {
       this.logger.verbose(`creating ses client`)
-      this._client = new SESClient({
-        region: this.config.get('aws.region', 'eu-central-1'),
-        endpoint: this.config.get('aws.endpoint'),
-        credentials: {
-          accessKeyId: this.config.getOrThrow('aws.accessKeyId'),
-          secretAccessKey: this.config.getOrThrow('aws.secretAccessKey'),
-        },
-      })
+      this._client = new SESClient(
+        // TODO: change to aws.useConfigCredentials when sqs is ready
+        this.config.get<boolean>('ses.useConfigCredentials', false)
+          ? {
+              region: this.config.get('aws.region'),
+              endpoint: this.config.get('aws.endpoint'),
+              credentials: {
+                accessKeyId: this.config.getOrThrow('aws.accessKeyId'),
+                secretAccessKey: this.config.getOrThrow('aws.secretAccessKey'),
+              },
+            }
+          : {},
+      )
     }
     return this._client
   }

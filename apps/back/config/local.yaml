@@ -4,6 +4,7 @@ common:
   prettify: true
   graphqlMaxComplexity: 150
 aws:
+  useConfigCredentials: true
   accessKeyId: 'test'
   secretAccessKey: 'test'
   region: 'eu-central-1'

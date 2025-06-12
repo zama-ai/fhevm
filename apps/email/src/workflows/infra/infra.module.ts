@@ -23,10 +23,20 @@ import * as uc from '#workflows/use-cases/index.js'
             name: 'email',
             queueUrl: config.getOrThrow<string>('aws.email.queueUrl')!,
             useQueueUrlAsEndpoint: false,
-            sqs: new SQSClient({
-              endpoint: config.getOrThrow<string>('aws.endpoint'),
-              region: config.get<string>('aws.region'),
-            }),
+            sqs: new SQSClient(
+              config.get<boolean>('aws.useConfigCredentials', false)
+                ? {
+                    endpoint: config.get<string>('aws.endpoint'),
+                    region: config.get<string>('aws.region'),
+                    credentials: {
+                      accessKeyId: config.getOrThrow<string>('aws.accessKeyId'),
+                      secretAccessKey: config.getOrThrow<string>(
+                        'aws.secretAccessKey',
+                      ),
+                    },
+                  }
+                : {},
+            ),
             messageAttributeNames: ['All'],
             attributeNames: ['All'],
           },

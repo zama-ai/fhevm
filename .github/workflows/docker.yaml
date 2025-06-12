@@ -165,12 +165,28 @@ jobs:
             SHOULD_PUSH=true
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             SHOULD_PUSH=true
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            SHOULD_PUSH=true
           elif [[ "${{ github.event.action }}" == "labeled" && "${{ github.event.label.name }}" == "docker" ]]; then
             SHOULD_PUSH=true
           fi
           
           echo "push=${SHOULD_PUSH}" >> $GITHUB_OUTPUT
           echo "Will push: ${SHOULD_PUSH}"
+
+      - name: Determine Docker tags
+        id: docker-tags
+        run: |
+          TAGS="ghcr.io/zama-zws/console/${{ matrix.service }}:${{ steps.set-tag.outputs.gitsha }}"
+          
+          # Only add latest tag if pushing to main branch
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            TAGS="${TAGS}\nghcr.io/zama-zws/console/${{ matrix.service }}:latest"
+          fi
+          
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$TAGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       # Only login to the registry when we intend to push
       - name: Login to GitHub Container Registry
@@ -193,9 +209,7 @@ jobs:
           build-args: |
             ${{ env.cargo_git_cli == 'true' && format('CARGO_NET_GIT_FETCH_WITH_CLI={0}', true) || '' }}
           context: ${{ env.context }}
-          tags: |
-            ghcr.io/zama-zws/console/${{ matrix.service }}:${{ steps.set-tag.outputs.gitsha }}
-            ghcr.io/zama-zws/console/${{ matrix.service }}:latest
+          tags: ${{ steps.docker-tags.outputs.tags }}
 
   # TODO: find out why the test is failing
   integration-test:

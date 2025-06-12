@@ -20,14 +20,15 @@ import { SharedModule } from '#shared/shared.module.js'
             name: 'back',
             queueUrl: config.get<string>('aws.back.queueUrl')!,
             useQueueUrlAsEndpoint: false,
-            sqs: new SQSClient({
+            sqs: new SQSClient(config.get<boolean>('aws.useConfigCredentials', false) ? {
               endpoint: config.get('aws.endpoint'),
               region: config.get('aws.region'),
               credentials: {
                 accessKeyId: config.getOrThrow('aws.accessKeyId'),
-                secretAccessKey: config.getOrThrow('aws.secretAccessKey'),
-              },
-            }),
+                    secretAccessKey: config.getOrThrow('aws.secretAccessKey'),
+                  },
+                }
+              : {}),
             messageAttributeNames: ['All'],
             attributeNames: ['All'],
           },
