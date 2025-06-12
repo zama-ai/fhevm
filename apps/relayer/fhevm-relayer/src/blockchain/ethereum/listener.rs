@@ -5,6 +5,7 @@ use crate::core::event::{
 };
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
+use crate::store::BlockNumberStore;
 use alloy::rpc::types::Log;
 use futures_util::StreamExt;
 use std::sync::Arc;
@@ -28,6 +29,7 @@ pub async fn ethereum_listener(
             RelayerEvent,
         >,
     >,
+    block_number_store: Arc<BlockNumberStore>,
 ) {
     loop {
         tokio::select! {
@@ -39,16 +41,23 @@ pub async fn ethereum_listener(
                             category: ApiCategory::PRODUCTION,
                             number: 1,
                         },
-                        log_converter(event_log),
+                        log_converter(event_log.clone()),
                     );
                     orchestrator.dispatch_event(event).await.unwrap_or_else(|e| {
                         error!(
-                            file = file!(),
-                            line = line!(),
                             error = %e,
-                            "Failed to dispatch event"
+                            "dispatching event"
                         );
                     });
+
+                    if let Some(block_number) = event_log.block_number {
+                        block_number_store.persist_last_block_number(block_number).await.unwrap_or_else(|e| {
+                            error!(
+                                error = %e,
+                                "persisting last block number"
+                            );
+                        });
+                    }
                 }
                 None => {
                     info!("Subscription stream ended");

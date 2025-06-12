@@ -35,7 +35,7 @@
 use alloy::primitives::Address;
 use alloy::signers::Signer;
 use clap::Parser;
-use fhevm_relayer::store::PublicDecryptCacheStore;
+use fhevm_relayer::store::{BlockNumberStore, PublicDecryptCacheStore};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::{str::FromStr, sync::Arc};
@@ -217,6 +217,12 @@ async fn main() -> eyre::Result<()> {
             let kv_store = Arc::new(kv_store);
             let event_store = Arc::new(EventStore::<RelayerEvent>::new(kv_store.clone()));
             let public_decrypt_cache = Arc::new(PublicDecryptCacheStore::new(kv_store.clone()));
+            let fhevm_block_store =
+                Arc::new(BlockNumberStore::new(kv_store.clone(), "fhevm".to_string()));
+            let gateway_block_store = Arc::new(BlockNumberStore::new(
+                kv_store.clone(),
+                "gateway".to_string(),
+            ));
 
             // Register event logging hook to capture all events
             orchestrator.register_pre_dispatch_hook(EventLoggingHook::new(
@@ -335,12 +341,19 @@ async fn main() -> eyre::Result<()> {
             // TODO: Pass the event_dispatcher to the event_listener
             let filter_fhevm =
                 ContractAndTopicsFilter::new(vec![decryption_oracle_address], vec![]);
-            let subscription_fhevm = fhevm.new_subscription(filter_fhevm, None).await?;
+            let latest_block_fhevm = fhevm_block_store
+                .get_last_block_number()
+                .await
+                .map_err(|e| eyre::eyre!("Error getting last block number: {}", e))?;
+            let subscription_fhevm = fhevm
+                .new_subscription(filter_fhevm, latest_block_fhevm)
+                .await?;
             info!("Starting Relayer fhevm Listener");
             task_set.spawn(ethereum_listener(
                 subscription_fhevm,
                 fhevm_event_log_converter,
                 Arc::clone(&orchestrator),
+                Arc::clone(&fhevm_block_store),
             ));
 
             // === Initialize gateway adapter
@@ -358,12 +371,19 @@ async fn main() -> eyre::Result<()> {
                 vec![decryption_address, input_verification_address],
                 vec![],
             );
-            let subscription_gateway = gateway.new_subscription(filter_gateway, None).await?;
+            let latest_block_gateway = gateway_block_store
+                .get_last_block_number()
+                .await
+                .map_err(|e| eyre::eyre!("Error getting last block number: {}", e))?;
+            let subscription_gateway = gateway
+                .new_subscription(filter_gateway, latest_block_gateway)
+                .await?;
             info!("Starting Relayer Gateway Listener");
             task_set.spawn(ethereum_listener(
                 subscription_gateway,
                 gateway_event_log_converter,
                 Arc::clone(&orchestrator),
+                Arc::clone(&gateway_block_store),
             ));
 
             // HTTP endpoint
