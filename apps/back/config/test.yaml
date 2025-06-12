@@ -17,16 +17,14 @@ chains:
     name: 'Sepolia'
     description: 'Ethereum Sepolia'
 httpz:
-  fhe_key_info:
-    - fhe_public_key:
-        data_id: 'fhe-public-key-data-id'
-        urls:
-          - http://0.0.0.0:9000/kms-public/PUB/PublicKey/KEY_GEN_ID
+  fheKeyInfo:
+    - fhePublicKey:
+        dataId: 'fhe-public-key-data-id'
+        urls: http://0.0.0.0:9000/kms-public/PUB/PublicKey/KEY_GEN_ID
   crs:
     2048:
-      data_id: 'crs-data-id'
-      urls:
-        - 'http://0.0.0.0:9000/kms-public/PUB/CRS/CRS_GEN_ID'
+      dataId: 'crs-data-id'
+      urls: http://0.0.0.0:9000/kms-public/PUB/CRS/CRS_GEN_ID
 jwt:
   secret: 'JWTSecretPassPhrase'
   expiresIn: '1minute'

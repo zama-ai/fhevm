@@ -30,6 +30,7 @@ import {
   UserDecryptRequest,
   userDecryptSchema,
 } from './dtos/user-decrypt-request.dto.js'
+import { KeyUrlPresenter } from './presenters/keyurl.presenter.js'
 
 @Controller('')
 export class HttpzController {
@@ -49,8 +50,8 @@ export class HttpzController {
   @Get('/v1/keyurl')
   async getKeyUrl() {
     this.logger.log('GET /v1/keyurl')
-    const { fhe_key_info, crs } = await this.getKeyUrlUC.execute().toPromise()
-    return { response: { fhe_key_info, crs } }
+    const keyurl = await this.getKeyUrlUC.execute().toPromise()
+    return { response: KeyUrlPresenter(keyurl) }
   }
 
   @Post('/v1/input-proof')

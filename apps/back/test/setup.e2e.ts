@@ -23,7 +23,7 @@ async function startPostresInstance(databaseUrl: string) {
 
   // Execute Prisma migrations
   execSync('pnpx prisma migrate deploy', {
-    env: { DATABASE_URL: url, PATH: process.env.PATH },
+    env: { APP__DB__URL: url, PATH: process.env.PATH },
   })
 
   return url
@@ -53,7 +53,7 @@ async function startPostgres(maxWorkers: number) {
   // NOTE: I need to run the prisma client to generate the prisma client
   // Sometimes, it doesn't get the last generated client.
   execSync('pnpx prisma generate', {
-    env: { DATABASE_URL: urls[0], PATH: process.env.PATH },
+    env: { APP__DB__URL: urls[0], PATH: process.env.PATH },
   })
 
   return urls

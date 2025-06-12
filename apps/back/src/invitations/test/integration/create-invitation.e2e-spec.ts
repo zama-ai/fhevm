@@ -52,4 +52,30 @@ describe('createInvitation', () => {
       })
     })
   })
+
+  describe('given an invitation exists', () => {
+    let email: string
+    let token: string
+
+    beforeEach(async () => {
+      email = faker.internet.email()
+      const request = await manager.auth.createInvitation(email)
+      if (request.success) {
+        token = request.data.token
+      } else {
+        console.log(`failed to create invitation: ${JSON.stringify(request)}`)
+        expect(request.success).toBe(true)
+      }
+    })
+
+    test('then it fails due a duplicated email error', async () => {
+      const request = await manager.auth.createInvitation(email)
+      expect(request.success).toBe(false)
+      if (!request.success) {
+        expect(request.errors).toBeDefined()
+        expect(request.errors.length).toBeGreaterThan(0)
+        expect(request.errors[0].message).toBe('Email already used')
+      }
+    })
+  })
 })

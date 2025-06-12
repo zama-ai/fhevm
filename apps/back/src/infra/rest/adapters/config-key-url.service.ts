@@ -14,24 +14,39 @@ export class ConfigKeyUrlService implements KeyUrlService {
   constructor(private readonly config: ConfigService) {}
 
   getFHEPublicKey(): Task<FHEPublicKey[], AppError> {
-    const data = this.config.get<unknown[]>('httpz.fhe_key_info')
+    const data =
+      this.config.get<{ fhePublicKey?: { dataId?: string; urls?: string } }[]>(
+        'httpz.fheKeyInfo',
+      )
     this.logger.verbose(`data: ${JSON.stringify(data)}`)
 
     return Task.of(
       data
+        ?.map(({ fhePublicKey }) => ({
+          fhePublicKey: {
+            dataId: fhePublicKey?.dataId,
+            urls: fhePublicKey?.urls?.split(','),
+          },
+        }))
         ?.map(FHEPublicKey.parse)
         .filter(isOk)
         .map(r => r.unwrap()) ?? [],
     )
   }
   getCRS(): Task<Record<string, CRS>, AppError> {
-    const data = this.config.get<Record<string, unknown>>('httpz.crs') ?? {}
+    const data =
+      this.config.get<Record<string, { dataId?: string; urls?: string }>>(
+        'httpz.crs',
+      ) ?? {}
     this.logger.verbose(`data: ${JSON.stringify(data)}`)
 
     return Task.of(
       Object.entries(data).reduce(
         (map, [key, value]) => {
-          const crs = CRS.parse(value)
+          const crs = CRS.parse({
+            dataId: value.dataId,
+            urls: value.urls?.split(','),
+          })
           return isOk(crs) ? { ...map, [key]: crs.unwrap() } : map
         },
         {} as Record<string, CRS>,

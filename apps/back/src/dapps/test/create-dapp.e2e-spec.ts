@@ -55,6 +55,9 @@ describe('create-dapp', () => {
         })
         if (result.success) {
           dapp = result.data
+        } else {
+          console.log(`failed to create dapp: ${JSON.stringify(result)}`)
+          expect(result.success, 'Failed to create dApp').toBe(true)
         }
       })
 

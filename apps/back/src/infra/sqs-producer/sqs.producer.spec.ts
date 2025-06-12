@@ -13,7 +13,6 @@ import { TestBed } from '@suites/unit'
 const client = mockClient(SQSClient)
 
 function getConfig(key: string): string | undefined {
-  console.log(`get config for ${key}`)
   switch (key) {
     case 'aws.endpoint':
       return 'http://localhost:4566'

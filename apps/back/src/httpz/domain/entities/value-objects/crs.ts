@@ -4,7 +4,7 @@ import { z } from 'zod'
 export class CRS extends ValueObject(
   'CRS',
   z.object({
-    data_id: z.string(),
+    dataId: z.string(),
     urls: z.array(z.string().url()),
   }),
 ) {

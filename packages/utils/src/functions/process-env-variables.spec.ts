@@ -41,4 +41,12 @@ describe('processEnvVariables', () => {
       ],
     })
   })
+
+  test("shouldn't convert to array if the key is larger then the array length", () => {
+    vi.stubEnv('APP__OBJ__2048__CHAIN_ID', '123')
+    vi.stubEnv('APP__OBJ__2048__NAME', 'TEST')
+    expect(processEnvVariables()).toEqual({
+      obj: { '2048': { chainId: '123', name: 'TEST' } },
+    })
+  })
 })

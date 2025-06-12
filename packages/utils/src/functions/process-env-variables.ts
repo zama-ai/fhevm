@@ -22,9 +22,18 @@ export function processEnvVariables(config?: {
   return mergeArrayNode(r)
 }
 
+function getMaxKey(object: object): number {
+  return Object.keys(object).reduce((max, key) => {
+    return Math.max(max, parseInt(key))
+  }, 0)
+}
+
 function mergeArrayNode(obj: object): object {
   if (typeof obj === 'object' && obj !== null) {
-    return Object.keys(obj).length && hasAllIntegerKeys(obj)
+    return Object.keys(obj).length &&
+      hasAllIntegerKeys(obj) &&
+      // I check if the keys are array indexes or an actual key
+      getMaxKey(obj) < Object.keys(obj).length
       ? Object.values(obj).map(mergeArrayNode)
       : Object.fromEntries(
           Object.entries(obj).map(([key, value]) => [

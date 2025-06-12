@@ -38,17 +38,17 @@ describe('HttpzController', () => {
       getKeyUrl = unitRef.get(GetKeyUrl) as unknown as Mocked<GetKeyUrl>
       getKeyUrl.execute.mockReturnValue(
         Task.of({
-          fhe_key_info: [
+          fheKeyInfo: [
             FHEPublicKey.parse({
-              fhe_public_key: {
-                data_id: faker.string.uuid(),
+              fhePublicKey: {
+                dataId: faker.string.uuid(),
                 urls: [faker.internet.url()],
               },
             }).unwrap(),
           ],
           crs: {
             [faker.string.uuid()]: CRS.parse({
-              data_id: faker.string.uuid(),
+              dataId: faker.string.uuid(),
               urls: [faker.internet.url()],
             }).unwrap(),
           },
@@ -100,7 +100,9 @@ describe('HttpzController', () => {
         contractChainId: faker.string.hexadecimal({ length: 3 }),
         contractAddress: faker.string.hexadecimal({ length: 40 }),
         userAddress: faker.string.hexadecimal({ length: 40 }),
-        ciphertextWithInputVerification: faker.string.hexadecimal({ length: 40 }),
+        ciphertextWithInputVerification: faker.string.hexadecimal({
+          length: 40,
+        }),
       })
       expect(inputProof.execute).toHaveBeenCalledOnce()
     })
@@ -110,7 +112,9 @@ describe('HttpzController', () => {
         contractChainId: faker.string.hexadecimal({ length: 3 }),
         contractAddress: faker.string.hexadecimal({ length: 40 }),
         userAddress: faker.string.hexadecimal({ length: 40 }),
-        ciphertextWithInputVerification: faker.string.hexadecimal({ length: 40 }),
+        ciphertextWithInputVerification: faker.string.hexadecimal({
+          length: 40,
+        }),
       })
       expect(response).toEqual({ response: { handles, signatures } })
     })

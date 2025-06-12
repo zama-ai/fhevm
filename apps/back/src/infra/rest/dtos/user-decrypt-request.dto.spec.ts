@@ -49,7 +49,7 @@ describe('UserDecryptRequest', () => {
     test('should not be a generic string', () => {
       const result = userDecryptSchema.safeParse({
         ...userDecryptRequest,
-        contractsChainId: faker.string.alphanumeric(40),
+        contractsChainId: 'a' + faker.string.alphanumeric(40),
       })
       expect(result.success).toBe(false)
     })

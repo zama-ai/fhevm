@@ -44,7 +44,6 @@ describe('input proof', () => {
       let address: string
 
       beforeEach(async () => {
-        chainId = faker.number.int({ min: 1, max: 100_000 })
         address = faker.string.hexadecimal({ length: 40 })
 
         const signup = await manager.auth.signup(

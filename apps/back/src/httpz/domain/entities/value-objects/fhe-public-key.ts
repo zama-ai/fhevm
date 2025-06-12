@@ -4,8 +4,8 @@ import { z } from 'zod'
 export class FHEPublicKey extends ValueObject(
   'FHEPublicKey',
   z.object({
-    fhe_public_key: z.object({
-      data_id: z.string(),
+    fhePublicKey: z.object({
+      dataId: z.string(),
       urls: z.array(z.string().url()),
     }),
   }),

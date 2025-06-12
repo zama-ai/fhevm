@@ -8,6 +8,7 @@ import {
   InvitationRepository,
 } from '../domain/repositories/invitation.repository.js'
 import { ConfigService } from '@nestjs/config'
+import { Email } from '#shared/entities/value-objects/email.js'
 
 export const EXPIRATION_TIME_IN_MILLISECONDS =
   parseInt(process.env.INVITATION_EXPIRATION_TIME ?? '', 10) || 86400 * 1000 * 7
@@ -43,16 +44,22 @@ export class CreateInvitation implements UseCase<Input, Invitation> {
   execute = (input: Input): Task<Invitation, AppError> => {
     // Note: using a private function save me from a lot of explicit types
     return this.checkSecret(input.secret)
-      .chain(() =>
-        Invitation.create(
-          {
-            email: input.email,
-          },
-          {
-            expirationTime: EXPIRATION_TIME_IN_MILLISECONDS,
-          },
+      .asyncChain(() =>
+        Email.from(input.email).asyncChain(
+          this.invitationRepository.findByEmail,
         ),
       )
-      .asyncChain(this.invitationRepository.create)
+      .chain(invitation =>
+        invitation.isSome()
+          ? Task.reject(unauthorizedError('Email already used'))
+          : Invitation.create(
+              {
+                email: input.email,
+              },
+              {
+                expirationTime: EXPIRATION_TIME_IN_MILLISECONDS,
+              },
+            ).asyncChain(this.invitationRepository.create),
+      )
   }
 }

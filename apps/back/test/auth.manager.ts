@@ -22,7 +22,7 @@ export class AuthManager {
     >(this.httpServer)
       .mutate(CREATE_INVITATION, {
         email,
-        secret: process.env.INVITATION_SECRET!,
+        secret: process.env.APP__INVITATION__SECRET!,
       })
       .exec('createInvitation')
   }

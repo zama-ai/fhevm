@@ -9,7 +9,7 @@ import {
 import { Inject, Injectable } from '@nestjs/common'
 import { AppError, Task, UseCase } from 'utils'
 
-type Output = { fhe_key_info: FHEPublicKey[]; crs: Record<string, CRS> }
+type Output = { fheKeyInfo: FHEPublicKey[]; crs: Record<string, CRS> }
 
 @Injectable()
 export class GetKeyUrl implements UseCase<void, Output> {
@@ -21,6 +21,6 @@ export class GetKeyUrl implements UseCase<void, Output> {
     return Task.all<AppError, FHEPublicKey[], Record<string, CRS>>([
       this.keyUrlService.getFHEPublicKey(),
       this.keyUrlService.getCRS(),
-    ]).map(([fhe_key_info, crs]) => ({ fhe_key_info, crs }))
+    ]).map(([fheKeyInfo, crs]) => ({ fheKeyInfo, crs }))
   }
 }
