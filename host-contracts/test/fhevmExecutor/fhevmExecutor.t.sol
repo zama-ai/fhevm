@@ -59,10 +59,7 @@ contract SupportedTypesConstants {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256)) +
-            (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
+            (1 << uint8(FheType.Uint256));
 
     uint256 internal supportedTypesFheNe = supportedTypesFheEq;
 
@@ -104,10 +101,7 @@ contract SupportedTypesConstants {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256)) +
-            (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
+            (1 << uint8(FheType.Uint256));
 
     uint256 internal supportedTypesFheRand =
         (1 << uint8(FheType.Bool)) +
@@ -116,10 +110,7 @@ contract SupportedTypesConstants {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256)) +
-            (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
+            (1 << uint8(FheType.Uint256));
 
     uint256 internal supportedTypesFheRandBounded =
         (1 << uint8(FheType.Uint8)) +
@@ -1852,32 +1843,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.expectRevert(FHEVMExecutorNoEvents.IsNotScalar.selector);
         vm.prank(account);
         fhevmExecutor.fheRem(lhs, rhs, 0x00);
-    }
-
-    function test_RevertsIfFheEqRHSIsScalarForEuint512AndAbove(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        bytes32 lhs = _generateMockHandle(FheType.Uint512);
-        bytes32 rhs = _generateMockHandle(FheType.Uint512);
-        address account = address(123);
-        _approveHandleInACL(lhs, account);
-        _approveHandleInACL(rhs, account);
-
-        vm.expectRevert(FHEVMExecutorNoEvents.IsScalar.selector);
-        vm.prank(account);
-        fhevmExecutor.fheEq(lhs, rhs, 0x01);
-    }
-
-    function test_RevertsIfFheNeRHSIsScalarEuint512AndAbove(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
-        bytes32 lhs = _generateMockHandle(FheType.Uint512);
-        bytes32 rhs = _generateMockHandle(FheType.Uint512);
-        address account = address(123);
-        _approveHandleInACL(lhs, account);
-        _approveHandleInACL(rhs, account);
-
-        vm.expectRevert(FHEVMExecutorNoEvents.IsScalar.selector);
-        vm.prank(account);
-        fhevmExecutor.fheNe(lhs, rhs, 0x01);
     }
 
     function test_RevertsIfUpperBoundIsNotPowerOfTwo(uint256 upperBound, bool withEvents) public {

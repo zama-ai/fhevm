@@ -36,15 +36,6 @@ interface IDecryptionOracle {
  *          that interact with the FHEVM protocol.
  */
 library FHE {
-    /// @notice Returned if the input's length is greater than 64 bytes.
-    error InputLengthAbove64Bytes(uint256 inputLength);
-
-    /// @notice Returned if the input's length is greater than 128 bytes.
-    error InputLengthAbove128Bytes(uint256 inputLength);
-
-    /// @notice Returned if the input's length is greater than 256 bytes.
-    error InputLengthAbove256Bytes(uint256 inputLength);
-
     /// @notice Returned if some handles were already saved for corresponding ID.
     error HandlesAlreadySavedForRequestID();
 

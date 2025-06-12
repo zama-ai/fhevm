@@ -409,10 +409,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256)) +
-            (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
+            (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         if (scalar == 0x01 && uint8(lhsType) > 8) revert IsScalar();
@@ -436,10 +433,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256)) +
-            (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
+            (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
         if (scalar == 0x01 && uint8(lhsType) > 8) revert IsScalar();
@@ -612,10 +606,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256)) +
-            (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
+            (1 << uint8(FheType.Uint256));
         FheType typeCt = _verifyAndReturnType(ifTrue, supportedTypes);
         result = _ternaryOp(Operators.fheIfThenElse, control, ifTrue, ifFalse);
         hcuLimit.checkHCUForIfThenElse(typeCt, control, ifTrue, ifFalse, result);
@@ -862,10 +853,7 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256)) +
-            (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
+            (1 << uint8(FheType.Uint256));
 
         /// @dev Unsupported erandom type.
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();

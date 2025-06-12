@@ -462,16 +462,6 @@ export function generateSolidityFHELib(operators: Operator[], fheTypes: FheType[
    *          that interact with the FHEVM protocol.
    */
   library FHE {
-
-    /// @notice Returned if the input's length is greater than 64 bytes.
-    error InputLengthAbove64Bytes(uint256 inputLength);
-
-    /// @notice Returned if the input's length is greater than 128 bytes.
-    error InputLengthAbove128Bytes(uint256 inputLength);
-
-    /// @notice Returned if the input's length is greater than 256 bytes.
-    error InputLengthAbove256Bytes(uint256 inputLength);
-
     /// @notice Returned if some handles were already saved for corresponding ID.
     error HandlesAlreadySavedForRequestID();
 
@@ -694,8 +684,6 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
 
   if (fheType.type == 'Bool') {
     implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(b?1:0))${scalarFlag})`;
-  } else if (fheType.type.startsWith('Bytes')) {
-    implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), b${scalarFlag})`;
   } else if (fheType.type.startsWith('Int')) {
     throw new Error('Int types are not supported!');
   } else {
@@ -710,8 +698,6 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
 
   if (fheType.type == 'Bool') {
     implExpressionB = `Impl.${leftOpName}(e${fheType.type.toLowerCase()}.unwrap(b), bytes32(uint256(a?1:0))${scalarFlag})`;
-  } else if (fheType.type.startsWith('Bytes')) {
-    implExpressionB = `Impl.${leftOpName}(e${fheType.type.toLowerCase()}.unwrap(b), a${scalarFlag})`;
   } else if (fheType.type.startsWith('Int')) {
     throw new Error('Int types are not supported yet!');
   } else {
@@ -748,13 +734,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
     function ${operator.name}(e${fheType.type.toLowerCase()} a, ${clearMatchingType.toLowerCase()} b) internal returns (${returnType}) {
         if (!isInitialized(a)) {
             a = asE${fheType.type.toLowerCase()}(${
-              fheType.type == 'Bool'
-                ? 'false'
-                : fheType.type.startsWith('Bytes')
-                  ? `padToBytes${fheType.bitLength / 8}(hex"")`
-                  : fheType.type == 'Address'
-                    ? `${clearMatchingType.toLowerCase()}(0)`
-                    : 0
+              fheType.type == 'Bool' ? 'false' : fheType.type == 'Address' ? `${clearMatchingType.toLowerCase()}(0)` : 0
             });
         }
         return ${returnType}.wrap(${implExpressionA});
@@ -772,13 +752,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
         ${maybeEncryptLeft}
         if (!isInitialized(b)) {
             b = asE${fheType.type.toLowerCase()}(${
-              fheType.type == 'Bool'
-                ? 'false'
-                : fheType.type.startsWith('Bytes')
-                  ? `padToBytes${fheType.bitLength / 8}(hex"")`
-                  : fheType.type == 'Address'
-                    ? `${clearMatchingType.toLowerCase()}(0)`
-                    : 0
+              fheType.type == 'Bool' ? 'false' : fheType.type == 'Address' ? `${clearMatchingType.toLowerCase()}(0)` : 0
             });
         }
         return ${returnType}.wrap(${implExpressionB});
@@ -948,7 +922,6 @@ function handleSolidityTFHEUnaryOperators(fheType: AdjustedFheType, operators: O
  * The generated functions include:
  * - A function to convert an `einput` handle and its proof to an encrypted type.
  * - If the type is `Bool`, an additional function to convert a plaintext boolean to an encrypted boolean.
- * - If the type is `Bytes`, an additional function to convert plaintext bytes to the respective encrypted type.
  * - For other types, a function to convert a plaintext value to the respective encrypted type.
  */
 function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: AdjustedFheType): string {
@@ -973,15 +946,6 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
     }
 
     `;
-  } else if (fheType.type.startsWith('Bytes')) {
-    result += `
-      /**
-        * @dev Convert the plaintext bytes to a e${fheType.type.toLowerCase()} value.
-      */
-      function asE${fheType.type.toLowerCase()}(${fheType.clearMatchingTypeAlias} value) internal returns (e${fheType.type.toLowerCase()}) {
-        return e${fheType.type.toLowerCase()}.wrap(Impl.trivialEncrypt(value, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
-      }
-      `;
   } else {
     const value =
       fheType.isAlias && fheType.clearMatchingTypeAlias !== undefined
