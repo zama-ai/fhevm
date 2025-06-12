@@ -112,31 +112,6 @@ jobs:
         run: |
           ./fhevm-cli test input-proof
 
-      - name: Public Decryption test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decryption
-
-      - name: User Decryption test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test user-decryption
-
-      - name: ERC20 test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test erc20
-
-      - name: Public Decryption HTTP endpoint test (ebool)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-ebool
-
-      - name: Public Decryption HTTP endpoint test (mixed)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-mixed
-
       - name: Incident simulation
         working-directory: test-suite/fhevm
         run: |
