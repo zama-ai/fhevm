@@ -13,7 +13,8 @@ export class SQSProducer implements EventProducer {
   private readonly queueMap = new Map<MSPrefix, string>()
 
   constructor(config: ConfigService) {
-    this.client = new SQSClient(config.get<boolean>('aws.useConfigCredentials', false)
+    this.client = new SQSClient(
+      config.get<boolean>('aws.useConfigCredentials', false)
       ? {
           endpoint: config.get<string>('aws.endpoint'),
           region: config.get<string>('aws.region'),
@@ -22,7 +23,9 @@ export class SQSProducer implements EventProducer {
             secretAccessKey: config.getOrThrow<string>('aws.secretAccessKey'),
           },
         }
-      : {})
+      : {},
+    )
+    this.client.config.useQueueUrlAsEndpoint = true
     this.queueMap.set('back', config.getOrThrow('aws.back.queueUrl'))
     this.queueMap.set('email', config.getOrThrow('aws.email.queueUrl'))
     this.queueMap.set('web3', config.getOrThrow('aws.web3.queueUrl'))

@@ -25,6 +25,7 @@ export class SqsProducer implements IProducer {
             },
           }
         : {})
+      this._sqs.config.useQueueUrlAsEndpoint = true
     }
     return this._sqs
   }

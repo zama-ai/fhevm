@@ -18,7 +18,6 @@ export class SqsProducer {
         ? {
             endpoint: config.get('aws.endpoint'),
             region: config.get('aws.region'),
-            useQueueUrlAsEndpoint: true,
             credentials: {
               accessKeyId: config.getOrThrow<string>('aws.accessKeyId'),
               secretAccessKey: config.getOrThrow<string>('aws.secretAccessKey'),
@@ -26,6 +25,7 @@ export class SqsProducer {
           }
         : {},
     )
+    this.#sns.config.useQueueUrlAsEndpoint = true
     this.#queueUrl = config.getOrThrow('aws.orchestrator.queueUrl')
   }
 
