@@ -17,6 +17,7 @@ use alloy::transports::http::reqwest::Url;
 pub use config::ConfigSettings;
 pub use nonce_managed_provider::FillersWithoutNonceManagement;
 pub use nonce_managed_provider::NonceManagedProvider;
+use tracing::error;
 pub use transaction_sender::TransactionSender;
 
 pub const REVIEW: &str = "review";
@@ -72,17 +73,37 @@ impl HealthStatus {
     }
 }
 
-pub async fn get_chain_id(
-    ws_url: Url,
-    max_retries: u32,
-    retry_interval: Duration,
-) -> anyhow::Result<u64> {
-    let provider = ProviderBuilder::new()
-        .connect_ws(
-            WsConnect::new(ws_url)
-                .with_max_retries(max_retries)
-                .with_retry_interval(retry_interval),
-        )
-        .await?;
-    Ok(provider.get_chain_id().await?)
+// Gets the chain ID from the given WebSocket URL.
+// This is a utility function that will try to connect until it succeeds.
+pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
+    loop {
+        let provider = match ProviderBuilder::new()
+            .connect_ws(WsConnect::new(ws_url.clone()))
+            .await
+        {
+            Ok(provider) => provider,
+            Err(e) => {
+                error!(
+                    "Failed to connect to Gateway at {}: {}, retrying in {:?}",
+                    ws_url, e, retry_interval
+                );
+                tokio::time::sleep(retry_interval).await;
+                continue;
+            }
+        };
+
+        match provider.get_chain_id().await {
+            Ok(chain_id) => {
+                tracing::info!(chain_id = chain_id, "Found chain ID");
+                return chain_id;
+            }
+            Err(e) => {
+                error!(
+                    "Failed to get chain ID from Gateway at {}: {}, retrying in {:?}",
+                    ws_url, e, retry_interval
+                );
+                tokio::time::sleep(retry_interval).await;
+            }
+        }
+    }
 }
