@@ -6,6 +6,7 @@ import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ACL} from "../../contracts/ACL.sol";
+import {ACLEvents} from "../../contracts/ACLEvents.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {fhevmExecutorAdd} from "../../addresses/FHEVMExecutorAddress.sol";
 
@@ -166,7 +167,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACL.NewDelegation(sender, delegatee, contractAddresses);
+        emit ACLEvents.NewDelegation(sender, delegatee, contractAddresses);
         acl.delegateAccount(delegatee, contractAddresses);
         vm.assertFalse(acl.allowedOnBehalf(delegatee, handle, delegateeContract, sender));
 
@@ -266,7 +267,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACL.NewDelegation(sender, delegatee, contractAddresses);
+        emit ACLEvents.NewDelegation(sender, delegatee, contractAddresses);
         acl.delegateAccount(delegatee, contractAddresses);
 
         vm.assertFalse(acl.allowedOnBehalf(delegatee, handle, delegateeContract, sender));
@@ -288,7 +289,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACL.RevokedDelegation(sender, delegatee, contractAddresses);
+        emit ACLEvents.RevokedDelegation(sender, delegatee, contractAddresses);
         acl.revokeDelegation(delegatee, contractAddresses);
     }
 
@@ -353,7 +354,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACL.AllowedForDecryption(address(sender), handlesList);
+        emit ACLEvents.AllowedForDecryption(address(sender), handlesList);
         acl.allowForDecryption(handlesList);
 
         assertTrue(acl.isAllowedForDecryption(handle0));
@@ -549,7 +550,7 @@ contract ACLTest is Test {
         vm.assume(randomPauser != address(0));
         vm.prank(owner);
         vm.expectEmit(address(acl));
-        emit ACL.UpdatePauser(randomPauser);
+        emit ACLEvents.UpdatePauser(randomPauser);
         acl.updatePauser(randomPauser);
         assertEq(acl.getPauser(), randomPauser);
     }
