@@ -73,7 +73,7 @@ async fn emit_events<P, N>(
                 let to_type: ToType = 4_u8;
                 let pt = U256::from(UNIQUE_INT.fetch_add(1, Ordering::SeqCst));
                 let txn_req = tfhe_contract
-                    .trivialEncrypt_1(pt.clone(), to_type.clone())
+                    .trivialEncrypt(pt.clone(), to_type.clone())
                     .into_transaction_request()
                     .into();
                 let pending_txn =

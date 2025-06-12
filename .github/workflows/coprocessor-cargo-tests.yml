@@ -26,6 +26,7 @@ jobs:
               - .github/workflows/coprocessor-cargo-tests.yml
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
+              - host-contracts/**
   cargo-tests:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
