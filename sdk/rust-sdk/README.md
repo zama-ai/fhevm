@@ -89,12 +89,9 @@ fn main() -> Result<(), FhevmError> {
         .with_keys_directory(PathBuf::from("./keys"))
         .with_gateway_chain_id(43113)
         .with_host_chain_id(11155111)  // Ethereum Sepolia
-        .with_gateway_contract("Decryption", "0x1234567890123456789012345678901234567890")
-        .with_gateway_contract(
-            "input-verifier",
-            "0x1234567890123456789012345678901234567aaa",
-        )
-        .with_host_contract("ACL", "0x0987654321098765432109876543210987654321")
+        .with_decryption_contract("0x1234567890123456789012345678901234567bbb")
+        .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")
+        .with_acl_contract("0x0987654321098765432109876543210987654321")
         .build()?;
 
     // Set up test addresses
@@ -126,12 +123,9 @@ let sdk_builder = FhevmSdkBuilder::new()
     .with_keys_directory(PathBuf::from("./keys"))
     .with_gateway_chain_id(43113)
     .with_host_chain_id(11155111)
-    .with_gateway_contract("decryption", "0x1234567890123456789012345678901234567890")
-    .with_gateway_contract(
-            "input-verification",
-            "0x1234567890123456789012345678901234567aaa",
-        )
-    .with_host_contract("ACL", "0x0987654321098765432109876543210987654321");
+    .with_decryption_contract("0x1234567890123456789012345678901234567bbb")
+    .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")
+    .with_acl_contract("0x0987654321098765432109876543210987654321");
 
 // Export configuration to YAML
 let yaml_config = sdk_builder.to_yaml()?;

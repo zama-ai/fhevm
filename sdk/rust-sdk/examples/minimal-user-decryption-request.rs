@@ -28,12 +28,6 @@ fn main() -> Result<()> {
         .with_keys_directory(path::PathBuf::from("./keys"))
         .with_gateway_chain_id(43113)
         .with_host_chain_id(11155111) // Example: Ethereum Sepolia
-        .with_gateway_contract("Decryption", "0x1234567890123456789012345678901234567bbb")
-        .with_gateway_contract(
-            "input-verifier",
-            "0x1234567890123456789012345678901234567aaa",
-        )
-        .with_host_contract("ACL", "0x0987654321098765432109876543210987654321")
         .build()?;
 
     let signature = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";

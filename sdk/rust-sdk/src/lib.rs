@@ -378,9 +378,9 @@ impl FhevmSdk {
     /// #     .with_keys_directory(PathBuf::from("./test_keys"))
     /// #     .with_gateway_chain_id(31337)
     /// #     .with_host_chain_id(31337)
-    /// #     .with_gateway_contract("decryption", "0x1111111111111111111111111111111111111111")
-    /// #     .with_gateway_contract("input-verification", "0x2222222222222222222222222222222222222222")
-    /// #     .with_host_contract("ACL", "0x3333333333333333333333333333333333333333")
+    /// #     .with_decryption_contract("0x1234567890123456789012345678901234567bbb")
+    /// #     .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")
+    /// #     .with_acl_contract("0x0987654321098765432109876543210987654321")
     /// #     .build()?;
     /// #
     /// # // Sample data
@@ -537,6 +537,35 @@ impl FhevmSdkBuilder {
                 );
             }
         }
+        self
+    }
+
+    pub fn with_input_verification_contract(mut self, address: &str) -> Self {
+        self.gateway_contracts.input_verification =
+            Some(Address::from_str(address).unwrap_or_else(|_| {
+                panic!(
+                    "Invalid address provided for input verification contract: {}",
+                    address
+                )
+            }));
+        self
+    }
+
+    pub fn with_decryption_contract(mut self, address: &str) -> Self {
+        self.gateway_contracts.decryption = Some(Address::from_str(address).unwrap_or_else(|_| {
+            panic!(
+                "Invalid address provided for decryption contract: {}",
+                address
+            )
+        }));
+        self
+    }
+
+    pub fn with_acl_contract(mut self, address: &str) -> Self {
+        self.host_contracts.acl =
+            Some(Address::from_str(address).unwrap_or_else(|_| {
+                panic!("Invalid address provided for ACL contract: {}", address)
+            }));
         self
     }
 
