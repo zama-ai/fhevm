@@ -422,32 +422,6 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice              Computes FHEEq operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
-     */
-    function fheEq(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
-        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-
-        if (scalar != 0x01) revert SecondOperandIsNotScalar();
-
-        if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
-        _checkByteLengthForEbytesTypes(rhs.length, lhsType);
-
-        result = keccak256(abi.encodePacked(Operators.fheEq, lhs, rhs, scalar, acl, block.chainid));
-        result = _appendMetadataToPrehandle(result, FheType.Bool);
-
-        hcuLimit.checkHCUForFheEqBytes(lhsType, scalar, lhs, result);
-        acl.allowTransient(result, msg.sender);
-    }
-
-    /**
      * @notice              Computes FHENe operation.
      * @param lhs           LHS.
      * @param rhs           RHS.
@@ -472,29 +446,6 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
 
         result = _binaryOp(Operators.fheNe, lhs, rhs, scalar, FheType.Bool);
         hcuLimit.checkHCUForFheNe(lhsType, scalar, lhs, rhs, result);
-    }
-
-    /**
-     * @notice              Computes FHENe operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
-     */
-    function fheNe(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
-        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-
-        if (scalar != 0x01) revert SecondOperandIsNotScalar();
-        if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
-        _checkByteLengthForEbytesTypes(rhs.length, lhsType);
-        result = keccak256(abi.encodePacked(Operators.fheNe, lhs, rhs, scalar, acl, block.chainid));
-        result = _appendMetadataToPrehandle(result, FheType.Bool);
-        acl.allowTransient(result, msg.sender);
-        hcuLimit.checkHCUForFheNeBytes(lhsType, scalar, lhs, result);
     }
 
     /**
@@ -747,26 +698,6 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice          Does trivial encryption.
-     * @param pt        Value to encrypt.
-     * @param toType    Target type.
-     * @return result   Result value of the target type.
-     * @dev             This is an overloaded function for ebytesXX types.
-     */
-    function trivialEncrypt(bytes memory pt, FheType toType) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint512)) +
-            (1 << uint8(FheType.Uint1024)) +
-            (1 << uint8(FheType.Uint2048));
-
-        if (((1 << uint8(toType)) & supportedTypes == 0)) revert UnsupportedType();
-        _checkByteLengthForEbytesTypes(pt.length, toType);
-        result = keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid));
-        result = _appendMetadataToPrehandle(result, toType);
-        hcuLimit.checkHCUForTrivialEncrypt(toType, result);
-        acl.allowTransient(result, msg.sender);
-    }
-
-    /**
      * @notice              Verifies the ciphertext.
      * @param inputHandle   Input handle.
      * @param userAddress   Address of the user.
@@ -855,19 +786,6 @@ contract FHEVMExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         result = result | (bytes32(uint256(uint8(handleType))) << 8);
         /// @dev Insert HANDLE_VERSION into byte 31.
         result = result | bytes32(uint256(HANDLE_VERSION));
-    }
-
-    /**
-     * @dev Checks the length for typeOf that are ebytes.
-     */
-    function _checkByteLengthForEbytesTypes(uint256 byteLength, FheType fheType) internal pure virtual {
-        if (fheType == FheType.Uint512) {
-            if (byteLength != 64) revert InvalidByteLength(fheType, byteLength);
-        } else if (fheType == FheType.Uint1024) {
-            if (byteLength != 128) revert InvalidByteLength(fheType, byteLength);
-        } else if (fheType == FheType.Uint2048) {
-            if (byteLength != 256) revert InvalidByteLength(fheType, byteLength);
-        }
     }
 
     function _verifyAndReturnType(

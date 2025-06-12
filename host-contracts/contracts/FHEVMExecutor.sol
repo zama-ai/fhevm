@@ -174,18 +174,6 @@ contract FHEVMExecutor is FHEVMExecutorNoEvents, FHEEvents {
     }
 
     /**
-     * @notice              Computes FHEEq operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
-     */
-    function fheEq(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) public virtual override returns (bytes32 result) {
-        result = super.fheEq(lhs, rhs, scalarByte);
-        emit FheEqBytes(msg.sender, lhs, rhs, scalarByte, result);
-    }
-
-    /**
      * @notice              Computes FHENe operation.
      * @param lhs           LHS.
      * @param rhs           RHS.
@@ -195,18 +183,6 @@ contract FHEVMExecutor is FHEVMExecutorNoEvents, FHEEvents {
     function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual override returns (bytes32 result) {
         result = super.fheNe(lhs, rhs, scalarByte);
         emit FheNe(msg.sender, lhs, rhs, scalarByte, result);
-    }
-
-    /**
-     * @notice              Computes FHENe operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
-     */
-    function fheNe(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) public virtual override returns (bytes32 result) {
-        result = super.fheNe(lhs, rhs, scalarByte);
-        emit FheNeBytes(msg.sender, lhs, rhs, scalarByte, result);
     }
 
     /**
@@ -360,18 +336,6 @@ contract FHEVMExecutor is FHEVMExecutorNoEvents, FHEEvents {
     function trivialEncrypt(uint256 pt, FheType toType) public virtual override returns (bytes32 result) {
         result = super.trivialEncrypt(pt, toType);
         emit TrivialEncrypt(msg.sender, pt, toType, result);
-    }
-
-    /**
-     * @notice          Does trivial encryption.
-     * @param pt        Value to encrypt.
-     * @param toType    Target type.
-     * @return result   Result value of the target type.
-     * @dev             This is an overloaded function for ebytesXX types.
-     */
-    function trivialEncrypt(bytes memory pt, FheType toType) public virtual override returns (bytes32 result) {
-        result = super.trivialEncrypt(pt, toType);
-        emit TrivialEncryptBytes(msg.sender, pt, toType, result);
     }
 
     /**

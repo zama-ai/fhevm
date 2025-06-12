@@ -264,15 +264,6 @@ interface IFHEVMExecutor {
     function trivialEncrypt(bytes memory ct, FheType toType) external returns (bytes32 result);
 
     /**
-     * @notice              Computes FHEEq operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
-     */
-    function fheEq(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) external returns (bytes32 result);
-
-    /**
      * @notice              Computes FHENe operation.
      * @param lhs           LHS.
      * @param rhs           RHS.
@@ -684,53 +675,6 @@ library Impl {
     function trivialEncrypt(uint256 value, FheType toType) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = IFHEVMExecutor($.FHEVMExecutorAddress).trivialEncrypt(value, toType);
-    }
-
-    /**
-     * @notice          Does trivial encryption.
-     * @param value     Value to encrypt.
-     * @param toType    Target type.
-     * @return result   Result value of the target type.
-     */
-    function trivialEncrypt(bytes memory value, FheType toType) internal returns (bytes32 result) {
-        FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = IFHEVMExecutor($.FHEVMExecutorAddress).trivialEncrypt(value, toType);
-    }
-
-    /**
-     * @notice              Computes FHEEq operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalar        Scalar byte.
-     * @return result       Result.
-     */
-    function eq(bytes32 lhs, bytes memory rhs, bool scalar) internal returns (bytes32 result) {
-        bytes1 scalarByte;
-        if (scalar) {
-            scalarByte = 0x01;
-        } else {
-            scalarByte = 0x00;
-        }
-        FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheEq(lhs, rhs, scalarByte);
-    }
-
-    /**
-     * @notice              Computes FHENe operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalar        Scalar byte.
-     * @return result       Result.
-     */
-    function ne(bytes32 lhs, bytes memory rhs, bool scalar) internal returns (bytes32 result) {
-        bytes1 scalarByte;
-        if (scalar) {
-            scalarByte = 0x01;
-        } else {
-            scalarByte = 0x00;
-        }
-        FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = IFHEVMExecutor($.FHEVMExecutorAddress).fheNe(lhs, rhs, scalarByte);
     }
 
     function rand(FheType randType) internal returns (bytes32 result) {
