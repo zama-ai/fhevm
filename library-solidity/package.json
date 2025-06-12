@@ -90,6 +90,6 @@
     "solidity-comments-linux-x64-gnu": "0.1.1"
   },
   "dependencies": {
-    "encrypted-types": "^0.0.2"
+    "encrypted-types": "^0.0.4"
   }
 }
