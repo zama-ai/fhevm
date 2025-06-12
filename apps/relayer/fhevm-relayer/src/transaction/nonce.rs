@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::lock::Mutex;
 use std::sync::Arc;
-use tracing::trace;
+use tracing::{debug, trace};
 
 /// Cached nonce manager
 ///
@@ -100,10 +100,10 @@ impl DebugNonceManager for CachedNonceManagerWithRefresh {
         let nonce_guard = nonce.lock().await;
         let current_nonce = if *nonce_guard == NONE {
             // Initialize the nonce if we haven't seen this account before.
-            trace!(%address, "fetching nonce");
+            debug!(%address, "fetching nonce");
             provider.get_transaction_count(address).await?
         } else {
-            trace!(%address, current_nonce = *nonce_guard, "incrementing nonce");
+            debug!(%address, current_nonce = *nonce_guard, "incrementing nonce");
             *nonce_guard
         };
         Ok(current_nonce)
@@ -200,10 +200,10 @@ impl NonceManager for CachedNonceManagerWithRefresh {
         let mut nonce_guard = nonce_mutex.lock().await;
         let new_nonce = if *nonce_guard == NONE {
             // Initialize the nonce if we haven't seen this account before.
-            trace!(%address, "fetching nonce");
+            debug!(%address, "fetching nonce");
             provider.get_transaction_count(address).await?
         } else {
-            trace!(%address, current_nonce = *nonce_guard, "incrementing nonce");
+            debug!(%address, current_nonce = *nonce_guard, "incrementing nonce");
             *nonce_guard
         };
         // Increment the value for future tx

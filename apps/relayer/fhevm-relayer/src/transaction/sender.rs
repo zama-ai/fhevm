@@ -407,8 +407,12 @@ impl TransactionManager {
                     // TODO: properly match different response errors and adapt retry mechanism
                     match e {
                         RpcError::ErrorResp(response_error) => {
+                            // TODO: Nonce reset is a temporary fix for "nonce too high" scenario.
+                            // Proper fix should be identified.
                             let response_error_string = response_error.to_string();
-                            if response_error_string.contains("nonce too low") {
+                            if response_error_string.contains("nonce too low")
+                                | response_error_string.contains("nonce too high")
+                            {
                                 let _ = self
                                     .nonce_manager
                                     .sync_nonce(&self.provider, self.signer.address())
