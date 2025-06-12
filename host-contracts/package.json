@@ -4,7 +4,7 @@
   "description": "fhevm backend contracts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zama-ai/fhevm-backend.git"
+    "url": "git+https://github.com/zama-ai/fhevm.git"
   },
   "main": "index.js",
   "scripts": {
