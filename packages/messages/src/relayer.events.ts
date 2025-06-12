@@ -5,6 +5,7 @@ import {
   web3Address,
   requestValidity,
   handleContractPair,
+  userDecryptResponse,
 } from './shared.js'
 
 // prefixed hex encoded
@@ -46,15 +47,13 @@ const schemas = [
     contractsChainId: chainId,
     handleContractPairs: z.array(handleContractPair),
     requestValidity: requestValidity,
-    contractsAddresses: z.array(web3Address),
+    contractAddresses: z.array(web3Address),
     userAddress: web3Address,
     signature: z.string(),
     publicKey: z.string(),
   }),
   genSchema('private-decryption:operation-response', {
-    gatewayRequestId: z.number(),
-    decryptedValue: z.string(),
-    signatures: z.array(z.string()),
+    response: z.array(userDecryptResponse),
   }),
   genSchema('public-decryption:operation-request', {
     ciphertextHandles: z.array(z.string().startsWith('0x').length(66)).min(1),
@@ -95,7 +94,7 @@ function factory<
     payload: object
   } = Extract<RelayerEvent, { type: `relayer:${K}` }>,
 >(type: K) {
-  return function (payload: Event['payload']) {
+  return function(payload: Event['payload']) {
     return {
       type: `relayer:${type}`,
       payload,

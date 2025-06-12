@@ -55,13 +55,47 @@ private_key_env = \"GATEWAY_PRIVATE_KEY\"
 """ > ./apps/relayer/compose/gateway.toml
 
 
+echo """common:
+  port: 3005
+  prettify: true
+  graphqlMaxComplexity: 150
+  logLevel: silent
+aws:
+  accessKeyId: 'test'
+  secretAccessKey: 'test'
+  region: 'eu-central-1'
+  endpoint: 'http://console-aws:4566'
+  orchestrator:
+    queueUrl: 'http://console-aws:4566/000000000000/orchestrator-queue'
+  back:
+    queueUrl: 'http://console-aws:4566/000000000000/back-queue'
+chains:
+  - id: 12345
+    name: 'fhevm'
+    description: 'fhevm Anvil Docker Compose'
+
+httpz:
+  fheKeyInfo:
+    - fhePublicKey:
+        dataId: 'fhe-public-key-data-id'
+        urls: '${KEY_URLS}'
+  crs:
+    2048:
+      dataId: 'crs-data-id'
+      urls: '${CRS_URLS}'
+jwt:
+  secret: 'JWTSecretPassPhrase'
+  expiresIn: '1minute'
+redis:
+  host: 'console-redis'
+""" > ./apps/back/config/compose.yaml
+
+
 # TODO: extract contract addresses from containers and set through env vars
 # NOTE: -> write into file and mount config as volume => get list of files in volume and use all as config files
 #
 if [ "${DEBUG:-0}" = "1" ]; then
-  CRS_URLS=$CRS_URLS \
-    KEY_URLS=$KEY_URLS \
-    RELAYER_STANDALONE_RELAYER_CONFIGURATION__KEY_URL__FHE_PUBLIC_KEY__DATA_ID="fhe-public-key-data-id" \
+  RELAYER_STANDALONE_RELAYER_CONFIGURATION__KEY_URL__FHE_PUBLIC_KEY__DATA_ID="fhe-public-key-data-id" \
     RELAYER_STANDALONE_RELAYER_CONFIGURATION__KEY_URL__FHE_PUBLIC_KEY__URL=$KEY_URLS \
     RELAYER_STANDALONE_RELAYER_CONFIGURATION__KEY_URL__CRS__DATA_ID="crs-data-id" \
     RELAYER_STANDALONE_RELAYER_CONFIGURATION__KEY_URL__CRS__URL=$CRS_URLS \
@@ -72,8 +106,6 @@ if [ "${DEBUG:-0}" = "1" ]; then
     docker kill console-orchestrator
     docker kill fhevm-relayer || echo "fhevm-relayer"
 else
-  CRS_URLS=$CRS_URLS \
-    KEY_URLS=$KEY_URLS \
     docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.03.console.run.yaml -f docker-compose.04.console.ghcr.yaml -f docker-compose.04.console.migrate.ghcr.yaml -p console up -d --wait --remove-orphans
 fi
 

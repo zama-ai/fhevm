@@ -40,6 +40,7 @@ diesel::table! {
         request_id -> Uuid,
         event_log -> Jsonb,
         chain_id -> Bytea,
+        timestamp -> Timestamp,
     }
 }
 

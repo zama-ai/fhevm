@@ -286,9 +286,8 @@ async fn main() {
 
     // Orchestrator
     // TODO: Should probably come from configuration
-    let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab]; // Used to generate uuid
     let dispatcher = Arc::new(TokioEventDispatcher::<ZwsRelayerEvent>::new());
-    let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
+    let orchestrator = Orchestrator::new(Arc::clone(&dispatcher));
 
     // Transaction services
     let mut tx_services = HashMap::new();

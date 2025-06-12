@@ -8,6 +8,7 @@ import {
   operationEnum,
   handleContractPair,
   requestValidity,
+  userDecryptResponse,
 } from './shared.js'
 
 type EventTypes =
@@ -104,15 +105,13 @@ const schemas = [
     contractsChainId: chainId,
     handleContractPairs: z.array(handleContractPair),
     requestValidity: requestValidity,
-    contractsAddresses: z.array(web3Address),
+    contractAddresses: z.array(web3Address),
     userAddress: web3Address,
     signature: z.string(),
     publicKey: z.string(),
   }),
   genSchema('httpz:private-decrypt:completed', {
-    gatewayRequestId: z.number(),
-    decryptedValue: z.string(),
-    signatures: z.array(z.string()),
+    response: z.array(userDecryptResponse)
   }),
   genSchema('httpz:public-decrypt:requested', {
     ciphertextHandles: z.array(z.string().startsWith('0x').length(66)).min(1),

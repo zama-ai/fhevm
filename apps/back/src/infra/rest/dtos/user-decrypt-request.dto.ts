@@ -28,7 +28,7 @@ export const userDecryptSchema = z.object({
       ),
     z.string().regex(/^0x[\da-f]+$/i, 'Invalid Chain ID'),
   ]),
-  contractsAddresses: z.array(web3Address),
+  contractAddresses: z.array(web3Address),
   userAddress: web3Address,
   signature: z.string(),
   publicKey: z.string(),

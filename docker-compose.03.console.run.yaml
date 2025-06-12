@@ -12,11 +12,13 @@ services:
         condition: service_healthy
       back-migrate:
         condition: service_completed_successfully
-    # These vars will be populated from fhevm containers
     environment:
-      - CRS_URLS=${CRS_URLS}
-      - KEY_URLS=${KEY_URLS}
-      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - RUN_MODE=prod
+    # We need to add fhevm settings
+    volumes:
+      - type: bind
+        target: /prod-wrkspc/config/prod.yaml
+        source: ${PWD}/apps/back/config/compose.yaml
     env_file:
       - ./apps/back/.env.compose
     healthcheck:

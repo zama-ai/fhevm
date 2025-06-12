@@ -1,9 +1,9 @@
 services:
   tests-e2e-debug:
     container_name: console-tests-e2e-debug
-    image: ghcr.io/zama-ai/fhevm-test-suite/e2e:${TESTS_VERSION:-02c6691}
+    image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TESTS_VERSION:-77dc4ec}
     env_file:
-      - ./external/httpz-test-suite/fhevm/env/staging/.env.tests.local
+      - ./external/fhevm/test-suite/fhevm/env/staging/.env.test-suite.local
     environment:
       - RELAYER_URL=${RELAYER_URL:-http://console-back:3005}
     command:

@@ -99,7 +99,7 @@ pub async fn wait_for_ct_priv_dec_availability(
             return Err(format!("Invalid URL {} : {}", gateway_http_url, e).to_string());
         }
     };
-    let provider = ProviderBuilder::new().on_http(url);
+    let provider = ProviderBuilder::new().connect_http(url);
     let decryption = Decryption::new(decryption_address, provider.clone());
     let max_retries = 120;
     let retry_interval = core::time::Duration::from_millis(1000);
@@ -166,7 +166,7 @@ pub async fn wait_for_ct_pub_dec_availability(
             return Err(format!("Invalid URL {} : {}", gateway_http_url, e).to_string());
         }
     };
-    let provider = ProviderBuilder::new().on_http(url);
+    let provider = ProviderBuilder::new().connect_http(url);
     let decryption = Decryption::new(decryption_address, provider.clone());
     let max_retries = 120;
     let retry_interval = core::time::Duration::from_millis(1000);
@@ -291,6 +291,7 @@ impl EventHandler<ZwsRelayerEvent> for ZWSTransactionManagerMockHandler {
                 let message = ZwsRelayerEvent::TransactionResponse(Box::new(TransactionResponse {
                     request_id: transaction_request.request_id(),
                     receipt: tx_receipt.inner,
+                    timestamp: current_timestamp(),
                 }));
 
                 let _ = send_message_to_sqs_queue_empty(
@@ -353,6 +354,7 @@ impl EventHandler<ZwsRelayerEvent> for ZWSConsoleMockHandler {
                     ZwsRelayerEvent::OracleAuthorizationResponse(OracleAuthorizationResponse {
                         request_id: authorization_request.request_id(),
                         authorized: true,
+                        timestamp: current_timestamp(),
                     });
 
                 // SQS
@@ -456,29 +458,26 @@ impl Display for SupportedBlockchainEvent {
 }
 
 impl SupportedBlockchainEvent {
-    pub fn decode_log_data(
-        log: &LogData,
-        validate: bool,
-    ) -> Result<SupportedBlockchainEvent, std::string::String> {
-        if let Ok(event) = DecryptionRequest::decode_log_data(log, validate) {
+    pub fn decode_log_data(log: &LogData) -> Result<SupportedBlockchainEvent, std::string::String> {
+        if let Ok(event) = DecryptionRequest::decode_log_data(log) {
             return Ok(SupportedBlockchainEvent::DecryptionRequest(event));
         };
-        if let Ok(event) = UserDecryptionResponse::decode_log_data(log, validate) {
+        if let Ok(event) = UserDecryptionResponse::decode_log_data(log) {
             return Ok(SupportedBlockchainEvent::UserDecryptionResponse(event));
         };
-        if let Ok(event) = PublicDecryptionResponse::decode_log_data(log, validate) {
+        if let Ok(event) = PublicDecryptionResponse::decode_log_data(log) {
             return Ok(SupportedBlockchainEvent::PublicDecryptionResponse(event));
         };
-        if let Ok(event) = VerifyProofResponse::decode_log_data(log, validate) {
+        if let Ok(event) = VerifyProofResponse::decode_log_data(log) {
             return Ok(SupportedBlockchainEvent::VerifyProofResponse(event));
         };
-        if let Ok(event) = VerifyProofRequest::decode_log_data(log, validate) {
+        if let Ok(event) = VerifyProofRequest::decode_log_data(log) {
             return Ok(SupportedBlockchainEvent::VerifyProofRequest(event));
         };
-        if let Ok(event) = UserDecryptionRequest::decode_log_data(log, validate) {
+        if let Ok(event) = UserDecryptionRequest::decode_log_data(log) {
             return Ok(SupportedBlockchainEvent::UserDecryptionRequest(event));
         };
-        if let Ok(event) = PublicDecryptionRequest::decode_log_data(log, validate) {
+        if let Ok(event) = PublicDecryptionRequest::decode_log_data(log) {
             return Ok(SupportedBlockchainEvent::PublicDecryptionRequest(event));
         };
         Err("Failed to decode log data into any supported event type".to_string())
@@ -588,7 +587,7 @@ impl ZWSRelayerHandler {
             .inner
             .logs()
             .iter()
-            .map(|log| SupportedBlockchainEvent::decode_log_data(log.data(), true))
+            .map(|log| SupportedBlockchainEvent::decode_log_data(log.data()))
             .next();
 
         let (on_chain_id, op_type) = match parsed {
@@ -639,6 +638,7 @@ impl ZWSRelayerHandler {
                         request_id: response.request_id,
                         event_log: elt.event_log.0.clone(),
                         chain_id: self.gateway_chain_id,
+                        timestamp: current_timestamp(),
                     });
 
                     // Re-emit internally the event
@@ -669,7 +669,7 @@ impl ZWSRelayerHandler {
         // use even if they don't match a known request yet.
         // We should add a date and a block-number to expire responses.
 
-        match SupportedBlockchainEvent::decode_log_data(event.event_log.data(), true) {
+        match SupportedBlockchainEvent::decode_log_data(event.event_log.data()) {
             Ok(decoded_event) => {
                 debug!("Successfuly decoded event: {}", decoded_event);
 
@@ -687,6 +687,7 @@ impl ZWSRelayerHandler {
                                     ZwsRelayerEvent::UnrecoverableError(UnrecoverableError {
                                         request_id: event.request_id(),
                                         event: RelayerEventNoError::BlockchainEvent(event),
+                                        timestamp: current_timestamp(),
                                     });
                                 let _ = send_message_to_sqs_queue_empty(
                                     true,
@@ -714,6 +715,7 @@ impl ZWSRelayerHandler {
                             OracleAuthorizationRequest {
                                 request_id: event.request_id(),
                                 caller_address: contract_caller,
+                                timestamp: current_timestamp(),
                             },
                         );
                         let _ = send_message_to_sqs_queue_empty(
@@ -751,6 +753,7 @@ impl ZWSRelayerHandler {
                                             request_id: source_request_id,
                                             handles: verification_response.ctHandles,
                                             signatures: verification_response.signatures,
+                                            timestamp: current_timestamp(),
                                         },
                                     );
 
@@ -788,7 +791,7 @@ impl ZWSRelayerHandler {
                         ) {
                             Ok(value) => match value {
                                 Some(source_request_id) => {
-                                    let responses: Vec<UserDecryptResponsePayloadJson> =
+                                    let response: Vec<UserDecryptResponsePayloadJson> =
                                         private_decryption_response
                                             .reencryptedShares
                                             .iter()
@@ -803,7 +806,8 @@ impl ZWSRelayerHandler {
                                     let message = ZwsRelayerEvent::HTTPPrivateDecryptionResponse(
                                         PrivateDecryptionResponse {
                                             request_id: source_request_id,
-                                            responses,
+                                            response,
+                                            timestamp: current_timestamp(),
                                         },
                                     );
                                     let _ = send_message_to_sqs_queue_empty(
@@ -866,7 +870,6 @@ impl ZWSRelayerHandler {
                                     // Craft callback
                                     match SupportedBlockchainEvent::decode_log_data(
                                         response.event_log.data(),
-                                        true,
                                     ) {
                                         Ok(event) => match event {
                                             SupportedBlockchainEvent::DecryptionRequest(value) => {
@@ -901,6 +904,7 @@ impl ZWSRelayerHandler {
                                                         address: value.contractCaller,
                                                         chain_id: response.chain_id,
                                                         calldata,
+                                                        timestamp: current_timestamp(),
                                                     },
                                                 );
 
@@ -971,7 +975,7 @@ impl ZWSRelayerHandler {
         debug!("DB Fetch Response: {:?}", response);
 
         // NOTE: Only public decryption requests require an authorization request
-        match SupportedBlockchainEvent::decode_log_data(response.event_log.data(), true) {
+        match SupportedBlockchainEvent::decode_log_data(response.event_log.data()) {
             Ok(event) => match event {
                 SupportedBlockchainEvent::DecryptionRequest(value) => {
                     // TODO: DEBUG
@@ -998,6 +1002,7 @@ impl ZWSRelayerHandler {
                         address: self.decryption_manager_address,
                         chain_id: self.gateway_chain_id,
                         calldata,
+                        timestamp: current_timestamp(),
                     });
 
                     let gateway_request_insertion_result = create_gateway_request(
@@ -1082,6 +1087,7 @@ impl ZWSRelayerHandler {
             address: self.zkpok_manager_address,
             chain_id: self.gateway_chain_id,
             calldata,
+            timestamp: current_timestamp(),
         });
 
         let gateway_request_insertion_result = create_gateway_request(
@@ -1161,6 +1167,8 @@ impl ZWSRelayerHandler {
             address: self.decryption_manager_address,
             chain_id: self.gateway_chain_id,
             calldata,
+
+            timestamp: current_timestamp(),
         });
 
         let gateway_request_insertion_result = create_gateway_request(

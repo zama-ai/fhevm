@@ -1,4 +1,9 @@
 [submodule "apps/relayer/fhevm-relayer"]
 	path = apps/relayer/fhevm-relayer
 	url = git@github.com:zama-ai/fhevm-relayer.git
-	tag = v0.1.0-rc8
+	branch = main
+
+[submodule "external/fhevm"]
+	path = external/fhevm
+	url = git@github.com:zama-ai/fhevm.git
+	branch = main

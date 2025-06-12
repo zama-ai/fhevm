@@ -114,6 +114,7 @@ pub async fn private_decryption_handler(
         user_address: request_data.user_address,
         public_key: request_data.public_key,
         signature: request_data.signature,
+        timestamp: current_timestamp(),
     });
 
     let rx = register_once_handler(
@@ -159,7 +160,7 @@ pub async fn private_decryption_handler(
                     (
                         StatusCode::OK,
                         Json(UserDecryptResponseJson {
-                            response: value.responses,
+                            response: value.response,
                         }),
                     )
                         .into_response()
@@ -222,6 +223,7 @@ pub async fn input_registration_handler(
         contract_address: request_data.contract_address,
         user_address: request_data.user_address,
         ciphetext_with_zk_proof: request_data.ciphetext_with_zk_proof,
+        timestamp: current_timestamp(),
     });
 
     let rx = register_once_handler(
@@ -631,11 +633,11 @@ pub async fn blockchain_event_listener(
                         // NOTE: we should probably parse event log here instead of in the handler
                         // and populate the event accordingly
                         let id = orchestrator.new_request_id();
-                        let event = ZwsRelayerEvent::BlockchainEvent(BlockchainEvent{
-                            request_id: id,
+                        let event = ZwsRelayerEvent::BlockchainEvent(BlockchainEvent::new(
+                            id,
                             event_log,
                             chain_id,
-                        });
+                        ));
 
                         debug!(
                             file = file!(),

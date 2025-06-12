@@ -60,9 +60,10 @@ describe('PrivateDecrypt', () => {
           back.httpzPrivateDecryptCompleted(
             {
               requestId,
-              gatewayRequestId: faker.number.int({ min: 0, max: 213 }),
-              decryptedValue: faker.string.hexadecimal({ length: 40 }),
-              signatures: [faker.string.hexadecimal({ length: 40 })],
+              response: [{
+                payload: faker.string.hexadecimal({ length: 40 }),
+                signature: faker.string.hexadecimal({ length: 40 }),
+              }]
             },
             { correlationId: faker.string.uuid() },
           ),
@@ -78,7 +79,7 @@ describe('PrivateDecrypt', () => {
           },
           signature: faker.string.hexadecimal({ length: 40 }),
           publicKey: faker.string.hexadecimal({ length: 40 }),
-          contractsAddresses: [contractAddress],
+          contractAddresses: [contractAddress],
           userAddress,
           handleContractPairs: [
             {

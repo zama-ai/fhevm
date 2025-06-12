@@ -30,9 +30,16 @@ use uuid::Uuid;
 //   - Private decryption Response
 // - Input mechanism
 //   - TODO
+//
+
+pub fn current_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
 
 // NOTE: Box<dyn Event> vs Enum implementing Event trait
-//
 
 // Convert u64 to Vec<u8>
 fn u64_to_bytes(value: u64) -> Vec<u8> {
@@ -79,10 +86,10 @@ pub enum ZwsRelayerEvent {
     HTTPInputRegistrationResponse(HTTPInputRegistrationResponse),
     // Private Decryption
     /// Private decryption request from the HTTP endpoint or the Console
-    #[serde(rename = "relayer:http-private-decryption:operation-request")]
+    #[serde(rename = "relayer:private-decryption:operation-request")]
     HTTPPrivateDecryptionRequest(PrivateDecryptionRequest),
     /// Private decryption response
-    #[serde(rename = "relayer:http-private-decryption:operation-response")]
+    #[serde(rename = "relayer:private-decryption:operation-response")]
     HTTPPrivateDecryptionResponse(PrivateDecryptionResponse),
     // Public Decryption
     // TODO: implement
@@ -288,6 +295,26 @@ impl Event for RelayerEventNoError {
             Self::HTTPInputRegistrationResponse(value) => value.request_id(),
         }
     }
+
+    fn timestamp(&self) -> u64 {
+        match self {
+            Self::BlockchainEvent(value) => value.timestamp(),
+            Self::HTTPZGatewayEvent(value) => value.timestamp(),
+            Self::DebugMessage(value) => value.timestamp(),
+            Self::OracleAuthorizationRequest(value) => value.timestamp(),
+            Self::OracleAuthorizationResponse(value) => value.timestamp(),
+            Self::TransactionRequest(value) => value.timestamp(),
+            Self::TransactionResponse(value) => value.timestamp(),
+            Self::HTTPPrivateDecryptionRequest(value) => value.timestamp(),
+            Self::HTTPPrivateDecryptionResponse(value) => value.timestamp(),
+            Self::HTTPPublicDecryptionRequest(value) => value.timestamp(),
+            Self::HTTPPublicDecryptionResponse(value) => value.timestamp(),
+            Self::OraclePublicDecryptionRequest(value) => value.timestamp(),
+            Self::OraclePublicDecryptionResponse(value) => value.timestamp(),
+            Self::HTTPInputRegistrationRequest(value) => value.timestamp(),
+            Self::HTTPInputRegistrationResponse(value) => value.timestamp(),
+        }
+    }
 }
 
 impl Display for ZwsRelayerEvent {
@@ -360,6 +387,26 @@ impl Event for ZwsRelayerEvent {
             Self::UnrecoverableError(value) => value.request_id(),
         }
     }
+    fn timestamp(&self) -> u64 {
+        match self {
+            Self::BlockchainEvent(value) => value.timestamp(),
+            Self::HTTPZGatewayEvent(value) => value.timestamp(),
+            Self::DebugMessage(value) => value.timestamp(),
+            Self::OracleAuthorizationRequest(value) => value.timestamp(),
+            Self::OracleAuthorizationResponse(value) => value.timestamp(),
+            Self::TransactionRequest(value) => value.timestamp(),
+            Self::TransactionResponse(value) => value.timestamp(),
+            Self::HTTPPrivateDecryptionRequest(value) => value.timestamp(),
+            Self::HTTPPrivateDecryptionResponse(value) => value.timestamp(),
+            Self::HTTPPublicDecryptionRequest(value) => value.timestamp(),
+            Self::HTTPPublicDecryptionResponse(value) => value.timestamp(),
+            Self::OraclePublicDecryptionRequest(value) => value.timestamp(),
+            Self::OraclePublicDecryptionResponse(value) => value.timestamp(),
+            Self::HTTPInputRegistrationRequest(value) => value.timestamp(),
+            Self::HTTPInputRegistrationResponse(value) => value.timestamp(),
+            Self::UnrecoverableError(value) => value.timestamp(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -370,6 +417,28 @@ pub struct BlockchainEvent {
     pub event_log: alloy::rpc::types::Log,
     #[serde(rename = "chainId")]
     pub chain_id: u64,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
+}
+
+impl BlockchainEvent {
+    pub fn new(
+        request_id: Uuid,
+        event_log: alloy::rpc::types::Log,
+        chain_id: u64,
+    ) -> BlockchainEvent {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        BlockchainEvent {
+            request_id,
+            event_log,
+            chain_id,
+            timestamp,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Queryable, Selectable, Insertable)]
@@ -383,6 +452,9 @@ pub struct BlockchainEventRow {
     #[serde(rename = "chainId")]
     #[diesel(sql_type = Binary)]
     pub chain_id: Vec<u8>,
+    #[serde(rename = "timestamp")]
+    #[diesel(sql_type = Timestamp)]
+    pub timestamp: std::time::SystemTime,
 }
 
 impl BlockchainEventRow {
@@ -391,6 +463,7 @@ impl BlockchainEventRow {
             request_id: event.request_id,
             event_log: diesel_json::Json(event.event_log),
             chain_id: u64_to_bytes(event.chain_id),
+            timestamp: std::time::UNIX_EPOCH + std::time::Duration::from_secs(event.timestamp),
         }
     }
 }
@@ -400,11 +473,17 @@ impl TryFrom<BlockchainEventRow> for BlockchainEvent {
 
     fn try_from(row: BlockchainEventRow) -> Result<Self, Self::Error> {
         let chain_id = bytes_to_u64(&row.chain_id)?;
+        let timestamp = row
+            .timestamp
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
         Ok(Self {
             request_id: row.request_id,
             event_log: row.event_log.0,
             chain_id,
+            timestamp,
         })
     }
 }
@@ -549,6 +628,7 @@ table! {
         request_id -> Uuid,
         event_log -> Jsonb,
         chain_id -> Bytea,
+        timestamp -> Timestamp,
     }
 }
 
@@ -674,6 +754,8 @@ pub fn update_gateway_request_onchain_id(
 pub struct HTTPZGatewayEvent {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -681,6 +763,8 @@ pub struct DebugMessage {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
     pub message: String,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -688,6 +772,8 @@ pub struct UnrecoverableError {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
     pub event: RelayerEventNoError,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -702,6 +788,8 @@ pub struct HTTPInputRegistrationRequest {
     pub user_address: Address,
     #[serde(rename = "ciphertextWithInputVerification")]
     pub ciphetext_with_zk_proof: Bytes,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -712,6 +800,8 @@ pub struct HTTPInputRegistrationResponse {
     pub handles: Vec<FixedBytes<32>>,
     #[serde(rename = "signatures")]
     pub signatures: Vec<Bytes>,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -724,7 +814,7 @@ pub struct HTTPPrivateDecryptionRequest {
     pub ct_handle_contract_pairs: Vec<HandleContractPair>,
     #[serde(rename = "requestValidity")]
     pub request_validity: RequestValidity,
-    #[serde(rename = "contractsAddresses")]
+    #[serde(rename = "contractAddresses")]
     pub contract_addresses: Vec<Address>,
     #[serde(rename = "userAddress")]
     pub user_address: Address,
@@ -732,6 +822,8 @@ pub struct HTTPPrivateDecryptionRequest {
     pub signature: Bytes,
     #[serde(rename = "publicKey")]
     pub public_key: Bytes,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -744,6 +836,8 @@ pub struct HTTPPrivateDecryptionResponse {
     pub decrypted_value: Bytes,
     #[serde(rename = "signatures")]
     pub signatures: Vec<Bytes>,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -752,6 +846,8 @@ pub struct OracleAuthorizationRequest {
     pub request_id: Uuid,
     #[serde(rename = "callerAddress")]
     pub caller_address: Address,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -759,6 +855,8 @@ pub struct OracleAuthorizationResponse {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
     pub authorized: bool,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -769,6 +867,8 @@ pub struct TransactionRequest {
     pub calldata: Bytes,
     #[serde(rename = "chainId")]
     pub chain_id: u64,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -777,17 +877,19 @@ pub struct TransactionResponse {
     pub request_id: Uuid,
     /// Transaction receipt, holds the logs, the gas used, ...
     pub receipt: TransactionReceipt<AnyReceiptEnvelope<Log>>,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PrivateDecryptionRequest {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
-    #[serde(rename = "ctHandleContractPairs")]
+    #[serde(rename = "handleContractPairs")]
     pub ct_handle_contract_pairs: Vec<HandleContractPair>,
     #[serde(rename = "requestValidity")]
     pub request_validity: RequestValidity,
-    #[serde(rename = "contractChainId")]
+    #[serde(rename = "contractsChainId")]
     pub contracts_chain_id: u64,
     #[serde(rename = "contractAddresses")]
     pub contract_addresses: Vec<Address>,
@@ -797,6 +899,8 @@ pub struct PrivateDecryptionRequest {
     pub signature: Bytes,
     #[serde(rename = "publicKey")]
     pub public_key: Bytes,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 #[allow(clippy::from_over_into)]
@@ -818,7 +922,9 @@ impl Into<fhevm_relayer::core::event::UserDecryptRequest> for PrivateDecryptionR
 pub struct PrivateDecryptionResponse {
     #[serde(rename = "requestId")]
     pub request_id: Uuid,
-    pub responses: Vec<UserDecryptResponsePayloadJson>,
+    pub response: Vec<UserDecryptResponsePayloadJson>,
+    #[serde(rename = "timestamp", default = "current_timestamp")]
+    pub timestamp: u64,
 }
 
 macro_rules! impl_event {
@@ -834,6 +940,10 @@ macro_rules! impl_event {
 
             fn request_id(&self) -> uuid::Uuid {
                 self.request_id
+            }
+
+            fn timestamp(&self) -> u64 {
+                self.timestamp
             }
         }
 
@@ -896,6 +1006,7 @@ where
             return Err(err_msg);
         }
     };
+    debug!("Serialized: {:?}", serialized_message);
     let publishing_response = match sqs_client
         .send_message()
         .queue_url(queue_url)

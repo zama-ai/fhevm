@@ -17,7 +17,7 @@ describe('UserDecryptRequest', () => {
         startTimestamp: faker.string.numeric({ length: 3 }),
         durationDays: faker.string.numeric({ length: 3 }),
       },
-      contractsAddresses: [faker.string.hexadecimal({ length: 40 })],
+      contractAddresses: [faker.string.hexadecimal({ length: 40 })],
       userAddress: faker.string.hexadecimal({ length: 40 }),
       signature: faker.string.alphanumeric({ length: 32 }),
       publicKey: faker.string.alphanumeric({ length: 62 }),

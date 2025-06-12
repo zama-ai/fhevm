@@ -64,6 +64,12 @@ export const handleContractPair = z.object({
   contractAddress: z.string(),
 })
 
+
+export const userDecryptResponse = z.object({
+  signature: z.string(),
+  payload: z.string(),
+})
+
 export const requestValidity = z.object({
   startTimestamp: z.string(),
   durationDays: z.string(),
@@ -90,7 +96,7 @@ export function metaFactory<
       meta: Meta
     } = Extract<Events, { type: `${Prefix}:${Key}` }>,
   >(key: Key) {
-    return function (payload: Event['payload'], meta: Event['meta']) {
+    return function(payload: Event['payload'], meta: Event['meta']) {
       return {
         type: `${prefix}:${key}`,
         payload,

@@ -84,16 +84,16 @@ console-up-service:
 
 # Relayer
 .PHONY: relayer-run relayer-build relayer-run-debug relayer-lint
-relayer-run:
+zws-relayer-run:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer
 
-relayer-build:
+zws-relayer-build:
 	cd $(TOP)apps/relayer && cargo build --bin zws-relayer
 
-relayer-lint:
+zws-relayer-lint:
 	cd $(TOP)apps/relayer && cargo clippy --all-targets --all-features --workspace --exclude fhevm-relayer -- -D warnings
 
-relayer-run-debug:
+zws-relayer-run-debug:
 	cd $(TOP)apps/relayer && cargo run --bin zws-relayer -- --config-file debug.toml
 
 .PHONY: down

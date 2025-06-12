@@ -13,7 +13,7 @@ describe('relayer', () => {
             startTimestamp: faker.string.numeric(5),
             durationDays: faker.string.numeric(5),
           },
-          contractsAddresses: [
+          contractAddresses: [
             faker.string.hexadecimal({
               length: 40,
             }) as `0x${string}`,
@@ -42,17 +42,16 @@ describe('relayer', () => {
       {
         event: relayer.privateDecryptionOperationResponse({
           requestId: generateRequestId(),
-          gatewayRequestId: faker.number.int({ min: 0, max: 64 }),
-          decryptedValue: faker.string.hexadecimal({
-            length: { min: 10, max: 50 },
-          }) as `0x${string}`,
-          signatures: [
-            faker.string.hexadecimal({
-              length: { min: 10, max: 50 },
-            }) as `0x${string}`,
-            faker.string.hexadecimal({
-              length: { min: 10, max: 50 },
-            }) as `0x${string}`,
+          response: [
+            {
+              payload: faker.string.hexadecimal({
+                length: { min: 10, max: 50 },
+              }) as `0x${string}`,
+              signature:
+                faker.string.hexadecimal({
+                  length: { min: 10, max: 50 },
+                }) as `0x${string}`,
+            }
           ],
         }),
       },

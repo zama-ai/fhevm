@@ -11,8 +11,8 @@ serde = { version = "1", features = ["derive"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
 dotenvy = { version = "^0.15.0" }
 diesel = { version = "2.2.0", features = ["postgres", "extras", "serde_json"] }
-alloy-sol-types = { version = "1.0.0" }
-alloy = { version = "0.13.0", features = ["full", "signer-aws"] }
+alloy-sol-types = { version = "1.1.0" }
+alloy = { version = "1.0.3", features = ["full", "signer-aws"] }
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.26", features = ["rustls"] }
 bip39 = { version = "2" }

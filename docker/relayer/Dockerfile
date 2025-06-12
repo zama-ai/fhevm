@@ -2,7 +2,7 @@
 # TODO: move this image to use a safer base
 
 # Base from https://docs.docker.com/guides/rust/develop/
-ARG RUST_VERSION=1.83.0
+ARG RUST_VERSION=1.87.0
 ARG CARGO_NET_GIT_FETCH_WITH_CLI=false
 ARG APP_NAME=zws-relayer  # binary name specified in apps/relayer/relayer/Cargo.toml
 
@@ -20,9 +20,13 @@ WORKDIR /app
 # output directory before the cache mounted /app/target is unmounted.
 # NOTE: We need to mount ssh to be able to fetch the `fhevm-relayer` git repo.
 RUN --mount=type=ssh \
-    --mount=type=bind,source=lib,target=lib \
-    --mount=type=bind,source=relayer,target=relayer \
-    --mount=type=bind,source=fhevm-relayer,target=fhevm-relayer \
+    --mount=type=bind,source=lib/Cargo.toml,target=lib/Cargo.toml \
+    --mount=type=bind,source=lib/src,target=lib/src \
+    --mount=type=bind,source=relayer/Cargo.toml,target=relayer/Cargo.toml \
+    --mount=type=bind,source=relayer/src,target=relayer/src \
+    --mount=type=bind,source=fhevm-relayer/Cargo.toml,target=fhevm-relayer/Cargo.toml \
+    --mount=type=bind,source=fhevm-relayer/src,target=fhevm-relayer/src \
+    --mount=type=bind,source=fhevm-relayer/artifacts,target=fhevm-relayer/artifacts \
     --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
     --mount=type=cache,target=/app/target/ \
@@ -30,7 +34,7 @@ RUN --mount=type=ssh \
     <<EOF
 set -e
 # TODO: investigate why sqlite3 is required to build diesel if only postgres is specified
-apt update && apt install libssl-dev git musl-dev pkg-config libpq-dev libsqlite3-dev -y
+apt-get update && apt-get install libssl-dev git musl-dev pkg-config libpq-dev libsqlite3-dev -y
 ls -R && cargo build --locked --release
 cp ./target/release/$APP_NAME /bin/server
 EOF
@@ -47,7 +51,7 @@ EOF
 # reproducibility is important, consider using a digest
 # (e.g.,    debian@sha256:ac707220fbd7b67fc19b112cee8170b41a9e97f703f588b2cdbbcdcecdd8af57).
 FROM debian:bullseye-slim AS runtime
-RUN apt update && apt install libssl-dev libpq-dev libsqlite3-dev ca-certificates gettext -y && update-ca-certificates
+RUN apt-get update && apt-get install libssl-dev libpq-dev libsqlite3-dev ca-certificates gettext -y && update-ca-certificates
 
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/   #user

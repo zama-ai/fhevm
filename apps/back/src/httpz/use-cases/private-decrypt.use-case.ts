@@ -27,17 +27,18 @@ type Input = {
   contractsChainId: string | number
   handleContractPairs: HandleContractPair[]
   requestValidity: RequestValidity
-  contractsAddresses: string[]
+  contractAddresses: string[]
   userAddress: string
   signature: string
   publicKey: string
 }
 
-type Output = {
-  gatewayRequestId: number
-  decryptedValue: string
-  signatures: string[]
+type UserDecryptResponse = {
+  payload: string,
+  signature: string,
 }
+
+type Output = UserDecryptResponse[]
 
 export type IPrivateDecrypt = UseCase<Input, Output>
 
@@ -70,11 +71,11 @@ export class PrivateDecrypt implements UseCase<Input, Output> {
     return every([
       typeof input.contractsChainId === 'string'
         ? any([
-            ChainId.fromString(input.contractsChainId),
-            ChainId.fromHex(input.contractsChainId),
-          ])
+          ChainId.fromString(input.contractsChainId),
+          ChainId.fromHex(input.contractsChainId),
+        ])
         : ChainId.from(input.contractsChainId),
-      Web3Address.from(input.contractsAddresses[0]),
+      Web3Address.from(input.contractAddresses[0]),
     ])
       .asyncChain(([chainId, address]) =>
         this.apiKeyAllowsRequest
@@ -113,11 +114,11 @@ export class PrivateDecrypt implements UseCase<Input, Output> {
             .chain(() =>
               this.syncService.waitForResponse<Output>(requestId, data => {
                 if (back.isBackEvent(data) && isPrivateDecryptResult(data)) {
-                  return Task.of<Output, AppError>({
-                    ...data.payload,
-                  })
+                  return Task.of<Output, AppError>(
+                    data.payload.response,
+                  )
                 }
-                return Task.reject(unknownError('Invalid evnet received'))
+                return Task.reject(unknownError('Invalid event received'))
               }),
             ),
           Task.timeout(parseInt(process.env.DEFAULT_TIMEOUT ?? '30', 10)),

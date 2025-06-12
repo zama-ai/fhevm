@@ -78,4 +78,7 @@ volume/
 # prisma generated folders
 apps/back/generated/
 apps/orchestrator/generated/
+apps/back/config/compose.yaml
 *storybook.log
+
+*rustc-ice*
