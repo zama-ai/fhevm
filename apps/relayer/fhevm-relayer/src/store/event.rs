@@ -7,6 +7,8 @@ use uuid::Uuid;
 use crate::orchestrator::traits::Event;
 use crate::store::key_value_db::KVStore;
 
+const EVENT_PREFIX: &str = "EVENT";
+
 /// EventStore provides a data translation layer for storing and retrieving
 /// events using a key value store.
 pub struct EventStore<E: Event + serde::Serialize + for<'de> serde::Deserialize<'de>> {
@@ -28,17 +30,17 @@ where
 
     // Helper to build key from request_id and event_id with padding
     fn build_key(request_id: &Uuid, event_id: u8) -> String {
-        format!("{request_id}-{event_id:04}")
+        format!("{}:{}-{:04}", EVENT_PREFIX, request_id, event_id)
     }
 
     // Helper to build a key prefix for a specific request ID
     fn build_request_prefix(request_id: &Uuid) -> String {
-        format!("{request_id}-")
+        format!("{}:{}-", EVENT_PREFIX, request_id)
     }
 
     // Helper to build latest event ID key for a request ID
     fn build_latest_event_id_key(request_id: &Uuid) -> String {
-        format!("latest:{request_id}")
+        format!("{}:latest:{}", EVENT_PREFIX, request_id)
     }
 
     /// Persist an event.
