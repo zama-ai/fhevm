@@ -1,4 +1,4 @@
-FROM ghcr.io/zama-ai/fhevm-node:latest
+FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21
 
 WORKDIR /app
 
@@ -28,5 +28,9 @@ RUN npx hardhat clean && \
     npx hardhat compile:specific --contract contracts/mocks
 
 USER fhevm:fhevm
+
+# Check that some pre-compiled contracts are present
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD test -d /app/artifacts && find /app/artifacts -type f -name "*.json" | grep -q . || exit 1
 
 ENTRYPOINT ["/bin/bash", "-c"]
