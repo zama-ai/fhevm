@@ -1,4 +1,3 @@
-
 ## Introduction
 
 The **FHEVM Gateway** is a set of smart contracts that enables decrypting FHE ciphertexts from different host chains. It
@@ -35,6 +34,7 @@ Documentation can be found [here](./docs/SUMMARY.md).
 </picture>
 </a>
 
-🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
+🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to
+grow the community and motivates further development.
 
 [![GitHub stars](https://img.shields.io/github/stars/zama-ai/fhevm?style=social)](https://github.com/zama-ai/fhevm/)

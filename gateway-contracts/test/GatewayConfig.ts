@@ -7,15 +7,12 @@ import hre from "hardhat";
 import { EmptyUUPSProxy, GatewayConfig } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
-import { CoprocessorStruct, KmsNodeStruct } from "../typechain-types/contracts/interfaces/IGatewayConfig";
 import {
-  UINT64_MAX,
-  createRandomAddress,
-  createRandomWallet,
-  loadHostChainIds,
-  loadTestVariablesFixture,
-  toValues,
-} from "./utils";
+  CoprocessorStruct,
+  CustodianStruct,
+  KmsNodeStruct,
+} from "../typechain-types/contracts/interfaces/IGatewayConfig";
+import { UINT64_MAX, createRandomWallet, loadHostChainIds, loadTestVariablesFixture, toValues } from "./utils";
 
 describe("GatewayConfig", function () {
   // Get the registered host chains' chainIds
@@ -38,13 +35,23 @@ describe("GatewayConfig", function () {
   let kmsTxSenders: HardhatEthersSigner[];
   let kmsSigners: HardhatEthersSigner[];
   let coprocessors: CoprocessorStruct[];
+  let custodians: CustodianStruct[];
   let coprocessorTxSenders: HardhatEthersSigner[];
   let coprocessorSigners: HardhatEthersSigner[];
 
   async function getInputsForDeployFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
-    const { kmsTxSenders, kmsSigners, nKmsNodes, coprocessorTxSenders, coprocessorSigners, nCoprocessors } =
-      fixtureData;
+    const {
+      kmsTxSenders,
+      kmsSigners,
+      nKmsNodes,
+      coprocessorTxSenders,
+      coprocessorSigners,
+      nCoprocessors,
+      custodianTxSenders,
+      custodianSigners,
+      nCustodians,
+    } = fixtureData;
 
     // Create KMS nodes with the tx sender and signer addresses
     kmsNodes = [];
@@ -63,6 +70,16 @@ describe("GatewayConfig", function () {
         txSenderAddress: coprocessorTxSenders[i].address,
         signerAddress: coprocessorSigners[i].address,
         s3BucketUrl: `s3://bucket-${i}`,
+      });
+    }
+
+    // Create custodians with the tx sender addresses
+    custodians = [];
+    for (let i = 0; i < nCustodians; i++) {
+      custodians.push({
+        txSenderAddress: custodianTxSenders[i].address,
+        signerAddress: custodianSigners[i].address,
+        encryptionKey: hre.ethers.hexlify(hre.ethers.randomBytes(64)),
       });
     }
 
@@ -115,6 +132,7 @@ describe("GatewayConfig", function () {
             userDecryptionThreshold,
             kmsNodes,
             coprocessors,
+            custodians,
           ],
         },
       });
@@ -133,6 +151,7 @@ describe("GatewayConfig", function () {
         mpcThreshold,
         toValues(kmsNodes).toString(),
         toValues(coprocessors).toString(),
+        toValues(custodians).toString(),
       ]);
     });
 
@@ -151,6 +170,7 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsNodes,
               coprocessors,
+              custodians,
             ],
           },
         }),
@@ -172,6 +192,7 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               emptyKmsNodes,
               coprocessors,
+              custodians,
             ],
           },
         }),
@@ -193,10 +214,33 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsNodes,
               emptyCoprocessors,
+              custodians,
             ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "EmptyCoprocessors");
+    });
+
+    it("Should revert because the custodians list is empty", async function () {
+      const emptyCustodians: CustodianStruct[] = [];
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [
+              pauser.address,
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              userDecryptionThreshold,
+              kmsNodes,
+              coprocessors,
+              emptyCustodians,
+            ],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, "EmptyCustodians");
     });
 
     it("Should revert because the MPC threshold is too high", async function () {
@@ -215,6 +259,7 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsNodes,
               coprocessors,
+              custodians,
             ],
           },
         }),
@@ -239,6 +284,7 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsNodes,
               coprocessors,
+              custodians,
             ],
           },
         }),
@@ -261,6 +307,7 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsNodes,
               coprocessors,
+              custodians,
             ],
           },
         }),
@@ -285,6 +332,7 @@ describe("GatewayConfig", function () {
               nullUserDecryptionThreshold,
               kmsNodes,
               coprocessors,
+              custodians,
             ],
           },
         }),
@@ -307,6 +355,7 @@ describe("GatewayConfig", function () {
               highUserDecryptionThreshold,
               kmsNodes,
               coprocessors,
+              custodians,
             ],
           },
         }),
@@ -419,6 +468,18 @@ describe("GatewayConfig", function () {
         for (const hostChain of hostChains) {
           expect(hostChainIds).to.include(Number(hostChain.chainId));
         }
+      });
+    });
+
+    describe("Reinitialization", function () {
+      it("Should reinitialize to latest version", async function () {
+        await expect(gatewayConfig.reinitializeV2(custodians))
+          .to.emit(gatewayConfig, "Reinitialization")
+          .withArgs(toValues(custodians));
+      });
+
+      it("Should revert because the custodians list is empty", async function () {
+        await expect(gatewayConfig.reinitializeV2([])).to.be.revertedWithCustomError(gatewayConfig, "EmptyCustodians");
       });
     });
 

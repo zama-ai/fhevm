@@ -102,6 +102,17 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     });
   }
 
+  // Parse the custodians
+  const numCustodians = parseInt(getRequiredEnvVar("NUM_CUSTODIANS"));
+  const custodians = [];
+  for (let idx = 0; idx < numCustodians; idx++) {
+    custodians.push({
+      txSenderAddress: getRequiredEnvVar(`CUSTODIAN_TX_SENDER_ADDRESS_${idx}`),
+      signerAddress: getRequiredEnvVar(`CUSTODIAN_SIGNER_ADDRESS_${idx}`),
+      encryptionKey: getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`),
+    });
+  }
+
   console.log("Pauser address:", pauserAddress);
   console.log("Protocol metadata:", protocolMetadata);
   console.log("MPC threshold:", mpcThreshold);
@@ -109,6 +120,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   console.log("User decryption threshold:", userDecryptionThreshold);
   console.log("KMS nodes:", kmsNodes);
   console.log("Coprocessors:", coprocessors);
+  console.log("Custodians:", custodians);
 
   await deployContractImplementation("GatewayConfig", hre, [
     pauserAddress,
@@ -118,6 +130,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     userDecryptionThreshold,
     kmsNodes,
     coprocessors,
+    custodians,
   ]);
 });
 
