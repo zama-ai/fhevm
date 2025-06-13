@@ -51,6 +51,7 @@ interface IGatewayConfig {
 
     event AddHostChain(HostChain hostChain);
     event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
+    event Reinitialization(Custodian[] custodians);
     event UpdateMpcThreshold(uint256 newMpcThreshold);
     event UpdatePauser(address newPauser);
     event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
@@ -728,6 +729,36 @@ interface IGatewayConfig {
           }
         ]
       },
+      {
+        "name": "custodians",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct Custodian[]",
+        "components": [
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "encryptionKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Reinitialization",
+    "inputs": [
       {
         "name": "custodians",
         "type": "tuple[]",
@@ -3809,6 +3840,113 @@ event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256
             fn from(
                 this: &InitializeGatewayConfig,
             ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `Reinitialization((address,address,bytes)[])` and selector `0x6b5560fe85319aa437e2547c24cc6b89b1af2bdeefe51b85d2fba91bff9d29c4`.
+```solidity
+event Reinitialization(Custodian[] custodians);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct Reinitialization {
+        #[allow(missing_docs)]
+        pub custodians: alloy::sol_types::private::Vec<
+            <Custodian as alloy::sol_types::SolType>::RustType,
+        >,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for Reinitialization {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Array<Custodian>,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
+            const SIGNATURE: &'static str = "Reinitialization((address,address,bytes)[])";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                107u8, 85u8, 96u8, 254u8, 133u8, 49u8, 154u8, 164u8, 55u8, 226u8, 84u8,
+                124u8, 36u8, 204u8, 107u8, 137u8, 177u8, 175u8, 43u8, 222u8, 239u8,
+                229u8, 27u8, 133u8, 210u8, 251u8, 169u8, 27u8, 255u8, 157u8, 41u8, 196u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self { custodians: data.0 }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        Custodian,
+                    > as alloy_sol_types::SolType>::tokenize(&self.custodians),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(),)
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for Reinitialization {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&Reinitialization> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &Reinitialization) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -9237,6 +9375,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         InitializeGatewayConfig(InitializeGatewayConfig),
         #[allow(missing_docs)]
+        Reinitialization(Reinitialization),
+        #[allow(missing_docs)]
         UpdateMpcThreshold(UpdateMpcThreshold),
         #[allow(missing_docs)]
         UpdatePauser(UpdatePauser),
@@ -9265,6 +9405,11 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 221u8, 185u8, 180u8, 173u8, 61u8, 237u8, 95u8, 3u8, 1u8, 104u8, 55u8,
             ],
             [
+                107u8, 85u8, 96u8, 254u8, 133u8, 49u8, 154u8, 164u8, 55u8, 226u8, 84u8,
+                124u8, 36u8, 204u8, 107u8, 137u8, 177u8, 175u8, 43u8, 222u8, 239u8,
+                229u8, 27u8, 133u8, 210u8, 251u8, 169u8, 27u8, 255u8, 157u8, 41u8, 196u8,
+            ],
+            [
                 131u8, 126u8, 10u8, 101u8, 40u8, 218u8, 223u8, 162u8, 220u8, 121u8, 38u8,
                 146u8, 197u8, 24u8, 46u8, 82u8, 169u8, 245u8, 187u8, 222u8, 237u8, 123u8,
                 35u8, 114u8, 146u8, 122u8, 38u8, 198u8, 149u8, 131u8, 150u8, 19u8,
@@ -9289,7 +9434,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IGatewayConfigEvents {
         const NAME: &'static str = "IGatewayConfigEvents";
-        const COUNT: usize = 6usize;
+        const COUNT: usize = 7usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -9313,6 +9458,14 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             validate,
                         )
                         .map(Self::InitializeGatewayConfig)
+                }
+                Some(<Reinitialization as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <Reinitialization as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                            validate,
+                        )
+                        .map(Self::Reinitialization)
                 }
                 Some(
                     <UpdateMpcThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -9376,6 +9529,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::InitializeGatewayConfig(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::Reinitialization(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::UpdateMpcThreshold(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -9396,6 +9552,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::InitializeGatewayConfig(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::Reinitialization(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UpdateMpcThreshold(inner) => {
@@ -9847,6 +10006,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<T, &P, InitializeGatewayConfig, N> {
             self.event_filter::<InitializeGatewayConfig>()
+        }
+        ///Creates a new event filter for the [`Reinitialization`] event.
+        pub fn Reinitialization_filter(
+            &self,
+        ) -> alloy_contract::Event<T, &P, Reinitialization, N> {
+            self.event_filter::<Reinitialization>()
         }
         ///Creates a new event filter for the [`UpdateMpcThreshold`] event.
         pub fn UpdateMpcThreshold_filter(

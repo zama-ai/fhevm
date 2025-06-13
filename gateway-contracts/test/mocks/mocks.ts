@@ -205,6 +205,12 @@ describe("Mock contracts", function () {
         );
     });
 
+    it("Should emit Reinitialization event on reinitialization", async function () {
+      await expect(gatewayConfigMock.reinitializeV2([DefaultCustodian]))
+        .to.emit(gatewayConfigMock, "Reinitialization")
+        .withArgs(toValues([DefaultCustodian]));
+    });
+
     it("Should emit UpdatePauser event on update pauser call", async function () {
       await expect(gatewayConfigMock.updatePauser(DefaultAddress))
         .to.emit(gatewayConfigMock, "UpdatePauser")

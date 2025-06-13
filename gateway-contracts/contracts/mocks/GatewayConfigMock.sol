@@ -12,6 +12,8 @@ contract GatewayConfigMock {
         Custodian[] custodians
     );
 
+    event Reinitialization(Custodian[] custodians);
+
     event UpdatePauser(address newPauser);
 
     event UpdateMpcThreshold(uint256 newMpcThreshold);
@@ -40,6 +42,10 @@ contract GatewayConfigMock {
         Custodian[] memory custodians = new Custodian[](1);
 
         emit InitializeGatewayConfig(pauser, metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
+    }
+
+    function reinitializeV2(Custodian[] memory custodians) external {
+        emit Reinitialization(custodians);
     }
 
     function updatePauser(address newPauser) external {

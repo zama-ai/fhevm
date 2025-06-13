@@ -86,6 +86,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @param initialUserDecryptionThreshold The user decryption threshold
     /// @param initialKmsNodes List of KMS nodes
     /// @param initialCoprocessors List of coprocessors
+    /// @param initialCustodians List of custodians
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
         address initialPauser,
@@ -159,6 +160,26 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             initialCoprocessors,
             initialCustodians
         );
+    }
+
+    /// @notice Reinitializes the contract with custodians.
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV2(Custodian[] memory custodians) external reinitializer(3) {
+        __Ownable_init(owner());
+        __Pausable_init();
+
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        if (custodians.length == 0) {
+            revert EmptyCustodians();
+        }
+
+        /// @dev Register the custodians
+        for (uint256 i = 0; i < custodians.length; i++) {
+            $.custodians[custodians[i].txSenderAddress] = custodians[i];
+        }
+
+        emit Reinitialization(custodians);
     }
 
     /// @dev See {IGatewayConfig-updatePauser}.
