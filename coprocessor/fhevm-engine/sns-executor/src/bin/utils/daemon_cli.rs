@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use clap::{command, Parser};
 use humantime::parse_duration;
+use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -71,6 +72,12 @@ pub struct Args {
 
     #[arg(long, default_value = "120s", value_parser = parse_duration)]
     pub s3_regular_recheck_duration: Duration,
+
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(Level),
+        default_value_t = Level::INFO)]
+    pub log_level: Level,
 }
 
 pub fn parse_args() -> Args {

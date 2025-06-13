@@ -11,6 +11,7 @@ use aws_config::BehaviorVersion;
 use clap::{Parser, ValueEnum};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
+use tracing::{error, info, Level};
 use transaction_sender::{
     get_chain_id, make_abstract_signer, AbstractSigner, ConfigSettings,
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
@@ -104,6 +105,12 @@ struct Conf {
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     provider_retry_interval: Duration,
+
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(Level),
+        default_value_t = Level::INFO)]
+    log_level: Level,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -121,14 +128,15 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().json().with_level(true).init();
     let conf = Conf::parse();
-    let chain_id = get_chain_id(
-        conf.gateway_url.clone(),
-        conf.provider_max_retries,
-        conf.provider_retry_interval,
-    )
-    .await?;
+
+    tracing_subscriber::fmt()
+        .json()
+        .with_level(true)
+        .with_max_level(conf.log_level)
+        .init();
+
+    let chain_id = get_chain_id(conf.gateway_url.clone(), conf.provider_retry_interval).await;
     let abstract_signer: AbstractSigner;
     match conf.signer_type {
         SignerType::PrivateKey => {
@@ -156,18 +164,35 @@ async fn main() -> anyhow::Result<()> {
         .clone()
         .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
     let cancel_token = CancellationToken::new();
-    let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
+
+    let provider = loop {
+        match ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet.clone())
             .connect_ws(
-                WsConnect::new(conf.gateway_url)
+                WsConnect::new(conf.gateway_url.clone())
                     .with_max_retries(conf.provider_max_retries)
                     .with_retry_interval(conf.provider_retry_interval),
             )
-            .await?,
-        Some(wallet.default_signer().address()),
-    );
+            .await
+        {
+            Ok(inner_provider) => {
+                info!("Connected to Gateway at {}", conf.gateway_url);
+                break NonceManagedProvider::new(
+                    inner_provider,
+                    Some(wallet.default_signer().address()),
+                );
+            }
+            Err(e) => {
+                error!(
+                    "Failed to connect to Gateway at {} on startup: {}, retrying in {:?}",
+                    conf.gateway_url, e, conf.provider_retry_interval
+                );
+                tokio::time::sleep(conf.provider_retry_interval).await;
+            }
+        }
+    };
+
     let sender = TransactionSender::new(
         conf.input_verification_address,
         conf.ciphertext_commits_address,
