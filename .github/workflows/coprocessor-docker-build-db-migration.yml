@@ -10,7 +10,7 @@ on:
       - published
 
 concurrency:
-  group: fhevm-db-migration-${{ github.ref_name }}
+  group: db-migration-${{ github.ref_name }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -30,8 +30,8 @@ jobs:
           filters: |
             db-migration-files:
               - .github/workflows/coprocessor-docker-build-db-migration.yml
-              - coprocessor/fhevm-engine/fhevm-db/**
-  docker-fhevm-db-migration:
+              - coprocessor/fhevm-engine/db-migration/**
+  docker-db-migration:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-db-migration-files == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
@@ -48,5 +48,5 @@ jobs:
       push_image: true
       image-name: "fhevm/coprocessor/db-migration"
       generate-dev-image: false
-      docker-file: "fhevm-engine/fhevm-db/Dockerfile"
+      docker-file: "fhevm-engine/db-migration/Dockerfile"
       arm-build: true
