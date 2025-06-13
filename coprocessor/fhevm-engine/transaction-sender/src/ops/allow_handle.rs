@@ -435,4 +435,14 @@ where
 
         Ok(maybe_has_more_work)
     }
+
+    fn provider(&self) -> &P {
+        self.provider.inner()
+    }
+
+    async fn check_provider_connection(&self) -> anyhow::Result<()> {
+        // Simple check to verify the provider is connected
+        let _ = self.provider.get_block_number().await?;
+        Ok(())
+    }
 }

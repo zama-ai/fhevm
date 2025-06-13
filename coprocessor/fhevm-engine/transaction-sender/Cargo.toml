@@ -1,6 +1,6 @@
 [package]
 name = "transaction-sender"
-version = "0.6.1"
+version = "0.7.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -19,7 +19,11 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-hex = { workspace = true }
+# Health check related additions
+axum = { workspace = true }
+tower-http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 humantime = { workspace = true }
 
 # crates.io dependencies
