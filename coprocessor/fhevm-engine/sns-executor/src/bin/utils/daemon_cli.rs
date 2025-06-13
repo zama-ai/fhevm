@@ -71,6 +71,9 @@ pub struct Args {
 
     #[arg(long, default_value = "120s", value_parser = parse_duration)]
     pub s3_regular_recheck_duration: Duration,
+    
+    #[arg(long, default_value = "120s", value_parser = parse_duration)]
+    pub cleanup_interval: Duration,
 }
 
 pub fn parse_args() -> Args {

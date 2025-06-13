@@ -30,7 +30,7 @@
       },
       {
         "ordinal": 5,
-        "name": "txn_retry_count",
+        "name": "txn_limited_retries_count",
         "type_info": "Int4"
       },
       {
@@ -45,7 +45,7 @@
       },
       {
         "ordinal": 8,
-        "name": "txn_transport_retry_count",
+        "name": "txn_unlimited_retries_count",
         "type_info": "Int4"
       }
     ],
