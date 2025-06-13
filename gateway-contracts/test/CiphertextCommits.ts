@@ -2,8 +2,9 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { Wallet } from "ethers";
+import hre from "hardhat";
 
-import { CiphertextCommits, GatewayConfig } from "../typechain-types";
+import { CiphertextCommits, CiphertextCommits__factory, GatewayConfig } from "../typechain-types";
 import {
   createBytes32,
   createCtHandle,
@@ -68,6 +69,23 @@ describe("CiphertextCommits", function () {
     ciphertextCommits = fixture.ciphertextCommits;
     owner = fixture.owner;
     pauser = fixture.pauser;
+  });
+
+  describe("Deployment", function () {
+    let ciphertextCommitsFactory: CiphertextCommits__factory;
+
+    beforeEach(async function () {
+      // Get the CiphertextCommits contract factory
+      ciphertextCommitsFactory = await hre.ethers.getContractFactory("CiphertextCommits", owner);
+    });
+
+    it("Should revert because initialization is not from an empty proxy", async function () {
+      await expect(
+        hre.upgrades.upgradeProxy(ciphertextCommits, ciphertextCommitsFactory, {
+          call: { fn: "initializeFromEmptyProxy" },
+        }),
+      ).to.be.revertedWithCustomError(ciphertextCommits, "NotInitializingFromEmptyProxy");
+    });
   });
 
   describe("Add ciphertext material", async function () {

@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { GatewayConfig, InputVerification } from "../typechain-types";
+import { GatewayConfig, InputVerification, InputVerification__factory } from "../typechain-types";
 import {
   EIP712,
   createBytes32,
@@ -36,6 +36,29 @@ describe("InputVerification", function () {
   const fakeTxSender = createRandomWallet();
   const fakeSigner = createRandomWallet();
   const fakeZkProofId = 2;
+
+  describe("Deployment", function () {
+    let inputVerificationFactory: InputVerification__factory;
+    let inputVerification: InputVerification;
+    let owner: Wallet;
+
+    beforeEach(async function () {
+      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      inputVerification = fixtureData.inputVerification;
+      owner = fixtureData.owner;
+
+      // Get the InputVerification contract factory
+      inputVerificationFactory = await hre.ethers.getContractFactory("InputVerification", owner);
+    });
+
+    it("Should revert because initialization is not from an empty proxy", async function () {
+      await expect(
+        hre.upgrades.upgradeProxy(inputVerification, inputVerificationFactory, {
+          call: { fn: "initializeFromEmptyProxy" },
+        }),
+      ).to.be.revertedWithCustomError(inputVerification, "NotInitializingFromEmptyProxy");
+    });
+  });
 
   describe("Verify proof request", async function () {
     let gatewayConfig: GatewayConfig;
