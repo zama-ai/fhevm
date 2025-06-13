@@ -91,7 +91,3 @@ private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 # bucket = "my-ciphertext-bucket"
 # ENV: KMS_CONNECTOR_S3_CONFIG__ENDPOINT
 # endpoint = "http://localhost:9876"
-
-# Gas limit for each transaction sent to the Gateway (optional)
-# ENV: KMS_CONNECTOR_GAS_LIMIT
-# gas_limit = "6000"

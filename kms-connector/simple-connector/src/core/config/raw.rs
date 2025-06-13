@@ -58,8 +58,6 @@ pub struct RawConfig {
     pub s3_config: Option<S3Config>,
     #[serde(default)]
     pub aws_kms_config: Option<AwsKmsConfig>,
-    #[serde(default)]
-    pub gas_limit: Option<u64>,
     #[serde(default = "default_verify_coprocessors")]
     pub verify_coprocessors: Option<bool>,
 }

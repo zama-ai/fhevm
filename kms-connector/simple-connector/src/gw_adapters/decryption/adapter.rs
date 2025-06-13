@@ -10,16 +10,14 @@ use tracing::{debug, info};
 /// Adapter for decryption operations
 #[derive(Clone)]
 pub struct DecryptionAdapter<P> {
-    gas_limit: Option<u64>,
     decryption_address: Address,
     provider: Arc<P>,
 }
 
 impl<P: Provider + Clone> DecryptionAdapter<P> {
     /// Create a new decryption adapter
-    pub fn new(gas_limit: Option<u64>, decryption_address: Address, provider: Arc<P>) -> Self {
+    pub fn new(decryption_address: Address, provider: Arc<P>) -> Self {
         Self {
-            gas_limit,
             decryption_address,
             provider,
         }
@@ -59,11 +57,23 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
 
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
 
-        // Create and send transaction
-        let mut call = contract
-            .publicDecryptionResponse(id, result, signature.into())
-            .into_transaction_request();
-        call.gas = self.gas_limit;
+        let call_builder = contract.publicDecryptionResponse(id, result, signature.into());
+
+        // Estimate gas and add an 80% buffer
+        let estimated_gas = call_builder
+            .estimate_gas()
+            .await
+            .map_err(|e| Error::Contract(e.to_string()))?;
+        let gas_limit = estimated_gas * 18 / 10; // 80% buffer
+        info!(
+            ?estimated_gas,
+            ?gas_limit,
+            "Gas estimated for public decryption response"
+        );
+
+        let mut call = call_builder.into_transaction_request();
+        call.gas = Some(gas_limit);
+
         let tx = self
             .provider()
             .send_transaction(call)
@@ -108,10 +118,23 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
 
         // Create and send transaction
-        let mut call = contract
-            .userDecryptionResponse(id, result, signature.into())
-            .into_transaction_request();
-        call.gas = self.gas_limit;
+        let call_builder = contract.userDecryptionResponse(id, result, signature.into());
+
+        // Estimate gas and add an 80% buffer
+        let estimated_gas = call_builder
+            .estimate_gas()
+            .await
+            .map_err(|e| Error::Contract(e.to_string()))?;
+        let gas_limit = estimated_gas * 18 / 10; // 80% buffer
+        info!(
+            ?estimated_gas,
+            ?gas_limit,
+            "Gas estimated for user decryption response"
+        );
+
+        let mut call = call_builder.into_transaction_request();
+        call.gas = Some(gas_limit);
+
         let tx = self
             .provider()
             .send_transaction(call)
