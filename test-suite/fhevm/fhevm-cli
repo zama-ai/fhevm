@@ -18,11 +18,11 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT="fhevm"
 
 export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.7.0-rc1"}
-export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc2"}
+export HOST_VERSION=${HOST_VERSION:-"7f63532"}
 export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"v0.7.0-rc1"}
 export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc1"}
 export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.7.0-rc1"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"a45484d"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"d7cbaa0"}
 export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc17"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc8"}
 
@@ -156,10 +156,6 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
           docker_args+=("-g" "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)")
           ;;
-        public-decryption-ebytes256)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION (ebytes256)${RESET}"
-          docker_args+=("-g" "test async decrypt ebytes256 trivial")
-          ;;
         erc20)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] ERC20${RESET}"
           docker_args+=("-g" "should transfer tokens between two users.")
@@ -175,10 +171,6 @@ case $COMMAND in
         operators)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
           docker_args+=("--parallel" "-g" "test operator|FHEVM manual operations")
-          ;;
-        extra-operators)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] EXTRA OPERATORS${RESET}"
-          docker_args+=("-g" "FHEVM revert paths")
           ;;
         random)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
