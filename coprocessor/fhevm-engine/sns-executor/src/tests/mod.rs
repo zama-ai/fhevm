@@ -98,6 +98,7 @@ async fn setup() -> anyhow::Result<(
             notify_channel: "fhevm".to_string(),
             batch_limit: 10,
             polling_interval: 60000,
+            cleanup_interval: Duration::from_secs(10),
             max_connections: 5,
         },
         s3: crate::S3Config::default(),

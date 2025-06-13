@@ -92,7 +92,11 @@ pub(crate) async fn process_s3_uploads(
                 let mut trx = pool.begin().await?;
 
                 let item = match job {
-                    UploadJob::Normal(item) => item,
+                    UploadJob::Normal(item) => 
+                    {  
+                        item.enqueue_upload_task(&mut trx).await?;
+                        item
+                    },
                     UploadJob::DatabaseLock(item) => {
                         if let Err(err) = sqlx::query!(
                             "SELECT * FROM ciphertext_digest

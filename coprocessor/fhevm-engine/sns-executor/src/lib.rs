@@ -32,6 +32,7 @@ pub struct DBConfig {
     pub notify_channel: String,
     pub batch_limit: u32,
     pub polling_interval: u32,
+    pub cleanup_interval: Duration,
     pub max_connections: u32,
 }
 
@@ -129,19 +130,6 @@ impl HandleItem {
         .execute(trx.as_mut())
         .await?;
 
-        // Reset ciphertext128 as the ct128 has been successfully uploaded to S3
-        // NB: For reclaiming the disk-space in DB, we rely on auto vacuuming in
-        // Postgres
-
-        sqlx::query!(
-            "UPDATE ciphertexts
-             SET ciphertext128 = NULL
-             WHERE handle = $1",
-            self.handle
-        )
-        .execute(trx.as_mut())
-        .await?;
-
         info!(
             "Mark ct128 as uploaded, handle: {}, digest: {}",
             compact_hex(&self.handle),
@@ -230,7 +218,7 @@ pub enum UploadJob {
 }
 
 impl UploadJob {
-    pub fn handle(&self) -> &Vec<u8> {
+    pub fn handle(&self) -> &[u8] {
         match self {
             UploadJob::Normal(item) => &item.handle,
             UploadJob::DatabaseLock(item) => &item.handle,
