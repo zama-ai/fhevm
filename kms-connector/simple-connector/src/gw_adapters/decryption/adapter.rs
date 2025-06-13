@@ -57,10 +57,26 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
 
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
 
-        // Create and send transaction
-        let call = contract.publicDecryptionResponse(id, result, signature.into());
-        let tx = call
-            .send()
+        let call_builder = contract.publicDecryptionResponse(id, result, signature.into());
+
+        // Estimate gas and add an 80% buffer
+        let estimated_gas = call_builder
+            .estimate_gas()
+            .await
+            .map_err(|e| Error::Contract(e.to_string()))?;
+        let gas_limit = estimated_gas * 18 / 10; // 80% buffer
+        info!(
+            ?estimated_gas,
+            ?gas_limit,
+            "Gas estimated for public decryption response"
+        );
+
+        let mut call = call_builder.into_transaction_request();
+        call.gas = Some(gas_limit);
+
+        let tx = self
+            .provider()
+            .send_transaction(call)
             .await
             .map_err(|e| Error::Contract(e.to_string()))?;
         // TODO: optimize for low latency
@@ -102,11 +118,29 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
 
         // Create and send transaction
-        let call = contract.userDecryptionResponse(id, result, signature.into());
-        let tx = call
-            .send()
+        let call_builder = contract.userDecryptionResponse(id, result, signature.into());
+
+        // Estimate gas and add an 80% buffer
+        let estimated_gas = call_builder
+            .estimate_gas()
             .await
             .map_err(|e| Error::Contract(e.to_string()))?;
+        let gas_limit = estimated_gas * 18 / 10; // 80% buffer
+        info!(
+            ?estimated_gas,
+            ?gas_limit,
+            "Gas estimated for user decryption response"
+        );
+
+        let mut call = call_builder.into_transaction_request();
+        call.gas = Some(gas_limit);
+
+        let tx = self
+            .provider()
+            .send_transaction(call)
+            .await
+            .map_err(|e| Error::Contract(e.to_string()))?;
+
         // TODO: optimize for low latency
         let receipt = tx
             .get_receipt()

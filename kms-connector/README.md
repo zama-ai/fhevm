@@ -156,14 +156,14 @@ The KMS Connector supports flexible configuration through both TOML files and en
    # Set required configuration
    export KMS_CONNECTOR_GATEWAY_URL="ws://localhost:8547"
    export KMS_CONNECTOR_KMS_CORE_ENDPOINT="http://localhost:50052"
-   
+
    # Wallet configuration (one of the following is required)
    export KMS_CONNECTOR_PRIVATE_KEY="0x0000000000000000000000000000000000000000000000000000000000000001"
    # OR for AWS KMS
    export KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID="alias/my-kms-key"
    export KMS_CONNECTOR_AWS_KMS_CONFIG__REGION="us-east-1"
    export KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT="http://localhost:4566"
-   
+
    export KMS_CONNECTOR_CHAIN_ID="31337"
    export KMS_CONNECTOR_DECRYPTION_ADDRESS="0x..."
    export KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS="0x..."
