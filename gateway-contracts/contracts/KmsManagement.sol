@@ -121,7 +121,11 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /// @notice Initializes the contract.
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
-    function initialize(string memory fheParamsName, bytes32 fheParamsDigest) public virtual reinitializer(2) {
+    /// @custom:oz-upgrades-validate-as-initializer
+    function initializeFromEmptyProxy(
+        string memory fheParamsName,
+        bytes32 fheParamsDigest
+    ) public virtual reinitializer(2) {
         __Ownable_init(owner());
         __Pausable_init();
 

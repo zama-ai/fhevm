@@ -21,7 +21,7 @@ contract GatewayConfigMock {
 
     event AddHostChain(HostChain hostChain);
 
-    function initialize(
+    function initializeFromEmptyProxy(
         address initialPauser,
         ProtocolMetadata memory initialMetadata,
         uint256 initialMpcThreshold,

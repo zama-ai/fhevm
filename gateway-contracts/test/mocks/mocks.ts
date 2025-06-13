@@ -177,7 +177,7 @@ describe("Mock contracts", function () {
   describe("GatewayConfigMock", async function () {
     it("Should emit Initialization event on initialization", async function () {
       await expect(
-        gatewayConfigMock.initialize(
+        gatewayConfigMock.initializeFromEmptyProxy(
           DefaultAddress,
           DefaultProtocolMetadata,
           DefaultUint256,

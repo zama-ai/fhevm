@@ -77,7 +77,8 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /// @notice Initializes the contract.
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
-    function initialize() public virtual reinitializer(2) {
+    /// @custom:oz-upgrades-validate-as-initializer
+    function initializeFromEmptyProxy() public virtual reinitializer(2) {
         __Ownable_init(owner());
         __Pausable_init();
     }

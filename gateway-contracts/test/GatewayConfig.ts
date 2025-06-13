@@ -106,7 +106,7 @@ describe("GatewayConfig", function () {
       // Upgrade the proxy contract to the GatewayConfig contract
       const upgradeTx = await hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
         call: {
-          fn: "initialize",
+          fn: "initializeFromEmptyProxy",
           args: [
             pauser.address,
             protocolMetadata,
@@ -142,7 +142,7 @@ describe("GatewayConfig", function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
-            fn: "initialize",
+            fn: "initializeFromEmptyProxy",
             args: [
               nullPauser,
               protocolMetadata,
@@ -163,7 +163,7 @@ describe("GatewayConfig", function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
-            fn: "initialize",
+            fn: "initializeFromEmptyProxy",
             args: [
               pauser.address,
               protocolMetadata,
@@ -184,7 +184,7 @@ describe("GatewayConfig", function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
-            fn: "initialize",
+            fn: "initializeFromEmptyProxy",
             args: [
               pauser.address,
               protocolMetadata,
@@ -206,7 +206,7 @@ describe("GatewayConfig", function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
-            fn: "initialize",
+            fn: "initializeFromEmptyProxy",
             args: [
               pauser.address,
               protocolMetadata,
@@ -230,7 +230,7 @@ describe("GatewayConfig", function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
-            fn: "initialize",
+            fn: "initializeFromEmptyProxy",
             args: [
               pauser.address,
               protocolMetadata,
@@ -252,7 +252,7 @@ describe("GatewayConfig", function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
-            fn: "initialize",
+            fn: "initializeFromEmptyProxy",
             args: [
               pauser.address,
               protocolMetadata,
@@ -276,7 +276,7 @@ describe("GatewayConfig", function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
-            fn: "initialize",
+            fn: "initializeFromEmptyProxy",
             args: [
               pauser.address,
               protocolMetadata,
@@ -298,7 +298,7 @@ describe("GatewayConfig", function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
-            fn: "initialize",
+            fn: "initializeFromEmptyProxy",
             args: [
               pauser.address,
               protocolMetadata,

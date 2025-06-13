@@ -103,7 +103,8 @@ contract InputVerification is
     /// @notice Initializes the contract.
     /// @dev Contract name and version for EIP712 signature validation are defined here
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
-    function initialize() public virtual reinitializer(2) {
+    /// @custom:oz-upgrades-validate-as-initializer
+    function initializeFromEmptyProxy() public virtual reinitializer(2) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
         __Pausable_init();
