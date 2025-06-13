@@ -2,7 +2,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/.gitbook/assets/fhevm-header-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/.gitbook/assets/fhevm-header-light.png">
-  <img width=600 alt="fhevm">
+  <img width=500 alt="fhevm">
 </picture>
 </p>
 
@@ -29,14 +29,13 @@
 
 ### What is FHEVM?
 
-**FHEVM** is a technology that enables confidential smart contracts on the EVM using fully homomorphic encryption (FHE).
+**FHEVM** is the core framework of the *Zama Confidential Blockchain Protocol*. It enables confidential smart contracts on EVM-compatible blockchains by leveraging Fully Homomorphic Encryption (FHE), allowing encrypted data to be processed directly onchain. 
 
-Thanks to a breakthrough in homomorphic encryption, FHEVM makes it possible to run confidential smart contracts on encrypted data, guaranteeing both confidentiality and composability with:
-
+FHEVM ensures both confidentiality and composability, with the following guarantees:
 - **End-to-end encryption of transactions and state:** Data included in transactions is encrypted and never visible to anyone.
 - **Composability and data availability on-chain:** States are updated while remaining encrypted at all times.
 - **No impact on existing dApps and state:** Encrypted state co-exists alongside public one, and doesn't impact existing dApps.
-  <br></br>
+<br></br>
 
 ### Table of contents
 
@@ -68,21 +67,17 @@ The directories of this repository are organized in the following way:
 
 - **`test-suite/`**: Integration with docker-compose and tests covering end-to-end FHEVM stack behavior.
 
-- `test-suite/`
-  - Integration with docker-compose and tests covering end-to-end fhevm stack behavior.
+- **`test-suite/`**: Integration with docker-compose and tests covering end-to-end fhevm stack behavior.
 
-- `golden-container-images/`
-  - Docker golden images for Node.js and Rust environments used as base images by the stack.
-
-- `charts/`
-  - Helm charts and deployment configurations for the stack.
+- **`golden-container-images/`**: Docker golden images for Node.js and Rust environments used as base images by the stack.
 
 - **`charts/`**: Helm charts and deployment configurations for the stack.
+
   <br></br>
 ### Main features
 
 - **Privacy by design:** Building decentralized apps with full privacy and confidentiality on Ethereum, leveraging FHE.
-- **Solidity integration:** Write FHEVM contracts like any standard Solidity contract using Solidity. Compatible with existing toolchains — with Hardhat and Foundry (coming soon) support.
+- **Solidity integration:** Write FHEVM contracts like any standard Solidity contract using Solidity. Compatible with existing toolchains — such as Hardhat and Foundry (*coming soon*).
 - **Programmable privacy:**  Define exactly what data is encrypted and write the access control logic directly in your smart contracts.
 - **High precision encrypted integers :** Up to 256 bits of precision for integers.
 - **Full range of operators:** All typical operators are available: `+`, `-`, `*`, `/`, `<`, `>`, `==`, ternary-if, boolean operations…. Consecutive FHE operations are not limited.
