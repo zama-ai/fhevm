@@ -334,7 +334,7 @@ impl InfiniteLogIter {
     }
 
     async fn next(&mut self) -> Option<Log> {
-        let mut not_initialized = true;
+        let mut not_initialized = self.stream.is_none();
         self.prev_event = self.current_event.take();
         while self.current_event.is_none() {
             if self.stream.is_none() {
