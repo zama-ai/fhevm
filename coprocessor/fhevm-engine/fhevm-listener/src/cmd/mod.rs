@@ -16,7 +16,6 @@ use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
 use alloy_sol_types::SolEventInterface;
 
 use clap::Parser;
-use humantime::parse_duration;
 
 use rustls;
 
@@ -76,12 +75,6 @@ pub struct Args {
         help = "Initial block time, refined on each block"
     )]
     pub initial_block_time: u64,
-
-    #[arg(long, default_value = "1000000")]
-    pub provider_max_retries: u32,
-
-    #[arg(long, default_value = "4s", value_parser = parse_duration)]
-    pub provider_retry_interval: Duration,
 }
 
 type RProvider = FillProvider<
@@ -98,9 +91,6 @@ type RProvider = FillProvider<
 // TODO: to merge with Levent works
 struct InfiniteLogIter {
     url: String,
-    max_retries: u32,
-    retry_interval: Duration,
-
     block_time: u64, /* A default value that is refined with real-time
                       * events data */
     no_block_immediate_recheck: bool,
@@ -149,8 +139,6 @@ impl InfiniteLogIter {
             current_event: None,
             last_block_event_count: 0,
             last_block_recheck_planned: 0,
-            max_retries: args.provider_max_retries,
-            retry_interval: args.provider_retry_interval,
         }
     }
 
@@ -249,8 +237,7 @@ impl InfiniteLogIter {
         let mut retry = 20;
         loop {
             let ws = WsConnect::new(&self.url)
-                .with_max_retries(self.max_retries)
-                .with_retry_interval(self.retry_interval);
+                .with_max_retries(0); // disabled, alloy skips events
 
             match ProviderBuilder::new().connect_ws(ws).await {
                 Ok(provider) => {
@@ -391,12 +378,6 @@ impl InfiniteLogIter {
         let Some(current_event) = &self.current_event else {
             return None;
         };
-        if let Some(block_number) = current_event.block_number {
-            // we subtract one because the current block is on going
-            self.last_valid_block = Some(
-                block_number.max(self.last_valid_block.unwrap_or_default()) - 1,
-            );
-        }
         self.last_block_event_count += 1;
         return self.current_event.clone();
     }
@@ -478,11 +459,14 @@ pub async fn main(args: Args) {
             if let Some(block_number) = log.block_number {
                 if block_error_event_fthe == 0 {
                     if let Some(ref mut db) = db {
-                        db.mark_prev_block_as_valid(
+                        let last_valid_block = db.mark_prev_block_as_valid(
                             &log_iter.current_event,
                             &log_iter.prev_event,
                         )
                         .await;
+                        if last_valid_block.is_some() {
+                            log_iter.last_valid_block = last_valid_block;
+                        }
                     }
                 } else {
                     eprintln!(

@@ -168,8 +168,6 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         start_at_block: None,
         end_at_block: None,
         catchup_margin: 5,
-        provider_max_retries: 5,
-        provider_retry_interval: Duration::from_secs(1),
     };
 
     // Start listener in background task
