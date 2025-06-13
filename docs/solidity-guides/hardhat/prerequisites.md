@@ -1,6 +1,6 @@
 # Prerequisites
 
-This guide will walk you through installing all necessary dependencies from scratch, preparing you for developing and deploying fhevm smart contracts using Hardhat.
+This guide will walk you through installing all necessary dependencies from scratch, preparing you for developing and deploying FHEVM smart contracts using Hardhat.
 
 To use Hardhat to build and deploy confidential smart contract, you need to have the following:
 

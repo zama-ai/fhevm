@@ -30,6 +30,10 @@ jobs:
   cargo-tests:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
+    permissions:
+      contents: read
+      checks: write
+      packages: read
     runs-on: large_ubuntu_16
     steps:
     - name: Checkout code
@@ -64,6 +68,13 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-
 
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Init database
       run: make init_db
       working-directory: coprocessor/fhevm-engine/coprocessor
@@ -81,7 +92,3 @@ jobs:
       run: |
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TXN_SENDER_TEST_GLOBAL_LOCALSTACK=1 cargo test --release -- --test-threads=1
       working-directory: coprocessor/fhevm-engine
-
-permissions:
-  contents: read
-  checks: write

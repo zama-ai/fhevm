@@ -1,10 +1,10 @@
 # Key features
 
-This document provides an overview of key features of the fhevm smart contract library.
+This document provides an overview of key features of the FHEVM smart contract library.
 
 ### Configuration and initialization
 
-Smart contracts using fhevm require proper configuration and initialization:
+Smart contracts using FHEVM require proper configuration and initialization:
 
 - **Environment setup**: Import and inherit from environment-specific configuration contracts
 - **Gateway configuration**: Configure secure gateway access for cryptographic operations
@@ -19,8 +19,7 @@ fhevm introduces encrypted data types compatible with Solidity:
 - **Booleans**: `ebool`
 - **Unsigned Integers**: `euint8`, `euint16`, `euint32`, `euint64`, `euint128`, `euint256`
 - **Addresses**: `eaddress`
-- **Bytes**: `ebytes64`, `ebytes128`, `ebytes256`
-- **Input**: `einput` for handling encrypted input data
+- **Input**: `externalEbool`, `externalEaddress`, `externalEuintXX` for handling encrypted input data
 
 Encrypted data is represented as ciphertext handles, ensuring secure computation and interaction.
 

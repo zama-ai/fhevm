@@ -14,7 +14,7 @@ The `debug.decrypt[XX]` functions allow you to decrypt encrypted handles into pl
 
 - **Environment**: The `debug.decrypt[XX]` functions work **only in mocked environments** (e.g., `hardhat` network).
 - **Production limitation**: In production, decryption is performed asynchronously via the Gateway and requires an authorized onchain request.
-- **Encrypted types**: The `debug.decrypt[XX]` functions supports various encrypted types, including integers, booleans, and `ebytesXX`.
+- **Encrypted types**: The `debug.decrypt[XX]` functions supports various encrypted types, including integers, and booleans.
 - **Bypass ACL authorization**: The `debug.decrypt[XX]` functions allow decryption without ACL authorization, useful for verifying encrypted operations during development and testing.
 
 ## Supported functions
@@ -39,16 +39,6 @@ Decrypts encrypted booleans (`ebool`).
 | Function Name | Returns   | Encrypted Type |
 | ------------- | --------- | -------------- |
 | `decryptBool` | `boolean` | `ebool`        |
-
-### Byte array decryption
-
-Decrypts encrypted byte arrays of various sizes (`ebytesXX`).
-
-| Function Name      | Returns  | Encrypted Type |
-| ------------------ | -------- | -------------- |
-| `decryptEbytes64`  | `string` | `ebytes64`     |
-| `decryptEbytes128` | `string` | `ebytes128`    |
-| `decryptEbytes256` | `string` | `ebytes256`    |
 
 ### Address decryption
 

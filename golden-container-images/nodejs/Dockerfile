@@ -29,4 +29,7 @@ COPY --from=builder --chown=fhevm:fhevm /app /app
 
 USER fhevm:fhevm
 
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node --version || exit 1
+
 ENTRYPOINT ["/bin/bash", "-c"]

@@ -128,7 +128,7 @@ Despite both leading to the same encrypted result!
 
 ### Beware of overflows of FHE arithmetic operators
 
-FHE arithmetic operators can overflow. Do not forget to take into account such a possibility when implementing fhevm smart contracts.
+FHE arithmetic operators can overflow. Do not forget to take into account such a possibility when implementing FHEVM smart contracts.
 
 ❌ For example, if you wanted to create a mint function for an encrypted ERC20 token with an encrypted `totalSupply` state variable, this code is vulnerable to overflows:
 
