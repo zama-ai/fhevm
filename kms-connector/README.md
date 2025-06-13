@@ -156,14 +156,14 @@ The KMS Connector supports flexible configuration through both TOML files and en
    # Set required configuration
    export KMS_CONNECTOR_GATEWAY_URL="ws://localhost:8547"
    export KMS_CONNECTOR_KMS_CORE_ENDPOINT="http://localhost:50052"
-   
+
    # Wallet configuration (one of the following is required)
    export KMS_CONNECTOR_PRIVATE_KEY="0x0000000000000000000000000000000000000000000000000000000000000001"
    # OR for AWS KMS
    export KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID="alias/my-kms-key"
    export KMS_CONNECTOR_AWS_KMS_CONFIG__REGION="us-east-1"
    export KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT="http://localhost:4566"
-   
+
    export KMS_CONNECTOR_CHAIN_ID="31337"
    export KMS_CONNECTOR_DECRYPTION_ADDRESS="0x..."
    export KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS="0x..."
@@ -174,6 +174,7 @@ The KMS Connector supports flexible configuration through both TOML files and en
    export KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS="300"
    export KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS="300"
    export KMS_CONNECTOR_RETRY_INTERVAL_SECS="5"
+   export KMS_CONNECTOR_GAS_LIMIT = "6000"
 
    # S3 configuration (optional)
    # Note the double underscore (__) for nested configuration
@@ -259,6 +260,7 @@ All environment variables are prefixed with `KMS_CONNECTOR_`. Here's the complet
 | `KMS_CONNECTOR_S3_CONFIG__REGION` | AWS S3 region for ciphertext storage | (optional) |
 | `KMS_CONNECTOR_S3_CONFIG__BUCKET` | AWS S3 bucket name for ciphertext storage | (optional) |
 | `KMS_CONNECTOR_S3_CONFIG__ENDPOINT` | AWS S3 endpoint URL for ciphertext storage | (optional) |
+| `KMS_CONNECTOR_GAS_LIMIT` | Gas limit for each transaction sent to the Gateway | (optional) |
 
 > **Note on Nested Configuration**: For nested configuration structures like `s3_config` and `aws_kms_config`, use double underscores (`__`) in environment variables to represent the nesting. For example, `s3_config.region` in TOML becomes `KMS_CONNECTOR_S3_CONFIG__REGION` as an environment variable.
 

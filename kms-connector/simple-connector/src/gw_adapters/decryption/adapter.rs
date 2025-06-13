@@ -10,14 +10,16 @@ use tracing::{debug, info};
 /// Adapter for decryption operations
 #[derive(Clone)]
 pub struct DecryptionAdapter<P> {
+    gas_limit: Option<u64>,
     decryption_address: Address,
     provider: Arc<P>,
 }
 
 impl<P: Provider + Clone> DecryptionAdapter<P> {
     /// Create a new decryption adapter
-    pub fn new(decryption_address: Address, provider: Arc<P>) -> Self {
+    pub fn new(gas_limit: Option<u64>, decryption_address: Address, provider: Arc<P>) -> Self {
         Self {
+            gas_limit,
             decryption_address,
             provider,
         }
@@ -58,9 +60,13 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
 
         // Create and send transaction
-        let call = contract.publicDecryptionResponse(id, result, signature.into());
-        let tx = call
-            .send()
+        let mut call = contract
+            .publicDecryptionResponse(id, result, signature.into())
+            .into_transaction_request();
+        call.gas = self.gas_limit;
+        let tx = self
+            .provider()
+            .send_transaction(call)
             .await
             .map_err(|e| Error::Contract(e.to_string()))?;
         // TODO: optimize for low latency
@@ -102,11 +108,16 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
 
         // Create and send transaction
-        let call = contract.userDecryptionResponse(id, result, signature.into());
-        let tx = call
-            .send()
+        let mut call = contract
+            .userDecryptionResponse(id, result, signature.into())
+            .into_transaction_request();
+        call.gas = self.gas_limit;
+        let tx = self
+            .provider()
+            .send_transaction(call)
             .await
             .map_err(|e| Error::Contract(e.to_string()))?;
+
         // TODO: optimize for low latency
         let receipt = tx
             .get_receipt()

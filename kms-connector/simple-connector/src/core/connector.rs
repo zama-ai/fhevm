@@ -37,7 +37,13 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
             config.gateway_config_address,
             event_tx,
         );
-        let decryption = DecryptionAdapter::new(config.decryption_address, provider.clone());
+
+        // Possible gas limit
+        let decryption = DecryptionAdapter::new(
+            config.gas_limit,
+            config.decryption_address,
+            provider.clone(),
+        );
 
         let decryption_handler =
             DecryptionHandler::new(decryption.clone(), kms_client.clone(), config.clone());
