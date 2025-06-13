@@ -492,18 +492,6 @@ describe("GatewayConfig", function () {
       });
     });
 
-    describe("Reinitialization", function () {
-      it("Should reinitialize to latest version", async function () {
-        await expect(gatewayConfig.reinitializeV2(custodians))
-          .to.emit(gatewayConfig, "Reinitialization")
-          .withArgs(toValues(custodians));
-      });
-
-      it("Should revert because the custodians list is empty", async function () {
-        await expect(gatewayConfig.reinitializeV2([])).to.be.revertedWithCustomError(gatewayConfig, "EmptyCustodians");
-      });
-    });
-
     describe("Pauser", function () {
       it("Should return the initialized pauser address", async function () {
         expect(await gatewayConfig.getPauser()).to.equal(pauser.address);

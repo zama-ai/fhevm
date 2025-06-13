@@ -179,7 +179,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             $.custodians[custodians[i].txSenderAddress] = custodians[i];
         }
 
-        emit Reinitialization(custodians);
+        emit ReinitializeGatewayConfigV2(custodians);
     }
 
     /// @dev See {IGatewayConfig-updatePauser}.
