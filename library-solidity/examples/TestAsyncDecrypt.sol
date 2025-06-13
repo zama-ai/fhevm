@@ -298,81 +298,6 @@ contract TestAsyncDecrypt {
         return decryptedInput;
     }
 
-    function requestEbytes64NonTrivial(externalEbytes64 inputHandle, bytes calldata inputProof) public {
-        ebytes64 inputNonTrivial = FHE.fromExternal(inputHandle, inputProof);
-        bytes32[] memory cts = new bytes32[](1);
-        cts[0] = FHE.toBytes32(inputNonTrivial);
-        FHE.requestDecryption(cts, this.callbackBytes64.selector);
-    }
-
-    function requestEbytes64Trivial(bytes calldata value) public {
-        ebytes64 inputTrivial = FHE.asEbytes64(FHE.padToBytes64(value));
-        bytes32[] memory cts = new bytes32[](1);
-        cts[0] = FHE.toBytes32(inputTrivial);
-        FHE.requestDecryption(cts, this.callbackBytes64.selector);
-    }
-
-    function callbackBytes64(
-        uint256 requestID,
-        bytes calldata decryptedInput,
-        bytes[] memory signatures
-    ) public returns (bytes memory) {
-        FHE.checkSignatures(requestID, signatures);
-        yBytes64 = decryptedInput;
-        return decryptedInput;
-    }
-
-    function requestEbytes128NonTrivial(externalEbytes128 inputHandle, bytes calldata inputProof) public {
-        ebytes128 inputNonTrivial = FHE.fromExternal(inputHandle, inputProof);
-        bytes32[] memory cts = new bytes32[](1);
-        cts[0] = FHE.toBytes32(inputNonTrivial);
-        FHE.requestDecryption(cts, this.callbackBytes128.selector);
-    }
-
-    function requestEbytes128Trivial(bytes calldata value) public {
-        ebytes128 inputTrivial = FHE.asEbytes128(FHE.padToBytes128(value));
-        bytes32[] memory cts = new bytes32[](1);
-        cts[0] = FHE.toBytes32(inputTrivial);
-        FHE.requestDecryption(cts, this.callbackBytes128.selector);
-    }
-
-    function callbackBytes128(
-        uint256 requestID,
-        bytes calldata decryptedInput,
-        bytes[] memory signatures
-    ) public returns (bytes memory) {
-        FHE.checkSignatures(requestID, signatures);
-        yBytes128 = decryptedInput;
-        return decryptedInput;
-    }
-
-    function requestEbytes256Trivial(bytes calldata value) public {
-        ebytes256 inputTrivial = FHE.asEbytes256(FHE.padToBytes256(value));
-        bytes32[] memory cts = new bytes32[](1);
-        cts[0] = FHE.toBytes32(inputTrivial);
-        FHE.requestDecryption(cts, this.callbackBytes256.selector);
-    }
-
-    function requestEbytes256NonTrivial(externalEbytes256 inputHandle, bytes calldata inputProof) public {
-        ebytes256 inputNonTrivial = FHE.fromExternal(inputHandle, inputProof);
-        bytes32[] memory cts = new bytes32[](1);
-        cts[0] = FHE.toBytes32(inputNonTrivial);
-        FHE.requestDecryption(cts, this.callbackBytes256.selector);
-    }
-
-    /// @notice Callback function for 256-bit encrypted bytes decryption
-    /// @param decryptedInput The decrypted 256-bit bytes
-    /// @return The decrypted value
-    function callbackBytes256(
-        uint256 requestID,
-        bytes calldata decryptedInput,
-        bytes[] memory signatures
-    ) public returns (bytes memory) {
-        FHE.checkSignatures(requestID, signatures);
-        yBytes256 = decryptedInput;
-        return decryptedInput;
-    }
-
     /// @notice Request decryption of an encrypted address
     function requestAddress() public {
         bytes32[] memory cts = new bytes32[](1);
@@ -425,39 +350,40 @@ contract TestAsyncDecrypt {
         return decryptedInput;
     }
 
-    /// @notice Request decryption of mixed data types including 256-bit encrypted bytes
-    /// @dev Demonstrates how to include encrypted bytes256 in a mixed decryption request
-    /// @param inputHandle The encrypted input handle for the bytes256
-    /// @param inputProof The proof for the encrypted bytes256
-    function requestMixedBytes256(externalEbytes256 inputHandle, bytes calldata inputProof) public {
-        ebytes256 xBytes256 = FHE.fromExternal(inputHandle, inputProof);
+    /// @notice Request decryption of mixed data types
+    /// @dev Demonstrates how to do a mixed decryption request
+    /// @param inputHandle The encrypted input handle for euint256
+    /// @param inputProof The proof for the encrypted euint256
+    function requestMixed(externalEuint256 inputHandle, bytes calldata inputProof) public {
         bytes32[] memory cts = new bytes32[](4);
         cts[0] = FHE.toBytes32(xBool);
         cts[1] = FHE.toBytes32(xAddress);
-        cts[2] = FHE.toBytes32(xBytes256);
-        ebytes64 input64Bytes = FHE.asEbytes64(FHE.padToBytes64(hex"aaff42"));
-        cts[3] = FHE.toBytes32(input64Bytes);
-        FHE.requestDecryption(cts, this.callbackMixedBytes256.selector);
+        cts[2] = FHE.toBytes32(xUint32);
+        euint256 inputEuint256 = FHE.fromExternal(inputHandle, inputProof);
+        cts[3] = FHE.toBytes32(inputEuint256);
+        FHE.requestDecryption(cts, this.callbackMixed.selector);
     }
 
     /// @notice Callback function for mixed data type decryption including 256-bit encrypted bytes
     /// @dev Processes and stores the decrypted values
     /// @param decBool Decrypted boolean
     /// @param decAddress Decrypted address
-    /// @param bytesRes Decrypted 256-bit bytes
-    function callbackMixedBytes256(
+    /// @param decEuint32 Decrypted 32-bit unsigned integer
+    /// @param decEuint256 Decrypted 256-bit unsigned integer
+    /// @param signatures Signatures to verify the authenticity of the decryption
+    function callbackMixed(
         uint256 requestID,
         bool decBool,
         address decAddress,
-        bytes memory bytesRes,
-        bytes memory bytesRes2,
+        uint32 decEuint32,
+        uint256 decEuint256,
         bytes[] memory signatures
     ) public {
         FHE.checkSignatures(requestID, signatures);
         yBool = decBool;
         yAddress = decAddress;
-        yBytes256 = bytesRes;
-        yBytes64 = bytesRes2;
+        yUint32 = decEuint32;
+        yUint256 = decEuint256;
     }
 
     /// @dev internal setter to link a decryption requestID to a uint256 value

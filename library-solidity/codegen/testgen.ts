@@ -202,9 +202,6 @@ const stateVar = {
   euint64: 'resEuint64',
   euint128: 'resEuint128',
   euint256: 'resEuint256',
-  ebytes64: 'resEbytes64',
-  ebytes128: 'resEbytes128',
-  ebytes256: 'resEbytes256',
 };
 
 /**
@@ -446,9 +443,6 @@ export function generateSolidityUnitTestContracts(os: OverloadShard): string {
           euint64 public resEuint64;
           euint128 public resEuint128;
           euint256 public resEuint256;
-          ebytes64 public resEbytes64;
-          ebytes128 public resEbytes128;
-          ebytes256 public resEbytes256;
 
           constructor() {
             FHE.setCoprocessor(FHEVMConfig.defaultConfig());
@@ -628,15 +622,12 @@ function functionTypeToCalldataType(t: FunctionType): string {
  * @returns The encrypted type string based on the `FunctionType`.
  *
  * The conversion rules are as follows:
- * - If the type is `Euint` or `Ebytes`, it returns `ebytes` followed by the number of bytes (calculated as `t.bits / 8`).
  * - If the type is `Uint`, it returns `euint` followed by the number of bits.
  * - If the type is `Ebool`, it returns `ebool`.
  */
 function functionTypeToEncryptedType(t: FunctionType): string {
   switch (t.type) {
     case ArgumentType.Euint:
-    // case ArgumentType.Ebytes:
-    //  return `ebytes${t.bits / 8}`;
     case ArgumentType.Uint:
       return `euint${t.bits}`;
     case ArgumentType.Ebool:
@@ -654,7 +645,6 @@ function functionTypeToEncryptedType(t: FunctionType): string {
  * - If `t.type` is `ArgumentType.Euint`, the result is `euint` followed by the number of bits.
  * - If `t.type` is `ArgumentType.Uint`, the result is obtained from the `getUint` function with the number of bits.
  * - If `t.type` is `ArgumentType.Ebool`, the result is `ebool`.
- * - If `t.type` is `ArgumentType.Ebytes`, the result is `ebytes` followed by the number of bits.
  */
 function functionTypeToString(t: FunctionType): string {
   switch (t.type) {
@@ -664,7 +654,5 @@ function functionTypeToString(t: FunctionType): string {
       return getUint(t.bits);
     case ArgumentType.Ebool:
       return `ebool`;
-    // case ArgumentType.Ebytes:
-    //  return `ebytes${t.bits}`;
   }
 }

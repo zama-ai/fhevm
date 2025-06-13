@@ -21,9 +21,6 @@ import { FheType } from './common';
  * - `Uint128`: Unsigned integer type with a bit length of 128.
  * - `Uint160`: Unsigned integer type with a bit length of 160.
  * - `Uint256`: Unsigned integer type with a bit length of 256.
- * - `Uint512`: Unsigned integer type with a bit length of 512.
- * - `Uint1024`: Unsigned integer type with a bit length of 1024.
- * - `Uint2048`: Unsigned integer type with a bit length of 2048.
  */
 export const ALL_FHE_TYPES: FheType[] = [
   {
@@ -297,7 +294,7 @@ export const ALL_FHE_TYPES: FheType[] = [
     aliases: [
       {
         type: 'Bytes64',
-        supportedOperators: ['eq', 'ne', 'select', 'rand'],
+        supportedOperators: [],
         clearMatchingType: '',
       },
     ],
@@ -311,7 +308,7 @@ export const ALL_FHE_TYPES: FheType[] = [
     aliases: [
       {
         type: 'Bytes128',
-        supportedOperators: ['eq', 'ne', 'select', 'rand'],
+        supportedOperators: [],
         clearMatchingType: '',
       },
     ],
@@ -325,7 +322,7 @@ export const ALL_FHE_TYPES: FheType[] = [
     aliases: [
       {
         type: 'Bytes256',
-        supportedOperators: ['eq', 'ne', 'select', 'rand'],
+        supportedOperators: [],
         clearMatchingType: '',
       },
     ],

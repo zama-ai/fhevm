@@ -11,7 +11,6 @@ contract MakePubliclyDecryptable {
     /// @notice Encrypted unsigned integers of various sizes
     ebool public valueb;
     euint8 public value8;
-    ebytes256 public value2048;
 
     /// @notice Constructor to set FHE configuration
     constructor() {
@@ -38,16 +37,5 @@ contract MakePubliclyDecryptable {
     /// @notice check if an euint8 is publicly decryptable
     function isPubliclyDecryptableUint8() public view returns (bool) {
         return FHE.isPubliclyDecryptable(value8);
-    }
-
-    /// @notice make an ebytes256 publicly decryptable
-    function makePubliclyDecryptableBytes256() public {
-        value2048 = FHE.asEbytes256(FHE.padToBytes256(hex"d179e0"));
-        FHE.makePubliclyDecryptable(value2048);
-    }
-
-    /// @notice check if an ebytes256 is publicly decryptable
-    function isPubliclyDecryptableBytes256() public view returns (bool) {
-        return FHE.isPubliclyDecryptable(value2048);
     }
 }
