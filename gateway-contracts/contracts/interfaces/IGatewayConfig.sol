@@ -27,7 +27,7 @@ interface IGatewayConfig {
      * @param kmsNodes List of KMS nodes.
      * @param coprocessors List of coprocessors.
      */
-    event Initialization(
+    event InitializeGatewayConfig(
         address pauser,
         ProtocolMetadata metadata,
         uint256 mpcThreshold,

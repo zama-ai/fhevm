@@ -44,7 +44,7 @@ interface IGatewayConfig {
     error NotPauser(address pauserAddress);
 
     event AddHostChain(HostChain hostChain);
-    event Initialization(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
+    event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
     event UpdateMpcThreshold(uint256 newMpcThreshold);
     event UpdatePauser(address newPauser);
     event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
@@ -607,7 +607,7 @@ interface IGatewayConfig {
   },
   {
     "type": "event",
-    "name": "Initialization",
+    "name": "InitializeGatewayConfig",
     "inputs": [
       {
         "name": "pauser",
@@ -3287,9 +3287,9 @@ event AddHostChain(HostChain hostChain);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `Initialization(address,(string,string),uint256,(address,address,string)[],(address,address,string)[])` and selector `0xf33d908c4a8b532fe64df20b726f11405c11b9772d31b66f5eef6887a43c3fde`.
+    /**Event with signature `InitializeGatewayConfig(address,(string,string),uint256,(address,address,string)[],(address,address,string)[])` and selector `0xe592d16130c2f176fb7451aaa9e2c8c06ba79411351d9dd56f226fb92752a986`.
 ```solidity
-event Initialization(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
+event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3298,7 +3298,7 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 mpcThres
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct Initialization {
+    pub struct InitializeGatewayConfig {
         #[allow(missing_docs)]
         pub pauser: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
@@ -3323,7 +3323,7 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 mpcThres
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for Initialization {
+        impl alloy_sol_types::SolEvent for InitializeGatewayConfig {
             type DataTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 ProtocolMetadata,
@@ -3335,11 +3335,11 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 mpcThres
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "Initialization(address,(string,string),uint256,(address,address,string)[],(address,address,string)[])";
+            const SIGNATURE: &'static str = "InitializeGatewayConfig(address,(string,string),uint256,(address,address,string)[],(address,address,string)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                243u8, 61u8, 144u8, 140u8, 74u8, 139u8, 83u8, 47u8, 230u8, 77u8, 242u8,
-                11u8, 114u8, 111u8, 17u8, 64u8, 92u8, 17u8, 185u8, 119u8, 45u8, 49u8,
-                182u8, 111u8, 94u8, 239u8, 104u8, 135u8, 164u8, 60u8, 63u8, 222u8,
+                229u8, 146u8, 209u8, 97u8, 48u8, 194u8, 241u8, 118u8, 251u8, 116u8, 81u8,
+                170u8, 169u8, 226u8, 200u8, 192u8, 107u8, 167u8, 148u8, 17u8, 53u8, 29u8,
+                157u8, 213u8, 111u8, 34u8, 111u8, 185u8, 39u8, 82u8, 169u8, 134u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -3410,7 +3410,7 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 mpcThres
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for Initialization {
+        impl alloy_sol_types::private::IntoLogData for InitializeGatewayConfig {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -3419,9 +3419,11 @@ event Initialization(address pauser, ProtocolMetadata metadata, uint256 mpcThres
             }
         }
         #[automatically_derived]
-        impl From<&Initialization> for alloy_sol_types::private::LogData {
+        impl From<&InitializeGatewayConfig> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &Initialization) -> alloy_sol_types::private::LogData {
+            fn from(
+                this: &InitializeGatewayConfig,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -8656,7 +8658,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         AddHostChain(AddHostChain),
         #[allow(missing_docs)]
-        Initialization(Initialization),
+        InitializeGatewayConfig(InitializeGatewayConfig),
         #[allow(missing_docs)]
         UpdateMpcThreshold(UpdateMpcThreshold),
         #[allow(missing_docs)]
@@ -8701,9 +8703,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 58u8, 245u8, 211u8, 151u8, 154u8, 218u8, 181u8, 3u8, 88u8, 0u8,
             ],
             [
-                243u8, 61u8, 144u8, 140u8, 74u8, 139u8, 83u8, 47u8, 230u8, 77u8, 242u8,
-                11u8, 114u8, 111u8, 17u8, 64u8, 92u8, 17u8, 185u8, 119u8, 45u8, 49u8,
-                182u8, 111u8, 94u8, 239u8, 104u8, 135u8, 164u8, 60u8, 63u8, 222u8,
+                229u8, 146u8, 209u8, 97u8, 48u8, 194u8, 241u8, 118u8, 251u8, 116u8, 81u8,
+                170u8, 169u8, 226u8, 200u8, 192u8, 107u8, 167u8, 148u8, 17u8, 53u8, 29u8,
+                157u8, 213u8, 111u8, 34u8, 111u8, 185u8, 39u8, 82u8, 169u8, 134u8,
             ],
         ];
     }
@@ -8725,13 +8727,15 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         )
                         .map(Self::AddHostChain)
                 }
-                Some(<Initialization as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <Initialization as alloy_sol_types::SolEvent>::decode_raw_log(
+                Some(
+                    <InitializeGatewayConfig as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <InitializeGatewayConfig as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                             validate,
                         )
-                        .map(Self::Initialization)
+                        .map(Self::InitializeGatewayConfig)
                 }
                 Some(
                     <UpdateMpcThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -8792,7 +8796,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::AddHostChain(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::Initialization(inner) => {
+                Self::InitializeGatewayConfig(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::UpdateMpcThreshold(inner) => {
@@ -8814,7 +8818,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::AddHostChain(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::Initialization(inner) => {
+                Self::InitializeGatewayConfig(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UpdateMpcThreshold(inner) => {
@@ -9250,11 +9254,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<T, &P, AddHostChain, N> {
             self.event_filter::<AddHostChain>()
         }
-        ///Creates a new event filter for the [`Initialization`] event.
-        pub fn Initialization_filter(
+        ///Creates a new event filter for the [`InitializeGatewayConfig`] event.
+        pub fn InitializeGatewayConfig_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, Initialization, N> {
-            self.event_filter::<Initialization>()
+        ) -> alloy_contract::Event<T, &P, InitializeGatewayConfig, N> {
+            self.event_filter::<InitializeGatewayConfig>()
         }
         ///Creates a new event filter for the [`UpdateMpcThreshold`] event.
         pub fn UpdateMpcThreshold_filter(
