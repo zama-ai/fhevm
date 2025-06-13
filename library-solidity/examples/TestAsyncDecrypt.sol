@@ -350,6 +350,42 @@ contract TestAsyncDecrypt {
         return decryptedInput;
     }
 
+    /// @notice Request decryption of mixed data types
+    /// @dev Demonstrates how to do a mixed decryption request
+    /// @param inputHandle The encrypted input handle for euint256
+    /// @param inputProof The proof for the encrypted euint256
+    function requestMixed(externalEuint256 inputHandle, bytes calldata inputProof) public {
+        bytes32[] memory cts = new bytes32[](4);
+        cts[0] = FHE.toBytes32(xBool);
+        cts[1] = FHE.toBytes32(xAddress);
+        cts[2] = FHE.toBytes32(xUint32);
+        euint256 inputEuint256 = FHE.fromExternal(inputHandle, inputProof);
+        cts[3] = FHE.toBytes32(inputEuint256);
+        FHE.requestDecryption(cts, this.callbackMixed.selector);
+    }
+
+    /// @notice Callback function for mixed data type decryption including 256-bit encrypted bytes
+    /// @dev Processes and stores the decrypted values
+    /// @param decBool Decrypted boolean
+    /// @param decAddress Decrypted address
+    /// @param decEuint32 Decrypted 32-bit unsigned integer
+    /// @param decEuint256 Decrypted 256-bit unsigned integer
+    /// @param signatures Signatures to verify the authenticity of the decryption
+    function callbackMixed(
+        uint256 requestID,
+        bool decBool,
+        address decAddress,
+        uint32 decEuint32,
+        uint256 decEuint256,
+        bytes[] memory signatures
+    ) public {
+        FHE.checkSignatures(requestID, signatures);
+        yBool = decBool;
+        yAddress = decAddress;
+        yUint32 = decEuint32;
+        yUint256 = decEuint256;
+    }
+
     /// @dev internal setter to link a decryption requestID to a uint256 value
     /// @dev if used multiple times with same requestID, it will map the requestID to the list of all added inputs
     function addParamsUint256(uint256 requestID, uint256 value) internal {

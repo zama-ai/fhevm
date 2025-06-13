@@ -263,4 +263,23 @@ describe('TestAsyncDecrypt', function () {
     const y = await this.contract.yUint64();
     expect(y).to.equal(18446744073709550042n);
   });
+
+  it('test async decrypt mixed', async function () {
+    const uint256Input = BigInt('18446744073709550032');
+    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    inputAlice.add256(uint256Input);
+    const encryptedAmount = await inputAlice.encrypt();
+    const tx = await this.contract.requestMixed(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    await awaitAllDecryptionResults();
+
+    const y = await this.contract.yUint256();
+    expect(y).to.equal(uint256Input);
+    const y2 = await this.contract.yUint32();
+    expect(y2).to.equal(32);
+    const yb = await this.contract.yBool();
+    expect(yb).to.equal(true);
+    const yAdd = await this.contract.yAddress();
+    expect(yAdd).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
+  });
 });
