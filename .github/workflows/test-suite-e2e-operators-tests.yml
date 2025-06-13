@@ -109,11 +109,6 @@ jobs:
         run: |
           ./fhevm-cli test random
 
-      - name: Extra operators tests
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test extra-operators
-
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
         if: always()

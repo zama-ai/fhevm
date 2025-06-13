@@ -11,7 +11,6 @@ contract HTTPPublicDecrypt is E2EFHEVMConfig {
     ebool public xBool;
     euint32 public xUint32;
     eaddress public xAddress;
-    ebytes128 public xBytes128;
 
     /// @notice Constructor to initialize the contract and set up encrypted values
     constructor() {
@@ -24,8 +23,5 @@ contract HTTPPublicDecrypt is E2EFHEVMConfig {
 
         xAddress = FHE.asEaddress(0xfC4382C084fCA3f4fB07c3BCDA906C01797595a8);
         FHE.makePubliclyDecryptable(xAddress);
-
-        xBytes128 = FHE.asEbytes128(FHE.padToBytes128(hex"d3f1e794f90b63477d50293f0ff0d232ca3f485213a1"));
-        FHE.makePubliclyDecryptable(xBytes128);
     }
 }

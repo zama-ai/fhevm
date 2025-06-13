@@ -34,13 +34,4 @@ describe('MakePubliclyDecryptable', function () {
     const isPubliclyDecryptableAfter = await this.contract.isPubliclyDecryptableUint8();
     expect(isPubliclyDecryptableAfter).to.equal(true);
   });
-
-  it('test MakePubliclyDecryptable ebytes256', async function () {
-    const isPubliclyDecryptableBefore = await this.contract.isPubliclyDecryptableBytes256();
-    expect(isPubliclyDecryptableBefore).to.equal(false);
-    const tx = await this.contract.makePubliclyDecryptableBytes256();
-    await tx.wait();
-    const isPubliclyDecryptableAfter = await this.contract.isPubliclyDecryptableBytes256();
-    expect(isPubliclyDecryptableAfter).to.equal(true);
-  });
 });
