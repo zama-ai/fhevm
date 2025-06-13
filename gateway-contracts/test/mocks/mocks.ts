@@ -175,7 +175,7 @@ describe("Mock contracts", function () {
   });
 
   describe("GatewayConfigMock", async function () {
-    it("Should emit Initialization event on initialization", async function () {
+    it("Should emit InitializeGatewayConfig event on initialization", async function () {
       await expect(
         gatewayConfigMock.initializeFromEmptyProxy(
           DefaultAddress,
@@ -187,7 +187,7 @@ describe("Mock contracts", function () {
           [DefaultCoprocessor],
         ),
       )
-        .to.emit(gatewayConfigMock, "Initialization")
+        .to.emit(gatewayConfigMock, "InitializeGatewayConfig")
         .withArgs(
           DefaultAddress,
           toValues(DefaultProtocolMetadata),
