@@ -1,12 +1,12 @@
 # Branching in FHE
 
-This document explains how to implement conditional logic (if/else branching) when working with encrypted values in fhevm. Unlike typical Solidity programming, working with Fully Homomorphic Encryption (FHE) requires specialized methods to handle conditions on encrypted data.
+This document explains how to implement conditional logic (if/else branching) when working with encrypted values in FHEVM. Unlike typical Solidity programming, working with Fully Homomorphic Encryption (FHE) requires specialized methods to handle conditions on encrypted data.
 
 ## **Overview**
 
-In fhevm, when you perform [comparison operations](../references/functions.md#comparison-operation-eq-ne-ge-gt-le-lt), the result is an encrypted boolean (`ebool`). Since encrypted booleans do not support standard boolean operations like `if` statements or logical operators, conditional logic must be implemented using specialized methods.
+In FHEVM, when you perform [comparison operations](../references/functions.md#comparison-operation-eq-ne-ge-gt-le-lt), the result is an encrypted boolean (`ebool`). Since encrypted booleans do not support standard boolean operations like `if` statements or logical operators, conditional logic must be implemented using specialized methods.
 
-To facilitate conditional assignments, fhevm provides the `FHE.select` function, which acts as a ternary operator for encrypted values.
+To facilitate conditional assignments, FHEVM provides the `FHE.select` function, which acts as a ternary operator for encrypted values.
 
 ## **Using `FHE.select` for conditional logic**
 
@@ -67,4 +67,4 @@ This is a simplified example to demonstrate the functionality. For a complete im
 - Encrypted booleans (`ebool`) and values maintain confidentiality, enabling privacy-preserving logic.
 - Developers should account for gas costs and ciphertext behavior when designing conditional operations.
 
-For more information on the supported operations, see the [fhevm API documentation](../references/functions.md).
+For more information on the supported operations, see the [FHEVM API documentation](../references/functions.md).

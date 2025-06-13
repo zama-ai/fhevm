@@ -2,7 +2,7 @@
 
 This tutorial covers the essential steps to quickly write and deploy a confidential ERC20 smart contract using the [fhevm Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template).
 
-Hardhat is a flexible, extensible development environment for Ethereum, providing a robust toolkit for compiling, testing, and deploying smart contracts. With Zama’s fhevm integration, you can develop confidential ERC20 contracts locally and then seamlessly deploy them to a real fhevm node.
+Hardhat is a flexible, extensible development environment for Ethereum, providing a robust toolkit for compiling, testing, and deploying smart contracts. With Zama’s FHEVM integration, you can develop confidential ERC20 contracts locally and then seamlessly deploy them to a real FHEVM node.
 
 **In this tutorial, you will learn to:**
 

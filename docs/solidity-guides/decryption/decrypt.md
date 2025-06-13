@@ -15,7 +15,7 @@ To learn how decryption works see [Encryption, Decryption, Re-encryption, and Co
 
 ## Overview
 
-Decryption in fhevm is an asynchronous process that involves the Gateway and Key Management System (KMS). Contracts requiring decryption must extend the GatewayCaller contract, which imports the necessary libraries and provides access to the Gateway.
+Decryption in FHEVM is an asynchronous process that involves the Gateway and Key Management System (KMS). Contracts requiring decryption must extend the GatewayCaller contract, which imports the necessary libraries and provides access to the Gateway.
 
 Here’s an example of how to request decryption in a contract:
 
@@ -52,7 +52,7 @@ contract TestAsyncDecrypt is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, G
 
 #### Key additions to the code
 
-1.  **Configuration imports**: The configuration contracts are imported to set up the fhevm environment and Gateway.
+1.  **Configuration imports**: The configuration contracts are imported to set up the FHEVM environment and Gateway.
 
     ```solidity
     import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";

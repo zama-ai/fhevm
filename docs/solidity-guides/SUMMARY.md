@@ -2,11 +2,6 @@
 
 - [Overview](solidity-overview.md)
 - [Quick Start guide](overview.md)
-- [Quick Start - Remix](remix/README.md)
-  - [1. Setting up Remix](remix/remix.md)
-  - [2. Connect your wallet to Remix](remix/connect_wallet.md)
-  - [3. Deploying ConfidentialERC20](remix/deploying_cerc20.md)
-  - [4. Interacting with the contract](remix/interact.md)
 - [Quick Start - Hardhat](hardhat/README.md)
   - [Prerequisites](hardhat/prerequisites.md)
   - [1. Setting up Hardhat](hardhat/1.-setting-up-hardhat.md)
@@ -19,7 +14,7 @@
 
 - [Supported types](types.md)
 - [Operations on encrypted types](operations.md)
-- [AsEbool, asEuintXX, asEaddress and asEbytesXX operations](asEXXoperators.md)
+- [AsEbool, asEuintXX, and asEaddress operations](asEXXoperators.md)
 
 ## Access & Inputs
 

@@ -1,4 +1,4 @@
-# Smart contracts - fhevm API
+# Smart contracts - FHEVM API
 
 This document provides an overview of the functions available in the `FHE` Solidity library. The FHE library provides functionality for working with encrypted types and performing operations on them. It implements fully homomorphic encryption (FHE) operations in Solidity.
 
@@ -39,12 +39,9 @@ The library ensures that all operations on encrypted data follow the constraints
 - `euint128`: Encrypted 128-bit unsigned integer
 - `euint256`: Encrypted 256-bit unsigned integer
 
-#### Addresses & Bytes
+#### Addresses
 
 - `eaddress`: Encrypted Ethereum address
-- `ebytes64`: Encrypted 64-byte value
-- `ebytes128`: Encrypted 128-byte value
-- `ebytes256`: Encrypted 256-byte value
 
 #### Special Types
 
@@ -56,9 +53,6 @@ The library ensures that all operations on encrypted data follow the constraints
 - `externalEuint128`: Input type for encrypted 128-bit unsigned integer value
 - `externalEuint256`: Input type for encrypted 256-bit unsigned integer value
 - `externalEaddress`: Input type for encrypted Ethereum address
-- `externalEbytes64`: Input type for encrypted 64-byte value
-- `externalEbytes128`: Input type for encrypted 128-byte value
-- `externalEbytes256`: Input type for encrypted 256-byte value
 
 ### Casting Types
 
@@ -104,7 +98,7 @@ The `asEbool` functions behave similarly to the `asEuint` functions, but for enc
 function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal
 ```
 
-Sets the fhevm configuration for encrypted operations.
+Sets the FHEVM configuration for encrypted operations.
 
 ### Initialization Checks
 
