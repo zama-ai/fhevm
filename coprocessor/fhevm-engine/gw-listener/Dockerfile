@@ -14,7 +14,7 @@ RUN cargo fetch && \
     SQLX_OFFLINE=true cargo build --release -p gw-listener
 
 # Stage 3: Runtime image
-FROM cgr.dev/chainguard/glibc-dynamic:latest AS runtime
+FROM cgr.dev/chainguard/glibc-dynamic:latest AS prod
 
 COPY --from=builder /lib/ /lib/
 COPY --from=builder /bin/ /bin/
@@ -31,3 +31,5 @@ COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/rel
 USER fhevm:fhevm
 
 CMD ["/usr/local/bin/gw_listener"]
+
+FROM prod AS dev
