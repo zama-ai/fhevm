@@ -22,7 +22,7 @@ interface ICiphertextCommits {
     error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
     error InvalidCoprocessorContextAddCiphertext(bytes32 ctHandle, uint256 contextId, ContextStatus contextStatus);
 
-    event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenders);
+    event AddCiphertextMaterial(bytes32 indexed ctHandle, uint256 indexed contextId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenders);
 
     function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest) external;
     function checkCiphertextMaterial(bytes32 ctHandle) external view;
@@ -180,6 +180,12 @@ interface ICiphertextCommits {
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
+      },
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
       },
       {
         "name": "ciphertextDigest",
@@ -1344,9 +1350,9 @@ error InvalidCoprocessorContextAddCiphertext(bytes32 ctHandle, uint256 contextId
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `AddCiphertextMaterial(bytes32,bytes32,bytes32,address[])` and selector `0xcb89ccb347018d7f282bb4c048e135e19bc1d13660fa0f2850e10518422536de`.
+    /**Event with signature `AddCiphertextMaterial(bytes32,uint256,bytes32,bytes32,address[])` and selector `0x9a9c6c25496ff6386aeefaaa7a051f863a5eb9f295f1ab4b3902c7fdd068893e`.
 ```solidity
-event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenders);
+event AddCiphertextMaterial(bytes32 indexed ctHandle, uint256 indexed contextId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenders);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -1358,6 +1364,8 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
     pub struct AddCiphertextMaterial {
         #[allow(missing_docs)]
         pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub ciphertextDigest: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
@@ -1388,12 +1396,13 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "AddCiphertextMaterial(bytes32,bytes32,bytes32,address[])";
+            const SIGNATURE: &'static str = "AddCiphertextMaterial(bytes32,uint256,bytes32,bytes32,address[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                203u8, 137u8, 204u8, 179u8, 71u8, 1u8, 141u8, 127u8, 40u8, 43u8, 180u8,
-                192u8, 72u8, 225u8, 53u8, 225u8, 155u8, 193u8, 209u8, 54u8, 96u8, 250u8,
-                15u8, 40u8, 80u8, 225u8, 5u8, 24u8, 66u8, 37u8, 54u8, 222u8,
+                154u8, 156u8, 108u8, 37u8, 73u8, 111u8, 246u8, 56u8, 106u8, 238u8, 250u8,
+                170u8, 122u8, 5u8, 31u8, 134u8, 58u8, 94u8, 185u8, 242u8, 149u8, 241u8,
+                171u8, 75u8, 57u8, 2u8, 199u8, 253u8, 208u8, 104u8, 137u8, 62u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -1404,6 +1413,7 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
             ) -> Self {
                 Self {
                     ctHandle: topics.1,
+                    contextId: topics.2,
                     ciphertextDigest: data.0,
                     snsCiphertextDigest: data.1,
                     coprocessorTxSenders: data.2,
@@ -1440,7 +1450,11 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.ctHandle.clone())
+                (
+                    Self::SIGNATURE_HASH.into(),
+                    self.ctHandle.clone(),
+                    self.contextId.clone(),
+                )
             }
             #[inline]
             fn encode_topics_raw(
@@ -1456,6 +1470,9 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
                 out[1usize] = <alloy::sol_types::sol_data::FixedBytes<
                     32,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.ctHandle);
+                out[2usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.contextId);
                 Ok(())
             }
         }
@@ -2636,9 +2653,9 @@ function getVersion() external pure returns (string memory);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                203u8, 137u8, 204u8, 179u8, 71u8, 1u8, 141u8, 127u8, 40u8, 43u8, 180u8,
-                192u8, 72u8, 225u8, 53u8, 225u8, 155u8, 193u8, 209u8, 54u8, 96u8, 250u8,
-                15u8, 40u8, 80u8, 225u8, 5u8, 24u8, 66u8, 37u8, 54u8, 222u8,
+                154u8, 156u8, 108u8, 37u8, 73u8, 111u8, 246u8, 56u8, 106u8, 238u8, 250u8,
+                170u8, 122u8, 5u8, 31u8, 134u8, 58u8, 94u8, 185u8, 242u8, 149u8, 241u8,
+                171u8, 75u8, 57u8, 2u8, 199u8, 253u8, 208u8, 104u8, 137u8, 62u8,
             ],
         ];
     }

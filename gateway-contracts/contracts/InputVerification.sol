@@ -353,7 +353,7 @@ contract InputVerification is
     }
 
     function _checkCoprocessorContextValidity(uint256 contextId, uint256 zkProofId) internal view virtual {
-        if (_isCoprocessorContextInvalid(contextId)) {
+        if (!COPROCESSOR_CONTEXTS.isCoprocessorContextActiveOrSuspended(contextId)) {
             ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
             revert InvalidCoprocessorContextInputVerification(zkProofId, contextId, contextStatus);
         }

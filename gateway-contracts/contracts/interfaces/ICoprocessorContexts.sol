@@ -17,23 +17,21 @@ interface ICoprocessorContexts {
     /**
      * @notice Emitted when the CoprocessorContexts initialization is completed.
      * @param featureSet The feature set.
-     * @param contextBlockPeriods The context block periods.
      * @param coprocessors The coprocessors.
      */
-    event InitCoprocessorContext(
-        string featureSet,
-        CoprocessorContextBlockPeriods contextBlockPeriods,
-        Coprocessor[] coprocessors
-    );
-
-    event UpdateCoprocessorContextSuspensionBlockPeriod(uint256 newContextSuspensionBlockPeriod);
+    event InitCoprocessorContext(uint256 featureSet, Coprocessor[] coprocessors);
 
     /**
-     * @notice Emitted when a new coprocessor context has been registered.
+     * @notice Emitted when a new coprocessor context has been suggested to be added.
      * @param activeCoprocessorContext The current active coprocessor context.
      * @param newCoprocessorContext The new coprocessor context.
+     * @param blockPeriods The block periods for the new coprocessor context.
      */
-    event NewCoprocessorContext(CoprocessorContext activeCoprocessorContext, CoprocessorContext newCoprocessorContext);
+    event NewCoprocessorContext(
+        CoprocessorContext activeCoprocessorContext,
+        CoprocessorContext newCoprocessorContext,
+        CoprocessorContextBlockPeriods blockPeriods
+    );
 
     /**
      * @notice Emitted when a new coprocessor context is being pre-activated.
@@ -44,7 +42,7 @@ interface ICoprocessorContexts {
 
     event ActivateCoprocessorContext(uint256 contextId);
 
-    event SuspendCoprocessorContext(uint256 contextId);
+    event SuspendCoprocessorContext(uint256 contextId, uint256 suspendedBlockNumber);
 
     event CompromiseCoprocessorContext(uint256 contextId);
 
@@ -79,7 +77,11 @@ interface ICoprocessorContexts {
 
     error CoprocessorContextNotGenerating(uint256 contextId);
 
+    error NoPreActivationCoprocessorContext();
+
     error NoSuspendedCoprocessorContext();
+
+    error NoActiveCoprocessorContext();
 
     /**
      * @notice Error emitted when an transaction sender address is not associated with a registered coprocessor within the context.
@@ -88,12 +90,7 @@ interface ICoprocessorContexts {
      */
     error NotCoprocessorFromContext(uint256 contextId, address coprocessorTxSenderAddress);
 
-    /**
-     * @notice Check if an address is a registered coprocessor transaction sender from a context.
-     * @param contextId The coprocessor context ID.
-     * @param txSenderAddress The address to check.
-     */
-    function checkIsCoprocessorTxSenderFromContext(uint256 contextId, address txSenderAddress) external view;
+    function getPreActivationCoprocessorContextId() external view returns (uint256);
 
     function getSuspendedCoprocessorContextId() external view returns (uint256);
 
@@ -114,13 +111,13 @@ interface ICoprocessorContexts {
 
     /**
      * @notice Add a new coprocessor context to the CoprocessorContexts contract.
-     * @param preActivationBlockPeriod The pre-activation block period.
-     * @param featureSet The feature set.
+     * @param featureSet The feature set index.
+     * @param blockPeriods The block periods.
      * @param coprocessors The set of coprocessors representing the coprocessor context.
      */
     function addCoprocessorContext(
-        uint256 preActivationBlockPeriod,
-        string calldata featureSet,
+        uint256 featureSet,
+        CoprocessorContextBlockPeriods calldata blockPeriods,
         Coprocessor[] calldata coprocessors
     ) external;
 
@@ -132,7 +129,13 @@ interface ICoprocessorContexts {
 
     function moveSuspendedCoprocessorContextToActive() external;
 
-    function checkIsCoprocessorTxSender(address txSenderAddress) external view;
+    /**
+     * @notice Check if an address is a registered coprocessor transaction sender from a context.
+     * @param contextId The coprocessor context ID.
+     * @param txSenderAddress The address to check.
+     */
+    function checkIsCoprocessorTxSenderFromContext(uint256 contextId, address txSenderAddress) external view;
+
     /**
      * @notice Check if an address is a registered coprocessor signer from a context.
      * @param contextId The coprocessor context ID.
@@ -140,7 +143,11 @@ interface ICoprocessorContexts {
      */
     function checkIsCoprocessorSignerFromContext(uint256 contextId, address signerAddress) external view;
 
-    function getCoprocessorContextSuspensionBlockPeriod() external view returns (uint256);
+    function isCoprocessorContextActiveOrSuspended(uint256 contextId) external view returns (bool);
+
+    function getCoprocessorContextPreActivationBlockNumber(uint256 contextId) external view returns (uint256);
+
+    function getCoprocessorContextSuspendedBlockNumber(uint256 contextId) external view returns (uint256);
 
     /**
      * @notice Get the coprocessor majority threshold.

@@ -17,9 +17,4 @@ abstract contract ContextChecks {
         COPROCESSOR_CONTEXTS.refreshCoprocessorContextStatuses();
         _;
     }
-
-    function _isCoprocessorContextInvalid(uint256 contextId) internal view virtual returns (bool) {
-        return (contextId != COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId() &&
-            contextId != COPROCESSOR_CONTEXTS.getSuspendedCoprocessorContextId());
-    }
 }

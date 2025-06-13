@@ -89,6 +89,13 @@ export async function loadTestVariablesFixture() {
   const parsedEnvGatewayConfig = dotenv.parse(fs.readFileSync("addresses/.env.gateway_config"));
   const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", parsedEnvGatewayConfig.GATEWAY_CONFIG_ADDRESS);
 
+  // Load the CoprocessorContexts contract
+  const parsedEnvCoprocessorContexts = dotenv.parse(fs.readFileSync("addresses/.env.coprocessor_contexts"));
+  const coprocessorContexts = await hre.ethers.getContractAt(
+    "CoprocessorContexts",
+    parsedEnvCoprocessorContexts.COPROCESSOR_CONTEXTS_ADDRESS,
+  );
+
   // Load the InputVerification contract
   const parsedEnvInputVerification = dotenv.parse(fs.readFileSync("addresses/.env.input_verification"));
   const inputVerification = await hre.ethers.getContractAt(
@@ -122,6 +129,7 @@ export async function loadTestVariablesFixture() {
   return {
     ...fixtureData,
     gatewayConfig,
+    coprocessorContexts,
     kmsManagement,
     ciphertextCommits,
     multichainAcl,

@@ -114,7 +114,7 @@ contract CiphertextCommits is
         if (contextId == 0) {
             contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
             $.inputVerificationContextId[addCiphertextHash] = contextId;
-        } else if (_isCoprocessorContextInvalid(contextId)) {
+        } else if (!COPROCESSOR_CONTEXTS.isCoprocessorContextActiveOrSuspended(contextId)) {
             ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
             revert InvalidCoprocessorContextAddCiphertext(ctHandle, contextId, contextStatus);
         }
@@ -162,6 +162,7 @@ contract CiphertextCommits is
 
             emit AddCiphertextMaterial(
                 ctHandle,
+                contextId,
                 ciphertextDigest,
                 snsCiphertextDigest,
                 $._coprocessorTxSenderAddresses[ctHandle]

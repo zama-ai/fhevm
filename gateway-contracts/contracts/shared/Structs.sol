@@ -34,13 +34,13 @@ struct Coprocessor {
 struct CoprocessorContext {
     uint256 contextId;
     uint256 previousContextId;
-    string featureSet;
+    uint256 featureSet;
     Coprocessor[] coprocessors;
 }
 
 struct CoprocessorContextBlockPeriods {
     uint256 preActivationBlockPeriod;
-    uint256 suspensionBlockPeriod;
+    uint256 suspendedBlockPeriod;
 }
 
 /// @notice Struct that represents a host chain

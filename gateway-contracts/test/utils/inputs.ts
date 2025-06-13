@@ -1,4 +1,8 @@
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { HDNodeWallet } from "ethers";
 import hre from "hardhat";
+
+import { CoprocessorStruct } from "../../typechain-types/contracts/interfaces/ICoprocessorContexts";
 
 // Define the maximum value for a uint64
 export const UINT64_MAX = (BigInt(1) << BigInt(64)) - BigInt(1);
@@ -48,4 +52,21 @@ export function createCtHandle(chainId: number = 0, fheType: number = 0): string
 // Create a list of ctHandles (bytes32[])
 export function createCtHandles(length: number, chainId: number = 0, fheType: number = 0): string[] {
   return Array.from({ length }, () => createCtHandle(chainId, fheType));
+}
+
+export function createCoprocessors(
+  nCoprocessors: number,
+  coprocessorTxSenders: HardhatEthersSigner[] | HDNodeWallet[],
+  coprocessorSigners: HardhatEthersSigner[] | HDNodeWallet[],
+): CoprocessorStruct[] {
+  const coprocessors: CoprocessorStruct[] = [];
+  for (let i = 0; i < nCoprocessors; i++) {
+    coprocessors.push({
+      name: `Coprocessor ${i}`,
+      txSenderAddress: coprocessorTxSenders[i].address,
+      signerAddress: coprocessorSigners[i].address,
+      s3BucketUrl: `s3://bucket-${i}`,
+    });
+  }
+  return coprocessors;
 }

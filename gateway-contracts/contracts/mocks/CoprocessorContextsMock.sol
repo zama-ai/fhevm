@@ -4,21 +4,19 @@ import "../shared/Structs.sol";
 import "../shared/Enums.sol";
 
 contract CoprocessorContextsMock {
-    event InitCoprocessorContext(
-        string featureSet,
-        CoprocessorContextBlockPeriods contextBlockPeriods,
-        Coprocessor[] coprocessors
+    event InitCoprocessorContext(uint256 featureSet, Coprocessor[] coprocessors);
+
+    event NewCoprocessorContext(
+        CoprocessorContext activeCoprocessorContext,
+        CoprocessorContext newCoprocessorContext,
+        CoprocessorContextBlockPeriods blockPeriods
     );
-
-    event UpdateCoprocessorContextSuspensionBlockPeriod(uint256 newContextSuspensionBlockPeriod);
-
-    event NewCoprocessorContext(CoprocessorContext activeCoprocessorContext, CoprocessorContext newCoprocessorContext);
 
     event PreActivateCoprocessorContext(CoprocessorContext newCoprocessorContext, uint256 preActivationBlockNumber);
 
     event ActivateCoprocessorContext(uint256 contextId);
 
-    event SuspendCoprocessorContext(uint256 contextId);
+    event SuspendCoprocessorContext(uint256 contextId, uint256 suspendedBlockNumber);
 
     event CompromiseCoprocessorContext(uint256 contextId);
 
@@ -28,41 +26,32 @@ contract CoprocessorContextsMock {
 
     uint256 coprocessorContextCount;
 
-    function initialize(
-        CoprocessorContextBlockPeriods calldata initialContextBlockPeriods,
-        string calldata initialFeatureSet,
-        Coprocessor[] calldata initialCoprocessors
-    ) public {
-        string memory featureSet;
-        CoprocessorContextBlockPeriods memory contextBlockPeriods;
+    function initialize(uint256 initialFeatureSet, Coprocessor[] calldata initialCoprocessors) public {
+        uint256 featureSet;
         Coprocessor[] memory coprocessors = new Coprocessor[](1);
 
-        emit InitCoprocessorContext(featureSet, contextBlockPeriods, coprocessors);
-    }
-
-    function updateCoprocessorContextSuspensionBlockPeriod(
-        uint256 newCoprocessorContextSuspensionBlockPeriod
-    ) external {
-        uint256 newContextSuspensionBlockPeriod;
-
-        emit UpdateCoprocessorContextSuspensionBlockPeriod(newContextSuspensionBlockPeriod);
+        emit InitCoprocessorContext(featureSet, coprocessors);
     }
 
     function addCoprocessorContext(
-        uint256 preActivationBlockPeriod,
-        string memory featureSet,
+        uint256 featureSet,
+        CoprocessorContextBlockPeriods calldata blockPeriods,
         Coprocessor[] calldata coprocessors
     ) external {
+        CoprocessorContext memory activeCoprocessorContext;
         CoprocessorContext memory newCoprocessorContext;
         uint256 preActivationBlockNumber;
+
+        emit NewCoprocessorContext(activeCoprocessorContext, newCoprocessorContext, blockPeriods);
 
         emit PreActivateCoprocessorContext(newCoprocessorContext, preActivationBlockNumber);
     }
 
     function refreshCoprocessorContextStatuses() external {
         uint256 contextId;
+        uint256 suspendedBlockNumber;
 
-        emit SuspendCoprocessorContext(contextId);
+        emit SuspendCoprocessorContext(contextId, suspendedBlockNumber);
 
         emit ActivateCoprocessorContext(contextId);
 

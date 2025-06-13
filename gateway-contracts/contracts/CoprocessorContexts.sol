@@ -31,16 +31,12 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
     struct CoprocessorContextsStorage {
         /// @notice The coprocessor context lifecycle
         ContextLifecycle.ContextLifecycleStorage coprocessorContextLifecycle;
-        uint256 coprocessorContextGenerationBlockPeriod;
-        mapping(uint256 contextId => uint256 coprocessorContextPreActivationBlockPeriod) coprocessorContextPreActivationBlockPeriod;
-        uint256 coprocessorContextSuspensionBlockPeriod;
         /// @notice The coprocessor contexts
         mapping(uint256 contextId => CoprocessorContext coprocessorContext) coprocessorContexts;
         /// @notice The number of coprocessor contexts
         uint256 coprocessorContextCount;
         /// @notice Wether a coprocessor is done with key resharing
         mapping(uint256 contextId => mapping(address coprocessorSignerAddress => bool doneKeyResharing)) coprocessorDoneKeyResharing;
-        mapping(uint256 contextId => uint256 activationBlockNumber) coprocessorContextActivationBlockNumber;
         /// @notice Verified signatures for key resharing responses
         mapping(uint256 contextId => bytes[] verifiedSignatures) verifiedKeyResharingSignatures;
         /// @notice The coprocessors' metadata
@@ -53,13 +49,13 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
         mapping(uint256 contextId => address[] coprocessorTxSenderAddresses) coprocessorTxSenderAddresses;
         /// @notice The coprocessors' signer address list
         mapping(uint256 contextId => address[] coprocessorSignerAddresses) coprocessorSignerAddresses;
-        mapping(uint256 contextId => uint256 generationBlockNumber) coprocessorContextGenerationBlockNumber;
-        mapping(uint256 contextId => uint256 preActivationBlockNumber) coprocessorContextPreActivationBlockNumber;
-        mapping(uint256 contextId => uint256 suspensionBlockNumber) coprocessorContextSuspensionBlockNumber;
         /// @notice The public decryption threshold per coprocessor context
         mapping(uint256 contextId => uint256 threshold) publicDecryptionThreshold;
         /// @notice The user decryption threshold per coprocessor context
         mapping(uint256 contextId => uint256 threshold) userDecryptionThreshold;
+        mapping(uint256 contextId => uint256 preActivationBlockNumber) coprocessorContextPreActivationBlockNumber;
+        mapping(uint256 contextId => uint256 suspendedBlockNumber) coprocessorContextSuspendedBlockNumber;
+        mapping(uint256 contextId => uint256 suspendedBlockPeriod) coprocessorContextSuspendedBlockPeriod;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -83,12 +79,10 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
 
     /// @notice Initializes the contract
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
-    /// @param initialContextBlockPeriods The block periods of the coprocessor context
     /// @param initialFeatureSet The feature set of the coprocessor context
     /// @param initialCoprocessors The coprocessors of the coprocessor context
     function initialize(
-        CoprocessorContextBlockPeriods calldata initialContextBlockPeriods,
-        string calldata initialFeatureSet,
+        uint256 initialFeatureSet,
         Coprocessor[] calldata initialCoprocessors
     ) public virtual reinitializer(2) {
         __Ownable_init(owner());
@@ -107,38 +101,44 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
         // cases, the context must be pre-activated first.
         ContextLifecycle.setActive($.coprocessorContextLifecycle, newCoprocessorContext.contextId);
 
-        _setBlockPeriods(initialContextBlockPeriods, newCoprocessorContext.contextId);
-
-        emit InitCoprocessorContext(initialFeatureSet, initialContextBlockPeriods, initialCoprocessors);
+        emit InitCoprocessorContext(initialFeatureSet, initialCoprocessors);
     }
 
-    /// @dev See {ICoprocessorContexts-checkIsCoprocessorTxSenderFromContext}.
-    function checkIsCoprocessorTxSenderFromContext(
-        uint256 contextId,
-        address txSenderAddress
-    ) public view virtual ensureContextInitialized(contextId) {
-        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
-        if (!$.isCoprocessorTxSender[contextId][txSenderAddress]) {
-            revert NotCoprocessorTxSenderFromContext(contextId, txSenderAddress);
+    /**
+     * @dev See {ICoprocessorContexts-getPreActivationCoprocessorContextId}.
+     */
+    function getPreActivationCoprocessorContextId() public view virtual returns (uint256) {
+        uint256 preActivationContextId = _getPreActivationCoprocessorContextId();
+        if (preActivationContextId == 0) {
+            revert NoPreActivationCoprocessorContext();
         }
+        return preActivationContextId;
     }
 
     /**
      * @dev See {ICoprocessorContexts-getSuspendedCoprocessorContextId}.
      */
     function getSuspendedCoprocessorContextId() public view virtual returns (uint256) {
-        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
-        return $.coprocessorContextLifecycle.suspendedContextId;
+        uint256 suspendedContextId = _getSuspendedCoprocessorContextId();
+        if (suspendedContextId == 0) {
+            revert NoSuspendedCoprocessorContext();
+        }
+        return suspendedContextId;
     }
 
     /**
      * @dev See {ICoprocessorContexts-getActiveCoprocessorContextId}.
      * There should always be an active coprocessor context defined in the gateway, as we do not allow
      * to manually set active coprocessor contexts to `Compromised` or `Destroyed` states
+     * We still add a revert here to prevent any unexpected behaviors that could cause the protocol
+     * to behave in an unexpected manner (ex: by considering a null contextId. ).
      */
     function getActiveCoprocessorContextId() public view virtual returns (uint256) {
-        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
-        return $.coprocessorContextLifecycle.activeContextId;
+        uint256 activeContextId = _getActiveCoprocessorContextId();
+        if (activeContextId == 0) {
+            revert NoActiveCoprocessorContext();
+        }
+        return activeContextId;
     }
 
     /**
@@ -147,8 +147,10 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
      * to manually set active coprocessor contexts to `Compromised` or `Destroyed` states
      */
     function getActiveCoprocessorContext() public view virtual returns (CoprocessorContext memory) {
-        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
+        // It will revert if there is no active coprocessor context, although this should never happen
         uint256 activeContextId = getActiveCoprocessorContextId();
+
+        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
         return $.coprocessorContexts[activeContextId];
     }
 
@@ -156,7 +158,7 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
     function getCoprocessorFromContext(
         uint256 contextId,
         address coprocessorTxSenderAddress
-    ) public view virtual returns (Coprocessor memory) {
+    ) public view virtual ensureContextInitialized(contextId) returns (Coprocessor memory) {
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
         Coprocessor memory coprocessor = $.coprocessors[contextId][coprocessorTxSenderAddress];
 
@@ -167,29 +169,25 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
         return coprocessor;
     }
 
-    /// @dev See {ICoprocessorContexts-updateCoprocessorContextSuspensionBlockPeriod}.
-    function updateCoprocessorContextSuspensionBlockPeriod(
-        uint256 newCoprocessorContextSuspensionBlockPeriod
-    ) external virtual onlyOwner whenNotPaused {
-        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
-        $.coprocessorContextSuspensionBlockPeriod = newCoprocessorContextSuspensionBlockPeriod;
-        emit UpdateCoprocessorContextSuspensionBlockPeriod(newCoprocessorContextSuspensionBlockPeriod);
-    }
-
     /// @dev See {ICoprocessorContexts-addCoprocessorContext}.
     function addCoprocessorContext(
-        uint256 preActivationBlockPeriod,
-        string memory featureSet,
+        uint256 featureSet,
+        CoprocessorContextBlockPeriods calldata blockPeriods,
         Coprocessor[] calldata coprocessors
     ) external virtual onlyOwner {
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
 
         // Do not allow adding a new coprocessor context if there is a suspended coprocessor context ongoing
-        uint256 suspendedContextId = getSuspendedCoprocessorContextId();
+        uint256 suspendedContextId = _getSuspendedCoprocessorContextId();
         if (suspendedContextId != 0) {
             revert SuspendedCoprocessorContextOngoing(suspendedContextId);
         }
 
+        // This will revert if there is no active coprocessor context. Although this should never
+        // happen, it acts as a safeguard to prevent any unexpected behaviors. If such scenario
+        // ever happens, this means no new contexts could be added. Instead, the gateway will need to be
+        // paused and upgraded to a new version which puts back a working active coprocessor context
+        // manually.
         CoprocessorContext memory activeCoprocessorContext = getActiveCoprocessorContext();
 
         CoprocessorContext memory newCoprocessorContext = _addCoprocessorContext(
@@ -198,6 +196,8 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
             coprocessors
         );
 
+        emit NewCoprocessorContext(activeCoprocessorContext, newCoprocessorContext, blockPeriods);
+
         // Set the coprocessor context to the generating state
         ContextLifecycle.setGenerating($.coprocessorContextLifecycle, newCoprocessorContext.contextId);
 
@@ -205,8 +205,12 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
         // coprocessor contexts
         ContextLifecycle.setPreActivation($.coprocessorContextLifecycle, newCoprocessorContext.contextId);
 
-        uint256 preActivationBlockNumber = block.number + preActivationBlockPeriod;
+        uint256 preActivationBlockNumber = block.number + blockPeriods.preActivationBlockPeriod;
         $.coprocessorContextPreActivationBlockNumber[newCoprocessorContext.contextId] = preActivationBlockNumber;
+
+        // Store the suspended block period for the previous coprocessor context
+        $.coprocessorContextSuspendedBlockPeriod[activeCoprocessorContext.contextId] = blockPeriods
+            .suspendedBlockPeriod;
 
         emit PreActivateCoprocessorContext(newCoprocessorContext, preActivationBlockNumber);
     }
@@ -217,20 +221,24 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
         uint256 preActivationContextId = $.coprocessorContextLifecycle.preActivationContextId;
 
         if (preActivationContextId != 0) {
-            if (block.number > $.coprocessorContextPreActivationBlockNumber[preActivationContextId]) {
+            if (block.number >= $.coprocessorContextPreActivationBlockNumber[preActivationContextId]) {
                 uint256 activeContextId = getActiveCoprocessorContextId();
+
+                uint256 suspendedBlockNumber = block.number + $.coprocessorContextSuspendedBlockPeriod[activeContextId];
+                $.coprocessorContextSuspendedBlockNumber[activeContextId] = suspendedBlockNumber;
+
                 ContextLifecycle.setSuspended($.coprocessorContextLifecycle, activeContextId);
-                emit SuspendCoprocessorContext(activeContextId);
+                emit SuspendCoprocessorContext(activeContextId, suspendedBlockNumber);
 
                 ContextLifecycle.setActive($.coprocessorContextLifecycle, preActivationContextId);
                 emit ActivateCoprocessorContext(preActivationContextId);
             }
         }
 
-        uint256 suspendedContextId = getSuspendedCoprocessorContextId();
+        uint256 suspendedContextId = _getSuspendedCoprocessorContextId();
 
         if (suspendedContextId != 0) {
-            if (block.number > $.coprocessorContextSuspensionBlockNumber[suspendedContextId]) {
+            if (block.number >= $.coprocessorContextSuspendedBlockNumber[suspendedContextId]) {
                 ContextLifecycle.setDeactivated($.coprocessorContextLifecycle, suspendedContextId);
                 emit DeactivateCoprocessorContext(suspendedContextId);
             }
@@ -270,14 +278,14 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
     }
 
     function moveSuspendedCoprocessorContextToActive() external virtual onlyOwner {
-        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
+        // This will revert if there is no suspended coprocessor context
         uint256 suspendedContextId = getSuspendedCoprocessorContextId();
 
-        if (suspendedContextId == 0) {
-            revert NoSuspendedCoprocessorContext();
-        }
+        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
 
-        uint256 activeContextId = getActiveCoprocessorContextId();
+        // This will not revert if there is no active coprocessor context (something that should never
+        // happen), as this function is only meant to be used in case of emergency.
+        uint256 activeContextId = _getActiveCoprocessorContextId();
         ContextLifecycle.setDeactivated($.coprocessorContextLifecycle, activeContextId);
         emit DeactivateCoprocessorContext(activeContextId);
 
@@ -285,10 +293,15 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
         emit ActivateCoprocessorContext(suspendedContextId);
     }
 
-    /// @dev See {ICoprocessorContexts-checkIsCoprocessorTxSender}.
-    function checkIsCoprocessorTxSender(address txSenderAddress) external view virtual {
-        uint256 activeContextId = getActiveCoprocessorContextId();
-        checkIsCoprocessorTxSenderFromContext(activeContextId, txSenderAddress);
+    /// @dev See {ICoprocessorContexts-checkIsCoprocessorTxSenderFromContext}.
+    function checkIsCoprocessorTxSenderFromContext(
+        uint256 contextId,
+        address txSenderAddress
+    ) external view virtual ensureContextInitialized(contextId) {
+        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
+        if (!$.isCoprocessorTxSender[contextId][txSenderAddress]) {
+            revert NotCoprocessorTxSenderFromContext(contextId, txSenderAddress);
+        }
     }
 
     /// @dev See {ICoprocessorContexts-checkIsCoprocessorSignerFromContext}.
@@ -302,10 +315,26 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
         }
     }
 
-    /// @dev See {ICoprocessorContexts-getCoprocessorContextSuspensionBlockPeriod}.
-    function getCoprocessorContextSuspensionBlockPeriod() external view virtual returns (uint256) {
+    function isCoprocessorContextActiveOrSuspended(
+        uint256 contextId
+    ) external view virtual ensureContextInitialized(contextId) returns (bool) {
+        return (contextId == getActiveCoprocessorContextId() || contextId == _getSuspendedCoprocessorContextId());
+    }
+
+    /// @dev See {ICoprocessorContexts-getCoprocessorContextPreActivationBlockNumber}.
+    function getCoprocessorContextPreActivationBlockNumber(
+        uint256 contextId
+    ) external view virtual ensureContextInitialized(contextId) returns (uint256) {
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
-        return $.coprocessorContextSuspensionBlockPeriod;
+        return $.coprocessorContextPreActivationBlockNumber[contextId];
+    }
+
+    /// @dev See {ICoprocessorContexts-getCoprocessorContextSuspendedBlockNumber}.
+    function getCoprocessorContextSuspendedBlockNumber(
+        uint256 contextId
+    ) external view virtual ensureContextInitialized(contextId) returns (uint256) {
+        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
+        return $.coprocessorContextSuspendedBlockNumber[contextId];
     }
 
     /// @dev See {IGatewayConfig-getCoprocessorMajorityThresholdFromContext}.
@@ -362,18 +391,9 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
             );
     }
 
-    function _setBlockPeriods(
-        CoprocessorContextBlockPeriods calldata coprocessorBlockPeriods,
-        uint256 contextId
-    ) internal virtual {
-        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
-        $.coprocessorContextPreActivationBlockPeriod[contextId] = coprocessorBlockPeriods.preActivationBlockPeriod;
-        $.coprocessorContextSuspensionBlockPeriod = coprocessorBlockPeriods.suspensionBlockPeriod;
-    }
-
     function _addCoprocessorContext(
         uint256 previousContextId,
-        string memory featureSet,
+        uint256 featureSet,
         Coprocessor[] calldata coprocessors
     ) internal virtual returns (CoprocessorContext memory) {
         if (coprocessors.length == 0) {
@@ -414,6 +434,21 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
      */
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+
+    function _getPreActivationCoprocessorContextId() internal view virtual returns (uint256) {
+        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
+        return $.coprocessorContextLifecycle.preActivationContextId;
+    }
+
+    function _getSuspendedCoprocessorContextId() internal view virtual returns (uint256) {
+        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
+        return $.coprocessorContextLifecycle.suspendedContextId;
+    }
+
+    function _getActiveCoprocessorContextId() internal view virtual returns (uint256) {
+        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
+        return $.coprocessorContextLifecycle.activeContextId;
+    }
 
     /**
      * @dev Returns the CoprocessorContexts storage location.

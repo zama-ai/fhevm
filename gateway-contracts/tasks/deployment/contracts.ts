@@ -110,10 +110,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
 
 // Deploy the CoprocessorContexts contract
 task("task:deployCoprocessorContexts").setAction(async function (_, hre) {
-  // Parse the coprocessor context block periods
-  const coprocessorsPreActivationBlockPeriod = getRequiredEnvVar("COPROCESSORS_PRE_ACTIVATION_BLOCK_PERIOD");
-  const coprocessorsSuspensionBlockPeriod = getRequiredEnvVar("COPROCESSORS_SUSPENSION_BLOCK_PERIOD");
-
   // Parse the coprocessor feature set
   const coprocessorsFeatureSet = getRequiredEnvVar("COPROCESSORS_FEATURE_SET");
 
@@ -130,11 +126,7 @@ task("task:deployCoprocessorContexts").setAction(async function (_, hre) {
   }
   console.log("Coprocessors:", coprocessors);
 
-  await deployContractImplementation("CoprocessorContexts", hre, [
-    [coprocessorsPreActivationBlockPeriod, coprocessorsSuspensionBlockPeriod],
-    coprocessorsFeatureSet,
-    coprocessors,
-  ]);
+  await deployContractImplementation("CoprocessorContexts", hre, [coprocessorsFeatureSet, coprocessors]);
 });
 
 // Deploy the InputVerification contract

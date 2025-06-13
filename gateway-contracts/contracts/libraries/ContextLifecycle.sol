@@ -122,7 +122,7 @@ library ContextLifecycle {
         ContextLifecycleStorage storage $,
         uint256 contextId
     ) internal onlyNonNullContextId(contextId) {
-        if (!isActive($, contextId) || !isSuspended($, contextId)) {
+        if (!isActive($, contextId) && !isSuspended($, contextId)) {
             revert ContextNotActiveOrSuspended(contextId);
         }
 

@@ -112,7 +112,7 @@ contract MultichainAcl is
         if (contextId == 0) {
             contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
             $.allowPublicDecryptContextId[ctHandle] = contextId;
-        } else if (_isCoprocessorContextInvalid(contextId)) {
+        } else if (!COPROCESSOR_CONTEXTS.isCoprocessorContextActiveOrSuspended(contextId)) {
             ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
             revert InvalidCoprocessorContextAllowPublicDecrypt(ctHandle, contextId, contextStatus);
         }
@@ -154,7 +154,7 @@ contract MultichainAcl is
         if (contextId == 0) {
             contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
             $.allowAccountContextId[ctHandle][accountAddress] = contextId;
-        } else if (_isCoprocessorContextInvalid(contextId)) {
+        } else if (!COPROCESSOR_CONTEXTS.isCoprocessorContextActiveOrSuspended(contextId)) {
             ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
             revert InvalidCoprocessorContextAllowAccount(ctHandle, accountAddress, contextId, contextStatus);
         }
@@ -209,7 +209,7 @@ contract MultichainAcl is
         if (contextId == 0) {
             contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
             $.delegateAccountContextId[delegateAccountHash] = contextId;
-        } else if (_isCoprocessorContextInvalid(contextId)) {
+        } else if (!COPROCESSOR_CONTEXTS.isCoprocessorContextActiveOrSuspended(contextId)) {
             ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
             revert InvalidCoprocessorContextDelegateAccount(
                 chainId,

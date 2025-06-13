@@ -637,20 +637,15 @@ describe("KmsManagement", function () {
       // Trigger a key activation response
       const txResponse1 = await kmsManagement.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId1);
 
-      // Check that the first response does not emit an event (consensus is not reached yet)
-      await expect(txResponse1).to.not.emit(kmsManagement, "ActivateKeyResponse");
+      // Check that the first response emits an event
+      // TODO: Currently, the consensus threshold is hardcoded to 0 until keygen is integrated in the contract
+      // See https://github.com/zama-ai/fhevm/issues/33
+      await expect(txResponse1).to.emit(kmsManagement, "ActivateKeyResponse").withArgs(keyId1);
 
       // Check that a coprocessor cannot respond twice to the same key activation request
       await expect(kmsManagement.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId1))
         .to.be.revertedWithCustomError(kmsManagement, "ActivateKeyCoprocessorAlreadyResponded")
         .withArgs(keyId1, coprocessorTxSenders[0]);
-
-      // Trigger a 2nd key activation response with the 2nd coprocessor, which should reach consensus
-      // (tests use a total of 3 coprocessors) and thus emit an event
-      const txResponse2 = await kmsManagement.connect(coprocessorTxSenders[1]).activateKeyResponse(keyId1);
-
-      // Check that the 2nd response emits an event
-      await expect(txResponse2).to.emit(kmsManagement, "ActivateKeyResponse").withArgs(keyId1);
 
       // Check that we cannot activate the 2nd key (which has been generated but for which a KSK key
       // has not been generated)
@@ -658,10 +653,12 @@ describe("KmsManagement", function () {
         .to.be.revertedWithCustomError(kmsManagement, "ActivateKeyRequiresKskgen")
         .withArgs(keyId1, keyId2);
 
-      // The 3rd response should be ignored (not reverted) and not emit an event
+      // The 2nd and 3rd responses should be ignored (not reverted) and not emit an event
+      const txResponse2 = await kmsManagement.connect(coprocessorTxSenders[1]).activateKeyResponse(keyId1);
       const txResponse3 = await kmsManagement.connect(coprocessorTxSenders[2]).activateKeyResponse(keyId1);
 
-      // Check that the 3rd response does not emit an event
+      // Check that the 2nd and 3rd responses do not emit an event
+      await expect(txResponse2).to.not.emit(kmsManagement, "ActivateKeyResponse");
       await expect(txResponse3).to.not.emit(kmsManagement, "ActivateKeyResponse");
     });
 

@@ -28,6 +28,9 @@ describe("InputVerification", function () {
   // Expected ZK proof id (after first request)
   const zkProofId = 1;
 
+  // Expected context id (since the context is not changed)
+  const contextId = 1;
+
   // Define 3 new valid ctHandles
   const newCtHandles = createCtHandles(3);
 
@@ -62,7 +65,7 @@ describe("InputVerification", function () {
 
       await expect(txResponse)
         .to.emit(inputVerification, "VerifyProofRequest")
-        .withArgs(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
+        .withArgs(zkProofId, contextId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     });
 
     it("Should revert because the contract's chain ID does not correspond to a registered host chain", async function () {
