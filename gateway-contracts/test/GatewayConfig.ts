@@ -227,7 +227,7 @@ describe("GatewayConfig", function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
-            fn: "initialize",
+            fn: "initializeFromEmptyProxy",
             args: [
               pauser.address,
               protocolMetadata,
@@ -468,6 +468,18 @@ describe("GatewayConfig", function () {
         for (const hostChain of hostChains) {
           expect(hostChainIds).to.include(Number(hostChain.chainId));
         }
+      });
+    });
+
+    describe("Reinitialization", function () {
+      it("Should reinitialize to latest version", async function () {
+        await expect(gatewayConfig.reinitializeV2(custodians))
+          .to.emit(gatewayConfig, "Reinitialization")
+          .withArgs(toValues(custodians));
+      });
+
+      it("Should revert because the custodians list is empty", async function () {
+        await expect(gatewayConfig.reinitializeV2([])).to.be.revertedWithCustomError(gatewayConfig, "EmptyCustodians");
       });
     });
 

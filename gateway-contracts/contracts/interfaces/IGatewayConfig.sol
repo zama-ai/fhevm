@@ -38,6 +38,12 @@ interface IGatewayConfig {
     );
 
     /**
+     * @notice Emitted when the GatewayConfig reinitialization is completed.
+     * @param custodians List of custodians.
+     */
+    event Reinitialization(Custodian[] custodians);
+
+    /**
      * @notice Emitted when the pauser address has been updated.
      * @param newPauser The new pauser address.
      */
