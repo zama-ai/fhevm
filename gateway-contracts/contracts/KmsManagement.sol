@@ -5,8 +5,8 @@ import "./interfaces/IKmsManagement.sol";
 import "./interfaces/IGatewayConfig.sol";
 import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import "./shared/EmptyProxyUpgradeable.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
 
@@ -14,7 +14,13 @@ import "./shared/Pausable.sol";
 /// @dev TODO: This contract is neither used nor up-to-date. It will be reworked in the future.
 /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/108
 /// @dev See {IKmsManagement}.
-contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks, Pausable {
+contract KmsManagement is
+    IKmsManagement,
+    Ownable2StepUpgradeable,
+    EmptyProxyUpgradeable,
+    GatewayConfigChecks,
+    Pausable
+{
     /// @notice The address of the GatewayConfig contract for protocol state calls.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -125,7 +131,7 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     function initializeFromEmptyProxy(
         string memory fheParamsName,
         bytes32 fheParamsDigest
-    ) public virtual reinitializer(2) {
+    ) public virtual onlyFromEmptyProxy reinitializer(2) {
         __Ownable_init(owner());
         __Pausable_init();
 

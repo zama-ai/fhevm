@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "./interfaces/IGatewayConfig.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import "./interfaces/IGatewayConfig.sol";
+import "./shared/EmptyProxyUpgradeable.sol";
 import "./shared/Pausable.sol";
 
 /**
@@ -13,7 +13,7 @@ import "./shared/Pausable.sol";
  * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and host chains.
  * @dev See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
-contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeable, Pausable {
+contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, EmptyProxyUpgradeable, Pausable {
     /// @notice The maximum chain ID.
     uint256 internal constant MAX_CHAIN_ID = type(uint64).max;
 
@@ -93,7 +93,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 initialUserDecryptionThreshold,
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors
-    ) public virtual reinitializer(2) {
+    ) public virtual onlyFromEmptyProxy reinitializer(2) {
         __Ownable_init(owner());
         __Pausable_init();
 

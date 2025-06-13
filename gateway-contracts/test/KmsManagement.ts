@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
-import { GatewayConfig, KmsManagement } from "../typechain-types";
+import { KmsManagement, KmsManagement__factory } from "../typechain-types";
 import { createRandomWallet, loadTestVariablesFixture } from "./utils";
 
 describe("KmsManagement", function () {
@@ -113,6 +113,33 @@ describe("KmsManagement", function () {
 
     return { ...fixtureData, kskId };
   }
+
+  describe("Deployment", function () {
+    let kmsManagementFactory: KmsManagement__factory;
+    let kmsManagement: KmsManagement;
+    let owner: Wallet;
+    let fheParamsName: string;
+    let fheParamsDigest: string;
+
+    beforeEach(async function () {
+      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      kmsManagement = fixtureData.kmsManagement;
+      fheParamsName = fixtureData.fheParamsName;
+      fheParamsDigest = fixtureData.fheParamsDigest;
+      owner = fixtureData.owner;
+
+      // Get the KmsManagement contract factory
+      kmsManagementFactory = await hre.ethers.getContractFactory("KmsManagement", owner);
+    });
+
+    it("Should revert because initialization is not from an empty proxy", async function () {
+      await expect(
+        hre.upgrades.upgradeProxy(kmsManagement, kmsManagementFactory, {
+          call: { fn: "initializeFromEmptyProxy", args: [fheParamsName, fheParamsDigest] },
+        }),
+      ).to.be.revertedWithCustomError(kmsManagement, "NotInitializingFromEmptyProxy");
+    });
+  });
 
   describe("Key generation", function () {
     it("Should revert if the FHE params are not initialized", async function () {
