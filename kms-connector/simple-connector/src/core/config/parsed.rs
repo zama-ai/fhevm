@@ -48,8 +48,6 @@ pub struct Config {
     pub wallet: KmsWallet,
     /// S3 configuration for ciphertext storage (optional).
     pub s3_config: Option<S3Config>,
-    /// The gas limit for each transaction sent by the connector.
-    pub gas_limit: Option<u64>,
     // TODO: implement to increase security
     /// Whether to verify coprocessors against the `GatewayConfig` contract (optional, defaults to true)
     pub verify_coprocessors: Option<bool>,
@@ -84,7 +82,6 @@ impl Display for Config {
             "GatewayConfig Domain Version: {}",
             self.gateway_config_domain_version
         )?;
-        writeln!(f, "Gas limit: {:?}", self.gas_limit)?;
         writeln!(f, "Channel Size: {}", self.channel_size)?;
         writeln!(
             f,
@@ -181,7 +178,6 @@ impl Config {
             gateway_config_domain_version,
             wallet,
             s3_config: raw_config.s3_config,
-            gas_limit: raw_config.gas_limit,
             verify_coprocessors: raw_config.verify_coprocessors,
         })
     }
@@ -540,7 +536,6 @@ mod tests {
                 ),
                 s3_config: None,
                 aws_kms_config: None,
-                gas_limit: None,
                 verify_coprocessors: Some(true),
             }
         }
