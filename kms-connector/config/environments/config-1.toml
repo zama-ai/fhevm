@@ -2,31 +2,36 @@ service_name = "kms-connector-1"
 
 chain_id = 31337
 
-decryption_address = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
-
-gateway_config_address = "0x0000000000000000000000000000000000000001"
-
 kms_core_endpoint = "http://[::1]:50200"
 
 gateway_url = "ws://0.0.0.0:8545"
 
+database_url = "postgres://postgres:postgres@localhost/kms-connector"
+
 channel_size = 2000
 
 private_key = "8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f"
+
+[decryption_contract]
+address = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+# domain_name = "Decryption"
+# domain_version = "1"
+
+[gateway_config_contract]
+address = "0x0000000000000000000000000000000000000001"
+# domain_name = "GatewayConfig"
+# domain_version = "1"
+
+[kms_management_contract]
+address = "0x0000000000000000000000000000000000000002"
+# domain_name = "KmsManagement"
+# domain_version = "1"
 
 # public_decryption_timeout_secs = 300
 
 # user_decryption_timeout_secs = 300
 
 # retry_interval_secs = 5
-
-# decryption_domain_name = "Decryption"
-
-# decryption_domain_version = "1"
-
-# gateway_config_domain_name = "GatewayConfig"
-
-# gateway_config_domain_version = "1"
 
 # [s3_config]
 # region = "us-east-1"
