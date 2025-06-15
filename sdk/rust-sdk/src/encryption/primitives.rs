@@ -7,17 +7,14 @@ use tracing::info;
 /// Defines the bit width for different encryption types
 #[derive(Debug, Clone, Copy)]
 pub enum EncryptionType {
-    Bit1,    // Boolean
-    Bit8,    // uint8
-    Bit16,   // uint16
-    Bit32,   // uint32
-    Bit64,   // uint64
-    Bit128,  // uint128
-    Bit160,  // address
-    Bit256,  // uint256
-    Bit512,  // bytes64
-    Bit1024, // bytes128
-    Bit2048, // bytes256
+    Bit1,   // Boolean
+    Bit8,   // uint8
+    Bit16,  // uint16
+    Bit32,  // uint32
+    Bit64,  // uint64
+    Bit128, // uint128
+    Bit160, // address
+    Bit256, // uint256
 }
 
 impl EncryptionType {
@@ -32,26 +29,20 @@ impl EncryptionType {
             Self::Bit128 => 128,
             Self::Bit160 => 160,
             Self::Bit256 => 256,
-            Self::Bit512 => 512,
-            Self::Bit1024 => 1024,
-            Self::Bit2048 => 2048,
         }
     }
 
     /// Get the discriminant value used in handle computation
     pub fn discriminant(&self) -> u8 {
         match self {
-            Self::Bit1 => 0,     // ebool
-            Self::Bit8 => 2,     // euint8
-            Self::Bit16 => 3,    // euint16
-            Self::Bit32 => 4,    // euint32
-            Self::Bit64 => 5,    // euint64
-            Self::Bit128 => 6,   // euint128
-            Self::Bit160 => 7,   // eaddress
-            Self::Bit256 => 8,   // euint256
-            Self::Bit512 => 9,   // ebytes64
-            Self::Bit1024 => 10, // ebytes128
-            Self::Bit2048 => 11, // ebytes256
+            Self::Bit1 => 0,   // ebool
+            Self::Bit8 => 2,   // euint8
+            Self::Bit16 => 3,  // euint16
+            Self::Bit32 => 4,  // euint32
+            Self::Bit64 => 5,  // euint64
+            Self::Bit128 => 6, // euint128
+            Self::Bit160 => 7, // eaddress
+            Self::Bit256 => 8, // euint256
         }
     }
 
@@ -66,9 +57,6 @@ impl EncryptionType {
             128 => Ok(Self::Bit128),
             160 => Ok(Self::Bit160),
             256 => Ok(Self::Bit256),
-            512 => Ok(Self::Bit512),
-            1024 => Ok(Self::Bit1024),
-            2048 => Ok(Self::Bit2048),
             _ => Err(FhevmError::InvalidParams(format!(
                 "Unsupported bit width: {}",
                 bit_width

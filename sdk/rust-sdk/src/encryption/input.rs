@@ -327,17 +327,14 @@ impl EncryptedInputBuilder {
             .map(|(index, &bit_width)| {
                 // Get the encryption type discriminant for this bit width
                 let encryption_type = match bit_width {
-                    1 => 0,     // ebool
-                    8 => 2,     // euint8
-                    16 => 3,    // euint16
-                    32 => 4,    // euint32
-                    64 => 5,    // euint64
-                    128 => 6,   // euint128
-                    160 => 7,   // eaddress
-                    256 => 8,   // euint256
-                    512 => 9,   // ebytes64
-                    1024 => 10, // ebytes128
-                    2048 => 11, // ebytes256
+                    1 => 0,   // ebool
+                    8 => 2,   // euint8
+                    16 => 3,  // euint16
+                    32 => 4,  // euint32
+                    64 => 5,  // euint64
+                    128 => 6, // euint128
+                    160 => 7, // eaddress
+                    256 => 8, // euint256
                     _ => {
                         return Err(FhevmError::InvalidParams(format!(
                             "Unsupported bit width: {}",
