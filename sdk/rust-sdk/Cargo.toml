@@ -19,8 +19,6 @@ path = "src/main.rs"
 
 
 [dependencies]
-env = "1.0.1"
-help = "0.0.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_yaml = "0.9.34"
 thiserror = "2.0.12"
