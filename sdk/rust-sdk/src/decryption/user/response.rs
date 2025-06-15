@@ -1,6 +1,7 @@
+use super::deserializer::UserDecryptionDeserializer;
 use super::types::ResponseConfig;
 use crate::blockchain::bindings::Decryption::CtHandleContractPair;
-use crate::utils::{JsonConverter, parse_hex_string, validate_address_from_str};
+use crate::utils::{parse_hex_string, validate_address_from_str};
 use crate::{FhevmError, Result};
 use alloy::primitives::Address;
 use alloy::signers::Signature;
@@ -207,7 +208,7 @@ impl ResponseProcessor {
         )?;
 
         // Convert response to KMS format
-        let responses = JsonConverter::json_to_responses(&json_response)?;
+        let responses = UserDecryptionDeserializer::json_to_responses(&json_response)?;
 
         // Convert keys for cryptobox
         let crypto_pub_key = u8vec_to_cryptobox_pk(&public_key_bytes)

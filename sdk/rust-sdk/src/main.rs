@@ -1,213 +1,209 @@
-use std::path;
-
-use gateway_sdk::utils::validate_address_from_str;
-use gateway_sdk::{EncryptedInput, FhevmError, FhevmSdk, FhevmSdkBuilder};
-
 use alloy::primitives::address;
-use gateway_sdk::EncryptedInputBuilder;
 use gateway_sdk::logging::{self, LogConfig, LogFormat};
-use tracing::{error, info, warn};
+use gateway_sdk::{FhevmSdk, FhevmSdkBuilder, Result};
+use std::path;
+use tracing::{Level, info, warn};
 
-use tracing::Level;
-
-fn main() -> Result<(), FhevmError> {
-    // Initialize logging (if needed)
-
-    let config = LogConfig {
+fn main() -> Result<()> {
+    // Initialize logging
+    logging::init_with_config(LogConfig {
         level: Level::INFO,
         show_file_line: true,
         show_thread_ids: false,
         format: LogFormat::Compact,
-    };
+    });
 
-    logging::init_with_config(config);
+    info!("🚀 FHEVM SDK Demo");
 
-    info!("FHEVM SDK Demo");
+    // Create SDK and run demos
+    let mut sdk = create_sdk()?;
+    info!("✅ SDK created successfully\n");
 
-    // APPROACH 1: Using the builder pattern
-    info!("=== Builder Pattern Approach ===");
-    let mut sdk_from_builder = create_sdk_with_builder()?;
-    demo_sdk_functionality(&mut sdk_from_builder)?;
+    // Show configuration
+    println!("{}", sdk.configuration_status());
+    println!("\n{}", "=".repeat(60));
 
-    info!("FHEVM SDK Demo completed");
+    // Run all demos
+    demo_encryption(&mut sdk)?;
+    println!("\n{}", "=".repeat(60));
+
+    demo_eip712_signatures(&sdk)?;
+    println!("\n{}", "=".repeat(60));
+
+    demo_decrypt_calldata(&mut sdk)?;
+
+    info!("\n✅ All demos completed successfully!");
     Ok(())
 }
 
-/// Create an SDK instance using the builder pattern
-fn create_sdk_with_builder() -> Result<FhevmSdk, FhevmError> {
-    info!("Creating SDK using builder pattern");
-
-    let sdk = create_sample_builder().build()?;
-    info!("SDK successfully created with builder");
-
-    Ok(sdk)
-}
-
-/// Create a sample builder with test configuration
-fn create_sample_builder() -> FhevmSdkBuilder {
+fn create_sdk() -> Result<FhevmSdk> {
     FhevmSdkBuilder::new()
         .with_keys_directory(path::PathBuf::from("./keys"))
         .with_gateway_chain_id(43113)
-        .with_host_chain_id(11155111) // Example: Ethereum Sepolia
+        .with_host_chain_id(11155111)
         .with_decryption_contract("0x1234567890123456789012345678901234567bbb")
         .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")
         .with_acl_contract("0x0987654321098765432109876543210987654321")
+        .build()
 }
 
-/// Demonstrate SDK functionality
-fn demo_sdk_functionality(sdk: &mut FhevmSdk) -> Result<(), FhevmError> {
-    // Set up test addresses
+/// Demo 1: Encryption with real data
+fn demo_encryption(sdk: &mut FhevmSdk) -> Result<()> {
+    info!("\n📦 Demo 1: Encrypting Data");
+
     let contract_address = address!("0x7777777777777777777777777777777777777777");
     let user_address = address!("0x8888888888888888888888888888888888888888");
 
-    // Example: Encrypt a value
-    info!("Encrypting value 18446744073709550042");
+    // Create encrypted input
+    let mut builder = sdk.create_input_builder()?;
+    builder.add_u64(18446744073709550042)?; // Large u64 value
+    builder.add_bool(true)?;
+    builder.add_u32(42)?;
 
-    // Create an input builder and explicitly type it
-    let mut builder: EncryptedInputBuilder = match sdk.create_input_builder() {
-        Ok(b) => b,
-        Err(e) => {
-            info!("Error creating input builder: {}", e);
-            return Err(e);
-        }
-    };
+    let encrypted = builder.encrypt_and_prove_for(contract_address, user_address)?;
 
-    // Add a value
-    if let Err(e) = builder.add_u64(18446744073709550042) {
-        info!("Error adding value: {}", e);
-        return Err(e);
+    info!("✅ Encryption successful!");
+    info!("   - Values encrypted: {}", encrypted.handles.len());
+    info!("   - Ciphertext size: {} bytes", encrypted.ciphertext.len());
+    info!("   - Contract: {}", contract_address);
+    info!("   - User: {}", user_address);
+
+    // Show first handle as example
+    if let Some(first_handle) = encrypted.handles_as_hex().first() {
+        info!(
+            "   - Example handle: {}...{}",
+            &first_handle[..10],
+            &first_handle[first_handle.len() - 6..]
+        );
     }
 
-    // Encrypt for a specific contract and user
-    let encrypted: EncryptedInput =
-        builder.encrypt_and_prove_for(contract_address, user_address)?;
-    info!("Encryption successful!");
-    info!("  - Handles: {}", encrypted.handles.len());
-    info!("  - Ciphertext size: {} bytes", encrypted.ciphertext.len());
+    Ok(())
+}
 
-    let handle_vecs: Vec<Vec<u8>> = encrypted
-        .handles
-        .iter()
-        .map(|handle| handle.to_vec())
-        .collect();
+/// Demo 2: EIP-712 Signatures (all three modes)
+fn demo_eip712_signatures(sdk: &FhevmSdk) -> Result<()> {
+    info!("\n🔏 Demo 2: EIP-712 Signatures");
 
-    // Example: Generate EIP-712 signature
-    info!("Generating EIP-712 hash");
-
-    // Message parameters
+    // Test data
     let public_key =
         "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331";
-
-    let contract_addresses = vec![validate_address_from_str(
-        "0x56a24bcaE11890353726596fD6f5cABb5a126Df9",
-    )?];
-    let start_timestamp = 1748252823;
-    let duration_days = 10;
-
+    let contract_addresses_str = "0x56a24bcaE11890353726596fD6f5cABb5a126Df9";
     let wallet_private_key = "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f";
+    let (start_timestamp, duration_days) = (1748252823, 10);
 
-    // Example 1: Generate EIP-712 hash only (no signing)
-    info!("--- Example 1: Hash Only ---");
-    match sdk.generate_eip712_for_user_decrypt(
-        &public_key,
-        &contract_addresses,
-        start_timestamp,
-        duration_days,
-        None, // No wallet key
-        None, // No verification
-    ) {
-        Ok(result) => {
-            info!("✅ EIP-712 hash generated successfully");
-            info!("   Hash: {}", result.hash);
-            info!("   Signed: {}", result.is_signed());
-            info!("   Verification status: {}", result.verification_status());
-        }
-        Err(e) => error!("❌ Hash generation error: {}", e),
+    // Mode 1: Hash only
+    info!("\n   Mode 1: Hash Only (No Signing)");
+    let hash_only = sdk
+        .eip712_builder()
+        .public_key(&public_key)
+        .add_contract(contract_addresses_str)?
+        .validity_period(start_timestamp, duration_days)
+        .generate_hash()?;
+
+    info!("   ✅ Hash: {}", hash_only);
+
+    // Mode 2: Hash + Sign (fast, no verification)
+    info!("\n   Mode 2: Hash + Sign (Fast)");
+    let signed_only = sdk
+        .eip712_builder()
+        .public_key(&public_key)
+        .add_contract(contract_addresses_str)?
+        .validity_period(start_timestamp, duration_days)
+        .sign_with(wallet_private_key)
+        .generate_and_sign_only()?;
+
+    info!(
+        "   ✅ Signed by: {}",
+        signed_only.signer.unwrap_or_default()
+    );
+    if let Ok(sig) = signed_only.require_signature() {
+        info!(
+            "   ✅ Signature: 0x{}...{}",
+            &hex::encode(&sig[..4]),
+            &hex::encode(&sig[sig.len() - 4..])
+        );
     }
 
-    // Example 2: Generate hash and sign (no verification)
-    info!("--- Example 2: Hash + Sign (Fast) ---");
-    match sdk.generate_eip712_for_user_decrypt(
-        &public_key,
-        &contract_addresses,
-        start_timestamp,
-        duration_days,
-        Some(wallet_private_key), // With wallet key
-        None,                     // No verification (default, fast)
-    ) {
-        Ok(result) => {
-            info!("✅ EIP-712 hash and signature generated successfully");
-            info!("   Hash: {}", result.hash);
-            info!("   Signed: {}", result.is_signed());
-            info!("   Signer: {}", result.signer.unwrap_or_default());
-            info!("   Verification status: {}", result.verification_status());
+    // Mode 3: Hash + Sign + Verify (complete)
+    info!("\n   Mode 3: Hash + Sign + Verify (Full)");
+    let verified = sdk
+        .eip712_builder()
+        .public_key(&public_key)
+        .add_contract(contract_addresses_str)?
+        .validity_period(start_timestamp, duration_days)
+        .sign_with(wallet_private_key)
+        .verify(true)
+        .generate_and_sign()?;
 
-            if let Ok(signature) = result.require_signature() {
-                info!("   Signature: 0x{}", hex::encode(signature));
-            }
-        }
-        Err(e) => error!("❌ Signing error: {}", e),
+    if verified.is_verified() {
+        info!("   ✅ Signature verified successfully!");
+    } else {
+        warn!("   ⚠️  Signature verification failed");
     }
 
-    // Example 3: Generate, sign, and verify (full process)
-    info!("--- Example 3: Hash + Sign + Verify (Full) ---");
-    match sdk.generate_eip712_for_user_decrypt(
-        &public_key,
-        &contract_addresses,
-        start_timestamp,
-        duration_days,
-        Some(wallet_private_key), // With wallet key
-        Some(true),               // With verification
-    ) {
-        Ok(result) => {
-            info!("✅ Full EIP-712 process completed");
-            info!("   Hash: {}", result.hash);
-            info!("   Signed: {}", result.is_signed());
-            info!("   Signer: {}", result.signer.unwrap_or_default());
-            info!(
-                "   Verification attempted: {}",
-                result.was_verification_attempted()
-            );
-            info!("   Verification status: {}", result.verification_status());
+    Ok(())
+}
 
-            if result.is_verified() {
-                info!("   🎉 Signature verified successfully!");
-            } else if result.was_verification_attempted() {
-                warn!("   ⚠️ Signature verification failed");
-            }
+/// Demo 3: Generate Decrypt Calldata
+fn demo_decrypt_calldata(sdk: &mut FhevmSdk) -> Result<()> {
+    info!("\n🔐 Demo 3: Decrypt Calldata Generation");
 
-            // Demonstrate error handling for verification
-            match result.ensure_verified() {
-                Ok(()) => info!("   ✅ Verification check passed"),
-                Err(e) => warn!("   ⚠️ Verification check failed: {}", e),
-            }
-        }
-        Err(e) => error!("❌ Full process error: {}", e),
-    }
+    // Create some test handles
+    let handles = vec![vec![1u8; 32], vec![2u8; 32]];
+    let contract_addresses = vec![address!("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1")];
+    let user_address = "0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1";
 
-    // Generate user decrypt calldata using the builder pattern
-    info!("Generating user decrypt calldata");
+    // Public decrypt calldata
+    info!("\n   Public Decrypt:");
+    let public_calldata = sdk.generate_public_decrypt_calldata(&handles)?;
+    info!("   ✅ Calldata size: {} bytes", public_calldata.len());
+    info!(
+        "   ✅ Function selector: 0x{}",
+        hex::encode(&public_calldata[..4])
+    );
 
-    let signature = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    // User decrypt calldata (with real encryption)
+    info!("\n   User Decrypt (with real data):");
 
-    match sdk
+    // First, create real encrypted data
+    let mut builder = sdk.create_input_builder()?;
+    builder.add_u32(123)?;
+    builder.add_bool(true)?;
+
+    let encrypted = builder.encrypt_and_prove_for(
+        contract_addresses[0],
+        address!("0x8888888888888888888888888888888888888888"),
+    )?;
+
+    // Convert handles to Vec<Vec<u8>>
+    let handle_vecs: Vec<Vec<u8>> = encrypted.handles.iter().map(|h| h.to_vec()).collect();
+
+    // Create user decrypt request
+    let public_key =
+        "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331";
+    let signature = "0x".to_owned() + &"ab".repeat(65);
+
+    let user_calldata = sdk
         .create_user_decrypt_request_builder()
         .add_handles_from_bytes(&handle_vecs, &contract_addresses)?
-        .user_address_from_str(&user_address.to_string())?
-        .signature_from_hex(signature)?
+        .user_address_from_str(user_address)?
+        .signature_from_hex(&signature)?
         .public_key_from_hex(&public_key)?
-        .validity(start_timestamp, duration_days)?
-        .build_and_generate_calldata()
-    {
-        Ok(calldata) => {
-            info!("✅ Calldata generated: {} bytes", calldata.len());
-            info!(
-                "   First 32 bytes: 0x{}",
-                hex::encode(&calldata[..32.min(calldata.len())])
-            );
-        }
-        Err(e) => info!("❌ Calldata generation error: {}", e),
-    }
+        .validity(1640995200, 30)?
+        .build_and_generate_calldata()?;
+
+    info!("   ✅ Calldata size: {} bytes", user_calldata.len());
+    info!(
+        "   ✅ Function selector: 0x{}",
+        hex::encode(&user_calldata[..4])
+    );
+    info!("   ✅ Handles included: {}", handle_vecs.len());
+
+    // Verify proof calldata
+    info!("\n   Verify Proof:");
+    let verify_calldata = sdk.generate_verify_proof_calldata(&encrypted)?;
+    info!("   ✅ Calldata size: {} bytes", verify_calldata.len());
+    info!("   ✅ For contract: {}", encrypted.contract_address);
 
     Ok(())
 }

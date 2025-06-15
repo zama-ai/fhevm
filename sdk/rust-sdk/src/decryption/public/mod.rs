@@ -4,14 +4,14 @@
 //! builder pattern as user decryption for consistency and ease of use.
 
 // Internal modules
-mod builder;
 mod deserializer;
+mod request;
 mod response;
 mod types;
 mod verification;
 
 // Re-export main types and functions
-pub use self::builder::{PublicDecryptRequest, PublicDecryptRequestBuilder};
+pub use self::request::{PublicDecryptRequest, PublicDecryptRequestBuilder};
 pub use self::response::{PublicDecryptionResponseBuilder, process_public_decryption_response};
 pub use self::types::{DecryptedResults, PublicDecryptionResponse, PublicDecryptionResult};
 

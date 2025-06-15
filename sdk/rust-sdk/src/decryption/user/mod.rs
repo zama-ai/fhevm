@@ -4,6 +4,7 @@
 //! for both request construction and response processing.
 
 // Internal modules
+mod deserializer;
 mod request;
 mod response;
 mod types;

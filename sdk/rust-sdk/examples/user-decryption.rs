@@ -119,14 +119,14 @@ fn generate_user_decrypt_signature(
     let wallet_private_key = "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f";
 
     // Generate EIP-712 signature with verification
-    let eip712_result = sdk.generate_eip712_for_user_decrypt(
-        &public_key,
-        &contract_addresses,
-        start_timestamp,
-        duration_days,
-        Some(wallet_private_key), // With signing
-        Some(true),               // With verification
-    )?;
+    let eip712_result = sdk
+        .create_eip712_signature_builder()
+        .public_key(public_key)
+        .with_contract_addresses(contract_addresses)
+        .validity_period(start_timestamp, duration_days)
+        .sign_with(wallet_private_key)
+        .verify(true) // Enable verification
+        .generate_and_sign()?;
 
     // Validate the result
     if !eip712_result.is_signed() {
@@ -305,14 +305,14 @@ fn demonstrate_error_scenarios(sdk: &FhevmSdk) -> Result<(), FhevmError> {
 
     // Scenario 1: Try to verify without wallet key
     info!("Testing verification without wallet key...");
-    match sdk.generate_eip712_for_user_decrypt(
-        &public_key,
-        &contracts,
-        1748252823,
-        10,
-        None,
-        Some(true),
-    ) {
+    match sdk
+        .create_eip712_signature_builder()
+        .public_key(public_key)
+        .with_contract_addresses(contracts)
+        .validity_period(1748252823, 10)
+        .verify(true)
+        .generate_and_sign()
+    {
         Ok(_) => error!("❌ Should have failed"),
         Err(e) => info!("✅ Correctly caught error: {}", e),
     }
@@ -334,32 +334,38 @@ fn performance_comparison(sdk: &FhevmSdk) -> Result<(), FhevmError> {
 
     // Benchmark: Hash only
     let start = std::time::Instant::now();
-    let _ =
-        sdk.generate_eip712_for_user_decrypt(&public_key, &contracts, 1748252823, 10, None, None)?;
+
+    let _ = sdk
+        .create_eip712_signature_builder()
+        .public_key(public_key)
+        .with_contract_addresses(contracts.clone())
+        .validity_period(1748252823, 10)
+        .generate_hash()?;
     let hash_time = start.elapsed();
 
     // Benchmark: Hash + Sign
     let start = std::time::Instant::now();
-    let _ = sdk.generate_eip712_for_user_decrypt(
-        &public_key,
-        &contracts,
-        1748252823,
-        10,
-        Some(wallet_key),
-        None,
-    )?;
+    let _ = sdk
+        .create_eip712_signature_builder()
+        .public_key(public_key)
+        .with_contract_addresses(contracts.clone())
+        .validity_period(1748252823, 10)
+        .sign_with(wallet_key)
+        .verify(false)
+        .generate_and_sign()?;
+
     let sign_time = start.elapsed();
 
     // Benchmark: Hash + Sign + Verify
     let start = std::time::Instant::now();
-    let _ = sdk.generate_eip712_for_user_decrypt(
-        &public_key,
-        &contracts,
-        1748252823,
-        10,
-        Some(wallet_key),
-        Some(true),
-    )?;
+    let _ = sdk
+        .create_eip712_signature_builder()
+        .public_key(public_key)
+        .with_contract_addresses(contracts)
+        .validity_period(1748252823, 10)
+        .verify(true)
+        .generate_and_sign()?;
+
     let verify_time = start.elapsed();
 
     info!("⚡ Performance Results:");

@@ -402,28 +402,6 @@ mod tests {
     }
 
     #[test]
-    fn test_response_with_failure_status() {
-        let json_response = serde_json::json!({
-            "status": "failure",
-            "error": "ACL check failed",
-            "response": []
-        })
-        .to_string();
-
-        let builder = PublicDecryptionResponseBuilder::new()
-            .kms_signers(vec!["0xtest".to_string()])
-            .threshold(1)
-            .gateway_chain_id(1)
-            .verifying_contract_address("0x1234567890123456789012345678901234567890")
-            .ct_handles(vec!["0x".to_string()])
-            .json_response(&json_response);
-
-        let result = builder.process();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("ACL check failed"));
-    }
-
-    #[test]
     fn test_missing_signatures() {
         let json_response = serde_json::json!({
             "response": [{

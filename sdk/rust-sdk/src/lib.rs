@@ -2,10 +2,6 @@
 //!
 //! A Rust SDK for interacting with FHEVM networks.
 
-use crate::signature::{
-    Eip712Builder, Eip712Result, recover_signer, sign_eip712_hash, validate_private_key_format,
-    verify_eip712_signature,
-};
 use alloy::primitives::Address;
 use decryption::user::{UserDecryptRequestBuilder, UserDecryptionResponseBuilder};
 use serde::{Deserialize, Serialize};
@@ -18,7 +14,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, info, warn};
-use utils::parse_hex_string;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GatewayContracts {
@@ -106,6 +101,78 @@ impl FhevmSdk {
         }
     }
 
+    /// Get the current configuration
+    pub fn config(&self) -> &FhevmConfig {
+        &self.config
+    }
+
+    /// Get the gateway chain ID
+    pub fn gateway_chain_id(&self) -> u64 {
+        self.config.gateway_chain_id
+    }
+
+    /// Get the host chain ID
+    pub fn host_chain_id(&self) -> u64 {
+        self.config.host_chain_id
+    }
+
+    /// Check if all required contracts are configured
+    pub fn is_fully_configured(&self) -> bool {
+        self.config.gateway_contracts.input_verification.is_some()
+            && self.config.gateway_contracts.decryption.is_some()
+            && self.config.host_contracts.acl.is_some()
+    }
+
+    /// Get a summary of the configuration status
+    pub fn configuration_status(&self) -> String {
+        let mut status = String::new();
+        status.push_str("FHEVM SDK Configuration Status:\n");
+        status.push_str(&format!(
+            "  Gateway Chain ID: {}\n",
+            self.config.gateway_chain_id
+        ));
+        status.push_str(&format!("  Host Chain ID: {}\n", self.config.host_chain_id));
+        status.push_str(&format!(
+            "  Keys Directory: {}\n",
+            self.config.keys_directory.display()
+        ));
+
+        status.push_str("\nGateway Contracts:\n");
+        status.push_str(&format!(
+            "  Input Verification: {}\n",
+            self.config
+                .gateway_contracts
+                .input_verification
+                .map(|a| a.to_string())
+                .unwrap_or_else(|| "Not Set".to_string())
+        ));
+        status.push_str(&format!(
+            "  Decryption: {}\n",
+            self.config
+                .gateway_contracts
+                .decryption
+                .map(|a| a.to_string())
+                .unwrap_or_else(|| "Not Set".to_string())
+        ));
+
+        status.push_str("\nHost Contracts:\n");
+        status.push_str(&format!(
+            "  ACL: {}\n",
+            self.config
+                .host_contracts
+                .acl
+                .map(|a| a.to_string())
+                .unwrap_or_else(|| "Not Set".to_string())
+        ));
+
+        status.push_str(&format!(
+            "\nKeys Loaded: {}",
+            self.public_key.is_some() && self.crs.is_some()
+        ));
+
+        status
+    }
+
     /// Ensure keys are loaded from the configured path
     fn ensure_keys_loaded(&mut self) -> Result<()> {
         if self.public_key.is_none() || self.crs.is_none() {
@@ -137,153 +204,76 @@ impl FhevmSdk {
         Ok(Self::new(config))
     }
 
-    /// Generate EIP-712 hash for user decrypt, with optional signing
+    /// Create an EIP-712 signature builder for user decrypt operations
     ///
-    /// This function creates an EIP-712 hash for user decryption requests and optionally
-    /// signs it if a wallet private key is provided. It's the main entry point for
-    /// EIP-712 operations in the SDK.
+    /// This is the primary way to generate EIP-712 signatures in the SDK.
     ///
-    /// # Arguments
+    /// # Example
     ///
-    /// * `public_key` - User's public key for decryption
-    /// * `contract_addresses` - List of contract addresses that can access the decryption
-    /// * `start_timestamp` - When the decryption permission becomes valid (Unix timestamp)
-    /// * `duration_days` - How many days the permission remains valid
-    /// * `wallet_private_key` - Optional private key for signing (if None, only returns hash)
-    /// * `verify` - Optional verification flag (default: false for performance)
+    /// ```no_run
+    /// # use gateway_sdk::{FhevmSdk, FhevmError};
+    /// # fn example(sdk: &FhevmSdk) -> Result<(), FhevmError> {
+    /// // Just generate hash
+    /// let hash = sdk.eip712_builder()
+    ///     .public_key("0x2000...")
+    ///     .add_contract("0x742d...")?
+    ///     .validity_period(1748252823, 10)
+    ///     .generate_hash()?;
     ///
-    /// # Returns
+    /// // Sign and verify (consistent with your actual usage)
+    /// let result = sdk.eip712_builder()
+    ///     .public_key("0x2000...")
+    ///     .add_contract("0x742d...")?
+    ///     .validity_period(1748252823, 10)
+    ///     .sign_with("0x7136...")
+    ///     .verify(true)
+    ///     .build()?;
     ///
-    /// Returns `Eip712Result` containing:
-    /// - `hash`: The EIP-712 hash (always present)
-    /// - `signature`: Optional signature (if wallet_private_key was provided)
-    /// - `signer`: Optional signer address (if signature was created)
-    /// - `verified`: Optional verification result (if verify=true was requested)
-    ///
-    /// # Usage Patterns
-    ///
-    /// - **Hash only**: Pass `wallet_private_key=None` to generate only the EIP-712 hash
-    /// - **Hash + Sign**: Pass a wallet private key to generate hash and signature
-    /// - **Hash + Sign + Verify**: Additionally pass `verify=Some(true)` to verify the signature
-    /// - **Performance**: Default verification is `false` for better performance
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - Input verifier contract address is not configured
-    /// - Contract addresses list is empty
-    /// - Public key is empty
-    /// - Duration days is zero
-    /// - Wallet private key format is invalid (if provided)
-    /// - Signing fails (if wallet private key is provided)
-    /// - Verification is requested without providing a wallet private key
-    /// - Verification fails (if explicitly requested and signature is invalid)
-    pub fn generate_eip712_for_user_decrypt(
-        &self,
-        public_key: &str,
-        contract_addresses: &[Address],
-        start_timestamp: u64,
-        duration_days: u64,
-        wallet_private_key: Option<&str>,
-        verify: Option<bool>,
-    ) -> Result<Eip712Result> {
-        debug!(
-            "Generating EIP-712 for user decrypt with {} contracts",
-            contract_addresses.len()
-        );
-
-        // Get and validate the input verifier contract address from SDK config
-        let input_verifier_address = self
+    /// println!("Signed: {}, Verified: {}", result.is_signed(), result.is_verified());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn create_eip712_signature_builder(&self) -> signature::eip712::Eip712SignatureBuilder {
+        let verifying_contract = self
             .config
             .gateway_contracts
             .input_verification
-            .ok_or_else(|| {
-                FhevmError::InvalidParams(
-                    "Input verification contract address is not set".to_string(),
-                )
-            })?;
+            .unwrap_or_else(|| {
+                warn!("Input verification contract not set, using zero address");
+                Address::ZERO
+            });
 
-        // Create the EIP-712 builder with SDK configuration
-        let builder = Eip712Builder::new(
-            self.config.gateway_chain_id,
-            input_verifier_address,
-            self.config.host_chain_id,
-        );
+        let config = signature::eip712::Eip712Config {
+            gateway_chain_id: self.config.gateway_chain_id,
+            verifying_contract,
+            contracts_chain_id: self.config.host_chain_id,
+        };
 
-        let public_key_bytes = parse_hex_string(public_key, "public key")?;
+        signature::eip712::Eip712SignatureBuilder::new(config)
+    }
 
-        // Always generate the hash first
-        let hash = builder.build_user_decrypt_hash(
-            &public_key_bytes,
-            contract_addresses,
-            start_timestamp,
-            duration_days,
-        )?;
+    /// Alternative shorter name for discoverability
+    pub fn eip712_builder(&self) -> signature::eip712::Eip712SignatureBuilder {
+        self.create_eip712_signature_builder()
+    }
 
-        debug!("Generated EIP-712 hash: {}", hash);
-
-        let should_verify = verify.unwrap_or(false);
-
-        if should_verify && wallet_private_key.is_none() {
-            return Err(FhevmError::InvalidParams(
-                "Cannot verify signature when no wallet private key is provided. Either provide a wallet private key or set verify to false/None.".to_string()
-            ));
-        }
-
-        // Handle optional signing
-        if let Some(wallet_key) = wallet_private_key {
-            info!("🔑 Wallet private key provided, will generate signature");
-
-            // Validate the wallet key format using helper function
-            validate_private_key_format(wallet_key)?;
-
-            // Sign the hash using helper function from signature module
-            debug!("Signing EIP-712 hash with wallet key");
-            let signature = sign_eip712_hash(hash, wallet_key)?;
-
-            // Recover the signer address using helper function
-            let signer = recover_signer(&signature, hash)?;
-            debug!("Recovered signer address: {}", signer);
-
-            // Handle optional verification
-            let should_verify = verify.unwrap_or(false); // Default to false for performance
-            let verification_result = if should_verify {
-                debug!("Performing signature verification (requested by user)");
-                match verify_eip712_signature(&signature, hash, signer) {
-                    Ok(is_valid) => {
-                        if is_valid {
-                            debug!("✅ Signature verification passed");
-                        } else {
-                            warn!("❌ Signature verification failed");
-                        }
-                        Some(is_valid)
-                    }
-                    Err(e) => {
-                        warn!("Signature verification error: {}", e);
-                        Some(false)
-                    }
-                }
-            } else {
-                debug!("Skipping signature verification (default behavior)");
-                None
-            };
-
-            Ok(Eip712Result {
-                hash,
-                signature: Some(signature),
-                signer: Some(signer),
-                verified: verification_result,
-            })
-        } else {
-            info!("ℹ️ No wallet private key provided, returning hash only");
-
-            Ok(Eip712Result {
-                hash,
-                signature: None,
-                signer: None,
-                verified: None,
-            })
-        }
+    /// Generate a new cryptobox keypair
+    ///
+    /// This is used for user decryption operations where responses need to be
+    /// encrypted back to the user.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use gateway_sdk::{FhevmSdk, FhevmError};
+    /// # fn example(sdk: &FhevmSdk) -> Result<(), FhevmError> {
+    /// let keypair = sdk.generate_keypair()?;
+    /// println!("Public key: {}", keypair.public_key);
+    /// // Never log private keys in production!
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn generate_keypair(&self) -> Result<signature::Keypair> {
+        signature::generate_keypair()
     }
 
     /// Generate calldata for UserDelegatedDecrypt operation
@@ -298,19 +288,102 @@ impl FhevmSdk {
     }
 
     /// Generate calldata for PublicDecrypt operation
-    pub fn generate_public_decrypt_calldata(&self, _ct_handles: &[Vec<u8>]) -> Result<Vec<u8>> {
-        // Placeholder
-        Ok(vec![])
+    ///
+    /// This method creates the transaction calldata for public decryption,
+    /// where anyone can decrypt values that are marked as publicly decryptable.
+    ///
+    /// # Arguments
+    /// * `ct_handles` - Array of 32-byte ciphertext handles to decrypt
+    ///
+    /// # Returns
+    /// Transaction calldata ready to be sent to the blockchain
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use gateway_sdk::{FhevmSdk, FhevmError};
+    /// # fn example(sdk: &FhevmSdk) -> Result<(), FhevmError> {
+    /// let handles = vec![
+    ///     vec![1u8; 32], // First handle
+    ///     vec![2u8; 32], // Second handle
+    /// ];
+    ///
+    /// let calldata = sdk.generate_public_decrypt_calldata(&handles)?;
+    /// println!("Calldata: 0x{}", hex::encode(&calldata));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn generate_public_decrypt_calldata(&self, ct_handles: &[Vec<u8>]) -> Result<Vec<u8>> {
+        info!(
+            "🔓 Generating public decrypt calldata for {} handles",
+            ct_handles.len()
+        );
+
+        // Use the existing builder pattern
+        let calldata = self
+            .create_public_decrypt_request_builder()
+            .add_handles_from_bytes(ct_handles)?
+            .build_and_generate_calldata()?;
+
+        info!(
+            "✅ Generated public decrypt calldata: {} bytes",
+            calldata.len()
+        );
+        Ok(calldata)
     }
 
-    /// Generate calldata for Input operation
+    /// Generate calldata for Input verification operation
+    ///
+    /// This method creates the transaction calldata for verifying encrypted inputs
+    /// with their zero-knowledge proofs.
+    ///
+    /// # Arguments
+    /// * `encrypted_input` - The encrypted input containing ciphertext and proof
+    ///
+    /// # Returns
+    /// Transaction calldata ready to be sent to the blockchain
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use gateway_sdk::{FhevmSdk, FhevmError};
+    /// # use alloy::primitives::address;
+    /// # fn example(sdk: &mut FhevmSdk) -> Result<(), FhevmError> {
+    /// // Create and encrypt some input
+    /// let mut builder = sdk.create_input_builder()?;
+    /// builder.add_u64(42)?;
+    ///
+    /// let encrypted = builder.encrypt_and_prove_for(
+    ///     address!("0x7777777777777777777777777777777777777777"),
+    ///     address!("0x8888888888888888888888888888888888888888")
+    /// )?;
+    ///
+    /// // Generate verification calldata
+    /// let calldata = sdk.generate_verify_proof_calldata(&encrypted)?;
+    /// println!("Verification calldata: {} bytes", calldata.len());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn generate_verify_proof_calldata(
         &self,
-        _ciphertext: &[u8],
-        _proof: &[u8],
+        encrypted_input: &EncryptedInput,
     ) -> Result<Vec<u8>> {
-        // Placeholder
-        Ok(vec![])
+        info!("🔍 Generating verify proof calldata");
+        debug!("   Contract: {}", encrypted_input.contract_address);
+        debug!("   User: {}", encrypted_input.user_address);
+        debug!("   Handles: {}", encrypted_input.handles.len());
+
+        // Use the existing calldata generation function
+        let calldata = crate::blockchain::calldata::verify_proof_req(
+            encrypted_input.chain_id,
+            encrypted_input.contract_address,
+            encrypted_input.user_address,
+            encrypted_input.ciphertext.clone().into(),
+        )?;
+
+        info!(
+            "✅ Generated verify proof calldata: {} bytes",
+            calldata.len()
+        );
+        Ok(calldata.to_vec())
     }
 
     /// Get an input builder factory for creating encrypted inputs
