@@ -1,6 +1,6 @@
 [package]
 name = "zkproof-worker"
-version = "0.6.1"
+version = "0.7.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
