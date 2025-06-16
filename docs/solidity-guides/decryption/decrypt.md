@@ -15,23 +15,22 @@ To learn how decryption works see [Encryption, Decryption, Re-encryption, and Co
 
 ## Overview
 
-Decryption in FHEVM is an asynchronous process that involves the Gateway and Key Management System (KMS). Contracts requiring decryption must extend the GatewayCaller contract, which imports the necessary libraries and provides access to the Gateway.
-
-Here’s an example of how to request decryption in a contract:
+Decryption in FHEVM is an asynchronous process that involves the Relayer and Key Management System (KMS).
+Here’s an example of how to safely request decryption in a contract.
 
 ### Example: asynchronous decryption in a contract
 
 ```solidity
 pragma solidity ^0.8.24;
 
-import "fhevm/lib/FHE.sol";
-import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
-import "fhevm/gateway/GatewayCaller.sol";
+import "@fhevm/solidity/lib/FHE.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract TestAsyncDecrypt is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, GatewayCaller {
+contract TestAsyncDecrypt is SepoliaConfig {
   ebool xBool;
   bool public yBool;
+  bool isDecryptionPending;
+  uint256 latestRequestId;
 
   constructor() {
       xBool = FHE.asEbool(true);
@@ -39,32 +38,25 @@ contract TestAsyncDecrypt is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, G
   }
 
   function requestBool() public {
+    require(!isDecryptionPending, "Decryption is in progress");
     uint256[] memory cts = new uint256[](1);
-    cts[0] = Gateway.toUint256(xBool);
-    Gateway.requestDecryption(cts, this.myCustomCallback.selector, 0, block.timestamp + 100, false);
+    cts[0] = FHE.toUint256(xBool);
+    uint256 latestRequestId = FHE.requestDecryption(cts, this.myCustomCallback.selector);
+
+    /// @dev This prevents sending multiple requests before the first callback was sent.
+    isDecryptionPending = true;
   }
 
-  function myCustomCallback(uint256 /*requestID*/, bool decryptedInput) public onlyGateway returns (bool) {
+  function myCustomCallback(uint256 requestId, bool decryptedInput, bytes[] memory signatures) public returns (bool) {
+    /// @dev This check is used to verify that the request id is the expected one.
+    require(requestId == latestRequestId, "Invalid requestId");
+    FHE.checkSignatures(requestId, signatures);
     yBool = decryptedInput;
+    isDecryptionPending = false;
     return yBool;
   }
+}
 ```
-
-#### Key additions to the code
-
-1.  **Configuration imports**: The configuration contracts are imported to set up the FHEVM environment and Gateway.
-
-    ```solidity
-    import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-    import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
-    ```
-
-2.  **`GatewayCaller` import**:\
-    The `GatewayCaller` contract is imported to enable decryption requests.
-
-    ```solidity
-    import "fhevm/gateway/GatewayCaller.sol";
-    ```
 
 ### Next steps
 

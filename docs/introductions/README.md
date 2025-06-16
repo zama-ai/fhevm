@@ -50,7 +50,7 @@ like this:
 pragma solidity ^0.8.24;
 
 import { FHE } from "@fhevm/solidity/lib/FHE.sol";
-import { SepoliaZamaFHEVMConfig } from "@fhevm/solidity/config/ZamaFHEVMConfig.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 contract MyCounter is SepoliaZamaFHEVMConfig {
   euint64 counter;

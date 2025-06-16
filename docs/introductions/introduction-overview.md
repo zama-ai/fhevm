@@ -15,7 +15,7 @@ Otherwise, pick your path:
 integrate the SDK, and run your first confidential app.
 
 ⚙️ Go to [Architecture](./architecture_overview.md) – Explore how the protocol works under the hood: smart contracts,
-coprocessors, the Gateway, and the KMS.
+coprocessors, the relayer, and the KMS.
 
 🧰 Go to [Tooling](../solidity-guides/solidity-overview.md) – Discover how to use the Hardhat plugin and debugging tools
 designed to make FHE development seamless.

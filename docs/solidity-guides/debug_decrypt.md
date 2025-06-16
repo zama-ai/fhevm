@@ -13,7 +13,7 @@ The `debug.decrypt[XX]` functions allow you to decrypt encrypted handles into pl
 ### Key points
 
 - **Environment**: The `debug.decrypt[XX]` functions work **only in mocked environments** (e.g., `hardhat` network).
-- **Production limitation**: In production, decryption is performed asynchronously via the Gateway and requires an authorized onchain request.
+- **Production limitation**: In production, decryption is performed asynchronously via the relayer and requires an authorized onchain request.
 - **Encrypted types**: The `debug.decrypt[XX]` functions supports various encrypted types, including integers, and booleans.
 - **Bypass ACL authorization**: The `debug.decrypt[XX]` functions allow decryption without ACL authorization, useful for verifying encrypted operations during development and testing.
 
@@ -106,4 +106,4 @@ if (network.name !== "hardhat") {
 ## **Best practices**
 
 - **Use only for debugging**: These functions require access to private keys and are meant exclusively for local testing and debugging.
-- **Production decryption**: For production, always use the asynchronous Gateway-based decryption.
+- **Production decryption**: For production, always use the asynchronous relayer-based decryption.
