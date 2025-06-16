@@ -8,7 +8,7 @@ import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/acc
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IInputVerification.sol";
 import "./interfaces/IGatewayConfig.sol";
-import "./shared/EmptyProxyUpgradeable.sol";
+import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
 
@@ -20,7 +20,7 @@ contract InputVerification is
     IInputVerification,
     EIP712Upgradeable,
     Ownable2StepUpgradeable,
-    EmptyProxyUpgradeable,
+    UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
     Pausable
 {

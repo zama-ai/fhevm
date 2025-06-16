@@ -7,7 +7,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
 import "./interfaces/IKmsManagement.sol";
-import "./shared/EmptyProxyUpgradeable.sol";
+import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
 import "./libraries/HandleOps.sol";
@@ -19,7 +19,7 @@ import "./libraries/HandleOps.sol";
 contract CiphertextCommits is
     ICiphertextCommits,
     Ownable2StepUpgradeable,
-    EmptyProxyUpgradeable,
+    UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
     Pausable
 {

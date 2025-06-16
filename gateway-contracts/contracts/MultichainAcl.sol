@@ -7,7 +7,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IMultichainAcl.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
-import "./shared/EmptyProxyUpgradeable.sol";
+import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
 
@@ -16,7 +16,7 @@ import "./shared/Pausable.sol";
 contract MultichainAcl is
     IMultichainAcl,
     Ownable2StepUpgradeable,
-    EmptyProxyUpgradeable,
+    UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
     Pausable
 {

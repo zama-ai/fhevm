@@ -11,7 +11,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IGatewayConfig.sol";
 import "./interfaces/IMultichainAcl.sol";
 import "./interfaces/ICiphertextCommits.sol";
-import "./shared/EmptyProxyUpgradeable.sol";
+import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/FheType.sol";
 import "./shared/Pausable.sol";
@@ -23,7 +23,7 @@ contract Decryption is
     IDecryption,
     EIP712Upgradeable,
     Ownable2StepUpgradeable,
-    EmptyProxyUpgradeable,
+    UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
     Pausable
 {

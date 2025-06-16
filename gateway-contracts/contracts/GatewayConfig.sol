@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IGatewayConfig.sol";
-import "./shared/EmptyProxyUpgradeable.sol";
+import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/Pausable.sol";
 
 /**
@@ -13,7 +13,7 @@ import "./shared/Pausable.sol";
  * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and host chains.
  * @dev See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
-contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, EmptyProxyUpgradeable, Pausable {
+contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy, Pausable {
     /// @notice The maximum chain ID.
     uint256 internal constant MAX_CHAIN_ID = type(uint64).max;
 
