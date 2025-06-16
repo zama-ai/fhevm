@@ -107,7 +107,7 @@ function transfer(
   bytes calldata inputProof
 ) public {
   // Verify the provided encrypted amount and convert it into an encrypted uint64
-  euint64 amount = FHE.asEuint64(encryptedAmount, inputProof);
+  euint64 amount = FHE.fromExternal(encryptedAmount, inputProof);
 
   // Function logic here, such as transferring funds
   ...
