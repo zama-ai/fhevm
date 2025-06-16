@@ -5,6 +5,7 @@ on:
     inputs:
       release:
         description: "Set to true for release tagging"
+        type: boolean
         required: false
         default: false
 
