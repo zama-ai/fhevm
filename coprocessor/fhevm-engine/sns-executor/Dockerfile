@@ -27,10 +27,10 @@ COPY --from=builder /etc/ssl/certs/ /etc/ssl/certs/
 COPY --from=builder --chown=fhevm:fhevm /home/fhevm /home/fhevm
 COPY --from=builder --chown=fhevm:fhevm /app /app
 
-COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/sns_executor /usr/local/bin/sns_executor
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/sns_worker /usr/local/bin/sns_worker
 
 USER fhevm:fhevm
 
-CMD ["/usr/local/bin/sns_executor"]
+CMD ["/usr/local/bin/sns_worker"]
 
 FROM prod AS dev
