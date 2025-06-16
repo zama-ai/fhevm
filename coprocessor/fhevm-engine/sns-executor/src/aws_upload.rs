@@ -23,6 +23,7 @@ use std::time::{Duration, SystemTime};
 use tokio::select;
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinHandle;
+use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -464,13 +465,17 @@ async fn do_resubmits_loop(
 
     let retry_conf = &conf.s3.retry_policy;
 
+    let mut recheck_ticker = interval(retry_conf.recheck_duration);
+    let mut resubmit_ticker = interval(retry_conf.regular_recheck_duration);
+
+
     loop {
         select! {
             _ = token.cancelled() => {
                 return Ok(())
             },
             // Recheck S3 ready status
-            _ = tokio::time::sleep(retry_conf.recheck_duration) => {
+            _ = recheck_ticker.tick() => {
                 if !is_ready.load(Ordering::Acquire) {
                     info!("Recheck S3 setup ...");
                     let (is_ready_res, _) = check_is_ready(&client, conf).await;
@@ -484,13 +489,13 @@ async fn do_resubmits_loop(
                     }
                 }
             }
-
-            // A regular resubmit to ensure there no left over tasks
-            _ = tokio::time::sleep(retry_conf.regular_recheck_duration) => {
+            // A regular resubmit to ensure there no remaining tasks
+            _ = resubmit_ticker.tick() => {
+                info!("Retry resubmit ...");
                 try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE).await
                     .unwrap_or_else(|err| {
                         error!("Failed to resubmit tasks: {}", err);
-                    });
+                });
             }
         }
     }
