@@ -69,15 +69,18 @@ For more details, refer to the [Random Encrypted Numbers](random.md) document.
 
 ## Overload operators
 
-The `FHE` library supports operator overloading for encrypted integers (e.g., `+`, `-`, `*`, `&`) using the Solidity [`using for`](https://docs.soliditylang.org/en/v0.8.22/contracts.html#using-for) syntax. These overloaded operators currently perform unchecked operations, meaning they do not include overflow checks.
+The `FHE` library supports operator overloading for encrypted integers (e.g., `+`, `-`, `*`, `&`) using the Solidity [`using for`](https://docs.soliditylang.org/en/v0.8.24/contracts.html#using-for) syntax. These overloaded operators currently perform unchecked operations, meaning they do not include overflow checks.
 
 **Example**\
 Overloaded operators make code more concise:
 
 ```solidity
+using {
+    add as +
+} for FHE global;
 euint64 a = FHE.asEuint64(42);
 euint64 b = FHE.asEuint64(58);
-euint64 sum = a + b; // Calls FHE.add under the hood
+euint64 sum = a + b; /// @dev Calls FHE.add under the hood
 ```
 
 ## Best Practices
