@@ -122,11 +122,13 @@ describe("GatewayConfig", function () {
       // Extract event args and convert to strings. This is needed as the "upgradeProxy()" method above
       // returns an GatewayConfig instance instead of a ContractTransactionResponse, so the expect() function
       // from chaijs fails on the evaluation of the transaction events.
-      const initializationEvents = await upgradeTx.queryFilter(upgradeTx.filters.Initialization);
-      const stringifiedEventArgs = (initializationEvents[0] as EventLog).args.map((arg: any) => arg.toString());
+      const initializeGatewayConfigEvents = await upgradeTx.queryFilter(upgradeTx.filters.InitializeGatewayConfig);
+      const stringifiedEventArgs = (initializeGatewayConfigEvents[0] as EventLog).args.map((arg: any) =>
+        arg.toString(),
+      );
 
       // It should emit one event containing the initialization parameters
-      expect(initializationEvents.length).to.equal(1);
+      expect(initializeGatewayConfigEvents.length).to.equal(1);
       expect(stringifiedEventArgs).to.deep.equal([
         pauser.address,
         toValues(protocolMetadata).toString(),

@@ -139,7 +139,13 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             $.coprocessorSignerAddresses.push(initialCoprocessors[i].signerAddress);
         }
 
-        emit Initialization(initialPauser, initialMetadata, initialMpcThreshold, initialKmsNodes, initialCoprocessors);
+        emit InitializeGatewayConfig(
+            initialPauser,
+            initialMetadata,
+            initialMpcThreshold,
+            initialKmsNodes,
+            initialCoprocessors
+        );
     }
 
     /// @dev See {IGatewayConfig-updatePauser}.
