@@ -42,7 +42,7 @@ developing confidential smart contracts.
 
 ### Write your first confidential smart contract
 
-Use the provided contract examples, like `ConfidentialERC20`, to begin. A basic confidential token contract might look
+Use the provided contract examples, like `MyCounter`, to begin. A basic counter contract might look
 like this:
 
 ```solidity
