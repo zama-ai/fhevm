@@ -24,7 +24,7 @@ layout:
 
 ## Explore the doc
 
-<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Solidity Guides</strong></td><td>Write encrypted logic with Solidity tools.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="/solidity-guides">Solidity</a></td></tr><tr><td><strong>SDK Guides</strong></td><td>Build frontends with encrypted user data.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="/sdk-guides">SDK</a></td></tr><tr><td><strong>Examples</strong></td><td>Explore real dApps and code templates.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="/examples">Examples</a></td></tr></tbody></table>
+<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Solidity Guides</strong></td><td>Write encrypted logic with Solidity tools.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/solidity-guides">Solidity</a></td></tr><tr><td><strong>SDK Guides</strong></td><td>Build frontends with encrypted user data.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/sdk-guides">SDK</a></td></tr><tr><td><strong>Examples</strong></td><td>Explore real dApps and code templates.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="/examples">Examples</a></td></tr></tbody></table>
 
 ## Path to Build
 
@@ -64,7 +64,7 @@ contract MyCounter is SepoliaZamaFHEVMConfig {
 }
 ```
 
-<a href="/solidity-guides/get-started/overview" class="button primary">See the full
+<a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/solidity-guides/get-started/overview" class="button primary">See the full
 Solidity guide</a> {% endstep %}
 
 {% step %}
@@ -73,7 +73,7 @@ Solidity guide</a> {% endstep %}
 
 Start from Zama's ready-to-use React template.
 
-<a href="/sdk-guides" class="button primary">See the full SDK
+<a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/sdk-guides" class="button primary">See the full SDK
 guide</a> <a href="https://github.com/zama-ai/fhevm-react-template" class="button secondary">Clone the template</a> ;
 {% endstep %}
 
