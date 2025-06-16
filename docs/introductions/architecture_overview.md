@@ -17,7 +17,7 @@ compatibility:
 - **On-chain smart contracts** describe encrypted logic symbolically, managing access control and state via FHE handles.
 - **Off-chain coprocessors** listen to emitted events, reconstruct the compute graph, and perform the actual encrypted
   computation.
-- **The Gateway** acts as the protocol coordinator — verifying proofs, relaying requests, and managing data flow between
+- **The Relayer** acts as the protocol coordinator — verifying proofs, relaying requests, and managing data flow between
   the blockchain, the coprocessors, and the KMS.
 - **The KMS** is a decentralized, threshold-secure network that handles private key operations like decryption and
   signing, without ever reconstructing the full key.
