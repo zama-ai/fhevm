@@ -43,11 +43,6 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     cargo install --locked --profile=${LTO_RELEASE} \
     --path ./kms-connector/simple-connector --root ./kms-connector/simple-connector --bins
 
-# Dependencies stage
-FROM debian:stable-slim AS dependencies
-
-WORKDIR /app/kms-connector
-ENV PATH="$PATH:/app/kms-connector/bin"
 
 # Final runtime stage
 FROM debian:stable-slim AS prod
@@ -73,5 +68,10 @@ RUN groupadd -g 10002 kms && \
     useradd -m -u 10003 -g kms kms
 RUN chown -R kms:kms /app/kms-connector
 USER kms
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD pgrep -f "dist/src/main" > /dev/null || exit 1
+
+CMD ["kms-connector"]
 
 FROM prod AS dev
