@@ -32,8 +32,7 @@ layout:
 
 ### **Set up your development environment**
 
-Use the official Hardhat template from Zama that includes all necessary configurations and dependencies to start
-developing confidential smart contracts.
+Use the official Hardhat template from Zama that includes all necessary configurations and dependencies to start developing confidential smart contracts.
 
 <a href="https://github.com/zama-ai/fhevm-hardhat-template" class="button secondary">Clone the template</a>
 {% endstep %}
