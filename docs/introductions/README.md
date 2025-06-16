@@ -80,7 +80,7 @@ guide</a> <a href="https://github.com/zama-ai/fhevm-react-template" class="butto
 
 ### To continue
 
-<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Architecture</strong></td><td>Understand how the system fits together.</td><td></td><td><a href="broken-reference">Broken link</a></td></tr><tr><td><strong>Dapps Demos</strong></td><td>Try real projects built with fhevm.</td><td></td><td></td></tr><tr><td><strong>White paper</strong></td><td>Dive deep into the cryptographic design.</td><td></td><td></td></tr></tbody></table>
+<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Architecture</strong></td><td>Understand how the system fits together.</td><td></td><td><a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/architecture/architecture_overview">Broken link</a></td></tr><tr><td><strong>Dapps Demos</strong></td><td>Try real projects built with fhevm.</td><td></td><td></td></tr><tr><td><strong>White paper</strong></td><td>Dive deep into the cryptographic design.</td><td></td><td></td></tr></tbody></table>
 {% endstep %}
 {% endstepper %}
 
