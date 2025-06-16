@@ -32,7 +32,6 @@ fhevm provides functions to cast between encrypted types:
 - **Casting between encrypted types**: `FHE.asEbool` converts encrypted integers to encrypted booleans
 - **Casting to encrypted types**: `FHE.asEuintX` converts plaintext values to encrypted types
 - **Casting to encrypted addresses**: `FHE.asEaddress` converts plaintext addresses to encrypted addresses
-- **Casting to encrypted bytes**: `FHE.asEbytesX` converts plaintext bytes to encrypted bytes
 
 For more information see [use of encrypted types](types.md).
 
