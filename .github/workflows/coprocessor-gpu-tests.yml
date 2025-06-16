@@ -82,6 +82,7 @@ jobs:
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     permissions:
       contents: read
+      packages: read
     strategy:
       fail-fast: false
       # explicit include-based build matrix, of known valid options
@@ -139,6 +140,13 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Init database
         run: make init_db

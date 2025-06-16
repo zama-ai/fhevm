@@ -4,7 +4,7 @@ use sns_executor::{
 };
 use tokio::{signal::unix, spawn, sync::mpsc};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, Level};
+use tracing::error;
 mod utils;
 
 fn handle_sigint(token: CancellationToken) {
@@ -46,6 +46,7 @@ fn construct_config() -> Config {
                 regular_recheck_duration: args.s3_regular_recheck_duration,
             },
         },
+        log_level: args.log_level,
     }
 }
 
@@ -57,7 +58,7 @@ async fn main() {
     tracing_subscriber::fmt()
         .json()
         .with_level(true)
-        .with_max_level(Level::INFO)
+        .with_max_level(config.log_level)
         .init();
 
     // Handle SIGINIT signals

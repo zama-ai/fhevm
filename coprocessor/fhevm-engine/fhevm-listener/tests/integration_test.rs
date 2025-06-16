@@ -1,12 +1,11 @@
-use futures_util::future::try_join_all;
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::Ordering;
-use std::time::Duration;
-
 use alloy::network::EthereumWallet;
 use alloy::node_bindings::Anvil;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
+use futures_util::future::try_join_all;
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
+use tracing::Level;
 
 use alloy_primitives::U256;
 use alloy_provider::{Provider, ProviderBuilder, WalletProvider, WsConnect};
@@ -18,7 +17,6 @@ use sqlx::postgres::PgPoolOptions;
 use fhevm_listener::cmd::main;
 use fhevm_listener::cmd::Args;
 use fhevm_listener::database::tfhe_event_propagate::{Database, ToType};
-
 
 // contracts are compiled in build.rs/build_contract() using solc
 // json are generated in build.rs/build_contract() using solc
@@ -80,7 +78,7 @@ async fn emit_events<P, N>(
                     provider.send_transaction(txn_req).await.unwrap();
                 let receipt = pending_txn.get_receipt().await.unwrap();
                 assert!(receipt.status());
-                let add : Vec<_> = provider.signer_addresses().collect();
+                let add: Vec<_> = provider.signer_addresses().collect();
                 let txn_req = acl_contract
                     .allow(pt.clone().into(), add[0].clone())
                     .into_transaction_request()
@@ -141,7 +139,6 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         .execute(&db_pool)
         .await?;
 
-
     let coprocessor_api_key = Some(
         sqlx::query!("SELECT tenant_api_key FROM tenants LIMIT 1")
             .fetch_one(&db_pool)
@@ -168,6 +165,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         start_at_block: None,
         end_at_block: None,
         catchup_margin: 5,
+        log_level: Level::INFO,
     };
 
     // Start listener in background task
@@ -181,7 +179,13 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     let tfhe_contract_clone = tfhe_contract.clone();
     let acl_contract_clone = acl_contract.clone();
     let event_source = tokio::spawn(async move {
-        emit_events(&wallets_clone, &url_clone, tfhe_contract_clone, acl_contract_clone).await;
+        emit_events(
+            &wallets_clone,
+            &url_clone,
+            tfhe_contract_clone,
+            acl_contract_clone,
+        )
+        .await;
     });
 
     tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
@@ -204,7 +208,8 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     let mut acl_events_count = 0;
     let mut nb_kill = 1;
     // Restart/kill many time until no more events are consumned.
-    for _ in 1..120 { // 10 mins max to avoid stalled CI
+    for _ in 1..120 {
+        // 10 mins max to avoid stalled CI
         let listener_handle = tokio::spawn(main(args.clone()));
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
         let tfhe_new_count = sqlx::query!("SELECT COUNT(*) FROM computations")
@@ -212,12 +217,14 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
             .await?
             .count
             .unwrap_or(0);
-        let acl_new_count = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
-            .fetch_one(&db_pool)
-            .await?
-            .count
-            .unwrap_or(0);
-        let no_count_change = tfhe_events_count == tfhe_new_count && acl_events_count == acl_new_count;
+        let acl_new_count =
+            sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
+                .fetch_one(&db_pool)
+                .await?
+                .count
+                .unwrap_or(0);
+        let no_count_change = tfhe_events_count == tfhe_new_count
+            && acl_events_count == acl_new_count;
         if event_source.is_finished() && no_count_change {
             listener_handle.abort();
             break;
@@ -226,7 +233,12 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         acl_events_count = acl_new_count;
         listener_handle.abort();
         nb_kill += 1;
-        eprintln!("Kill {nb_kill} ongoing, event source ongoing: {}, {} {}", event_source.is_finished(), tfhe_events_count, acl_events_count);
+        eprintln!(
+            "Kill {nb_kill} ongoing, event source ongoing: {}, {} {}",
+            event_source.is_finished(),
+            tfhe_events_count,
+            acl_events_count
+        );
         tokio::time::sleep(tokio::time::Duration::from_secs_f64(1.5)).await;
     }
 

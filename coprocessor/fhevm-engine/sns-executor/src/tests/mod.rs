@@ -9,6 +9,7 @@ use std::{
 use test_harness::instance::DBInstance;
 use tfhe::{prelude::FheDecrypt, ClientKey, SquashedNoiseFheUint};
 use tokio::{sync::mpsc, time::sleep};
+use tracing::Level;
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 const TENANT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";
@@ -101,6 +102,7 @@ async fn setup() -> anyhow::Result<(
         },
         s3: crate::S3Config::default(),
         service_name: "test-sns-worker".to_owned(),
+        log_level: Level::INFO,
     };
 
     let pool = sqlx::postgres::PgPoolOptions::new()
