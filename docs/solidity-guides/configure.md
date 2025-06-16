@@ -59,7 +59,7 @@ import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 **Purpose**
 
 - Configures the relayer for secure cryptographic operations.
-- Facilitates reencryption and decryption requests.
+- Facilitates public and user decryption requests.
 
 **Example: Configuring the relayer with Sepolia settings**
 

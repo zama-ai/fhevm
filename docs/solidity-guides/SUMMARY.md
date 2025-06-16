@@ -1,6 +1,7 @@
 ## Get Started
 
-- [Overview](overview.md)
+- [Overview](solidity-overview.md)
+- [Quick Start guide](overview.md)
 - [Quick Start - Hardhat](hardhat/README.md)
   - [Prerequisites](hardhat/prerequisites.md)
   - [1. Setting up Hardhat](hardhat/1.-setting-up-hardhat.md)
