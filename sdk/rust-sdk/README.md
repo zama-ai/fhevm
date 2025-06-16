@@ -93,8 +93,10 @@ cargo run --example minimal-public-decryption-response
 | uint8-256 | ✅ | `add_u8()` through `add_u256()` |
 | address (eaddress) | ✅ | `add_address()` |
 | **Decryption** | | |
-| Public Decrypt | ✅ | Full builder pattern support |
-| User Decrypt | ✅ | With EIP-712 signatures |
+| Public Decrypt Request | ✅ | Full builder pattern support |
+| Public Decrypt Response | ✅ | Full builder pattern support with EIP-712 signatures verification |
+| User Decrypt Request | ✅ | With EIP-712 signatures generation |
+| User Decrypt Response | ❌ | Response construction is working but issue using kms client response signature verification |
 | Delegated Decrypt | ❌ | Not yet implemented |
 | **Key Management** | | |
 | Generation/Loading | ✅ | Automatic key management |
