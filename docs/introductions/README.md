@@ -64,7 +64,7 @@ contract MyCounter is SepoliaZamaFHEVMConfig {
 }
 ```
 
-<a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/mIaweK9iiWMF773uuVPP/" class="button primary">See the full
+<a href="/solidity-guides/get-started/overview" class="button primary">See the full
 Solidity guide</a> {% endstep %}
 
 {% step %}
@@ -73,7 +73,7 @@ Solidity guide</a> {% endstep %}
 
 Start from Zama's ready-to-use React template.
 
-<a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/2wDODARNL7cfrn1fsPcS/" class="button primary">See the full SDK
+<a href="/sdk-guides" class="button primary">See the full SDK
 guide</a> <a href="https://github.com/zama-ai/fhevm-react-template" class="button secondary">Clone the template</a> ;
 {% endstep %}
 
