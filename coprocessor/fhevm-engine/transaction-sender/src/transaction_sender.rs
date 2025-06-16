@@ -6,7 +6,9 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use crate::{nonce_managed_provider::NonceManagedProvider, ops, AbstractSigner, ConfigSettings};
+use crate::{
+    nonce_managed_provider::NonceManagedProvider, ops, AbstractSigner, ConfigSettings, HealthStatus,
+};
 
 #[derive(Clone)]
 pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
@@ -167,5 +169,55 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
     async fn sleep_with_backoff(&self, sleep_duration: &mut u64) {
         tokio::time::sleep(Duration::from_secs(*sleep_duration)).await;
         *sleep_duration = std::cmp::min(*sleep_duration * 2, self.conf.error_sleep_max_secs as u64);
+    }
+
+    /// Checks the health of the transaction sender's connections
+    pub async fn health_check(&self) -> HealthStatus {
+        let mut database_connected = false;
+        let mut blockchain_connected = false;
+        let mut error_details = Vec::new();
+
+        // Check database connection
+        match sqlx::query("SELECT 1").execute(&self.db_pool).await {
+            Ok(_) => {
+                database_connected = true;
+            }
+            Err(e) => {
+                error_details.push(format!("Database query error: {}", e));
+            }
+        }
+        // Check blockchain connection for at least one operation
+        if let Some(op) = self.operations.first() {
+            // The provider internal retry may last a long time, so we set a timeout
+            match tokio::time::timeout(
+                self.conf.health_check_timeout,
+                op.check_provider_connection(),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {
+                    blockchain_connected = true;
+                }
+                Ok(Err(e)) => {
+                    error_details.push(format!("Blockchain connection error: {}", e));
+                }
+                Err(_) => {
+                    error_details.push("Blockchain connection timeout".to_string());
+                }
+            }
+        } else {
+            error_details.push("No operations configured".to_string());
+        }
+
+        // Determine overall health status
+        if database_connected && blockchain_connected {
+            HealthStatus::healthy()
+        } else {
+            HealthStatus::unhealthy(
+                database_connected,
+                blockchain_connected,
+                error_details.join("; "),
+            )
+        }
     }
 }

@@ -16,9 +16,6 @@ contract Rand is E2EFHEVMConfig {
     euint64 public value64Bounded;
     euint128 public value128;
     euint256 public value256;
-    ebytes64 public value512;
-    ebytes128 public value1024;
-    ebytes256 public value2048;
 
     /// @notice Generate random 8-bit encrypted unsigned integer
     function generateBool() public {
@@ -108,20 +105,5 @@ contract Rand is E2EFHEVMConfig {
     function generate256UpperBound(uint256 upperBound) public {
         value256 = FHE.randEuint256(upperBound);
         FHE.makePubliclyDecryptable(value256);
-    }
-
-    function generate512() public {
-        value512 = FHE.randEbytes64();
-        FHE.makePubliclyDecryptable(value512);
-    }
-
-    function generate1024() public {
-        value1024 = FHE.randEbytes128();
-        FHE.makePubliclyDecryptable(value1024);
-    }
-
-    function generate2048() public {
-        value2048 = FHE.randEbytes256();
-        FHE.makePubliclyDecryptable(value2048);
     }
 }

@@ -13,9 +13,6 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
     euint128 public resEuint128;
     euint256 public resEuint256;
     eaddress public resAdd;
-    ebytes64 public resEbytes64;
-    ebytes128 public resEbytes128;
-    ebytes256 public resEbytes256;
 
     function eqEbool(bool a, bool b) external {
         ebool input1 = FHE.asEbool(a);
@@ -61,160 +58,6 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         resEbool = result;
     }
 
-    function eqEbytes256(
-        externalEbytes256 inp1,
-        bytes calldata inputProof1,
-        externalEbytes256 inp2,
-        bytes calldata inputProof2
-    ) external {
-        ebytes256 input1 = FHE.fromExternal(inp1, inputProof1);
-        ebytes256 input2 = FHE.fromExternal(inp2, inputProof2);
-        ebool result = FHE.eq(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function neEbytes256(
-        externalEbytes256 inp1,
-        bytes calldata inputProof1,
-        externalEbytes256 inp2,
-        bytes calldata inputProof2
-    ) external {
-        ebytes256 input1 = FHE.fromExternal(inp1, inputProof1);
-        ebytes256 input2 = FHE.fromExternal(inp2, inputProof2);
-        ebool result = FHE.ne(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function eqEbytes64(bytes memory a, bytes memory b) external {
-        ebytes64 input1 = FHE.asEbytes64(FHE.padToBytes64(a));
-        ebytes64 input2 = FHE.asEbytes64(FHE.padToBytes64(b));
-        ebool result = FHE.eq(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function eqEbytes64ScalarL(bytes memory a, bytes memory b) external {
-        bytes memory input1 = FHE.padToBytes64(a);
-        ebytes64 input2 = FHE.asEbytes64(FHE.padToBytes64(b));
-        ebool result = FHE.eq(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function eqEbytes64ScalarR(bytes memory a, bytes memory b) external {
-        ebytes64 input1 = FHE.asEbytes64(FHE.padToBytes64(a));
-        bytes memory input2 = FHE.padToBytes64(b);
-        ebool result = FHE.eq(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function neEbytes64(bytes memory a, bytes memory b) external {
-        ebytes64 input1 = FHE.asEbytes64(FHE.padToBytes64(a));
-        ebytes64 input2 = FHE.asEbytes64(FHE.padToBytes64(b));
-        ebool result = FHE.ne(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function neEbytes64ScalarL(bytes memory a, bytes memory b) external {
-        bytes memory input1 = FHE.padToBytes64(a);
-        ebytes64 input2 = FHE.asEbytes64(FHE.padToBytes64(b));
-        ebool result = FHE.ne(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function neEbytes64ScalarR(bytes memory a, bytes memory b) external {
-        ebytes64 input1 = FHE.asEbytes64(FHE.padToBytes64(a));
-        bytes memory input2 = FHE.padToBytes64(b);
-        ebool result = FHE.ne(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function eqEbytes128(bytes memory a, bytes memory b) external {
-        ebytes128 input1 = FHE.asEbytes128(FHE.padToBytes128(a));
-        ebytes128 input2 = FHE.asEbytes128(FHE.padToBytes128(b));
-        ebool result = FHE.eq(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function eqEbytes128ScalarL(bytes memory a, bytes memory b) external {
-        bytes memory input1 = FHE.padToBytes128(a);
-        ebytes128 input2 = FHE.asEbytes128(FHE.padToBytes128(b));
-        ebool result = FHE.eq(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function eqEbytes128ScalarR(bytes memory a, bytes memory b) external {
-        ebytes128 input1 = FHE.asEbytes128(FHE.padToBytes128(a));
-        bytes memory input2 = FHE.padToBytes128(b);
-        ebool result = FHE.eq(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function neEbytes128(bytes memory a, bytes memory b) external {
-        ebytes128 input1 = FHE.asEbytes128(FHE.padToBytes128(a));
-        ebytes128 input2 = FHE.asEbytes128(FHE.padToBytes128(b));
-        ebool result = FHE.ne(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function neEbytes128ScalarL(bytes memory a, bytes memory b) external {
-        bytes memory input1 = FHE.padToBytes128(a);
-        ebytes128 input2 = FHE.asEbytes128(FHE.padToBytes128(b));
-        ebool result = FHE.ne(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function neEbytes128ScalarR(bytes memory a, bytes memory b) external {
-        ebytes128 input1 = FHE.asEbytes128(FHE.padToBytes128(a));
-        bytes memory input2 = FHE.padToBytes128(b);
-        ebool result = FHE.ne(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function eqEbytes256ScalarL(bytes memory a, bytes memory b) external {
-        bytes memory input1 = FHE.padToBytes256(a);
-        ebytes256 input2 = FHE.asEbytes256(FHE.padToBytes256(b));
-        ebool result = FHE.eq(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function eqEbytes256ScalarR(bytes memory a, bytes memory b) external {
-        ebytes256 input1 = FHE.asEbytes256(FHE.padToBytes256(a));
-        bytes memory input2 = FHE.padToBytes256(b);
-        ebool result = FHE.eq(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function neEbytes256ScalarL(bytes memory a, bytes memory b) external {
-        bytes memory input1 = FHE.padToBytes256(a);
-        ebytes256 input2 = FHE.asEbytes256(FHE.padToBytes256(b));
-        ebool result = FHE.ne(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
-    function neEbytes256ScalarR(bytes memory a, bytes memory b) external {
-        ebytes256 input1 = FHE.asEbytes256(FHE.padToBytes256(a));
-        bytes memory input2 = FHE.padToBytes256(b);
-        ebool result = FHE.ne(input1, input2);
-        FHE.makePubliclyDecryptable(result);
-        resEbool = result;
-    }
-
     function test_select_ebool(bool control, bool ifTrue, bool ifFalse) public {
         ebool controlProc = FHE.asEbool(control);
         ebool ifTrueProc = FHE.asEbool(ifTrue);
@@ -222,33 +65,6 @@ contract FHEVMManualTestSuite is E2EFHEVMConfig {
         ebool result = FHE.select(controlProc, ifTrueProc, ifFalseProc);
         FHE.makePubliclyDecryptable(result);
         resEbool = result;
-    }
-
-    function test_select_ebytes64(bool control, bytes memory ifTrue, bytes memory ifFalse) public {
-        ebool controlProc = FHE.asEbool(control);
-        ebytes64 ifTrueProc = FHE.asEbytes64(FHE.padToBytes64(ifTrue));
-        ebytes64 ifFalseProc = FHE.asEbytes64(FHE.padToBytes64(ifFalse));
-        ebytes64 result = FHE.select(controlProc, ifTrueProc, ifFalseProc);
-        FHE.makePubliclyDecryptable(result);
-        resEbytes64 = result;
-    }
-
-    function test_select_ebytes128(bool control, bytes memory ifTrue, bytes memory ifFalse) public {
-        ebool controlProc = FHE.asEbool(control);
-        ebytes128 ifTrueProc = FHE.asEbytes128(FHE.padToBytes128(ifTrue));
-        ebytes128 ifFalseProc = FHE.asEbytes128(FHE.padToBytes128(ifFalse));
-        ebytes128 result = FHE.select(controlProc, ifTrueProc, ifFalseProc);
-        FHE.makePubliclyDecryptable(result);
-        resEbytes128 = result;
-    }
-
-    function test_select_ebytes256(bool control, bytes memory ifTrue, bytes memory ifFalse) public {
-        ebool controlProc = FHE.asEbool(control);
-        ebytes256 ifTrueProc = FHE.asEbytes256(FHE.padToBytes256(ifTrue));
-        ebytes256 ifFalseProc = FHE.asEbytes256(FHE.padToBytes256(ifFalse));
-        ebytes256 result = FHE.select(controlProc, ifTrueProc, ifFalseProc);
-        FHE.makePubliclyDecryptable(result);
-        resEbytes256 = result;
     }
 
     function test_select(
