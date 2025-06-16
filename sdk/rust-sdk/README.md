@@ -12,6 +12,10 @@ A Rust SDK for interacting with Fully Homomorphic Encryption Virtual Machine (FH
 - **Builder Pattern**: Intuitive API design for complex operations
 - **Multiple Values**: Process multiple encrypted values in single operations
 
+## Disclaimer
+
+This library requires (for now) a private access to kms repository. 
+
 ## Installation
 
 Add to your `Cargo.toml`:
