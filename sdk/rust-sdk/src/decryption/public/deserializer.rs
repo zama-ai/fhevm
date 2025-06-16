@@ -18,9 +18,6 @@ const TYPE_UINT64: u8 = 5;
 const TYPE_UINT128: u8 = 6;
 const TYPE_ADDRESS: u8 = 7;
 const TYPE_UINT256: u8 = 8;
-const TYPE_BYTES64: u8 = 9;
-const TYPE_BYTES128: u8 = 10;
-const TYPE_BYTES256: u8 = 11;
 
 /// Deserialize decrypted result using ABI decoding
 pub fn deserialize_decrypted_result(
@@ -161,7 +158,6 @@ fn decode_value_by_type(type_disc: u8, value_bytes: &[u8]) -> Result<serde_json:
             decode_numeric(value_bytes)
         }
         TYPE_ADDRESS => decode_address(value_bytes),
-        TYPE_BYTES64 | TYPE_BYTES128 | TYPE_BYTES256 => decode_bytes(value_bytes),
         _ => Err(FhevmError::DecryptionError(format!(
             "Unknown type discriminant: {}",
             type_disc
@@ -196,11 +192,6 @@ fn decode_address(value_bytes: &[u8]) -> Result<serde_json::Value> {
     let addr_bytes = &value_bytes[ADDRESS_BYTE_OFFSET..WORD_SIZE];
     let addr = format!("0x{}", hex::encode(addr_bytes));
     Ok(serde_json::json!(addr))
-}
-
-fn decode_bytes(value_bytes: &[u8]) -> Result<serde_json::Value> {
-    // For static layout, just return hex of the slot
-    Ok(serde_json::json!(format!("0x{}", hex::encode(value_bytes))))
 }
 
 #[cfg(test)]
