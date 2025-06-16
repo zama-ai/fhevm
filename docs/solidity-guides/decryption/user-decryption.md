@@ -2,10 +2,10 @@
 
 This document explains how to perform user decryption. User decryption required when you want a user to access their private data without it being exposed to the blockchain.
 
-Re-encryption in FHEVM enables the secure sharing or reuse of encrypted data under a new public key without exposing the plaintext. This feature is essential for scenarios where encrypted data must be transferred between contracts, dApps, or users while maintaining its confidentiality.
+User decryption in FHEVM enables the secure sharing or reuse of encrypted data under a new public key without exposing the plaintext. This feature is essential for scenarios where encrypted data must be transferred between contracts, dApps, or users while maintaining its confidentiality.
 
 {% hint style="info" %}
-Before implementing re-encryption, ensure you are familiar with the foundational concepts of encryption, re-encryption and computation. Refer to [Encryption, Decryption, Re-encryption, and Computation](../introductions/d_re_ecrypt_compute.md).
+Before implementing user decryption ensure you are familiar with the foundational concepts of encryption, decryption, and computation. Refer to [Encryption, Decryption, and Computation](../introductions/d_re_ecrypt_compute.md).
 {% endhint %}
 
 ## When to use user decryption
@@ -14,11 +14,11 @@ User decryption is particularly useful for **allowing individual users to secure
 
 ## Overview
 
-The re-encryption process involves retrieving ciphertext from the blockchain and performing re-encryption on the client-side. In other words we take the data that has been encrypted by the KMS, decrypt it and encrypt it with the users private key, so only he can access the information.
+The user decryption process involves retrieving ciphertext from the blockchain and performing user-decryption on the client-side. In other words we take the data that has been encrypted by the KMS, decrypt it and encrypt it with the users private key, so only he can access the information.
 
 This ensures that the data remains encrypted under the blockchain’s FHE key but can be securely shared with a user by re-encrypting it under the user’s NaCl public key.
 
-Re-encryption is facilitated by the **Relayer** and the **Key Management System (KMS)**. The workflow consists of the following:
+User decryption is facilitated by the **Relayer** and the **Key Management System (KMS)**. The workflow consists of the following:
 
 1. Retrieving the ciphertext from the blockchain using a contract’s view function.
 2. Re-encrypting the ciphertext client-side with the user’s public key, ensuring only the user can decrypt it.
@@ -41,10 +41,10 @@ contract ConfidentialERC20 {
 
 Here, `balanceOf` allows retrieval of the user’s encrypted balance stored on the blockchain.
 
-## Step 2: re-encrypt the ciphertext
+## Step 2: decrypt the ciphertext
 
-Re-encryption is performed client-side using the `@fhevm/sdk` library. [Refer to the guide](../../frontend/webapp.md) to learn how to include `@fhevm/sdk` in your project.
-Below is an example of how to implement reencryption in a dApp:
+User decryption is performed client-side using the `@fhevm/sdk` library. [Refer to the guide](../../frontend/webapp.md) to learn how to include `@fhevm/sdk` in your project.
+Below is an example of how to implement user decryption in a dApp:
 
 ```ts
 import { createInstances } from "../instance";
@@ -63,7 +63,7 @@ await initSigners(); // Initialize signers
 const signers = await getSigners();
 
 const instance = await createInstances(this.signers);
-// Generate the private and public key, used for the reencryption
+// Generate the private and public key, used for the user decryption
 const { publicKey, privateKey } = instance.generateKeypair();
 
 // Create an EIP712 object for the user to sign.
@@ -96,4 +96,4 @@ This code retrieves the user’s encrypted balance, re-encrypts it with their pu
 
 - **`instance.generateKeypair()`**: Generates a public-private keypair for the user.
 - **`instance.createEIP712(publicKey, CONTRACT_ADDRESS)`**: Creates an EIP712 object for signing the user’s public key.
-- **`instance.reencrypt()`**: Facilitates the re-encryption process by contacting the relayer and decrypting the data locally with the private key.
+- **`instance.reencrypt()`**: Facilitates the user decryption process by contacting the relayer and decrypting the data locally with the private key.

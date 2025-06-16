@@ -87,6 +87,6 @@ The KMS is a decentralized threshold-MPC-based service that manages the FHE key 
 
 The KMS ensures robust cryptographic security, preventing single points of failure and maintaining public verifiability.
 
-In the next section, we will dive deeper into encryption, re-encryption, and decryption processes, including how they
-interact with the KMS and Gateway services. For more details, see
+In the next section, we will dive deeper into encryption and decryption processes, including how they
+interact with the KMS and relayer services. For more details, see
 [Encryption, decryption, and computation](./d_re_ecrypt_compute.md).

@@ -9,7 +9,7 @@ To utilize encrypted computations in Solidity contracts, you must configure the 
 ## Key components configured automatically
 
 1. **FHE library**: Sets up encryption parameters and cryptographic keys.
-2. **Relayer**: Manages secure cryptographic operations, including reencryption and decryption.
+2. **Relayer**: Manages secure cryptographic operations, including user decryption and public decryption.
 3. **Network-specific settings**: Adapts to local testing, testnets (Sepolia for example), or mainnet deployment.
 
 By inheriting these configuration contracts, you ensure seamless initialization and functionality across environments.
@@ -45,9 +45,9 @@ contract MyERC20 is SepoliaZamaFHEVMConfig {
 }
 ```
 
-## ZamaRela.sol
+## ZamaConfig.sol
 
-To perform decryption or reencryption, your contract must interact with the **Relayer**, which acts as a secure bridge between the blockchain, coprocessor, and Key Management System (KMS).
+To perform public decryption or user decryption, your contract must interact with the **Relayer**, which acts as a secure bridge between the blockchain, coprocessor, and Key Management System (KMS).
 
 **Import based on your environment**
 
@@ -59,7 +59,7 @@ import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 **Purpose**
 
 - Configures the relayer for secure cryptographic operations.
-- Facilitates reencryption and decryption requests.
+- Facilitates public and user decryption requests.
 
 **Example: Configuring the relayer with Sepolia settings**
 

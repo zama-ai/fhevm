@@ -311,7 +311,7 @@ function allowTransient(T value, address account) internal
 
 #### Access control list (ACL) overview
 
-The `allow` and `allowTransient` functions enable fine-grained control over who can access, decrypt, and reencrypt encrypted values. Temporary permissions (`allowTransient`) are ideal for minimizing gas usage in scenarios where access is needed only within a single transaction.
+The `allow` and `allowTransient` functions enable fine-grained control over who can access and decrypt encrypted values. Temporary permissions (`allowTransient`) are ideal for minimizing gas usage in scenarios where access is needed only within a single transaction.
 
 **Example: granting access**
 
