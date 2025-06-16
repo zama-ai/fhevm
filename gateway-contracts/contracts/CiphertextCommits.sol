@@ -4,10 +4,10 @@ import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
 import { kmsManagementAddress } from "../addresses/KmsManagementAddress.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
 import "./interfaces/IKmsManagement.sol";
+import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
 import "./libraries/HandleOps.sol";
@@ -19,7 +19,7 @@ import "./libraries/HandleOps.sol";
 contract CiphertextCommits is
     ICiphertextCommits,
     Ownable2StepUpgradeable,
-    UUPSUpgradeable,
+    UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
     Pausable
 {
@@ -77,7 +77,7 @@ contract CiphertextCommits is
      * @dev This function needs to be public in order to be called by the UUPS proxy.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual reinitializer(2) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(2) {
         __Ownable_init(owner());
         __Pausable_init();
     }

@@ -314,6 +314,25 @@ describe("GatewayConfig", function () {
         .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighUserDecryptionThreshold")
         .withArgs(highUserDecryptionThreshold, nKmsNodes);
     });
+
+    it("Should revert because initialization is not from an empty proxy", async function () {
+      await expect(
+        hre.upgrades.upgradeProxy(gatewayConfig, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [
+              pauser.address,
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              userDecryptionThreshold,
+              kmsNodes,
+              coprocessors,
+            ],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, "NotInitializingFromEmptyProxy");
+    });
   });
 
   describe("After deployment", function () {

@@ -41,4 +41,5 @@ pub mod r#signedmath;
 pub mod r#storageslot;
 pub mod r#strings;
 pub mod r#uupsupgradeable;
+pub mod r#uupsupgradeableemptyproxy;
 pub mod r#ierc1822proxiable;
