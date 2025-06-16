@@ -72,6 +72,6 @@ USER kms
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD pgrep -f "dist/src/main" > /dev/null || exit 1
 
-CMD ["kms-connector"]
+CMD ["/app/kms-connector/bin/kms-connector", "start", "-c", "/var/lib/kms-connector/config.toml"]
 
 FROM prod AS dev
