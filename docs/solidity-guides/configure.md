@@ -14,7 +14,7 @@ To utilize encrypted computations in Solidity contracts, you must configure the 
 
 By inheriting these configuration contracts, you ensure seamless initialization and functionality across environments.
 
-## ZamaFHEVMConfig.sol
+## ZamaConfig.sol
 
 This configuration contract initializes the **fhevm environment** with required encryption parameters.
 
@@ -22,7 +22,7 @@ This configuration contract initializes the **fhevm environment** with required 
 
 ```solidity
 // For Ethereum Sepolia
-import { SepoliaZamaFHEVMConfig } from "@fhevm/solidity/config/ZamaFHEVMConfig.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 ```
 
 **Purpose:**
@@ -36,9 +36,9 @@ import { SepoliaZamaFHEVMConfig } from "@fhevm/solidity/config/ZamaFHEVMConfig.s
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { SepoliaZamaFHEVMConfig } from "@fhevm/solidity/config/ZamaFHEVMConfig.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract MyERC20 is SepoliaZamaFHEVMConfig {
+contract MyERC20 is SepoliaConfig {
   constructor() {
     // Additional initialization logic if needed
   }
