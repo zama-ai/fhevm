@@ -48,10 +48,10 @@ like this:
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { FHE } from "@fhevm/solidity/lib/FHE.sol";
+import { FHE, euint64 } from "@fhevm/solidity/lib/FHE.sol";
 import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract MyCounter is SepoliaZamaFHEVMConfig {
+contract MyCounter is ZamaConfig {
   euint64 counter;
   constructor() {
     counter = FHE.asEuint64(0);
@@ -59,6 +59,7 @@ contract MyCounter is SepoliaZamaFHEVMConfig {
 
   function add() public {
     counter = FHE.add(counter, 1);
+    FHE.allowThis(counter);
   }
 }
 ```
