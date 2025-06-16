@@ -39,8 +39,8 @@ contract TestAsyncDecrypt is SepoliaConfig {
 
   function requestBool() public {
     require(!isDecryptionPending, "Decryption is in progress");
-    uint256[] memory cts = new uint256[](1);
-    cts[0] = FHE.toUint256(xBool);
+    bytes32[] memory cts = new bytes32[](1);
+    cts[0] = FHE.toBytes32(xBool);
     uint256 latestRequestId = FHE.requestDecryption(cts, this.myCustomCallback.selector);
 
     /// @dev This prevents sending multiple requests before the first callback was sent.
