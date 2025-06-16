@@ -24,7 +24,7 @@ layout:
 
 ## Explore the doc
 
-<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Solidity Guides</strong></td><td>Write encrypted logic with Solidity tools.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/mIaweK9iiWMF773uuVPP/">Solidity</a></td></tr><tr><td><strong>SDK Guides</strong></td><td>Build frontends with encrypted user data.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/2wDODARNL7cfrn1fsPcS/">SDK</a></td></tr><tr><td><strong>Examples</strong></td><td>Explore real dApps and code templates.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/hBX9KO0dtJnFLDRNYCZX/">Examples</a></td></tr></tbody></table>
+<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Solidity Guides</strong></td><td>Write encrypted logic with Solidity tools.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/solidity-guides">Solidity</a></td></tr><tr><td><strong>SDK Guides</strong></td><td>Build frontends with encrypted user data.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/sdk-guides">SDK</a></td></tr><tr><td><strong>Examples</strong></td><td>Explore real dApps and code templates.</td><td><a href=".gitbook/assets/Zama-Gitbook_Cover_Test.png">Gitbook-cover.png</a></td><td><a href="/examples">Examples</a></td></tr></tbody></table>
 
 ## Path to Build
 
@@ -32,8 +32,7 @@ layout:
 
 ### **Set up your development environment**
 
-Use the official Hardhat template from Zama that includes all necessary configurations and dependencies to start
-developing confidential smart contracts.
+Use the official Hardhat template from Zama that includes all necessary configurations and dependencies to start developing confidential smart contracts.
 
 <a href="https://github.com/zama-ai/fhevm-hardhat-template" class="button secondary">Clone the template</a>
 {% endstep %}
@@ -42,7 +41,7 @@ developing confidential smart contracts.
 
 ### Write your first confidential smart contract
 
-Use the provided contract examples, like `ConfidentialERC20`, to begin. A basic confidential token contract might look
+Use the provided contract examples, like `MyCounter`, to begin. A basic counter contract might look
 like this:
 
 ```solidity
@@ -64,7 +63,7 @@ contract MyCounter is SepoliaZamaFHEVMConfig {
 }
 ```
 
-<a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/mIaweK9iiWMF773uuVPP/" class="button primary">See the full
+<a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/solidity-guides/get-started/overview" class="button primary">See the full
 Solidity guide</a> {% endstep %}
 
 {% step %}
@@ -73,7 +72,7 @@ Solidity guide</a> {% endstep %}
 
 Start from Zama's ready-to-use React template.
 
-<a href="https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/2wDODARNL7cfrn1fsPcS/" class="button primary">See the full SDK
+<a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/sdk-guides" class="button primary">See the full SDK
 guide</a> <a href="https://github.com/zama-ai/fhevm-react-template" class="button secondary">Clone the template</a> ;
 {% endstep %}
 
@@ -81,7 +80,7 @@ guide</a> <a href="https://github.com/zama-ai/fhevm-react-template" class="butto
 
 ### To continue
 
-<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Architecture</strong></td><td>Understand how the system fits together.</td><td></td><td><a href="broken-reference">Broken link</a></td></tr><tr><td><strong>Dapps Demos</strong></td><td>Try real projects built with fhevm.</td><td></td><td></td></tr><tr><td><strong>White paper</strong></td><td>Dive deep into the cryptographic design.</td><td></td><td></td></tr></tbody></table>
+<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Architecture</strong></td><td>Understand how the system fits together.</td><td></td><td><a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/architecture/architecture_overview">Broken link</a></td></tr><tr><td><strong>Dapps Demos</strong></td><td>Try real projects built with fhevm.</td><td></td><td></td></tr><tr><td><strong>White paper</strong></td><td>Dive deep into the cryptographic design.</td><td></td><td></td></tr></tbody></table>
 {% endstep %}
 {% endstepper %}
 
