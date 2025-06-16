@@ -1,13 +1,16 @@
 ## Table of all addresses
 
-Save this in your `.env` file:
+Save this in your `.env` file.
 
-| Contract/Service       | Address/Value                              |
-| ---------------------- | ------------------------------------------ |
-| TFHE_EXECUTOR_CONTRACT | 0x687408aB54661ba0b4aeF3a44156c616c6955E07 |
-| ACL_CONTRACT           | 0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5 |
-| PAYMENT_CONTRACT       | 0xFb03BE574d14C256D56F09a198B586bdfc0A9de2 |
-| KMS_VERIFIER_CONTRACT  | 0x9D6891A6240D6130c54ae243d8005063D05fE14b |
-| GATEWAY_CONTRACT       | 0x33347831500F1e73f0ccCBb95c9f86B94d7b1123 |
-| PUBLIC_KEY_ID          | 0301c5dd3e2702992b7c12930b7d4defeaaa52cf   |
-| GATEWAY_URL            | `https://gateway.sepolia.zama.ai/`         |
+These are Sepolia addresses.
+
+| Contract/Service           | Address/Value                                  |
+|----------------------------|------------------------------------------------|
+| FHEVM_EXECUTOR_CONTRACT    | 0x848B0066793BcC60346Da1F49049357399B8D595     |
+| ACL_CONTRACT               | 0x687820221192C5B662b25367F70076A37bc79b6c     |
+| HCU_LIMIT_CONTRACT         | 0x594BB474275918AF9609814E68C61B1587c5F838     |
+| KMS_VERIFIER_CONTRACT      | 0x1364cBBf2cDF5032C47d8226a6f6FBD2AFCDacAC     |
+| INPUT_VERIFIER_CONTRACT    | 0xbc91f3daD1A5F19F8390c400196e58073B6a0BC4     |
+| DECRYPTION_ORACLE_CONTRACT | 0xa02Cda4Ca3a71D7C46997716F4283aa851C28812     |
+| PUBLIC_KEY_ID              | 0301c5dd3e2702992b7c12930b7d4defeaaa52cf       |
+| RELAYER_URL                | `https://relayer.testnet.zama.cloud/v1/keyurl` |
