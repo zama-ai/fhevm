@@ -28,10 +28,7 @@ When a function in a smart contract is called, it may accept two types of parame
 Here’s an example of a Solidity function accepting multiple encrypted parameters:
 
 ```solidity
-function myExample(
-  address account,
-  uint id,
-  bool isAllowed,
+function exampleFunction(
   externalEbool param1,
   externalEuint64 param2,
   externalEuint8 param3,
@@ -43,56 +40,43 @@ function myExample(
 
 In this example, `param1`, `param2`, and `param3` are encrypted inputs for `ebool`, `euint64`, and `euint8` while `inputProof` contains the corresponding ZKPoK to validate their authenticity.
 
-## Client-Side implementation
+### Input Generation using Hardhat
 
-To interact with such a function, developers can use the [@fhevm/sdk](https://github.com/zama-ai/fhevmjs) library to create and manage encrypted inputs. Below is an example implementation:
+In the below example, we use Alice's address to create the encrypted inputs and submits the transaction.
 
-```javascript
-import { createInstances } from "../instance";
-import { getSigners, initSigners } from "../signers";
+```typescript
+import * as hre from "hardhat";
+import { fhevm } from "hardhat";
 
-await initSigners(); // Initialize signers
-const signers = await getSigners();
+const input = hre.fhevm.createEncryptedInput(contract.address, signers.alice.address);
+input.add64(transferAmount);
+const encryptedInput = await input.encrypt();
 
-const instance = await createInstances(this.signers);
-// Create encrypted inputs
-const input = instance.createEncryptedInput(contractAddress, userAddress);
-const inputs = input.add64(64).addBool(true).add8(4).encrypt(); // Encrypt the parameters
-
-// Call the smart contract function with encrypted inputs
-contract.myExample(
-  "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80", // Account address
-  32, // Plaintext parameter
-  true, // Plaintext boolean parameter
-  inputs.handles[0], // Handle for the first parameter
-  inputs.handles[1], // Handle for the second parameter
-  inputs.handles[2], // Handle for the third parameter
-  inputs.inputProof, // Proof to validate all encrypted inputs
-);
+tx = await myContract
+      .connect(signers.alice)
+      [
+        "exampleFunction(bytes32,bytes32,bytes32,bytes)"
+      ](signers.bob.address, encryptedInput.handles[0], encryptedInput.handles[1], encryptedInput.handles[2], encryptedTransferAmount.inputProof);
+    
+await tx.wait();
 ```
-
-In this example:
-
-- **`add64`, `addBool`, and `add8`**: Specify the types and values of inputs to encrypt.
-- **`encrypt`**: Generates the encrypted inputs and the zero-knowledge proof.
-
 ## Validating encrypted inputs
 
 Smart contracts process encrypted inputs by verifying them against the associated zero-knowledge proof. This is done using the `FHE.asEuintXX`, `FHE.asEbool`, or `FHE.asEaddress` functions, which validate the input and convert it into the appropriate encrypted type.
 
-### Example validation that goes along the client-Side implementation
+### Example validation
 
 This example demonstrates a function that performs multiple encrypted operations, such as updating a user's encrypted balance and toggling an encrypted boolean flag:
 
 ```solidity
   function myExample(
-    externalEuint64,
+    externalEuint64 encryptedAmount,
     externalEbool encryptedToggle,
     bytes calldata inputProof
   ) public {
     // Validate and convert the encrypted inputs
-    euint64 amount = FHE.asEuint64(encryptedAmount, inputProof);
-    ebool toggleFlag = FHE.asEbool(encryptedToggle, inputProof);
+    euint64 amount = FHE.fromExternal(encryptedAmount, inputProof);
+    ebool toggleFlag = FHE.fromExternal(encryptedToggle, inputProof);
 
     // Update the user's encrypted balance
     balances[msg.sender] = FHE.add(balances[msg.sender], amount);
@@ -110,10 +94,9 @@ This example demonstrates a function that performs multiple encrypted operations
   function getEncryptedFlag() public view returns (ebool) {
     return userFlags[msg.sender];
   }
-}
 ```
 
-### Example validation in the `encryptedERC20.sol` smart contract
+### Example validation in the `ConfidentialERC20.sol` smart contract
 
 Here’s an example of a smart contract function that verifies an encrypted input before proceeding:
 
@@ -134,7 +117,7 @@ function transfer(
 ### How validation works
 
 1. **Input verification**:\
-   The `FHE.asEuintXX` function ensures that the input is a valid ciphertext with a corresponding ZKPoK.
+   The `FHE.fromExternal` function ensures that the input is a valid ciphertext with a corresponding ZKPoK.
 2. **Type conversion**:\
    The function transforms `externalEbool`, `externalEaddress`, `externalEuintXX` into the appropriate encrypted type (`ebool`, `eaddress`, `euintXX`) for further operations within the contract.
 
