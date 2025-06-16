@@ -74,9 +74,9 @@ To overcome these challenges, Zama introduced a hybrid architecture for FHEVM th
 - **Off-chain**
   - Coprocessors execute FHE operations using the evaluation key.
   - Results are stored off-chain, and only references (handles) are returned on-chain.
-- **Gateway & KMS**
+- **Relayer & KMS**
 
-  - The Gateway coordinates between the blockchain, users, and the KMS.
+  - The relayer coordinates between the blockchain, users, and the KMS.
   - The Key Management System securely handles decryption via threshold MPC, supporting both smart contract and user
     decryption.
 

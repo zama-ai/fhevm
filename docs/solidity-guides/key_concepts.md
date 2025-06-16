@@ -7,7 +7,7 @@ This document provides an overview of key features of the FHEVM smart contract l
 Smart contracts using FHEVM require proper configuration and initialization:
 
 - **Environment setup**: Import and inherit from environment-specific configuration contracts
-- **Gateway configuration**: Configure secure gateway access for cryptographic operations
+- **Relayer configuration**: Configure secure relayer access for cryptographic operations
 - **Initialization checks**: Validate encrypted variables are properly initialized before use
 
 For more information see [Configuration](configure.md).

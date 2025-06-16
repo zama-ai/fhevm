@@ -4,12 +4,12 @@ This document explains how to enable encrypted computations in your smart contra
 
 ## Core configuration setup
 
-To utilize encrypted computations in Solidity contracts, you must configure the **FHE library** and **Gateway addresses**. The `fhevm` package simplifies this process with prebuilt configuration contracts, allowing you to focus on developing your contract’s logic without handling the underlying cryptographic setup.
+To utilize encrypted computations in Solidity contracts, you must configure the **FHE library** and **Relayer addresses**. The `fhevm` package simplifies this process with prebuilt configuration contracts, allowing you to focus on developing your contract’s logic without handling the underlying cryptographic setup.
 
 ## Key components configured automatically
 
 1. **FHE library**: Sets up encryption parameters and cryptographic keys.
-2. **Gateway**: Manages secure cryptographic operations, including reencryption and decryption.
+2. **Relayer**: Manages secure cryptographic operations, including reencryption and decryption.
 3. **Network-specific settings**: Adapts to local testing, testnets (Sepolia for example), or mainnet deployment.
 
 By inheriting these configuration contracts, you ensure seamless initialization and functionality across environments.
@@ -22,7 +22,7 @@ This configuration contract initializes the **fhevm environment** with required 
 
 ```solidity
 // For Ethereum Sepolia
-import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaFHEVMConfig } from "@fhevm/solidity/config/ZamaFHEVMConfig.sol";
 ```
 
 **Purpose:**
@@ -36,7 +36,7 @@ import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaFHEVMConfig } from "@fhevm/solidity/config/ZamaFHEVMConfig.sol";
 
 contract MyERC20 is SepoliaZamaFHEVMConfig {
   constructor() {
@@ -45,33 +45,31 @@ contract MyERC20 is SepoliaZamaFHEVMConfig {
 }
 ```
 
-## ZamaGatewayConfig.sol
+## ZamaRela.sol
 
-To perform decryption or reencryption, your contract must interact with the **Gateway**, which acts as a secure bridge between the blockchain, coprocessor, and Key Management System (KMS).
+To perform decryption or reencryption, your contract must interact with the **Relayer**, which acts as a secure bridge between the blockchain, coprocessor, and Key Management System (KMS).
 
 **Import based on your environment**
 
 ```solidity
-// For Ethereum Sepolia
-import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
+// For Sepolia
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 ```
 
 **Purpose**
 
-- Configures the Gateway for secure cryptographic operations.
+- Configures the relayer for secure cryptographic operations.
 - Facilitates reencryption and decryption requests.
 
-**Example: Configuring the gateway with Sepolia settings**
+**Example: Configuring the relayer with Sepolia settings**
 
 ```solidity
-import "fhevm/lib/FHE.sol";
-import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
-import "fhevm/gateway/GatewayCaller.sol";
+import "@fhevm/solidity/lib/FHE.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract Test is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, GatewayCaller {
+contract Test is SepoliaConfig {
   constructor() {
-    // Gateway and FHEVM environment initialized automatically
+    // Relayer and FHEVM environment initialized automatically
   }
 }
 ```
@@ -99,4 +97,4 @@ require(FHE.isInitialized(counter), "Counter not initialized!");
 
 ## Summary
 
-By leveraging prebuilt configuration contracts like `ZamaFHEVMConfig.sol` and `ZamaGatewayConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.
+By leveraging prebuilt a configuration contract like `ZamaConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.
