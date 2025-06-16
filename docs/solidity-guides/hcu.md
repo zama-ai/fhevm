@@ -1,24 +1,26 @@
-# Homomorphic Complexity Units ("HCU") in fhevm
+# Homomorphic Complexity Units ("HCU") in FHEVM
 
-This guide explains how to use Fully Homomorphic Encryption (FHE) operations in your smart contracts on fhevm. Understanding HCU is critical for designing efficient confidential smart contracts.
+This guide explains how to use Fully Homomorphic Encryption (FHE) operations in your smart contracts on FHEVM. Understanding HCU is critical for designing efficient confidential smart contracts.
 
 ## Overview
 
 FHE operations in FHEVM are computationally intensive compared to standard Ethereum operations, as they require complex mathematical computations to maintain privacy and security. To manage computational load and prevent potential denial-of-service attacks, FHEVM implements a metering system called **Homomorphic Complexity Units ("HCU")**.
 
-Each FHE operation consumes a specific amount of HCU based on its computational complexity. The `HCULimit` contract monitors HCU consumption for each transaction and enforces two key limits:
+To represent this complexity, we introduced the **Homomorphic Complexity Unit ("HCU")**. In Solidity, each FHE operation consumes a set amount of HCU based on the operational computational complexity for hardware computation. Since FHE transactions are symbolic, this helps preventing resource exhaustion outside of the blockchain.
+
+To do so, there is a contract named `HCULimit`, which monitors HCU consumption for each transaction and enforces two key limits:
 
 - **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order.
 - **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel.
 
-If either limit is exceeded, the transaction will revert, ensuring network stability and preventing resource exhaustion.
+If either limit is exceeded, the transaction will revert.
 
 ## Measuring HCU
 
-To monitor HCU during development, you can use the following tool: **`getTxHCUFromTxReceipt`**:
+To monitor HCU during development, you can use the following helper function: **`getTxHCUFromTxReceipt`**:
 
 You can import it as such: `import { getTxHCUFromTxReceipt } from "../coprocessorUtils";`
-It allows to extract either the total HCU consumption or the maximum depth HCU consumption from a transaction receipt.
+It allows to extract either the total HCU consumption or the maximum depth HCU consumption from a Solidity transaction receipt.
 
 ### Example
 
@@ -266,8 +268,7 @@ When using `eaddress` (internally represented as `euint160`), the HCU costs for 
 | Function name               | HCU             |
 | --------------------------- | --------------- |
 | `cast`                      | 200             |
-| `trivialEncrypt` (basic)    | 100-800         |
-| `trivialEncrypt` (extended) | 1,600-6,400     |
+| `trivialEncrypt`            | 100-800         |
 | `randBounded`               | 100,000         |
-| `select`                    | 43,000-71,000   |
 | `rand`                      | 100,000         |
+| `select`                    | 43,000-71,000   |
