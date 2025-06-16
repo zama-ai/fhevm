@@ -9,7 +9,7 @@
 - [Overview](architecture_overview.md)
 - [FHE on blockchain](fhe-on-blockchain.md)
 - [FHEVM components](fhevm-components.md)
-- [Encryption, decryption, re-encryption, and computation](d_re_ecrypt_compute.md)
+- [Encryption, decryption, and computation](d_re_ecrypt_compute.md)
 
 ## References
 

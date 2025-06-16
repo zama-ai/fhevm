@@ -4,7 +4,7 @@ The FHEVM architecture provides the foundation for confidential smart contracts 
 core is FHE, a cryptographic technique enabling computations directly on encrypted data, ensuring privacy at every
 stage.&#x20;
 
-This system relies on three key types:&#x20;
+This system relies on three key types:
 
 - The **public key:** used by users to encrypt their inputs locally.
 - The **private key:** required for decryption, securely distributed and managed through a threshold MPC-based Key

@@ -115,7 +115,7 @@ User decryption is initiated on the client side using the
    - The dApp receives the encrypted ciphertext under the user's public key from the Gateway/Relayer.
    - The dApp decrypts the ciphertext locally using the user's private key.
 
-You can read [our re-encryption guide explaining how to use it](solidity-guides/decryption/reencryption.md).
+You can read [our user decryption guide explaining how to use it](solidity-guides/decryption/user-decryption.md).
 
 ## **Tying It All Together**
 

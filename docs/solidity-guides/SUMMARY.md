@@ -18,11 +18,11 @@
 - [Access Control List](acl/README.md)
   - [ACL examples](acl/acl_examples.md)
 
-## Decryption & Re-encryption
+## Public Decryption & User Decryption
 
-- [Decryption](decryption/decrypt.md)
+- [User Decryption](decryption/user-decryption.md)
+- [Public Decryption](decryption/public-decryption.md)
 - [Decryption in depth](decryption/decrypt_details.md)
-- [Re-encryption](decryption/reencryption.md)
 
 ## Control Flow & Logic
 
