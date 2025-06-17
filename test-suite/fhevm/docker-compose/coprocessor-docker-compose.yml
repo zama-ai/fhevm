@@ -182,7 +182,7 @@ services:
 
   transaction-sender:
     container_name: fhevm-transaction-sender
-    image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${COPROCESSOR_VERSION}
+    # image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${COPROCESSOR_VERSION}
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/transaction-sender/Dockerfile

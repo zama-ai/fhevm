@@ -23,7 +23,10 @@ services:
 
   gateway-sc-deploy:
     container_name: fhevm-gateway-sc-deploy
-    image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
+    # image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
+    build:
+      context: ../../../gateway-contracts
+      dockerfile: Dockerfile
     env_file:
       - ../env/staging/.env.gateway.local
     command:
@@ -36,7 +39,10 @@ services:
 
   gateway-sc-add-network:
     container_name: fhevm-gateway-sc-add-network
-    image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
+    # image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
+    build:
+      context: ../../../gateway-contracts
+      dockerfile: Dockerfile
     env_file:
       - ../env/staging/.env.gateway.local
     command:

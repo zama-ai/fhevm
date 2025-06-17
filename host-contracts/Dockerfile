@@ -1,4 +1,4 @@
-FROM ghcr.io/zama-ai/fhevm-node:latest
+FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21
 
 USER root
 
