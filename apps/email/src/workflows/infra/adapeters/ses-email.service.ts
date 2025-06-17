@@ -30,11 +30,11 @@ export class SESEmailService implements EmailService {
         // TODO: change to aws.useConfigCredentials when sqs is ready
         this.config.get<boolean>('ses.useConfigCredentials', false)
           ? {
-              region: this.config.get('aws.region'),
-              endpoint: this.config.get('aws.endpoint'),
+              region: this.config.get('ses.region'),
+              endpoint: this.config.get('ses.endpoint'),
               credentials: {
-                accessKeyId: this.config.getOrThrow('aws.accessKeyId'),
-                secretAccessKey: this.config.getOrThrow('aws.secretAccessKey'),
+                accessKeyId: this.config.getOrThrow('ses.accessKeyId'),
+                secretAccessKey: this.config.getOrThrow('ses.secretAccessKey'),
               },
             }
           : {},

@@ -11,4 +11,9 @@ aws:
 ses:
   # TODO: remove this when sqs is ready
   useConfigCredentials: true
-  fromEmail: support@zama.ai
+  fromEmail: support@zama.cloud
+  endpoint: 'http://localhost:4566'
+  region: 'eu-central-1'
+  accessKeyId: 'test'
+  secretAccessKey: 'test'
+  frontendUrl: 'http://localhost:3000'
