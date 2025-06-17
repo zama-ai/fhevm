@@ -4,6 +4,8 @@ import fs from 'fs';
 import { task, types } from 'hardhat/config';
 import type { RunTaskFunction, TaskArguments } from 'hardhat/types';
 
+import { getRequiredEnvVar } from './utils/loadVariables';
+
 function stripContractName(input: string): string {
   const colonIndex = input.lastIndexOf('/');
   if (colonIndex !== -1) {
@@ -28,7 +30,39 @@ async function upgradeCurrentToNew(
   const currentImplementation = await ethers.getContractFactory(currentImplem, deployer);
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   const newImplementationFactory = await ethers.getContractFactory(newImplem, deployer);
-  await upgrades.upgradeProxy(proxy, newImplementationFactory);
+  await upgrades.upgradeProxy(proxy, newImplementationFactory, {
+    call: { fn: 'reinitializeV2' },
+  });
+  if (verifyContract) {
+    console.log('Waiting 2 minutes before contract verification... Please wait...');
+    await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
+    const implementationACLAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await run('verify:verify', {
+      address: implementationACLAddress,
+      constructorArguments: [],
+    });
+  }
+}
+
+async function upgradeCurrentToNewACL(
+  privateKey: string,
+  proxyAddress: string,
+  currentImplem: string,
+  newImplem: string,
+  verifyContract: boolean,
+  upgrades: HardhatUpgrades,
+  run: RunTaskFunction,
+  ethers: any,
+) {
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  await run('compile:specific', { contract: stripContractName(currentImplem) });
+  await run('compile:specific', { contract: stripContractName(newImplem) });
+  const currentImplementation = await ethers.getContractFactory(currentImplem, deployer);
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  const newImplementationFactory = await ethers.getContractFactory(newImplem, deployer);
+  await upgrades.upgradeProxy(proxy, newImplementationFactory, {
+    call: { fn: 'reinitializeV2', args: [getRequiredEnvVar('PAUSER_ADDRESS')] },
+  });
   if (verifyContract) {
     console.log('Waiting 2 minutes before contract verification... Please wait...');
     await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
@@ -59,7 +93,7 @@ task('task:upgradeACL')
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
     const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
-    await upgradeCurrentToNew(
+    await upgradeCurrentToNewACL(
       taskArguments.privateKey,
       proxyAddress,
       taskArguments.currentImplementation,

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {fhevmExecutorAdd} from "../addresses/FHEVMExecutorAddress.sol";
 
@@ -14,7 +14,7 @@ import {FheType} from "./shared/FheType.sol";
  * transaction level, including the maximum number of homomorphic complexity units (HCU) per transaction.
  * @dev The contract is designed to be used with the FHEVMExecutor contract.
  */
-contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
+contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
@@ -37,7 +37,7 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -63,12 +63,17 @@ contract HCULimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice  Re-initializes the contract.
+     * @notice  Initializes the contract.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitialize() public virtual reinitializer(2) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(3) {
         __Ownable_init(owner());
     }
+
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    function reinitializeV2() public virtual reinitializer(3) {}
 
     /**
      * @notice Check the homomorphic complexity units limit for FheAdd.
