@@ -32,7 +32,7 @@ jobs:
               - .github/workflows/coprocessor-docker-build.yml
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
-              - host-contracts/**
+              - host-contracts/contracts/**
   docker-fhevm-coprocessor:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-files == 'true' || github.event_name == 'release' }}
