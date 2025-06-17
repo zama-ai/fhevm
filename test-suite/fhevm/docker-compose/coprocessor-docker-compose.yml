@@ -34,7 +34,10 @@ services:
 
   db-migration:
     container_name: fhevm-db-migration
-    image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
+    # image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
     env_file:
       - ../env/staging/.env.coprocessor.local
     environment:
@@ -50,9 +53,12 @@ services:
         condition: service_completed_successfully
 
   ####################### COPROCESSOR SERVICES #######################
-  fhevm-listener:
-    container_name: fhevm-fhevm-listener
-    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
+  host-listener:
+    container_name: fhevm-host-listener
+    # image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${HOST_LISTENER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/fhevm-listener/Dockerfile
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -68,11 +74,10 @@ services:
 
   gw-listener:
     container_name: fhevm-gw-listener
-    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
-    # image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:latest
-    # build:
-    #   context: ../../..
-    #   dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
+    # image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${GW_LISTENER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/liveness || exit 1"]
       interval: 10s
@@ -97,7 +102,10 @@ services:
 
   tfhe-worker:
     container_name: fhevm-tfhe-worker
-    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
+    # image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/coprocessor/Dockerfile
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -118,7 +126,10 @@ services:
 
   zkproof-worker:
     container_name: fhevm-zkproof-worker
-    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
+    # image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${ZKPROOF_WORKER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/zkproof-worker/Dockerfile
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -137,7 +148,10 @@ services:
 
   sns-worker:
     container_name: fhevm-sns-worker
-    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
+    # image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${SNS_WORKER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/sns-executor/Dockerfile
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -147,19 +161,19 @@ services:
       - --pg-listen-channels
       - event_pbs_computations
       - event_ciphertext_computed
-      - --pg-notify-channel="event_ciphertext128_computed"
+      - --pg-notify-channel
+      - event_ciphertext128_computed
       - --work-items-batch-size=20
       - --pg-polling-interval=30
       - --pg-pool-connections=10
       - --bucket-name-ct64=ct64
       - --bucket-name-ct128=ct128
-      # # uncomment if you are using release => v0.7.0-rc2
-      # - --s3-max-concurrent-uploads=100
-      # - --s3-max-retries-per-upload=100
-      # - --s3-max-backoff=10s
-      # - --s3-max-retries-timeout=120s
-      # - --s3-recheck-duration=2s
-      # - --s3-regular-recheck-duration=120s
+      - --s3-max-concurrent-uploads=100
+      - --s3-max-retries-per-upload=100
+      - --s3-max-backoff=10s
+      - --s3-max-retries-timeout=120s
+      - --s3-recheck-duration=2s
+      - --s3-regular-recheck-duration=120s
     depends_on:
       db:
         condition: service_healthy
@@ -168,7 +182,10 @@ services:
 
   transaction-sender:
     container_name: fhevm-transaction-sender
-    image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${COPROCESSOR_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/transaction-sender/Dockerfile
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -186,8 +203,7 @@ services:
       - --verify-proof-resp-batch-limit=128
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
-      # # uncomment if you are using release => v0.7.0-rc2
-      # - --signer-type=private-key
+      - --signer-type=private-key
     depends_on:
       db:
         condition: service_healthy
