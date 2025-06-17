@@ -23,6 +23,10 @@ tonic  = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 bytesize = { workspace = true}
+tokio-util = { workspace = true}
+axum = { workspace = true}
+serde_json = { workspace = true}
+http = {workspace = true}
 
 # crates.io dependencies
 paste = "1.0.15"
@@ -33,6 +37,8 @@ opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
+
+
 
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
