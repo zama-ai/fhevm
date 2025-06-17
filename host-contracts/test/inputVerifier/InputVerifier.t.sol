@@ -7,9 +7,9 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {InputVerifier} from "../../contracts/InputVerifier.sol";
-import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
-import {FheType} from "../../contracts/FheType.sol";
-import {FHEVMExecutorNoEvents} from "../../contracts/FHEVMExecutorNoEvents.sol";
+import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
+import {FheType} from "../../contracts/shared/FheType.sol";
+import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 
 contract InputVerifierTest is Test {
     InputVerifier internal inputVerifier;
@@ -251,7 +251,7 @@ contract InputVerifierTest is Test {
     }
 
     /**
-     * @dev Generates input parameters for FHEVMExecutorNoEvents context.
+     * @dev Generates input parameters for FHEVMExecutor context.
      *
      * @param cleartextValues Cleartext values for handles.
      * @param fheTypes FHE types for each cleartext value.
@@ -278,11 +278,7 @@ contract InputVerifierTest is Test {
     )
         internal
         view
-        returns (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
-            bytes32 mockInputHandle,
-            bytes memory inputProof
-        )
+        returns (FHEVMExecutor.ContextUserInputs memory context, bytes32 mockInputHandle, bytes memory inputProof)
     {
         assert(cleartextValues.length == fheTypes.length && cleartextValues.length > 0);
         bytes32[] memory handles = new bytes32[](cleartextValues.length);
@@ -317,11 +313,7 @@ contract InputVerifierTest is Test {
     )
         internal
         view
-        returns (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
-            bytes32 mockInputHandle,
-            bytes memory inputProof
-        )
+        returns (FHEVMExecutor.ContextUserInputs memory context, bytes32 mockInputHandle, bytes memory inputProof)
     {
         address userAddress = address(1234);
         address contractAddress = address(2222);
@@ -471,7 +463,7 @@ contract InputVerifierTest is Test {
         cleartextValues[0] = bytes32(uint256(cleartextValue));
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateMockInputParameters(
@@ -505,7 +497,7 @@ contract InputVerifierTest is Test {
         cleartextValues[1] = bytes32(cleartextValue2 ? uint256(1) : uint256(0));
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateMockInputParameters(
@@ -529,7 +521,7 @@ contract InputVerifierTest is Test {
         vm.assume(invalidChainId != block.chainid);
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(invalidChainId, HANDLE_VERSION, activeSigners);
@@ -545,7 +537,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(3);
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
@@ -563,7 +555,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(3);
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
@@ -581,7 +573,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(3);
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
@@ -603,7 +595,7 @@ contract InputVerifierTest is Test {
         vm.assume(indexHandle > 0 && indexHandle < 255);
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
@@ -623,7 +615,7 @@ contract InputVerifierTest is Test {
         vm.assume(indexHandle > 0 && indexHandle < 255);
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
@@ -644,7 +636,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(3);
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
@@ -664,7 +656,7 @@ contract InputVerifierTest is Test {
         vm.assume(handleVersion != HANDLE_VERSION);
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, handleVersion, activeSigners);
@@ -689,19 +681,15 @@ contract InputVerifierTest is Test {
         fheTypes[0] = FheType.Uint64;
         cleartextValues[0] = bytes32(uint256(initialCleartextValue));
 
-        (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
-            ,
-            bytes memory inputProof
-        ) = _generateMockInputParameters(
-                cleartextValues,
-                fheTypes,
-                userAddress,
-                contractAddress,
-                block.chainid,
-                HANDLE_VERSION,
-                activeSigners
-            );
+        (FHEVMExecutor.ContextUserInputs memory context, , bytes memory inputProof) = _generateMockInputParameters(
+            cleartextValues,
+            fheTypes,
+            userAddress,
+            contractAddress,
+            block.chainid,
+            HANDLE_VERSION,
+            activeSigners
+        );
 
         uint64 updatedCleartextValue = 987654321;
         cleartextValues[0] = bytes32(uint256(updatedCleartextValue));
@@ -735,7 +723,7 @@ contract InputVerifierTest is Test {
         cleartextValues[0] = bytes32(uint256(initialCleartextValue));
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateMockInputParameters(
@@ -778,7 +766,7 @@ contract InputVerifierTest is Test {
         signers[0] = signer0;
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, signers);
@@ -801,7 +789,7 @@ contract InputVerifierTest is Test {
         assertFalse(inputVerifier.isSigner(signer4));
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, signers);
@@ -822,7 +810,7 @@ contract InputVerifierTest is Test {
         signers[1] = signer0;
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, signers);
@@ -841,7 +829,7 @@ contract InputVerifierTest is Test {
         address[] memory signers = new address[](0);
 
         (
-            FHEVMExecutorNoEvents.ContextUserInputs memory context,
+            FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, signers);

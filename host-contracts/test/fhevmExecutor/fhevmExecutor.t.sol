@@ -8,9 +8,9 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
 
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {FHEEvents} from "../../contracts/FHEEvents.sol";
-import {FHEVMExecutorNoEvents} from "../../contracts/FHEVMExecutorNoEvents.sol";
-import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
-import {FheType} from "../../contracts/FheType.sol";
+import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
+import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
+import {FheType} from "../../contracts/shared/FheType.sol";
 
 import {aclAdd} from "../../addresses/ACLAddress.sol";
 import {HCULimitAdd} from "../../addresses/HCULimitAddress.sol";
@@ -171,7 +171,7 @@ contract MockACL {
 contract MockInputVerifier {
     /// @dev This function is a placeholder for the actual input verification logic.
     function verifyCiphertext(
-        FHEVMExecutorNoEvents.ContextUserInputs memory,
+        FHEVMExecutor.ContextUserInputs memory,
         bytes32 inputHandle,
         bytes memory
     ) external pure returns (bytes32) {
@@ -221,14 +221,14 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
             UnsafeUpgrades.upgradeProxy(
                 proxy,
                 address(new FHEVMExecutor()),
-                abi.encodeCall(FHEVMExecutorNoEvents.reinitialize, ()),
+                abi.encodeCall(FHEVMExecutor.reinitialize, ()),
                 owner
             );
         } else {
             UnsafeUpgrades.upgradeProxy(
                 proxy,
-                address(new FHEVMExecutorNoEvents()),
-                abi.encodeCall(FHEVMExecutorNoEvents.reinitialize, ()),
+                address(new FHEVMExecutor()),
+                abi.encodeCall(FHEVMExecutor.reinitialize, ()),
                 owner
             );
         }
@@ -290,7 +290,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     }
 
     function _computeExpectedResultUnaryOp(
-        FHEVMExecutorNoEvents.Operators op,
+        FHEVMExecutor.Operators op,
         bytes32 handle,
         FheType resultType
     ) internal view returns (bytes32 result) {
@@ -299,7 +299,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     }
 
     function _computeExpectedResultBinaryOp(
-        FHEVMExecutorNoEvents.Operators op,
+        FHEVMExecutor.Operators op,
         bytes32 lhs,
         bytes32 rhs,
         bytes1 scalar,
@@ -311,7 +311,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     }
 
     function _computeExpectedResultBinaryOpWithScalar(
-        FHEVMExecutorNoEvents.Operators op,
+        FHEVMExecutor.Operators op,
         bytes32 lhs,
         bytes memory rhs,
         bytes1 scalar,
@@ -323,7 +323,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     }
 
     function _computeExpectedResultTernaryOp(
-        FHEVMExecutorNoEvents.Operators op,
+        FHEVMExecutor.Operators op,
         bytes32 lhs,
         bytes32 middle,
         bytes32 rhs,
@@ -340,7 +340,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
     /**
      * @dev Public function to set up the test environment.
-     * This function deploys the proxy, upgrades it to the FHEVMExecutorNoEvents implementation.
+     * This function deploys the proxy, upgrades it to the FHEVMExecutor implementation.
      */
     function setUp() public {
         _deployProxy();
@@ -403,7 +403,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheAdd,
+            FHEVMExecutor.Operators.fheAdd,
             lhs,
             rhs,
             scalarByte,
@@ -432,7 +432,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheSub,
+            FHEVMExecutor.Operators.fheSub,
             lhs,
             rhs,
             scalarByte,
@@ -461,7 +461,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheMul,
+            FHEVMExecutor.Operators.fheMul,
             lhs,
             rhs,
             scalarByte,
@@ -492,7 +492,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheDiv,
+            FHEVMExecutor.Operators.fheDiv,
             lhs,
             rhs,
             scalarByte,
@@ -523,7 +523,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheRem,
+            FHEVMExecutor.Operators.fheRem,
             lhs,
             rhs,
             scalarByte,
@@ -552,7 +552,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheBitAnd,
+            FHEVMExecutor.Operators.fheBitAnd,
             lhs,
             rhs,
             scalarByte,
@@ -581,7 +581,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheBitOr,
+            FHEVMExecutor.Operators.fheBitOr,
             lhs,
             rhs,
             scalarByte,
@@ -610,7 +610,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheBitXor,
+            FHEVMExecutor.Operators.fheBitXor,
             lhs,
             rhs,
             scalarByte,
@@ -639,7 +639,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheShl,
+            FHEVMExecutor.Operators.fheShl,
             lhs,
             rhs,
             scalarByte,
@@ -668,7 +668,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheShr,
+            FHEVMExecutor.Operators.fheShr,
             lhs,
             rhs,
             scalarByte,
@@ -697,7 +697,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheRotl,
+            FHEVMExecutor.Operators.fheRotl,
             lhs,
             rhs,
             scalarByte,
@@ -726,7 +726,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheRotr,
+            FHEVMExecutor.Operators.fheRotr,
             lhs,
             rhs,
             scalarByte,
@@ -756,7 +756,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheEq,
+            FHEVMExecutor.Operators.fheEq,
             lhs,
             rhs,
             scalarByte,
@@ -787,7 +787,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheNe,
+            FHEVMExecutor.Operators.fheNe,
             lhs,
             rhs,
             scalarByte,
@@ -817,7 +817,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheGe,
+            FHEVMExecutor.Operators.fheGe,
             lhs,
             rhs,
             scalarByte,
@@ -847,7 +847,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheGt,
+            FHEVMExecutor.Operators.fheGt,
             lhs,
             rhs,
             scalarByte,
@@ -877,7 +877,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheLe,
+            FHEVMExecutor.Operators.fheLe,
             lhs,
             rhs,
             scalarByte,
@@ -907,7 +907,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheLt,
+            FHEVMExecutor.Operators.fheLt,
             lhs,
             rhs,
             scalarByte,
@@ -936,7 +936,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheMin,
+            FHEVMExecutor.Operators.fheMin,
             lhs,
             rhs,
             scalarByte,
@@ -965,7 +965,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
-            FHEVMExecutorNoEvents.Operators.fheMax,
+            FHEVMExecutor.Operators.fheMax,
             lhs,
             rhs,
             scalarByte,
@@ -991,11 +991,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         _approveHandleInACL(lhs, sender);
 
-        bytes32 expectedResult = _computeExpectedResultUnaryOp(
-            FHEVMExecutorNoEvents.Operators.fheNeg,
-            lhs,
-            FheType(fheType)
-        );
+        bytes32 expectedResult = _computeExpectedResultUnaryOp(FHEVMExecutor.Operators.fheNeg, lhs, FheType(fheType));
 
         vm.prank(sender);
         if (withEvents) {
@@ -1016,11 +1012,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         _approveHandleInACL(lhs, sender);
 
-        bytes32 expectedResult = _computeExpectedResultUnaryOp(
-            FHEVMExecutorNoEvents.Operators.fheNot,
-            lhs,
-            FheType(fheType)
-        );
+        bytes32 expectedResult = _computeExpectedResultUnaryOp(FHEVMExecutor.Operators.fheNot, lhs, FheType(fheType));
 
         vm.prank(sender);
 
@@ -1048,7 +1040,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultTernaryOp(
-            FHEVMExecutorNoEvents.Operators.fheIfThenElse,
+            FHEVMExecutor.Operators.fheIfThenElse,
             lhs,
             middle,
             rhs,
@@ -1079,7 +1071,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
             );
 
             bytes32 expectedResult = keccak256(
-                abi.encodePacked(FHEVMExecutorNoEvents.Operators.fheRand, FheType(fheType), expectedSeed)
+                abi.encodePacked(FHEVMExecutor.Operators.fheRand, FheType(fheType), expectedSeed)
             );
 
             expectedResult = _appendMetadataToPrehandle(
@@ -1122,12 +1114,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
             );
 
             bytes32 expectedResult = keccak256(
-                abi.encodePacked(
-                    FHEVMExecutorNoEvents.Operators.fheRandBounded,
-                    upperBound,
-                    FheType(fheType),
-                    expectedSeed
-                )
+                abi.encodePacked(FHEVMExecutor.Operators.fheRandBounded, upperBound, FheType(fheType), expectedSeed)
             );
 
             expectedResult = _appendMetadataToPrehandle(
@@ -1154,7 +1141,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 expectedResult = keccak256(
-            abi.encodePacked(FHEVMExecutorNoEvents.Operators.trivialEncrypt, pt, FheType(fheType), acl, block.chainid)
+            abi.encodePacked(FHEVMExecutor.Operators.trivialEncrypt, pt, FheType(fheType), acl, block.chainid)
         );
         expectedResult = _appendMetadataToPrehandle(FheType(fheType), expectedResult, block.chainid, HANDLE_VERSION);
 
@@ -1182,7 +1169,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(handle, sender);
 
         bytes32 expectedResult = keccak256(
-            abi.encodePacked(FHEVMExecutorNoEvents.Operators.cast, handle, FheType(fheOutputType), acl, block.chainid)
+            abi.encodePacked(FHEVMExecutor.Operators.cast, handle, FheType(fheOutputType), acl, block.chainid)
         );
 
         expectedResult = _appendMetadataToPrehandle(
@@ -1216,7 +1203,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheAdd(lhs, rhs, scalarByte);
     }
@@ -1233,7 +1220,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheSub(lhs, rhs, scalarByte);
     }
@@ -1250,7 +1237,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheMul(lhs, rhs, scalarByte);
     }
@@ -1268,7 +1255,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheDiv(lhs, rhs, scalarByte);
     }
@@ -1286,7 +1273,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheRem(lhs, rhs, scalarByte);
     }
@@ -1303,7 +1290,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheBitAnd(lhs, rhs, scalarByte);
     }
@@ -1320,7 +1307,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheBitOr(lhs, rhs, scalarByte);
     }
@@ -1337,7 +1324,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheBitXor(lhs, rhs, scalarByte);
     }
@@ -1354,7 +1341,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheShl(lhs, rhs, scalarByte);
     }
@@ -1371,7 +1358,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheShr(lhs, rhs, scalarByte);
     }
@@ -1388,7 +1375,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheRotl(lhs, rhs, scalarByte);
     }
@@ -1405,7 +1392,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheRotr(lhs, rhs, scalarByte);
     }
@@ -1422,7 +1409,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheEq(lhs, rhs, scalarByte);
     }
@@ -1439,7 +1426,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheNe(lhs, rhs, scalarByte);
     }
@@ -1456,7 +1443,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheGe(lhs, rhs, scalarByte);
     }
@@ -1473,7 +1460,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheGt(lhs, rhs, scalarByte);
     }
@@ -1490,7 +1477,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheLe(lhs, rhs, scalarByte);
     }
@@ -1507,7 +1494,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheLt(lhs, rhs, scalarByte);
     }
@@ -1524,7 +1511,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheMin(lhs, rhs, scalarByte);
     }
@@ -1541,7 +1528,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheMax(lhs, rhs, scalarByte);
     }
@@ -1555,7 +1542,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes32 handle = _generateMockHandle(FheType(fheType));
         _approveHandleInACL(handle, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheNot(handle);
     }
@@ -1574,7 +1561,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(handleIfTrue, sender);
         _approveHandleInACL(handleIfFalse, sender);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.fheIfThenElse(handleControl, handleIfTrue, handleIfFalse);
     }
@@ -1584,7 +1571,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRand));
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         fhevmExecutor.fheRand(FheType(fheType));
     }
 
@@ -1597,7 +1584,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRandBounded));
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         fhevmExecutor.fheRandBounded(upperBound, FheType(fheType));
     }
 
@@ -1617,7 +1604,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
         bytes32 handle = _generateMockHandle(FheType(fheInputType));
         _approveHandleInACL(handle, sender);
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(sender);
         fhevmExecutor.cast(handle, FheType(fheOutputType));
     }
@@ -1630,7 +1617,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
         bytes32 handle = _generateMockHandle(FheType(fheType));
         _approveHandleInACL(handle, sender);
-        vm.expectRevert(FHEVMExecutorNoEvents.InvalidType.selector);
+        vm.expectRevert(FHEVMExecutor.InvalidType.selector);
         vm.prank(sender);
         fhevmExecutor.cast(handle, FheType(fheType));
     }
@@ -1639,13 +1626,13 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         upgradeProxyAndDeployMockContracts(withEvents);
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesTrivialEncrypt));
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         fhevmExecutor.trivialEncrypt(pt, FheType(fheType));
     }
 
     function test_RevertsIfACLNotAllowed_Cast(bool withEvents) public {
         upgradeProxyAndDeployMockContracts(withEvents);
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.ACLNotAllowed.selector);
+        vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
         bytes32 handle = _generateMockHandle(FheType.Uint128);
         fhevmExecutor.cast(handle, FheType.Uint64);
     }
@@ -1653,7 +1640,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     function test_RevertsIfACLNotAllowed_UnaryOp(bool withEvents) public {
         upgradeProxyAndDeployMockContracts(withEvents);
         bytes32 handle = _generateMockHandle(FheType.Uint128);
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.ACLNotAllowed.selector);
+        vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
         /// @dev We use fheNeg as an example of a unary operation.
         fhevmExecutor.fheNeg(handle);
     }
@@ -1665,7 +1652,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address account = address(123);
         _approveHandleInACL(rhs, account);
 
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.ACLNotAllowed.selector);
+        vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
         vm.prank(account);
         /// @dev We use fheAdd as an example of a binary operation.
         fhevmExecutor.fheAdd(lhs, rhs, 0x00);
@@ -1678,7 +1665,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address account = address(123);
         _approveHandleInACL(lhs, account);
 
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.ACLNotAllowed.selector);
+        vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
         vm.prank(account);
         /// @dev We use fheAdd as an example of a binary operation.
         fhevmExecutor.fheAdd(lhs, rhs, 0x00);
@@ -1698,7 +1685,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, account);
         _approveHandleInACL(rhs, account);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.IncompatibleTypes.selector);
+        vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
         vm.prank(account);
         /// @dev We use fheAdd as an example of a binary operation.
         fhevmExecutor.fheAdd(lhs, rhs, 0x00);
@@ -1713,7 +1700,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(middle, account);
         _approveHandleInACL(rhs, account);
 
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.ACLNotAllowed.selector);
+        vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
         vm.prank(account);
         /// @dev We use fheIfThenElse as an example of a ternary operation.
         fhevmExecutor.fheIfThenElse(lhs, middle, rhs);
@@ -1728,7 +1715,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, account);
         _approveHandleInACL(rhs, account);
 
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.ACLNotAllowed.selector);
+        vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
         vm.prank(account);
         /// @dev We use fheIfThenElse as an example of a ternary operation.
         fhevmExecutor.fheIfThenElse(lhs, middle, rhs);
@@ -1743,7 +1730,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, account);
         _approveHandleInACL(middle, account);
 
-        vm.expectPartialRevert(FHEVMExecutorNoEvents.ACLNotAllowed.selector);
+        vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
         vm.prank(account);
         /// @dev We use fheIfThenElse as an example of a ternary operation.
         fhevmExecutor.fheIfThenElse(lhs, middle, rhs);
@@ -1763,7 +1750,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(middle, account);
         _approveHandleInACL(rhs, account);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.UnsupportedType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         vm.prank(account);
         /// @dev We use fheIfThenElse as an example of a ternary operation.
         fhevmExecutor.fheIfThenElse(lhs, middle, rhs);
@@ -1789,7 +1776,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(middle, account);
         _approveHandleInACL(rhs, account);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.IncompatibleTypes.selector);
+        vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
         vm.prank(account);
         /// @dev We use fheIfThenElse as an example of a ternary operation.
         fhevmExecutor.fheIfThenElse(lhs, middle, rhs);
@@ -1802,7 +1789,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address account = address(123);
         _approveHandleInACL(lhs, account);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.DivisionByZero.selector);
+        vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
         vm.prank(account);
         fhevmExecutor.fheDiv(lhs, rhs, 0x01);
     }
@@ -1814,7 +1801,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address account = address(123);
         _approveHandleInACL(lhs, account);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.DivisionByZero.selector);
+        vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
         vm.prank(account);
         fhevmExecutor.fheRem(lhs, rhs, 0x01);
     }
@@ -1827,7 +1814,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, account);
         _approveHandleInACL(rhs, account);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.IsNotScalar.selector);
+        vm.expectRevert(FHEVMExecutor.IsNotScalar.selector);
         vm.prank(account);
         fhevmExecutor.fheDiv(lhs, rhs, 0x00);
     }
@@ -1840,7 +1827,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(lhs, account);
         _approveHandleInACL(rhs, account);
 
-        vm.expectRevert(FHEVMExecutorNoEvents.IsNotScalar.selector);
+        vm.expectRevert(FHEVMExecutor.IsNotScalar.selector);
         vm.prank(account);
         fhevmExecutor.fheRem(lhs, rhs, 0x00);
     }
@@ -1848,7 +1835,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     function test_RevertsIfUpperBoundIsNotPowerOfTwo(uint256 upperBound, bool withEvents) public {
         upgradeProxyAndDeployMockContracts(withEvents);
         vm.assume(upperBound > 0 && ((upperBound & (upperBound - 1)) != 0));
-        vm.expectRevert(FHEVMExecutorNoEvents.NotPowerOfTwo.selector);
+        vm.expectRevert(FHEVMExecutor.NotPowerOfTwo.selector);
         fhevmExecutor.fheRandBounded(upperBound, FheType.Uint16);
     }
 
@@ -1875,7 +1862,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address userAddress = address(123);
         bytes memory mockInputProof = abi.encode("mockProof");
         bytes32 inputHandle = _generateMockHandle(FheType(fheType));
-        vm.expectRevert(FHEVMExecutorNoEvents.InvalidType.selector);
+        vm.expectRevert(FHEVMExecutor.InvalidType.selector);
         fhevmExecutor.verifyCiphertext(inputHandle, userAddress, mockInputProof, FheType(otherFheType));
     }
 }

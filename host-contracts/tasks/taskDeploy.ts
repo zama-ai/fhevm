@@ -24,7 +24,7 @@ async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUp
 
 task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
   // Compile the EmptyUUPS proxy contract
-  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+  await run('compile:specific', { contract: 'contracts/shared' });
 
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);

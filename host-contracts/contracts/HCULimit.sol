@@ -6,7 +6,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {fhevmExecutorAdd} from "../addresses/FHEVMExecutorAddress.sol";
 
-import {FheType} from "./FheType.sol";
+import {FheType} from "./shared/FheType.sol";
 
 /**
  * @title HCULimit
