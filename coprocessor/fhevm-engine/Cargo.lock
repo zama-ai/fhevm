@@ -2646,7 +2646,7 @@ dependencies = [
 
 [[package]]
 name = "coprocessor"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "actix-web",
  "alloy",
@@ -3447,7 +3447,7 @@ dependencies = [
 
 [[package]]
 name = "fhevm-listener"
-version = "0.0.1"
+version = "0.7.0"
 dependencies = [
  "alloy",
  "alloy-eips",
@@ -6714,7 +6714,7 @@ dependencies = [
 
 [[package]]
 name = "sns-executor"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "aligned-vec",
  "anyhow",
@@ -8896,7 +8896,7 @@ dependencies = [
 
 [[package]]
 name = "zkproof-worker"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "alloy-primitives 1.2.0",
  "anyhow",

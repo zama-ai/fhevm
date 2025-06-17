@@ -1,0 +1,59 @@
+name: coprocessor-tfhe-worker-docker-build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  release:
+    types:
+      - published
+
+concurrency:
+  group: fhevm-coprocessor-tfhe-worker-${{ github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check-changes:
+    name: coprocessor-tfhe-worker-docker-build/check-changes
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      changes-coprocessor-tfhe-worker: ${{ steps.filter.outputs.coprocessor-tfhe-worker }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            coprocessor-tfhe-worker:
+              - .github/workflows/coprocessor-tfhe-worker-docker-build.yml
+              - coprocessor/fhevm-engine/coprocessor/**
+              - coprocessor/fhevm-engine/Cargo.toml
+              - coprocessor/fhevm-engine/Cargo.lock
+  build:
+    name: coprocessor-tfhe-worker-docker-build/build
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-coprocessor-tfhe-worker == 'true' || github.event_name == 'release' }}
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef9d90453e0d776453026c751fbbd48e410d605a
+    secrets:
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+      attestations: 'write'
+      packages: 'write'
+      id-token: 'write'
+    with:
+      working-directory: "."
+      docker-context: "."
+      push_image: true
+      image-name: "fhevm/coprocessor/tfhe-worker"
+      docker-file: "coprocessor/fhevm-engine/coprocessor/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-tfhe-worker"

@@ -1,4 +1,4 @@
-# Stage 1: Build Transaction Sender
+# Stage 1: Build SNS Worker
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.85.0 AS builder
 
 USER root
@@ -10,11 +10,11 @@ COPY coprocessor/proto ./coprocessor/proto
 
 WORKDIR /app/coprocessor/fhevm-engine
 
-# Build transaction_sender binary
+# Build sns_executor binary
 RUN cargo fetch && \
-    SQLX_OFFLINE=true cargo build --release -p transaction-sender
+    SQLX_OFFLINE=true cargo build --release -p sns-executor
 
-# Stage 3: Runtime image
+# Stage 2: Runtime image
 FROM cgr.dev/chainguard/glibc-dynamic:latest AS prod
 
 COPY --from=builder /lib/ /lib/
@@ -27,10 +27,10 @@ COPY --from=builder /etc/ssl/certs/ /etc/ssl/certs/
 COPY --from=builder --chown=fhevm:fhevm /home/fhevm /home/fhevm
 COPY --from=builder --chown=fhevm:fhevm /app /app
 
-COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/transaction_sender /usr/local/bin/transaction_sender
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/sns_worker /usr/local/bin/sns_worker
 
 USER fhevm:fhevm
 
-CMD ["/usr/local/bin/transaction_sender"]
+CMD ["/usr/local/bin/sns_worker"]
 
 FROM prod AS dev
