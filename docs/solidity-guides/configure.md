@@ -22,7 +22,7 @@ The `ZamaConfig` library exposes functions to retrieve FHEVM configuration struc
 
 Under the hood, this library encapsulates the network-specific addresses of Zama's FHEVM infrastructure into a single struct (`FHEVMConfigStruct`). 
 
-## SepoliaConfig.sol
+## SepoliaConfig
 
 The `SepoliaConfig` contract is designed to be inherited by a user contract. The constructor automatically sets up the FHEVM coprocessor and decryption oracle using the configuration provided by the library for the respective network. When a contract inherits from `SepoliaConfig`, the constructor calls `FHE.setCoprocessor` and `FHE.setDecryptionOracle` with the appropriate addresses. This ensures that the inheriting contract is automatically wired to the correct FHEVM contracts and oracle for the target network, abstracting away manual address management and reducing the risk of misconfiguration.
 
@@ -65,4 +65,4 @@ require(FHE.isInitialized(counter), "Counter not initialized!");
 
 ## Summary
 
-By leveraging prebuilt a configuration contract like `SepoliaConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.
+By leveraging prebuilt a configuration contract like `SepoliaConfig` in `ZamaConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.
