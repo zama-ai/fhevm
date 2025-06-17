@@ -262,6 +262,7 @@ if [ "$FORCE_BUILD" = true ]; then
   BUILD_TAG=" (local build)"
 fi
 
+log_info "FHEVM Stack Versions:"
 log_info "FHEVM Contracts:"
 log_info "  gateway-contracts:${GATEWAY_VERSION}${BUILD_TAG}"
 log_info "  host-contracts:${HOST_VERSION}${BUILD_TAG}"

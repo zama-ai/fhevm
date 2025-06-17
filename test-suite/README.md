@@ -53,9 +53,13 @@ cd test-suite/fhevm
 ./fhevm-cli clean
 ```
 
-### Forcing Local Builds (`--build`)
+### WIP - Forcing Local Builds (`--build`)
 
-The `fhevm-cli` script is configured to use specific versions for Docker images for each service. While the default `./fhevm-cli deploy` command would typically attempt to pull these images, **please note that these pre-built Docker images are currently hosted in a private registry and are not publicly available for direct pulling.**
+⚠️ **IMPORTANT: THIS FEATURE IS STILL A WORK IN PROGRESS!** ⚠️
+We are actively working to optimize caching for local machines and GitHub runners.
+
+🚨 **SECURITY NOTICE:**
+The pre-built Docker images for the FHEVM stack are currently hosted in a **private registry** and are **not publicly available** for direct pulling. This is intentional for security reasons.
 
 Therefore, for external developers or anyone setting up the stack for the first time without access to our private registry, **using the `--build` option is the recommended and necessary way to get started:**
 
@@ -73,7 +77,7 @@ This command instructs Docker Compose to:
 *   **Local Modifications:** If you have made local changes to any of the Dockerfiles or the build context of a service (e.g., you've cloned one of the sub-repositories like `fhevm-contracts` or `fhevm-coprocessor` into the expected relative paths and made changes), `--build` ensures these changes are incorporated.
 *   **Ensuring Correct Setup:** It guarantees that you are running with images built directly from the provided source, eliminating discrepancies that could arise from attempting to pull non-existent or inaccessible public images.
 
-In summary, until public images are made available, external users should always use `./fhevm-cli deploy --build` to ensure a successful deployment.
+🚧 **In summary:** Until public images are made available, external users should always use `./fhevm-cli deploy --build` to ensure a successful deployment.
 
 ## Security policy
 

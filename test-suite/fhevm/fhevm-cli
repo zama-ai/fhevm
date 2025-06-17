@@ -45,7 +45,7 @@ function usage {
   echo -e "${BOLD}Usage:${RESET} ${YELLOW}fhevm-cli${RESET} ${CYAN}COMMAND [OPTIONS]${RESET}"
   echo
   echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
-  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build]${RESET}    Deploy the full fhevm stack (optionally rebuild images)"
+  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
   echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|erc20|debug)"
   echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
   echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
