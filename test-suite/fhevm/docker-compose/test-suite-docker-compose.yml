@@ -2,7 +2,7 @@ services:
 
   test-suite-e2e-debug:
     container_name: fhevm-test-suite-e2e-debug
-    # image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
+    image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
     build:
       context: ../..
       dockerfile: e2e/Dockerfile

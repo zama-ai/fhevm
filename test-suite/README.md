@@ -26,6 +26,7 @@ KMS can be configured to two modes:
 
 ## Get started
 
+### Quickstart
 The test suite offers a unified CLI for all operations:
 
 ```sh
@@ -51,6 +52,28 @@ cd test-suite/fhevm
 # Clean up
 ./fhevm-cli clean
 ```
+
+### Forcing Local Builds (`--build`)
+
+The `fhevm-cli` script is configured to use specific versions for Docker images for each service. While the default `./fhevm-cli deploy` command would typically attempt to pull these images, **please note that these pre-built Docker images are currently hosted in a private registry and are not publicly available for direct pulling.**
+
+Therefore, for external developers or anyone setting up the stack for the first time without access to our private registry, **using the `--build` option is the recommended and necessary way to get started:**
+
+```sh
+./fhevm-cli deploy --build
+```
+
+This command instructs Docker Compose to:
+1.  Build the images locally using the `Dockerfile` and context specified in the respective `docker-compose/*.yml` files for each service. This process uses the source code available in your local checkout (or cloned sub-repositories).
+2.  Tag the newly built images with the versions specified in the `fhevm-cli` script.
+3.  Then, start the services using these freshly built local images.
+
+**Why `--build` is essential for external developers:**
+*   **Image Access:** Since pre-built images are private, `--build` allows you to construct the necessary images from the publicly available source code.
+*   **Local Modifications:** If you have made local changes to any of the Dockerfiles or the build context of a service (e.g., you've cloned one of the sub-repositories like `fhevm-contracts` or `fhevm-coprocessor` into the expected relative paths and made changes), `--build` ensures these changes are incorporated.
+*   **Ensuring Correct Setup:** It guarantees that you are running with images built directly from the provided source, eliminating discrepancies that could arise from attempting to pull non-existent or inaccessible public images.
+
+In summary, until public images are made available, external users should always use `./fhevm-cli deploy --build` to ensure a successful deployment.
 
 ## Security policy
 

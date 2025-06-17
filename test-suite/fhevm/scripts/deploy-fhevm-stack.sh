@@ -1,16 +1,11 @@
 #!/bin/bash
 
-# Exit on error
 set -e
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
-
-# Global project vars
-PROJECT="fhevm"
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -23,6 +18,24 @@ log_warn() {
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
 }
+
+# Global project vars
+PROJECT="fhevm"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Argument Parsing
+FORCE_BUILD=false
+NEW_ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--build" ]]; then
+    FORCE_BUILD=true
+    log_info "Force build option detected. Services will be rebuilt."
+  else
+    NEW_ARGS+=("$arg")
+  fi
+done
+# Overwrite original arguments with the filtered list (removes --build from $@)
+set -- "${NEW_ARGS[@]}"
 
 # Function to check if services are ready based on expected state
 wait_for_service() {
@@ -165,6 +178,50 @@ run_compose() {
     done
 }
 
+# Function to start an entire docker-compose file with --build and wait for specified services
+run_compose_with_build() {
+    local component=$1
+    local service_desc=$2
+    local env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
+    local compose_file="$SCRIPT_DIR/../docker-compose/$component-docker-compose.yml"
+    shift 2
+
+    local services=("$@")
+    local service_states=()
+    local service_names=()
+
+    # Parse service names and states
+    for arg in "${services[@]}"; do
+        IFS=':' read -r name state <<< "$arg"
+        service_names+=("$name")
+        service_states+=("$state")
+    done
+
+    log_info "Building and starting $service_desc using local environment file..."
+    log_info "Using environment file: $env_file"
+
+    # Start all services with --build
+    if ! docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" up --build -d; then
+        log_error "Failed to build and start $service_desc"
+        return 1
+    fi
+
+    # Wait for each specified service
+    for i in "${!service_names[@]}"; do
+        local name="${service_names[$i]}"
+        local expect_running=true
+
+        if [[ "${service_states[$i]}" == "complete" ]]; then
+            expect_running=false
+        fi
+
+        wait_for_service "$compose_file" "$name" "$expect_running"
+        if [ $? -ne 0 ]; then
+            return 1
+        fi
+    done
+}
+
 get_minio_ip() {
     # Get IP address of minio container and update AWS_ENDPOINT_URL
     # IMPORTANT: this is a workaround as sns-worker is not able to resolve the container name
@@ -199,13 +256,28 @@ prepare_all_env_files
 prepare_local_config_relayer
 
 log_info "Deploying FHEVM Stack..."
-log_info "Using component versions:"
-log_info "  FHEVM GATEWAY: ${GATEWAY_VERSION}"
-log_info "  FHEVM HOST: ${HOST_VERSION}"
-log_info "  FHEVM COPROCESSOR: ${COPROCESSOR_VERSION}"
-log_info "  FHEVM DB MIGRATION: ${DB_MIGRATION_VERSION}"
-log_info "  FHEVM KMS CONNECTOR: ${CONNECTOR_VERSION}"
-log_info "  FHEVM TEST SUITE: ${TEST_SUITE_VERSION}"
+
+BUILD_TAG=""
+if [ "$FORCE_BUILD" = true ]; then
+  BUILD_TAG=" (local build)"
+fi
+
+log_info "FHEVM Contracts:"
+log_info "  gateway-contracts:${GATEWAY_VERSION}${BUILD_TAG}"
+log_info "  host-contracts:${HOST_VERSION}${BUILD_TAG}"
+log_info "FHEVM Coprocessor Services:"
+log_info "  coprocessor/db-migration:${DB_MIGRATION_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/gw-listener:${HOST_LISTENER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/listener-listener:${GW_LISTENER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/tx-sender:${TX_SENDER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/sns-worker:${SNS_WORKER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/zkproof-worker:${ZKPROOF_WORKER_VERSION}${BUILD_TAG}"
+log_info "FHEVM KMS Connector Services:"
+log_info "  kms-connector:${CONNECTOR_VERSION}${BUILD_TAG}"
+log_info "FHEVM Test Suite:"
+log_info "  test-suite/e2e:${TEST_SUITE_VERSION}${BUILD_TAG}"
+log_info "External Dependencies:"
 log_info "  KMS CORE: ${CORE_VERSION}"
 log_info "  RELAYER: ${RELAYER_VERSION}"
 
@@ -213,24 +285,39 @@ run_compose "minio" "MinIO Services" \
     "${PROJECT}-minio:running" \
     "${PROJECT}-minio-setup:complete"
 
+# External dependency - KMS Core
 run_compose "core" "Core Services" \
     "kms-core:running" \
     "${PROJECT}-generate-fhe-keys:complete"
 
 "${SCRIPT_DIR}/update-kms-keys.sh"
 
-run_compose "gateway" "Gateway Network Services" \
+if [ "$FORCE_BUILD" = true ]; then
+  run_compose_with_build "gateway" "Gateway Network Services" \
     "${PROJECT}-gateway-node:running" \
     "${PROJECT}-gateway-sc-deploy:complete" \
     "${PROJECT}-gateway-sc-add-network:complete"
+else
+  run_compose "gateway" "Gateway Network Services" \
+    "${PROJECT}-gateway-node:running" \
+    "${PROJECT}-gateway-sc-deploy:complete" \
+    "${PROJECT}-gateway-sc-add-network:complete"
+fi
 
-run_compose "host" "Host Network Services" \
+if [ "$FORCE_BUILD" = true ]; then
+  run_compose_with_build "host" "Host Network Services" \
     "${PROJECT}-host-node:running" \
     "${PROJECT}-host-sc-deploy:complete"
+else
+  run_compose "host" "Host Network Services" \
+    "${PROJECT}-host-node:running" \
+    "${PROJECT}-host-sc-deploy:complete"
+fi
 
 get_minio_ip "fhevm-minio"
 
-run_compose "coprocessor" "Coprocessor Services" \
+if [ "$FORCE_BUILD" = true ]; then
+  run_compose_with_build "coprocessor" "Coprocessor Services" \
     "${PROJECT}-coprocessor-db:running" \
     "${PROJECT}-key-downloader:complete" \
     "${PROJECT}-db-migration:complete" \
@@ -240,14 +327,37 @@ run_compose "coprocessor" "Coprocessor Services" \
     "${PROJECT}-zkproof-worker:running" \
     "${PROJECT}-sns-worker:running" \
     "${PROJECT}-transaction-sender:running"
+else
+  run_compose "coprocessor" "Coprocessor Services" \
+    "${PROJECT}-coprocessor-db:running" \
+    "${PROJECT}-key-downloader:complete" \
+    "${PROJECT}-db-migration:complete" \
+    "${PROJECT}-fhevm-listener:running" \
+    "${PROJECT}-gw-listener:running" \
+    "${PROJECT}-tfhe-worker:running" \
+    "${PROJECT}-zkproof-worker:running" \
+    "${PROJECT}-sns-worker:running" \
+    "${PROJECT}-transaction-sender:running"
+fi
 
-run_compose "connector" "Connector Services" \
+if [ "$FORCE_BUILD" = true ]; then
+  run_compose_with_build "connector" "Connector Services" \
     "kms-connector:running"
+else
+  run_compose "connector" "Connector Services" \
+    "kms-connector:running"
+fi
 
+# External dependency - Relayer
 run_compose "relayer" "Relayer Services" \
     "${PROJECT}-relayer:running"
 
-run_compose "test-suite" "Test Suite E2E Tests" \
+if [ "$FORCE_BUILD" = true ]; then
+  run_compose_with_build "test-suite" "Test Suite E2E Tests" \
     "${PROJECT}-test-suite-e2e-debug:running"
+else
+  run_compose "test-suite" "Test Suite E2E Tests" \
+    "${PROJECT}-test-suite-e2e-debug:running"
+fi
 
 log_info "All services started successfully!"

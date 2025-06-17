@@ -34,7 +34,7 @@ services:
 
   db-migration:
     container_name: fhevm-db-migration
-    # image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
@@ -55,7 +55,7 @@ services:
   ####################### COPROCESSOR SERVICES #######################
   host-listener:
     container_name: fhevm-host-listener
-    # image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${HOST_LISTENER_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${HOST_LISTENER_VERSION}
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/fhevm-listener/Dockerfile
@@ -74,7 +74,7 @@ services:
 
   gw-listener:
     container_name: fhevm-gw-listener
-    # image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${GW_LISTENER_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${GW_LISTENER_VERSION}
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
@@ -102,7 +102,7 @@ services:
 
   tfhe-worker:
     container_name: fhevm-tfhe-worker
-    # image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/coprocessor/Dockerfile
@@ -126,7 +126,7 @@ services:
 
   zkproof-worker:
     container_name: fhevm-zkproof-worker
-    # image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${ZKPROOF_WORKER_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${ZKPROOF_WORKER_VERSION}
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/zkproof-worker/Dockerfile
@@ -148,7 +148,7 @@ services:
 
   sns-worker:
     container_name: fhevm-sns-worker
-    # image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${SNS_WORKER_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${SNS_WORKER_VERSION}
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/sns-executor/Dockerfile
@@ -182,7 +182,7 @@ services:
 
   transaction-sender:
     container_name: fhevm-transaction-sender
-    # image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${COPROCESSOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${TX_SENDER_VERSION}
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/transaction-sender/Dockerfile
