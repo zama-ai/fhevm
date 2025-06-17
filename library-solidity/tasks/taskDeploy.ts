@@ -13,7 +13,7 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
     await hre.run('clean');
   }
   await hre.run('compile:specific', { contract: 'examples/' });
-  await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxy' });
+  await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/shared' });
   await hre.run('task:deployEmptyUUPSProxies');
   // It needs to recompile to account for the change in addresses.
   await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/' });
@@ -80,7 +80,7 @@ task('task:deployDecryptionOracle').setAction(async function (_taskArguments: Ta
 
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory(
-    'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
     deployer,
   );
   const newImplem = await ethers.getContractFactory('DecryptionOracle', deployer);
@@ -95,7 +95,7 @@ task('task:deployACL').setAction(async function (_taskArguments: TaskArguments, 
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory(
-    'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
     deployer,
   );
   const newImplem = await ethers.getContractFactory('ACL', deployer);
@@ -110,7 +110,7 @@ task('task:deployFHEVMExecutor').setAction(async function (_taskArguments: TaskA
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory(
-    'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
     deployer,
   );
   let newImplem;
@@ -126,7 +126,7 @@ task('task:deployKMSVerifier').setAction(async function (taskArguments: TaskArgu
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory(
-    'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
     deployer,
   );
   const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/KMSVerifier.sol:KMSVerifier', deployer);
@@ -145,7 +145,10 @@ task('task:deployKMSVerifier').setAction(async function (taskArguments: TaskArgu
     initialSigners.push(kmsSignerAddress);
   }
   await upgrades.upgradeProxy(proxy, newImplem, {
-    call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold] },
+    call: {
+      fn: 'initializeFromEmptyProxy',
+      args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold],
+    },
   });
   console.info('KMSVerifier code set successfully at address:', proxyAddress);
   console.info(`${numSigners} KMS signers were added to KMSVerifier at initialization`);
@@ -162,7 +165,7 @@ task('task:deployInputVerifier')
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory(
-      'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+      'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
       deployer,
     );
     const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/InputVerifier.sol:InputVerifier', deployer);
@@ -187,7 +190,7 @@ task('task:deployInputVerifier')
     }
 
     await upgrades.upgradeProxy(proxy, newImplem, {
-      call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource, initialSigners] },
+      call: { fn: 'initializeFromEmptyProxy', args: [verifyingContractSource, chainIDSource, initialSigners] },
     });
     console.info('InputVerifier code set successfully at address:', proxyAddress);
   });
@@ -196,7 +199,7 @@ task('task:deployHCULimit').setAction(async function (_taskArguments: TaskArgume
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory(
-    'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
     deployer,
   );
   const newImplem = await ethers.getContractFactory('HCULimit', deployer);
