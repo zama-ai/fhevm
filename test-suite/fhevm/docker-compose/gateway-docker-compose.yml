@@ -27,6 +27,10 @@ services:
     build:
       context: ../../../gateway-contracts
       dockerfile: Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     env_file:
       - ../env/staging/.env.gateway.local
     command:
@@ -43,6 +47,10 @@ services:
     build:
       context: ../../../gateway-contracts
       dockerfile: Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     env_file:
       - ../env/staging/.env.gateway.local
     command:

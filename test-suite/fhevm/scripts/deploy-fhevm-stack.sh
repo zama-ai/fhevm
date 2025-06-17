@@ -267,8 +267,8 @@ log_info "  gateway-contracts:${GATEWAY_VERSION}${BUILD_TAG}"
 log_info "  host-contracts:${HOST_VERSION}${BUILD_TAG}"
 log_info "FHEVM Coprocessor Services:"
 log_info "  coprocessor/db-migration:${DB_MIGRATION_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/gw-listener:${HOST_LISTENER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/listener-listener:${GW_LISTENER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/gw-listener:${GW_LISTENER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/host-listener:${HOST_LISTENER_VERSION}${BUILD_TAG}"
 log_info "  coprocessor/tx-sender:${TX_SENDER_VERSION}${BUILD_TAG}"
 log_info "  coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}${BUILD_TAG}"
 log_info "  coprocessor/sns-worker:${SNS_WORKER_VERSION}${BUILD_TAG}"
@@ -321,7 +321,7 @@ if [ "$FORCE_BUILD" = true ]; then
     "${PROJECT}-coprocessor-db:running" \
     "${PROJECT}-key-downloader:complete" \
     "${PROJECT}-db-migration:complete" \
-    "${PROJECT}-fhevm-listener:running" \
+    "${PROJECT}-host-listener:running" \
     "${PROJECT}-gw-listener:running" \
     "${PROJECT}-tfhe-worker:running" \
     "${PROJECT}-zkproof-worker:running" \
@@ -332,7 +332,7 @@ else
     "${PROJECT}-coprocessor-db:running" \
     "${PROJECT}-key-downloader:complete" \
     "${PROJECT}-db-migration:complete" \
-    "${PROJECT}-fhevm-listener:running" \
+    "${PROJECT}-host-listener:running" \
     "${PROJECT}-gw-listener:running" \
     "${PROJECT}-tfhe-worker:running" \
     "${PROJECT}-zkproof-worker:running" \

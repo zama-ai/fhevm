@@ -6,6 +6,10 @@ services:
     build:
       context: ../../..
       dockerfile: kms-connector/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     env_file:
       - ../env/staging/.env.connector.local
     volumes:

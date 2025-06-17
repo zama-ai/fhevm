@@ -38,6 +38,10 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     env_file:
       - ../env/staging/.env.coprocessor.local
     environment:
@@ -59,6 +63,10 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/fhevm-listener/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -78,6 +86,10 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/liveness || exit 1"]
       interval: 10s
@@ -106,6 +118,10 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/coprocessor/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -130,6 +146,10 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/zkproof-worker/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -152,6 +172,10 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/sns-executor/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -186,6 +210,10 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/transaction-sender/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:

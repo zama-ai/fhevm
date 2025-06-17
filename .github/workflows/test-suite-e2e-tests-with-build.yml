@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: test-suite-e2e-tests-with-build/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -34,7 +35,8 @@ jobs:
           filters: |
             fhevm:
               - 'test-suite/fhevm/**'
-  fhevm-e2e-test:
+  tests:
+    name: test-suite-e2e-tests-with-build/tests
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
     permissions:
@@ -47,7 +49,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Setup Docker
+      - name: Display Docker and Buildx version
+        run: |
+          echo "Docker version: $(docker --version)"
+          echo "Docker Buildx version: $(docker buildx version)"
+          echo "--- Docker Info ---"
+          docker info
+          echo "-------------------"
+
+      - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
       - name: Login to GitHub Container Registry
@@ -62,6 +72,8 @@ jobs:
         env:
           CORE_VERSION: ${{ inputs.core_version }}
           RELAYER_VERSION: ${{ inputs.relayer_version }}
+          DOCKER_BUILDKIT: 1
+        timeout-minutes: 90
         run: |
           ./fhevm-cli deploy --build
 
