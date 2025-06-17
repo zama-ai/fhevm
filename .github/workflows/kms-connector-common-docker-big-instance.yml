@@ -1,5 +1,11 @@
 name: kms-connector-common-docker-big-instance
 
+permissions:
+  contents: read
+  pull-requests: write
+  packages: write
+  id-token: write
+
 on:
   workflow_call:
     inputs:
@@ -75,10 +81,10 @@ jobs:
     needs: [start-runner]
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef9d90453e0d776453026c751fbbd48e410d605a
     permissions:
-      actions: 'read'
-      contents: 'read'
-      id-token: 'write'
-      pull-requests: 'read'
+      actions: read
+      contents: read
+      id-token: write
+      pull-requests: read
       packages: write
       attestations: write
     secrets:

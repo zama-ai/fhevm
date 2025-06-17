@@ -6,6 +6,9 @@ on:
 env:
   ACTIONLINT_VERSION: 1.6.27
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: common-pull-request/lint (bpr)

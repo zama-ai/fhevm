@@ -1,6 +1,12 @@
 # Main build workflow that handles both x86 and ARM builds
 name: kms-connector-common-testing
 
+permissions:
+  contents: read
+  pull-requests: write
+  packages: write
+  id-token: write
+
 on:
   workflow_call:
     inputs:
@@ -92,6 +98,7 @@ jobs:
         with:
           submodules: true
           token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+          persist-credentials: 'false'
 
       - name: Setup Home
         if: "${{ !contains(inputs.runs-on, 'ubuntu') }}"
