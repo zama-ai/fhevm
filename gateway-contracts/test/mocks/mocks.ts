@@ -207,7 +207,7 @@ describe("Mock contracts", function () {
 
     it("Should emit Reinitialization event on reinitialization", async function () {
       await expect(gatewayConfigMock.reinitializeV2([DefaultCustodian]))
-        .to.emit(gatewayConfigMock, "Reinitialization")
+        .to.emit(gatewayConfigMock, "ReinitializeGatewayConfigV2")
         .withArgs(toValues([DefaultCustodian]));
     });
 
