@@ -51,7 +51,7 @@ interface IGatewayConfig {
 
     event AddHostChain(HostChain hostChain);
     event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
-    event Reinitialization(Custodian[] custodians);
+    event ReinitializeGatewayConfigV2(Custodian[] custodians);
     event UpdateMpcThreshold(uint256 newMpcThreshold);
     event UpdatePauser(address newPauser);
     event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
@@ -757,7 +757,7 @@ interface IGatewayConfig {
   },
   {
     "type": "event",
-    "name": "Reinitialization",
+    "name": "ReinitializeGatewayConfigV2",
     "inputs": [
       {
         "name": "custodians",
@@ -3846,9 +3846,9 @@ event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `Reinitialization((address,address,bytes)[])` and selector `0x6b5560fe85319aa437e2547c24cc6b89b1af2bdeefe51b85d2fba91bff9d29c4`.
+    /**Event with signature `ReinitializeGatewayConfigV2((address,address,bytes)[])` and selector `0x5d3104c54d74e1dfed77e78ac05c70001d83d277c6e9747d252183b7abf0a7d8`.
 ```solidity
-event Reinitialization(Custodian[] custodians);
+event ReinitializeGatewayConfigV2(Custodian[] custodians);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3857,7 +3857,7 @@ event Reinitialization(Custodian[] custodians);
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct Reinitialization {
+    pub struct ReinitializeGatewayConfigV2 {
         #[allow(missing_docs)]
         pub custodians: alloy::sol_types::private::Vec<
             <Custodian as alloy::sol_types::SolType>::RustType,
@@ -3872,17 +3872,17 @@ event Reinitialization(Custodian[] custodians);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for Reinitialization {
+        impl alloy_sol_types::SolEvent for ReinitializeGatewayConfigV2 {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Array<Custodian>,);
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "Reinitialization((address,address,bytes)[])";
+            const SIGNATURE: &'static str = "ReinitializeGatewayConfigV2((address,address,bytes)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                107u8, 85u8, 96u8, 254u8, 133u8, 49u8, 154u8, 164u8, 55u8, 226u8, 84u8,
-                124u8, 36u8, 204u8, 107u8, 137u8, 177u8, 175u8, 43u8, 222u8, 239u8,
-                229u8, 27u8, 133u8, 210u8, 251u8, 169u8, 27u8, 255u8, 157u8, 41u8, 196u8,
+                93u8, 49u8, 4u8, 197u8, 77u8, 116u8, 225u8, 223u8, 237u8, 119u8, 231u8,
+                138u8, 192u8, 92u8, 112u8, 0u8, 29u8, 131u8, 210u8, 119u8, 198u8, 233u8,
+                116u8, 125u8, 37u8, 33u8, 131u8, 183u8, 171u8, 240u8, 167u8, 216u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -3935,7 +3935,7 @@ event Reinitialization(Custodian[] custodians);
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for Reinitialization {
+        impl alloy_sol_types::private::IntoLogData for ReinitializeGatewayConfigV2 {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -3944,9 +3944,11 @@ event Reinitialization(Custodian[] custodians);
             }
         }
         #[automatically_derived]
-        impl From<&Reinitialization> for alloy_sol_types::private::LogData {
+        impl From<&ReinitializeGatewayConfigV2> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &Reinitialization) -> alloy_sol_types::private::LogData {
+            fn from(
+                this: &ReinitializeGatewayConfigV2,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -9375,7 +9377,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         InitializeGatewayConfig(InitializeGatewayConfig),
         #[allow(missing_docs)]
-        Reinitialization(Reinitialization),
+        ReinitializeGatewayConfigV2(ReinitializeGatewayConfigV2),
         #[allow(missing_docs)]
         UpdateMpcThreshold(UpdateMpcThreshold),
         #[allow(missing_docs)]
@@ -9400,14 +9402,14 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 165u8, 156u8, 176u8, 37u8, 67u8, 252u8, 118u8, 48u8, 132u8, 55u8,
             ],
             [
+                93u8, 49u8, 4u8, 197u8, 77u8, 116u8, 225u8, 223u8, 237u8, 119u8, 231u8,
+                138u8, 192u8, 92u8, 112u8, 0u8, 29u8, 131u8, 210u8, 119u8, 198u8, 233u8,
+                116u8, 125u8, 37u8, 33u8, 131u8, 183u8, 171u8, 240u8, 167u8, 216u8,
+            ],
+            [
                 102u8, 118u8, 147u8, 65u8, 239u8, 253u8, 38u8, 143u8, 196u8, 233u8,
                 169u8, 200u8, 242u8, 123u8, 252u8, 150u8, 133u8, 7u8, 181u8, 25u8, 176u8,
                 221u8, 185u8, 180u8, 173u8, 61u8, 237u8, 95u8, 3u8, 1u8, 104u8, 55u8,
-            ],
-            [
-                107u8, 85u8, 96u8, 254u8, 133u8, 49u8, 154u8, 164u8, 55u8, 226u8, 84u8,
-                124u8, 36u8, 204u8, 107u8, 137u8, 177u8, 175u8, 43u8, 222u8, 239u8,
-                229u8, 27u8, 133u8, 210u8, 251u8, 169u8, 27u8, 255u8, 157u8, 41u8, 196u8,
             ],
             [
                 131u8, 126u8, 10u8, 101u8, 40u8, 218u8, 223u8, 162u8, 220u8, 121u8, 38u8,
@@ -9459,13 +9461,15 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         )
                         .map(Self::InitializeGatewayConfig)
                 }
-                Some(<Reinitialization as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <Reinitialization as alloy_sol_types::SolEvent>::decode_raw_log(
+                Some(
+                    <ReinitializeGatewayConfigV2 as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <ReinitializeGatewayConfigV2 as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                             validate,
                         )
-                        .map(Self::Reinitialization)
+                        .map(Self::ReinitializeGatewayConfigV2)
                 }
                 Some(
                     <UpdateMpcThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -9529,7 +9533,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::InitializeGatewayConfig(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::Reinitialization(inner) => {
+                Self::ReinitializeGatewayConfigV2(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::UpdateMpcThreshold(inner) => {
@@ -9554,7 +9558,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::InitializeGatewayConfig(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::Reinitialization(inner) => {
+                Self::ReinitializeGatewayConfigV2(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UpdateMpcThreshold(inner) => {
@@ -10007,11 +10011,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<T, &P, InitializeGatewayConfig, N> {
             self.event_filter::<InitializeGatewayConfig>()
         }
-        ///Creates a new event filter for the [`Reinitialization`] event.
-        pub fn Reinitialization_filter(
+        ///Creates a new event filter for the [`ReinitializeGatewayConfigV2`] event.
+        pub fn ReinitializeGatewayConfigV2_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, Reinitialization, N> {
-            self.event_filter::<Reinitialization>()
+        ) -> alloy_contract::Event<T, &P, ReinitializeGatewayConfigV2, N> {
+            self.event_filter::<ReinitializeGatewayConfigV2>()
         }
         ///Creates a new event filter for the [`UpdateMpcThreshold`] event.
         pub fn UpdateMpcThreshold_filter(

@@ -12,7 +12,7 @@ contract GatewayConfigMock {
         Custodian[] custodians
     );
 
-    event Reinitialization(Custodian[] custodians);
+    event ReinitializeGatewayConfigV2(Custodian[] custodians);
 
     event UpdatePauser(address newPauser);
 
@@ -45,7 +45,7 @@ contract GatewayConfigMock {
     }
 
     function reinitializeV2(Custodian[] memory custodians) external {
-        emit Reinitialization(custodians);
+        emit ReinitializeGatewayConfigV2(custodians);
     }
 
     function updatePauser(address newPauser) external {
