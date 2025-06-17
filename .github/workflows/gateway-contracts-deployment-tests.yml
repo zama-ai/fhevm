@@ -11,9 +11,9 @@ jobs:
   check-changes:
     name: gateway-contracts-deploymenent-tests/check-changes
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
@@ -96,6 +96,6 @@ jobs:
           make docker-compose-down
 
 permissions:
-  contents: read
-  checks: write
-  packages: read
+  contents: 'read'
+  checks: 'write'
+  packages: 'read'

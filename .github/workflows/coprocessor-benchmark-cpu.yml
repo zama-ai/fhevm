@@ -31,7 +31,7 @@ jobs:
     name: coprocessor-benchmarks-cpu/setup-instance
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -53,7 +53,7 @@ jobs:
     continue-on-error: true
     timeout-minutes: 720  # 12 hours
     permissions:
-      contents: read
+      contents: 'read'
     strategy:
       fail-fast: false
       # explicit include-based build matrix, of known valid options
@@ -179,7 +179,7 @@ jobs:
     needs: [ setup-instance, benchmarks-cpu ]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     steps:
       - name: Stop remote instance
         id: stop-instance

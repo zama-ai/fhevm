@@ -11,9 +11,9 @@ jobs:
   check-changes:
     name: coprocessor-dependency-analysis/check-changes
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       changes-rust-files: ${{ steps.filter.outputs.rust-files }}
@@ -69,5 +69,5 @@ jobs:
           cargo-audit audit
 
 permissions:
-  contents: read
-  checks: write
+  contents: 'read'
+  checks: 'write'

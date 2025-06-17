@@ -10,9 +10,9 @@ jobs:
   check-changes:
     name: charts-helm-checks/check-changes
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       changes-charts: ${{ steps.filter.outputs.charts }}
@@ -33,7 +33,7 @@ jobs:
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
     runs-on: 'ubuntu-latest'
     permissions:
-      contents: read
+      contents: 'read'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -48,7 +48,7 @@ jobs:
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

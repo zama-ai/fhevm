@@ -11,9 +11,9 @@ jobs:
   check-changes:
     name: coprocessor-cargo-test/check-changes
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       changes-rust-files: ${{ steps.filter.outputs.rust-files }}
@@ -34,9 +34,9 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
     permissions:
-      contents: read
-      checks: write
-      packages: read
+      contents: 'read'
+      checks: 'write'
+      packages: 'read'
     runs-on: large_ubuntu_16
     steps:
     - name: Checkout code

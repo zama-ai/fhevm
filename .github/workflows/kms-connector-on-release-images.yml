@@ -20,7 +20,7 @@ jobs:
       contents: 'read'
       id-token: 'write'
       pull-requests: 'read'
-      packages: write
+      packages: 'write'
       attestations: write
     with:
       docker-file: './kms-connector/Dockerfile'

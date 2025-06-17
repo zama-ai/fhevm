@@ -9,9 +9,9 @@ jobs:
   check-changes:
     name: host-contracts-slither-analysis/check-changes
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
@@ -34,9 +34,9 @@ jobs:
     env:
       HARDHAT_NETWORK: hardhat
     permissions:
-      contents: read
-      checks: write
-      security-events: write
+      contents: 'read'
+      checks: 'write'
+      security-events: 'write'
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

@@ -7,7 +7,7 @@ env:
   ACTIONLINT_VERSION: 1.6.27
 
 permissions:
-  contents: read
+  contents: 'read'
 
 jobs:
   lint:

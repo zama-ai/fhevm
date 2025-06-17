@@ -17,9 +17,9 @@ jobs:
   check-changes:
     name: test-suite-docker-build/check-changes
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       changes-e2e-docker: ${{ steps.filter.outputs.e2e-docker }}
@@ -43,9 +43,9 @@ jobs:
       GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
     permissions:
-      contents: "read"
-      id-token: "write"
-      packages: "write"
+      contents: 'read'
+      id-token: 'write'
+      packages: 'write'
     with:
       working-directory: "test-suite"
       docker-context: "test-suite"
