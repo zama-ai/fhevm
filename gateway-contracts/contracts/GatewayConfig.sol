@@ -163,11 +163,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @notice Reinitializes the contract with custodians.
-    /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2(Custodian[] memory custodians) external reinitializer(3) {
-        __Ownable_init(owner());
-        __Pausable_init();
-
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
         if (custodians.length == 0) {
