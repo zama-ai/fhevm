@@ -216,22 +216,13 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
      * The new implementation is an instance of the FHEVMExecutor contract.
      * The proxy is upgraded using the UnsafeUpgrades library and the owner address.
      */
-    function _upgradeProxy(bool hasEvents) internal {
-        if (hasEvents) {
-            UnsafeUpgrades.upgradeProxy(
-                proxy,
-                address(new FHEVMExecutor()),
-                abi.encodeCall(FHEVMExecutor.reinitialize, ()),
-                owner
-            );
-        } else {
-            UnsafeUpgrades.upgradeProxy(
-                proxy,
-                address(new FHEVMExecutor()),
-                abi.encodeCall(FHEVMExecutor.reinitialize, ()),
-                owner
-            );
-        }
+    function _upgradeProxy() internal {
+        UnsafeUpgrades.upgradeProxy(
+            proxy,
+            address(new FHEVMExecutor()),
+            abi.encodeCall(FHEVMExecutor.reinitialize, ()),
+            owner
+        );
         fhevmExecutor = FHEVMExecutor(proxy);
     }
 
@@ -333,8 +324,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         result = _appendMetadataToPrehandle(middleFheType, result, block.chainid, HANDLE_VERSION);
     }
 
-    function upgradeProxyAndDeployMockContracts(bool withEvents) internal {
-        _upgradeProxy(withEvents);
+    function upgradeProxyAndDeployMockContracts() internal {
+        _upgradeProxy();
         _deployMockContracts();
     }
 
@@ -349,8 +340,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     /**
      * @dev Tests that the contract is reinitialized correctly.
      */
-    function test_PostProxyUpgradeCheck(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_PostProxyUpgradeCheck() public {
+        upgradeProxyAndDeployMockContracts();
         // Check if the owner is set correctly
         assertEq(fhevmExecutor.owner(), owner);
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
@@ -367,8 +358,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     /**
      * @dev Tests that only the owner can authorize an upgrade.
      */
-    function test_OnlyOwnerCanAuthorizeUpgrade(address randomAccount, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_OnlyOwnerCanAuthorizeUpgrade(address randomAccount) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
@@ -379,8 +370,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     /**
      * @dev Tests that only the owner can authorize an upgrade.
      */
-    function test_OnlyOwnerCanAuthorizeUpgrade(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_OnlyOwnerCanAuthorizeUpgrade() public {
+        upgradeProxyAndDeployMockContracts();
         /// @dev It does not revert since it called by the owner.
         UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxy()), "", owner);
     }
@@ -389,8 +380,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
      * @dev The following tests will verify that only the supported types are allowed for each operation.
      */
 
-    function test_FheAddSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheAddSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
 
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheAdd));
@@ -411,16 +402,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheAdd(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheAdd(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheAdd(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheSubSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheSubSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheSub));
         address sender = address(123);
@@ -440,16 +430,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheSub(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheSub(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheSub(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheMulSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheMulSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMul));
         address sender = address(123);
@@ -469,16 +458,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheMul(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheMul(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheMul(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheDivSupportedTypesWorkAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheDivSupportedTypesWorkAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheDiv));
         address sender = address(123);
@@ -500,16 +488,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheDiv(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheDiv(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheDiv(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheRemSupportedTypesWorkAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheRemSupportedTypesWorkAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheRem));
         address sender = address(123);
@@ -531,16 +518,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheRem(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheRem(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheRem(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheBitAndSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheBitAndSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheBitAnd));
         address sender = address(123);
@@ -560,16 +546,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheBitAnd(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheBitAnd(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheBitAnd(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheBitOrSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheBitOrSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheBitOr));
         address sender = address(123);
@@ -589,16 +574,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheBitOr(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheBitOr(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheBitOr(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheBitXorSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheBitXorSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheBitXor));
         address sender = address(123);
@@ -618,16 +602,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheBitXor(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheBitXor(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheBitXor(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheShlSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheShlSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheShl));
         address sender = address(123);
@@ -647,16 +630,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheShl(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheShl(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheShl(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheShrSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheShrSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheShr));
         address sender = address(123);
@@ -676,16 +658,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheShr(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheShr(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheShr(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheRotlSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheRotlSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheRotl));
         address sender = address(123);
@@ -705,16 +686,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheRotl(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheRotl(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheRotl(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheRotrSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheRotrSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheRotr));
         address sender = address(123);
@@ -734,16 +714,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheRotr(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheRotr(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheRotr(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheEqSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheEqSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheEq));
         vm.assume(fheType <= uint8(FheType.Uint256) || (scalarByte & 0x01) == 0x00);
@@ -765,16 +744,14 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         vm.prank(sender);
 
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheEq(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheEq(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheEq(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheNeSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheNeSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheNe));
         vm.assume(fheType <= uint8(FheType.Uint256) || (scalarByte & 0x01) == 0x00);
@@ -795,16 +772,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheNe(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheNe(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheNe(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheGeSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheGeSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheGe));
         vm.assume(fheType <= uint8(FheType.Uint256) || (scalarByte & 0x01) == 0x00);
@@ -825,16 +801,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheGe(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheGe(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheGe(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheGtSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheGtSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheGt));
         vm.assume(fheType <= uint8(FheType.Uint256) || (scalarByte & 0x01) == 0x00);
@@ -855,16 +830,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheGt(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheGt(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheGt(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheLeSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheLeSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheLe));
         vm.assume(fheType <= uint8(FheType.Uint256) || (scalarByte & 0x01) == 0x00);
@@ -885,16 +859,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheLe(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheLe(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheLe(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheLtSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheLtSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheLt));
         vm.assume(fheType <= uint8(FheType.Uint256) || (scalarByte & 0x01) == 0x00);
@@ -915,16 +888,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheLt(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheLt(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheLt(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheMinSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheMinSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMin));
         address sender = address(123);
@@ -944,16 +916,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheMin(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheMin(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheMin(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheMaxSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheMaxSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMax));
         address sender = address(123);
@@ -973,16 +944,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheMax(sender, lhs, rhs, scalarByte, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheMax(sender, lhs, rhs, scalarByte, expectedResult);
         bytes32 result = fhevmExecutor.fheMax(lhs, rhs, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheNegSupportedTypesWorkAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheNegSupportedTypesWorkAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheNeg));
         address sender = address(123);
@@ -994,16 +964,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes32 expectedResult = _computeExpectedResultUnaryOp(FHEVMExecutor.Operators.fheNeg, lhs, FheType(fheType));
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheNeg(sender, lhs, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheNeg(sender, lhs, expectedResult);
         bytes32 result = fhevmExecutor.fheNeg(lhs);
         assertEq(result, expectedResult);
     }
 
-    function test_FheNotSupportedTypesWorkAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheNotSupportedTypesWorkAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheNot));
         address sender = address(123);
@@ -1016,16 +985,14 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         vm.prank(sender);
 
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheNot(sender, lhs, expectedResult);
-        }
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheNot(sender, lhs, expectedResult);
         bytes32 result = fhevmExecutor.fheNot(lhs);
         assertEq(result, expectedResult);
     }
 
-    function test_FheIfThenElseSupportedTypesWorkAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheIfThenElseSupportedTypesWorkAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheIfThenElse));
 
@@ -1048,16 +1015,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.FheIfThenElse(sender, lhs, middle, rhs, expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheIfThenElse(sender, lhs, middle, rhs, expectedResult);
         bytes32 result = fhevmExecutor.fheIfThenElse(lhs, middle, rhs);
         assertEq(result, expectedResult);
     }
 
-    function test_FheRandSupportedTypesWorkAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheRandSupportedTypesWorkAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheRand));
         address sender = address(123);
@@ -1082,22 +1048,16 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
             );
 
             vm.prank(sender);
-            if (withEvents) {
-                vm.expectEmit(true, true, true, true);
-                emit FHEEvents.FheRand(sender, FheType(fheType), expectedSeed, expectedResult);
-            }
 
+            vm.expectEmit(true, true, true, true);
+            emit FHEEvents.FheRand(sender, FheType(fheType), expectedSeed, expectedResult);
             bytes32 result = fhevmExecutor.fheRand(FheType(fheType));
             assertEq(result, expectedResult);
         }
     }
 
-    function test_FheRandBoundedSupportedTypesWorkAsExpected(
-        uint8 upperBoundExponent,
-        uint8 fheType,
-        bool withEvents
-    ) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheRandBoundedSupportedTypesWorkAsExpected(uint8 upperBoundExponent, uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         /// @dev The upperBound must be a power of 2.
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheRandBounded));
@@ -1125,17 +1085,16 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
             );
 
             vm.prank(sender);
-            if (withEvents) {
-                vm.expectEmit(true, true, true, true);
-                emit FHEEvents.FheRandBounded(sender, upperBound, FheType(fheType), expectedSeed, expectedResult);
-            }
+
+            vm.expectEmit(true, true, true, true);
+            emit FHEEvents.FheRandBounded(sender, upperBound, FheType(fheType), expectedSeed, expectedResult);
             bytes32 result = fhevmExecutor.fheRandBounded(upperBound, FheType(fheType));
             assertEq(result, expectedResult);
         }
     }
 
-    function test_TrivialEncryptSupportedTypesWorkAsExpected(uint256 pt, uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_TrivialEncryptSupportedTypesWorkAsExpected(uint256 pt, uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesTrivialEncrypt));
         address sender = address(123);
@@ -1146,16 +1105,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         expectedResult = _appendMetadataToPrehandle(FheType(fheType), expectedResult, block.chainid, HANDLE_VERSION);
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.TrivialEncrypt(sender, pt, FheType(fheType), expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.TrivialEncrypt(sender, pt, FheType(fheType), expectedResult);
         bytes32 result = fhevmExecutor.trivialEncrypt(pt, FheType(fheType));
         assertEq(result, expectedResult);
     }
 
-    function test_CastWorksAsExpected(uint8 fheInputType, uint8 fheOutputType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_CastWorksAsExpected(uint8 fheInputType, uint8 fheOutputType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheInputType <= uint8(FheType.Int248));
         vm.assume(fheOutputType <= uint8(FheType.Int248));
         vm.assume(
@@ -1180,10 +1138,9 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         );
 
         vm.prank(sender);
-        if (withEvents) {
-            vm.expectEmit(true, true, true, true);
-            emit FHEEvents.Cast(sender, handle, FheType(fheOutputType), expectedResult);
-        }
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.Cast(sender, handle, FheType(fheOutputType), expectedResult);
         bytes32 result = fhevmExecutor.cast(handle, FheType(fheOutputType));
         assertEq(result, expectedResult);
     }
@@ -1191,8 +1148,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     /**
      * @dev The following tests will verify that only the supported types are allowed for each operation.
      */
-    function test_FheAddNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheAddNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheAdd));
         address sender = address(123);
@@ -1208,8 +1165,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheAdd(lhs, rhs, scalarByte);
     }
 
-    function test_FheSubNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheSubNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheSub));
         address sender = address(123);
@@ -1225,8 +1182,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheSub(lhs, rhs, scalarByte);
     }
 
-    function test_FheMulNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheMulNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheMul));
         address sender = address(123);
@@ -1242,8 +1199,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheMul(lhs, rhs, scalarByte);
     }
 
-    function test_FheDivNonSupportedTypesRevertAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheDivNonSupportedTypesRevertAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         bytes1 scalarByte = bytes1(0x01);
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheDiv));
@@ -1260,8 +1217,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheDiv(lhs, rhs, scalarByte);
     }
 
-    function test_FheRemNonSupportedTypesRevertAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheRemNonSupportedTypesRevertAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         bytes1 scalarByte = bytes1(0x01);
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRem));
@@ -1278,8 +1235,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRem(lhs, rhs, scalarByte);
     }
 
-    function test_FheBitAndNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheBitAndNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheBitAnd));
         address sender = address(123);
@@ -1295,8 +1252,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheBitAnd(lhs, rhs, scalarByte);
     }
 
-    function test_FheBitOrNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheBitOrNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheBitOr));
         address sender = address(123);
@@ -1312,8 +1269,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheBitOr(lhs, rhs, scalarByte);
     }
 
-    function test_FheBitXorNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheBitXorNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheBitXor));
         address sender = address(123);
@@ -1329,8 +1286,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheBitXor(lhs, rhs, scalarByte);
     }
 
-    function test_FheShlNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheShlNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheShl));
         address sender = address(123);
@@ -1346,8 +1303,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheShl(lhs, rhs, scalarByte);
     }
 
-    function test_FheShrNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheShrNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheShr));
         address sender = address(123);
@@ -1363,8 +1320,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheShr(lhs, rhs, scalarByte);
     }
 
-    function test_FheRotlNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheRotlNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRotl));
         address sender = address(123);
@@ -1380,8 +1337,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRotl(lhs, rhs, scalarByte);
     }
 
-    function test_FheRotrNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheRotrNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRotr));
         address sender = address(123);
@@ -1397,8 +1354,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRotr(lhs, rhs, scalarByte);
     }
 
-    function test_FheEqNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheEqNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheEq));
         address sender = address(123);
@@ -1414,8 +1371,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheEq(lhs, rhs, scalarByte);
     }
 
-    function test_FheNeNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheNeNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheNe));
         address sender = address(123);
@@ -1431,8 +1388,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheNe(lhs, rhs, scalarByte);
     }
 
-    function test_FheGeNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheGeNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheGe));
         address sender = address(123);
@@ -1448,8 +1405,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheGe(lhs, rhs, scalarByte);
     }
 
-    function test_FheGtNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheGtNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheGt));
         address sender = address(123);
@@ -1465,8 +1422,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheGt(lhs, rhs, scalarByte);
     }
 
-    function test_FheLeNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheLeNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheLe));
         address sender = address(123);
@@ -1482,8 +1439,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheLe(lhs, rhs, scalarByte);
     }
 
-    function test_FheLtNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheLtNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheLt));
         address sender = address(123);
@@ -1499,8 +1456,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheLt(lhs, rhs, scalarByte);
     }
 
-    function test_FheMinNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheMinNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheMin));
         address sender = address(123);
@@ -1516,8 +1473,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheMin(lhs, rhs, scalarByte);
     }
 
-    function test_FheMaxNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheMaxNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheMax));
         address sender = address(123);
@@ -1533,8 +1490,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheMax(lhs, rhs, scalarByte);
     }
 
-    function test_FheNotNonSupportedTypesRevertAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheNotNonSupportedTypesRevertAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheNot));
         address sender = address(123);
@@ -1547,8 +1504,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheNot(handle);
     }
 
-    function test_FheIfThenElseNonSupportedTypesRevertAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheIfThenElseNonSupportedTypesRevertAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheIfThenElse));
         address sender = address(123);
@@ -1566,8 +1523,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheIfThenElse(handleControl, handleIfTrue, handleIfFalse);
     }
 
-    function test_FheRandNonSupportedTypesRevertAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheRandNonSupportedTypesRevertAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRand));
 
@@ -1575,12 +1532,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRand(FheType(fheType));
     }
 
-    function test_FheRandBoundedNonSupportedTypesRevertAsExpected(
-        uint256 upperBound,
-        uint8 fheType,
-        bool withEvents
-    ) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_FheRandBoundedNonSupportedTypesRevertAsExpected(uint256 upperBound, uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRandBounded));
 
@@ -1588,12 +1541,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRandBounded(upperBound, FheType(fheType));
     }
 
-    function test_CastNonSupportedTypesRevertAsExpected(
-        uint8 fheInputType,
-        uint8 fheOutputType,
-        bool withEvents
-    ) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_CastNonSupportedTypesRevertAsExpected(uint8 fheInputType, uint8 fheOutputType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheInputType <= uint8(FheType.Int248));
         vm.assume(fheOutputType <= uint8(FheType.Int248));
         vm.assume(
@@ -1609,8 +1558,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.cast(handle, FheType(fheOutputType));
     }
 
-    function test_CastCannotCastToSameType(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_CastCannotCastToSameType(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         /// @dev The supported types for the output are more restrictive than the input types.
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesOutputCast));
@@ -1622,31 +1571,31 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.cast(handle, FheType(fheType));
     }
 
-    function test_TrivialEncryptNotSupportedTypesRevertAsExpected(uint256 pt, uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_TrivialEncryptNotSupportedTypesRevertAsExpected(uint256 pt, uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesTrivialEncrypt));
         vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         fhevmExecutor.trivialEncrypt(pt, FheType(fheType));
     }
 
-    function test_RevertsIfACLNotAllowed_Cast(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfACLNotAllowed_Cast() public {
+        upgradeProxyAndDeployMockContracts();
         vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
         bytes32 handle = _generateMockHandle(FheType.Uint128);
         fhevmExecutor.cast(handle, FheType.Uint64);
     }
 
-    function test_RevertsIfACLNotAllowed_UnaryOp(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfACLNotAllowed_UnaryOp() public {
+        upgradeProxyAndDeployMockContracts();
         bytes32 handle = _generateMockHandle(FheType.Uint128);
         vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
         /// @dev We use fheNeg as an example of a unary operation.
         fhevmExecutor.fheNeg(handle);
     }
 
-    function test_RevertsIfACLNotAllowed_BinaryOpLHS(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfACLNotAllowed_BinaryOpLHS() public {
+        upgradeProxyAndDeployMockContracts();
         bytes32 lhs = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = _generateMockHandle(FheType.Uint16);
         address account = address(123);
@@ -1658,8 +1607,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheAdd(lhs, rhs, 0x00);
     }
 
-    function test_RevertsIfACLNotAllowed_BinaryOpRHS(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfACLNotAllowed_BinaryOpRHS() public {
+        upgradeProxyAndDeployMockContracts();
         bytes32 lhs = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = _generateMockHandle(FheType.Uint16);
         address account = address(123);
@@ -1671,8 +1620,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheAdd(lhs, rhs, 0x00);
     }
 
-    function test_RevertsIfBinaryOpTypesNotCompatible(uint8 fheTypeLhs, uint8 fheTypeRhs, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfBinaryOpTypesNotCompatible(uint8 fheTypeLhs, uint8 fheTypeRhs) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheTypeLhs <= uint8(FheType.Int248));
         vm.assume(fheTypeRhs <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheTypeLhs), supportedTypesFheAdd));
@@ -1691,8 +1640,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheAdd(lhs, rhs, 0x00);
     }
 
-    function test_RevertsIfACLNotAllowed_TernaryOpLHS(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfACLNotAllowed_TernaryOpLHS() public {
+        upgradeProxyAndDeployMockContracts();
         bytes32 lhs = _generateMockHandle(FheType.Bool);
         bytes32 middle = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = _generateMockHandle(FheType.Uint16);
@@ -1706,8 +1655,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheIfThenElse(lhs, middle, rhs);
     }
 
-    function test_RevertsIfACLNotAllowed_TernaryOpMiddle(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfACLNotAllowed_TernaryOpMiddle() public {
+        upgradeProxyAndDeployMockContracts();
         bytes32 lhs = _generateMockHandle(FheType.Bool);
         bytes32 middle = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = _generateMockHandle(FheType.Uint16);
@@ -1721,8 +1670,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheIfThenElse(lhs, middle, rhs);
     }
 
-    function test_RevertsIfACLNotAllowed_TernaryOpRHS(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfACLNotAllowed_TernaryOpRHS() public {
+        upgradeProxyAndDeployMockContracts();
         bytes32 lhs = _generateMockHandle(FheType.Bool);
         bytes32 middle = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = _generateMockHandle(FheType.Uint16);
@@ -1736,8 +1685,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheIfThenElse(lhs, middle, rhs);
     }
 
-    function test_RevertsIfTernaryOpLHSIsNotBool(uint8 fheTypeLhs, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfTernaryOpLHSIsNotBool(uint8 fheTypeLhs) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheTypeLhs <= uint8(FheType.Int248));
         vm.assume(fheTypeLhs != uint8(FheType.Bool));
 
@@ -1756,12 +1705,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheIfThenElse(lhs, middle, rhs);
     }
 
-    function test_RevertsIfTernaryOpMiddleAndLHSTypesNotCompatible(
-        uint8 fheTypeMiddle,
-        uint8 fheTypeRhs,
-        bool withEvents
-    ) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfTernaryOpMiddleAndLHSTypesNotCompatible(uint8 fheTypeMiddle, uint8 fheTypeRhs) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheTypeMiddle <= uint8(FheType.Int248));
         vm.assume(fheTypeRhs <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheTypeMiddle), supportedTypesFheIfThenElse));
@@ -1782,8 +1727,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheIfThenElse(lhs, middle, rhs);
     }
 
-    function test_RevertsIfFheDivTriesDividingByZero(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfFheDivTriesDividingByZero() public {
+        upgradeProxyAndDeployMockContracts();
         bytes32 lhs = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = 0;
         address account = address(123);
@@ -1794,8 +1739,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheDiv(lhs, rhs, 0x01);
     }
 
-    function test_RevertsIfFheRemTriesDividingByZero(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfFheRemTriesDividingByZero() public {
+        upgradeProxyAndDeployMockContracts();
         bytes32 lhs = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = 0;
         address account = address(123);
@@ -1806,8 +1751,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRem(lhs, rhs, 0x01);
     }
 
-    function test_RevertsIfFheDivRHSIsNotScalar(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfFheDivRHSIsNotScalar() public {
+        upgradeProxyAndDeployMockContracts();
         bytes32 lhs = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = _generateMockHandle(FheType.Uint16);
         address account = address(123);
@@ -1819,8 +1764,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheDiv(lhs, rhs, 0x00);
     }
 
-    function test_RevertsIfFheRemRHSIsNotScalar(bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfFheRemRHSIsNotScalar() public {
+        upgradeProxyAndDeployMockContracts();
         bytes32 lhs = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = _generateMockHandle(FheType.Uint16);
         address account = address(123);
@@ -1832,15 +1777,15 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRem(lhs, rhs, 0x00);
     }
 
-    function test_RevertsIfUpperBoundIsNotPowerOfTwo(uint256 upperBound, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_RevertsIfUpperBoundIsNotPowerOfTwo(uint256 upperBound) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(upperBound > 0 && ((upperBound & (upperBound - 1)) != 0));
         vm.expectRevert(FHEVMExecutor.NotPowerOfTwo.selector);
         fhevmExecutor.fheRandBounded(upperBound, FheType.Uint16);
     }
 
-    function test_VerifyCiphertextWorksIfInputTypeIsAsExpected(uint8 fheType, bool withEvents) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_VerifyCiphertextWorksIfInputTypeIsAsExpected(uint8 fheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         address userAddress = address(123);
         bytes memory mockInputProof = abi.encode("mockProof");
@@ -1849,12 +1794,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, inputHandle);
     }
 
-    function test_VerifyCiphertextWorksIfInputTypeIsNotAsExpected(
-        uint8 fheType,
-        uint8 otherFheType,
-        bool withEvents
-    ) public {
-        upgradeProxyAndDeployMockContracts(withEvents);
+    function test_VerifyCiphertextWorksIfInputTypeIsNotAsExpected(uint8 fheType, uint8 otherFheType) public {
+        upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(otherFheType <= uint8(FheType.Int248));
         vm.assume(fheType != otherFheType);
