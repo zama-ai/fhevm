@@ -4,31 +4,27 @@ This document explains how to enable encrypted computations in your smart contra
 
 ## Core configuration setup
 
-To utilize encrypted computations in Solidity contracts, you must configure the **FHE library** and **Relayer addresses**. The `fhevm` package simplifies this process with prebuilt configuration contracts, allowing you to focus on developing your contract’s logic without handling the underlying cryptographic setup.
+To utilize encrypted computations in Solidity contracts, you must configure the **FHE library** and **Oracle addresses**. The `fhevm` package simplifies this process with prebuilt configuration contracts, allowing you to focus on developing your contract’s logic without handling the underlying cryptographic setup.
+
+This library and its associated contracts provide a standardized way to configure and interact with Zama's FHEVM (Fully Homomorphic Encryption Virtual Machine) infrastructure on different Ethereum networks. It supplies the necessary contract addresses for Zama's FHEVM components (`ACL`, `FHEVMExecutor`, `KMSVerifier`, `InputVerifier`) and the decryption oracle, enabling seamless integration for Solidity contracts that require FHEVM support.
 
 ## Key components configured automatically
 
 1. **FHE library**: Sets up encryption parameters and cryptographic keys.
-2. **Relayer**: Manages secure cryptographic operations, including user decryption and public decryption.
+2. **Oracle**: Manages secure cryptographic operations such as public decryption.
 3. **Network-specific settings**: Adapts to local testing, testnets (Sepolia for example), or mainnet deployment.
 
 By inheriting these configuration contracts, you ensure seamless initialization and functionality across environments.
 
 ## ZamaConfig.sol
 
-This configuration contract initializes the **fhevm environment** with required encryption parameters.
+The `ZamaConfig` library exposes functions to retrieve FHEVM configuration structs and oracle addresses for supported networks (currently only the Sepolia testnet).
 
-**Import based on your environment:**
+Under the hood, this library encapsulates the network-specific addresses of Zama's FHEVM infrastructure into a single struct (`FHEVMConfigStruct`). 
 
-```solidity
-// For Ethereum Sepolia
-import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
-```
+## SepoliaConfig.sol
 
-**Purpose:**
-
-- Sets encryption parameters such as cryptographic keys and supported ciphertext types.
-- Ensures proper initialization of the FHEVM environment.
+The `SepoliaConfig` contract is designed to be inherited by a user contract. The constructor automatically sets up the FHEVM coprocessor and decryption oracle using the configuration provided by the library for the respective network. When a contract inherits from `SepoliaConfig`, the constructor calls `FHE.setCoprocessor` and `FHE.setDecryptionOracle` with the appropriate addresses. This ensures that the inheriting contract is automatically wired to the correct FHEVM contracts and oracle for the target network, abstracting away manual address management and reducing the risk of misconfiguration.
 
 **Example: using Sepolia configuration**
 
@@ -45,34 +41,6 @@ contract MyERC20 is SepoliaConfig {
 }
 ```
 
-## ZamaConfig.sol
-
-To perform public decryption or user decryption, your contract must interact with the **Relayer**, which acts as a secure bridge between the blockchain, coprocessor, and Key Management System (KMS).
-
-**Import based on your environment**
-
-```solidity
-// For Sepolia
-import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
-```
-
-**Purpose**
-
-- Configures the relayer for secure cryptographic operations.
-- Facilitates public and user decryption requests.
-
-**Example: Configuring the relayer with Sepolia settings**
-
-```solidity
-import "@fhevm/solidity/lib/FHE.sol";
-import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
-
-contract Test is SepoliaConfig {
-  constructor() {
-    // Relayer and FHEVM environment initialized automatically
-  }
-}
-```
 
 ## Using `isInitialized`
 
@@ -97,4 +65,4 @@ require(FHE.isInitialized(counter), "Counter not initialized!");
 
 ## Summary
 
-By leveraging prebuilt a configuration contract like `ZamaConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.
+By leveraging prebuilt a configuration contract like `SepoliaConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.
