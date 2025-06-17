@@ -24,7 +24,9 @@ use std::sync::Arc;
 use tfhe::set_server_key;
 
 use tokio::{select, time::Duration};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
+use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus};
 
 const MAX_CACHED_TENANT_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -36,9 +38,49 @@ pub(crate) struct Ciphertext {
     ct_version: i16,
 }
 
+
+pub struct ZkProofService {
+    pool: PgPool,
+    conf: Config,
+    _cancel_token: CancellationToken,
+}
+impl HealthCheckService for  ZkProofService {
+    async fn health_check(&self) -> HealthStatus {
+        let mut hs = HealthStatus::default();
+        hs.register_db_status(&self.pool).await;
+        hs
+    }
+}
+
+impl ZkProofService {
+
+    pub async fn create(conf: Config, cancel_token: CancellationToken) -> ZkProofService {
+        // Each worker needs at least 3 pg connections
+        let pool_connections = std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
+        let t = telemetry::tracer("init_service");
+        let _s = t.child_span("pg_connect");
+
+        // DB Connection pool is shared amongst all workers
+        let pool = PgPoolOptions::new()
+            .max_connections(pool_connections)
+            .connect(&conf.database_url)
+            .await
+            .expect("valid db pool");
+
+        ZkProofService {
+            pool,
+            conf,
+            _cancel_token: cancel_token,
+        }
+    }
+
+    pub async fn run(&self) -> Result<(), ExecutionError> {
+        execute_verify_proofs_loop(self.pool.clone(), self.conf.clone()).await
+    }
+}
 /// Executes the main loop for handling verify_proofs requests inserted in the
 /// database
-pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionError> {
+async fn execute_verify_proofs_loop(pool: PgPool,  conf: Config) -> Result<(), ExecutionError> {
     info!("Starting with config {:?}", conf);
 
     // Tenants key cache is shared amongst all workers
@@ -46,21 +88,7 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
         NonZero::new(MAX_CACHED_TENANT_KEYS).unwrap(),
     )));
 
-    // Each worker needs at least 3 pg connections
-    let pool_connections = std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
-
-    let t = telemetry::tracer("init_service");
-    let s = t.child_span("pg_connect");
-
-    // DB Connection pool is shared amongst all workers
-    let pool = PgPoolOptions::new()
-        .max_connections(pool_connections)
-        .connect(&conf.database_url)
-        .await
-        .expect("valid db pool");
-
-    telemetry::end_span(s);
-
+    let t = telemetry::tracer("init_workers");
     let mut s = t.child_span("start_workers");
     telemetry::attribute(&mut s, "count", conf.worker_thread_count.to_string());
     let mut task_set = JoinSet::new();
