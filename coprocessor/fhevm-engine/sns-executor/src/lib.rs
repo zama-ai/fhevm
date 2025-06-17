@@ -32,6 +32,7 @@ pub struct DBConfig {
     pub notify_channel: String,
     pub batch_limit: u32,
     pub polling_interval: u32,
+    pub cleanup_interval: Duration,
     pub max_connections: u32,
 }
 
@@ -129,19 +130,6 @@ impl HandleItem {
         .execute(trx.as_mut())
         .await?;
 
-        // Reset ciphertext128 as the ct128 has been successfully uploaded to S3
-        // NB: For reclaiming the disk-space in DB, we rely on auto vacuuming in
-        // Postgres
-
-        sqlx::query!(
-            "UPDATE ciphertexts
-             SET ciphertext128 = NULL
-             WHERE handle = $1",
-            self.handle
-        )
-        .execute(trx.as_mut())
-        .await?;
-
         info!(
             "Mark ct128 as uploaded, handle: {}, digest: {}",
             compact_hex(&self.handle),
@@ -218,10 +206,30 @@ pub enum ExecutionError {
     S3TransientError(String),
 }
 
+#[derive(Clone)]
+pub enum UploadJob {
+    /// Represents a standard upload that is dispatched immediately
+    /// after a successful squash_noise computation
+    Normal(HandleItem),
+
+    /// Represents a job that requires acquiring a database lock
+    /// before initiating the upload process.
+    DatabaseLock(HandleItem),
+}
+
+impl UploadJob {
+    pub fn handle(&self) -> &[u8] {
+        match self {
+            UploadJob::Normal(item) => &item.handle,
+            UploadJob::DatabaseLock(item) => &item.handle,
+        }
+    }
+}
+
 /// Runs the SnS worker loop
 pub async fn compute_128bit_ct(
     conf: &Config,
-    tx: Sender<HandleItem>,
+    tx: Sender<UploadJob>,
     token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(target: "sns", "Worker started with {}", conf);
@@ -235,8 +243,8 @@ pub async fn compute_128bit_ct(
 /// Runs the uploader loop
 pub async fn process_s3_uploads(
     conf: &Config,
-    rx: mpsc::Receiver<HandleItem>,
-    tx: Sender<HandleItem>,
+    rx: mpsc::Receiver<UploadJob>,
+    tx: Sender<UploadJob>,
     token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(target: "sns", "Uploader started with {:?}", conf.s3);

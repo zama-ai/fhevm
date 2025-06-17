@@ -3423,6 +3423,7 @@ dependencies = [
  "anyhow",
  "bigdecimal",
  "bincode",
+ "bytesize",
  "hex",
  "lru 0.13.0",
  "opentelemetry",

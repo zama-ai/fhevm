@@ -1,7 +1,8 @@
 use fhevm_engine_common::telemetry;
 use sns_executor::{
-    compute_128bit_ct, process_s3_uploads, Config, DBConfig, HandleItem, S3Config, S3RetryPolicy,
+    compute_128bit_ct, process_s3_uploads, Config, DBConfig, S3Config, S3RetryPolicy, UploadJob,
 };
+
 use tokio::{signal::unix, spawn, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::error;
@@ -33,6 +34,7 @@ fn construct_config() -> Config {
             batch_limit: args.work_items_batch_size,
             polling_interval: args.pg_polling_interval,
             max_connections: args.pg_pool_connections,
+            cleanup_interval: args.cleanup_interval,
         },
         s3: S3Config {
             bucket_ct128: args.bucket_name_ct128,
@@ -68,7 +70,7 @@ async fn main() {
     // to avoid blocking the worker
     // and to allow for some burst of uploads
     let (uploads_tx, uploads_rx) =
-        mpsc::channel::<HandleItem>(10 * config.s3.max_concurrent_uploads as usize);
+        mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
 
     if let Err(err) = telemetry::setup_otlp(&config.service_name) {
         panic!("Error while initializing tracing: {:?}", err);
