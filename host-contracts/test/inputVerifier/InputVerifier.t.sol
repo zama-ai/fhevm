@@ -127,7 +127,7 @@ contract InputVerifierTest is Test {
      * The function performs the following steps:
      * 1. Deploys a new `InputVerifier` contract and sets its address as the new implementation.
      * 2. Uses `UnsafeUpgrades.upgradeProxy` to upgrade the proxy to the new implementation.
-     *    - Passes the encoded call to `InputVerifier.reinitialize` with the required parameters:
+     *    - Passes the encoded call to `InputVerifier.initializeFromEmptyProxy` with the required parameters:
      *      - `verifyingContractSource`: The source of the verifying contract.
      *      - `uint64(block.chainid)`: The chain ID of the current blockchain.
      *      - `signers`: The array of signers.
@@ -139,7 +139,10 @@ contract InputVerifierTest is Test {
         UnsafeUpgrades.upgradeProxy(
             proxy,
             implementation,
-            abi.encodeCall(InputVerifier.reinitialize, (verifyingContractSource, uint64(block.chainid), signers)),
+            abi.encodeCall(
+                InputVerifier.initializeFromEmptyProxy,
+                (verifyingContractSource, uint64(block.chainid), signers)
+            ),
             owner
         );
         inputVerifier = InputVerifier(proxy);
@@ -947,7 +950,10 @@ contract InputVerifierTest is Test {
         UnsafeUpgrades.upgradeProxy(
             proxy,
             implementation,
-            abi.encodeCall(InputVerifier.reinitialize, (verifyingContractSource, uint64(block.chainid), emptySigners)),
+            abi.encodeCall(
+                InputVerifier.initializeFromEmptyProxy,
+                (verifyingContractSource, uint64(block.chainid), emptySigners)
+            ),
             owner
         );
     }

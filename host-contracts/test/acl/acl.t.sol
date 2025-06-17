@@ -36,7 +36,12 @@ contract ACLTest is Test {
 
     function _upgradeProxy() internal {
         implementation = address(new ACL());
-        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(acl.reinitialize, (pauser)), owner);
+        UnsafeUpgrades.upgradeProxy(
+            proxy,
+            implementation,
+            abi.encodeCall(acl.initializeFromEmptyProxy, (pauser)),
+            owner
+        );
         acl = ACL(proxy);
         fhevmExecutor = acl.getFHEVMExecutorAddress();
     }
@@ -59,7 +64,7 @@ contract ACLTest is Test {
      */
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxy();
-        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.1.0")));
+        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.2.0")));
         assertEq(acl.owner(), owner);
         assertEq(acl.getPauser(), pauser);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
@@ -569,7 +574,12 @@ contract ACLTest is Test {
     /// @dev This function exists for the test below to call it externally.
     function upgradeWithNullPauser() public {
         implementation = address(new ACL());
-        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(acl.reinitialize, (address(0))), owner);
+        UnsafeUpgrades.upgradeProxy(
+            proxy,
+            implementation,
+            abi.encodeCall(acl.initializeFromEmptyProxy, (address(0))),
+            owner
+        );
     }
 
     /**
