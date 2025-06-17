@@ -11,8 +11,8 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
     string private constant CONTRACT_NAME = "GatewayConfig";
 
     /// @notice Version of the contract
-    uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MAJOR_VERSION = 1001;
+    uint256 private constant MINOR_VERSION = 0;
     uint256 private constant PATCH_VERSION = 0;
 
     struct ProtocolMetadataV2 {
@@ -29,7 +29,7 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
         mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender) _isCoprocessorTxSender;
         mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner;
         mapping(uint256 chainId => bool isRegistered) _isHostChainRegistered;
-        ProtocolMetadata protocolMetadata;
+        ProtocolMetadata protocolMetadata; // deprecated, use protocolMetadataV2 instead
         mapping(address kmsTxSenderAddress => KmsNode kmsNode) kmsNodes;
         address[] kmsTxSenderAddresses;
         address[] kmsSignerAddresses;
@@ -52,6 +52,7 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
         _disableInitializers();
     }
 
+    /// @custom:oz-upgrades-validate-as-initializer
     function initialize(string calldata newField) public virtual reinitializer(3) {
         __Ownable_init(owner());
         __Pausable_init();
@@ -63,11 +64,6 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
     function getProtocolMetadata() external view virtual returns (ProtocolMetadataV2 memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.protocolMetadataV2;
-    }
-
-    function getCoprocessor(address coprocessorTxSenderAddress) external view virtual returns (Coprocessor memory) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.coprocessors[coprocessorTxSenderAddress];
     }
 
     /// @notice Getter for the name and version of the contract

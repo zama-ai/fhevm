@@ -9,8 +9,8 @@ contract KmsManagementV2Example is KmsManagement {
     string private constant CONTRACT_NAME = "KmsManagement";
 
     /// @notice Version of the contract
-    uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MAJOR_VERSION = 1000;
+    uint256 private constant MINOR_VERSION = 0;
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice Getter for the name and version of the contract

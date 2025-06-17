@@ -72,16 +72,16 @@ describe("Upgrades", function () {
     await multichainAcl.waitForDeployment();
     const ownerBef = await multichainAcl.owner();
     expect(await multichainAcl.getVersion()).to.equal("MultichainAcl v0.1.0");
-    const multichainAcl2 = await upgrades.upgradeProxy(multichainAcl, multichainAclFactoryV2);
-    await multichainAcl2.waitForDeployment();
-    const ownerAft = await multichainAcl2.owner();
+    const multichainAclV2 = await upgrades.upgradeProxy(multichainAcl, multichainAclFactoryV2);
+    await multichainAclV2.waitForDeployment();
+    const ownerAft = await multichainAclV2.owner();
     expect(ownerBef).to.equal(ownerAft);
-    expect(await multichainAcl2.getVersion()).to.equal("MultichainAcl v0.2.0");
+    expect(await multichainAclV2.getVersion()).to.equal("MultichainAcl v1000.0.0");
     const multichainAclAddress = ethers.getCreateAddress({
       from: owner.address,
       nonce: nonceBef, // using nonce of nonceBef instead of nonceBef+1 here, since the original implementation has already been deployer during the setup phase, and hardhat-upgrades plugin is able to detect this and not redeploy twice same contract
     });
-    expect(multichainAclAddress).to.equal(await multichainAcl2.getAddress());
+    expect(multichainAclAddress).to.equal(await multichainAclV2.getAddress());
   });
 
   it("Should deploy upgradable CiphertextCommits", async function () {
@@ -92,9 +92,9 @@ describe("Upgrades", function () {
     const ciphertextCommits = await upgrades.upgradeProxy(emptyUUPS, ciphertextCommitsFactoryV1);
     await ciphertextCommits.waitForDeployment();
     expect(await ciphertextCommits.getVersion()).to.equal("CiphertextCommits v0.1.0");
-    const ciphertextCommits2 = await upgrades.upgradeProxy(ciphertextCommits, ciphertextCommitsFactoryV2);
-    await ciphertextCommits2.waitForDeployment();
-    expect(await ciphertextCommits2.getVersion()).to.equal("CiphertextCommits v0.2.0");
+    const ciphertextCommitsV2 = await upgrades.upgradeProxy(ciphertextCommits, ciphertextCommitsFactoryV2);
+    await ciphertextCommitsV2.waitForDeployment();
+    expect(await ciphertextCommitsV2.getVersion()).to.equal("CiphertextCommits v1000.0.0");
   });
 
   it("Should deploy upgradable Decryption", async function () {
@@ -105,9 +105,9 @@ describe("Upgrades", function () {
     const decryption = await upgrades.upgradeProxy(emptyUUPS, decryptionFactoryV1);
     await decryption.waitForDeployment();
     expect(await decryption.getVersion()).to.equal("Decryption v0.1.0");
-    const decryption2 = await upgrades.upgradeProxy(decryption, decryptionFactoryV2);
-    await decryption2.waitForDeployment();
-    expect(await decryption2.getVersion()).to.equal("Decryption v0.2.0");
+    const decryptionV2 = await upgrades.upgradeProxy(decryption, decryptionFactoryV2);
+    await decryptionV2.waitForDeployment();
+    expect(await decryptionV2.getVersion()).to.equal("Decryption v1000.0.0");
   });
 
   it("Should deploy upgradable GatewayConfig", async function () {
@@ -118,9 +118,9 @@ describe("Upgrades", function () {
     const gatewayConfig = await upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactoryV1);
     await gatewayConfig.waitForDeployment();
     expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
-    const gatewayConfig2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigFactoryV2);
-    await gatewayConfig2.waitForDeployment();
-    expect(await gatewayConfig2.getVersion()).to.equal("GatewayConfig v0.2.0");
+    const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigFactoryV2);
+    await gatewayConfigV2.waitForDeployment();
+    expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v1000.0.0");
   });
 
   it("Should deploy upgradable KmsManagement", async function () {
@@ -131,9 +131,9 @@ describe("Upgrades", function () {
     const kmsManagement = await upgrades.upgradeProxy(emptyUUPS, kmsManagementFactoryV1);
     await kmsManagement.waitForDeployment();
     expect(await kmsManagement.getVersion()).to.equal("KmsManagement v0.1.0");
-    const kmsManagement2 = await upgrades.upgradeProxy(kmsManagement, kmsManagementFactoryV2);
-    await kmsManagement2.waitForDeployment();
-    expect(await kmsManagement2.getVersion()).to.equal("KmsManagement v0.2.0");
+    const kmsManagementV2 = await upgrades.upgradeProxy(kmsManagement, kmsManagementFactoryV2);
+    await kmsManagementV2.waitForDeployment();
+    expect(await kmsManagementV2.getVersion()).to.equal("KmsManagement v1000.0.0");
   });
 
   it("Should deploy upgradable InputVerification", async function () {
@@ -144,9 +144,9 @@ describe("Upgrades", function () {
     const inputVerification = await upgrades.upgradeProxy(emptyUUPS, inputVerificationFactoryV1);
     await inputVerification.waitForDeployment();
     expect(await inputVerification.getVersion()).to.equal("InputVerification v0.1.0");
-    const inputVerification2 = await upgrades.upgradeProxy(inputVerification, inputVerificationFactoryV2);
-    await inputVerification2.waitForDeployment();
-    expect(await inputVerification2.getVersion()).to.equal("InputVerification v0.2.0");
+    const inputVerificationV2 = await upgrades.upgradeProxy(inputVerification, inputVerificationFactoryV2);
+    await inputVerificationV2.waitForDeployment();
+    expect(await inputVerificationV2.getVersion()).to.equal("InputVerification v1000.0.0");
   });
 
   it("Should allow original owner to upgrade the original GatewayConfig and transfer ownership", async function () {
@@ -156,57 +156,77 @@ describe("Upgrades", function () {
       initializer: "initialize",
       kind: "uups",
     });
-    const originalGatewayConfig = await upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactoryV1);
-    await originalGatewayConfig.waitForDeployment();
-    expect(await originalGatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
+    const gatewayConfig = await upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactoryV1);
+    await gatewayConfig.waitForDeployment();
+    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
 
-    const originalGatewayConfigAddress = await originalGatewayConfig.getAddress();
+    const originalGatewayConfigAddress = await gatewayConfig.getAddress();
     const deployer = owner;
 
-    const newGatewayConfigFactoryUpgraded = await ethers.getContractFactory("GatewayConfigV2Example", deployer);
-    const gatewayConfig2 = await upgrades.upgradeProxy(originalGatewayConfig, newGatewayConfigFactoryUpgraded);
-    await gatewayConfig2.waitForDeployment();
-    expect(await gatewayConfig2.getVersion()).to.equal("GatewayConfig v0.2.0");
-    expect(await gatewayConfig2.getAddress()).to.equal(originalGatewayConfigAddress);
+    const gatewayConfigV2ExampleFactory = await ethers.getContractFactory("GatewayConfigV2Example", deployer);
+    const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigV2ExampleFactory);
+    await gatewayConfigV2.waitForDeployment();
+    expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v1000.0.0");
+    expect(await gatewayConfigV2.getAddress()).to.equal(originalGatewayConfigAddress);
 
     const newSigner = await createAndFundRandomWallet();
-    await gatewayConfig2.transferOwnership(newSigner);
-    await gatewayConfig2.connect(newSigner).acceptOwnership();
+    await gatewayConfigV2.transferOwnership(newSigner);
+    await gatewayConfigV2.connect(newSigner).acceptOwnership();
 
-    const newGatewayConfigFactoryUpgraded2 = await ethers.getContractFactory("GatewayConfigV3Example", deployer);
-    await expect(upgrades.upgradeProxy(gatewayConfig2, newGatewayConfigFactoryUpgraded2)).to.be.reverted; // old owner can no longer upgrade ACL
+    const gatewayConfigV3ExampleFactoryOldOwner = await ethers.getContractFactory("GatewayConfigV3Example", deployer);
+    await expect(upgrades.upgradeProxy(gatewayConfigV2, gatewayConfigV3ExampleFactoryOldOwner)).to.be.reverted; // old owner can no longer upgrade ACL
 
-    const newGatewayConfigFactoryUpgraded3 = await ethers.getContractFactory("GatewayConfigV3Example", newSigner);
-    const gatewayConfig3 = await upgrades.upgradeProxy(gatewayConfig2, newGatewayConfigFactoryUpgraded3); // new owner can upgrade ACL
+    const gatewayConfigV3ExampleFactoryNewOwner = await ethers.getContractFactory("GatewayConfigV3Example", newSigner);
+    const gatewayConfigV3 = await upgrades.upgradeProxy(gatewayConfigV2, gatewayConfigV3ExampleFactoryNewOwner); // new owner can upgrade ACL
 
-    await gatewayConfig3.waitForDeployment();
-    expect(await gatewayConfig3.getVersion()).to.equal("GatewayConfig v0.3.0");
+    await gatewayConfigV3.waitForDeployment();
+    expect(await gatewayConfigV3.getVersion()).to.equal("GatewayConfig v1001.0.0");
   });
 
-  it("Should maintain state consistency after upgrade", async function () {
+  it("Should maintain state consistency after upgrades", async function () {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
     const { gatewayConfig } = fixtureData;
+
+    // Protocol metadata fields
+    const name = "Protocol";
+    const website = "https://protocol.com";
+    const newField = "Protocol new field";
 
     // Check that GatewayConfig is at version 0.1.0
     expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
 
     // Check that the protocol metadata is correct
     const metadata = await gatewayConfig.getProtocolMetadata();
-    const protocolMetadata = { name: "Protocol", website: "https://protocol.com" };
-    expect(metadata).to.deep.equal(toValues(protocolMetadata));
+    expect(metadata).to.deep.equal(
+      toValues({
+        name,
+        website,
+      }),
+    );
 
-    // Upgrade the GatewayConfig contract to version 0.3.0
-    const protocolNewField = "Protocol new field";
-    const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigFactoryV3, {
-      call: { fn: "initialize", args: [protocolNewField] },
-    });
+    // Upgrade the GatewayConfig contract to V2
+    const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigFactoryV2);
     await gatewayConfigV2.waitForDeployment();
-    expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v0.3.0");
-    expect(await gatewayConfig.getAddress()).to.equal(await gatewayConfigV2.getAddress());
 
-    // Check that the protocol metadata is still correct after the upgrade
-    const protocolMetadataV2 = { name: "Protocol", website: "https://protocol.com", newField: protocolNewField };
-    const metadataAfterUpgrade = await gatewayConfigV2.getProtocolMetadata();
-    expect(metadataAfterUpgrade).to.deep.equal(toValues(protocolMetadataV2));
+    // Check the contract version and the protocol metadata are still correct in V2
+    expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v1000.0.0");
+    expect(metadata).to.deep.equal(
+      toValues({
+        name,
+        website,
+      }),
+    );
+
+    // Upgrade the GatewayConfig contract to V3
+    const gatewayConfigV3 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigFactoryV3, {
+      call: { fn: "initialize", args: [newField] },
+    });
+    await gatewayConfigV3.waitForDeployment();
+    expect(await gatewayConfigV3.getVersion()).to.equal("GatewayConfig v1001.0.0");
+    expect(await gatewayConfigV3.getAddress()).to.equal(await gatewayConfig.getAddress());
+
+    // Check that the protocol metadata is consistent and includes the new field after the upgrade
+    const metadataAfterUpgrade = await gatewayConfigV3.getProtocolMetadata();
+    expect(metadataAfterUpgrade).to.deep.equal(toValues({ name, website, newField }));
   });
 });
