@@ -34,7 +34,8 @@ jobs:
               - coprocessor/fhevm-engine/fhevm-listner/**
               - coprocessor/fhevm-engine/Cargo.toml
               - coprocessor/fhevm-engine/Cargo.lock
-              - host-contracts/contracts/**
+              - host-contracts/contracts/*Events.sol
+              - host-contracts/contracts/shared/**
   build:
     name: coprocessor-host-listener-docker-build/build
     needs: check-changes

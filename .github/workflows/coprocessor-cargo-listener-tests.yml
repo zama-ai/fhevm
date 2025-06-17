@@ -1,4 +1,4 @@
-name: Coprocessor Cargo tests
+name: Coprocessor Cargo tests for contract change
 
 on:
   pull_request:
@@ -23,9 +23,9 @@ jobs:
         with:
           filters: |
             rust-files:
-              - .github/workflows/coprocessor-cargo-tests.yml
-              - coprocessor/fhevm-engine/**
-              - coprocessor/proto/**
+              - .github/workflows/coprocessor-cargo-listener-tests.yml
+              - host-contracts/contracts/*Events.sol
+              - host-contracts/contracts/shared/**
   cargo-tests:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
@@ -90,4 +90,4 @@ jobs:
     - name: Run tests
       run: |
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TXN_SENDER_TEST_GLOBAL_LOCALSTACK=1 cargo test --release -- --test-threads=1
-      working-directory: coprocessor/fhevm-engine
+      working-directory: coprocessor/fhevm-engine/fhevm-listener
