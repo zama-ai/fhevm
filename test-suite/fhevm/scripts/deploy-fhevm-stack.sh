@@ -278,8 +278,8 @@ log_info "  kms-connector:${CONNECTOR_VERSION}${BUILD_TAG}"
 log_info "FHEVM Test Suite:"
 log_info "  test-suite/e2e:${TEST_SUITE_VERSION}${BUILD_TAG}"
 log_info "External Dependencies:"
-log_info "  KMS CORE: ${CORE_VERSION}"
-log_info "  RELAYER: ${RELAYER_VERSION}"
+log_info "  kms-service:${CORE_VERSION}"
+log_info "  fhevm-relayer:${RELAYER_VERSION}"
 
 run_compose "minio" "MinIO Services" \
     "${PROJECT}-minio:running" \
