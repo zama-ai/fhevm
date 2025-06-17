@@ -38,6 +38,8 @@ use crate::ACLTest::ACLTestInstance;
 use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
 
 const NB_EVENTS_PER_WALLET: i64 = 400;
+const DATABASE_URL: &str = "postgresql://postgres:postgres@localhost:5432/coprocessor";
+
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
@@ -115,12 +117,9 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     }
     let url = anvil.ws_endpoint();
 
-    let database_url =
-        "postgresql://postgres:postgres@localhost:5432/coprocessor";
-
     let db_pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(database_url)
+        .connect(DATABASE_URL)
         .await?;
 
     sqlx::query!("TRUNCATE computations")
@@ -160,12 +159,13 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         ignore_acl_events: false,
         acl_contract_address: None,
         tfhe_contract_address: None,
-        database_url: database_url.into(),
+        database_url: DATABASE_URL.into(),
         coprocessor_api_key,
         start_at_block: None,
         end_at_block: None,
         catchup_margin: 5,
         log_level: Level::INFO,
+        health_port: 8080,
     };
 
     // Start listener in background task
@@ -194,7 +194,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     eprintln!("First kill, check database valid block has been updated");
     listener_handle.abort();
     let mut database =
-        Database::new(&database_url, &coprocessor_api_key.unwrap(), chain_id)
+        Database::new(&DATABASE_URL, &coprocessor_api_key.unwrap(), chain_id)
             .await;
     let last_block = database.read_last_valid_block().await;
     assert!(last_block.is_some());
@@ -202,7 +202,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
 
     let db_pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(database_url)
+        .connect(DATABASE_URL)
         .await?;
     let mut tfhe_events_count = 0;
     let mut acl_events_count = 0;
@@ -246,5 +246,78 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     assert_eq!(acl_events_count, nb_wallet * NB_EVENTS_PER_WALLET);
     eprintln!("Total kills: {nb_kill}");
     assert!(3 < nb_kill);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_health() -> Result<(), anyhow::Error> {
+    let mut anvil = Anvil::new()
+        .block_time_f64(1.0)
+        .args(["--accounts", "1"])
+        .spawn();
+    let url = anvil.ws_endpoint();
+
+    let db_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(DATABASE_URL)
+        .await?;
+
+    let coprocessor_api_key = Some(
+        sqlx::query!("SELECT tenant_api_key FROM tenants LIMIT 1")
+            .fetch_one(&db_pool)
+            .await?
+            .tenant_api_key,
+    );
+    let args = Args {
+        url: url.clone(),
+        initial_block_time: 1,
+        no_block_immediate_recheck: false,
+        ignore_tfhe_events: false,
+        ignore_acl_events: false,
+        acl_contract_address: None,
+        tfhe_contract_address: None,
+        database_url: DATABASE_URL.into(),
+        coprocessor_api_key,
+        start_at_block: None,
+        end_at_block: None,
+        catchup_margin: 5,
+        log_level: Level::INFO,
+        health_port: 8081,
+    };
+
+    const LIVENESS_URL: &str = "http://0.0.0.0:8081/liveness";
+    const HEALTHZ_URL: &str = "http://0.0.0.0:8081/healthz";
+
+    // Start listener in background task
+    let listener_handle: tokio::task::JoinHandle<()> = tokio::spawn(main(args.clone()));
+    for _ in 1..10 {
+        let response = reqwest::get(LIVENESS_URL).await;
+        if response.is_ok() && response.unwrap().status().is_success() {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    }
+    let response = reqwest::get(LIVENESS_URL).await;
+    assert!(response.is_ok());
+    assert!(response.unwrap().status().is_success());
+    let response = reqwest::get(HEALTHZ_URL).await;
+    let Ok(response) = response else {
+        return Err(anyhow::anyhow!("Failed to get healthz"));
+    };
+    if !response.status().is_success() {
+        eprintln!("response: {:?}", response.text().await);
+        return Err(anyhow::anyhow!("Failed to get healthz"));
+    }
+    anvil.child_mut().kill().unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    let response = reqwest::get(HEALTHZ_URL).await;
+    let Ok(response) = response else {
+        return Err(anyhow::anyhow!("Failed to get healthz"));
+    };
+    if response.status().is_success() {
+        return Err(anyhow::anyhow!("Healthz should be unhealthy"));
+    }
+    listener_handle.abort();
     Ok(())
 }
