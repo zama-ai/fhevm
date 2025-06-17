@@ -1,4 +1,4 @@
-name: Fhevm Gateway Contracts Hardhat tests in Docker
+name: gateway-contracts-hardhat-tests-docker
 
 on:
   workflow_call:
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   docker-test:
-    name: Hardhat tests in docker container
+    name: gateway-contracts-hardhat-tests-docker/test (bpr)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project

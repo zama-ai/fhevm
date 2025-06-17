@@ -1,4 +1,4 @@
-name: Docker - Rust Glibc Golden Image
+name: golden-container-images-docker-build-rust
 
 on:
   workflow_dispatch:
@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: golden-container-images-docker-build-rust/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -49,7 +50,8 @@ jobs:
     steps:
       - id: set-tag
         run: echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
-  docker-golden-rust:
+  build:
+    name: golden-container-images-docker-build-rust/build
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.changes-golden-rust == 'true' }}
     uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main

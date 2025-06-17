@@ -1,4 +1,4 @@
-name: Fhevm Host Contracts Slither Analysis
+name: host-contracts-slither-analysis
 
 # The SARIF output is temporarily disabled.
 on:
@@ -7,6 +7,7 @@ on:
       - main
 jobs:
   check-changes:
+    name: host-contracts-slither-analysis/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -24,6 +25,7 @@ jobs:
               - .github/workflows/host-contracts-slither-analysis.yml
               - host-contracts/**
   analyze:
+    name: host-contracts-slither-analysis/analyze (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
     runs-on: large_ubuntu_32

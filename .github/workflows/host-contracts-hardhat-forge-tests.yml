@@ -1,10 +1,11 @@
-name: Fhevm Host Contracts Hardhat/Forge Tests
+name: host-contracts-hardhat-forge-tests
 
 on:
   pull_request:
 
 jobs:
   check-changes:
+    name: host-contracts-hardhat-forge-tests/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -23,6 +24,7 @@ jobs:
               - host-contracts/**
   build:
     needs: check-changes
+    name: host-contracts-hardhat-forge-tests/build (bpr)
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
     runs-on: large_ubuntu_32
     strategy:
@@ -44,6 +46,6 @@ jobs:
       - run: cp ./host-contracts/.env.example ./host-contracts/.env
       - run: npm --prefix ./host-contracts ci --include=optional
       - name: "Run JS/TS tests"
-        run: npm --prefix ./host-contracts run test:mock      
+        run: npm --prefix ./host-contracts run test:mock
       - name: "Run forge tests"
         run: "cd host-contracts && forge install foundry-rs/forge-std && forge test"

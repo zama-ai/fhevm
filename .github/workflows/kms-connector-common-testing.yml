@@ -1,5 +1,5 @@
 # Main build workflow that handles both x86 and ARM builds
-name: KMS Connector Common Testing
+name: kms-connector-common-testing
 
 on:
   workflow_call:
@@ -72,7 +72,8 @@ env:
   RUST_IMAGE_VERSION: '1.86.0'
 
 jobs:
-  compile-rust-unit-tests:
+  test:
+    name: kms-connector-common-testing/test (bpr)
     timeout-minutes: 500
     runs-on: ${{ inputs.runs-on }}
     services:

@@ -1,4 +1,4 @@
-name: Fhevm Host Contracts Deployment Tests
+name: host-contracts-docker-deployment-tests
 
 on:
   pull_request:
@@ -9,6 +9,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: host-contracts-docker-deployment-tests/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -27,6 +28,7 @@ jobs:
               - host-contracts/**
   docker-compose-tests:
     needs: check-changes
+    name: host-contracts-docker-deployment-tests/docker-compose-tests (bpr)
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
     runs-on: ubuntu-latest
     steps:

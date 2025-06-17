@@ -1,4 +1,4 @@
-name: Fhevm Gateway Contracts Deployment Tests
+name: gateway-contracts-deployment-tests
 
 on:
   pull_request:
@@ -9,6 +9,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: gateway-contracts-deploymenent-tests/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -25,8 +26,8 @@ jobs:
             gw-contracts:
               - .github/workflows/gateway-contracts-deployment-tests.yml
               - gateway-contracts/**
-  fhevm-gateway-sc-deploy:
-    name: Fhevm Gateway Contracts Deployment Tests
+  sc-deploy:
+    name: gateway-contracts-deployment-tests/sc-deploy (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     runs-on: ubuntu-latest

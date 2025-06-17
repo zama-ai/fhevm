@@ -35,7 +35,7 @@ jobs:
               - coprocessor/fhevm-engine/Cargo.toml
               - coprocessor/fhevm-engine/Cargo.lock
   build:
-    name: coprocessor-tx-sender-docker-build/build
+    name: coprocessor-tx-sender-docker-build/build (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-tx-sender == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef9d90453e0d776453026c751fbbd48e410d605a

@@ -1,4 +1,4 @@
-name: Docker - NodeJS Golden Image
+name: golden-container-images-docker-build-nodejs
 
 on:
   workflow_dispatch:
@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: golden-container-images-docker-build-nodejs/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -37,7 +38,8 @@ jobs:
             golden-nodejs:
               - '.github/workflows/golden-images-docker-build.yml'
               - 'golden-container-images/nodejs/**'
-  docker-golden-nodejs:
+  build:
+    name: golden-container-images-docker-build-nodejs/build
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-golden-nodejs == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main

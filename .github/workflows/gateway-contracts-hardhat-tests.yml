@@ -1,5 +1,5 @@
 # Run hardhat tests
-name: Fhevm Gateway Contracts Hardhat tests
+name: gateway-contracts-hardhat-tests
 
 on:
   pull_request:
@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: gateway-contracts-hardhat-tests/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -30,10 +31,10 @@ jobs:
             gw-contracts:
               - .github/workflows/gateway-contracts-hardhat-tests.yml
               - gateway-contracts/**
-  hardhat-tests:
+  tests:
+    name: gateway-contracts-hardhat-tests/tests (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
-    name: Hardhat tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project

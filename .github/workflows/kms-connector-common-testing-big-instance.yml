@@ -1,4 +1,5 @@
-name: KMS Connector Common Testing Big Instance
+name: kms-connector-common-testing-big-instance
+
 on:
   workflow_call:
     inputs:
@@ -72,7 +73,7 @@ env:
 
 jobs:
   start-runner:
-    name: Start self-hosted EC2 runner
+    name: kms-connector-common-testing-big-instance/start-runner
     runs-on: ubuntu-latest
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
@@ -89,6 +90,7 @@ jobs:
           profile: ${{ inputs.slab-backend }}
 
   run-build:
+    name: kms-connector-common-testing-big-instance/run-build
     needs: start-runner
     uses: ./.github/workflows/kms-connector-common-testing.yml
     secrets:
@@ -111,7 +113,7 @@ jobs:
       app-cache-dir: ${{ inputs.app-cache-dir }}
 
   stop-runner:
-    name: Stops self-hosted EC2 runner
+    name: kms-connector-common-testing-big-instance/stop-runner
     needs:
       - start-runner
       - run-build

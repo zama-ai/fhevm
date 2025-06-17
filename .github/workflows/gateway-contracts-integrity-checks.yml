@@ -2,7 +2,7 @@
 # - The Rust bindings crate version and files are up-to-date
 # - Contract mocks and selectors are current
 # - Dependency licenses compliance
-name: Fhevm Gateway Contracts Integrity Checks
+name: gateway-contracts-integrity-checks
 
 on:
   pull_request:
@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: gateway-contracts-integrity-checks/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -33,9 +34,9 @@ jobs:
               - .github/workflows/gateway-contracts-integrity-checks.yml
               - gateway-contracts/**
   contract-integrity-checks:
+    name: gateway-contracts-integrity-checks/contract-integrity-checks (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
-    name: Contract integrity checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project

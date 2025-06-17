@@ -1,4 +1,4 @@
-name: Fhevm Gateway Mock Contracts Deployment
+name: gateway-contracts-mock-deployment
 
 on:
   pull_request:
@@ -25,10 +25,10 @@ jobs:
             gw-contracts:
               - .github/workflows/gateway-contracts-mock-deployment.yml
               - gateway-contracts/**
-  fhevm-gateway-mock-contracts-deploy:
+  deploy:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
-    name: Fhevm Gateway Mock Contracts Deployment
+    name: gateway-contracts-mock-deployment/deploy (bpr)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

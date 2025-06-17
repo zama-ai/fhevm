@@ -1,4 +1,4 @@
-name: Fhevm Solidity npm Publish
+name: library-solidity-publish
 
 on:
   workflow_dispatch:
@@ -10,6 +10,7 @@ on:
 
 jobs:
   publish:
+    name: library-solidity-publish/publish
     runs-on: ubuntu-latest
     defaults:
       run:

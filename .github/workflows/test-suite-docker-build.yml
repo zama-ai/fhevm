@@ -1,4 +1,4 @@
-name: "Docker - Fhevm Test Suite E2E"
+name: test-suite-docker-build
 
 on:
   pull_request:
@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: test-suite-docker-build/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -32,9 +33,9 @@ jobs:
               - '.github/workflows/test-suite-docker-build.yml'
               - 'test-suite/e2e/**'
   docker-e2e-image:
+    name: test-suite-docker-build/docker-e2e-image (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-e2e-docker == 'true' || github.event_name == 'release' }}
-    name: Docker - fhevm E2E Image
     uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
     secrets:
       GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}

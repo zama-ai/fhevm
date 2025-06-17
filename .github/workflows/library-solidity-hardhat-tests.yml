@@ -1,10 +1,11 @@
-name: Fhevm Library Solidity Hardhat tests
+name: library-solidity-hardhat-tests
 
 on:
   pull_request:
 
 jobs:
   check-changes:
+    name: library-solidity-hardhat-tests/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -22,6 +23,7 @@ jobs:
               - .github/workflows/library-solidity-npm-tests.yml
               - library-solidity/**
   build:
+    name: library-solidity-hardhat-tests/build (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-library-solidity == 'true' }}
     runs-on: large_ubuntu_32
@@ -40,4 +42,4 @@ jobs:
       - run: cp ./library-solidity/.env.example ./library-solidity/.env
       - run: npm --prefix ./library-solidity ci --include=optional
       - name: "Run JS/TS tests"
-        run: npm --prefix ./library-solidity run test:mock      
+        run: npm --prefix ./library-solidity run test:mock

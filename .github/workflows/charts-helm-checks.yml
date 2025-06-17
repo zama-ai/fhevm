@@ -1,4 +1,4 @@
-name: "Helm - Charts Checks"
+name: charts-helm-checks
 
 on:
   pull_request:
@@ -8,6 +8,7 @@ env:
 
 jobs:
   check-changes:
+    name: charts-helm-checks/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -24,7 +25,8 @@ jobs:
             charts:
               - '.github/workflows/charts-helm-checks.yml'
               - 'charts/**'
-  helm-charts-lint:
+  lint:
+    name: charts-helm-checks/lint
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
     runs-on: 'ubuntu-latest'
@@ -36,7 +38,8 @@ jobs:
         uses: WyriHaximus/github-action-helm3@fc4ba26e75cf5d08182c6ce3b72623c8bfd7272b # v3.1.0
         with:
           exec: helm lint charts/*
-  helm-charts-test:
+  test:
+    name: charts-helm-checks/test (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
     runs-on: ubuntu-latest

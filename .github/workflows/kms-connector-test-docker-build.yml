@@ -3,7 +3,7 @@
 # 1. Pull requests: For validation before merging
 # 2. Pushes: On main and release/* branches for building images
 # IMPORTANT NOTES: The tests are only executed for components that have been changed
-name: "KMS Connector Test Docker Build"
+name: kms-connector-test-docker-build
 
 on:
   pull_request:
@@ -32,6 +32,7 @@ jobs:
   # Initial job that determines which components have changed
   # Used by subsequent jobs to decide whether they need to run
   check-changes:
+    name: kms-connector-test-docker-build/check-changes
     runs-on: ubuntu-latest
     outputs:
       # Each output indicates if files in a specific component were modified
@@ -63,6 +64,7 @@ jobs:
   # - Changes to workflow file
   ############################################################################
   test-connector:
+    name: kms-connector-test-docker-build/test-connector
     needs: check-changes
     if: needs.check-changes.outputs.changes-connector == 'true'
     uses: ./.github/workflows/kms-connector-common-testing-big-instance.yml
@@ -82,6 +84,7 @@ jobs:
   # Only runs on main/release branches after successful tests
   # Also runs on pull requests targeting main/release branches with the docker label
   docker-connector:
+    name: kms-connector-test-docker-build/docker-connector
     needs:
       - test-connector
     if: >-

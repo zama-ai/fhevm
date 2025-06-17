@@ -1,4 +1,4 @@
-name: Fhevm Host Contracts npm Publish
+name: host-contracts-publish
 
 on:
   workflow_dispatch:
@@ -10,6 +10,7 @@ on:
 
 jobs:
   publish:
+    name: host-contracts-publish/publish
     runs-on: ubuntu-latest
     defaults:
       run:

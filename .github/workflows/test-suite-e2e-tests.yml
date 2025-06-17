@@ -1,4 +1,4 @@
-name: Test Suite E2E Tests
+name: test-suite-e2e-tests
 
 on:
   workflow_dispatch:
@@ -43,6 +43,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: test-suite-e2e-tests/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -59,6 +60,7 @@ jobs:
             fhevm:
               - 'test-suite/fhevm/**'
   fhevm-e2e-test:
+    name: test-suite-e2e-tests/fhevm-e2e-test (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
     permissions:
