@@ -220,7 +220,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         UnsafeUpgrades.upgradeProxy(
             proxy,
             address(new FHEVMExecutor()),
-            abi.encodeCall(FHEVMExecutor.reinitialize, ()),
+            abi.encodeCall(FHEVMExecutor.initializeFromEmptyProxy, ()),
             owner
         );
         fhevmExecutor = FHEVMExecutor(proxy);
@@ -347,7 +347,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
         assertEq(fhevmExecutor.getACLAddress(), aclAdd);
         assertEq(fhevmExecutor.getHCULimitAddress(), HCULimitAdd);
-        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.1.0")));
+        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.2.0")));
     }
 
     /// @dev This function exists for the test below to call it externally.

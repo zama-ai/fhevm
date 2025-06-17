@@ -117,7 +117,7 @@ contract KMSVerifierTest is Test {
             proxy,
             implementation,
             abi.encodeCall(
-                kmsVerifier.reinitialize,
+                kmsVerifier.initializeFromEmptyProxy,
                 (verifyingContractSource, uint64(block.chainid), signers, initialThreshold)
             ),
             owner
