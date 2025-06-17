@@ -379,6 +379,7 @@ describe("GatewayConfig", function () {
               userDecryptionThreshold,
               kmsNodes,
               coprocessors,
+              custodians,
             ],
           },
         }),
