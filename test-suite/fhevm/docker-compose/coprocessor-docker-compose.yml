@@ -55,6 +55,11 @@ services:
     image: ghcr.io/zama-ai/fhevm/coprocessor:${COPROCESSOR_VERSION}
     env_file:
       - ../env/staging/.env.coprocessor.local
+    healthcheck:
+        test: ["CMD-SHELL", "curl -f http://localhost:8080/healthz || exit 1"]
+        interval: 10s
+        timeout: 5s
+        retries: 3
     command:
       - fhevm_listener
       - --database-url=${DATABASE_URL}
