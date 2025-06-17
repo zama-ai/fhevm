@@ -1,4 +1,4 @@
-name: Docker - Fhevm Gateway Contracts
+name: gateway-contracts-docker-build
 
 on:
   pull_request:
@@ -15,15 +15,18 @@ concurrency:
 
 jobs:
   check-changes:
+    name: gateway-contracts-docker-build/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: read
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
         id: filter
         with:
@@ -31,7 +34,8 @@ jobs:
             gw-contracts:
               - .github/workflows/gateway-contracts-docker-build.yml
               - gateway-contracts/**
-  docker-gateway-contracts:
+  build:
+    name: gateway-contracts-docker-build/build
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
@@ -39,9 +43,9 @@ jobs:
       GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
     permissions:
-      contents: "read"
-      id-token: "write"
-      packages: "write"
+      contents: read
+      id-token: write
+      packages: write
     with:
       working-directory: "gateway-contracts"
       docker-context: "gateway-contracts"
@@ -51,7 +55,8 @@ jobs:
       arm-build: true
 
   docker-hardhat-test:
-    needs: docker-gateway-contracts
+    needs: build
+    name: gateway-contracts-docker-build/docker-hardhat-test (bpr)
     uses: ./.github/workflows/gateway-contracts-hardhat-tests-docker.yml
     with:
-      image-name: ${{ needs.docker-gateway-contracts.outputs.image_name }}
+      image-name: ${{ needs.build.outputs.image_name }}

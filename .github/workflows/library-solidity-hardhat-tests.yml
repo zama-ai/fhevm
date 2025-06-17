@@ -1,19 +1,22 @@
-name: Fhevm Library Solidity Hardhat tests
+name: library-solidity-hardhat-tests
 
 on:
   pull_request:
 
 jobs:
   check-changes:
+    name: library-solidity-hardhat-tests/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: read
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     outputs:
       changes-library-solidity: ${{ steps.filter.outputs.library-solidity }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
         id: filter
         with:
@@ -22,12 +25,15 @@ jobs:
               - .github/workflows/library-solidity-npm-tests.yml
               - library-solidity/**
   build:
+    name: library-solidity-hardhat-tests/build (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-library-solidity == 'true' }}
     runs-on: large_ubuntu_32
     strategy:
       matrix:
         node-version: [20.x]
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -40,4 +46,4 @@ jobs:
       - run: cp ./library-solidity/.env.example ./library-solidity/.env
       - run: npm --prefix ./library-solidity ci --include=optional
       - name: "Run JS/TS tests"
-        run: npm --prefix ./library-solidity run test:mock      
+        run: npm --prefix ./library-solidity run test:mock

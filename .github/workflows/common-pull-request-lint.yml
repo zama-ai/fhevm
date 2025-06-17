@@ -1,4 +1,4 @@
-name: Fhevm Common PR Lint
+name: common-pull-request
 
 on:
   pull_request:
@@ -6,8 +6,12 @@ on:
 env:
   ACTIONLINT_VERSION: 1.6.27
 
+permissions:
+  contents: read
+
 jobs:
   lint:
+    name: common-pull-request/lint (bpr)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

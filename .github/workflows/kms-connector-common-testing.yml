@@ -1,5 +1,11 @@
 # Main build workflow that handles both x86 and ARM builds
-name: KMS Connector Common Testing
+name: kms-connector-common-testing
+
+permissions:
+  contents: read
+  pull-requests: write
+  packages: write
+  id-token: write
 
 on:
   workflow_call:
@@ -72,7 +78,8 @@ env:
   RUST_IMAGE_VERSION: '1.86.0'
 
 jobs:
-  compile-rust-unit-tests:
+  test:
+    name: kms-connector-common-testing/test (bpr)
     timeout-minutes: 500
     runs-on: ${{ inputs.runs-on }}
     services:
@@ -91,6 +98,7 @@ jobs:
         with:
           submodules: true
           token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+          persist-credentials: 'false'
 
       - name: Setup Home
         if: "${{ !contains(inputs.runs-on, 'ubuntu') }}"

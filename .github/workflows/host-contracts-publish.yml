@@ -1,15 +1,17 @@
-name: Fhevm Host Contracts npm Publish
+name: host-contracts-publish
 
 on:
   workflow_dispatch:
     inputs:
       release:
         description: "Set to true for release tagging"
+        type: boolean
         required: false
         default: false
 
 jobs:
   publish:
+    name: host-contracts-publish/publish
     runs-on: ubuntu-latest
     defaults:
       run:
