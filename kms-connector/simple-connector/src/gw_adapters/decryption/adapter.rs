@@ -9,9 +9,6 @@ use fhevm_gateway_rust_bindings::decryption::Decryption;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, info, warn};
 
-/// The max value for the `gas_limit` of a transaction.
-const INFINITE_GAS_LIMIT: u64 = u64::MAX;
-
 /// The time to wait between two transactions attempt.
 const TX_INTERVAL: Duration = Duration::from_secs(3);
 
@@ -131,16 +128,20 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
 
     /// Estimates the `gas_limit` for the upcoming transaction.
     async fn estimate_gas(&self, id: U256, call: &mut TransactionRequest) {
-        match self.provider.estimate_gas(call.clone()).await {
-            Ok(gas) => info!(decryption_id = ?id, "Initial gas estimation for the tx: {gas}"),
-            Err(e) => warn!(decryption_id = ?id, "Failed to estimate gas for the tx: {e}"),
-        }
+        let gas_estimation = match self.provider.estimate_gas(call.clone()).await {
+            Ok(estimation) => estimation,
+            Err(e) => return warn!(decryption_id = ?id, "Failed to estimate gas for the tx: {e}"),
+        };
+        info!(decryption_id = ?id, "Initial gas estimation for the tx: {gas_estimation}");
 
+        // Increase estimation to 300%
         // TODO: temporary workaround for out-of-gas errors
         // Our automatic estimation fails during gas pikes.
         // (see https://zama-ai.slack.com/archives/C0915Q59CKG/p1749843623276629?thread_ts=1749828466.079719&cid=C0915Q59CKG)
-        info!(decryption_id = ?id, "Updating `gas_limit` to max value");
-        call.gas = Some(INFINITE_GAS_LIMIT);
+        let new_gas_value = gas_estimation.saturating_mul(3);
+
+        info!(decryption_id = ?id, "Updating `gas_limit` to {new_gas_value}");
+        call.gas = Some(new_gas_value);
     }
 
     /// Sends the requested transactions with one retry.
