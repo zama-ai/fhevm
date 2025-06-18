@@ -2257,8 +2257,6 @@ version = "0.1.0-rc6"
 dependencies = [
  "alloy",
  "anyhow",
- "aws-config",
- "aws-sdk-kms",
  "clap",
  "config",
  "fhevm_gateway_rust_bindings",
@@ -6819,6 +6817,29 @@ dependencies = [
  "sha1",
  "thiserror",
  "utf-8",
+]
+
+[[package]]
+name = "tx-sender"
+version = "0.1.0-rc6"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "aws-config",
+ "aws-sdk-kms",
+ "connector-utils",
+ "fhevm_gateway_rust_bindings",
+ "serde",
+ "serial_test",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test",
 ]
 
 [[package]]

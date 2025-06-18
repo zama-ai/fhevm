@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/gw-listener", "crates/utils", "simple-connector"]
+members = ["crates/*", "simple-connector"]
 
 [workspace.package]
 authors = ["Zama"]

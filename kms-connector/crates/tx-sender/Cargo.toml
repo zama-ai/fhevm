@@ -1,5 +1,5 @@
 [package]
-name = "connector-utils"
+name = "tx-sender"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,23 +7,23 @@ publish.workspace = true
 version.workspace = true
 
 [dependencies]
+connector-utils.workspace = true
 fhevm_gateway_rust_bindings.workspace = true
-kms-grpc.workspace = true
-tfhe.workspace = true
 
 alloy.workspace = true
 anyhow.workspace = true
-clap.workspace = true
-config.workspace = true
+aws-config.workspace = true
+aws-sdk-kms.workspace = true
 serde.workspace = true
 sqlx.workspace = true
-thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tonic.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
 tempfile.workspace = true
 toml.workspace = true
+tracing-test.workspace = true
