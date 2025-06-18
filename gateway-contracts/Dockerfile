@@ -1,4 +1,4 @@
-FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21
+FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS prod
 
 WORKDIR /app
 
@@ -34,3 +34,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD test -d /app/artifacts && find /app/artifacts -type f -name "*.json" | grep -q . || exit 1
 
 ENTRYPOINT ["/bin/bash", "-c"]
+
+FROM prod AS dev
