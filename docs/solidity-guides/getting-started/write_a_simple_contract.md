@@ -1,3 +1,2 @@
-# Readme
-
-Go to [FHEVM Hardhat Template Quickstart](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/QUICKSTART.md)
+- [Tutorial: For Hardhat Beginners, write a simple Counter smart contract using Solidity and Hardhat.](../../examples/tutorials/counter/counter)
+- [Tutorial: From Counter.sol to FHECounter.sol, how to transform a standard smart contract into a FHEVM-equivalent.](../../examples/tutorials/fhecounter/fhecounter)
