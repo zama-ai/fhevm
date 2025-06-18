@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tfhe::set_server_key;
 
-use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus};
+use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use tokio::{select, time::Duration};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
@@ -65,6 +65,15 @@ impl HealthCheckService for ZkProofService {
             .unwrap_or(u64::MAX) as u32)
         < threshold
     }
+
+    fn get_version(&self) -> Version {
+        // Later, the unknowns will be initialized from build.rs
+        Version{
+            name: "zkproof-worker",
+            version: "unknown",
+            build: "unknown",
+        }
+    }
 }
 
 impl ZkProofService {
@@ -101,7 +110,7 @@ impl ZkProofService {
 }
 /// Executes the main loop for handling verify_proofs requests inserted in the
 /// database
-async fn execute_verify_proofs_loop(
+pub async fn execute_verify_proofs_loop(
     pool: PgPool,
     conf: Config,
     last_active_at: Arc<RwLock<SystemTime>>,
@@ -160,9 +169,6 @@ async fn execute_worker(
         if let Ok(mut value) = last_active_at.try_write() {
             *value = SystemTime::now();
         }
-
-
-        tokio::time::sleep(Duration::from_secs(10000)).await;
 
         if let Err(e) = execute_verify_proof_routine(pool, tenant_key_cache, conf).await {
             error!(target: "zkpok", "Execution err: {}", e);
