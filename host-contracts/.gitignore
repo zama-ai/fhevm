@@ -27,3 +27,4 @@ ignition/deployments/chain-31337
 /out
 lcov.info
 /report
+lib/forge-std
