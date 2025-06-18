@@ -57,4 +57,12 @@ spec:
             limits:
               cpu: {{ .Values.snsWorker.resources.limits.cpu | default "500m" }}
               memory: {{ .Values.snsWorker.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.snsWorker.probes .Values.snsWorker.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.snsWorker.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.snsWorker.probes .Values.snsWorker.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.snsWorker.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
 {{- end -}}

@@ -62,4 +62,12 @@ spec:
             limits:
               cpu: {{ .Values.fhevmListener.resources.limits.cpu | default "500m" }}
               memory: {{ .Values.fhevmListener.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.fhevmListener.probes .Values.fhevmListener.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.fhevmListener.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.fhevmListener.probes .Values.fhevmListener.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.fhevmListener.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
 {{- end -}}

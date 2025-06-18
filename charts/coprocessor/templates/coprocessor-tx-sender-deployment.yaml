@@ -57,4 +57,12 @@ spec:
             limits:
               cpu: {{ .Values.txSender.resources.limits.cpu | default "500m" }}
               memory: {{ .Values.txSender.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.txSender.probes .Values.txSender.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.txSender.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.txSender.probes .Values.txSender.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.txSender.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
 {{- end -}}

@@ -105,6 +105,22 @@ fhevmListener:
     limits:
       cpu: 500m
       memory: 512Mi
+  # probes: enable and configure liveness/readiness health checks
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
   affinity:
     enabled: false
   tolerations:
@@ -150,6 +166,21 @@ gwListener:
     limits:
       cpu: 500m
       memory: 512Mi
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
   affinity:
     enabled: false
   tolerations:
@@ -197,6 +228,21 @@ tfheWorker:
     limits:
       cpu: 500m
       memory: 512Mi
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
   tracing:
     enabled: false
     endpoint: ""
@@ -240,6 +286,21 @@ zkProofWorker:
     limits:
       cpu: 500m
       memory: 512Mi
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
   affinity:
     enabled: false
   tolerations:
@@ -289,6 +350,21 @@ snsWorker:
     limits:
       cpu: 500m
       memory: 512Mi
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
   affinity:
     enabled: false
   tolerations:
@@ -343,6 +419,21 @@ txSender:
     limits:
       cpu: 500m
       memory: 512Mi
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
   affinity:
     enabled: false
   tolerations:

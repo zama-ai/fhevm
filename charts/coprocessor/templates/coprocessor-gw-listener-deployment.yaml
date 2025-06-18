@@ -57,4 +57,12 @@ spec:
             limits:
               cpu: {{ .Values.gwListener.resources.limits.cpu | default "500m" }}
               memory: {{ .Values.gwListener.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.gwListener.probes .Values.gwListener.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.gwListener.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.gwListener.probes .Values.gwListener.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.gwListener.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
 {{- end -}}

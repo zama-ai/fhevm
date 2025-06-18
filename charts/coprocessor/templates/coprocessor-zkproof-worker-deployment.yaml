@@ -57,4 +57,12 @@ spec:
             limits:
               cpu: {{ .Values.zkProofWorker.resources.limits.cpu | default "500m" }}
               memory: {{ .Values.zkProofWorker.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.zkProofWorker.probes .Values.zkProofWorker.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.zkProofWorker.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.zkProofWorker.probes .Values.zkProofWorker.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.zkProofWorker.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
 {{- end -}}
