@@ -1,10 +1,6 @@
 name: kms-connector-common-docker-big-instance
 
-permissions:
-  contents: 'read'
-  pull-requests: write
-  packages: 'write'
-  id-token: 'write'
+permissions: {}
 
 on:
   workflow_call:
