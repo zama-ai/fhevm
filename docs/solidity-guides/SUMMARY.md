@@ -5,10 +5,7 @@
 - [Quick Start - Hardhat](hardhat/README.md)
   - [Prerequisites](hardhat/prerequisites.md)
   - [1. Setting up Hardhat](hardhat/1.-setting-up-hardhat.md)
-  - [2. Writing contracts](hardhat/2.-writing-contracts.md)
-  - [3. Testing in mocked mode](hardhat/3.-testing-in-mocked-mode.md)
-  - [4. Deploying the contract](hardhat/4.-deploying-the-contract.md)
-  - [5. Interacting with the contract](hardhat/5.-interacting-with-the-contract.md)
+  - [2. Quick start](hardhat/2.-quickstart.md)
 
 ## Encrypted Types & Operations
 
