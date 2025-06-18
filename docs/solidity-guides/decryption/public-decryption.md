@@ -3,7 +3,7 @@
 This section explains how to handle decryption in fhevm. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
 
 {% hint style="info" %}
-Understanding how encryption, user decryption, and public decryption works is a prerequisite before implementation, see [Encryption, User Decryption, Public Decryption, and Computation](../../introductions/d_re_ecrypt_compute.md).
+Understanding how encryption, user decryption, and public decryption works is a prerequisite before implementation, see [Encryption, User Decryption, Public Decryption, and Computation](../../protocol/d_re_ecrypt_compute.md).
 {% endhint %}
 
 Decryption is essential in two primary cases:
@@ -11,7 +11,7 @@ Decryption is essential in two primary cases:
 1. **Smart contract logic**: A contract requires plaintext values for computations or decision-making.
 2. **User interaction**: Plaintext data needs to be revealed to all users, such as revealing the decision of the vote.
 
-To learn how decryption works see [Encryption, User decryption, Public decryption, and Computation](../../introductions/d_re_ecrypt_compute.md).
+To learn how decryption works see [Encryption, User decryption, Public decryption, and Computation](../../protocol/d_re_ecrypt_compute.md).
 
 ## Overview
 

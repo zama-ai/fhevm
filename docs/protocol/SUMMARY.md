@@ -1,20 +1,13 @@
-## Getting Started
+- [Welcome](README.md)
 
-- [Welcome to FHEVM[Draft]](README.md)
-- [Overview](introduction-overview.md)
+## Protocol
 
-## Architecture
-
-- [Litepaper](litepaper.md)
-- [Overview](architecture_overview.md)
-- [FHE on blockchain](fhe-on-blockchain.md)
-- [FHEVM components](fhevm-components.md)
-- [Encryption, decryption, and computation](d_re_ecrypt_compute.md)
-
-## References
-
-- [Table of all addresses](table_of_addresses.md)
-- [Repositories](overview.md)
+- [FHE on Blockchain](architecture/overview.md)
+  - [Coprocessor](architecture/coprocessor.md)
+  - [Gateway](architecture/gateway.md)
+  - [KMS](architecture/kms.md)
+  - [Relayer & Oracle](architecture/relayer_oracle.md)
+- [Roadmap](roadmap.md)
 
 ## Developer
 

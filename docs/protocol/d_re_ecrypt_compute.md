@@ -80,8 +80,8 @@ You can read about the implementation details in [our decryption guide](solidity
 #### What is “User Decryption”?
 
 User Decryption is the mechanism that allows users or applications to request private access to decrypted data — without
-exposing the plaintext on-chain. Instead of simply decrypting, the KMS securely decrypts the result with
-the user’s public key, allowing the user to decrypt it client-side only.
+exposing the plaintext on-chain. Instead of simply decrypting, the KMS securely decrypts the result with the user’s
+public key, allowing the user to decrypt it client-side only.
 
 This guarantees:
 
