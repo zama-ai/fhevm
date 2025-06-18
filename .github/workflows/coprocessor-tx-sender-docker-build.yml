@@ -40,7 +40,7 @@ jobs:
     name: coprocessor-tx-sender-docker-build/build (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-tx-sender == 'true' || github.event_name == 'release' }}
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef9d90453e0d776453026c751fbbd48e410d605a
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3c6b5ecf34d5350a03d1ff5e4d0ddc89607b614e
     secrets:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
@@ -49,7 +49,7 @@ jobs:
       actions: 'read'
       contents: 'read'
       pull-requests: 'read'
-      attestations: write
+      attestations: 'write'
       packages: 'write'
       id-token: 'write'
     with:
@@ -57,5 +57,5 @@ jobs:
       docker-context: "."
       push_image: true
       image-name: "fhevm/coprocessor/tx-sender"
-      docker-file: "coprocessor/fhevm-engine/transaction-sender/Dockerfile"
+      docker-file: "./coprocessor/fhevm-engine/transaction-sender/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-tx-sender"

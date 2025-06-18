@@ -44,17 +44,21 @@ jobs:
     name: golden-container-images-docker-build-nodejs/build
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-golden-nodejs == 'true' || github.event_name == 'release' }}
-    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3c6b5ecf34d5350a03d1ff5e4d0ddc89607b614e
     secrets:
-      GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
     permissions:
+      actions: 'read'
       contents: 'read'
-      id-token: 'write'
+      pull-requests: 'read'
+      attestations: 'write'
       packages: 'write'
+      id-token: 'write'
     with:
       working-directory: "."
       push_image: true
       image-name: "fhevm/gci/nodejs"
-      docker-file: "golden-container-images/nodejs/Dockerfile"
-      arm-build: true
+      docker-file: "./golden-container-images/nodejs/Dockerfile"
+      app-cache-dir: "fhevm-golden-nodejs"
