@@ -27,7 +27,8 @@
 ## Development Guide
 
 - [Hardhat module](hardhat/README.md)
-- [Setup Hardhat](hardhat/setup.md)
-- [Test](hardhat/test.md)
-- [Deployment](hardhat/deploy.md)
+  - [Setup Hardhat](hardhat/setup.md)
+  - [Test](hardhat/test.md)
+  - [Deployment](hardhat/deploy.md)
 - [Foundry](foundry.md)
+- [HCU Estimator](hcu.md)

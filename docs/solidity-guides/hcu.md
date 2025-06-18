@@ -23,57 +23,6 @@ limits:
 
 If either limit is exceeded, the transaction will revert.
 
-## Measuring HCU
-
-To monitor HCU during development, you can use the following helper function: **`getTxHCUFromTxReceipt`**:
-
-You can import it as such: `import { getTxHCUFromTxReceipt } from "../coprocessorUtils";` It allows to extract either
-the total HCU consumption or the maximum depth HCU consumption from a Solidity transaction receipt.
-
-### Example
-
-The following code demonstrates how to obtain information about HCU from the logs.
-
-```typescript
-import { getTxHCUFromTxReceipt } from "../coprocessorUtils";
-
-const tx = await this.erc20["transfer(address,bytes32,bytes)"](
-  this.signers.bob.address,
-  encryptedTransferAmount.handles[0],
-  encryptedTransferAmount.inputProof,
-);
-const receipt = await tx.wait();
-expect(receipt?.status).to.eq(1);
-
-const {
-  globalTxHCU: globalTxHCU,
-  maxTxHCUDepth: maxTxHCUDepth,
-  HCUDepthPerHandle: hcuDepthPerHandle,
-} = getTxHCUFromTxReceipt(tx);
-
-console.log("Total Transaction HCU:", globalTxHCU);
-console.log("Maximum transaction HCU depth:", maxTxHCUDepth);
-console.log(hcuDepthPerHandle);
-```
-
-The output from the code above will look similar to the following:
-
-```
-Total Transaction HCU: 586200
-Maximum transaction HCU depth: 397000
-{
-  '0xbd7130bfcc326fda4bb2d1369a8f2aa53f8f537a66ff0000000000007a690000': 156000,
-  '0xf1a829fc1ef14cec26872d6671ed40e6e46b923a94ff0000000000007a690500': 600,
-  '0xf44b392aec4240d38d0fa468a9334139784f3e1ac7ff0000000000007a690500': 209000,
-  '0xf6f5c565fda71893b08bba9b8395d0877a5beb3847ff0000000000007a690500': 397000,
-  '0x1f442f6150dae1ca5dd32e1e34c11210f9c37a68edff0000000000007a690500': 397000
-}
-```
-
-- The first two lines show the total HCU consumed by the transaction and the maximum HCU depth.
-- The object lists HCU usage per handle, where each key is a handle identifier and each value is the HCU depth for that
-  handle.
-
 ## HCU limit
 
 The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per
