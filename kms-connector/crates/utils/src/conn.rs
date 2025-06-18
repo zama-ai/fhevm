@@ -8,10 +8,10 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 /// The number of connection retry to connect to the database or the Gateway RPC node.
-const RETRY_NUMBER: usize = 5;
+pub const RETRY_NUMBER: usize = 5;
 
 /// The delay between two connection attempts.
-const RETRY_DELAY: Duration = Duration::from_secs(2);
+pub const RETRY_DELAY: Duration = Duration::from_secs(2);
 
 /// Tries to establish the connection with Postgres database.
 pub async fn connect_to_db(db_url: &str, db_pool_size: u32) -> anyhow::Result<Pool<Postgres>> {

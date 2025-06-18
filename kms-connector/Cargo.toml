@@ -71,6 +71,7 @@ tracing-subscriber = { version = "=0.3.19", default-features = true, features = 
 url = { version = "=2.5.4", default-features = false }
 
 # Testing dependencies
+connector-tests.path = "tests"
 rand = "=0.8.5"
 serial_test = "3.2.0"
 tempfile = "=3.19.1"

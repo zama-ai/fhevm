@@ -1,6 +1,7 @@
-use alloy::primitives::U256;
+use alloy::{hex, primitives::U256};
+use anyhow::anyhow;
 use kms_grpc::kms::v1::{
-    PublicDecryptionRequest, PublicDecryptionResponse, UserDecryptionRequest,
+    PublicDecryptionRequest, PublicDecryptionResponse, RequestId, UserDecryptionRequest,
     UserDecryptionResponse,
 };
 use tonic::Response;
@@ -25,6 +26,7 @@ impl From<UserDecryptionRequest> for KmsGrpcRequest {
 }
 
 /// The different KMS Core GRPC responses used by the KMS Connector.
+#[derive(Clone, Debug)]
 pub enum KmsGrpcResponse {
     PublicDecryption {
         decryption_id: U256,
@@ -36,20 +38,32 @@ pub enum KmsGrpcResponse {
     },
 }
 
-impl From<(U256, Response<PublicDecryptionResponse>)> for KmsGrpcResponse {
-    fn from(value: (U256, Response<PublicDecryptionResponse>)) -> Self {
-        Self::PublicDecryption {
-            decryption_id: value.0,
+impl TryFrom<(RequestId, Response<PublicDecryptionResponse>)> for KmsGrpcResponse {
+    type Error = anyhow::Error;
+
+    fn try_from(
+        value: (RequestId, Response<PublicDecryptionResponse>),
+    ) -> Result<Self, Self::Error> {
+        let decryption_id = U256::try_from_be_slice(&hex::decode(value.0.request_id)?)
+            .ok_or_else(|| anyhow!("Failed to parse decryption_id"))?;
+
+        Ok(Self::PublicDecryption {
+            decryption_id,
             grpc_response: value.1.into_inner(),
-        }
+        })
     }
 }
 
-impl From<(U256, Response<UserDecryptionResponse>)> for KmsGrpcResponse {
-    fn from(value: (U256, Response<UserDecryptionResponse>)) -> Self {
-        Self::UserDecryption {
-            decryption_id: value.0,
+impl TryFrom<(RequestId, Response<UserDecryptionResponse>)> for KmsGrpcResponse {
+    type Error = anyhow::Error;
+
+    fn try_from(value: (RequestId, Response<UserDecryptionResponse>)) -> Result<Self, Self::Error> {
+        let decryption_id = U256::try_from_be_slice(&hex::decode(value.0.request_id)?)
+            .ok_or_else(|| anyhow!("Failed to parse decryption_id"))?;
+
+        Ok(Self::UserDecryption {
+            decryption_id,
             grpc_response: value.1.into_inner(),
-        }
+        })
     }
 }

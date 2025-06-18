@@ -13,6 +13,7 @@ tfhe.workspace = true
 
 alloy.workspace = true
 anyhow.workspace = true
+bincode.workspace = true
 clap.workspace = true
 config.workspace = true
 serde.workspace = true
