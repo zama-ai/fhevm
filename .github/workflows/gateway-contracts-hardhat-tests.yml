@@ -16,9 +16,9 @@ jobs:
   check-changes:
     name: gateway-contracts-hardhat-tests/check-changes
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
@@ -39,7 +39,7 @@ jobs:
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     steps:
       - name: Checkout project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

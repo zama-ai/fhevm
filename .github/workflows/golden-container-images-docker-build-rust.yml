@@ -23,9 +23,9 @@ jobs:
   check-changes:
     name: golden-container-images-docker-build-rust/check-changes
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       changes-golden-rust: ${{ steps.filter.outputs.golden-rust }}
@@ -42,9 +42,9 @@ jobs:
               - 'golden-container-images/rust-glibc/**'
   set-custom-tag:
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch'
     outputs:
@@ -61,9 +61,9 @@ jobs:
       GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
     permissions:
-      contents: read
-      id-token: write
-      packages: write
+      contents: 'read'
+      id-token: 'write'
+      packages: 'write'
     with:
       working-directory: "."
       push_image: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.push_image == 'true' || github.event_name != 'workflow_dispatch' && true }}

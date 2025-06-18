@@ -11,7 +11,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: 'read'
 
 concurrency:
   group: contract-integrity-checks-${{ github.ref }}

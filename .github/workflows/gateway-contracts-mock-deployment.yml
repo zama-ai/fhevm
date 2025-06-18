@@ -8,15 +8,15 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
-  checks: write
-  packages: read
+  contents: 'read'
+  checks: 'write'
+  packages: 'read'
 
 jobs:
   check-changes:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
     steps:

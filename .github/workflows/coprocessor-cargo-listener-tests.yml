@@ -1,4 +1,4 @@
-name: Coprocessor Cargo tests for contract change
+name: coprocessor-cargo-listener-tests
 
 on:
   pull_request:
@@ -9,6 +9,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: coprocessor-cargo-listener-tests/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -27,12 +28,13 @@ jobs:
               - host-contracts/contracts/*Events.sol
               - host-contracts/contracts/shared/**
   cargo-tests:
+    name: coprocessor-cargo-listener-tests/cargo-tests (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
     permissions:
-      contents: read
-      checks: write
-      packages: read
+      contents: 'read'
+      checks: 'write'
+      packages: 'read'
     runs-on: large_ubuntu_16
     steps:
     - name: Checkout code

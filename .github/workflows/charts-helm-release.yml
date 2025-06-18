@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  packages: write
+  contents: 'read'
+  packages: 'write'
 
 env:
   HELM_VERSION: v3.16.4

@@ -2,10 +2,10 @@
 name: kms-connector-common-testing
 
 permissions:
-  contents: read
+  contents: 'read'
   pull-requests: write
-  packages: write
-  id-token: write
+  packages: 'write'
+  id-token: 'write'
 
 on:
   workflow_call:

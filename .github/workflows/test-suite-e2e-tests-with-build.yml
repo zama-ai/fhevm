@@ -41,9 +41,9 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
     permissions:
-      contents: "read"
-      id-token: "write"
-      packages: "read"
+      contents: 'read'
+      id-token: 'write'
+      packages: 'read'
 
     runs-on: large_ubuntu_32
     steps:

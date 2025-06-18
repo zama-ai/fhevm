@@ -32,7 +32,7 @@ jobs:
               - .github/workflows/coprocessor-db-migration-docker-build.yml
               - coprocessor/fhevm-engine/db-migration/**
   build:
-    name: coprocessor-db-migration-docker-build/build
+    name: coprocessor-db-migration-docker-build/build (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-db-migration == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef9d90453e0d776453026c751fbbd48e410d605a

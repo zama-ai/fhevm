@@ -11,9 +11,9 @@ jobs:
   check-changes:
     name: host-contracts-docker-deployment-tests/check-changes
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
@@ -92,6 +92,6 @@ jobs:
         docker compose down -v --remove-orphans
 
 permissions:
-  contents: read
-  checks: write
-  packages: read
+  contents: 'read'
+  checks: 'write'
+  packages: 'read'

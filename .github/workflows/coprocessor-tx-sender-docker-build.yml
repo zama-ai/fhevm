@@ -17,9 +17,9 @@ jobs:
   check-changes:
     name: coprocessor-tx-sender-docker-build/check-changes
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       changes-coprocessor-tx-sender: ${{ steps.filter.outputs.coprocessor-tx-sender }}
@@ -46,12 +46,12 @@ jobs:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
     permissions:
-      actions: read
-      contents: read
-      pull-requests: read
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
       attestations: write
-      packages: write
-      id-token: write
+      packages: 'write'
+      id-token: 'write'
     with:
       working-directory: "."
       docker-context: "."
