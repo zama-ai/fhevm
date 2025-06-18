@@ -35,18 +35,22 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-e2e-docker == 'true' || github.event_name == 'release' }}
     name: Docker - fhevm E2E Image
-    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef9d90453e0d776453026c751fbbd48e410d605a
     secrets:
-      GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
     permissions:
-      contents: "read"
-      id-token: "write"
-      packages: "write"
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+      attestations: 'write'
+      packages: 'write'
+      id-token: 'write'
     with:
       working-directory: "test-suite"
       docker-context: "test-suite"
       push_image: true
       image-name: "fhevm/test-suite/e2e"
-      docker-file: "e2e/Dockerfile"
-      arm-build: true
+      docker-file: "./test-suite/e2e/Dockerfile"
+      app-cache-dir: "fhevm-test-suite-e2e"
