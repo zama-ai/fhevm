@@ -2,15 +2,15 @@
 
 pragma solidity ^0.8.24;
 
-import "../Decryption.sol";
+import "../InputVerification.sol";
 
-contract DecryptionUpgradedExample is Decryption {
+contract InputVerificationV2Example is InputVerification {
     /// @notice Name of the contract
-    string private constant CONTRACT_NAME = "Decryption";
+    string private constant CONTRACT_NAME = "InputVerification";
 
     /// @notice Version of the contract
-    uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MAJOR_VERSION = 1000;
+    uint256 private constant MINOR_VERSION = 0;
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice Getter for the name and version of the contract
