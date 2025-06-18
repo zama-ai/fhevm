@@ -15,29 +15,35 @@ use tracing::{error, info};
 struct HealthResponse {
     status_code: String,
     status: String,
-    fields: HashMap<String, bool>,
-    details: Option<String>,
+    dependencies: HashMap<&'static str, &'static str>,
+    details: String,
 }
 
 impl From<HealthStatus> for HealthResponse {
     fn from(status: HealthStatus) -> Self {
-        let healthy = status.fields.iter().all(|(_, s)| *s);
+        let details = status.error_details();
+        let dependencies: HashMap<&'static str, &'static str> = status
+            .checks
+            .iter()
+            .map(|(&key, &value)| (key, if value { "ok" } else { "fail" }))
+            .collect();
 
         Self {
             status_code: if status.is_healthy() { "200" } else { "503" }.to_string(),
-            status: if healthy {
+            status: if status.is_healthy() {
                 "healthy".to_string()
             } else {
                 "unhealthy".to_string()
             },
-            fields: status.fields,
-            details: Some(status.error_details.join("; ")),
+            dependencies,
+            details,
         }
     }
 }
 
 pub trait HealthCheckService: Send + Sync {
     fn health_check(&self) -> impl std::future::Future<Output = HealthStatus> + Send;
+    fn is_alive(&self) -> impl std::future::Future<Output = bool> + Send;
 }
 
 pub struct HttpServer<S: HealthCheckService + Send + Sync + 'static> {
@@ -93,20 +99,30 @@ impl<S: HealthCheckService + Send + Sync + 'static> HttpServer<S> {
         (http_status, Json(HealthResponse::from(status)))
     }
 
-    async fn liveness_handler(State(_service): State<Arc<S>>) -> impl IntoResponse {
-        (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "status_code": "200",
-                "status": "alive"
-            })),
-        )
+    async fn liveness_handler(State(service): State<Arc<S>>) -> impl IntoResponse {
+        if service.is_alive().await {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "status_code": "200",
+                    "status": "alive"
+                })),
+            )
+        } else {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "status_code": "503",
+                    "status": "not_responding"
+                })),
+            )
+        }
     }
 }
 
 #[derive(Clone, Default)]
 pub struct HealthStatus {
-    pub fields: HashMap<String, bool>,
+    pub checks: HashMap<&'static str, bool>,
     pub error_details: Vec<String>,
 }
 
@@ -114,7 +130,7 @@ impl HealthStatus {
     /// Checks DB availability by reusing the service internal DB connection pool
     ///
     /// query has its internal timeout
-    pub async fn register_db_status(&mut self, pool: &PgPool) {
+    pub async fn set_db_connected(&mut self, pool: &PgPool) {
         let mut is_connected = false;
         match sqlx::query("SELECT 1").execute(pool).await {
             Ok(_) => {
@@ -125,11 +141,19 @@ impl HealthStatus {
                     .push(format!("Database query error: {}", e));
             }
         }
-        self.fields
-            .insert("database_connected".to_string(), is_connected);
+        self.checks.insert("database", is_connected);
     }
 
     pub fn is_healthy(&self) -> bool {
-        self.fields.iter().all(|(_, s)| *s)
+        self.checks.iter().all(|(_, s)| *s)
+    }
+
+    pub fn error_details(&self) -> String {
+        self.error_details
+            .iter()
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("; ")
     }
 }
