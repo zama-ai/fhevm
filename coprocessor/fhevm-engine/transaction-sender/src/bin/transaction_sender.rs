@@ -7,11 +7,12 @@ use alloy::{
     signers::{aws::AwsSigner, local::PrivateKeySigner, Signer},
     transports::http::reqwest::Url,
 };
+use anyhow::Context;
 use aws_config::BehaviorVersion;
 use clap::{Parser, ValueEnum};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info}; // Add the missing tracing macros
+use tracing::{error, info, Level};
 use transaction_sender::{
     get_chain_id, http_server::HttpServer, make_abstract_signer, AbstractSigner, ConfigSettings,
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
@@ -112,6 +113,12 @@ struct Conf {
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     health_check_timeout: Duration,
+
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(Level),
+        default_value_t = Level::INFO)]
+    log_level: Level,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -129,18 +136,20 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().json().with_level(true).init();
     let conf = Conf::parse();
-    let chain_id = get_chain_id(
-        conf.gateway_url.clone(),
-        conf.provider_max_retries,
-        conf.provider_retry_interval,
-    )
-    .await?;
+
+    tracing_subscriber::fmt()
+        .json()
+        .with_level(true)
+        .with_max_level(conf.log_level)
+        .init();
+
+    let chain_id = get_chain_id(conf.gateway_url.clone(), conf.provider_retry_interval).await;
     let abstract_signer: AbstractSigner;
     match conf.signer_type {
         SignerType::PrivateKey => {
             if conf.private_key.is_none() {
+                error!("Private key is required for PrivateKey signer");
                 return Err(anyhow::anyhow!(
                     "Private key is required for PrivateKey signer"
                 ));
@@ -151,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
         }
         SignerType::AwsKms => {
             let key_id = std::env::var("AWS_KEY_ID")
-                .expect("AWS_KEY_ID environment variable is required for AwsKms signer");
+                .context("AWS_KEY_ID environment variable is required for AwsKms signer")?;
             let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
             let aws_kms_client = aws_sdk_kms::Client::new(&aws_conf);
             let signer = AwsSigner::new(aws_kms_client, key_id, Some(chain_id)).await?;
@@ -159,23 +168,40 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     let wallet = EthereumWallet::new(abstract_signer.clone());
-    let database_url = conf
-        .database_url
-        .clone()
-        .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
+    let database_url = match conf.database_url.clone() {
+        Some(url) => url,
+        None => std::env::var("DATABASE_URL").context("DATABASE_URL is undefined")?,
+    };
     let cancel_token = CancellationToken::new();
-    let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
+
+    let provider = loop {
+        match ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet.clone())
             .connect_ws(
-                WsConnect::new(conf.gateway_url)
+                WsConnect::new(conf.gateway_url.clone())
                     .with_max_retries(conf.provider_max_retries)
                     .with_retry_interval(conf.provider_retry_interval),
             )
-            .await?,
-        Some(wallet.default_signer().address()),
-    );
+            .await
+        {
+            Ok(inner_provider) => {
+                info!("Connected to Gateway at {}", conf.gateway_url);
+                break NonceManagedProvider::new(
+                    inner_provider,
+                    Some(wallet.default_signer().address()),
+                );
+            }
+            Err(e) => {
+                error!(
+                    "Failed to connect to Gateway at {} on startup: {}, retrying in {:?}",
+                    conf.gateway_url, e, conf.provider_retry_interval
+                );
+                tokio::time::sleep(conf.provider_retry_interval).await;
+            }
+        }
+    };
+
     let config = ConfigSettings {
         database_url,
         database_pool_size: conf.database_pool_size,
@@ -198,26 +224,33 @@ async fn main() -> anyhow::Result<()> {
         health_check_port: conf.health_check_port,
         health_check_timeout: conf.health_check_timeout,
     };
-    let transaction_sender = TransactionSender::new(
-        conf.input_verification_address,
-        conf.ciphertext_commits_address,
-        conf.multichain_acl_address,
-        abstract_signer,
-        provider,
-        cancel_token.clone(),
-        config,
-        None,
-    )
-    .await?;
 
-    // Wrap the TransactionSender in an Arc
-    let transaction_sender = std::sync::Arc::new(transaction_sender);
+    let transaction_sender = std::sync::Arc::new(
+        TransactionSender::new(
+            conf.input_verification_address,
+            conf.ciphertext_commits_address,
+            conf.multichain_acl_address,
+            abstract_signer,
+            provider,
+            cancel_token.clone(),
+            config.clone(),
+            None,
+        )
+        .await?,
+    );
 
-    // Create HTTP server with the Arc-wrapped sender
     let http_server = HttpServer::new(
         transaction_sender.clone(),
         conf.health_check_port,
         cancel_token.clone(),
+    );
+
+    install_signal_handlers(cancel_token.clone())?;
+
+    info!(
+        health_check_port = conf.health_check_port,
+        conf = ?config,
+        "Transaction sender and HTTP health check server starting"
     );
 
     // Run both services concurrently

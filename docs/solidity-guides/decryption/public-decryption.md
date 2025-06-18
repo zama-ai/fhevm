@@ -1,9 +1,9 @@
-# Decryption
+# Public decryption
 
 This section explains how to handle decryption in fhevm. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
 
 {% hint style="info" %}
-Understanding how encryption, decryption and reencryption works is a prerequisite before implementation, see [Encryption, Decryption, Re-encryption, and Computation](../../introductions/d_re_ecrypt_compute.md).
+Understanding how encryption, user decryption, and public decryption works is a prerequisite before implementation, see [Encryption, User Decryption, Public Decryption, and Computation](../../introductions/d_re_ecrypt_compute.md).
 {% endhint %}
 
 Decryption is essential in two primary cases:
@@ -11,7 +11,7 @@ Decryption is essential in two primary cases:
 1. **Smart contract logic**: A contract requires plaintext values for computations or decision-making.
 2. **User interaction**: Plaintext data needs to be revealed to all users, such as revealing the decision of the vote.
 
-To learn how decryption works see [Encryption, Decryption, Re-encryption, and Computation](../../introductions/d_re_ecrypt_compute.md).
+To learn how decryption works see [Encryption, User decryption, Public decryption, and Computation](../../introductions/d_re_ecrypt_compute.md).
 
 ## Overview
 
@@ -39,8 +39,8 @@ contract TestAsyncDecrypt is SepoliaConfig {
 
   function requestBool() public {
     require(!isDecryptionPending, "Decryption is in progress");
-    uint256[] memory cts = new uint256[](1);
-    cts[0] = FHE.toUint256(xBool);
+    bytes32[] memory cts = new bytes32[](1);
+    cts[0] = FHE.toBytes32(xBool);
     uint256 latestRequestId = FHE.requestDecryption(cts, this.myCustomCallback.selector);
 
     /// @dev This prevents sending multiple requests before the first callback was sent.
@@ -60,7 +60,7 @@ contract TestAsyncDecrypt is SepoliaConfig {
 
 ### Next steps
 
-Explore advanced decryption techniques and learn more about re-encryption:
+Explore advanced decryption techniques and learn more about user decryption:
 
 - [Decryption in depth](decrypt_details.md)
-- [Re-encryption](reencryption.md)
+- [User decryption](user-decryption.md)

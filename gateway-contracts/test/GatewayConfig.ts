@@ -122,11 +122,13 @@ describe("GatewayConfig", function () {
       // Extract event args and convert to strings. This is needed as the "upgradeProxy()" method above
       // returns an GatewayConfig instance instead of a ContractTransactionResponse, so the expect() function
       // from chaijs fails on the evaluation of the transaction events.
-      const initializationEvents = await upgradeTx.queryFilter(upgradeTx.filters.Initialization);
-      const stringifiedEventArgs = (initializationEvents[0] as EventLog).args.map((arg: any) => arg.toString());
+      const initializeGatewayConfigEvents = await upgradeTx.queryFilter(upgradeTx.filters.InitializeGatewayConfig);
+      const stringifiedEventArgs = (initializeGatewayConfigEvents[0] as EventLog).args.map((arg: any) =>
+        arg.toString(),
+      );
 
       // It should emit one event containing the initialization parameters
-      expect(initializationEvents.length).to.equal(1);
+      expect(initializeGatewayConfigEvents.length).to.equal(1);
       expect(stringifiedEventArgs).to.deep.equal([
         pauser.address,
         toValues(protocolMetadata).toString(),
@@ -313,6 +315,25 @@ describe("GatewayConfig", function () {
       )
         .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighUserDecryptionThreshold")
         .withArgs(highUserDecryptionThreshold, nKmsNodes);
+    });
+
+    it("Should revert because initialization is not from an empty proxy", async function () {
+      await expect(
+        hre.upgrades.upgradeProxy(gatewayConfig, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [
+              pauser.address,
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              userDecryptionThreshold,
+              kmsNodes,
+              coprocessors,
+            ],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, "NotInitializingFromEmptyProxy");
     });
   });
 

@@ -1,10 +1,11 @@
-use alloy::primitives::{Bytes, FixedBytes, Log};
+use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
 
 use fhevm_listener::contracts::TfheContract;
 use fhevm_listener::contracts::TfheContract::TfheContractEvents;
-use fhevm_listener::database::tfhe_event_propagate::{ClearConst, Database as ListenerDatabase, Handle, ToType};
-
+use fhevm_listener::database::tfhe_event_propagate::{
+    ClearConst, Database as ListenerDatabase, Handle, ToType,
+};
 
 use crate::tests::operators::{generate_binary_test_cases, generate_unary_test_cases};
 use crate::tests::utils::{decrypt_ciphertexts, wait_until_all_ciphertexts_computed};
@@ -44,11 +45,6 @@ fn as_scalar_handle(big_int: &BigInt) -> Handle {
 fn as_scalar_uint(big_int: &BigInt) -> ClearConst {
     let (_, bytes) = big_int.to_bytes_be();
     ClearConst::from_be_slice(&bytes)
-}
-
-fn to_bytes(big_int: &BigInt) -> Bytes {
-    let (_, bytes) = big_int.to_bytes_be();
-    Bytes::copy_from_slice(&bytes)
 }
 
 fn to_ty(ty: i32) -> ToType {

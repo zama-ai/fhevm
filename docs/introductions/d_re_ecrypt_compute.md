@@ -37,7 +37,7 @@ transmitted or processed.
   - **Source**: Frontend.
   - **Destination**: Coprocessor (for processing).
 
-<figure><img src="../.gitbook/assets/encrypt.png" alt="re-encryption" width="600"><figcaption></figcaption></figure>
+<figure><img src="../.gitbook/assets/encrypt.png" alt="decryption" width="600"><figcaption></figcaption></figure>
 
 You can read about the implementation details in [our encryption guide](solidity-guides/inputs.md).
 
@@ -74,13 +74,13 @@ There are two kinds of decryption supported in the FHEVM system:
 
 <figure><img src="../.gitbook/assets/decryption.png" alt="decryption"><figcaption></figcaption></figure>
 
-<figure><img src="../.gitbook/assets/asyncDecrypt.png" alt="re-encryption"><figcaption><p>re-encryption</p></figcaption></figure>
+<figure><img src="../.gitbook/assets/asyncDecrypt.png" alt="decryption"><figcaption><p>decryption</p></figcaption></figure>
 You can read about the implementation details in [our decryption guide](solidity-guides/decryption/decrypt.md).
 
 #### What is “User Decryption”?
 
 User Decryption is the mechanism that allows users or applications to request private access to decrypted data — without
-exposing the plaintext on-chain. Instead of simply decrypting, the KMS securely decrypts and re-encrypts the result with
+exposing the plaintext on-chain. Instead of simply decrypting, the KMS securely decrypts the result with
 the user’s public key, allowing the user to decrypt it client-side only.
 
 This guarantees:
@@ -89,7 +89,7 @@ This guarantees:
 - The KMS never reveals the decrypted value
 - The decrypted result is not written to the blockchain
 
-<figure><img src="../.gitbook/assets/reencryption.png" alt="re-encryption"><figcaption><p>re-encryption process</p></figcaption></figure>
+<figure><img src="../.gitbook/assets/reencryption.png" alt="decryption"><figcaption><p>decryption process</p></figcaption></figure>
 
 #### Client-side implementation
 
@@ -98,7 +98,7 @@ User decryption is initiated on the client side using the
 
 1. **Retrieve the ciphertext**:
    - The dApp calls a view function (e.g., `balanceOf`) on the smart contract to get the handle of the ciphertext to be
-     re-encrypted.
+     decrypted.
 2. **Generate and sign a keypair**:
    - The dApp generates a keypair for the user.
    - The user signs the public key to ensure authenticity.
@@ -115,7 +115,7 @@ User decryption is initiated on the client side using the
    - The dApp receives the encrypted ciphertext under the user's public key from the Gateway/Relayer.
    - The dApp decrypts the ciphertext locally using the user's private key.
 
-You can read [our re-encryption guide explaining how to use it](solidity-guides/decryption/reencryption.md).
+You can read [our user decryption guide explaining how to use it](solidity-guides/decryption/user-decryption.md).
 
 ## **Tying It All Together**
 

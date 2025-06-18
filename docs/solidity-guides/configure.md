@@ -9,12 +9,12 @@ To utilize encrypted computations in Solidity contracts, you must configure the 
 ## Key components configured automatically
 
 1. **FHE library**: Sets up encryption parameters and cryptographic keys.
-2. **Relayer**: Manages secure cryptographic operations, including reencryption and decryption.
+2. **Relayer**: Manages secure cryptographic operations, including user decryption and public decryption.
 3. **Network-specific settings**: Adapts to local testing, testnets (Sepolia for example), or mainnet deployment.
 
 By inheriting these configuration contracts, you ensure seamless initialization and functionality across environments.
 
-## ZamaFHEVMConfig.sol
+## ZamaConfig.sol
 
 This configuration contract initializes the **fhevm environment** with required encryption parameters.
 
@@ -22,7 +22,7 @@ This configuration contract initializes the **fhevm environment** with required 
 
 ```solidity
 // For Ethereum Sepolia
-import { SepoliaZamaFHEVMConfig } from "@fhevm/solidity/config/ZamaFHEVMConfig.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 ```
 
 **Purpose:**
@@ -36,18 +36,18 @@ import { SepoliaZamaFHEVMConfig } from "@fhevm/solidity/config/ZamaFHEVMConfig.s
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { SepoliaZamaFHEVMConfig } from "@fhevm/solidity/config/ZamaFHEVMConfig.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract MyERC20 is SepoliaZamaFHEVMConfig {
+contract MyERC20 is SepoliaConfig {
   constructor() {
     // Additional initialization logic if needed
   }
 }
 ```
 
-## ZamaRela.sol
+## ZamaConfig.sol
 
-To perform decryption or reencryption, your contract must interact with the **Relayer**, which acts as a secure bridge between the blockchain, coprocessor, and Key Management System (KMS).
+To perform public decryption or user decryption, your contract must interact with the **Relayer**, which acts as a secure bridge between the blockchain, coprocessor, and Key Management System (KMS).
 
 **Import based on your environment**
 
@@ -59,7 +59,7 @@ import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 **Purpose**
 
 - Configures the relayer for secure cryptographic operations.
-- Facilitates reencryption and decryption requests.
+- Facilitates public and user decryption requests.
 
 **Example: Configuring the relayer with Sepolia settings**
 

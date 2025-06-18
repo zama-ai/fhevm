@@ -14,7 +14,7 @@ use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::sync::mpsc::{self, Sender};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{info, Level};
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
@@ -32,6 +32,7 @@ pub struct DBConfig {
     pub notify_channel: String,
     pub batch_limit: u32,
     pub polling_interval: u32,
+    pub cleanup_interval: Duration,
     pub max_connections: u32,
 }
 
@@ -58,6 +59,7 @@ pub struct Config {
     pub service_name: String,
     pub db: DBConfig,
     pub s3: S3Config,
+    pub log_level: Level,
 }
 
 /// Implement Display for Config
@@ -123,19 +125,6 @@ impl HandleItem {
             SET ciphertext128 = $1
             WHERE handle = $2",
             digest,
-            self.handle
-        )
-        .execute(trx.as_mut())
-        .await?;
-
-        // Reset ciphertext128 as the ct128 has been successfully uploaded to S3
-        // NB: For reclaiming the disk-space in DB, we rely on auto vacuuming in
-        // Postgres
-
-        sqlx::query!(
-            "UPDATE ciphertexts
-             SET ciphertext128 = NULL
-             WHERE handle = $1",
             self.handle
         )
         .execute(trx.as_mut())
@@ -217,10 +206,30 @@ pub enum ExecutionError {
     S3TransientError(String),
 }
 
+#[derive(Clone)]
+pub enum UploadJob {
+    /// Represents a standard upload that is dispatched immediately
+    /// after a successful squash_noise computation
+    Normal(HandleItem),
+
+    /// Represents a job that requires acquiring a database lock
+    /// before initiating the upload process.
+    DatabaseLock(HandleItem),
+}
+
+impl UploadJob {
+    pub fn handle(&self) -> &[u8] {
+        match self {
+            UploadJob::Normal(item) => &item.handle,
+            UploadJob::DatabaseLock(item) => &item.handle,
+        }
+    }
+}
+
 /// Runs the SnS worker loop
 pub async fn compute_128bit_ct(
     conf: &Config,
-    tx: Sender<HandleItem>,
+    tx: Sender<UploadJob>,
     token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(target: "sns", "Worker started with {}", conf);
@@ -234,8 +243,8 @@ pub async fn compute_128bit_ct(
 /// Runs the uploader loop
 pub async fn process_s3_uploads(
     conf: &Config,
-    rx: mpsc::Receiver<HandleItem>,
-    tx: Sender<HandleItem>,
+    rx: mpsc::Receiver<UploadJob>,
+    tx: Sender<UploadJob>,
     token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(target: "sns", "Uploader started with {:?}", conf.s3);

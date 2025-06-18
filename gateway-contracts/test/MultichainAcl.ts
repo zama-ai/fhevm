@@ -2,8 +2,9 @@ import { HardhatEthersSigner, SignerWithAddress } from "@nomicfoundation/hardhat
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { Wallet } from "ethers";
+import hre from "hardhat";
 
-import { GatewayConfig, MultichainAcl } from "../typechain-types";
+import { GatewayConfig, MultichainAcl, MultichainAcl__factory } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IMultichainAcl interface
 import { DelegationAccountsStruct } from "../typechain-types/contracts/interfaces/IMultichainAcl";
@@ -49,6 +50,23 @@ describe("MultichainAcl", function () {
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     owner = fixture.owner;
     pauser = fixture.pauser;
+  });
+
+  describe("Deployment", function () {
+    let multichainAclFactory: MultichainAcl__factory;
+
+    beforeEach(async function () {
+      // Get the MultichainAcl contract factory
+      multichainAclFactory = await hre.ethers.getContractFactory("MultichainAcl", owner);
+    });
+
+    it("Should revert because initialization is not from an empty proxy", async function () {
+      await expect(
+        hre.upgrades.upgradeProxy(multichainAcl, multichainAclFactory, {
+          call: { fn: "initializeFromEmptyProxy" },
+        }),
+      ).to.be.revertedWithCustomError(multichainAcl, "NotInitializingFromEmptyProxy");
+    });
   });
 
   describe("Allow account", async function () {

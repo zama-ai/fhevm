@@ -4,6 +4,8 @@ import fs from 'fs';
 import { task, types } from 'hardhat/config';
 import type { RunTaskFunction, TaskArguments } from 'hardhat/types';
 
+import { getRequiredEnvVar } from './utils/loadVariables';
+
 function stripContractName(input: string): string {
   const colonIndex = input.lastIndexOf('/');
   if (colonIndex !== -1) {
@@ -28,7 +30,39 @@ async function upgradeCurrentToNew(
   const currentImplementation = await ethers.getContractFactory(currentImplem, deployer);
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   const newImplementationFactory = await ethers.getContractFactory(newImplem, deployer);
-  await upgrades.upgradeProxy(proxy, newImplementationFactory);
+  await upgrades.upgradeProxy(proxy, newImplementationFactory, {
+    call: { fn: 'reinitializeV2' },
+  });
+  if (verifyContract) {
+    console.log('Waiting 2 minutes before contract verification... Please wait...');
+    await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
+    const implementationACLAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await run('verify:verify', {
+      address: implementationACLAddress,
+      constructorArguments: [],
+    });
+  }
+}
+
+async function upgradeCurrentToNewACL(
+  privateKey: string,
+  proxyAddress: string,
+  currentImplem: string,
+  newImplem: string,
+  verifyContract: boolean,
+  upgrades: HardhatUpgrades,
+  run: RunTaskFunction,
+  ethers: any,
+) {
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  await run('compile:specific', { contract: stripContractName(currentImplem) });
+  await run('compile:specific', { contract: stripContractName(newImplem) });
+  const currentImplementation = await ethers.getContractFactory(currentImplem, deployer);
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  const newImplementationFactory = await ethers.getContractFactory(newImplem, deployer);
+  await upgrades.upgradeProxy(proxy, newImplementationFactory, {
+    call: { fn: 'reinitializeV2', args: [getRequiredEnvVar('PAUSER_ADDRESS')] },
+  });
   if (verifyContract) {
     console.log('Waiting 2 minutes before contract verification... Please wait...');
     await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
@@ -49,18 +83,18 @@ task('task:upgradeACL')
     'newImplementation',
     'The new implementation solidity contract path and name, eg: examples/ACLUpgradedExample.sol:ACLUpgradedExample',
   )
-  .addParam('privateKey', 'The deployer private key')
   .addOptionalParam(
     'verifyContract',
     'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
     const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
-    await upgradeCurrentToNew(
-      taskArguments.privateKey,
+    await upgradeCurrentToNewACL(
+      privateKey,
       proxyAddress,
       taskArguments.currentImplementation,
       taskArguments.newImplementation,
@@ -80,18 +114,18 @@ task('task:upgradeFHEVMExecutor')
     'newImplementation',
     'The new implementation solidity contract path and name, eg: examples/FHEVMExecutorUpgradedExample.sol:FHEVMExecutorUpgradedExample',
   )
-  .addParam('privateKey', 'The deployer private key')
   .addOptionalParam(
     'verifyContract',
     'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.exec'));
-    const proxyAddress = parsedEnv.TFHE_EXECUTOR_CONTRACT_ADDRESS;
+    const proxyAddress = parsedEnv.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
-      taskArguments.privateKey,
+      privateKey,
       proxyAddress,
       taskArguments.currentImplementation,
       taskArguments.newImplementation,
@@ -111,18 +145,18 @@ task('task:upgradeKMSVerifier')
     'newImplementation',
     'The new implementation solidity contract path and name, eg: examples/KMSVerifierUpgradedExample.sol:KMSVerifierUpgradedExample',
   )
-  .addParam('privateKey', 'The deployer private key')
   .addOptionalParam(
     'verifyContract',
     'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier'));
     const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
-      taskArguments.privateKey,
+      privateKey,
       proxyAddress,
       taskArguments.currentImplementation,
       taskArguments.newImplementation,
@@ -142,18 +176,18 @@ task('task:upgradeInputVerifier')
     'newImplementation',
     'The new implementation solidity contract path and name, eg: contracts/InputVerifier2.sol:InputVerifier',
   )
-  .addParam('privateKey', 'The deployer private key')
   .addOptionalParam(
     'verifyContract',
     'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier'));
     const proxyAddress = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
-      taskArguments.privateKey,
+      privateKey,
       proxyAddress,
       taskArguments.currentImplementation,
       taskArguments.newImplementation,
@@ -173,18 +207,18 @@ task('task:upgradeHCULimit')
     'newImplementation',
     'The new implementation solidity contract path and name, eg: examples/HCULimitUpgradedExample.sol:HCULimitUpgradedExample',
   )
-  .addParam('privateKey', 'The deployer private key')
   .addOptionalParam(
     'verifyContract',
     'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.hculimit'));
     const proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
-      taskArguments.privateKey,
+      privateKey,
       proxyAddress,
       taskArguments.currentImplementation,
       taskArguments.newImplementation,
@@ -204,18 +238,18 @@ task('task:upgradeDecryptionOracleContract')
     'newImplementation',
     'The new implementation solidity contract path and name, eg: example/DecryptionOracleUpgradedExample.sol:DecryptionOracleUpgradedExample',
   )
-  .addParam('privateKey', 'The deployer private key')
   .addOptionalParam(
     'verifyContract',
     'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.decryptionoracle'));
     const proxyAddress = parsedEnv.DECRYPTION_ORACLE_ADDRESS;
     await upgradeCurrentToNew(
-      taskArguments.privateKey,
+      privateKey,
       proxyAddress,
       taskArguments.currentImplementation,
       taskArguments.newImplementation,

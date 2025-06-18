@@ -1,5 +1,5 @@
 # Run fhevm coprocessor benchmarks on a CPU instance and return parsed results to Slab.
-name: Coprocessor CPU benchmarks
+name: coprocessor-benchmarks-cpu
 
 on:
   workflow_dispatch:
@@ -28,10 +28,10 @@ env:
 
 jobs:
   setup-instance:
-    name: Setup instance (fhevm-coprocessor-benchmarks-cpu)
+    name: coprocessor-benchmarks-cpu/setup-instance
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -46,14 +46,14 @@ jobs:
           backend: aws
           profile: bench
 
-  fhevm-coprocessor-benchmarks-cpu:
-    name: Coprocessor CPU benchmarks (hpc7a.96xlarge)
+  benchmarks-cpu:
+    name: coprocessor-benchmarks-cpu/benchmarks-cpu (bpr)
     needs: setup-instance
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     continue-on-error: true
     timeout-minutes: 720  # 12 hours
     permissions:
-      contents: read
+      contents: 'read'
     strategy:
       fail-fast: false
       # explicit include-based build matrix, of known valid options
@@ -174,12 +174,12 @@ jobs:
           --slab-url "${{ secrets.SLAB_URL }}"
 
   teardown-instance:
-    name: Teardown instance (fhevm-coprocessor-benchmarks-cpu)
+    name: coprocessor-benchmarks-cpu/teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
-    needs: [ setup-instance, fhevm-coprocessor-benchmarks-cpu ]
+    needs: [ setup-instance, benchmarks-cpu ]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     steps:
       - name: Stop remote instance
         id: stop-instance

@@ -1,6 +1,6 @@
 use clap::{command, Parser};
 use fhevm_engine_common::telemetry;
-use tracing::error;
+use tracing::{error, info, Level};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -33,6 +33,13 @@ pub struct Args {
     /// Zkproof-worker service name in OTLP traces
     #[arg(long, default_value = "zkproof-worker")]
     pub service_name: String,
+
+    /// Log level for the worker
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(Level),
+        default_value_t = Level::INFO)]
+    pub log_level: Level,
 }
 
 pub fn parse_args() -> Args {
@@ -42,7 +49,11 @@ pub fn parse_args() -> Args {
 #[tokio::main]
 async fn main() {
     let args = parse_args();
-    tracing_subscriber::fmt().json().with_level(true).init(); // TODO: to file
+    tracing_subscriber::fmt()
+        .json()
+        .with_level(true)
+        .with_max_level(args.log_level)
+        .init();
 
     let database_url = args
         .database_url
@@ -59,10 +70,11 @@ async fn main() {
     };
 
     if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-        panic!("Error while initializing tracing: {:?}", err);
+        error!("Error while initializing tracing: {:?}", err);
+        std::process::exit(1);
     }
 
-    println!("Starting zkProof worker...");
+    info!("Starting zkProof worker...");
     if let Err(err) = zkproof_worker::verifier::execute_verify_proofs_loop(&conf).await {
         error!("Worker failed: {:?}", err);
     }

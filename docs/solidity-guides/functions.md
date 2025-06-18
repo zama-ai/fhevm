@@ -59,7 +59,6 @@ The library ensures that all operations on encrypted data follow the constraints
 - **Casting between encrypted types**: `FHE.asEbool` converts encrypted integers to encrypted booleans
 - **Casting to encrypted types**: `FHE.asEuintX` converts plaintext values to encrypted types
 - **Casting to encrypted addresses**: `FHE.asEaddress` converts plaintext addresses to encrypted addresses
-- **Casting to encrypted bytes**: `FHE.asEbytesX` converts plaintext bytes to encrypted bytes
 
 #### `asEuint`
 
@@ -311,7 +310,7 @@ function allowTransient(T value, address account) internal
 
 #### Access control list (ACL) overview
 
-The `allow` and `allowTransient` functions enable fine-grained control over who can access, decrypt, and reencrypt encrypted values. Temporary permissions (`allowTransient`) are ideal for minimizing gas usage in scenarios where access is needed only within a single transaction.
+The `allow` and `allowTransient` functions enable fine-grained control over who can access and decrypt encrypted values. Temporary permissions (`allowTransient`) are ideal for minimizing gas usage in scenarios where access is needed only within a single transaction.
 
 **Example: granting access**
 

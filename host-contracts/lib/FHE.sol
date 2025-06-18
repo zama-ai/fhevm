@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "./Impl.sol";
-import {FheType} from "../contracts/FheType.sol";
+import {FheType} from "../contracts/shared/FheType.sol";
 
 import "encrypted-types/EncryptedTypes.sol";
 

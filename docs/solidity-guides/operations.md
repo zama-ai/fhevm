@@ -67,22 +67,6 @@ You can generate cryptographically secure random numbers fully on-chain:
 
 For more details, refer to the [Random Encrypted Numbers](random.md) document.
 
-## Overload operators
-
-The `FHE` library supports operator overloading for encrypted integers (e.g., `+`, `-`, `*`, `&`) using the Solidity [`using for`](https://docs.soliditylang.org/en/v0.8.24/contracts.html#using-for) syntax. These overloaded operators currently perform unchecked operations, meaning they do not include overflow checks.
-
-**Example**\
-Overloaded operators make code more concise:
-
-```solidity
-using {
-    add as +
-} for FHE global;
-euint64 a = FHE.asEuint64(42);
-euint64 b = FHE.asEuint64(58);
-euint64 sum = a + b; /// @dev Calls FHE.add under the hood
-```
-
 ## Best Practices
 
 Here are some best practices to follow when using encrypted operations in your smart contracts:
@@ -95,8 +79,8 @@ Choose the smallest encrypted type that can accommodate your data to optimize ga
 
 ```solidity
 // Bad: Using euint256 for small numbers wastes gas
-euint64 age = FHE.euint256(25);  // age will never exceed 255
-euint64 percentage = FHE.euint256(75);  // percentage is 0-100
+euint64 age = FHE.asEuint128(25);  // age will never exceed 255
+euint64 percentage = FHE.asEuint128(75);  // percentage is 0-100
 ```
 
 ✅ Instead, use the smallest appropriate type:

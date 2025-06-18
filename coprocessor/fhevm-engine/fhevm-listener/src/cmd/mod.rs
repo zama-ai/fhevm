@@ -7,6 +7,7 @@ use sqlx::types::Uuid;
 use std::collections::VecDeque;
 use std::str::FromStr;
 use std::time::Duration;
+use tracing::{error, info, warn, Level};
 
 use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
@@ -75,6 +76,12 @@ pub struct Args {
         help = "Initial block time, refined on each block"
     )]
     pub initial_block_time: u64,
+
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(Level),
+        default_value_t = Level::INFO)]
+    pub log_level: Level,
 }
 
 type RProvider = FillProvider<
@@ -143,6 +150,7 @@ impl InfiniteLogIter {
     }
 
     async fn get_chain_id_or_panic(&self) -> ChainId {
+        // TODO: remove expect and, instead, propagate the error
         let ws = WsConnect::new(&self.url);
         let provider = ProviderBuilder::new()
             .connect_ws(ws)
@@ -192,7 +200,7 @@ impl InfiniteLogIter {
 
     async fn recheck_prev_block(&mut self) -> bool {
         let Some(provider) = &self.provider else {
-            eprintln!("No provider, inconsistent state");
+            error!("No provider, inconsistent state");
             return false;
         };
         let Some(event) = &self.prev_event else {
@@ -220,10 +228,11 @@ impl InfiniteLogIter {
         if logs.len() as u64 == last_block_event_count {
             return false;
         }
-        eprintln!(
-            "Replaying Block {block} with {} events (vs {})",
-            logs.len(),
-            last_block_event_count
+        info!(
+            block = block,
+            events_count = logs.len(),
+            last_block_event_count = last_block_event_count,
+            "Replaying Block"
         );
         self.catchup_logs.extend(logs);
         if let Some(event) = self.current_event.take() {
@@ -236,8 +245,7 @@ impl InfiniteLogIter {
     async fn new_log_stream(&mut self, not_initialized: bool) {
         let mut retry = 20;
         loop {
-            let ws = WsConnect::new(&self.url)
-                .with_max_retries(0); // disabled, alloy skips events
+            let ws = WsConnect::new(&self.url).with_max_retries(0); // disabled, alloy skips events
 
             match ProviderBuilder::new().connect_ws(ws).await {
                 Ok(provider) => {
@@ -252,8 +260,8 @@ impl InfiniteLogIter {
                     if !self.contract_addresses.is_empty() {
                         filter = filter.address(self.contract_addresses.clone())
                     }
-                    eprintln!("Listening on {}", &self.url);
-                    eprintln!("Contracts {:?}", &self.contract_addresses);
+                    info!(url = %self.url, "Listening on");
+                    info!(contracts = ?self.contract_addresses, "Contracts addresses");
                     // note subcribing to real-time before reading catchup
                     // events to have the minimal gap between the two
                     // TODO: but it does not guarantee no gap for now
@@ -272,6 +280,12 @@ impl InfiniteLogIter {
                 Err(err) => {
                     let delay = if not_initialized {
                         if retry == 0 {
+                            // TODO: remove panic and, instead, propagate the error
+                            error!(
+                                url = %self.url,
+                                error = %err,
+                                "Cannot connect",
+                            );
                             panic!(
                                 "Cannot connect to {} due to {err}.",
                                 &self.url
@@ -282,14 +296,19 @@ impl InfiniteLogIter {
                         1
                     };
                     if not_initialized {
-                        eprintln!(
-                            "Cannot connect to {} due to {err}. Will retry in {delay} secs, {retry} times.",
-                            &self.url
+                        warn!(
+                            url = %self.url,
+                            error = %err,
+                            delay_secs = delay,
+                            retry = retry,
+                            "Cannot connect. Will retry",
                         );
                     } else {
-                        eprintln!(
-                            "Cannot connect to {} due to {err}. Will retry in {delay} secs, indefinitively.",
-                            &self.url
+                        warn!(
+                            url = %self.url,
+                            error = %err,
+                            delay_secs = delay,
+                            "Cannot connect. Will retry infinitely",
                         );
                     }
                     retry -= 1;
@@ -301,7 +320,7 @@ impl InfiniteLogIter {
 
     async fn next_event_or_block_end(&mut self) -> LogOrBlockTimeout {
         let Some(stream) = &mut self.stream else {
-            eprintln!("No stream, inconsistent state");
+            error!("No stream, inconsistent state");
             return LogOrBlockTimeout::Log(None); // simulate a stream end to
                                                  // force reinit
         };
@@ -331,7 +350,7 @@ impl InfiniteLogIter {
             };
             if let Some(log) = self.catchup_logs.pop_front() {
                 if self.catchup_logs.is_empty() {
-                    eprintln!("Going back to real-time events");
+                    info!("Going back to real-time events");
                 };
                 self.current_event = Some(log);
                 break;
@@ -348,7 +367,7 @@ impl InfiniteLogIter {
                             return None;
                         }
                     }
-                    eprintln!("Nothing to read, retrying");
+                    info!("Nothing to read, retrying");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                     continue;
                 }
@@ -415,18 +434,22 @@ pub async fn main(args: Args) {
 
     if let Some(acl_contract_address) = &args.acl_contract_address {
         if let Err(err) = Address::from_str(acl_contract_address) {
+            // TODO: remove panic and, instead, propagate the error
+            error!(error = %err, "Invalid ACL contract address");
             panic!("Invalid acl contract address: {err}");
         };
     };
     if let Some(tfhe_contract_address) = &args.tfhe_contract_address {
         if let Err(err) = Address::from_str(tfhe_contract_address) {
-            panic!("Invalid tfhe contract address: {err}");
+            // TODO: remove panic and, instead, propagate the error
+            error!(error = %err, "Invalid TFHE contract address");
+            panic!("Invalid TFHE contract address: {err}");
         };
     }
 
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id_or_panic().await;
-    eprintln!("Chain ID: {chain_id}");
+    info!(chain_id = chain_id, "Chain ID");
 
     let mut db = if !args.database_url.is_empty() {
         if let Some(coprocessor_api_key) = args.coprocessor_api_key {
@@ -444,6 +467,8 @@ pub async fn main(args: Args) {
             }
             Some(db)
         } else {
+            // TODO: remove panic and, instead, propagate the error
+            error!("A Coprocessor API key is required to access the database");
             panic!("A Coprocessor API key is required to access the database");
         }
     } else {
@@ -452,46 +477,47 @@ pub async fn main(args: Args) {
 
     log_iter.new_log_stream(true).await;
 
-    let mut block_error_event_fthe = 0;
+    let mut block_tfhe_errors = 0;
     while let Some(log) = log_iter.next().await {
         if log_iter.is_first_of_block() {
             log_iter.reestimated_block_time();
             if let Some(block_number) = log.block_number {
-                if block_error_event_fthe == 0 {
+                if block_tfhe_errors == 0 {
                     if let Some(ref mut db) = db {
-                        let last_valid_block = db.mark_prev_block_as_valid(
-                            &log_iter.current_event,
-                            &log_iter.prev_event,
-                        )
-                        .await;
+                        let last_valid_block = db
+                            .mark_prev_block_as_valid(
+                                &log_iter.current_event,
+                                &log_iter.prev_event,
+                            )
+                            .await;
                         if last_valid_block.is_some() {
                             log_iter.last_valid_block = last_valid_block;
                         }
                     }
                 } else {
-                    eprintln!(
-                        "Errors in tfhe events: {block_error_event_fthe}"
+                    error!(
+                        block_tfhe_errors = block_tfhe_errors,
+                        "Errors in tfhe events"
                     );
-                    block_error_event_fthe = 0;
+                    block_tfhe_errors = 0;
                 }
-                eprintln!("\n--------------------");
-                eprintln!("Block {block_number}");
+                info!(block = block_number, "Block");
             }
         };
-        if block_error_event_fthe > 0 {
-            eprintln!("Errors in block {block_error_event_fthe}");
+        if block_tfhe_errors > 0 {
+            error!(block_tfhe_errors = block_tfhe_errors, "Errors in block");
         }
         if !args.ignore_tfhe_events {
             if let Ok(event) =
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
                 // TODO: filter on contract address if known
-                println!("TFHE {event:#?}");
+                info!(tfhe_event = ?event, "TFHE event");
                 if let Some(ref mut db) = db {
                     let res = db.insert_tfhe_event(&event).await;
                     if let Err(err) = res {
-                        block_error_event_fthe += 1;
-                        eprintln!("Error inserting tfhe event: {err}");
+                        block_tfhe_errors += 1;
+                        error!(error = %err, "Error inserting tfhe event");
                     }
                 }
                 continue;
@@ -501,7 +527,7 @@ pub async fn main(args: Args) {
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
-                println!("ACL {event:#?}");
+                info!(acl_event = ?event, "ACL event");
                 if let Some(ref mut db) = db {
                     let _ = db.handle_acl_event(&event).await;
                 }

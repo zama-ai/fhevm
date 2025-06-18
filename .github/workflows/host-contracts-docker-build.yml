@@ -1,4 +1,4 @@
-name: Docker - Fhevm Host Contracts
+name: host-contracts-docker-build
 
 on:
   pull_request:
@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: host-contracts-docker-build/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -24,6 +25,8 @@ jobs:
       changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
         id: filter
         with:
@@ -31,7 +34,8 @@ jobs:
             host-contracts:
               - .github/workflows/host-contracts-docker-build.yml
               - host-contracts/**
-  docker-fhevm-contracts:
+  build:
+    name: host-contracts-docker-build/build (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef9d90453e0d776453026c751fbbd48e410d605a
