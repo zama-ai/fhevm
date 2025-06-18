@@ -210,7 +210,9 @@ pub async fn input_registration_handler(
     let request_data: InputProofRequest = match payload.try_into() {
         Ok(event_data) => event_data,
         Err(message) => {
-            let error_response = InputProofErrorResponseJson { message };
+            let error_response = InputProofErrorResponseJson {
+                message: message.to_string(),
+            };
             return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
         }
     };

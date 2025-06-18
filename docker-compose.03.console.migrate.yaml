@@ -27,7 +27,6 @@ services:
     env_file:
       - ./apps/web3/.env.compose
     entrypoint: ["/bin/sh", "-c"]
-    # pnpx prisma migrate deploy
     command:
       - |
         echo "Waiting for database to be ready..." &&
