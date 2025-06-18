@@ -2,10 +2,11 @@ use crate::core::{
     KmsResponsePublisher,
     config::Config,
     event_picker::{DbEventPicker, EventPicker},
-    event_processor::{DbEventProcessor, DecryptionProcessor, EventProcessor, KmsClient},
+    event_processor::{
+        DbEventProcessor, DecryptionProcessor, EventProcessor, KmsClient, s3::S3Service,
+    },
     event_remover::{DbEventRemover, EventRemover},
     kms_response_publisher::DbKmsResponsePublisher,
-    s3::S3Service,
 };
 use connector_utils::conn::{GatewayProvider, connect_to_db, connect_to_gateway};
 use tokio_util::sync::CancellationToken;
@@ -106,5 +107,100 @@ impl
             response_publisher,
             event_remover,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use connector_tests::rand::{rand_signature, rand_u256};
+    use connector_utils::types::KmsResponse;
+    use std::time::Duration;
+    use tracing_test::traced_test;
+
+    #[tokio::test]
+    #[traced_test]
+    async fn test_kms_worker() {
+        let event_picker = MockEventPicker::new();
+        let event_processor = MockEventProcessor {};
+        let response_publisher = MockResponsePublisher {};
+        let event_remover = MockEventRemover {};
+
+        let worker = KmsWorker::new(
+            event_picker,
+            event_processor,
+            response_publisher,
+            event_remover,
+        );
+
+        let cancel_token = CancellationToken::new();
+        let worker_task = tokio::spawn(worker.start(cancel_token.clone()));
+
+        // Give time to the worker to process event
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        cancel_token.cancel();
+        worker_task.await.unwrap();
+
+        logs_contain("Event has been picked");
+        logs_contain("Response has been published");
+        logs_contain("Event has been removed");
+    }
+
+    struct MockEventPicker {
+        first_pick: bool,
+    }
+
+    impl MockEventPicker {
+        fn new() -> Self {
+            Self { first_pick: true }
+        }
+    }
+
+    impl EventPicker for MockEventPicker {
+        type Event = ();
+        async fn pick_event(&mut self) -> anyhow::Result<Self::Event> {
+            if self.first_pick {
+                info!("Event has been picked");
+                self.first_pick = false;
+            } else {
+                std::future::pending::<()>().await; // Wait forever
+            }
+            Ok(())
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockEventProcessor {}
+
+    impl EventProcessor for MockEventProcessor {
+        type Event = ();
+        async fn process(self, _event: &Self::Event) -> anyhow::Result<KmsResponse> {
+            Ok(KmsResponse::UserDecryption {
+                decryption_id: rand_u256(),
+                user_decrypted_shares: vec![],
+                signature: rand_signature(),
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockResponsePublisher {}
+
+    impl KmsResponsePublisher for MockResponsePublisher {
+        async fn publish(&self, _response: KmsResponse) -> anyhow::Result<()> {
+            info!("Response has been published");
+            Ok(())
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockEventRemover {}
+
+    impl EventRemover for MockEventRemover {
+        type Event = ();
+        async fn remove_event(&self, _event: Self::Event) -> () {
+            info!("Event has been removed");
+        }
     }
 }

@@ -1,7 +1,9 @@
 use crate::core::{
     config::Config,
-    event_processor::eip712::{alloy_to_protobuf_domain, verify_user_decryption_eip712},
-    s3::S3Service,
+    event_processor::{
+        eip712::{alloy_to_protobuf_domain, verify_user_decryption_eip712},
+        s3::S3Service,
+    },
 };
 use alloy::{
     hex,
