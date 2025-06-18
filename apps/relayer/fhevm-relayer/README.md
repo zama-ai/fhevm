@@ -108,8 +108,8 @@ contracts:
   decryption_manager_address: "0x9876..."
   zkpok_manager_address: "0xef01..."
 transaction:
-  private_key_fhevm_env: "FHEVM_PRIVATE_KEY"
-  private_key_gateway_env: "GATEWAY_PRIVATE_KEY"
+  private_key_fhevm: "0xab..."
+  private_key_gateway: "0xcd..."
   gas_limit: 1000000
   max_priority_fee: "2000000000"
   timeout_secs: 60

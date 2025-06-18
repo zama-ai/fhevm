@@ -2,7 +2,7 @@ use crate::core::event::{
     ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptEventId,
     UserDecryptRequest,
 };
-use crate::core::utils::OnceHandler;
+use crate::core::utils::{de_string_or_number, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use alloy::primitives::Bytes;
@@ -20,6 +20,7 @@ use tracing::{error, instrument, span, Level};
 pub struct UserDecryptRequestJson {
     pub handleContractPairs: Vec<HandleContractPairJson>,
     pub requestValidity: RequestValidityJson,
+    #[serde(deserialize_with = "de_string_or_number")]
     pub contractsChainId: String,
     pub contractAddresses: Vec<String>,
     pub userAddress: String,

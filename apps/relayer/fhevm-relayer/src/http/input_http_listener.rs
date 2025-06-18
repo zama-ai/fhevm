@@ -2,7 +2,7 @@ use crate::core::event::{
     ApiVersion, InputProofEventData, InputProofEventId, InputProofRequest, RelayerEvent,
     RelayerEventData,
 };
-use crate::core::utils::OnceHandler;
+use crate::core::utils::{de_string_or_number, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use axum::{extract::Json, http::StatusCode, response::IntoResponse};
@@ -15,6 +15,7 @@ use tracing::{info, instrument, span, Level};
 #[derive(Debug, Deserialize, Clone, Serialize)]
 #[allow(non_snake_case)]
 pub struct InputProofRequestJson {
+    #[serde(deserialize_with = "de_string_or_number")]
     pub contractChainId: String, // Hex encoded uint256 string with 0x prefix.
     pub contractAddress: String, // Hex encoded address with 0x prefix.
     pub userAddress: String,     // Hex encoded address with 0x prefix.

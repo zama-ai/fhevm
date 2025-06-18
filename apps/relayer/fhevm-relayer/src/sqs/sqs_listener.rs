@@ -4,10 +4,10 @@ use crate::core::event::{
 };
 use crate::core::utils::OnceHandler;
 use crate::http::input_http_listener::{
-    InputProofErrorResponseJson, InputProofRequestJson, InputProofResponseJson,
+    InputProofErrorResponseJson, InputProofRequestJson, InputProofResponsePayloadJson,
 };
 use crate::http::public_decrypt_http_listener::{
-    PublicDecryptErrorResponseJson, PublicDecryptRequestJson, PublicDecryptResponseJson,
+    PublicDecryptErrorResponseJson, PublicDecryptRequestJson, PublicDecryptResponsePayloadJson,
 };
 use crate::http::userdecrypt_http_listener::{
     UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
@@ -23,6 +23,18 @@ use tokio::sync::oneshot;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PayloadHolder<T> {
+    payload: T,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RequestIdHolder {
+    request_id: Uuid,
+}
+
 // TODO: add correlation-id
 #[derive(Debug, Deserialize, Clone, Serialize)]
 #[serde(tag = "type", content = "payload")]
@@ -31,7 +43,7 @@ pub enum RequestJson {
     InputProof(InputProofRequestJson),
     #[serde(rename = "relayer:http-public-decryption:operation-request")]
     PublicDecrypt(PublicDecryptRequestJson),
-    #[serde(rename = "relayer:http-private-decryption:operation-request")]
+    #[serde(rename = "relayer:private-decryption:operation-request")]
     UserDecrypt(UserDecryptRequestJson),
 }
 
@@ -59,15 +71,15 @@ impl TryInto<RelayerEventData> for RequestJson {
     }
 }
 
-// TODO: add correlation-id
+// TODO: check that these match with what is defined in the messages js library over in the console
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", content = "payload")]
 pub enum ResponseJson {
     #[serde(rename = "relayer:input-registration:input-registration-response")]
-    InputProofResponse(InputProofResponseJson),
+    InputProofResponse(InputProofResponsePayloadJson),
     #[serde(rename = "relayer:http-public-decryption:operation-response")]
-    PublicDecryptResponse(PublicDecryptResponseJson),
-    #[serde(rename = "relayer:http-private-decryption:operation-response")]
+    PublicDecryptResponse(PublicDecryptResponsePayloadJson),
+    #[serde(rename = "relayer:private-decryption:operation-response")]
     UserDecryptResponse(UserDecryptResponseJson),
     #[serde(rename = "relayer:input-registration:input-registration-error")]
     InputProofError(InputProofErrorResponseJson),
@@ -130,12 +142,10 @@ impl TryFrom<RelayerEventData> for ResponseJson {
     }
 }
 
-/// A helper struct to hold the flattened Json and the correlation ID.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CorrelatedJson<T> {
-    pub request_id: Uuid,
-    #[serde(flatten)]
-    pub payload: T,
+fn parse_sqs_request_payload(payload: &str) -> anyhow::Result<(Uuid, RequestJson)> {
+    let request_id_holder: PayloadHolder<RequestIdHolder> = serde_json::from_str(payload)?;
+    let request_json: RequestJson = serde_json::from_str(payload)?;
+    Ok((request_id_holder.payload.request_id, request_json))
 }
 
 pub fn request_json_to_response_event_id(request_json: RequestJson) -> (u8, u8) {
@@ -184,7 +194,10 @@ where
     T: serde::Serialize,
 {
     let serialized_message = match serde_json::to_string(&message) {
-        Ok(value) => value,
+        Ok(value) => {
+            debug!("Serialized message: {}", value);
+            value
+        }
         Err(err) => {
             let err_msg = format!("Error serializing message to JSON: {:?}", err);
             return Err(err_msg);
@@ -219,7 +232,7 @@ pub async fn process_sqs_message<D>(
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
     // Parse SQS message to any of the support json requests
-    let request_json: CorrelatedJson<RequestJson> = match serde_json::from_str(content.as_str()) {
+    let (request_id, request_json) = match parse_sqs_request_payload(content.as_str()) {
         Ok(value) => {
             debug!("Successfuly parsed relayer event: {:?} from sqs", value);
             value
@@ -231,8 +244,7 @@ pub async fn process_sqs_message<D>(
     };
 
     // Map RequestJson to RelayerEvent
-    let request_id = request_json.request_id;
-    let request_data: RelayerEventData = match request_json.payload.clone().try_into() {
+    let request_data: RelayerEventData = match request_json.clone().try_into() {
         Ok(event_data) => event_data,
         Err(message) => {
             // TODO: return error directly to backend
@@ -246,7 +258,7 @@ pub async fn process_sqs_message<D>(
 
     // Register handlers for response
     // TODO: modify this to support proper event id
-    let (event_id, failure_event_id) = request_json_to_response_event_id(request_json.payload);
+    let (event_id, failure_event_id) = request_json_to_response_event_id(request_json);
     let rx = register_once_handler(Arc::clone(&orchestrator), request_id, event_id);
     let error_rx = register_once_handler(Arc::clone(&orchestrator), request_id, failure_event_id);
 
@@ -262,6 +274,9 @@ pub async fn process_sqs_message<D>(
         return;
     }
 
+    // TODO: send error response back to orchestrator whenever something fails
+    // TODO: add timeout
+
     // Handle result or error
     let result = match future::select(rx.await, error_rx.await).await {
         Either::Left((result, _)) => result,
@@ -269,21 +284,40 @@ pub async fn process_sqs_message<D>(
     };
 
     let response_json: ResponseJson = match result {
-        Ok(event) => match event.data.try_into() {
+        Ok(event) => match event.data.clone().try_into() {
             Ok(value) => value,
-            _ => {
+            Err(error) => {
+                error!(
+                    "Couldn't broadcast event {:?} into ResponseJson with error: {}",
+                    event.data, error
+                );
                 return;
             }
         },
-        _ => {
-            // TODO: send error response back
+        Err(error) => {
+            error!("Error awaiting result from SQS queue with error {}", error);
             return;
         }
     };
-    let message = CorrelatedJson::<ResponseJson> {
-        request_id,
-        payload: response_json,
+
+    let mut message = match serde_json::to_value(response_json.clone()) {
+        Ok(value) => value,
+        Err(error) => {
+            error!(
+                "Couldn't serialize {:?} as serde-json Value with error: {}",
+                response_json, error
+            );
+            return;
+        }
     };
+
+    // Inserting the request-id
+    if let Some(obj) = message["payload"].as_object_mut() {
+        obj.insert(
+            "requestId".to_string(),
+            serde_json::json!(request_id.to_string()),
+        );
+    }
 
     match send_message_to_sqs_queue(&sqs_client, &outbound_queue, &message).await {
         Ok(_) => debug!("success sending response back to sqs: {outbound_queue}"),
@@ -297,7 +331,7 @@ pub async fn wait_for_response_with_id(
     sqs_client: &aws_sdk_sqs::Client,
     request_id: uuid::Uuid,
     queue: String,
-) -> anyhow::Result<CorrelatedJson<ResponseJson>> {
+) -> anyhow::Result<ResponseJson> {
     let wait_time_seconds: i32 = 10;
     loop {
         let rcv_message_output = match sqs_client
@@ -330,18 +364,44 @@ pub async fn wait_for_response_with_id(
             match message.body() {
                 Some(content) => {
                     let content = content.to_string();
-                    let request_json: CorrelatedJson<ResponseJson> =
+                    // NOTE: in this situation we could first parse the
+                    // request-id and iif there is a match then parse the
+                    // payload
+                    let holder: PayloadHolder<RequestIdHolder> =
                         match serde_json::from_str(content.as_str()) {
                             Ok(value) => {
-                                debug!("Successfuly parsed relayer event: {:?} from sqs", value);
+                                debug!(
+                                    "Successfuly parsed relayer request-id: {:?} from sqs",
+                                    value
+                                );
                                 value
                             }
                             Err(err) => {
-                                error!("Couldn't deserialize message: {content} with error {err}");
+                                error!(
+                                    "Couldn't deserialize request-id: {content} with error {err}"
+                                );
                                 continue;
                             }
                         };
-                    if request_json.request_id == request_id {
+                    let sqs_request_id = holder.payload.request_id;
+                    if sqs_request_id == request_id {
+                        let response_json: ResponseJson =
+                            match serde_json::from_str(content.as_str()) {
+                                Ok(value) => {
+                                    debug!(
+                                        "Successfuly parsed relayer response-id: {:?} from sqs",
+                                        value
+                                    );
+                                    value
+                                }
+                                Err(err) => {
+                                    error!(
+                                    "Couldn't deserialize request-id: {content} with error {err}"
+                                );
+                                    continue;
+                                }
+                            };
+
                         // NOTE: we need to delete messages once process otherwise they stay in the queue.
                         // The question is whether we should delete them once we get them or once they are
                         // processed (imagine we have multiple consumers).
@@ -360,7 +420,7 @@ pub async fn wait_for_response_with_id(
                             }
                         };
 
-                        return Ok(request_json);
+                        return Ok(response_json);
                     }
                 }
                 None => {
@@ -465,5 +525,43 @@ pub async fn run_sqs_server<D>(
                 }
             };
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::sqs::sqs_listener::{PayloadHolder, RequestIdHolder, RequestJson};
+
+    #[test]
+    fn test_deserializer() {
+        let payload = serde_json::json!({
+        "type":"relayer:input-registration:input-registration-request",
+        "payload":{
+            "requestId":"019778d4-1e52-7628-862f-91a51cceccfc",
+            // TODO: custom deserializer to support u64
+            "contractChainId":"12345",
+            "contractAddress":"0x14e15daeC3AAb3041279ceF25cfb730532f55B4b",
+            "userAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+            "ciphertextWithInputVerification":"..."
+        }});
+
+        println!("trying to deserialize payload");
+        let request_id_holder: PayloadHolder<RequestIdHolder> =
+            match serde_json::from_value(payload.clone()) {
+                Ok(value) => value,
+                Err(err) => {
+                    panic!("Couldn't deserialize message: {payload} with error {err}");
+                }
+            };
+
+        let request_json: RequestJson = match serde_json::from_value(payload.clone()) {
+            Ok(value) => value,
+            Err(err) => {
+                panic!("Couldn't deserialize message: {payload} with error {err}");
+            }
+        };
+
+        println!("{:?}", request_id_holder.payload.request_id);
+        println!("{:?}", request_json);
     }
 }

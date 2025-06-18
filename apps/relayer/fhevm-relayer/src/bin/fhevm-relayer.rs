@@ -37,7 +37,7 @@ use alloy::signers::Signer;
 use clap::Parser;
 use std::net::SocketAddr;
 use std::{str::FromStr, sync::Arc};
-use tracing::{info, span, Level};
+use tracing::{debug, info, span, Level};
 #[cfg(feature = "tracing-chrome")]
 use tracing_chrome::{ChromeLayerBuilder, FlushGuard};
 use tracing_subscriber::prelude::*;
@@ -115,6 +115,8 @@ async fn main() -> eyre::Result<()> {
     {
         let chrome_tracing_guard = init_tracing(&settings.log)?;
 
+        debug!("Starting relayer with configuration: {:?}", settings);
+
         // === Initialize Prometheus metrics registry and metrics
         let registry = Registry::new();
         metrics::init_metrics(&registry);
@@ -132,7 +134,7 @@ async fn main() -> eyre::Result<()> {
 
             // TODO: change this to accomodate generic signers
             // as it should already be supported in the lib
-            let mut fhevm_signer = parse_private_key(&settings.transaction.private_key_fhevm_env)?;
+            let mut fhevm_signer = parse_private_key(&settings.transaction.private_key_fhevm)?;
             fhevm_signer.set_chain_id(Some(settings.networks.fhevm.chain_id));
 
             // TODO: prepare for multi-chain support
@@ -152,8 +154,7 @@ async fn main() -> eyre::Result<()> {
                 .cloned()
                 .map_err(|e| eyre::eyre!("Failed to get gateway settings: {}", e))?;
 
-            let mut gateway_signer =
-                parse_private_key(&settings.transaction.private_key_gateway_env)?;
+            let mut gateway_signer = parse_private_key(&settings.transaction.private_key_gateway)?;
             gateway_signer.set_chain_id(Some(gateway_settings.chain_id));
 
             // Prepare tx service for gateway

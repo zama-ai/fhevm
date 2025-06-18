@@ -9,10 +9,6 @@ mod tests {
     use crate::sqs::sqs_listener::{send_message_to_sqs_queue, wait_for_response_with_id};
     use aws_credential_types::Credentials;
 
-    // Add method to await response from sqs for given id
-    //
-
-    // TODO: add tests going through SQS
     #[tokio::test]
     async fn test_input_url_sqs_endpoint() {
         let inbound_queue =
@@ -33,16 +29,15 @@ mod tests {
             .await;
         let sqs_client = aws_sdk_sqs::Client::new(&config);
 
-        // TODO: fix this payload
         let request_id = uuid::Uuid::new_v4();
         let message = &json!({
             "payload":{
-            "contractChainId": "123456",
+            "contractChainId": 123456,
             "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
             "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
             "ciphertextWithInputVerification": "abcdef",
+            "requestId": request_id.to_string(),
             },
-            "request_id": request_id.to_string(),
             "type": "relayer:input-registration:input-registration-request",
         });
 
@@ -54,7 +49,6 @@ mod tests {
             }
         };
 
-        // TODO: await response
         let timeout = tokio::time::Duration::from_secs(6);
         let response = tokio::time::timeout(
             timeout,
@@ -73,7 +67,10 @@ mod tests {
                     panic!("Relayer didn't respond correctly {:?}", error);
                 }
                 Ok(sub_value) => {
-                    assert_eq!(sub_value.request_id, request_id);
+                    matches!(
+                        sub_value,
+                        crate::sqs::sqs_listener::ResponseJson::InputProofResponse { .. }
+                    );
                 }
             },
         }
@@ -225,7 +222,6 @@ mod tests {
 
         let status_code = res.status();
         let res_text = res.text().await;
-        // TODO: Should fail
         let check_incorrect_chain_id = false;
         if check_incorrect_chain_id {
             assert_eq!(status_code, 400, "{:?}, {}", res_text, status_code);

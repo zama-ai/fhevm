@@ -19,6 +19,7 @@ use tracing::info;
 use uuid::Uuid;
 
 // TODO: add test to make sure that there is no id conflict
+// TODO: verify there is no snake-case, camel-case around here
 
 #[repr(u8)]
 #[derive(Debug)]
@@ -368,14 +369,18 @@ pub struct UserDecryptRequest {
 #[allow(non_snake_case)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HandleContractPair {
+    #[serde(rename = "handle")]
     pub ct_handle: U256,
+    #[serde(rename = "contractAddress")]
     pub contract_address: Address,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[allow(non_snake_case)]
 pub struct RequestValidity {
+    #[serde(rename = "startTimestamp")]
     pub start_timestamp: U256,
+    #[serde(rename = "durationDays")]
     pub duration_days: U256,
 }
 
@@ -507,10 +512,16 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
 impl From<PublicDecryptResponse> for PublicDecryptResponseJson {
     fn from(response: PublicDecryptResponse) -> Self {
         PublicDecryptResponseJson {
-            response: vec![PublicDecryptResponsePayloadJson {
-                decrypted_value: response.decrypted_value,
-                signatures: response.signatures,
-            }],
+            response: vec![response.into()],
+        }
+    }
+}
+
+impl From<PublicDecryptResponse> for PublicDecryptResponsePayloadJson {
+    fn from(response: PublicDecryptResponse) -> Self {
+        PublicDecryptResponsePayloadJson {
+            decrypted_value: response.decrypted_value,
+            signatures: response.signatures,
         }
     }
 }
@@ -631,18 +642,24 @@ fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
 impl From<InputProofResponse> for InputProofResponseJson {
     fn from(response: InputProofResponse) -> Self {
         InputProofResponseJson {
-            response: InputProofResponsePayloadJson {
-                handles: response
-                    .handles
-                    .into_iter()
-                    .map(|handle| format!("{:#x}", handle))
-                    .collect(),
-                signatures: response
-                    .signatures
-                    .into_iter()
-                    .map(|sig| format!("{:#x}", sig))
-                    .collect(),
-            },
+            response: response.into(),
+        }
+    }
+}
+
+impl From<InputProofResponse> for InputProofResponsePayloadJson {
+    fn from(response: InputProofResponse) -> Self {
+        InputProofResponsePayloadJson {
+            handles: response
+                .handles
+                .into_iter()
+                .map(|handle| format!("{:#x}", handle))
+                .collect(),
+            signatures: response
+                .signatures
+                .into_iter()
+                .map(|sig| format!("{:#x}", sig))
+                .collect(),
         }
     }
 }

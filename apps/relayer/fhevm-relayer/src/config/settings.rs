@@ -69,12 +69,14 @@ impl NetworksConfig {
     }
 }
 
+// TODO: setup aws-kms signer configuration here
+// TODO: setup proper callback gas-limit here
 #[derive(Debug, Deserialize, Clone)]
 pub struct TransactionConfig {
-    /// Environment variable name containing the private key for fhevm
-    pub private_key_fhevm_env: String,
-    /// Environment variable name containing the private key for gateway
-    pub private_key_gateway_env: String,
+    /// Containing the private key for fhevm
+    pub private_key_fhevm: String,
+    /// Containing the private key for gateway
+    pub private_key_gateway: String,
     /// Optional gas limit for transactions
     pub gas_limit: Option<u64>,
     /// Maximum priority fee for transactions

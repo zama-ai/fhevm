@@ -560,7 +560,7 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
 
     // Test private key from environment variable or use default
     let private_key =
-        std::env::var(&settings.transaction.private_key_gateway_env).unwrap_or_else(|_| {
+        std::env::var(&settings.transaction.private_key_gateway).unwrap_or_else(|_| {
             "9f5e213176c6d97cba246563083794ebeb8098c51dbcaf91e9f71a29db2ffd88".to_string()
         });
     let mut gateway_signer: PrivateKeySigner = private_key.parse()?;

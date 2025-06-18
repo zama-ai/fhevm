@@ -514,7 +514,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
 
     // Test private key from environment variable or use default
     let private_key =
-        std::env::var(&settings.transaction.private_key_gateway_env).unwrap_or_else(|_| {
+        std::env::var(&settings.transaction.private_key_gateway).unwrap_or_else(|_| {
             "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f".to_string()
         });
     let mut gateway_signer: PrivateKeySigner = private_key.parse()?;
@@ -631,7 +631,7 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
 
     // Test private key from environment variable or use default
     let private_key =
-        std::env::var(&settings.transaction.private_key_gateway_env).unwrap_or_else(|_| {
+        std::env::var(&settings.transaction.private_key_gateway).unwrap_or_else(|_| {
             "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f".to_string()
         });
     let mut gateway_signer: PrivateKeySigner = private_key.parse()?;

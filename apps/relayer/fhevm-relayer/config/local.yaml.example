@@ -34,8 +34,8 @@ keyurl:
       url: "http://0.0.0.0:3001/crs2048.bin"
 
 transaction:
-  private_key_fhevm_env: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
-  private_key_gateway_env: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+  private_key_fhevm: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+  private_key_gateway: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
   gas_limit: 150000
   max_priority_fee: 2000000000
   timeout_secs: 30
