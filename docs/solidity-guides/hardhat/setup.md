@@ -68,4 +68,3 @@ bunx hardhat vars set INFURA-PRIVATE-KEY
 If any of the requested Hardhat Configuration Variables is missing, you'll get an error message like this one:
 
 `Error HH1201: Cannot find a value for the configuration variable 'MNEMONIC'. Use 'npx hardhat vars set MNEMONIC' to set it or 'npx hardhat vars setup' to list all the configuration variables used by this project.`
-
