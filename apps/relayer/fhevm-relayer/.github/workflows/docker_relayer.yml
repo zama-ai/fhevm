@@ -47,3 +47,20 @@ jobs:
       image-name: "fhevm-relayer"
       docker-file: "Dockerfile"
       arm-build: true
+  docker-oracle:
+    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
+    secrets:
+      GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    with:
+      ref: 
+      working-directory: "./oracle"
+      docker-context: "./oracle"
+      push_image: true
+      image-name: "fhevm-relayer-decryption-oracle-contracts"
+      docker-file: "Dockerfile"
+      arm-build: true
