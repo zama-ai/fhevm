@@ -117,7 +117,7 @@ describe("Upgrades", function () {
     });
     const gatewayConfig = await upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactoryV1);
     await gatewayConfig.waitForDeployment();
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
+    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.2.0");
     const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigFactoryV2);
     await gatewayConfigV2.waitForDeployment();
     expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v1000.0.0");
@@ -158,7 +158,7 @@ describe("Upgrades", function () {
     });
     const gatewayConfig = await upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactoryV1);
     await gatewayConfig.waitForDeployment();
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
+    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.2.0");
 
     const originalGatewayConfigAddress = await gatewayConfig.getAddress();
     const deployer = owner;
@@ -193,7 +193,7 @@ describe("Upgrades", function () {
     const newField = "Protocol new field";
 
     // Check that GatewayConfig is at version 0.1.0
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
+    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.2.0");
 
     // Check that the protocol metadata is correct
     const metadata = await gatewayConfig.getProtocolMetadata();

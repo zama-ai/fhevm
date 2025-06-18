@@ -40,6 +40,11 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
         address[] coprocessorTxSenderAddresses;
         address[] coprocessorSignerAddresses;
         HostChain[] hostChains;
+        mapping(address custodianTxSenderAddress => Custodian custodian) custodians;
+        address[] custodianTxSenderAddresses;
+        address[] custodianSignerAddresses;
+        mapping(address custodianTxSenderAddress => bool isCustodianTxSender) _isCustodianTxSender;
+        mapping(address custodianSignerAddress => bool isCustodianSigner) _isCustodianSigner;
         // New state variables added in the upgraded version
         ProtocolMetadataV2 protocolMetadataV2;
     }
@@ -53,7 +58,7 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
     }
 
     /// @custom:oz-upgrades-validate-as-initializer
-    function initialize(string calldata newField) public virtual reinitializer(3) {
+    function initialize(string calldata newField) public virtual reinitializer(1000) {
         __Ownable_init(owner());
         __Pausable_init();
 
