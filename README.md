@@ -55,23 +55,26 @@ FHEVM ensures both confidentiality and composability, with the following guarant
 ### Project structure
 The directories of this repository are organized in the following way:
 
-- **`coprocessor/`**: Rust-based coprocessor implementation for FHE operations.
-
-- **`host-contracts/`**: Smart Contracts deployed on the host chain for orchestrating FHE workflows.
+###### FHEVM Contracts
 
 - **`gateway-contracts/`**: Smart contracts managing the gateway between on-chain and off-chain components.
 
+- **`host-contracts/`**: Smart Contracts deployed on the host chain for orchestrating FHE workflows.
+
+###### FHEVM Compute Engines
+
+- **`coprocessor/`**: Rust-based coprocessor implementation for FHE operations.
+
 - **`kms-connector/`**: Interface for integrating with Key Management Services (KMS) to handle encryption keys securely.
 
-- **`library-solidity/`**: Shared Solidity libraries used across smart contracts in the stack.
-
-- **`test-suite/`**: Integration with docker-compose and tests covering end-to-end FHEVM stack behavior.
-
-- **`test-suite/`**: Integration with docker-compose and tests covering end-to-end fhevm stack behavior.
+###### FHEVM Utilities
+- **`charts/`**: Helm charts and deployment configurations for the stack.
 
 - **`golden-container-images/`**: Docker golden images for Node.js and Rust environments used as base images by the stack.
 
-- **`charts/`**: Helm charts and deployment configurations for the stack.
+- **`test-suite/`**: Integration with docker-compose and tests covering end-to-end FHEVM stack behavior.
+
+
 
   <br></br>
 ### Main features

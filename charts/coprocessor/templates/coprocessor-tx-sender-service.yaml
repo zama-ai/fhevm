@@ -1,0 +1,21 @@
+{{- if .Values.txSender.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: {{ include "txSenderName" . }}
+  name: {{ include "txSenderName" . }}
+spec:
+  ports:
+    - name: metrics
+      port: {{ .Values.txSender.ports.metrics }}
+      targetPort: metrics
+    - name: healthcheck
+      port: {{ .Values.txSender.ports.healthcheck }}
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: {{ include "txSenderName" . }}
+  type: ClusterIP
+{{- end }}
