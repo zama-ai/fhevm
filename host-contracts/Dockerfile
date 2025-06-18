@@ -1,4 +1,4 @@
-FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21
+FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS prod
 
 USER root
 
@@ -40,3 +40,5 @@ RUN npx hardhat clean && \
     npx hardhat compile:specific --contract contracts/emptyProxy
 
 ENTRYPOINT ["/bin/bash", "-c"]
+
+FROM prod AS dev

@@ -38,18 +38,22 @@ jobs:
     name: host-contracts-docker-build/build (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' || github.event_name == 'release' }}
-    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6323a1e8e260961562b66a9f33a608f86cd6c831
     secrets:
-      GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
     permissions:
+      actions: 'read'
       contents: 'read'
-      id-token: 'write'
+      pull-requests: 'read'
+      attestations: 'write'
       packages: 'write'
+      id-token: 'write'
     with:
       working-directory: "host-contracts"
       docker-context: "host-contracts"
       push_image: true
       image-name: "fhevm/host-contracts"
-      docker-file: "Dockerfile"
-      arm-build: true
+      docker-file: "./host-contracts/Dockerfile"
+      app-cache-dir: "fhevm-host-contracts"

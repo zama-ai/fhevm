@@ -1,0 +1,21 @@
+{{- if .Values.gwListener.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: {{ include "gwListenerName" . }}
+  name: {{ include "gwListenerName" . }}
+spec:
+  ports:
+    - name: metrics
+      port: {{ .Values.gwListener.ports.metrics }}
+      targetPort: metrics
+    - name: healthcheck
+      port: {{ .Values.gwListener.ports.healthcheck }}
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: {{ include "gwListenerName" . }}
+  type: ClusterIP
+{{- end }}

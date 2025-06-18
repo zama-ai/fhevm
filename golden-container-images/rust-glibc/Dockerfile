@@ -51,11 +51,11 @@ ENV RUSTFLAGS="-C target-feature=-crt-static"
 ENV OPENSSL_DIR=/usr
 
 
-FROM cgr.dev/chainguard/glibc-dynamic:latest-dev AS runtime
+FROM cgr.dev/chainguard/glibc-dynamic:latest-dev AS prod
 
 # Runtime base
 COPY --from=builder /lib/ /lib/
-COPY --from=builder /lib64/ /lib64/ 
+COPY --from=builder /lib64/ /lib64/
 COPY --from=builder /usr/lib/ /usr/lib/
 COPY --from=builder /usr/lib64/ /usr/lib64/
 COPY --from=builder /usr/lib/gcc/ /usr/lib/gcc/
@@ -91,3 +91,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD cargo --version || exit 1
 
 ENTRYPOINT ["/bin/bash", "-c"]
+
+FROM prod AS dev
