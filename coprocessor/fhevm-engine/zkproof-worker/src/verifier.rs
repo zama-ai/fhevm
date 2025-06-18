@@ -21,12 +21,14 @@ use crate::{auxiliary, Config, ExecutionError};
 use anyhow::Result;
 
 use std::sync::Arc;
+use std::time::SystemTime;
 use tfhe::set_server_key;
 
+use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus};
 use tokio::{select, time::Duration};
+use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
-use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus};
 
 const MAX_CACHED_TENANT_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -38,25 +40,38 @@ pub(crate) struct Ciphertext {
     ct_version: i16,
 }
 
-
 pub struct ZkProofService {
     pool: PgPool,
     conf: Config,
     _cancel_token: CancellationToken,
+
+    // Timestamp of the last moment the service was active
+    last_active_at: Arc<RwLock<SystemTime>>,
 }
-impl HealthCheckService for  ZkProofService {
+impl HealthCheckService for ZkProofService {
     async fn health_check(&self) -> HealthStatus {
-        let mut hs = HealthStatus::default();
-        hs.register_db_status(&self.pool).await;
-        hs
+        let mut status = HealthStatus::default();
+        status.set_db_connected(&self.pool).await;
+        status
+    }
+
+    async fn is_alive(&self) -> bool {
+        let last_active_at = *self.last_active_at.read().await;
+        let threshold = self.conf.pg_polling_interval + 10;
+
+        (SystemTime::now()
+            .duration_since(last_active_at)
+            .map(|d| d.as_secs())
+            .unwrap_or(u64::MAX) as u32)
+        < threshold
     }
 }
 
 impl ZkProofService {
-
     pub async fn create(conf: Config, cancel_token: CancellationToken) -> ZkProofService {
         // Each worker needs at least 3 pg connections
-        let pool_connections = std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
+        let pool_connections =
+            std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
         let t = telemetry::tracer("init_service");
         let _s = t.child_span("pg_connect");
 
@@ -71,16 +86,26 @@ impl ZkProofService {
             pool,
             conf,
             _cancel_token: cancel_token,
+            last_active_at: Arc::new(RwLock::new(SystemTime::UNIX_EPOCH)),
         }
     }
 
     pub async fn run(&self) -> Result<(), ExecutionError> {
-        execute_verify_proofs_loop(self.pool.clone(), self.conf.clone()).await
+        execute_verify_proofs_loop(
+            self.pool.clone(),
+            self.conf.clone(),
+            self.last_active_at.clone(),
+        )
+        .await
     }
 }
 /// Executes the main loop for handling verify_proofs requests inserted in the
 /// database
-async fn execute_verify_proofs_loop(pool: PgPool,  conf: Config) -> Result<(), ExecutionError> {
+async fn execute_verify_proofs_loop(
+    pool: PgPool,
+    conf: Config,
+    last_active_at: Arc<RwLock<SystemTime>>,
+) -> Result<(), ExecutionError> {
     info!("Starting with config {:?}", conf);
 
     // Tenants key cache is shared amongst all workers
@@ -97,11 +122,12 @@ async fn execute_verify_proofs_loop(pool: PgPool,  conf: Config) -> Result<(), E
         let conf = conf.clone();
         let tenant_key_cache = tenant_key_cache.clone();
         let pool = pool.clone();
+        let last_active_at = last_active_at.clone();
 
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         task_set.spawn(async move {
-            if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache).await {
+            if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache, last_active_at).await {
                 error!("executor failed with {}", err);
             }
         });
@@ -123,17 +149,26 @@ async fn execute_worker(
     conf: &Config,
     pool: &sqlx::Pool<sqlx::Postgres>,
     tenant_key_cache: &Arc<RwLock<LruCache<i32, TfheTenantKeys>>>,
+    last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
     let mut listener = PgListener::connect_with(pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
-    let idle_poll_interval = Duration::from_secs(conf.pg_polling_interval as u64);
+
+    let mut idle_event = interval(Duration::from_secs(conf.pg_polling_interval as u64));
 
     loop {
+        if let Ok(mut value) = last_active_at.try_write() {
+            *value = SystemTime::now();
+        }
+
+
+        tokio::time::sleep(Duration::from_secs(10000)).await;
+
         if let Err(e) = execute_verify_proof_routine(pool, tenant_key_cache, conf).await {
             error!(target: "zkpok", "Execution err: {}", e);
         } else {
             let count = get_remaining_tasks(pool).await?;
-            if count > 0 {
+            if get_remaining_tasks(pool).await? > 0 {
                 info!(target: "zkpok", {count}, "ZkPok tasks available");
                 continue;
             }
@@ -153,7 +188,7 @@ async fn execute_worker(
                     },
                 };
             },
-            _ = tokio::time::sleep(idle_poll_interval) => {
+            _ = idle_event.tick() => {
                 debug!(target: "zkpok", "Polling timeout, rechecking for tasks");
             }
         }

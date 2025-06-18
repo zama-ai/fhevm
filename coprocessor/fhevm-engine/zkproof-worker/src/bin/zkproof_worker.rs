@@ -1,10 +1,10 @@
-use std::sync::Arc;
 use clap::{command, Parser};
+use fhevm_engine_common::healthz_server::HttpServer;
+use fhevm_engine_common::telemetry;
+use std::sync::Arc;
 use tokio::{join, task};
 use tokio_util::sync::CancellationToken;
-use fhevm_engine_common::telemetry;
 use tracing::{error, info, Level};
-use fhevm_engine_common::healthz_server::HttpServer;
 use zkproof_worker::verifier::ZkProofService;
 
 #[derive(Parser, Debug, Clone)]
@@ -95,7 +95,10 @@ async fn main() {
 
     let http_task = task::spawn(async move {
         if let Err(err) = http_server.start().await {
-            error!(task = "health_check", "Error while running server: {:?}", err);
+            error!(
+                task = "health_check",
+                "Error while running server: {:?}", err
+            );
         }
         anyhow::Ok(())
     });
