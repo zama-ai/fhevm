@@ -86,6 +86,13 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     custodianSigners.push(custodianSigner);
   }
 
+  // Load the custodian encryption keys
+  const custodianEncryptionKeys = [];
+  for (let idx = 0; idx < nCustodians; idx++) {
+    const custodianEncryptionKey = getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`);
+    custodianEncryptionKeys.push(custodianEncryptionKey);
+  }
+
   return {
     owner,
     pauser,
@@ -95,6 +102,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     coprocessorSigners,
     custodianTxSenders,
     custodianSigners,
+    custodianEncryptionKeys,
   };
 }
 

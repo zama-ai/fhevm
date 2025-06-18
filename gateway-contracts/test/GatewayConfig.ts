@@ -38,6 +38,8 @@ describe("GatewayConfig", function () {
   let custodians: CustodianStruct[];
   let coprocessorTxSenders: HardhatEthersSigner[];
   let coprocessorSigners: HardhatEthersSigner[];
+  let custodianTxSenders: HardhatEthersSigner[];
+  let custodianSigners: HardhatEthersSigner[];
 
   async function getInputsForDeployFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -50,6 +52,7 @@ describe("GatewayConfig", function () {
       nCoprocessors,
       custodianTxSenders,
       custodianSigners,
+      custodianEncryptionKeys,
       nCustodians,
     } = fixtureData;
 
@@ -79,7 +82,7 @@ describe("GatewayConfig", function () {
       custodians.push({
         txSenderAddress: custodianTxSenders[i].address,
         signerAddress: custodianSigners[i].address,
-        encryptionKey: hre.ethers.hexlify(hre.ethers.randomBytes(64)),
+        encryptionKey: custodianEncryptionKeys[i],
       });
     }
 
@@ -395,6 +398,8 @@ describe("GatewayConfig", function () {
       kmsTxSenders = fixture.kmsTxSenders;
       kmsSigners = fixture.kmsSigners;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
+      custodianTxSenders = fixture.custodianTxSenders;
+      custodianSigners = fixture.custodianSigners;
     });
 
     describe("GatewayConfig initialization checks and getters", function () {
@@ -423,6 +428,18 @@ describe("GatewayConfig", function () {
       it("Should be registered as coprocessors signers", async function () {
         for (const coprocessorSigner of coprocessorSigners) {
           await expect(gatewayConfig.checkIsCoprocessorSigner(coprocessorSigner.address)).to.not.be.reverted;
+        }
+      });
+
+      it("Should be registered as custodian transaction senders", async function () {
+        for (const custodianTxSender of custodianTxSenders) {
+          await expect(gatewayConfig.checkIsCustodianTxSender(custodianTxSender.address)).to.not.be.reverted;
+        }
+      });
+
+      it("Should be registered as custodian signers", async function () {
+        for (const custodianSigner of custodianSigners) {
+          await expect(gatewayConfig.checkIsCustodianSigner(custodianSigner.address)).to.not.be.reverted;
         }
       });
 
@@ -477,6 +494,37 @@ describe("GatewayConfig", function () {
         // Check that all coprocessor signer addresses are in the list
         for (const coprocessorSigner of coprocessorSigners) {
           expect(coprocessorSignerAddresses).to.include(coprocessorSigner.address);
+        }
+      });
+
+      it("Should get custodian metadata from transaction sender addresses", async function () {
+        for (let i = 0; i < custodianTxSenders.length; i++) {
+          const custodian = await gatewayConfig.getCustodian(custodianTxSenders[i].address);
+          expect(custodian).to.deep.equal(toValues(custodians[i]));
+        }
+      });
+
+      it("Should get all custodian transaction sender addresses", async function () {
+        const custodianTxSenderAddresses = await gatewayConfig.getCustodianTxSenders();
+
+        // Check that the number of custodian transaction sender addresses is correct
+        expect(custodianTxSenderAddresses.length).to.equal(custodianTxSenders.length);
+
+        // Check that all custodian transaction sender addresses are in the list
+        for (const custodianTxSender of custodianTxSenders) {
+          expect(custodianTxSenderAddresses).to.include(custodianTxSender.address);
+        }
+      });
+
+      it("Should get all custodian signer addresses", async function () {
+        const custodianSignerAddresses = await gatewayConfig.getCustodianSigners();
+
+        // Check that the number of custodian signer addresses is correct
+        expect(custodianSignerAddresses.length).to.equal(custodianSigners.length);
+
+        // Check that all custodian signer addresses are in the list
+        for (const custodianSigner of custodianSigners) {
+          expect(custodianSignerAddresses).to.include(custodianSigner.address);
         }
       });
 

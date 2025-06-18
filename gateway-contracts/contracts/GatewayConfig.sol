@@ -64,6 +64,14 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         HostChain[] hostChains;
         /// @notice The custodians' metadata
         mapping(address custodianTxSenderAddress => Custodian custodian) custodians;
+        /// @notice The custodians' transaction sender address list
+        address[] custodianTxSenderAddresses;
+        /// @notice The custodians' signer address list
+        address[] custodianSignerAddresses;
+        /// @notice The custodians' transaction sender addresses
+        mapping(address custodianTxSenderAddress => bool isCustodianTxSender) _isCustodianTxSender;
+        /// @notice The custodians' signer addresses
+        mapping(address custodianSignerAddress => bool isCustodianSigner) _isCustodianSigner;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -150,6 +158,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @dev Register the custodians
         for (uint256 i = 0; i < initialCustodians.length; i++) {
             $.custodians[initialCustodians[i].txSenderAddress] = initialCustodians[i];
+            $.custodianTxSenderAddresses.push(initialCustodians[i].txSenderAddress);
+            $._isCustodianTxSender[initialCustodians[i].txSenderAddress] = true;
+            $.custodianSignerAddresses.push(initialCustodians[i].signerAddress);
+            $._isCustodianSigner[initialCustodians[i].signerAddress] = true;
         }
 
         emit InitializeGatewayConfig(
@@ -173,6 +185,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @dev Register the custodians
         for (uint256 i = 0; i < custodians.length; i++) {
             $.custodians[custodians[i].txSenderAddress] = custodians[i];
+            $.custodianTxSenderAddresses.push(custodians[i].txSenderAddress);
+            $._isCustodianTxSender[custodians[i].txSenderAddress] = true;
+            $.custodianSignerAddresses.push(custodians[i].signerAddress);
+            $._isCustodianSigner[custodians[i].signerAddress] = true;
         }
 
         emit ReinitializeGatewayConfigV2(custodians);
@@ -265,6 +281,22 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function checkIsCoprocessorSigner(address signerAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         if (!$._isCoprocessorSigner[signerAddress]) {
+            revert NotCoprocessorSigner(signerAddress);
+        }
+    }
+
+    /// @dev See {IGatewayConfig-checkIsCustodianTxSender}.
+    function checkIsCustodianTxSender(address txSenderAddress) external view virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if (!$._isCustodianTxSender[txSenderAddress]) {
+            revert NotCoprocessorTxSender(txSenderAddress);
+        }
+    }
+
+    /// @dev See {IGatewayConfig-checkIsCustodianSigner}.
+    function checkIsCustodianSigner(address signerAddress) external view virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if (!$._isCustodianSigner[signerAddress]) {
             revert NotCoprocessorSigner(signerAddress);
         }
     }
@@ -365,6 +397,18 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function getCustodian(address custodianTxSenderAddress) external view virtual returns (Custodian memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.custodians[custodianTxSenderAddress];
+    }
+
+    /// @dev See {IGatewayConfig-getCustodianTxSenders}.
+    function getCustodianTxSenders() external view virtual returns (address[] memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.custodianTxSenderAddresses;
+    }
+
+    /// @dev See {IGatewayConfig-getCustodianSigners}.
+    function getCustodianSigners() external view virtual returns (address[] memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.custodianSignerAddresses;
     }
 
     /// @dev See {IGatewayConfig-getVersion}.
