@@ -25,22 +25,22 @@ pragma solidity ^0.8.24;
 
 /// @title A simple counter contract
 contract Counter {
-    uint32 private count;
+    uint32 private _count;
 
     /// @notice Returns the current count
     function getCount() external view returns (uint32) {
-        return count;
+        return _count;
     }
 
     /// @notice Increments the counter by 1
-    function increment() external {
-        count += 1;
+    function increment(uint32 value) external {
+        _count += value;
     }
 
     /// @notice Decrements the counter by 1
-    function decrement() external {
-        require(count > 0, "Counter: cannot decrement below zero");
-        count -= 1;
+    function decrement(uint32 value) external {
+        require(_count >= value, "Counter: cannot decrement below zero");
+        _count -= value;
     }
 }
 ```
@@ -317,7 +317,7 @@ add the following test block:
 ```ts
 it("increment the counter by 1", async function () {
     const countBeforeInc = await counterContract.getCount();
-    const tx = await counterContract.connect(signers.alice).increment();
+    const tx = await counterContract.connect(signers.alice).increment(1);
     await tx.wait();
     const countAfterInc = await counterContract.getCount();
     expect(countAfterInc).to.eq(countBeforeInc + 1n);
@@ -361,10 +361,10 @@ add the following test block:
 ```ts
 it("decrement the counter by 1", async function () {
     // First increment, count becomes 1
-    let tx = await counterContract.connect(signers.alice).increment();
+    let tx = await counterContract.connect(signers.alice).increment(1);
     await tx.wait();
     // Then decrement, count goes back to 0
-    tx = await counterContract.connect(signers.alice).decrement();
+    tx = await counterContract.connect(signers.alice).decrement(1);
     await tx.wait();
     const count = await counterContract.getCount();
     expect(count).to.eq(0);

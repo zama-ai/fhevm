@@ -40,7 +40,7 @@ describe("Counter", function () {
 
   it("increment the counter by 1", async function () {
     const countBeforeInc = await counterContract.getCount();
-    const tx = await counterContract.connect(signers.alice).increment();
+    const tx = await counterContract.connect(signers.alice).increment(1);
     await tx.wait();
     const countAfterInc = await counterContract.getCount();
     expect(countAfterInc).to.eq(countBeforeInc + 1n);
@@ -51,7 +51,7 @@ describe("Counter", function () {
     let tx = await counterContract.connect(signers.alice).increment();
     await tx.wait();
     // Then decrement, count goes back to 0
-    tx = await counterContract.connect(signers.alice).decrement();
+    tx = await counterContract.connect(signers.alice).decrement(1);
     await tx.wait();
     const count = await counterContract.getCount();
     expect(count).to.eq(0);
