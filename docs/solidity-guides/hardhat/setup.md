@@ -86,14 +86,14 @@ If you do plan to deploy to the Sepolia Ethereum Testnet, you'll need to set up 
 Variables:
 
 - `MNEMONIC`
-- `INFURA_PRIVATE_KEY`
+- `INFURA_API_KEY`
 
 ---
 
 ### 🔐 Don’t have these credentials?
 
 - `MNEMONIC` — Generate one using [Metamask](https://metamask.io) or your favorite mnemonic generator.
-- `INFURA_PRIVATE_KEY` — Follow the [Infura + Metamask guide](https://docs.metamask.io/services/get-started/infura/) to
+- `INFURA_API_KEY` — Follow the [Infura + Metamask guide](https://docs.metamask.io/services/get-started/infura/) to
   obtain your key.
 
 ---
@@ -106,10 +106,10 @@ Set the `MNEMONIC`
 npx hardhat vars set MNEMONIC
 ```
 
-Set the `INFURA_PRIVATE_KEY`
+Set the `INFURA_API_KEY`
 
 ```sh
-npx hardhat vars set INFURA_PRIVATE_KEY
+npx hardhat vars set INFURA_API_KEY
 ```
 
 ---
@@ -119,7 +119,7 @@ npx hardhat vars set INFURA_PRIVATE_KEY
 If you skip this step, Hardhat will fall back to these defaults:
 
 - `MNEMONIC` = "test test test test test test test test test test test junk" 
-- `INFURA_PRIVATE_KEY` = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+- `INFURA_API_KEY` = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
 
 ⚠️ These defaults are not suitable for real deployments.
 
