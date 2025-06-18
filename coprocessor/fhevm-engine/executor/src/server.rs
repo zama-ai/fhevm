@@ -97,18 +97,18 @@ impl FhevmExecutor for FhevmExecutorService {
             let lsks = sks.clone();
             #[cfg(feature = "gpu")]
             let lsks = csks[0].clone();
-            set_server_key(lsks.clone());
-            if Self::decompress_compressed_ciphertexts(
-                &req.compressed_ciphertexts,
-                &mut state,
-                lsks.clone(),
-            )
-            .is_err()
-            {
-                return SyncComputeResponse {
-                    resp: Some(Resp::Error(SyncComputeError::BadInputCiphertext.into())),
-                };
-            }
+            // set_server_key(lsks.clone());
+            // if Self::decompress_compressed_ciphertexts(
+            //     &req.compressed_ciphertexts,
+            //     &mut state,
+            //     lsks.clone(),
+            // )
+            // .is_err()
+            // {
+            //     return SyncComputeResponse {
+            //         resp: Some(Resp::Error(SyncComputeError::BadInputCiphertext.into())),
+            //     };
+            // }
 
             // Run the request's computations in an async block
             let handle = tokio::runtime::Handle::current();
@@ -170,26 +170,6 @@ impl FhevmExecutorService {
         FhevmExecutorService { keys }
     }
 
-    #[allow(dead_code)]
-    fn process_computation(
-        comp: &SyncComputation,
-        state: &mut ComputationState,
-    ) -> Result<Vec<CompressedCiphertext>, SyncComputeError> {
-        // For now, assume only one result handle.
-        let result_handle = comp
-            .result_handles
-            .first()
-            .filter(|h| h.len() == HANDLE_LEN)
-            .ok_or(SyncComputeError::BadResultHandles)?
-            .clone();
-        let op = FheOperation::try_from(comp.operation);
-        match op {
-            Ok(FheOperation::FheGetCiphertext) => Self::get_ciphertext(comp, &result_handle, state),
-            Ok(_) => Self::compute(comp, result_handle, state),
-            _ => Err(SyncComputeError::InvalidOperation),
-        }
-    }
-
     fn expand_compact_lists(
         lists: &Vec<Vec<u8>>,
         state: &mut ComputationState,
@@ -220,6 +200,7 @@ impl FhevmExecutorService {
         state: &mut ComputationState,
         #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
         #[cfg(feature = "gpu")] sks: tfhe::CudaServerKey,
+        gpu_index: usize,
     ) -> Result<()> {
         tfhe::set_server_key(sks.clone());
         rayon::broadcast(|_| {
@@ -231,7 +212,7 @@ impl FhevmExecutorService {
             .for_each_with(src, |src, (index, ct)| {
                 let ct_type = get_ct_type(&ct.handle).expect("Invalid CT handle");
                 src.send((
-                    SupportedFheCiphertexts::decompress(ct_type, &ct.serialization)
+                    SupportedFheCiphertexts::decompress(ct_type, &ct.serialization, gpu_index)
                         .expect("Could not decompress ciphertext"),
                     index,
                 ))
@@ -248,81 +229,6 @@ impl FhevmExecutorService {
             );
         }
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    fn get_ciphertext(
-        comp: &SyncComputation,
-        result_handle: &Handle,
-        state: &ComputationState,
-    ) -> Result<Vec<CompressedCiphertext>, SyncComputeError> {
-        match (comp.inputs.first(), comp.inputs.len()) {
-            (
-                Some(SyncInput {
-                    input: Some(Input::Handle(handle)),
-                }),
-                1,
-            ) => {
-                if let Some(in_mem_ciphertext) = state.ciphertexts.get(handle) {
-                    if *handle != *result_handle {
-                        Err(SyncComputeError::BadInputs)
-                    } else {
-                        Ok(vec![CompressedCiphertext {
-                            handle: result_handle.to_vec(),
-                            serialization: in_mem_ciphertext.compressed.clone(),
-                        }])
-                    }
-                } else {
-                    Err(SyncComputeError::UnknownHandle)
-                }
-            }
-            _ => Err(SyncComputeError::BadInputs),
-        }
-    }
-
-    #[allow(dead_code)]
-    fn compute(
-        comp: &SyncComputation,
-        result_handle: Handle,
-        state: &mut ComputationState,
-    ) -> Result<Vec<CompressedCiphertext>, SyncComputeError> {
-        // Collect computation inputs.
-        let inputs: Result<Vec<SupportedFheCiphertexts>> = comp
-            .inputs
-            .iter()
-            .map(|sync_input| match &sync_input.input {
-                Some(input) => match input {
-                    Input::Handle(h) => {
-                        let ct = state.ciphertexts.get(h).ok_or(FhevmError::BadInputs)?;
-                        Ok(ct.expanded.clone())
-                    }
-                    Input::Scalar(s) => Ok(SupportedFheCiphertexts::Scalar(s.clone())),
-                },
-                None => Err(FhevmError::BadInputs.into()),
-            })
-            .collect();
-
-        // Do the computation on the inputs.
-        match inputs {
-            Ok(inputs) => match perform_fhe_operation(comp.operation as i16, &inputs) {
-                Ok(result) => {
-                    let (_, compressed) = result.clone().compress();
-                    state.ciphertexts.insert(
-                        result_handle.clone(),
-                        InMemoryCiphertext {
-                            expanded: result,
-                            compressed: compressed.clone(),
-                        },
-                    );
-                    Ok(vec![CompressedCiphertext {
-                        handle: result_handle,
-                        serialization: compressed,
-                    }])
-                }
-                Err(_) => Err(SyncComputeError::ComputationFailed),
-            },
-            Err(_) => Err(SyncComputeError::BadInputs),
-        }
     }
 }
 

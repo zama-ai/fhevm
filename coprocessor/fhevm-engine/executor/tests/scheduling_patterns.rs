@@ -190,7 +190,8 @@ async fn schedule_dependent_computations() {
                 match &ct.handle {
                     a if *a == aa => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -201,7 +202,8 @@ async fn schedule_dependent_computations() {
                     }
                     b if *b == bb => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -212,7 +214,8 @@ async fn schedule_dependent_computations() {
                     }
                     c if *c == cc => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -223,7 +226,8 @@ async fn schedule_dependent_computations() {
                     }
                     d if *d == dd => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -412,7 +416,8 @@ async fn schedule_y_patterns() {
                 match &ct.handle {
                     a if *a == aa => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -423,7 +428,8 @@ async fn schedule_y_patterns() {
                     }
                     b if *b == bb => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -434,7 +440,8 @@ async fn schedule_y_patterns() {
                     }
                     c if *c == cc => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -445,7 +452,8 @@ async fn schedule_y_patterns() {
                     }
                     d if *d == dd => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -456,7 +464,8 @@ async fn schedule_y_patterns() {
                     }
                     e if *e == ee => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -467,7 +476,8 @@ async fn schedule_y_patterns() {
                     }
                     f if *f == ff => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -478,7 +488,8 @@ async fn schedule_y_patterns() {
                     }
                     x if *x == x99 => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -489,7 +500,8 @@ async fn schedule_y_patterns() {
                     }
                     x if *x == x88 => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -676,7 +688,8 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                 match &ct.handle {
                     a if *a == aa => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -687,7 +700,8 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                     }
                     b if *b == bb => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -698,7 +712,8 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                     }
                     c if *c == cc => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -709,7 +724,8 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                     }
                     d if *d == dd => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -720,7 +736,8 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                     }
                     e if *e == ee => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -731,7 +748,8 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                     }
                     f if *f == ff => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -742,7 +760,8 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                     }
                     x if *x == x99 => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()
@@ -753,7 +772,8 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                     }
                     x if *x == x88 => {
                         let ctd =
-                            SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                            SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization)
+                                .unwrap();
                         match ctd
                             .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                             .as_str()

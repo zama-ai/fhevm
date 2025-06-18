@@ -536,7 +536,31 @@ impl SupportedFheCiphertexts {
         (type_num, safe_serialize(&list))
     }
 
-    pub fn decompress(ct_type: i16, list: &[u8]) -> Result<Self> {
+    #[cfg(feature = "gpu")]
+    pub fn decompress(ct_type: i16, list: &[u8], gpu_idx: usize) -> Result<Self> {
+        use crate::gpu_memory::{release_memory_on_gpu, reserve_memory_on_gpu};
+        let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
+        let mut reserved_mem = 0;
+        if let Ok(Some(decomp_size)) = ctlist.get_decompression_size_on_gpu(gpu_idx) {
+            reserved_mem = decomp_size;
+        };
+        reserve_memory_on_gpu(reserved_mem, gpu_idx);
+        let res = Self::decompress_impl(ct_type, list);
+        release_memory_on_gpu(reserved_mem, gpu_idx);
+        res
+    }
+
+    #[cfg(not(feature = "gpu"))]
+    pub fn decompress(ct_type: i16, list: &[u8], _: usize) -> Result<Self> {
+        Self::decompress_impl(ct_type, list)
+    }
+
+    // Decompression option on CPU when GPU is available
+    pub fn decompress_no_check(ct_type: i16, list: &[u8]) -> Result<Self> {
+        Self::decompress_impl(ct_type, list)
+    }
+
+    pub fn decompress_impl(ct_type: i16, list: &[u8]) -> Result<Self> {
         let list: CompressedCiphertextList = safe_deserialize(list)?;
         match ct_type {
             0 => Ok(SupportedFheCiphertexts::FheBool(

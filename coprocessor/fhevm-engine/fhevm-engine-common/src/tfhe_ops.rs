@@ -734,7 +734,36 @@ pub fn does_fhe_operation_support_both_encrypted_operands(op: &SupportedFheOpera
     !matches!(op, SupportedFheOperations::FheDiv)
 }
 
+#[cfg(not(feature = "gpu"))]
 pub fn perform_fhe_operation(
+    fhe_operation_int: i16,
+    input_operands: &[SupportedFheCiphertexts],
+    _: usize,
+    // for deterministc randomness functions
+) -> Result<SupportedFheCiphertexts, FhevmError> {
+    perform_fhe_operation_impl(fhe_operation_int, input_operands)
+}
+
+#[cfg(feature = "gpu")]
+pub fn perform_fhe_operation(
+    fhe_operation_int: i16,
+    input_operands: &[SupportedFheCiphertexts],
+    gpu_idx: usize,
+    // for deterministc randomness functions
+) -> Result<SupportedFheCiphertexts, FhevmError> {
+    use crate::gpu_memory::{get_op_size_on_gpu, release_memory_on_gpu, reserve_memory_on_gpu};
+
+    let mut gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, input_operands);
+    let _ = input_operands
+        .iter()
+        .map(|i| gpu_mem_res += i.get_size_on_gpu());
+    reserve_memory_on_gpu(gpu_mem_res, gpu_idx);
+    let res = perform_fhe_operation_impl(fhe_operation_int, input_operands);
+    release_memory_on_gpu(gpu_mem_res, gpu_idx);
+    res
+}
+
+pub fn perform_fhe_operation_impl(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
     // for deterministc randomness functions

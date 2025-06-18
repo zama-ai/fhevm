@@ -2,7 +2,15 @@ use crate::{
     tfhe_ops::*,
     types::{SupportedFheCiphertexts, SupportedFheOperations},
 };
-use tfhe::{prelude::*, FheUint2};
+use lazy_static::lazy_static;
+use tfhe::{core_crypto::gpu::get_number_of_gpus, prelude::*, FheUint2, GpuIndex};
+
+lazy_static! {
+    pub static ref gpu_mem_reservation: Vec<std::sync::atomic::AtomicU64> = (0
+        ..get_number_of_gpus())
+        .map(|_| std::sync::atomic::AtomicU64::new(0))
+        .collect::<Vec<_>>();
+}
 
 impl SupportedFheCiphertexts {
     pub fn move_to_current_device(&mut self) {
@@ -19,11 +27,11 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheBytes64(v) => v.move_to_current_device(),
             SupportedFheCiphertexts::FheBytes128(v) => v.move_to_current_device(),
             SupportedFheCiphertexts::FheBytes256(v) => v.move_to_current_device(),
-            SupportedFheCiphertexts::Scalar(_) => {} // TODO No need to move scalars
+            SupportedFheCiphertexts::Scalar(_) => {} // TODO - need to move scalars?
         };
     }
 
-    pub fn get_size_on_gpu(&mut self) -> u64 {
+    pub fn get_size_on_gpu(&self) -> u64 {
         match self {
             SupportedFheCiphertexts::FheBool(v) => {
                 let v: FheUint2 = v.to_owned().cast_into();
@@ -40,8 +48,64 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheBytes64(v) => v.get_size_on_gpu(),
             SupportedFheCiphertexts::FheBytes128(v) => v.get_size_on_gpu(),
             SupportedFheCiphertexts::FheBytes256(v) => v.get_size_on_gpu(),
-            SupportedFheCiphertexts::Scalar(v) => v.len() as u64, // TODO Might need fixing
+            SupportedFheCiphertexts::Scalar(v) => v.len() as u64,
         }
+    }
+}
+
+pub fn get_supported_ct_size_on_gpu(ct_type: i16) -> u64 {
+    trivial_encrypt_be_bytes(ct_type, &[1u8]).get_size_on_gpu()
+}
+
+// Reserving GPU memory happens in two stages:
+//  - we add the amount we need atomically to the GPU's reservation pool
+//  - we check that the new pool fits on GPU
+//    - if it does, we continue and allocate, then remove the reservation from the pool
+//    - if it doesn't, we remove from the pool and for now simply retry after a short interval
+// TODO: refine retrying, possibly targeting a different GPU where appropriate
+pub fn reserve_memory_on_gpu(amount: u64, idx: usize) {
+    let amount = 10 * amount;
+    loop {
+        let current_pool_size = gpu_mem_reservation[idx].load(std::sync::atomic::Ordering::SeqCst);
+        println!(
+            " \t GPU {} Reserving  {} - pool is {}",
+            idx, amount, current_pool_size
+        );
+        let Ok(new_pool_size) = gpu_mem_reservation[idx].compare_exchange(
+            current_pool_size,
+            current_pool_size + amount,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::Relaxed,
+        ) else {
+            continue;
+        };
+        if check_valid_cuda_malloc(new_pool_size, GpuIndex::new(idx as u32)) {
+            break;
+        } else {
+            println!("Insufficient memory - allocating {}", amount);
+            // Remove reservation as failed
+            release_memory_on_gpu(amount, idx);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            continue;
+        }
+    }
+}
+pub fn release_memory_on_gpu(amount: u64, idx: usize) {
+    let amount = 10 * amount;
+    loop {
+        let current_pool_size = gpu_mem_reservation[idx].load(std::sync::atomic::Ordering::SeqCst);
+        assert!(current_pool_size >= amount);
+        if gpu_mem_reservation[idx]
+            .compare_exchange(
+                current_pool_size,
+                current_pool_size - amount,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_ok()
+        {
+            break;
+        };
     }
 }
 
@@ -110,7 +174,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_add_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
 
@@ -169,7 +233,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_sub_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
 
@@ -228,7 +292,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_mul_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheDiv => {
@@ -286,7 +350,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_div_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheRem => {
@@ -344,7 +408,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_rem_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheBitAnd => {
@@ -429,7 +493,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_bitand_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheBitOr => {
@@ -515,7 +579,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_bitor_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheBitXor => {
@@ -601,7 +665,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_bitxor_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheShl => {
@@ -680,7 +744,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_left_shift_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheShr => {
@@ -759,7 +823,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_right_shift_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheRotl => {
@@ -838,7 +902,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_rotate_left_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheRotr => {
@@ -917,7 +981,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_rotate_right_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheMin => {
@@ -987,7 +1051,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_min_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheMax => {
@@ -1057,7 +1121,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_max_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheEq => {
@@ -1143,7 +1207,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_eq_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheNe => {
@@ -1229,7 +1293,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_ne_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheGe => {
@@ -1303,7 +1367,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_ge_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheGt => {
@@ -1377,7 +1441,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_gt_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheLe => {
@@ -1451,7 +1515,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_le_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheLt => {
@@ -1525,7 +1589,7 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_lt_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheNot => {
@@ -1544,7 +1608,7 @@ pub fn get_op_size_on_gpu(
                 SupportedFheCiphertexts::FheBytes64(a) => a.get_bitnot_size_on_gpu(),
                 SupportedFheCiphertexts::FheBytes128(a) => a.get_bitnot_size_on_gpu(),
                 SupportedFheCiphertexts::FheBytes256(a) => a.get_bitnot_size_on_gpu(),
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheNeg => {
@@ -1559,7 +1623,7 @@ pub fn get_op_size_on_gpu(
                 SupportedFheCiphertexts::FheUint128(a) => a.get_neg_size_on_gpu(),
                 SupportedFheCiphertexts::FheUint160(a) => a.get_neg_size_on_gpu(),
                 SupportedFheCiphertexts::FheUint256(a) => a.get_neg_size_on_gpu(),
-                _ => 0,
+                _ => assert!(false),
             }
         }
         SupportedFheOperations::FheIfThenElse => {
@@ -1614,764 +1678,59 @@ pub fn get_op_size_on_gpu(
                     SupportedFheCiphertexts::FheBytes256(a),
                     SupportedFheCiphertexts::FheBytes256(b),
                 ) => flag.get_if_then_else_size_on_gpu(a, b),
-                _ => 0,
+                _ => assert!(false),
             }
         }
-        //TODO
-        // SupportedFheOperations::FheCast => match (&input_operands[0], &input_operands[1]) {
-        //     (SupportedFheCiphertexts::FheBool(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheBool(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 1 => {
-        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
-        //                 }
-        //                 2 => {
-        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
-        //                 }
-        //                 3 => {
-        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
-        //                 }
-        //                 4 => {
-        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
-        //                 }
-        //                 5 => {
-        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
-        //                 }
-        //                 6 => {
-        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
-        //                 }
-        //                 7 => {
-        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
-        //                 }
-        //                 8 => {
-        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
-        //                 }
-        //                 9 => {
-        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
-        //                 }
-        //                 10 => {
-        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
-        //                 }
-        //                 11 => {
-        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
-        //                 }
-        //                 other => Err(FhevmError::UnknownCastType {
-        //                     fhe_operation: format!("{:?}", fhe_operation),
-        //                     type_to_cast_to: other,
-        //                 }),
-        //             }
-        //         }
-        //     }
-        //     (SupportedFheCiphertexts::FheUint4(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheUint4(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 0 => {
-        //                     let out: tfhe::FheBool = inp.gt(0);
-        //                     Ok(SupportedFheCiphertexts::FheBool(out))
-        //                 }
-        //                 2 => {
-        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
-        //                 }
-        //                 3 => {
-        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
-        //                 }
-        //                 4 => {
-        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
-        //                 }
-        //                 5 => {
-        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
-        //                 }
-        //                 6 => {
-        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
-        //                 }
-        //                 7 => {
-        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
-        //                 }
-        //                 8 => {
-        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
-        //                 }
-        //                 9 => {
-        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
-        //                 }
-        //                 10 => {
-        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
-        //                 }
-        //                 11 => {
-        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
-        //                 }
-        //                 other => Err(FhevmError::UnknownCastType {
-        //                     fhe_operation: format!("{:?}", fhe_operation),
-        //                     type_to_cast_to: other,
-        //                 }),
-        //             }
-        //         }
-        //     }
-        //     (SupportedFheCiphertexts::FheUint8(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheUint8(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 0 => {
-        //                     let out: tfhe::FheBool = inp.gt(0);
-        //                     Ok(SupportedFheCiphertexts::FheBool(out))
-        //                 }
-        //                 1 => {
-        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
-        //                 }
-        //                 3 => {
-        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
-        //                 }
-        //                 4 => {
-        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
-        //                 }
-        //                 5 => {
-        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
-        //                 }
-        //                 6 => {
-        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
-        //                 }
-        //                 7 => {
-        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
-        //                 }
-        //                 8 => {
-        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
-        //                 }
-        //                 9 => {
-        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
-        //                 }
-        //                 10 => {
-        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
-        //                 }
-        //                 11 => {
-        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
-        //                 }
-        //                 other => Err(FhevmError::UnknownCastType {
-        //                     fhe_operation: format!("{:?}", fhe_operation),
-        //                     type_to_cast_to: other,
-        //                 }),
-        //             }
-        //         }
-        //     }
-        //     (SupportedFheCiphertexts::FheUint16(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheUint16(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 0 => {
-        //                     let out: tfhe::FheBool = inp.gt(0);
-        //                     Ok(SupportedFheCiphertexts::FheBool(out))
-        //                 }
-        //                 1 => {
-        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
-        //                 }
-        //                 2 => {
-        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
-        //                 }
-        //                 4 => {
-        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
-        //                 }
-        //                 5 => {
-        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
-        //                 }
-        //                 6 => {
-        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
-        //                 }
-        //                 7 => {
-        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
-        //                 }
-        //                 8 => {
-        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
-        //                 }
-        //                 9 => {
-        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
-        //                 }
-        //                 10 => {
-        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
-        //                 }
-        //                 11 => {
-        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
-        //                 }
-        //                 other => Err(FhevmError::UnknownCastType {
-        //                     fhe_operation: format!("{:?}", fhe_operation),
-        //                     type_to_cast_to: other,
-        //                 }),
-        //             }
-        //         }
-        //     }
-        //     (SupportedFheCiphertexts::FheUint32(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheUint32(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 0 => {
-        //                     let out: tfhe::FheBool = inp.gt(0);
-        //                     Ok(SupportedFheCiphertexts::FheBool(out))
-        //                 }
-        //                 1 => {
-        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
-        //                 }
-        //                 2 => {
-        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
-        //                 }
-        //                 3 => {
-        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
-        //                 }
-        //                 5 => {
-        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
-        //                 }
-        //                 6 => {
-        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
-        //                 }
-        //                 7 => {
-        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
-        //                 }
-        //                 8 => {
-        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
-        //                 }
-        //                 9 => {
-        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
-        //                 }
-        //                 10 => {
-        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
-        //                 }
-        //                 11 => {
-        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
-        //                 }
-        //                 other => Err(FhevmError::UnknownCastType {
-        //                     fhe_operation: format!("{:?}", fhe_operation),
-        //                     type_to_cast_to: other,
-        //                 }),
-        //             }
-        //         }
-        //     }
-        //     (SupportedFheCiphertexts::FheUint64(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheUint64(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 0 => {
-        //                     let out: tfhe::FheBool = inp.gt(0);
-        //                     Ok(SupportedFheCiphertexts::FheBool(out))
-        //                 }
-        //                 1 => {
-        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
-        //                 }
-        //                 2 => {
-        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
-        //                 }
-        //                 3 => {
-        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
-        //                 }
-        //                 4 => {
-        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
-        //                 }
-        //                 6 => {
-        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
-        //                 }
-        //                 7 => {
-        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
-        //                 }
-        //                 8 => {
-        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
-        //                 }
-        //                 9 => {
-        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
-        //                 }
-        //                 10 => {
-        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
-        //                 }
-        //                 11 => {
-        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
-        //                 }
-        //                 other => Err(FhevmError::UnknownCastType {
-        //                     fhe_operation: format!("{:?}", fhe_operation),
-        //                     type_to_cast_to: other,
-        //                 }),
-        //             }
-        //         }
-        //     }
-        //     (SupportedFheCiphertexts::FheUint128(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheUint128(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 0 => {
-        //                     let out: tfhe::FheBool = inp.gt(0);
-        //                     Ok(SupportedFheCiphertexts::FheBool(out))
-        //                 }
-        //                 1 => {
-        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
-        //                 }
-        //                 2 => {
-        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
-        //                 }
-        //                 3 => {
-        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
-        //                 }
-        //                 4 => {
-        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
-        //                 }
-        //                 5 => {
-        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
-        //                 }
-        //                 7 => {
-        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
-        //                 }
-        //                 8 => {
-        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
-        //                 }
-        //                 9 => {
-        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
-        //                 }
-        //                 10 => {
-        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
-        //                 }
-        //                 11 => {
-        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
-        //                 }
-        //                 other => Err(FhevmError::UnknownCastType {
-        //                     fhe_operation: format!("{:?}", fhe_operation),
-        //                     type_to_cast_to: other,
-        //                 }),
-        //             }
-        //         }
-        //     }
-        //     (SupportedFheCiphertexts::FheUint160(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheUint160(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 0 => {
-        //                     let out: tfhe::FheBool = inp.gt(0);
-        //                     Ok(SupportedFheCiphertexts::FheBool(out))
-        //                 }
-        //                 1 => {
-        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
-        //                 }
-        //                 2 => {
-        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
-        //                 }
-        //                 3 => {
-        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
-        //                 }
-        //                 4 => {
-        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
-        //                 }
-        //                 5 => {
-        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
-        //                 }
-        //                 6 => {
-        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
-        //                 }
-        //                 8 => {
-        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
-        //                 }
-        //                 9 => {
-        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
-        //                 }
-        //                 10 => {
-        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
-        //                 }
-        //                 11 => {
-        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
-        //                 }
-        //                 other => Err(FhevmError::UnknownCastType {
-        //                     fhe_operation: format!("{:?}", fhe_operation),
-        //                     type_to_cast_to: other,
-        //                 }),
-        //             }
-        //         }
-        //     }
-        //     (SupportedFheCiphertexts::FheUint256(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheUint256(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 0 => {
-        //                     let out: tfhe::FheBool = inp.gt(0);
-        //                     Ok(SupportedFheCiphertexts::FheBool(out))
-        //                 }
-        //                 1 => {
-        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
-        //                 }
-        //                 2 => {
-        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
-        //                 }
-        //                 3 => {
-        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
-        //                 }
-        //                 4 => {
-        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
-        //                 }
-        //                 5 => {
-        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
-        //                 }
-        //                 6 => {
-        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
-        //                 }
-        //                 7 => {
-        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
-        //                 }
-        //                 9 => {
-        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
-        //                 }
-        //                 10 => {
-        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
-        //                 }
-        //                 11 => {
-        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
-        //                 }
-        //                 other => Err(FhevmError::UnknownCastType {
-        //                     fhe_operation: format!("{:?}", fhe_operation),
-        //                     type_to_cast_to: other,
-        //                 }),
-        //             }
-        //         }
-        //     }
-        //     (SupportedFheCiphertexts::FheBytes64(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheBytes64(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 0 => {
-        //                     let out: tfhe::FheBool = inp.gt(0);
-        //                     Ok(SupportedFheCiphertexts::FheBool(out))
-        //                 }
-        //                 1 => {
-        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
-        //                 }
-        //                 2 => {
-        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
-        //                 }
-        //                 3 => {
-        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
-        //                 }
-        //                 4 => {
-        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
-        //                 }
-        //                 5 => {
-        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
-        //                 }
-        //                 6 => {
-        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
-        //                 }
-        //                 7 => {
-        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
-        //                 }
-        //                 8 => {
-        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
-        //                 }
-        //                 10 => {
-        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
-        //                 }
-        //                 11 => {
-        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
-        //                 }
-        //                 other => Err(FhevmError::UnknownCastType {
-        //                     fhe_operation: format!("{:?}", fhe_operation),
-        //                     type_to_cast_to: other,
-        //                 }),
-        //             }
-        //         }
-        //     }
-        //     (SupportedFheCiphertexts::FheBytes128(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheBytes128(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 0 => {
-        //                     let out: tfhe::FheBool = inp.gt(0);
-        //                     Ok(SupportedFheCiphertexts::FheBool(out))
-        //                 }
-        //                 1 => {
-        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
-        //                 }
-        //                 2 => {
-        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
-        //                 }
-        //                 3 => {
-        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
-        //                 }
-        //                 4 => {
-        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
-        //                 }
-        //                 5 => {
-        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
-        //                 }
-        //                 6 => {
-        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
-        //                 }
-        //                 7 => {
-        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
-        //                 }
-        //                 8 => {
-        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
-        //                 }
-        //                 9 => {
-        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
-        //                 }
-        //                 11 => {
-        //                     let out: tfhe::FheUint2048 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes256(out))
-        //                 }
-        //                 other => Err(FhevmError::UnknownCastType {
-        //                     fhe_operation: format!("{:?}", fhe_operation),
-        //                     type_to_cast_to: other,
-        //                 }),
-        //             }
-        //         }
-        //     }
-        //     (SupportedFheCiphertexts::FheBytes256(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         let l = to_be_u16_bit(op) as i16;
-        //         let type_id = input_operands[0].type_num();
-        //         if l == type_id {
-        //             Ok(SupportedFheCiphertexts::FheBytes256(inp.clone()))
-        //         } else {
-        //             match l {
-        //                 0 => {
-        //                     let out: tfhe::FheBool = inp.gt(0);
-        //                     Ok(SupportedFheCiphertexts::FheBool(out))
-        //                 }
-        //                 1 => {
-        //                     let out: tfhe::FheUint4 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint4(out))
-        //                 }
-        //                 2 => {
-        //                     let out: tfhe::FheUint8 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint8(out))
-        //                 }
-        //                 3 => {
-        //                     let out: tfhe::FheUint16 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint16(out))
-        //                 }
-        //                 4 => {
-        //                     let out: tfhe::FheUint32 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint32(out))
-        //                 }
-        //                 5 => {
-        //                     let out: tfhe::FheUint64 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint64(out))
-        //                 }
-        //                 6 => {
-        //                     let out: tfhe::FheUint128 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint128(out))
-        //                 }
-        //                 7 => {
-        //                     let out: tfhe::FheUint160 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint160(out))
-        //                 }
-        //                 8 => {
-        //                     let out: tfhe::FheUint256 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheUint256(out))
-        //                 }
-        //                 9 => {
-        //                     let out: tfhe::FheUint512 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes64(out))
-        //                 }
-        //                 10 => {
-        //                     let out: tfhe::FheUint1024 = inp.clone().cast_into();
-        //                     Ok(SupportedFheCiphertexts::FheBytes128(out))
-        //                 }
-        //                 other => panic!("unexpected type: {other}"),
-        //             }
-        //         }
-        //     }
-        //     _ => Err(FhevmError::UnsupportedFheTypes {
-        //         fhe_operation: format!("{:?}", fhe_operation),
-        //         input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-        //     }),
-        // },
-        // SupportedFheOperations::FheTrivialEncrypt => match (&input_operands[0], &input_operands[1])
-        // {
-        //     (SupportedFheCiphertexts::Scalar(inp), SupportedFheCiphertexts::Scalar(op)) => {
-        //         Ok(trivial_encrypt_be_bytes(to_be_u16_bit(op) as i16, inp))
-        //     }
-        //     _ => Err(FhevmError::UnsupportedFheTypes {
-        //         fhe_operation: format!("{:?}", fhe_operation),
-        //         input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-        //     }),
-        // },
-        // SupportedFheOperations::FheRand => {
-        //     let SupportedFheCiphertexts::Scalar(rand_counter) = &input_operands[0] else {
-        //         return Err(FhevmError::UnsupportedFheTypes {
-        //             fhe_operation: format!("{:?}", fhe_operation),
-        //             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-        //         });
-        //     };
-        //     let SupportedFheCiphertexts::Scalar(to_type) = &input_operands[1] else {
-        //         return Err(FhevmError::UnsupportedFheTypes {
-        //             fhe_operation: format!("{:?}", fhe_operation),
-        //             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-        //         });
-        //     };
-        //     let rand_seed = to_be_u128_bit(rand_counter);
-        //     let to_type = to_be_u16_bit(to_type) as i16;
-        //     Ok(generate_random_number(to_type as i16, rand_seed, None))
-        // }
-        // SupportedFheOperations::FheRandBounded => {
-        //     let SupportedFheCiphertexts::Scalar(rand_counter) = &input_operands[0] else {
-        //         return Err(FhevmError::UnsupportedFheTypes {
-        //             fhe_operation: format!("{:?}", fhe_operation),
-        //             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-        //         });
-        //     };
-        //     let SupportedFheCiphertexts::Scalar(upper_bound) = &input_operands[1] else {
-        //         return Err(FhevmError::UnsupportedFheTypes {
-        //             fhe_operation: format!("{:?}", fhe_operation),
-        //             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-        //         });
-        //     };
-        //     let SupportedFheCiphertexts::Scalar(to_type) = &input_operands[2] else {
-        //         return Err(FhevmError::UnsupportedFheTypes {
-        //             fhe_operation: format!("{:?}", fhe_operation),
-        //             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-        //         });
-        //     };
-        //     let rand_seed = to_be_u128_bit(rand_counter);
-        //     let to_type = to_be_u16_bit(to_type) as i16;
-        //     Ok(generate_random_number(
-        //         to_type as i16,
-        //         rand_seed,
-        //         Some(upper_bound),
-        //     ))
-        // }
-        // SupportedFheOperations::FheGetInputCiphertext => todo!("Implement FheGetInputCiphertext"),
-        _ => 0,
+        SupportedFheOperations::FheTrivialEncrypt | SupportedFheOperations::FheCast => {
+            match (&input_operands[0], &input_operands[1]) {
+                (_, SupportedFheCiphertexts::Scalar(op)) => {
+                    trivial_encrypt_be_bytes(to_be_u16_bit(op) as i16, &[1u8]).get_size_on_gpu()
+                }
+                (_, _) => assert!(false),
+            }
+        }
+        SupportedFheOperations::FheRand => {
+            let SupportedFheCiphertexts::Scalar(to_type) = &input_operands[1] else {
+                return 0;
+            };
+            let to_type = to_be_u16_bit(to_type) as i16;
+            match to_type {
+                0 => tfhe::FheUint2::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                1 => tfhe::FheUint4::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                2 => tfhe::FheUint8::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                3 => tfhe::FheUint16::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                4 => tfhe::FheUint32::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                5 => tfhe::FheUint64::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                6 => tfhe::FheUint128::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                7 => tfhe::FheUint160::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                8 => tfhe::FheUint256::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                9 => tfhe::FheUint512::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                10 => tfhe::FheUint1024::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                11 => tfhe::FheUint2048::get_generate_oblivious_pseudo_random_size_on_gpu(),
+                _ => assert!(false),
+            }
+        }
+        SupportedFheOperations::FheRandBounded => {
+            let SupportedFheCiphertexts::Scalar(to_type) = &input_operands[2] else {
+                return 0;
+            };
+            let to_type = to_be_u16_bit(to_type) as i16;
+            match to_type {
+                0 => tfhe::FheUint2::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                1 => tfhe::FheUint4::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                2 => tfhe::FheUint8::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                3 => tfhe::FheUint16::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                4 => tfhe::FheUint32::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                5 => tfhe::FheUint64::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                6 => tfhe::FheUint128::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                7 => tfhe::FheUint160::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                8 => tfhe::FheUint256::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                9 => tfhe::FheUint512::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                10 => tfhe::FheUint1024::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                11 => tfhe::FheUint2048::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
+                _ => assert!(false),
+            }
+        }
+        _ => assert!(false),
     }
 }

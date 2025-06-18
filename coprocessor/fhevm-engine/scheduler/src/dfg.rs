@@ -11,6 +11,7 @@ pub struct OpNode {
     result: DFGTaskResult,
     result_handle: Handle,
     inputs: Vec<DFGTaskInput>,
+    #[cfg(feature = "gpu")]
     locality: i32,
 }
 pub type OpEdge = u8;
@@ -44,6 +45,7 @@ impl DFGraph {
             result: None,
             result_handle: rh,
             inputs,
+            #[cfg(feature = "gpu")]
             locality: -1,
         }))
     }

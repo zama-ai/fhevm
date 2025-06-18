@@ -131,8 +131,9 @@ async fn garbage_collect(conn: &mut PoolConnection<Postgres>) -> Result<(), Exec
         );"
     )
     .execute(conn.as_mut())
-    .await?.rows_affected();
- 
+    .await?
+    .rows_affected();
+
     if rows > 0 {
         let _s = telemetry::tracer_with_start_time("cleanup_ct128", start);
         info!(target: "worker", "Cleaning up old ciphertexts128, rows_affected: {}", rows);
@@ -381,15 +382,15 @@ async fn update_ciphertext128(
             // Insert the ciphertext128 into the database for reliability
             // Later on, we clean up all uploaded ct128
             let res = sqlx::query!(
-                    "
+                "
                     UPDATE ciphertexts
                     SET ciphertext128 = $1
                     WHERE handle = $2;",
-                    ciphertext128.as_ref(),
-                    task.handle
-                )
-                .execute(db_txn.as_mut())
-                .await;
+                ciphertext128.as_ref(),
+                task.handle
+            )
+            .execute(db_txn.as_mut())
+            .await;
 
             match res {
                 Ok(val) => {
@@ -453,6 +454,6 @@ fn decompress_ct(
 ) -> Result<SupportedFheCiphertexts, ExecutionError> {
     let ct_type = get_ct_type(handle)?;
 
-    let result = SupportedFheCiphertexts::decompress(ct_type, compressed_ct)?;
+    let result = SupportedFheCiphertexts::decompress_no_check(ct_type, compressed_ct)?;
     Ok(result)
 }
