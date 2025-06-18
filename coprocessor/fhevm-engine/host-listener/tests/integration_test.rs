@@ -17,10 +17,12 @@ use alloy::sol;
 use futures_util::future::try_join_all;
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
+use std::process::Command;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use test_harness::instance::ImportMode;
-use tracing::{warn, Level};
+use tracing::{info, warn, Level};
 
 use host_listener::cmd::main;
 use host_listener::cmd::Args;
@@ -46,6 +48,40 @@ use crate::ACLTest::ACLTestInstance;
 use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
 
 const NB_EVENTS_PER_WALLET: i64 = 200;
+
+pub async fn wait_url_success(url: &str, retry: u64, delay: u64) -> bool {
+    for step in 1..=retry {
+        let response = reqwest::get(url);
+        let response_or_timeout =
+            tokio::time::timeout(Duration::from_secs(7), response);
+        let Ok(response) = response_or_timeout.await else {
+            warn!("Listener timeout");
+            continue;
+        };
+        if response.is_ok() && response.as_ref().unwrap().status().is_success()
+        {
+            info!("Listener ok after {} seconds", step * delay);
+            return true;
+        } else {
+            warn!(
+                "Listener not ready yet, retry {}/{} in {} seconds",
+                step, retry, delay
+            );
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
+    }
+    false
+}
+
+pub async fn wait_alive(url: &str, retry: u64, delay: u64) -> bool {
+    let alive_url = format!("{}/liveness", url);
+    wait_url_success(&alive_url, retry, delay).await
+}
+
+pub async fn wait_healthy(url: &str, retry: u64, delay: u64) -> bool {
+    let healthz_url = format!("{}/healthz", url);
+    wait_url_success(&healthz_url, retry, delay).await
+}
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
@@ -166,11 +202,12 @@ struct Setup {
     tfhe_contract: FHEVMExecutorTestInstance<SetupProvider>,
     db_pool: sqlx::Pool<sqlx::Postgres>,
     _test_instance: test_harness::instance::DBInstance, // maintain db alive
+    health_check_url: String,
 }
 
 async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::WARN)
+        .with_max_level(tracing::Level::INFO)
         .compact()
         .try_init()
         .ok();
@@ -224,6 +261,7 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         dependence_cache_size: 128,
         reorg_maximum_duration_in_blocks: 100, // to go beyond chain start
     };
+    let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
     Ok(Setup {
         args,
@@ -233,6 +271,7 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         tfhe_contract,
         db_pool,
         _test_instance: test_instance,
+        health_check_url,
     })
 }
 
@@ -272,8 +311,7 @@ async fn test_listener_no_event_loss(
 
     // Start listener in background task
     let listener_handle = tokio::spawn(main(args.clone()));
-
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    assert!(wait_healthy(&setup.health_check_url, 60, 1).await);
 
     // Emit first batch of events
     let wallets_clone = setup.wallets.clone();
@@ -365,40 +403,35 @@ async fn test_listener_no_event_loss(
 #[tokio::test]
 #[serial(db)]
 async fn test_health() -> Result<(), anyhow::Error> {
-    let mut setup = setup(None).await.expect("setup failed");
-
-    const LIVENESS_URL: &str = "http://0.0.0.0:8081/liveness";
-    const HEALTHZ_URL: &str = "http://0.0.0.0:8081/healthz";
+    let setup = setup(None).await.expect("setup failed");
+    let args = setup.args.clone();
 
     // Start listener in background task
-    let listener_handle = tokio::spawn(main(setup.args.clone()));
-    for _ in 1..10 {
-        let response = reqwest::get(LIVENESS_URL).await;
-        if response.is_ok() && response.unwrap().status().is_success() {
-            break;
-        }
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-    }
-    let response = reqwest::get(LIVENESS_URL).await;
-    assert!(response.is_ok());
-    assert!(response.unwrap().status().is_success());
-    let response = reqwest::get(HEALTHZ_URL).await;
-    let Ok(response) = response else {
-        return Err(anyhow::anyhow!("Failed to get healthz"));
-    };
-    if !response.status().is_success() {
-        eprintln!("response: {:?}", response.text().await);
-        return Err(anyhow::anyhow!("Failed to get healthz"));
-    }
-    setup.anvil.child_mut().kill().unwrap();
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-    let response = reqwest::get(HEALTHZ_URL).await;
-    let Ok(response) = response else {
-        return Err(anyhow::anyhow!("Failed to get healthz"));
-    };
-    if response.status().is_success() {
-        return Err(anyhow::anyhow!("Healthz should be unhealthy"));
-    }
+    let listener_handle = tokio::spawn(main(args.clone()));
+    assert!(wait_alive(&setup.health_check_url, 60, 1).await);
+    assert!(wait_healthy(&setup.health_check_url, 60, 1).await);
+
+    let mut suspend_anvil = Command::new("kill")
+        .args(["-s", "STOP", &setup.anvil.child().id().to_string()])
+        .spawn()?;
+    suspend_anvil
+        .wait()
+        .expect("Failed to suspend Anvil process");
+    warn!("Anvil is suspended");
+    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await; // time to detect issue
+    warn!("Checking health");
+    assert!(!wait_healthy(&setup.health_check_url, 10, 1).await);
+
+    let mut continue_anvil = Command::new("kill")
+        .args(["-s", "CONT", &setup.anvil.child().id().to_string()])
+        .spawn()?;
+    continue_anvil
+        .wait()
+        .expect("Failed to continue Anvil process");
+    warn!("Anvil is back");
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await; // time to recover
+    assert!(wait_healthy(&setup.health_check_url, 10, 1).await);
+    warn!("Test is killing the listener");
     listener_handle.abort();
     Ok(())
 }

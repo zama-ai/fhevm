@@ -25,6 +25,7 @@ alloy = { version = "1.0.17", default-features = false, features = [
     "provider-ws",
     "signer-aws",
 ] }
+alloy-provider = "1.0.9"
 alloy-primitives = "1.2.0"
 axum = "0.7"
 tower-http = { version = "0.5", features = ["trace"] }
