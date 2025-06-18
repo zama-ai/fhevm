@@ -56,6 +56,7 @@ spec:
       containers:
       - name: db-migration
         image: {{ .Values.dbMigration.image.name }}:{{ .Values.dbMigration.image.tag }}
+        command: ["/initialize_db.sh"]
         env:
 {{ toYaml .Values.dbMigration.env | nindent 12 }}
         resources:
