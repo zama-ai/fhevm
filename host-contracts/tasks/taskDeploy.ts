@@ -24,7 +24,7 @@ async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUp
 
 task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
   // Compile the EmptyUUPS proxy contract
-  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+  await run('compile:specific', { contract: 'contracts/shared' });
 
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
@@ -86,7 +86,7 @@ task('task:deployACL').setAction(async function (taskArguments: TaskArguments, {
   const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
-    call: { fn: 'reinitialize', args: [getRequiredEnvVar('PAUSER_ADDRESS')] },
+    call: { fn: 'initializeFromEmptyProxy', args: [getRequiredEnvVar('PAUSER_ADDRESS')] },
   });
   console.log('ACL code set successfully at address:', proxyAddress);
 });
@@ -100,7 +100,7 @@ task('task:deployFHEVMExecutor').setAction(async function (taskArguments: TaskAr
   const proxyAddress = parsedEnv.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
-    call: { fn: 'reinitialize' },
+    call: { fn: 'initializeFromEmptyProxy' },
   });
   console.log('FHEVMExecutor code set successfully at address:', proxyAddress);
 });
@@ -136,7 +136,10 @@ task('task:deployKMSVerifier')
       }
     }
     await upgrades.upgradeProxy(proxy, newImplem, {
-      call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold] },
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold],
+      },
     });
     console.log('KMSVerifier code set successfully at address:', proxyAddress);
     console.log(
@@ -177,7 +180,7 @@ task('task:deployInputVerifier')
     }
 
     await upgrades.upgradeProxy(proxy, newImplem, {
-      call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource, initialSigners] },
+      call: { fn: 'initializeFromEmptyProxy', args: [verifyingContractSource, chainIDSource, initialSigners] },
     });
     console.log('InputVerifier code set successfully at address:', proxyAddress);
     console.log(
@@ -195,7 +198,7 @@ task('task:deployHCULimit').setAction(async function (taskArguments: TaskArgumen
   const proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
-    call: { fn: 'reinitialize' },
+    call: { fn: 'initializeFromEmptyProxy' },
   });
   console.log('HCULimit code set successfully at address:', proxyAddress);
 });

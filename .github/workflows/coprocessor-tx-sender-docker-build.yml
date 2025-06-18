@@ -1,4 +1,4 @@
-name: Docker - Fhevm Coprocessor Transaction Sender
+name: coprocessor-tx-sender-docker-build
 
 on:
   pull_request:
@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: coprocessor-tx-sender-docker-build/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -24,31 +25,37 @@ jobs:
       changes-coprocessor-tx-sender: ${{ steps.filter.outputs.coprocessor-tx-sender }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
         id: filter
         with:
           filters: |
             coprocessor-tx-sender:
-              - .github/workflows/coprocessor-docker-build-tx-sender.yml
+              - .github/workflows/coprocessor-tx-sender-docker-build.yml
               - coprocessor/fhevm-engine/transaction-sender/**
               - coprocessor/fhevm-engine/Cargo.toml
               - coprocessor/fhevm-engine/Cargo.lock
-  docker-fhevm-coprocessor:
+  build:
+    name: coprocessor-tx-sender-docker-build/build (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-tx-sender == 'true' || github.event_name == 'release' }}
-    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3c6b5ecf34d5350a03d1ff5e4d0ddc89607b614e
     secrets:
-      GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
     permissions:
-      contents: "read"
-      id-token: "write"
-      packages: "write"
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+      attestations: 'write'
+      packages: 'write'
+      id-token: 'write'
     with:
       working-directory: "."
       docker-context: "."
       push_image: true
       image-name: "fhevm/coprocessor/tx-sender"
-      generate-dev-image: false
-      docker-file: "coprocessor/fhevm-engine/transaction-sender/Dockerfile"
-      arm-build: true
+      docker-file: "./coprocessor/fhevm-engine/transaction-sender/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-tx-sender"

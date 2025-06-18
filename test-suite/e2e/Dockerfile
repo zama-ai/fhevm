@@ -33,7 +33,7 @@ RUN npx hardhat compile && \
     npx hardhat compile:specific --contract decryptionOracle
 
 # --- Runtime Stage ---
-FROM node:${NODE_VERSION} AS runtime
+FROM node:${NODE_VERSION} AS prod
 
 COPY --from=builder /lib/ /lib/
 COPY --from=builder /bin/ /bin/
@@ -49,3 +49,5 @@ USER fhevm:fhevm
 WORKDIR /app
 
 ENTRYPOINT ["/bin/bash", "-c"]
+
+FROM prod AS dev

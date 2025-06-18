@@ -1,4 +1,4 @@
-name: Test Suite E2E Operators
+name: test-suite-e2e-operators-tests
 
 on:
   workflow_dispatch:
@@ -43,10 +43,10 @@ concurrency:
 
 jobs:
   setup-instance:
-    name: Setup instance (operators-e2e-test)
+    name: test-suite-e2e-operators-tests/setup-instance
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -62,18 +62,20 @@ jobs:
           profile: bench
 
   operators-e2e-test:
-    name: Operators tests e2e
+    name: test-suite-e2e-operators-tests/operators-e2e-test
     if: ${{ github.event_name == 'workflow_dispatch' }}
     permissions:
-      contents: "read"
-      id-token: "write"
-      packages: "read"
+      contents: 'read'
+      id-token: 'write'
+      packages: 'read'
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     needs: setup-instance
     timeout-minutes: 1440
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
 
       - name: Setup Docker
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
@@ -130,12 +132,12 @@ jobs:
           ./fhevm-cli clean
 
   teardown-instance:
-    name: Teardown instance (operators-e2e-test)
+    name: test-suite-e2e-operators-tests/teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
     needs: [ setup-instance, operators-e2e-test]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     steps:
       - name: Stop remote instance
         id: stop-instance

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "contracts/FheType.sol";
+import "contracts/shared/FheType.sol";
 import "contracts/FHEEvents.sol";
 
 contract FHEVMExecutorTest is FHEEvents {

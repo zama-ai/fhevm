@@ -2,7 +2,7 @@
 # - The Rust bindings crate version and files are up-to-date
 # - Contract mocks and selectors are current
 # - Dependency licenses compliance
-name: Fhevm Gateway Contracts Integrity Checks
+name: gateway-contracts-integrity-checks
 
 on:
   pull_request:
@@ -10,21 +10,23 @@ on:
     branches:
       - main
 
+permissions:
+  contents: 'read'
+
 concurrency:
   group: contract-integrity-checks-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check-changes:
-    permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+    name: gateway-contracts-integrity-checks/check-changes
     runs-on: ubuntu-latest
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
         id: filter
         with:
@@ -33,13 +35,15 @@ jobs:
               - .github/workflows/gateway-contracts-integrity-checks.yml
               - gateway-contracts/**
   contract-integrity-checks:
+    name: gateway-contracts-integrity-checks/contract-integrity-checks (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
-    name: Contract integrity checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
 
       - name: Cache npm
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3

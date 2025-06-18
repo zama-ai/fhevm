@@ -26,7 +26,6 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
 
     /// @dev Decrypted state variables
     bool public yBool;
-    uint8 public yUint4;
     uint8 public yUint8;
     uint16 public yUint16;
     uint32 public yUint32;

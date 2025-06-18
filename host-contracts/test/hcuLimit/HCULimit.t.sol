@@ -5,9 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {FheType} from "../../contracts/FheType.sol";
+import {FheType} from "../../contracts/shared/FheType.sol";
 import {HCULimit} from "../../contracts/HCULimit.sol";
-import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
+import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
 import {fhevmExecutorAdd} from "../../addresses/FHEVMExecutorAddress.sol";
 import {SupportedTypesConstants} from "../fhevmExecutor/fhevmExecutor.t.sol";
 
@@ -57,7 +57,12 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         );
 
         implementation = address(new MockHCULimit());
-        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(hcuLimit.reinitialize, ()), owner);
+        UnsafeUpgrades.upgradeProxy(
+            proxy,
+            implementation,
+            abi.encodeCall(hcuLimit.initializeFromEmptyProxy, ()),
+            owner
+        );
         hcuLimit = MockHCULimit(proxy);
         fhevmExecutor = hcuLimit.getFHEVMExecutorAddress();
     }
@@ -67,7 +72,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.1.0")));
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.2.0")));
         assertEq(hcuLimit.owner(), owner);
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
