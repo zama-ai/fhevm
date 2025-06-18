@@ -32,7 +32,8 @@ layout:
 
 ### **Set up your development environment**
 
-Use the official Hardhat template from Zama that includes all necessary configurations and dependencies to start developing confidential smart contracts.
+Use the official Hardhat template from Zama that includes all necessary configurations and dependencies to start
+developing confidential smart contracts.
 
 <a href="https://github.com/zama-ai/fhevm-hardhat-template" class="button secondary">Clone the template</a>
 {% endstep %}
@@ -41,8 +42,7 @@ Use the official Hardhat template from Zama that includes all necessary configur
 
 ### Write your first confidential smart contract
 
-Use the provided contract examples, like `MyCounter`, to begin. A basic counter contract might look
-like this:
+Use the provided contract examples, like `MyCounter`, to begin. A basic counter contract might look like this:
 
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -64,8 +64,8 @@ contract MyCounter is ZamaConfig {
 }
 ```
 
-<a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/solidity-guides/get-started/overview" class="button primary">See the full
-Solidity guide</a> {% endstep %}
+<a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/solidity-guides/get-started/overview" class="button primary">See
+the full Solidity guide</a> {% endstep %}
 
 {% step %}
 
@@ -73,8 +73,8 @@ Solidity guide</a> {% endstep %}
 
 Start from Zama's ready-to-use React template.
 
-<a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/sdk-guides" class="button primary">See the full SDK
-guide</a> <a href="https://github.com/zama-ai/fhevm-react-template" class="button secondary">Clone the template</a> ;
+<a href="https://docs.zama.ai/doc-ui/IoEzE96rh6dKmIRhgam5/sdk-guides" class="button primary">See the full SDK guide</a>
+<a href="https://github.com/zama-ai/fhevm-react-template" class="button secondary">Clone the template</a> ;
 {% endstep %}
 
 {% step %}

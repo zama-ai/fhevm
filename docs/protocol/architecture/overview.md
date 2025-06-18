@@ -37,7 +37,7 @@ programmability, and composability can coexist.
 
 <figure><img src="../../.gitbook/assets/keys_fhe.png" alt="FHE Keys Overview"><figcaption><p>Overview of FHE Keys and their roles</p></figcaption></figure>
 
-## **FHE to Blockchain: From library to fhevm**
+## **FHE to Blockchain: From library to FHEVM**
 
 ### **Building on Zama's FHE library**
 
@@ -66,19 +66,19 @@ Integrating FHE into blockchain required solving several key problems:
 4. **Performance and scalability**: FHE is computationally heavy. To keep contracts efficient, compute is offloaded to
    specialized nodes — coprocessors.
 
-To overcome these challenges, Zama introduced a hybrid architecture for FHEVM that combines:
+## Architectural overview
 
-- **On-chain**
-  - Smart contracts written in Solidity using encrypted types (`euint`, `ebool`, etc.).
-  - Manages encrypted state and emits symbolic events to trigger off-chain execution.
-- **Off-chain**
-  - Coprocessors execute FHE operations using the evaluation key.
-  - Results are stored off-chain, and only references (handles) are returned on-chain.
-- **Relayer & KMS**
+FHEVM combines these cryptographic guarantees with a hybrid architecture that balances privacy, scalability, and EVM
+compatibility:
 
-  - The relayer coordinates between the blockchain, users, and the KMS.
-  - The Key Management System securely handles decryption via threshold MPC, supporting both smart contract and user
-    decryption.
+- **On-chain smart contracts** describe encrypted logic symbolically, managing access control and state via FHE handles.
+- **Off-chain coprocessors** listen to emitted events, reconstruct the compute graph, and perform the actual encrypted
+  computation.
+- **The Relayer** acts as the protocol coordinator — verifying proofs, relaying requests, and managing data flow between
+  the blockchain, the coprocessors, and the KMS.
+- **The KMS** is a decentralized, threshold-secure network that handles private key operations like decryption and
+  signing, without ever reconstructing the full key.
 
-  This architecture provides a scalable and secure foundation for confidential, composable smart contracts — without
-  modifying the EVM or breaking developer workflows.
+Rather than changing the EVM itself, this architecture introduces symbolic execution, turning smart contract calls into
+a graph of operations to be computed off-chain. The result is a system where confidentiality, programmability, and
+composability are not only compatible — they're native.
