@@ -79,7 +79,7 @@ jobs:
   run-docker:
     name: kms-connector-common-docker-big-instance/run-docker
     needs: [start-runner]
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef9d90453e0d776453026c751fbbd48e410d605a
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3c6b5ecf34d5350a03d1ff5e4d0ddc89607b614e
     permissions:
       actions: 'read'
       contents: 'read'
