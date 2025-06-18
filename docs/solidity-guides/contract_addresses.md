@@ -5,7 +5,7 @@ Save this in your `.env` file.
 These are Sepolia addresses.
 
 | Contract/Service           | Address/Value                                  |
-|----------------------------|------------------------------------------------|
+| -------------------------- | ---------------------------------------------- |
 | FHEVM_EXECUTOR_CONTRACT    | 0x848B0066793BcC60346Da1F49049357399B8D595     |
 | ACL_CONTRACT               | 0x687820221192C5B662b25367F70076A37bc79b6c     |
 | HCU_LIMIT_CONTRACT         | 0x594BB474275918AF9609814E68C61B1587c5F838     |
