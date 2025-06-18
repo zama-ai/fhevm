@@ -1,3 +1,4 @@
+use alloy_provider::Provider;
 use axum::{
     extract::State,
     http::StatusCode,
@@ -10,6 +11,8 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+
+use crate::types::BlockchainProvider;
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -159,6 +162,15 @@ impl HealthStatus {
             }
         }
         self.checks.insert("database", is_connected);
+    }
+
+    /// Checks if the blockchain is connected by executing a simple query
+    pub async fn set_blockchain_connected(&mut self, provider: &BlockchainProvider) {
+        let is_connected = provider
+            .get_block_number()
+            .await
+            .is_ok();
+        self.checks.insert("blockchain", is_connected);
     }
 
     pub fn is_healthy(&self) -> bool {
