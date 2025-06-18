@@ -71,7 +71,7 @@ dbMigration:
     enabled: false
     items: []
 
-fhevmListener:
+hostListener:
   enabled: false
   nameOverride:
   image:
@@ -94,7 +94,8 @@ fhevmListener:
     - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=ws://host-node:8545
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -111,14 +112,14 @@ fhevmListener:
       enabled: false
       httpGet:
         path: /liveness
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 10
       periodSeconds: 10
     readiness:
       enabled: false
       httpGet:
         path: /healthz
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
   affinity:
@@ -155,7 +156,8 @@ gwListener:
     - --gw-url=ws://gateway-anvil-node:8546
     - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -171,14 +173,14 @@ gwListener:
       enabled: false
       httpGet:
         path: /liveness
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 10
       periodSeconds: 10
     readiness:
       enabled: false
       httpGet:
         path: /healthz
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
   affinity:
@@ -217,7 +219,8 @@ tfheWorker:
   args:
     - --coprocessor-private-key=/accounts/coprocessor.hex
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -233,14 +236,14 @@ tfheWorker:
       enabled: false
       httpGet:
         path: /liveness
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 10
       periodSeconds: 10
     readiness:
       enabled: false
       httpGet:
         path: /healthz
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
   tracing:
@@ -275,7 +278,8 @@ zkProofWorker:
     - --pg-listen-channel="event_zkpok_new_work"
     - --pg-notify-channel="event_zkpok_computed"
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -291,14 +295,14 @@ zkProofWorker:
       enabled: false
       httpGet:
         path: /liveness
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 10
       periodSeconds: 10
     readiness:
       enabled: false
       httpGet:
         path: /healthz
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
   affinity:
@@ -339,7 +343,8 @@ snsWorker:
     - --pg-polling-interval=60
     - --pg-pool-connections=10
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -355,14 +360,14 @@ snsWorker:
       enabled: false
       httpGet:
         path: /liveness
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 10
       periodSeconds: 10
     readiness:
       enabled: false
       httpGet:
         path: /healthz
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
   affinity:
@@ -408,7 +413,8 @@ txSender:
     - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
     - --ciphertext-storage-address=$(CIPHERTEXT_STORAGE_ADDRESS)
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -424,14 +430,14 @@ txSender:
       enabled: false
       httpGet:
         path: /liveness
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 10
       periodSeconds: 10
     readiness:
       enabled: false
       httpGet:
         path: /healthz
-        port: 8080
+        port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
   affinity:

@@ -1,0 +1,21 @@
+{{- if .Values.snsWorker.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-sns-worker
+    app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+  name: {{ include "snsWorkerName" . }}
+spec:
+  ports:
+    - name: metrics
+      port: {{ .Values.snsWorker.ports.metrics }}
+      targetPort: metrics
+    - name: healthcheck
+      port: {{ .Values.snsWorker.ports.healthcheck }}
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-sns-worker
+    app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+  type: ClusterIP
+{{- end }}

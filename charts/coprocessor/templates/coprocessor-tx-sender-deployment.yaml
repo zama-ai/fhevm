@@ -50,6 +50,12 @@ spec:
 {{ toYaml .Values.txSender.args | nindent 12 }}
           env:
 {{ toYaml .Values.txSender.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.txSender.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
           resources:
             requests:
               cpu: {{ .Values.txSender.resources.requests.cpu | default "100m" }}

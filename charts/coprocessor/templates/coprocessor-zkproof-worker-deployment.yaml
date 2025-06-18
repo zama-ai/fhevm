@@ -50,6 +50,12 @@ spec:
 {{ toYaml .Values.zkProofWorker.args | nindent 12 }}
           env:
 {{ toYaml .Values.zkProofWorker.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.zkProofWorker.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
           resources:
             requests:
               cpu: {{ .Values.zkProofWorker.resources.requests.cpu | default "100m" }}

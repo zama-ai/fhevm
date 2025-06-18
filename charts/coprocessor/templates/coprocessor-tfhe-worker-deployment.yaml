@@ -60,6 +60,7 @@ spec:
             {{- range $portName, $portValue := .Values.tfheWorker.ports }}
             - name: {{ $portName }}
               containerPort: {{ $portValue }}
+              protocol: TCP
             {{- end }}
           resources:
             requests:

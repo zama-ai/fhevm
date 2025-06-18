@@ -3,9 +3,9 @@
 {{- default $tfheWorkerNameDefault .Values.tfheWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "fhevmListenerName" -}}
-{{- $fhevmListenerNameDefault := printf "%s-%s" .Release.Name "fhevm-listener" }}
-{{- default $fhevmListenerNameDefault .Values.fhevmListener.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- define "hostListenerName" -}}
+{{- $hostListenerNameDefault := printf "%s-%s" .Release.Name "host-listener" }}
+{{- default $hostListenerNameDefault .Values.hostListener.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "txSenderName" -}}

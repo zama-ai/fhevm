@@ -50,6 +50,12 @@ spec:
 {{ toYaml .Values.gwListener.args | nindent 12 }}
           env:
 {{ toYaml .Values.gwListener.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.gwListener.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
           resources:
             requests:
               cpu: {{ .Values.gwListener.resources.requests.cpu | default "100m" }}

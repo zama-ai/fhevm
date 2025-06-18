@@ -50,6 +50,12 @@ spec:
 {{ toYaml .Values.snsWorker.args | nindent 12 }}
           env:
 {{ toYaml .Values.snsWorker.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.snsWorker.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
           resources:
             requests:
               cpu: {{ .Values.snsWorker.resources.requests.cpu | default "100m" }}
