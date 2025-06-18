@@ -41,9 +41,17 @@ impl From<HealthStatus> for HealthResponse {
     }
 }
 
+#[derive(Serialize)]
+pub struct Version {
+    pub name: &'static str,
+    pub version: &'static str,
+    pub build: &'static str,
+}
+
 pub trait HealthCheckService: Send + Sync {
     fn health_check(&self) -> impl std::future::Future<Output = HealthStatus> + Send;
     fn is_alive(&self) -> impl std::future::Future<Output = bool> + Send;
+    fn get_version(&self) -> Version;
 }
 
 pub struct HttpServer<S: HealthCheckService + Send + Sync + 'static> {
@@ -64,6 +72,7 @@ impl<S: HealthCheckService + Send + Sync + 'static> HttpServer<S> {
         let app = Router::new()
             .route("/healthz", get(Self::health_handler))
             .route("/liveness", get(Self::liveness_handler))
+            .route("/version", get(Self::version_handler))
             .with_state(self.service.clone());
 
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
@@ -117,6 +126,14 @@ impl<S: HealthCheckService + Send + Sync + 'static> HttpServer<S> {
                 })),
             )
         }
+    }
+
+    async fn version_handler(State(service): State<Arc<S>>) -> impl IntoResponse {
+        let version = service.get_version();
+        (
+            StatusCode::OK,
+            Json(serde_json::json!(version)),
+        )
     }
 }
 
