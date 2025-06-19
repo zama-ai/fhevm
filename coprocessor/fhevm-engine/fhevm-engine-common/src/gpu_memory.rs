@@ -8,7 +8,7 @@ use tfhe::{core_crypto::gpu::get_number_of_gpus, prelude::*, FheUint2, GpuIndex}
 lazy_static! {
     pub static ref gpu_mem_reservation: Vec<std::sync::atomic::AtomicU64> = (0
         ..get_number_of_gpus())
-        .map(|_| std::sync::atomic::AtomicU64::new(0))
+        .map(|_| std::sync::atomic::AtomicU64::new(15000000000))
         .collect::<Vec<_>>();
 }
 
@@ -64,23 +64,17 @@ pub fn get_supported_ct_size_on_gpu(ct_type: i16) -> u64 {
 //    - if it doesn't, we remove from the pool and for now simply retry after a short interval
 // TODO: refine retrying, possibly targeting a different GPU where appropriate
 pub fn reserve_memory_on_gpu(amount: u64, idx: usize) {
-    let amount = 10 * amount;
+    let amount = amount + 10000000;
     println!(" \t GPU {} Reserving  {}", idx, amount);
     loop {
-        let current_pool_size = gpu_mem_reservation[idx].load(std::sync::atomic::Ordering::SeqCst);
+        let old_pool_size =
+            gpu_mem_reservation[idx].fetch_add(amount, std::sync::atomic::Ordering::SeqCst);
         println!(
             " \t GPU {} Reserving  {} - pool is {}",
-            idx, amount, current_pool_size
+            idx, amount, old_pool_size
         );
-        let Ok(new_pool_size) = gpu_mem_reservation[idx].compare_exchange(
-            current_pool_size,
-            current_pool_size + amount,
-            std::sync::atomic::Ordering::SeqCst,
-            std::sync::atomic::Ordering::Relaxed,
-        ) else {
-            continue;
-        };
-        if check_valid_cuda_malloc(new_pool_size, GpuIndex::new(idx as u32)) {
+
+        if check_valid_cuda_malloc(old_pool_size + amount, GpuIndex::new(idx as u32)) {
             break;
         } else {
             println!(
@@ -88,29 +82,16 @@ pub fn reserve_memory_on_gpu(amount: u64, idx: usize) {
                 idx, amount
             );
             // Remove reservation as failed
-            release_memory_on_gpu(amount, idx);
-            std::thread::sleep(std::time::Duration::from_millis(2));
-            continue;
+            let _ = gpu_mem_reservation[idx].fetch_sub(amount, std::sync::atomic::Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(200));
         }
     }
 }
 pub fn release_memory_on_gpu(amount: u64, idx: usize) {
-    let amount = 10 * amount;
-    loop {
-        let current_pool_size = gpu_mem_reservation[idx].load(std::sync::atomic::Ordering::SeqCst);
-        assert!(current_pool_size >= amount);
-        if gpu_mem_reservation[idx]
-            .compare_exchange(
-                current_pool_size,
-                current_pool_size - amount,
-                std::sync::atomic::Ordering::SeqCst,
-                std::sync::atomic::Ordering::Relaxed,
-            )
-            .is_ok()
-        {
-            break;
-        };
-    }
+    let amount = amount + 10000000;
+    let current_pool_size = gpu_mem_reservation[idx].load(std::sync::atomic::Ordering::SeqCst);
+    assert!(current_pool_size >= amount);
+    let _ = gpu_mem_reservation[idx].fetch_sub(amount, std::sync::atomic::Ordering::SeqCst);
 }
 
 // TODO: boolean ops & missing (Mul, Div, Rem, Eq, Ne, ...)
@@ -179,7 +160,7 @@ pub fn get_op_size_on_gpu(
                     a.get_add_size_on_gpu(to_be_u256_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -241,7 +222,7 @@ pub fn get_op_size_on_gpu(
                     a.get_sub_size_on_gpu(to_be_u256_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -303,7 +284,7 @@ pub fn get_op_size_on_gpu(
                     a.get_mul_size_on_gpu(to_be_u256_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -364,7 +345,7 @@ pub fn get_op_size_on_gpu(
                     a.get_div_size_on_gpu(to_be_u256_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -425,7 +406,7 @@ pub fn get_op_size_on_gpu(
                     a.get_rem_size_on_gpu(to_be_u256_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -513,7 +494,7 @@ pub fn get_op_size_on_gpu(
                     a.get_bitand_size_on_gpu(to_be_u2048_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -602,7 +583,7 @@ pub fn get_op_size_on_gpu(
                     a.get_bitor_size_on_gpu(to_be_u2048_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -691,7 +672,7 @@ pub fn get_op_size_on_gpu(
                     a.get_bitxor_size_on_gpu(to_be_u2048_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -773,7 +754,7 @@ pub fn get_op_size_on_gpu(
                     a.get_left_shift_size_on_gpu(to_be_u2048_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -855,7 +836,7 @@ pub fn get_op_size_on_gpu(
                     a.get_right_shift_size_on_gpu(to_be_u2048_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -937,7 +918,7 @@ pub fn get_op_size_on_gpu(
                     a.get_rotate_left_size_on_gpu(to_be_u2048_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1019,7 +1000,7 @@ pub fn get_op_size_on_gpu(
                     a.get_rotate_right_size_on_gpu(to_be_u2048_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1092,7 +1073,7 @@ pub fn get_op_size_on_gpu(
                     a.get_min_size_on_gpu(to_be_u256_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1165,7 +1146,7 @@ pub fn get_op_size_on_gpu(
                     a.get_max_size_on_gpu(to_be_u256_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1254,7 +1235,7 @@ pub fn get_op_size_on_gpu(
                     a.get_eq_size_on_gpu(to_be_u2048_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1343,7 +1324,7 @@ pub fn get_op_size_on_gpu(
                     a.get_ne_size_on_gpu(to_be_u2048_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1420,7 +1401,7 @@ pub fn get_op_size_on_gpu(
                     a.get_ge_size_on_gpu(to_be_u256_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1497,7 +1478,7 @@ pub fn get_op_size_on_gpu(
                     a.get_gt_size_on_gpu(to_be_u256_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1574,7 +1555,7 @@ pub fn get_op_size_on_gpu(
                     a.get_le_size_on_gpu(to_be_u256_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1651,7 +1632,7 @@ pub fn get_op_size_on_gpu(
                     a.get_lt_size_on_gpu(to_be_u256_bit(b))
                 }
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1673,7 +1654,7 @@ pub fn get_op_size_on_gpu(
                 SupportedFheCiphertexts::FheBytes128(a) => a.get_bitnot_size_on_gpu(),
                 SupportedFheCiphertexts::FheBytes256(a) => a.get_bitnot_size_on_gpu(),
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1691,7 +1672,7 @@ pub fn get_op_size_on_gpu(
                 SupportedFheCiphertexts::FheUint160(a) => a.get_neg_size_on_gpu(),
                 SupportedFheCiphertexts::FheUint256(a) => a.get_neg_size_on_gpu(),
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1749,7 +1730,7 @@ pub fn get_op_size_on_gpu(
                     SupportedFheCiphertexts::FheBytes256(b),
                 ) => flag.get_if_then_else_size_on_gpu(a, b),
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1760,7 +1741,7 @@ pub fn get_op_size_on_gpu(
                     trivial_encrypt_be_bytes(to_be_u16_bit(op) as i16, &[1u8]).get_size_on_gpu()
                 }
                 (_, _) => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1784,7 +1765,7 @@ pub fn get_op_size_on_gpu(
                 10 => tfhe::FheUint1024::get_generate_oblivious_pseudo_random_size_on_gpu(),
                 11 => tfhe::FheUint2048::get_generate_oblivious_pseudo_random_size_on_gpu(),
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
@@ -1808,13 +1789,13 @@ pub fn get_op_size_on_gpu(
                 10 => tfhe::FheUint1024::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
                 11 => tfhe::FheUint2048::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
                 _ => {
-                    assert!(false);
+                    panic!();
                     0
                 }
             }
         }
         _ => {
-            assert!(false);
+            panic!();
             0
         }
     }

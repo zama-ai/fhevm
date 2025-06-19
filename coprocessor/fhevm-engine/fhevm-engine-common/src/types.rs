@@ -545,23 +545,24 @@ impl SupportedFheCiphertexts {
             reserved_mem = decomp_size;
         };
         reserve_memory_on_gpu(reserved_mem, gpu_idx);
-        let res = Self::decompress_impl(ct_type, list);
+        let res = Self::decompress_impl(ct_type, &ctlist);
         release_memory_on_gpu(reserved_mem, gpu_idx);
         res
     }
 
     #[cfg(not(feature = "gpu"))]
     pub fn decompress(ct_type: i16, list: &[u8], _: usize) -> Result<Self> {
-        Self::decompress_impl(ct_type, list)
+        let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
+        Self::decompress_impl(ct_type, ctlist)
     }
 
     // Decompression option on CPU when GPU is available
     pub fn decompress_no_check(ct_type: i16, list: &[u8]) -> Result<Self> {
-        Self::decompress_impl(ct_type, list)
+        let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
+        Self::decompress_impl(ct_type, &ctlist)
     }
 
-    pub fn decompress_impl(ct_type: i16, list: &[u8]) -> Result<Self> {
-        let list: CompressedCiphertextList = safe_deserialize(list)?;
+    pub fn decompress_impl(ct_type: i16, list: &CompressedCiphertextList) -> Result<Self> {
         match ct_type {
             0 => Ok(SupportedFheCiphertexts::FheBool(
                 list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
