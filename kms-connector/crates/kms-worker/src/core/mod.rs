@@ -1,6 +1,6 @@
 mod config;
 mod event_picker;
-mod event_processor;
+pub mod event_processor;
 mod event_remover;
 mod kms_response_publisher;
 mod kms_worker;
