@@ -1,6 +1,11 @@
 use clap::{command, Parser};
+use fhevm_engine_common::healthz_server::HttpServer;
 use fhevm_engine_common::telemetry;
+use std::sync::Arc;
+use tokio::{join, task};
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
+use zkproof_worker::verifier::ZkProofService;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -40,6 +45,10 @@ pub struct Args {
         value_parser = clap::value_parser!(Level),
         default_value_t = Level::INFO)]
     pub log_level: Level,
+
+    /// HTTP server port for health checks
+    #[arg(long, default_value_t = 8080)]
+    health_check_port: u16,
 }
 
 pub fn parse_args() -> Args {
@@ -74,8 +83,33 @@ async fn main() {
         std::process::exit(1);
     }
 
-    info!("Starting zkProof worker...");
-    if let Err(err) = zkproof_worker::verifier::execute_verify_proofs_loop(&conf).await {
-        error!("Worker failed: {:?}", err);
-    }
+    let cancel_token = CancellationToken::new();
+    let service = ZkProofService::create(conf, cancel_token.child_token()).await;
+    let service = Arc::new(service);
+
+    let http_server = HttpServer::new(
+        service.clone(),
+        args.health_check_port,
+        cancel_token.child_token(),
+    );
+
+    let http_task = task::spawn(async move {
+        if let Err(err) = http_server.start().await {
+            error!(
+                task = "health_check",
+                "Error while running server: {:?}", err
+            );
+        }
+        anyhow::Ok(())
+    });
+
+    let service_task = async {
+        info!("Starting worker...");
+        if let Err(err) = service.run().await {
+            error!("Worker failed: {:?}", err);
+        }
+        Ok::<_, anyhow::Error>(())
+    };
+
+    let (_http_result, _service_result) = join!(http_task, service_task);
 }
