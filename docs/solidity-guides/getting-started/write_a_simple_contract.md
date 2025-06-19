@@ -1,23 +1,28 @@
-# 📘 Introduction
+# 2. Write a simple contract
 
-In this tutorial, you'll set up a minimal Hardhat development environment, then write and test a simple Solidity smart contract. This forms the foundation for working with more advanced contract types.
+In this tutorial, you'll write and test a simple regular Solidity smart contract within the FHEVM Hardhat template to get familiar with Hardhat workflow.
 
-In the next tutorial, you'll learn how to transition from a standard Solidity contract to an FHEVM-compatible Solidity contract.
+In the [next tutorial](fhecounter.md), you'll learn how to convert this contract into an FHEVM contract.
 
-### 🧠 What you'll learn
+## Prerequiste
 
-- How to write a minimal Solidity contract using Hardhat
-- How to test that contract using TypeScript and Hardhat’s testing framework
+* [Set up your Hardhat envrionment](quick-start-tutorial/setup.md).
+* Make sure that you Hardhat project is clean and ready to start. See the instructions [here](quick-start-tutorial/setup.md#rest-set-the-hardhat-envrionment).
 
-# 🚀 Create an Empty FHEVM Hardhat Project
+## What you'll learn
 
-Let’s begin by creating a fresh Hardhat project preconfigured for FHEVM.
+By the end of this tutorial, you will learn to&#x20;
 
-{% content-ref url="../hardhat/setup.md#optional-start-a-new-empty-fhevm-project" %}➡️ Follow the setup guide here{% endcontent-ref %}
+* Write a minimal Solidity contract using Hardhat.
+* Test the contract using TypeScript and Hardhat’s testing framework.
 
-# Step 1: Create `Counter.sol`
+## Write a simple contract
 
-Go to your project's `contracts` directory
+{% stepper %}
+{% step %}
+## Step 1: Create `Counter.sol`
+
+Go to your project's `contracts` directory:
 
 ```sh
 cd <your-project-root-directory>/contracts
@@ -50,8 +55,10 @@ contract Counter {
     }
 }
 ```
+{% endstep %}
 
-# Step 2: Compile `Counter.sol`
+{% step %}
+## Step 2: Compile `Counter.sol`
 
 From your project's root directory, run:
 
@@ -59,11 +66,17 @@ From your project's root directory, run:
 npx hardhat compile
 ```
 
-🎉 Great! Your Smart Contract is now compiled. 
+🎉 Great! Your Smart Contract is now compiled.
+{% endstep %}
+{% endstepper %}
 
-Let's set up the Hasrdhat test environment.
 
-# Step 3: Create `test/Counter.ts`
+
+## Set up the testing environment
+
+{% stepper %}
+{% step %}
+## Create a test script `test/Counter.ts`
 
 Go to your project's `test` directory
 
@@ -85,10 +98,13 @@ describe("Counter", function () {
 ```
 
 The file contains the following:
-- all the required `import` statements we will need during the various tests
-- The `chai` basic statements to run a first empty test named `Empty test`
 
-# Step 4: Run `test/Counter.ts`
+* all the required `import` statements we will need during the various tests
+* The `chai` basic statements to run a first empty test named `Empty test`
+{% endstep %}
+
+{% step %}
+## Run the test `test/Counter.ts`
 
 From your project's root directory, run:
 
@@ -96,7 +112,7 @@ From your project's root directory, run:
 npx hardhat test
 ```
 
-Output: 
+Output:
 
 ```sh
   Counter
@@ -107,23 +123,27 @@ Cool! The test basic skeleton is running!
   1 passing (1ms)
 ```
 
-🎉 Great! Your Hardhat test environment is properly setup. 
+🎉 Great! Your Hardhat test environment is properly setup.
 
-# Step 5: Set up the test signers
+
+{% endstep %}
+
+{% step %}
+## Set up the test signers
 
 Before interacting with smart contracts in Hardhat tests, we need to initialize signers.
 
-> [!Note]
->
-> In the context of Ethereum development, a signer represents an entity (usually a wallet) that can send transactions and sign messages.
-> In Hardhat, `ethers.getSigners()` returns a list of pre-funded test accounts.
+{% hint style="info" %}
+In the context of Ethereum development, a signer represents an entity (usually a wallet) that can send transactions and sign messages.\
+In Hardhat, `ethers.getSigners()` returns a list of pre-funded test accounts.
+{% endhint %}
 
 We’ll define three named signers for convenience:
 
-- `owner` — the deployer of the contract
-- `alice` and `bob` — additional simulated users
+* `owner` — the deployer of the contract
+* `alice` and `bob` — additional simulated users
 
-### ✍️ Replace the contents of `test/Counter.ts` with the following:
+#### Replace the contents of `test/Counter.ts` with the following:
 
 ```ts
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -151,9 +171,7 @@ describe("Counter", function () {
 });
 ```
 
----
-
-### ▶️ Run the test
+#### Run the test
 
 From your project's root directory, run:
 
@@ -161,7 +179,7 @@ From your project's root directory, run:
 npx hardhat test
 ```
 
-### ✅ Expected Output
+**Expected Output**
 
 ```sh
   Counter
@@ -173,8 +191,10 @@ address of user bob is 0x3f0CdAe6ebd93F9F776BCBB7da1D42180cC8fcC1
 
   1 passing (2ms)
 ```
+{% endstep %}
 
-# Step 6: Deploy the `Counter.sol` contract
+{% step %}
+## Set up testing instance
 
 Now that we have our signers set up, we can deploy the smart contract.
 
@@ -202,11 +222,7 @@ beforeEach(async () => {
 
 This ensures each test runs with a clean, independent contract instance.
 
----
-
-Let's put it together,
-
-### ✍️ Replace the contents of `test/Counter.ts` with the following:
+Let's put it together. Now your`test/Counter.ts` should look like the following:&#x20;
 
 ```ts
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -250,9 +266,8 @@ describe("Counter", function () {
   });
 });
 ```
----
 
-### ▶️ Run the test
+▶️ **Run the test:**
 
 From your project's root directory, run:
 
@@ -260,7 +275,7 @@ From your project's root directory, run:
 npx hardhat test
 ```
 
-### ✅ Expected Output
+#### Expected Output:
 
 ```sh
   Counter
@@ -270,8 +285,16 @@ Counter has been deployed at address 0x7553CB9124f974Ee475E5cE45482F90d5B6076BC
 
   1 passing (7ms)
 ```
+{% endstep %}
+{% endstepper %}
 
-# Step 7: Call the contract `getCount()` view function
+## Test functions
+
+Now everything is up and running, you can start testing your contract functions.
+
+{% stepper %}
+{% step %}
+## Call the contract `getCount()` view function
 
 Everything is up and running, we can now call the `Counter.sol` view function `getCount()` !
 
@@ -288,9 +311,7 @@ it("count should be zero after deployment", async function () {
 });
 ```
 
----
-
-### ▶️ Run the test
+#### Run the test
 
 From your project's root directory, run:
 
@@ -298,7 +319,7 @@ From your project's root directory, run:
 npx hardhat test
 ```
 
-### ✅ Expected Output
+#### Expected Output
 
 ```sh
   Counter
@@ -311,11 +332,13 @@ Counter.getCount() === 0
   1 passing (7ms)
 ```
 
-# Step 8: Call the contract `increment()` transaction function
 
-✍️ Just below the test block `it("count should be zero after deployment", async function () {...}`,
+{% endstep %}
 
-add the following test block:
+{% step %}
+## Call the contract `increment()` transaction function
+
+Just below the test block `it("count should be zero after deployment", async function () {...}`, add the following test block:
 
 ```ts
 it("increment the counter by 1", async function () {
@@ -327,15 +350,14 @@ it("increment the counter by 1", async function () {
 });
 ```
 
-### 📝 Remarks:
-- `increment()` is a transactional function that modifies the blockchain state.
-- It must be signed by a user — here we use `alice`.
-- `await wait()` to wait for the transaction to mined.
-- The test compares the counter before and after the transaction to ensure it incremented as expected.
+#### Remarks:
 
----
+* `increment()` is a transactional function that modifies the blockchain state.
+* It must be signed by a user — here we use `alice`.
+* `await wait()` to wait for the transaction to mined.
+* The test compares the counter before and after the transaction to ensure it incremented as expected.
 
-### ▶️ Run the test
+#### Run the test
 
 From your project's root directory, run:
 
@@ -343,7 +365,7 @@ From your project's root directory, run:
 npx hardhat test
 ```
 
-### ✅ Expected Output
+#### Expected Output
 
 ```sh
   Counter
@@ -357,9 +379,13 @@ Counter.getCount() === 0
   2 passing (12ms)
 ```
 
-# Step 9: Call the contract `decrement()` transaction function
 
-✍️ Just below the test block `it("increment the counter by 1", async function () {...}`,
+{% endstep %}
+
+{% step %}
+## Call the contract `decrement()` transaction function
+
+Just below the test block `it("increment the counter by 1", async function () {...}`,
 
 add the following test block:
 
@@ -376,9 +402,9 @@ it("decrement the counter by 1", async function () {
 });
 ```
 
----
+***
 
-### ▶️ Run the test
+#### Run the test
 
 From your project's root directory, run:
 
@@ -386,7 +412,7 @@ From your project's root directory, run:
 npx hardhat test
 ```
 
-### ✅ Expected Output
+#### Expected Output
 
 ```sh
   Counter
@@ -400,20 +426,18 @@ Counter.getCount() === 0
 
   2 passing (12ms)
 ```
+{% endstep %}
+{% endstepper %}
 
-# 📁 Final Project Files
+Now you have succesefully write and test your counter contract. You should have the following files in your project:
 
-By the end of this tutorial, you should have the following files in your project:
-
-- [`contracts/Counter.sol`](./code/contracts/Counter.sol.md) — your Solidity smart contract
-- [`test/Counter.ts`](./code/contracts/Counter.ts.md) — your Hardhat test suite written in TypeScript
+* [`contracts/Counter.sol`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#counter.sol) — your Solidity smart contract
+* [`test/Counter.ts`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#counter.ts) — your Hardhat test suite written in TypeScript
 
 These files form the foundation of a basic Hardhat-based smart contract project.
 
-# 🚀 What’s Next?
+## Next step
 
 Now that you've written and tested a basic Solidity smart contract, you're ready to take the next step.
 
-In the next tutorial, we’ll transform this standard `Counter.sol` contract into a trivial FHEVM-compatible version — allowing the counter value to be stored and updated using trivial fully homomorphic encryption.
-
-This will introduce you to the FHEVM workflow while building on the foundation you've just completed.
+In the [next tutorial](fhecounter.md), we’ll transform this standard `Counter.sol` contract into a trivial FHEVM-compatible version — allowing the counter value to be stored and updated using trivial fully homomorphic encryption.
