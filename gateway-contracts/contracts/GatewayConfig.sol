@@ -22,7 +22,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -62,6 +62,16 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         address[] coprocessorSignerAddresses;
         /// @notice The host chains' metadata
         HostChain[] hostChains;
+        /// @notice The custodians' metadata
+        mapping(address custodianTxSenderAddress => Custodian custodian) custodians;
+        /// @notice The custodians' transaction sender address list
+        address[] custodianTxSenderAddresses;
+        /// @notice The custodians' signer address list
+        address[] custodianSignerAddresses;
+        /// @notice The custodians' transaction sender addresses
+        mapping(address custodianTxSenderAddress => bool isCustodianTxSender) _isCustodianTxSender;
+        /// @notice The custodians' signer addresses
+        mapping(address custodianSignerAddress => bool isCustodianSigner) _isCustodianSigner;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -84,6 +94,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @param initialUserDecryptionThreshold The user decryption threshold
     /// @param initialKmsNodes List of KMS nodes
     /// @param initialCoprocessors List of coprocessors
+    /// @param initialCustodians List of custodians
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
         address initialPauser,
@@ -92,8 +103,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
         KmsNode[] memory initialKmsNodes,
-        Coprocessor[] memory initialCoprocessors
-    ) public virtual onlyFromEmptyProxy reinitializer(2) {
+        Coprocessor[] memory initialCoprocessors,
+        Custodian[] memory initialCustodians
+    ) public virtual onlyFromEmptyProxy reinitializer(3) {
         __Ownable_init(owner());
         __Pausable_init();
 
@@ -107,6 +119,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         if (initialCoprocessors.length == 0) {
             revert EmptyCoprocessors();
+        }
+
+        if (initialCustodians.length == 0) {
+            revert EmptyCustodians();
         }
 
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
@@ -139,13 +155,43 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             $.coprocessorSignerAddresses.push(initialCoprocessors[i].signerAddress);
         }
 
+        /// @dev Register the custodians
+        for (uint256 i = 0; i < initialCustodians.length; i++) {
+            $.custodians[initialCustodians[i].txSenderAddress] = initialCustodians[i];
+            $.custodianTxSenderAddresses.push(initialCustodians[i].txSenderAddress);
+            $._isCustodianTxSender[initialCustodians[i].txSenderAddress] = true;
+            $.custodianSignerAddresses.push(initialCustodians[i].signerAddress);
+            $._isCustodianSigner[initialCustodians[i].signerAddress] = true;
+        }
+
         emit InitializeGatewayConfig(
             initialPauser,
             initialMetadata,
             initialMpcThreshold,
             initialKmsNodes,
-            initialCoprocessors
+            initialCoprocessors,
+            initialCustodians
         );
+    }
+
+    /// @notice Reinitializes the contract with custodians.
+    function reinitializeV2(Custodian[] memory custodians) external reinitializer(3) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        if (custodians.length == 0) {
+            revert EmptyCustodians();
+        }
+
+        /// @dev Register the custodians
+        for (uint256 i = 0; i < custodians.length; i++) {
+            $.custodians[custodians[i].txSenderAddress] = custodians[i];
+            $.custodianTxSenderAddresses.push(custodians[i].txSenderAddress);
+            $._isCustodianTxSender[custodians[i].txSenderAddress] = true;
+            $.custodianSignerAddresses.push(custodians[i].signerAddress);
+            $._isCustodianSigner[custodians[i].signerAddress] = true;
+        }
+
+        emit ReinitializeGatewayConfigV2(custodians);
     }
 
     /// @dev See {IGatewayConfig-updatePauser}.
@@ -235,6 +281,22 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function checkIsCoprocessorSigner(address signerAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         if (!$._isCoprocessorSigner[signerAddress]) {
+            revert NotCoprocessorSigner(signerAddress);
+        }
+    }
+
+    /// @dev See {IGatewayConfig-checkIsCustodianTxSender}.
+    function checkIsCustodianTxSender(address txSenderAddress) external view virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if (!$._isCustodianTxSender[txSenderAddress]) {
+            revert NotCoprocessorTxSender(txSenderAddress);
+        }
+    }
+
+    /// @dev See {IGatewayConfig-checkIsCustodianSigner}.
+    function checkIsCustodianSigner(address signerAddress) external view virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if (!$._isCustodianSigner[signerAddress]) {
             revert NotCoprocessorSigner(signerAddress);
         }
     }
@@ -329,6 +391,24 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function getHostChains() external view virtual returns (HostChain[] memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.hostChains;
+    }
+
+    /// @dev See {IGatewayConfig-getCustodian}.
+    function getCustodian(address custodianTxSenderAddress) external view virtual returns (Custodian memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.custodians[custodianTxSenderAddress];
+    }
+
+    /// @dev See {IGatewayConfig-getCustodianTxSenders}.
+    function getCustodianTxSenders() external view virtual returns (address[] memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.custodianTxSenderAddresses;
+    }
+
+    /// @dev See {IGatewayConfig-getCustodianSigners}.
+    function getCustodianSigners() external view virtual returns (address[] memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.custodianSignerAddresses;
     }
 
     /// @dev See {IGatewayConfig-getVersion}.
