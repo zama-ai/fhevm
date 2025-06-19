@@ -27,11 +27,11 @@ releases:
     values:
       - host-node-values.yaml
 
-  - name: host-sc
+  - name: host-contracts
     namespace: fhevm
-    chart: "../../charts/fhevm-sc-deploy"
+    chart: "../../charts/contracts"
     values:
-      - host-sc-deploy-values.yaml
+      - host-contracts-deploy-values.yaml
     needs:
       - host
 
@@ -41,37 +41,45 @@ releases:
     values:
       - gateway-node-values.yaml
 
-  - name: gateway-sc
+  - name: gateway-contracts
     namespace: fhevm
-    chart: "../../charts/fhevm-sc-deploy"
+    chart: "../../charts/contracts"
     values:
-      - gateway-sc-deploy-values.yaml
+      - gateway-contracts-1-deploy-values.yaml
+    needs:
+      - gateway
+
+  - name: gateway-contracts-add-networks
+    namespace: fhevm
+    chart: "../../charts/contracts"
+    values:
+      - gateway-contracts-2-add-networks-values.yaml
     needs:
       - gateway
 
   # fhevm coprocessor
-  - name: fhevm-coprocessor
-    namespace: fhevm
-    chart: "../../charts/fhevm-coprocessor"
-    values:
-      - coprocessor-values.yaml
-    needs:
-      - fhevm/minio
-      - fhevm-postgresql
-      - host
-      - gateway
-      - host-sc
-      - gateway-sc
+#  - name: fhevm-coprocessor
+#    namespace: fhevm
+#    chart: "../../charts/coprocessor"
+#    values:
+#      - coprocessor-values.yaml
+#    needs:
+#      - fhevm/minio
+#      - fhevm-postgresql
+#      - host
+#      - gateway
+#      - host-contracts
+#      - gateway-contracts
 
   ## fhevm relayer
-  - name: fhevm-relayer
-    namespace: fhevm
-    chart: "../../charts/fhevm-relayer"
-    values:
-      - relayer-values.yaml
-    needs:
-      - fhevm/minio
-      - host
-      - gateway
-      - host-sc
-      - gateway-sc
+#  - name: fhevm-relayer
+#    namespace: fhevm
+#    chart: "../../charts/fhevm-relayer"
+#    values:
+#      - relayer-values.yaml
+#    needs:
+#      - fhevm/minio
+#      - host
+#      - gateway
+#      - host-contracts
+#      - gateway-sc
