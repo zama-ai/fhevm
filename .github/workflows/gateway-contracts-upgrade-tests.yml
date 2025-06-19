@@ -38,7 +38,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: v0.7.0
-          path: previous-gateway-contracts
+          path: previous-fhevm
           persist-credentials: 'false'
 
       - name: Set up Docker Buildx
@@ -52,13 +52,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and start Docker services from previous release
-        working-directory: previous-gateway-contracts
+        working-directory: previous-fhevm/gateway-contracts
         run: |
           make docker-compose-build
           make docker-compose-up
 
       - name: Check smart contract deployment from previous release
-        working-directory: previous-gateway-contracts
+        working-directory: previous-fhevm/gateway-contracts
         run: |
 
           ## Check Contracts Deployment
@@ -97,14 +97,14 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
-          path: current-gateway-contracts
+          path: current-fhevm
 
       - name: Install dependencies
-        working-directory: current-gateway-contracts
+        working-directory: current-fhevm/gateway-contracts
         run: npm ci
 
       - name: Upgrade GatewayConfig contract
-        working-directory: current-gateway-contracts
+        working-directory: current-fhevm/gateway-contracts
         env:
           DOTENV_CONFIG_PATH: .env
           HARDHAT_NETWORK: staging
@@ -112,10 +112,10 @@ jobs:
           RPC_URL: http://anvil-node:8546
         run: |
           cp .env.example .env
-          npx hardhat task:upgradeGatewayConfig --current-implementation ../previous-gateway-contracts/contracts/GatewayConfig.sol:GatewayConfig --new-implementation contracts/GatewayConfig.sol:GatewayConfig
+          npx hardhat task:upgradeGatewayConfig --current-implementation ../../previous-fhevm/gateway-contracts/contracts/GatewayConfig.sol:GatewayConfig --new-implementation contracts/GatewayConfig.sol:GatewayConfig
 
       - name: Clean up
-        working-directory: previous-gateway-contracts
+        working-directory: previous-fhevm/gateway-contracts
         if: always()
         run: |
           make docker-compose-down
