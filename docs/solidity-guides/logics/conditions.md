@@ -97,7 +97,9 @@ function bid(externalEuint64 encryptedValue, bytes calldata inputProof) external
 }
 
 function revealWinner() external onlyAfterEnd {
-  uint256 requestId = FHE.requestDecryption(highestBidder, this.transferPrize.selector);
+  bytes32[] memory cts = new bytes32[](2);
+  cts[0] = FHE.toBytes32(highestBidder);
+  uint256 requestId = FHE.requestDecryption(cts, this.transferPrize.selector);
 }
 
 function transferPrize(uint256 requestId, address auctionWinner, bytes memory signatures) external {
