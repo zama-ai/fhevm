@@ -131,7 +131,7 @@ task("task:upgradeMultichainAcl")
   .addOptionalParam(
     "verifyContract",
     "Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)",
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (
@@ -190,7 +190,7 @@ task("task:upgradeCiphertextCommits")
   .addOptionalParam(
     "verifyContract",
     "Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)",
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (
@@ -249,7 +249,7 @@ task("task:upgradeDecryption")
   .addOptionalParam(
     "verifyContract",
     "Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)",
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (
@@ -308,7 +308,7 @@ task("task:upgradeGatewayConfig")
   .addOptionalParam(
     "verifyContract",
     "Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)",
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (
@@ -367,7 +367,7 @@ task("task:upgradeKmsManagement")
   .addOptionalParam(
     "verifyContract",
     "Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)",
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (
@@ -426,7 +426,7 @@ task("task:upgradeInputVerification")
   .addOptionalParam(
     "verifyContract",
     "Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)",
-    false,
+    true,
     types.boolean,
   )
   .setAction(async function (
