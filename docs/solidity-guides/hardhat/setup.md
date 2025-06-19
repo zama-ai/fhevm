@@ -148,4 +148,25 @@ If you install both of them, VSCode will raise an error and ask you to pick only
 {% endstep %}
 <!-- End Step 6 -->
 
+<!-- Step 7 -->
+{% step %}
+## (Optional) Start a New Empty FHEVM Project
+
+Once your new [Github repository is cloned locally](#clone-your-newly-created-github-repository-locally), you can remove the following files and directories from the original FHEVM Hardhat template
+to start from a blank but functional FHEVM project setup:
+
+```sh
+# Navigate to the root of your new FHEVM Hardhat project
+cd <your-new-repo-name>
+```
+
+Then:
+
+```sh
+rm -rf test/* src/* tasks/* deploy ./fhevmTemp ./artifacts ./cache ./coverage ./types ./coverage.json ./dist
+```
+
+{% endstep %}
+<!-- End Step 7 -->
+
 {% endstepper %}
