@@ -1,3 +1,5 @@
+use std::process::ExitCode;
+
 use kms_worker::core::{Config, KmsWorker};
 
 use connector_utils::{
@@ -9,10 +11,12 @@ use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     if let Err(err) = run().await {
         error!("{err}");
+        return ExitCode::FAILURE;
     }
+    ExitCode::SUCCESS
 }
 
 async fn run() -> anyhow::Result<()> {
