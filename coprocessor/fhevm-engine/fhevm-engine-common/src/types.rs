@@ -553,7 +553,7 @@ impl SupportedFheCiphertexts {
     #[cfg(not(feature = "gpu"))]
     pub fn decompress(ct_type: i16, list: &[u8], _: usize) -> Result<Self> {
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
-        Self::decompress_impl(ct_type, ctlist)
+        Self::decompress_impl(ct_type, &ctlist)
     }
 
     // Decompression option on CPU when GPU is available
