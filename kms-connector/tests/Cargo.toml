@@ -15,3 +15,5 @@ anyhow.workspace = true
 rand.workspace = true
 sqlx = { workspace = true, features = ["migrate"] }
 testcontainers.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace= true

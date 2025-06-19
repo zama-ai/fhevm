@@ -98,7 +98,7 @@ where
         result: Bytes,
         signature: Vec<u8>,
     ) -> anyhow::Result<()> {
-        if signature.len() != 65 {
+        if signature.len() != EIP712_SIGNATURE_LENGTH {
             return Err(anyhow!(
                 "Invalid EIP-712 signature length: {}, expected 65 bytes",
                 signature.len()
@@ -138,7 +138,7 @@ where
         result: Bytes,
         signature: Vec<u8>,
     ) -> anyhow::Result<()> {
-        if signature.len() != 65 {
+        if signature.len() != EIP712_SIGNATURE_LENGTH {
             return Err(anyhow!(
                 "Invalid EIP-712 signature length: {}, expected 65 bytes",
                 signature.len()
@@ -170,6 +170,8 @@ where
         Ok(())
     }
 }
+
+pub const EIP712_SIGNATURE_LENGTH: usize = 65;
 
 impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponseRemover> {
     pub async fn from_config(config: Config) -> anyhow::Result<Self> {

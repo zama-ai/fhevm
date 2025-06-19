@@ -1,4 +1,4 @@
-mod config;
+pub mod config;
 mod kms_response_picker;
 mod kms_response_remover;
 mod tx_sender;

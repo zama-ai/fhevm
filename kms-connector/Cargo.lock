@@ -2261,6 +2261,8 @@ dependencies = [
  "rand 0.8.5",
  "sqlx",
  "testcontainers",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -6901,6 +6903,7 @@ dependencies = [
  "sqlx",
  "tempfile",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "toml",
  "tonic",
