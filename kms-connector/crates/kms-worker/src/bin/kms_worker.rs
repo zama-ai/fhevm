@@ -1,10 +1,9 @@
 use std::process::ExitCode;
 
-use gw_listener::core::{Config, DbEventPublisher, GatewayListener};
+use kms_worker::core::{Config, KmsWorker};
 
 use connector_utils::{
     cli::{Cli, Subcommands},
-    conn::{connect_to_db, connect_to_gateway},
     signal::install_signal_handlers,
 };
 use tokio_util::sync::CancellationToken;
@@ -26,7 +25,7 @@ async fn run() -> anyhow::Result<()> {
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
 
-    let subcommand = Cli::new("GatewayListener").parse();
+    let subcommand = Cli::new("KmsWorker").parse();
     match subcommand {
         Subcommands::Validate { config } => {
             Config::from_env_and_file(Some(config))?;
@@ -39,17 +38,12 @@ async fn run() -> anyhow::Result<()> {
                 info!("Using custom service name: {}", config.service_name);
             }
 
-            let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-            let publisher = DbEventPublisher::new(db_pool);
-
-            let provider = connect_to_gateway(&config.gateway_url).await?;
-            let gw_listener = GatewayListener::new(&config, provider, publisher);
-
             let cancel_token = CancellationToken::new();
             install_signal_handlers(cancel_token.clone())?;
 
-            info!("Starting GatewayListener with config:\n{}", config);
-            gw_listener.start(cancel_token).await
+            info!("Starting KmsWorker with config:\n{}", config);
+            let kms_worker = KmsWorker::from_config(config).await?;
+            kms_worker.start(cancel_token).await;
         }
     }
     Ok(())
