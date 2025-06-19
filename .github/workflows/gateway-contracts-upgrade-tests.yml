@@ -109,7 +109,7 @@ jobs:
           DOTENV_CONFIG_PATH: .env
           HARDHAT_NETWORK: staging
           CHAIN_ID_GATEWAY: 54321
-          RPC_URL: http://anvil-node:8546
+          RPC_URL: http://localhost:8546
         run: |
           cp .env.example .env
           cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
