@@ -178,7 +178,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_add_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
 
@@ -237,7 +240,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_sub_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
 
@@ -296,7 +302,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_mul_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheDiv => {
@@ -354,7 +363,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_div_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheRem => {
@@ -412,7 +424,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_rem_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheBitAnd => {
@@ -497,7 +512,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_bitand_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheBitOr => {
@@ -583,7 +601,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_bitor_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheBitXor => {
@@ -669,7 +690,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_bitxor_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheShl => {
@@ -748,7 +772,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_left_shift_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheShr => {
@@ -827,7 +854,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_right_shift_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheRotl => {
@@ -906,7 +936,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_rotate_left_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheRotr => {
@@ -985,7 +1018,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_rotate_right_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheMin => {
@@ -1055,7 +1091,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_min_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheMax => {
@@ -1125,7 +1164,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_max_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheEq => {
@@ -1211,7 +1253,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_eq_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheNe => {
@@ -1297,7 +1342,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_ne_size_on_gpu(to_be_u2048_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheGe => {
@@ -1371,7 +1419,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_ge_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheGt => {
@@ -1445,7 +1496,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_gt_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheLe => {
@@ -1519,7 +1573,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_le_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheLt => {
@@ -1593,7 +1650,10 @@ pub fn get_op_size_on_gpu(
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     a.get_lt_size_on_gpu(to_be_u256_bit(b))
                 }
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheNot => {
@@ -1612,7 +1672,10 @@ pub fn get_op_size_on_gpu(
                 SupportedFheCiphertexts::FheBytes64(a) => a.get_bitnot_size_on_gpu(),
                 SupportedFheCiphertexts::FheBytes128(a) => a.get_bitnot_size_on_gpu(),
                 SupportedFheCiphertexts::FheBytes256(a) => a.get_bitnot_size_on_gpu(),
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheNeg => {
@@ -1627,7 +1690,10 @@ pub fn get_op_size_on_gpu(
                 SupportedFheCiphertexts::FheUint128(a) => a.get_neg_size_on_gpu(),
                 SupportedFheCiphertexts::FheUint160(a) => a.get_neg_size_on_gpu(),
                 SupportedFheCiphertexts::FheUint256(a) => a.get_neg_size_on_gpu(),
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheIfThenElse => {
@@ -1682,7 +1748,10 @@ pub fn get_op_size_on_gpu(
                     SupportedFheCiphertexts::FheBytes256(a),
                     SupportedFheCiphertexts::FheBytes256(b),
                 ) => flag.get_if_then_else_size_on_gpu(a, b),
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheTrivialEncrypt | SupportedFheOperations::FheCast => {
@@ -1690,7 +1759,10 @@ pub fn get_op_size_on_gpu(
                 (_, SupportedFheCiphertexts::Scalar(op)) => {
                     trivial_encrypt_be_bytes(to_be_u16_bit(op) as i16, &[1u8]).get_size_on_gpu()
                 }
-                (_, _) => assert!(false),
+                (_, _) => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheRand => {
@@ -1711,7 +1783,10 @@ pub fn get_op_size_on_gpu(
                 9 => tfhe::FheUint512::get_generate_oblivious_pseudo_random_size_on_gpu(),
                 10 => tfhe::FheUint1024::get_generate_oblivious_pseudo_random_size_on_gpu(),
                 11 => tfhe::FheUint2048::get_generate_oblivious_pseudo_random_size_on_gpu(),
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
         SupportedFheOperations::FheRandBounded => {
@@ -1732,9 +1807,15 @@ pub fn get_op_size_on_gpu(
                 9 => tfhe::FheUint512::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
                 10 => tfhe::FheUint1024::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
                 11 => tfhe::FheUint2048::get_generate_oblivious_pseudo_random_bounded_size_on_gpu(),
-                _ => assert!(false),
+                _ => {
+                    assert!(false);
+                    0
+                }
             }
         }
-        _ => assert!(false),
+        _ => {
+            assert!(false);
+            0
+        }
     }
 }
