@@ -1,4 +1,3 @@
-{{- if .Values.scDeploy.enabled -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -93,14 +92,24 @@ data:
     done;
 
     {{- if .Values.scDeploy.verifyContracts }}
-    for envfile in /app/addresses/.env.*; do
-      echo "---"
-      echo "Verifying contract for ${envfile}"
-      CONTRACT_NAME="$(echo ${envfile} | cut -d'.' -f 3)"
-      CONTRACT_ADDRESS="$(cat ${envfile} | cut -d'=' -f 2)"
-      npx --no-install hardhat verify ${CONTRACT_ADDRESS} || true
-    done;
+    npx --no-install hardhat verify:verify || true
     {{- end }}
     echo "adding the current contracts version to the configmap"
     kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"{{ .Values.scDeploy.image.tag }}\"}}"
-{{- end }}
+  upgrade-contracts.sh: |
+    #!/bin/bash
+    set -eo pipefail
+    {{- if .Values.scDeploy.preventRedeployment }}
+    # Prevent smart contract deployment if already done for current version
+    if [[ "$DEPLOYED_SMART_CONTRACTS_VERSION" == "{{ .Values.scDeploy.image.tag }}" ]]; then
+      echo "contracts already deployed with version: ${DEPLOYED_SMART_CONTRACTS_VERSION}, aborting deployment" 1>&2
+      exit 0
+    fi
+    {{- end }}
+
+    echo "executing upgrade commands"
+    {{- range .Values.scUpgrade.upgradeCommands }}
+    {{ . | nindent 4 }}
+    {{- end }}
+    echo "updating the contracts version to the configmap"
+    kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"{{ .Values.scDeploy.image.tag }}\"}}"
