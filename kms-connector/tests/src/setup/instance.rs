@@ -74,8 +74,7 @@ impl TestInstance {
     }
 
     fn gateway(&self) -> &GatewayInstance {
-        &self
-            .gateway_instance
+        self.gateway_instance
             .as_ref()
             .expect("GatewayInstance has not been setup")
     }
