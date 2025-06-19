@@ -76,43 +76,99 @@ impl EventPicker for DbEventPicker {
 
 impl DbEventPicker {
     async fn pick_public_decryption_request(&self) -> anyhow::Result<GatewayEvent> {
-        let row = sqlx::query("TODO").fetch_one(&self.db_pool).await?;
+        let row = sqlx::query(
+            "
+                SELECT decryption_id, sns_ct_materials
+                FROM public_decryption_requests
+                LIMIT 1 FOR UPDATE SKIP LOCKED
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
         let event = GatewayEvent::from_public_decryption_row(&row)?;
         Ok(event)
     }
 
     async fn pick_user_decryption_request(&self) -> anyhow::Result<GatewayEvent> {
-        let row = sqlx::query("TODO").fetch_one(&self.db_pool).await?;
+        let row = sqlx::query(
+            "
+                SELECT decryption_id, sns_ct_materials, user_address, public_key
+                FROM user_decryption_requests
+                LIMIT 1 FOR UPDATE SKIP LOCKED
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
         let event = GatewayEvent::from_user_decryption_row(&row)?;
         Ok(event)
     }
 
     async fn pick_pre_keygen_request(&self) -> anyhow::Result<GatewayEvent> {
-        let row = sqlx::query("TODO").fetch_one(&self.db_pool).await?;
+        let row = sqlx::query(
+            "
+                SELECT pre_keygen_request_id, fhe_params_digest
+                FROM preprocess_keygen_requests
+                LIMIT 1 FOR UPDATE SKIP LOCKED
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
         let event = GatewayEvent::from_pre_keygen_row(&row)?;
         Ok(event)
     }
 
     async fn pick_pre_kskgen_request(&self) -> anyhow::Result<GatewayEvent> {
-        let row = sqlx::query("TODO").fetch_one(&self.db_pool).await?;
+        let row = sqlx::query(
+            "
+                SELECT pre_kskgen_request_id, fhe_params_digest
+                FROM preprocess_kskgen_requests
+                LIMIT 1 FOR UPDATE SKIP LOCKED
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
         let event = GatewayEvent::from_pre_kskgen_row(&row)?;
         Ok(event)
     }
 
     async fn pick_keygen_request(&self) -> anyhow::Result<GatewayEvent> {
-        let row = sqlx::query("TODO").fetch_one(&self.db_pool).await?;
+        let row = sqlx::query(
+            "
+                SELECT pre_key_id, fhe_params_digest
+                FROM keygen_requests
+                LIMIT 1 FOR UPDATE SKIP LOCKED
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
         let event = GatewayEvent::from_keygen_row(&row)?;
         Ok(event)
     }
 
     async fn pick_kskgen_request(&self) -> anyhow::Result<GatewayEvent> {
-        let row = sqlx::query("TODO").fetch_one(&self.db_pool).await?;
+        let row = sqlx::query(
+            "
+                SELECT pre_ksk_id, source_key_id, dest_key_id, fhe_params_digest
+                FROM kskgen_requests
+                LIMIT 1 FOR UPDATE SKIP LOCKED
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
         let event = GatewayEvent::from_kskgen_row(&row)?;
         Ok(event)
     }
 
     async fn pick_crsgen_request(&self) -> anyhow::Result<GatewayEvent> {
-        let row = sqlx::query("TODO").fetch_one(&self.db_pool).await?;
+        let row = sqlx::query(
+            "
+                SELECT crsgen_request_id, fhe_params_digest
+                FROM crsgen_requests
+                LIMIT 1 FOR UPDATE SKIP LOCKED
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
         let event = GatewayEvent::from_crsgen_row(&row)?;
         Ok(event)
     }
