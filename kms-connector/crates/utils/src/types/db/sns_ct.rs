@@ -2,7 +2,7 @@ use alloy::primitives::{Address, U256};
 use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
 
 /// Struct representing how `SnsCiphertextMaterial` are stored in the database.
-#[derive(sqlx::Type, Debug, Default, PartialEq)]
+#[derive(sqlx::Type, Clone, Debug, Default, PartialEq)]
 #[sqlx(type_name = "sns_ciphertext_material")]
 pub struct SnsCiphertextMaterialDbItem {
     ct_handle: [u8; 32],
