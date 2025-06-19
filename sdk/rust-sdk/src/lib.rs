@@ -386,8 +386,8 @@ impl FhevmSdk {
         Ok(calldata.to_vec())
     }
 
-    /// Get an input builder factory for creating encrypted inputs
-    pub fn get_input_factory(&mut self) -> Result<&InputBuilderFactory> {
+    /// Create an input builder factory for creating encrypted inputs
+    pub fn create_input_factory(&mut self) -> Result<()> {
         if self.input_factory.is_none() {
             // Load public key and CRS from config
 
@@ -418,13 +418,19 @@ impl FhevmSdk {
                 crs,
             ));
         }
+
+        Ok(())
+    }
+
+    /// Get an input builder factory for creating encrypted inputs
+    pub fn get_input_factory(&self) -> Result<&InputBuilderFactory> {
         self.input_factory
             .as_ref()
             .ok_or_else(|| FhevmError::InvalidParams("Failed to create input factory".to_string()))
     }
 
     /// Create a new encrypted input builder
-    pub fn create_input_builder(&mut self) -> Result<EncryptedInputBuilder> {
+    pub fn create_input_builder(&self) -> Result<EncryptedInputBuilder> {
         debug!("Creating encrypted input builder");
         let factory = self.get_input_factory()?;
         Ok(factory.create_builder())
@@ -789,7 +795,12 @@ impl FhevmSdkBuilder {
         let config = self.to_config()?;
 
         info!("SDK configuration validated successfully");
+
+        let mut fhevm = FhevmSdk::new(config);
+        fhevm.ensure_keys_loaded()?;
+        fhevm.create_input_factory()?;
+
         // Create and return the SDK
-        Ok(FhevmSdk::new(config))
+        Ok(fhevm)
     }
 }
