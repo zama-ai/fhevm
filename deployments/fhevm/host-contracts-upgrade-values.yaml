@@ -1,8 +1,8 @@
 scDeploy:
-  enabled: true
+  enabled: false
   image:
     name: ghcr.io/zama-ai/fhevm/host-contracts
-    tag: v0.7.0-rc2
+    tag: v0.7.0
   configmap:
     name: "host-sc-addresses"
   env:
@@ -44,21 +44,23 @@ scDeploy:
       value: "1"
     - name: COPROCESSOR_SIGNER_ADDRESS_0
       value: "0x6254A198F67ad40290a2E7B48aDB2d19B71f67BD"
-  verifyContracts: false
-  deployCommands:
-    - "npx --no-install hardhat task:deployAllHostContracts"
-  resources:
-    limits:
-      cpu: 1
-      memory: 4Gi
+
+scUpgrade:
+  enabled: true
+  oldContracts:
+    image:
+      name: ghcr.io/zama-ai/fhevm/host-contracts
+      tag: v0.7.0-rc2
+  upgradeCommands:
+    - npx --no-install hardhat task:upgradeFHEVMExecutor --verify-contract false --current-implementation oldContracts/FHEVMExecutor.sol:FHEVMExecutor --new-implementation contracts/FHEVMExecutor.sol:FHEVMExecutor
+    - npx --no-install hardhat task:upgradeACL --verify-contract false --current-implementation oldContracts/ACL.sol:ACL --new-implementation contracts/ACL.sol:ACL
+    - npx --no-install hardhat task:upgradeHCULimit --verify-contract false --current-implementation oldContracts/HCULimit.sol:HCULimit --new-implementation contracts/HCULimit.sol:HCULimit
 
 scDebug:
-  enabled: false
+  enabled: true
 
 persistence:
   enabled: true
   volumeClaim:
-    create: true
+    create: false
     name: "host-contracts"
-    storageClassName: "standard"
-    storageCapacity: 1Gi

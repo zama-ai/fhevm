@@ -35,6 +35,14 @@ releases:
     needs:
       - host
 
+  - name: host-contracts-upgrade
+    namespace: fhevm
+    chart: "../../charts/contracts"
+    values:
+      - host-contracts-upgrade-values.yaml
+    needs:
+      - host
+
   - name: gateway
     namespace: fhevm
     chart: "../../charts/anvil-node"
