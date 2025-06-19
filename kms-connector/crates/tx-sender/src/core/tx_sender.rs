@@ -1,34 +1,48 @@
-use crate::core::Config;
+use crate::core::{
+    Config, DbKmsResponsePicker, DbKmsResponseRemover, KmsResponsePicker, KmsResponseRemover,
+};
 use alloy::{
     primitives::{Bytes, U256},
     providers::Provider,
 };
 use anyhow::anyhow;
-use connector_utils::conn::{GatewayProvider, connect_to_gateway};
+use connector_utils::{
+    conn::{WalletGatewayProvider, connect_to_db, connect_to_gateway_with_wallet},
+    types::KmsResponse,
+};
 use fhevm_gateway_rust_bindings::decryption::Decryption::{self, DecryptionInstance};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 /// TODO.
-pub struct TransactionSender<P: Provider> {
+pub struct TransactionSender<L, P: Provider, R> {
+    response_picker: L,
     decryption_contract: DecryptionInstance<(), P>,
+    response_remover: R,
 }
 
-impl<P> TransactionSender<P>
+impl<L, P, R> TransactionSender<L, P, R>
 where
+    L: KmsResponsePicker,
     P: Provider,
+    R: KmsResponseRemover,
 {
     /// Creates a new `TransactionSender` instance.
-    pub fn new(decryption_contract: DecryptionInstance<(), P>) -> Self {
+    pub fn new(
+        response_picker: L,
+        decryption_contract: DecryptionInstance<(), P>,
+        response_remover: R,
+    ) -> Self {
         Self {
+            response_picker,
             decryption_contract,
+            response_remover,
         }
     }
 
     /// Starts the `TransactionSender`.
     pub async fn start(self, cancel_token: CancellationToken) {
         info!("Starting TransactionSender");
-        // let tx_sender = Arc::new(self);
         tokio::select! {
             _ = cancel_token.cancelled() => info!("TransactionSender cancelled..."),
             _ = self.run() => (),
@@ -37,13 +51,46 @@ where
     }
 
     /// Runs the KMS Core's responses processing loop.
-    async fn run(self) {
+    async fn run(mut self) {
         loop {
-            todo!()
+            let response = match self.response_picker.pick_response().await {
+                Ok(response) => response,
+                Err(e) => {
+                    error!("Error while picking response: {e}");
+                    continue;
+                }
+            };
+
+            let response_identifier = response.to_string();
+            if let Err(e) = self.process(response).await {
+                error!("Error while processing {response_identifier}: {e}");
+            }
         }
     }
 
-    // Code imported from `simple-connector` codebase -> remove this comment once used
+    /// Processes a KMS Core response.
+    async fn process(&self, response: KmsResponse) -> anyhow::Result<()> {
+        match response.clone() {
+            KmsResponse::PublicDecryption {
+                decryption_id: id,
+                decrypted_result,
+                signature,
+            } => {
+                self.send_public_decryption_response(id, decrypted_result.into(), signature)
+                    .await?;
+            }
+            KmsResponse::UserDecryption {
+                decryption_id: id,
+                user_decrypted_shares,
+                signature,
+            } => {
+                self.send_user_decryption_response(id, user_decrypted_shares.into(), signature)
+                    .await?;
+            }
+        }
+        self.response_remover.remove_response(&response).await
+    }
+
     /// Sends a PublicDecryptionResponse to the Gateway.
     pub async fn send_public_decryption_response(
         &self,
@@ -124,11 +171,19 @@ where
     }
 }
 
-impl TransactionSender<GatewayProvider> {
+impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponseRemover> {
     pub async fn from_config(config: Config) -> anyhow::Result<Self> {
-        let provider = connect_to_gateway(&config.gateway_url).await?;
+        let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
+        let response_picker = DbKmsResponsePicker::connect(db_pool.clone()).await?;
+        let response_remover = DbKmsResponseRemover::new(db_pool);
+
+        let provider = connect_to_gateway_with_wallet(&config.gateway_url, config.wallet).await?;
         let decryption_contract = Decryption::new(config.decryption_contract.address, provider);
 
-        Ok(Self::new(decryption_contract))
+        Ok(Self::new(
+            response_picker,
+            decryption_contract,
+            response_remover,
+        ))
     }
 }

@@ -2,8 +2,7 @@
 //!
 //! The `RawConfig` can then be parsed into a `Config` in the `parsed` module.
 
-use crate::core::config::wallet::AwsKmsConfig;
-use connector_utils::config::{DeserializeRawConfig, RawContractConfig};
+use connector_utils::config::{AwsKmsConfig, DeserializeRawConfig, RawContractConfig};
 use serde::{Deserialize, Serialize};
 
 /// Deserializable representation of the KMS connector configuration.
