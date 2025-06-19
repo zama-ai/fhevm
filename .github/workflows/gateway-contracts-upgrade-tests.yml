@@ -1,0 +1,126 @@
+name: gateway-contracts-upgrade-tests
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-changes:
+    name: gateway-contracts-upgrade-tests/check-changes
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            gw-contracts:
+              - .github/workflows/gateway-contracts-upgrade-tests.yml
+              - gateway-contracts/**
+  sc-upgrade:
+    name: gateway-contracts-upgrade-tests/sc-upgrade (bpr)
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout previous release code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: v0.7.0
+          path: previous-gateway-contracts
+          persist-credentials: 'false'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Login to Docker Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and start Docker services from previous release
+        working-directory: previous-gateway-contracts
+        run: |
+          make docker-compose-build
+          make docker-compose-up
+
+      - name: Check smart contract deployment from previous release
+        working-directory: previous-gateway-contracts
+        run: |
+
+          ## Check Contracts Deployment
+          timeout 300s bash -c 'while docker ps --filter "name=deploy-gateway-contracts" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
+          docker compose logs deploy-gateway-contracts > deployment_logs.txt
+          EXIT_CODE_SC=$(docker inspect --format='{{.State.ExitCode}}' deploy-gateway-contracts)
+          # display logs for debugging
+          # cat deployment_logs.txt
+          if [ "$EXIT_CODE_SC" -ne 0 ]; then
+            echo "Deployment failed with exit code $EXIT_CODE_SC"
+            exit 1
+          elif ! grep -q "Contract deployment done!" deployment_logs.txt; then
+            echo "Deployment did not complete successfully - 'Contract deployment done!' message not found in logs"
+            exit 1
+          else
+            echo "Deployment completed successfully with expected completion message"
+          fi
+
+          ## Check Host Chain Registration
+          timeout 300s bash -c 'while docker ps --filter "name=add-host-chains" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
+          docker compose logs add-host-chains > host_chain_registration_logs.txt
+          EXIT_CODE_HOST_CHAIN=$(docker inspect --format='{{.State.ExitCode}}' add-host-chains)
+          # display logs for debugging
+          # cat host_chain_registration_logs.txt
+          if [ "$EXIT_CODE_HOST_CHAIN" -ne 0 ]; then
+            echo "Host chain registration failed with exit code $EXIT_CODE_HOST_CHAIN"
+            exit 1
+          elif ! grep -q "Host chains registration done!" host_chain_registration_logs.txt; then
+            echo "Host chain registration did not complete successfully - 'Host chains registration done!' message not found in logs"
+            exit 1
+          else
+            echo "Host chain registration completed successfully with expected completion message"
+          fi
+
+      - name: Checkout current code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+          path: current-gateway-contracts
+
+      - name: Install dependencies
+        working-directory: current-gateway-contracts
+        run: npm ci
+
+      - name: Upgrade GatewayConfig contract
+        working-directory: current-gateway-contracts
+        env:
+          DOTENV_CONFIG_PATH: .env
+          HARDHAT_NETWORK: staging
+          CHAIN_ID_GATEWAY: 54321
+          RPC_URL: http://anvil-node:8546
+        run: |
+          cp .env.example .env
+          npx hardhat task:upgradeGatewayConfig --current-implementation ../previous-gateway-contracts/contracts/GatewayConfig.sol:GatewayConfig --new-implementation contracts/GatewayConfig.sol:GatewayConfig
+
+      - name: Clean up
+        working-directory: previous-gateway-contracts
+        if: always()
+        run: |
+          make docker-compose-down
+
+permissions:
+  contents: 'read'
+  checks: 'write'
+  packages: 'read'
