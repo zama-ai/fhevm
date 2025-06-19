@@ -229,7 +229,6 @@ impl FhevmHandler {
         req: &DecryptionRequestData,
         public_decryption_response: PublicDecryptResponse,
     ) -> Result<(), EventProcessingError> {
-        // let decrypted_value = U256::from(18446744073709551600u64);
         let public_decrypt_response: PublicDecryptionResponse = PublicDecryptionResponse {
             publicDecryptionId: public_decryption_response.gateway_request_id,
             decryptedResult: public_decryption_response.decrypted_value,

@@ -237,8 +237,8 @@ impl TransactionManager {
             .map_err(|e| TransactionServiceError::GasEstimation(e.to_string()))?;
 
         // NOTE: shouldn't this be exposed as tx-manager configuration?
-        // Add 10% buffer to estimated gas
-        let gas_with_buffer = (gas as f64 * 1.1) as u64;
+        // Add 20% buffer to estimated gas
+        let gas_with_buffer = (gas as f64 * 1.2) as u64;
 
         Ok(gas_with_buffer)
     }
@@ -455,13 +455,19 @@ impl TransactionManager {
         }
 
         info!("Preparing request: {:#x}", target);
-        let request = TransactionRequest::default()
+        let mut request = TransactionRequest::default()
             .with_from(self.sender_address())
             .with_to(target)
-            .with_input(calldata)
+            .with_input(calldata.clone())
             .with_value(config.value.unwrap_or_default());
-        let request = WithOtherFields::new(request);
 
+        if let Ok(gas_limit_estimate) = self.estimate_gas(target, calldata, Some(config)).await {
+            request = request.with_gas_limit(gas_limit_estimate);
+        } else {
+            warn!("Gas estimation failed");
+        }
+
+        let request = WithOtherFields::new(request);
         let tx = self.send_transaction_with_retry(request).await?;
         let tx_hash = tx.tx_hash();
         info!(?tx_hash, "Transaction submitted successfully");
