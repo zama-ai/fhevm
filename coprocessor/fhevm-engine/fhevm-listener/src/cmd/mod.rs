@@ -394,10 +394,9 @@ impl InfiniteLogIter {
                 }
             }
         }
-        let Some(current_event) = &self.current_event else {
-            return None;
+        if self.current_event.is_some() {
+            self.last_block_event_count += 1;
         };
-        self.last_block_event_count += 1;
         return self.current_event.clone();
     }
 
