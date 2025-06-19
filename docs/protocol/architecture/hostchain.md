@@ -1,22 +1,58 @@
-# Host chain
+# Host contracts
 
-FHEVM smart contracts are Solidity contracts that interact with encrypted values through symbolic execution.
+## What Are Host Contracts?
 
-### **Symbolic execution in Solidity**
+Host contracts are smart contracts deployed on any supported blockchain (EVM or non-EVM) that act as trusted bridges
+between on-chain applications and the FHEVM protocol. They serve as the minimal and foundational interface that
+confidential smart contracts use to:
 
-- **Handles**: Smart contract operations return handles (references to ciphertexts), rather than directly manipulating
-  encrypted data.
-- **Lazy Execution**: Actual computation is done off-chain by the coprocessor after the contract emits symbolic
-  instructions.
+- Interact with encrypted data (handles)
+- Perform access control operations
+- Emit events for the off-chain components (coprocessors, Gateway)
 
-This allows efficient, gas-minimized interaction with encrypted data, while preserving EVM compatibility.
+These host contracts are used indirectly by developers via the FHEVM Solidity library, abstracting away complexity and
+integrating smoothly into existing workflows.
 
-### **Zero-Knowledge proofs of knowledge (ZKPoKs)**
+## Responsibilities of Host Contracts
 
-FHEVM incorporates ZKPoKs to verify the correctness of encrypted inputs and outputs:
+### Trusted Interface Layer
 
-- **Validation**: ZKPoKs ensure that inputs are correctly formed and correspond to known plaintexts without revealing
-  sensitive data.
-- **Integrity**: They prevent misuse of ciphertexts and ensure the correctness of computations.
+Host contracts are the only on-chain components that:
 
-By combining symbolic execution and ZKPoKs, FHEVM smart contracts maintain both privacy and verifiability.
+- Maintain and enforce Access Control Lists (ACLs) for ciphertexts.
+- Emit events that trigger coprocessor execution.
+- Validate access permissions (persistent, transient, or decryption-related).
+
+They are effectively the on-chain authority for:
+
+- Who is allowed to access a ciphertext
+- When and how they can use it
+- These ACLs are mirrored on the Gateway for off-chain enforcement and bridging.
+
+### Access Control API
+
+Host contracts expose access control logic via standardized function calls (wrapped by the FHEVM library):
+
+- `allow(handle, address)`: Grants persistent access.
+- `allowTransient(handle, address)`: Grants temporary access for a single transaction.
+- `allowForDecryption(handle)`: Marks a handle as publicly decryptable.
+- `isAllowed(handle, address)`: Returns whether a given address has access.
+- `isSenderAllowed(handle)`: Checks if msg.sender is allowed to use a handle.
+
+They also emit:
+
+- `Allowed(handle, address)`
+- `AllowedForDecryption(handle)`
+
+These events are crucial for triggering coprocessor state updates and ensuring proper ACL replication to the Gateway.
+
+### Security Role
+
+Although the FHE computation happens off-chain, host contracts play a critical role in protocol security by:
+
+- Enforcing ACL-based gating
+- Ensuring only authorized contracts and users can decrypt or use a handle
+- Preventing misuse of encrypted data (e.g., computation without access)
+
+Access attempts without proper authorization are rejected at the smart contract level, protecting both the integrity of
+confidential operations and user privacy.
