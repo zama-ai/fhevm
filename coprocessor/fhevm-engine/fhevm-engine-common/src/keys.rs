@@ -1,7 +1,7 @@
 use std::{fs::read, sync::Arc};
 
 #[cfg(feature = "gpu")]
-use tfhe::CudaServerKey;
+use tfhe::core_crypto::gpu::get_number_of_gpus;
 use tfhe::{
     set_server_key,
     shortint::parameters::{
@@ -42,7 +42,7 @@ pub struct FhevmKeys {
     #[cfg(feature = "gpu")]
     pub compressed_server_key: CompressedServerKey,
     #[cfg(feature = "gpu")]
-    pub gpu_server_key: CudaServerKey,
+    pub gpu_server_key: Vec<tfhe::CudaServerKey>,
 }
 
 pub struct SerializedFhevmKeys {
@@ -77,7 +77,13 @@ impl FhevmKeys {
             #[cfg(feature = "gpu")]
             compressed_server_key: compressed_server_key.clone(),
             #[cfg(feature = "gpu")]
-            gpu_server_key: compressed_server_key.decompress_to_gpu(),
+            #[cfg(feature = "latency")]
+            gpu_server_key: vec![compressed_server_key.decompress_to_gpu()],
+            #[cfg(feature = "gpu")]
+            #[cfg(not(feature = "latency"))]
+            gpu_server_key: (0..get_number_of_gpus() as u32)
+                .map(|i| compressed_server_key.decompress_to_specific_gpu(tfhe::GpuIndex::new(i)))
+                .collect::<Vec<_>>(),
         }
     }
 
@@ -96,7 +102,7 @@ impl FhevmKeys {
     }
     pub fn set_gpu_server_key_for_current_thread(&self) {
         #[cfg(feature = "gpu")]
-        set_server_key(self.gpu_server_key.clone());
+        set_server_key(self.gpu_server_key[0].clone());
         #[cfg(not(feature = "gpu"))]
         set_server_key(self.server_key.clone());
     }
@@ -220,7 +226,13 @@ impl From<SerializedFhevmKeys> for FhevmKeys {
             #[cfg(feature = "gpu")]
             compressed_server_key: compressed_server_key.clone(),
             #[cfg(feature = "gpu")]
-            gpu_server_key: compressed_server_key.decompress_to_gpu(),
+            #[cfg(feature = "latency")]
+            gpu_server_key: vec![compressed_server_key.decompress_to_gpu()],
+            #[cfg(feature = "gpu")]
+            #[cfg(not(feature = "latency"))]
+            gpu_server_key: (0..get_number_of_gpus() as u32)
+                .map(|i| compressed_server_key.decompress_to_specific_gpu(tfhe::GpuIndex::new(i)))
+                .collect::<Vec<_>>(),
             #[cfg(feature = "gpu")]
             server_key: compressed_server_key.decompress(),
         }

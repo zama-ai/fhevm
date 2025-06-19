@@ -1,13 +1,12 @@
 use coprocessor::daemon_cli::Args;
-use coprocessor::types::TfheTenantKeys;
 use fhevm_engine_common::utils::safe_deserialize_key;
 use rand::Rng;
 use sqlx::query;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
-use tfhe::ClientKey;
 use tokio::sync::watch::Receiver;
+use tracing::Level;
 
 pub struct TestInstance {
     // just to destroy container
@@ -71,14 +70,9 @@ pub async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn
 }
 
 async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
-    let mut batch_size: i32 = 400;
-    let batch = std::env::var("BENCHMARK_BATCH_SIZE");
-    if let Ok(batch) = batch {
-        batch_size = batch.parse::<i32>().unwrap();
-    }
     let app_port = get_app_port();
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    start_coprocessor(rx, app_port, LOCAL_DB_URL, batch_size).await;
+    start_coprocessor(rx, app_port, LOCAL_DB_URL).await;
     Ok(TestInstance {
         _container: None,
         app_close_channel: Some(app_close_channel),
@@ -87,7 +81,8 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
     })
 }
 
-async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str, batch_size: i32) {
+async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
+    let ecfg = EnvConfig::new();
     let args: Args = Args {
         run_bg_worker: true,
         worker_polling_interval_ms: 1000,
@@ -95,11 +90,11 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str, batc
         generate_fhe_keys: false,
         server_maximum_ciphertexts_to_schedule: 20000,
         server_maximum_ciphertexts_to_get: 20000,
-        work_items_batch_size: batch_size,
+        work_items_batch_size: ecfg.batch_size,
         tenant_key_cache_size: 4,
-        coprocessor_fhe_threads: 4,
+        coprocessor_fhe_threads: 128,
         maximum_handles_per_input: 255,
-        tokio_threads: 2,
+        tokio_threads: 16,
         pg_pool_max_connections: 2,
         server_addr: format!("127.0.0.1:{app_port}"),
         metrics_addr: "".to_string(),
@@ -107,6 +102,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str, batc
         maximimum_compact_inputs_upload: 10,
         coprocessor_private_key: "./coprocessor.key".to_string(),
         service_name: "coprocessor".to_string(),
+        log_level: Level::INFO,
     };
 
     std::thread::spawn(move || {
@@ -130,12 +126,6 @@ fn get_app_port() -> u16 {
 
 async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::error::Error>> {
     let app_port = get_app_port();
-    let mut batch_size: i32 = 400;
-    let batch = std::env::var("BENCHMARK_BATCH_SIZE");
-    if let Ok(batch) = batch {
-        batch_size = batch.parse::<i32>().unwrap();
-    }
-
     let container = GenericImage::new("postgres", "15.7")
         .with_wait_for(WaitFor::message_on_stderr(
             "database system is ready to accept connections",
@@ -165,7 +155,7 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
     setup_test_user(&pool).await?;
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    start_coprocessor(rx, app_port, &db_url, batch_size).await;
+    start_coprocessor(rx, app_port, &db_url).await;
     Ok(TestInstance {
         _container: Some(container),
         app_close_channel: Some(app_close_channel),
@@ -175,16 +165,16 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
 }
 
 pub async fn wait_until_all_ciphertexts_computed(
-    test_instance: &TestInstance,
+    db_url: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
-        .connect(test_instance.db_url())
+        .connect(&db_url)
         .await?;
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        let count = sqlx::query!("SELECT count(*) FROM computations WHERE NOT is_completed")
+        let count = sqlx::query!("SELECT count(1) FROM computations WHERE NOT is_completed")
             .fetch_one(&pool)
             .await?;
         let current_count = count.count.unwrap();
@@ -247,17 +237,23 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
+pub struct BenchKeys {
+    pub pks: tfhe::CompactPublicKey,
+    pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
+    pub cks: tfhe::ClientKey,
+}
+
 pub async fn query_tenant_keys<'a, T>(
     tenants_to_query: Vec<i32>,
     conn: T,
-) -> Result<Vec<(TfheTenantKeys, ClientKey)>, Box<dyn std::error::Error + Send + Sync>>
+) -> Result<Vec<BenchKeys>, Box<dyn std::error::Error + Send + Sync>>
 where
     T: sqlx::PgExecutor<'a>,
 {
     let mut res = Vec::with_capacity(tenants_to_query.len());
     let keys = query!(
         "
-            SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key
+            SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, public_params, cks_key
             FROM tenants
             WHERE tenant_id = ANY($1::INT[])
         ",
@@ -268,51 +264,31 @@ where
     for key in keys {
         #[cfg(not(feature = "gpu"))]
         {
-            let sks: tfhe::ServerKey = safe_deserialize_key(&key.sks_key)
-                .expect("We can't deserialize our own validated sks key");
             let pks: tfhe::CompactPublicKey = safe_deserialize_key(&key.pks_key)
                 .expect("We can't deserialize our own validated pks key");
             let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&key.public_params)
                 .expect("We can't deserialize our own validated public params");
-            let ck: tfhe::ClientKey = safe_deserialize_key(&key.cks_key.unwrap())
+            let cks: tfhe::ClientKey = safe_deserialize_key(&key.cks_key.unwrap())
                 .expect("We can't deserialize client key");
-            res.push((
-                TfheTenantKeys {
-                    tenant_id: key.tenant_id,
-                    sks,
-                    pks,
-                    public_params: Arc::new(public_params),
-                    chain_id: key.chain_id,
-                    acl_contract_address: key.acl_contract_address,
-                    verifying_contract_address: key.verifying_contract_address,
-                },
-                ck,
-            ));
+            res.push(BenchKeys {
+                pks,
+                public_params: Arc::new(public_params),
+                cks,
+            });
         }
         #[cfg(feature = "gpu")]
         {
-            let csks: tfhe::CompressedServerKey = safe_deserialize_key(&key.sks_key)
-                .expect("We can't deserialize the gpu compressed sks key");
             let pks: tfhe::CompactPublicKey = safe_deserialize_key(&key.pks_key)
                 .expect("We can't deserialize our own validated pks key");
             let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&key.public_params)
                 .expect("We can't deserialize our own validated public params");
-            let ck: tfhe::ClientKey = safe_deserialize_key(&key.cks_key.unwrap())
+            let cks: tfhe::ClientKey = safe_deserialize_key(&key.cks_key.unwrap())
                 .expect("We can't deserialize client key");
-            res.push((
-                TfheTenantKeys {
-                    tenant_id: key.tenant_id,
-                    pks,
-                    sks: csks.clone().decompress(),
-                    csks: csks.clone(),
-                    gpu_sks: csks.decompress_to_gpu(),
-                    public_params: Arc::new(public_params),
-                    chain_id: key.chain_id,
-                    acl_contract_address: key.acl_contract_address,
-                    verifying_contract_address: key.verifying_contract_address,
-                },
-                ck,
-            ));
+            res.push(BenchKeys {
+                pks,
+                public_params: Arc::new(public_params),
+                cks,
+            });
         }
     }
 
@@ -814,6 +790,10 @@ const MULTI_BIT_CPU_SIZES: [usize; 6] = [4, 8, 16, 32, 40, 64];
 pub struct EnvConfig {
     pub is_multi_bit: bool,
     pub is_fast_bench: bool,
+    pub batch_size: i32,
+    pub scheduling_policy: String,
+    pub benchmark_type: String,
+    pub optimization_target: String,
 }
 
 impl EnvConfig {
@@ -823,15 +803,34 @@ impl EnvConfig {
             Ok(val) => val.to_lowercase() == "multi_bit",
             Err(_) => false,
         };
-
         let is_fast_bench = match env::var("__TFHE_RS_FAST_BENCH") {
             Ok(val) => val.to_lowercase() == "true",
             Err(_) => false,
+        };
+        let batch_size: i32 = match env::var("BENCHMARK_BATCH_SIZE") {
+            Ok(val) => val.parse::<i32>().unwrap(),
+            Err(_) => 400,
+        };
+        let scheduling_policy: String = match env::var("FHEVM_DF_SCHEDULE") {
+            Ok(val) => val,
+            Err(_) => "MAX_PARALLELISM".to_string(),
+        };
+        let benchmark_type: String = match env::var("BENCHMARK_TYPE") {
+            Ok(val) => val,
+            Err(_) => "ALL".to_string(),
+        };
+        let optimization_target: String = match env::var("OPTIMIZATION_TARGET") {
+            Ok(val) => val,
+            Err(_) => "throughput".to_string(),
         };
 
         EnvConfig {
             is_multi_bit,
             is_fast_bench,
+            batch_size,
+            scheduling_policy,
+            benchmark_type,
+            optimization_target,
         }
     }
 

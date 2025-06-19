@@ -11,6 +11,7 @@ pub struct OpNode {
     result: DFGTaskResult,
     result_handle: Handle,
     inputs: Vec<DFGTaskInput>,
+    locality: i32,
 }
 pub type OpEdge = u8;
 
@@ -43,6 +44,7 @@ impl DFGraph {
             result: None,
             result_handle: rh,
             inputs,
+            locality: -1,
         }))
     }
     pub fn add_dependence(
