@@ -4,6 +4,7 @@
 
 - [FHE on Blockchain](architecture/overview.md)
   - [FHE library](architecture/library.md)
+  - [Host contracts](architecture/hostchain.md)
   - [Coprocessor](architecture/coprocessor.md)
   - [Gateway](architecture/gateway.md)
   - [KMS](architecture/kms.md)
