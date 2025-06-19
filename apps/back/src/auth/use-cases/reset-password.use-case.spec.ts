@@ -294,7 +294,7 @@ describe('ResetPasswordWithEvents', () => {
         await result.toPromise()
         expect(producer.publish).toHaveBeenCalledExactlyOnceWith(
           expect.objectContaining({
-            type: 'back:user:password-reset:completed',
+            type: 'back:password-reset:completed',
           }),
         )
       })

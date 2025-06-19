@@ -2,7 +2,7 @@ import { EventProducer } from '#workflows/interfaces/event.producer.js'
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { back, MSPrefix, web3 } from 'messages'
+import { back, email, MSPrefix, relayer, web3 } from 'messages'
 import type { Result } from 'utils'
 import { AppError, fail, ok, Task, unknownError, validationError } from 'utils'
 
@@ -13,17 +13,22 @@ export class SQSProducer implements EventProducer {
   private readonly queueMap = new Map<MSPrefix, string>()
 
   constructor(config: ConfigService) {
+    this.logger.verbose(
+      `initializing SQS producer with ${
+        config.get('aws.useConfigCredentials') ? 'config' : 'env'
+      } credentials`,
+    )
     this.client = new SQSClient(
       config.get<boolean>('aws.useConfigCredentials', false)
-      ? {
-          endpoint: config.get<string>('aws.endpoint'),
-          region: config.get<string>('aws.region'),
-          credentials: {
-            accessKeyId: config.getOrThrow<string>('aws.accessKeyId'),
-            secretAccessKey: config.getOrThrow<string>('aws.secretAccessKey'),
-          },
-        }
-      : {},
+        ? {
+            endpoint: config.get<string>('aws.endpoint'),
+            region: config.get<string>('aws.region'),
+            credentials: {
+              accessKeyId: config.getOrThrow<string>('aws.accessKeyId'),
+              secretAccessKey: config.getOrThrow<string>('aws.secretAccessKey'),
+            },
+          }
+        : {},
     )
     this.client.config.useQueueUrlAsEndpoint = true
     this.queueMap.set('back', config.getOrThrow('aws.back.queueUrl'))
@@ -33,7 +38,11 @@ export class SQSProducer implements EventProducer {
   }
 
   private getQueueFromEvent = (
-    event: back.BackEvent | web3.Web3Event,
+    event:
+      | back.BackEvent
+      | web3.Web3Event
+      | relayer.RelayerEvent
+      | email.EmailEvent,
   ): Result<string, AppError> => {
     const prefix = event.type.split(':')[0] as MSPrefix
     return this.queueMap.has(prefix)
@@ -42,13 +51,20 @@ export class SQSProducer implements EventProducer {
   }
 
   readonly publish = (
-    message: back.BackEvent | web3.Web3Event,
+    message:
+      | back.BackEvent
+      | web3.Web3Event
+      | relayer.RelayerEvent
+      | email.EmailEvent,
   ): Task<void, AppError> => {
     this.logger.verbose(`handling ${message.type}`)
     const { requestId } = message.payload
 
     return this.getQueueFromEvent(message)
       .asyncChain(queueUrl => {
+        this.logger.debug(
+          `sending ${message.type} to ${message.type.split(':')[0]} queue`,
+        )
         this.logger.verbose(`queueUrl: ${queueUrl}`)
 
         return Task.fromPromise<void, AppError>(
@@ -63,11 +79,14 @@ export class SQSProducer implements EventProducer {
               this.logger.verbose(
                 `✅ [${requestId}] PublishCommand status code: ${result.$metadata?.httpStatusCode}`,
               )
+              this.logger.debug(`✅ [${requestId}] published`)
               return void 0
             })
             .catch(err => {
               this.logger.warn(
-                `❌ [${requestId}] failed to publish message to queue ${queueUrl}: ${JSON.stringify(err)}`,
+                `❌ [${requestId}] failed to publish message to queue ${queueUrl}: ${JSON.stringify(
+                  err,
+                )}`,
               )
               throw unknownError(String(err))
             }),

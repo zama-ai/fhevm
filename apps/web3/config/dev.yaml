@@ -1,0 +1,9 @@
+aws:
+  useConfigCredentials: false
+common:
+  logLevel: 'debug'
+# @NOTE: this should the ethereum chain
+fhe:
+  - chainId: 1337
+    contractAddress: '%{{ LOCAL_TFHE_EXECUTOR_CONTRACT_ADDRESS }}'
+    providerUrl: 'ws://l1-geth-node-zws-dev.ethereum-blockchain:8545'

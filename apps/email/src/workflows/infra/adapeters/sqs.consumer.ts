@@ -15,7 +15,7 @@ export class SQSConsumer {
 
   @SqsMessageHandler('email', false)
   public async handleMessage(message: Message) {
-    const batchItemFailures: { itemIdentifier: string | undefined }[] = []
+    this.logger.verbose(`message ${message.MessageId} received`)
 
     if (message.Body) {
       try {
@@ -39,10 +39,17 @@ export class SQSConsumer {
         this.logger.verbose(
           `pushing { itemIdentifier: ${message.MessageId} } into batchItemFailures`,
         )
-        batchItemFailures.push({ itemIdentifier: message.MessageId })
+        // Note: I need to throw the error here so that the message
+        // is kept in the queue and, after a while, it will be moved to
+        // the dead letter queue
+
+        throw err
       }
     }
 
-    return { batchItemFailures }
+    this.logger.verbose(`message ${message.MessageId} processed`)
+    // Note: by returning the message, we aknowledge that the message
+    // has been processed, and the `sqs-consumer` library will delete it.
+    return message
   }
 }

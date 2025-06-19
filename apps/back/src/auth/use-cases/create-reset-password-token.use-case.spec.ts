@@ -105,7 +105,7 @@ describe('CreateResetPasswordToken', () => {
       test('then it sends a reset password requested event', async () => {
         await result.toPromise()
         expect(producer.publish).toHaveBeenCalledExactlyOnceWith({
-          type: 'back:user:password-reset:requested',
+          type: 'back:password-reset:requested',
           payload: expect.objectContaining({
             requestId: expect.any(String),
             email,

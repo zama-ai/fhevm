@@ -29,7 +29,9 @@ export class ProcessInputProof
   execute = (
     event: back.BackEvent | relayer.RelayerEvent,
   ): Task<void, AppError> => {
+    this.logger.verbose(`event ${event.type} received`)
     if (isInputProofEvent(event)) {
+      this.logger.debug(`processing ${event.type}`)
       return Task.of<InputProof, AppError>(new InputProof())
         .map(inputProof => inputProof.send(event))
         .chain(messages =>

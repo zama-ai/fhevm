@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { Logger, Module } from '@nestjs/common'
 import { DbAppDeploymentRepository } from './adapters/db-app-deployment.repository.js'
 import { DatabaseModule } from '#database/database.module.js'
 import { SqsModule } from '@ssut/nestjs-sqs'
@@ -12,33 +12,49 @@ import { APP_DEPLOYMENT_REPO, EVENT_PRODUCER } from '#constants.js'
 import { SharedModule } from '#shared/shared.module.js'
 import { CronModule } from './cron/cron.module.js'
 
+const logger = new Logger('InfraModule')
+
 @Module({
   imports: [
     SharedModule,
     DatabaseModule,
     SqsModule.registerAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        consumers: [
-          {
-            name: 'orchestrator',
-            queueUrl: config.get<string>('aws.orchestrator.queueUrl')!,
-            useQueueUrlAsEndpoint: false,
-            sqs: new SQSClient(config.get<boolean>('aws.useConfigCredentials', false)
-              ? {
-                  endpoint: config.get<string>('aws.endpoint'),
-                  region: config.get<string>('aws.region'),
-                  credentials: {
-                    accessKeyId: config.getOrThrow<string>('aws.accessKeyId'),
-                    secretAccessKey: config.getOrThrow<string>('aws.secretAccessKey'),
-                  },
-                }
-              : {}),
-            messageAttributeNames: ['All'],
-            attributeNames: ['All'],
-          },
-        ],
-      }),
+      useFactory: (config: ConfigService) => {
+        logger.verbose(
+          `useConfigCredentials: ${config.get('aws.useConfigCredentials')}`,
+        )
+        logger.verbose(`endpoint: ${config.get('aws.endpoint')}`)
+        logger.verbose(`region: ${config.get('aws.region')}`)
+        logger.verbose(`queueUrl: ${config.get('aws.orchestrator.queueUrl')}`)
+        return {
+          consumers: [
+            {
+              name: 'orchestrator',
+              queueUrl: config.get<string>('aws.orchestrator.queueUrl')!,
+              useQueueUrlAsEndpoint: false,
+              sqs: new SQSClient(
+                config.get<boolean>('aws.useConfigCredentials', false)
+                  ? {
+                      endpoint: config.get<string>('aws.endpoint'),
+                      region: config.get<string>('aws.region'),
+                      credentials: {
+                        accessKeyId:
+                          config.getOrThrow<string>('aws.accessKeyId'),
+                        secretAccessKey: config.getOrThrow<string>(
+                          'aws.secretAccessKey',
+                        ),
+                      },
+                    }
+                  : {},
+              ),
+              messageAttributeNames: ['All'],
+              attributeNames: ['All'],
+            },
+          ],
+          logger: new Logger('SqsModule'),
+        }
+      },
     }),
     CronModule,
   ],

@@ -29,6 +29,7 @@ export class ProcessPrivateDecrypt
   execute = (
     event: back.BackEvent | relayer.RelayerEvent,
   ): Task<void, AppError> => {
+    this.logger.verbose(`event ${event.type} received`)
     if (isPrivateDecrypt(event)) {
       this.logger.debug(
         `processing ${event.type}: ${JSON.stringify(event.payload)}`,

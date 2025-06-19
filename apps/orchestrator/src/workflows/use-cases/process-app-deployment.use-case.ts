@@ -22,10 +22,12 @@ export class ProcessAppDeployment
     @Inject(APP_DEPLOYMENT_REPO) private readonly repo: AppDeploymentRepository,
     @Inject(EVENT_PRODUCER) private readonly producer: EventProducer,
   ) {
-    this.pupsub.subscribe('*', this.handleEvent)
+    this.pupsub.subscribe('back:dapp:validation:*', this.handleEvent)
+    this.pupsub.subscribe('web3:contract:validation:*', this.handleEvent)
   }
 
   private handleEvent: ISubscriber<back.BackEvent | web3.Web3Event> = event => {
+    this.logger.verbose(`event ${event.type} received`)
     return isAppDeploymentEvent(event)
       ? this.execute(event)
       : Task.of<void, AppError>(void 0)
@@ -38,6 +40,7 @@ export class ProcessAppDeployment
   }
 
   execute = (event: AppDeploymentEvents): Task<void, AppError> => {
+    this.logger.debug(`processing ${event.type}`)
     return this.fetchAppDeployment(event)
       .chain<AppDeployment>(opt =>
         opt.isSome()

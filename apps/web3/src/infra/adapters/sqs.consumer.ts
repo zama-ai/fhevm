@@ -16,15 +16,16 @@ export class SQSConsumer {
 
   @SqsMessageHandler('web3', false)
   public async handleMessage(message: Message) {
-    const batchItemFailures: { itemIdentifier: string | undefined }[] = []
+    this.logger.verbose(`message ${message.MessageId} received`)
+
     if (message.Body) {
       let data: unknown
       try {
         data = JSON.parse(message.Body)
       } catch (error) {
         this.logger.warn(`Failed to parse Body: ${error}`)
-        batchItemFailures.push({ itemIdentifier: message.MessageId })
-        return { batchItemFailures }
+
+        throw error
       }
 
       if (web3.isWeb3Event(data)) {
@@ -41,13 +42,16 @@ export class SQSConsumer {
           this.logger.verbose(
             `pushing { itemIdentifier: ${message.MessageId} } into batchItemFailures`,
           )
-          batchItemFailures.push({ itemIdentifier: message.MessageId })
+          throw error
         }
       } else {
         this.logger.warn('data is not an app-deployment command')
       }
     }
 
-    return { batchItemFailures }
+    this.logger.verbose(`message ${message.MessageId} processed`)
+    // Note: By returning the message, we aknowledge that the message has been processed
+    // and the `sqs-consumer` library will delete it.
+    return message
   }
 }

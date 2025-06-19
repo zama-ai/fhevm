@@ -110,7 +110,7 @@ export class ResetPasswordWithEvents
       this.logger.debug(`publishing password-reset completed event`)
       return this.producer
         .publish(
-          back.userPasswordResetCompleted(
+          back.passwordResetCompleted(
             {
               requestId: context?.requestId
                 ? String(context.requestId)

@@ -31,10 +31,10 @@ describe('password reset', () => {
     await manager.afterAll()
   })
 
-  describe("when receiving a 'back:user:password-reset:requested' event", () => {
+  describe("when receiving a 'back:password-reset:requested' event", () => {
     beforeEach(async () => {
       await manager.sendMessage(
-        back.userPasswordResetRequested(
+        back.passwordResetRequested(
           {
             requestId: faker.string.uuid(),
             email: faker.internet.email(),
@@ -55,10 +55,10 @@ describe('password reset', () => {
     })
   })
 
-  describe("when receiving a 'back:user:password-reset:completed' event", () => {
+  describe("when receiving a 'back:password-reset:completed' event", () => {
     beforeEach(async () => {
       await manager.sendMessage(
-        back.userPasswordResetCompleted(
+        back.passwordResetCompleted(
           {
             requestId: faker.string.uuid(),
             email: faker.internet.email(),

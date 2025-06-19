@@ -52,6 +52,14 @@ describe('SQSConsumer', () => {
         expect(pubsub.publish).toBeCalledWith(event)
       })
 
+      test(`should acknowledge the message`, async () => {
+        pubsub.publish.mockReturnValue(Task.of(void 0))
+        const message = encodeMessage(event)
+
+        const result = await consumer.handleMessage(message)
+        expect(result).toBe(message)
+      })
+
       test('should forward errors', async () => {
         pubsub.publish.mockReturnValue(
           Task.reject(unknownError('Mocked error')),
@@ -60,10 +68,9 @@ describe('SQSConsumer', () => {
         const message = encodeMessage(event)
         message.MessageId = messageId
 
-        const result = await consumer.handleMessage(message)
-        expect(result).toEqual({
-          batchItemFailures: [{ itemIdentifier: messageId }],
-        })
+        await expect(consumer.handleMessage(message)).rejects.toThrow(
+          'Mocked error',
+        )
       })
     })
   })

@@ -29,6 +29,7 @@ export class ProcessPublicDecrypt
   execute = (
     event: back.BackEvent | relayer.RelayerEvent,
   ): Task<void, AppError> => {
+    this.logger.verbose(`event ${event.type} received`)
     if (isPublicDecrypt(event)) {
       this.logger.debug(
         `processing ${event.type}: ${JSON.stringify(event.payload)}`,

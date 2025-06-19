@@ -68,7 +68,7 @@ describe('reset-user-password', () => {
         if (!back.isBackEvent(event)) {
           expect(false, 'event is not a BackEvent').toBeTruthy()
         }
-        expect(event.type).toBe('back:user:password-reset:requested')
+        expect(event.type).toBe('back:password-reset:requested')
         expect(event.payload.email).toBe(email)
         expect(Token.from(event.payload.token).isOk()).toBe(true)
       })
@@ -113,7 +113,7 @@ describe('reset-user-password', () => {
       if (!back.isBackEvent(event)) {
         expect(false, 'event is not a BackEvent').toBeTruthy()
       }
-      expect(event.type).toBe('back:user:password-reset:requested')
+      expect(event.type).toBe('back:password-reset:requested')
 
       token = event.payload.token
     })
@@ -166,7 +166,7 @@ describe('reset-user-password', () => {
         if (!back.isBackEvent(event)) {
           expect(false, 'event is not a BackEvent').toBeTruthy()
         }
-        expect(event.type).toBe('back:user:password-reset:completed')
+        expect(event.type).toBe('back:password-reset:completed')
         expect(event.payload.email).toBe(email)
       })
     })
@@ -192,7 +192,7 @@ describe('reset-user-password', () => {
         if (!back.isBackEvent(event)) {
           expect(false, 'event is not a BackEvent').toBeTruthy()
         }
-        expect(event.type).toBe('back:user:password-reset:requested')
+        expect(event.type).toBe('back:password-reset:requested')
 
         newToken = event.payload.token
       })

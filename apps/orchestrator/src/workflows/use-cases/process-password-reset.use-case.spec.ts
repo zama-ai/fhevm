@@ -29,14 +29,14 @@ describe(ProcessPasswordReset, () => {
     expect(useCase).toBeDefined()
   })
 
-  describe("when receiving a 'back:user:password-reset:requested' event", () => {
+  describe("when receiving a 'back:password-reset:requested' event", () => {
     let event: Extract<
       back.BackEvent,
-      { type: 'back:user:password-reset:requested' }
+      { type: 'back:password-reset:requested' }
     >
 
     beforeEach(async () => {
-      event = back.userPasswordResetRequested(
+      event = back.passwordResetRequested(
         {
           requestId: faker.string.uuid(),
           email: faker.internet.email(),
@@ -78,14 +78,14 @@ describe(ProcessPasswordReset, () => {
     })
   })
 
-  describe("when receiving a 'back:user:password-reset:completed' event", () => {
+  describe("when receiving a 'back:password-reset:completed' event", () => {
     let event: Extract<
       back.BackEvent,
-      { type: 'back:user:password-reset:completed' }
+      { type: 'back:password-reset:completed' }
     >
 
     beforeEach(async () => {
-      event = back.userPasswordResetCompleted(
+      event = back.passwordResetCompleted(
         {
           requestId: faker.string.uuid(),
           email: faker.internet.email(),

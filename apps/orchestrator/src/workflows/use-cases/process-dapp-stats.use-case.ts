@@ -18,7 +18,8 @@ export class ProcessDAppStats implements UseCase<DAppStatsEvents, void> {
     private readonly pupsub: IPubSub<DAppStatsEvents>,
     @Inject(EVENT_PRODUCER) private readonly producer: EventProducer,
   ) {
-    this.pupsub.subscribe('*', this.handleEvent)
+    this.pupsub.subscribe('back:dapp:stats-requested', this.handleEvent)
+    this.pupsub.subscribe('web3:fhe-event:detected', this.handleEvent)
   }
 
   private handleEvent: ISubscriber<back.BackEvent | web3.Web3Event> = event => {
@@ -40,6 +41,7 @@ export class ProcessDAppStats implements UseCase<DAppStatsEvents, void> {
   }
 
   execute = (event: DAppStatsEvents): Task<void, AppError> => {
+    this.logger.debug(`processing ${event.type}`)
     return Task.of<DAppStats, AppError>(new DAppStats()).chain(dAppStats =>
       Task.all<AppError, void>(
         dAppStats.send(event).map(msg => this.producer.publish(msg)),

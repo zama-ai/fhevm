@@ -2,8 +2,8 @@ import { back, email } from 'messages'
 import { type Actor, createActor, setup } from 'xstate'
 
 export const EVENT_TYPES = [
-  'back:user:password-reset:completed',
-  'back:user:password-reset:requested',
+  'back:password-reset:completed',
+  'back:password-reset:requested',
 ] as const
 
 export type PasswordResetEvents = Extract<
@@ -34,14 +34,14 @@ function factory({
     states: {
       Idle: {
         on: {
-          'back:user:password-reset:requested': {
+          'back:password-reset:requested': {
             actions: [
               ({ event: { payload, meta } }) =>
                 notifyMessage(email.passwordResetRequested(payload, meta)),
             ],
           },
 
-          'back:user:password-reset:completed': {
+          'back:password-reset:completed': {
             actions: [
               ({ event: { payload, meta } }) =>
                 notifyMessage(email.passwordResetCompleted(payload, meta)),
@@ -64,6 +64,7 @@ export class PasswordReset {
     this.messages.push(message)
   }
   send(event: PasswordResetEvents): (back.BackEvent | email.EmailEvent)[] {
+    this.messages = []
     this.#actor.send(event)
     return this.messages
   }

@@ -19,7 +19,8 @@ export class ProcessPasswordReset
     @Inject(PUBSUB) private readonly pubsub: IPubSub<PasswordResetEvents>,
     @Inject(EVENT_PRODUCER) private readonly producer: EventProducer,
   ) {
-    this.pubsub.subscribe('back:user:password-reset:*', this.handleEvent)
+    this.logger.verbose(`subscribing to 'back:password-reset:*' events`)
+    this.pubsub.subscribe('back:password-reset:*', this.handleEvent)
   }
 
   private handleEvent: ISubscriber<PasswordResetEvents> = event => {

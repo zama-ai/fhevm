@@ -23,19 +23,22 @@ export class ProcessAddressValidation
 
   constructor(
     @Inject(PUBSUB)
-    private readonly pupsub: IPubSub<back.BackEvent | web3.Web3Event>,
+    private readonly pubsub: IPubSub<back.BackEvent | web3.Web3Event>,
     @Inject(EVENT_PRODUCER) private readonly producer: EventProducer,
   ) {
-    this.pupsub.subscribe('*', this.handleEvent)
+    this.pubsub.subscribe('back:address:validation:requested', this.handleEvent)
+    this.pubsub.subscribe('web3:contract:validation:*', this.handleEvent)
   }
 
   private handleEvent: ISubscriber<back.BackEvent | web3.Web3Event> = event => {
+    this.logger.verbose(`event ${event.type} received`)
     return isAddressValidationEvent(event)
       ? this.execute(event)
       : Task.of<void, AppError>(void 0)
   }
 
   execute = (event: AddressValidationEvents): Task<void, AppError> => {
+    this.logger.debug(`processing ${event.type}`)
     return Task.of<AddressValidation, AppError>(new AddressValidation())
       .map(addressValidation => addressValidation.send(event))
       .chain(messages => {

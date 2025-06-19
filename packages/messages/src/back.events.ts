@@ -27,8 +27,8 @@ type EventTypes =
   | 'httpz:private-decrypt:completed'
   | 'httpz:public-decrypt:requested'
   | 'httpz:public-decrypt:completed'
-  | 'user:password-reset:requested'
-  | 'user:password-reset:completed'
+  | 'password-reset:requested'
+  | 'password-reset:completed'
 
 function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   key: Key,
@@ -124,11 +124,11 @@ const schemas = [
       }),
     ),
   }),
-  genSchema('user:password-reset:requested', {
+  genSchema('password-reset:requested', {
     email: z.string().email(),
     token: z.string(),
   }),
-  genSchema('user:password-reset:completed', {
+  genSchema('password-reset:completed', {
     email: z.string().email(),
   }),
 ] as const
@@ -169,12 +169,8 @@ export const httpzPublicDecryptRequested = factory(
 export const httpzPublicDecryptCompleted = factory(
   'httpz:public-decrypt:completed',
 )
-export const userPasswordResetRequested = factory(
-  'user:password-reset:requested',
-)
-export const userPasswordResetCompleted = factory(
-  'user:password-reset:completed',
-)
+export const passwordResetRequested = factory('password-reset:requested')
+export const passwordResetCompleted = factory('password-reset:completed')
 
 export function isBackEvent(data: unknown): data is BackEvent {
   return schema.safeParse(data).success

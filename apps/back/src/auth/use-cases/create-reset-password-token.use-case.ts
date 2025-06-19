@@ -66,7 +66,7 @@ export class CreateResetPasswordToken implements UseCase<Input, Output> {
         .chain(([token]) => {
           this.logger.debug(`publishing reset password requested event`)
           return this.producer.publish(
-            back.userPasswordResetRequested(
+            back.passwordResetRequested(
               {
                 requestId: generateRequestId(),
                 token: token.value,

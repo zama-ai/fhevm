@@ -1,7 +1,7 @@
 import { PUBSUB } from '#constants.js'
 import { Message } from '@aws-sdk/client-sqs'
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { SqsMessageHandler } from '@ssut/nestjs-sqs'
+import { SqsConsumerEventHandler, SqsMessageHandler } from '@ssut/nestjs-sqs'
 import { back, email, relayer, web3 } from 'messages'
 import { isAppError, type IPubSub } from 'utils'
 
@@ -17,7 +17,7 @@ export class SQSConsumer {
 
   @SqsMessageHandler('orchestrator')
   public async handleMessage(message: Message) {
-    const batchItemFailures: { itemIdentifier: string | undefined }[] = []
+    this.logger.verbose(`message ${message.MessageId} received`)
 
     if (message.Body) {
       const data: unknown = JSON.parse(message.Body)
@@ -71,12 +71,20 @@ export class SQSConsumer {
         // Note: I need to throw the error here so that the message
         // is kept in the queue and, after a while, it will be moved to
         // the dead letter queue
-        this.logger.verbose(
-          `pushing { itemIdentifier: ${message.MessageId} } into batchItemFailures`,
-        )
-        batchItemFailures.push({ itemIdentifier: message.MessageId })
+        throw error
       }
     }
-    return { batchItemFailures }
+
+    this.logger.verbose(`message ${message.MessageId} processed`)
+    // Note: By returning the message, we aknowledge that the message has been processed
+    // and the `sqs-consumer` library will delete it.
+    return message
+  }
+
+  @SqsConsumerEventHandler('orchestrator', 'processing_error')
+  public onProcessingError(error: Error, message: Message) {
+    this.logger.warn(
+      `❌ failed to process message ${message.MessageId}: ${error}`,
+    )
   }
 }

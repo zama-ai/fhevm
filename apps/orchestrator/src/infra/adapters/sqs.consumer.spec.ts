@@ -61,10 +61,9 @@ describe('SqsConsumer', () => {
         const message = encodeMessage(event)
         message.MessageId = messageId
 
-        const result = await consumer.handleMessage(message)
-        expect(result).toEqual({
-          batchItemFailures: [{ itemIdentifier: messageId }],
-        })
+        await expect(consumer.handleMessage(message)).rejects.toThrow(
+          'Mocked error',
+        )
       })
     })
   })

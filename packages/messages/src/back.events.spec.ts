@@ -111,6 +111,25 @@ describe('back', () => {
           { correlationId: faker.string.uuid() },
         ),
       },
+      {
+        event: back.passwordResetRequested(
+          {
+            requestId: generateRequestId(),
+            email: faker.internet.email(),
+            token: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: back.passwordResetCompleted(
+          {
+            requestId: generateRequestId(),
+            email: faker.internet.email(),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
     ])('identifies $event.type event', ({ event }) => {
       expect(back.isBackEvent(event)).toBe(true)
     })

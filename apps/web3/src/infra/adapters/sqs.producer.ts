@@ -47,7 +47,8 @@ export class SqsProducer {
         )
         .then(res => {
           this.logger.debug(
-            `message ${event.type} sent to queue ${this.#queueUrl} [${res.$metadata?.httpStatusCode}]`,
+            `message ${event.type} sent to queue ${this.#queueUrl} [${res
+              .$metadata?.httpStatusCode}]`,
           )
           resolve(void 0)
         })
