@@ -112,8 +112,10 @@ jobs:
           RPC_URL: http://anvil-node:8546
         run: |
           cp .env.example .env
+          cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
+          npx hardhat task:deployEmptyUUPSProxies
           npx hardhat task:upgradeGatewayConfig \
-            --current-implementation ../../previous-fhevm/gateway-contracts/contracts/GatewayConfig.sol:GatewayConfig \
+            --current-implementation previous-contracts/GatewayConfig.sol:GatewayConfig \
             --new-implementation contracts/GatewayConfig.sol:GatewayConfig \
             --reinitialize-args '[[{ "txSenderAddress": "0x30D7Fe34c8fD3417C8aa5F63cDb1f81e012c2042", "signerAddress": "0xdE4c747d9922EBF05EBb8937847F9C6097E847DD", "encryptionKey": "0xea8b8b710d770493a41b588808ea8e09d986561f73d523227718233f3b4742de793f18a9885136a9e7054b00ba0050a17f0c7d1bf180aaff5ece0fa3343afb1b" }]]' \
             --verify-contract false
