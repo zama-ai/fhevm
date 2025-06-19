@@ -4,10 +4,10 @@ scDeploy:
   # preventRedeployment: false
   nameOverride:
   image:
-    name: ghcr.io/zama-ai/fhevm-gateway/sc-bundle
-    tag: v0.1.0-rc11
+    name: ghcr.io/zama-ai/fhevm/host-contracts
+    tag: v0.7.0
   configmap:
-    name: "gateway-sc-addresses"
+    name: "sc-addresses"
     annotations:
   env:
     - name: MNEMONIC
@@ -18,6 +18,8 @@ scDeploy:
       value: "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
     - name: RPC_URL
       value: "http://gateway-node:8546"
+    # - name: HARDHAT_NETWORK
+    #   value: "sepolia"
   resources:
     requests:
       cpu: 100m
@@ -29,6 +31,19 @@ scDeploy:
     runAsNonRoot: true
     runAsUser: 10000
     fsGroup: 10001
+  deployCommands:
+  # - npx hardhat task:deploy
+  verifyContracts: false
+
+scUpgrade:
+  enabled: false
+  oldContracts:
+    image:
+      name: ghcr.io/zama-ai/fhevm/host-contracts
+      tag: v0.7.0-rc2
+  # Note: The upgrade process uses the new contracts image from scDeploy.image
+  upgradeCommands:
+  # - npx hardhat task:upgrade
 
 # Uncomment to use a specific node selector and toleration
 # nodeSelector:

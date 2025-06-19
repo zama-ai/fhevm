@@ -11,3 +11,4 @@
 {{- $scDebugStatefulSetNameDefault := printf "%s-%s" .Release.Name "debug" }}
 {{- default $scDebugStatefulSetNameDefault .Values.scDebug.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
+
