@@ -65,6 +65,7 @@ pub fn get_supported_ct_size_on_gpu(ct_type: i16) -> u64 {
 // TODO: refine retrying, possibly targeting a different GPU where appropriate
 pub fn reserve_memory_on_gpu(amount: u64, idx: usize) {
     let amount = 10 * amount;
+    println!(" \t GPU {} Reserving  {}", idx, amount);
     loop {
         let current_pool_size = gpu_mem_reservation[idx].load(std::sync::atomic::Ordering::SeqCst);
         println!(
@@ -82,7 +83,10 @@ pub fn reserve_memory_on_gpu(amount: u64, idx: usize) {
         if check_valid_cuda_malloc(new_pool_size, GpuIndex::new(idx as u32)) {
             break;
         } else {
-            println!("Insufficient memory - allocating {}", amount);
+            println!(
+                "\t => GPU {} Insufficient memory - allocating {}",
+                idx, amount
+            );
             // Remove reservation as failed
             release_memory_on_gpu(amount, idx);
             std::thread::sleep(std::time::Duration::from_millis(2));
