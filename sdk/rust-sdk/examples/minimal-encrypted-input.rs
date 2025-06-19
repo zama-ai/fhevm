@@ -12,7 +12,7 @@ fn main() -> Result<()> {
     println!("🔐 Creating encrypted input...");
 
     // Setup SDK
-    let mut sdk = FhevmSdkBuilder::new()
+    let sdk = FhevmSdkBuilder::new()
         .with_keys_directory("./keys")
         .with_gateway_chain_id(54321)
         .with_host_chain_id(12345)
