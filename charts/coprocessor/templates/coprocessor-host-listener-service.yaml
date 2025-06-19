@@ -1,0 +1,21 @@
+{{- if .Values.hostListener.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: {{ include "hostListenerName" . }}
+  name: {{ include "hostListenerName" . }}
+spec:
+  ports:
+    - name: metrics
+      port: {{ .Values.hostListener.ports.metrics }}
+      targetPort: metrics
+    - name: healthcheck
+      port: {{ .Values.hostListener.ports.healthcheck }}
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: {{ include "hostListenerName" . }}
+  type: ClusterIP
+{{- end }}

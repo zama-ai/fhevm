@@ -50,6 +50,12 @@ spec:
 {{ toYaml .Values.txSender.args | nindent 12 }}
           env:
 {{ toYaml .Values.txSender.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.txSender.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
           resources:
             requests:
               cpu: {{ .Values.txSender.resources.requests.cpu | default "100m" }}
@@ -57,4 +63,12 @@ spec:
             limits:
               cpu: {{ .Values.txSender.resources.limits.cpu | default "500m" }}
               memory: {{ .Values.txSender.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.txSender.probes .Values.txSender.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.txSender.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.txSender.probes .Values.txSender.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.txSender.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
 {{- end -}}

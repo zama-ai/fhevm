@@ -16,7 +16,7 @@ RUN mkdir -p /app && \
     mkdir -p /app /home/fhevm
 
 # Runtime
-FROM node:${NODE_VERSION} AS runtime
+FROM node:${NODE_VERSION} AS prod
 
 COPY --from=builder /lib/ /lib/
 COPY --from=builder /bin/bash /bin/bash
@@ -33,3 +33,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD node --version || exit 1
 
 ENTRYPOINT ["/bin/bash", "-c"]
+
+FROM prod AS dev

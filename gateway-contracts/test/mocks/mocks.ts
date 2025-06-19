@@ -50,6 +50,12 @@ describe("Mock contracts", function () {
     s3BucketUrl: DefaultString,
   };
 
+  const DefaultCustodian = {
+    txSenderAddress: DefaultAddress,
+    signerAddress: DefaultAddress,
+    encryptionKey: DefaultBytes,
+  };
+
   const DefaultHostChain = {
     chainId: DefaultUint256,
     fhevmExecutorAddress: DefaultAddress,
@@ -185,6 +191,7 @@ describe("Mock contracts", function () {
           DefaultUint256,
           [DefaultKmsNode],
           [DefaultCoprocessor],
+          [DefaultCustodian],
         ),
       )
         .to.emit(gatewayConfigMock, "InitializeGatewayConfig")
@@ -194,7 +201,14 @@ describe("Mock contracts", function () {
           DefaultUint256,
           toValues([DefaultKmsNode]),
           toValues([DefaultCoprocessor]),
+          toValues([DefaultCustodian]),
         );
+    });
+
+    it("Should emit Reinitialization event on reinitialization", async function () {
+      await expect(gatewayConfigMock.reinitializeV2([DefaultCustodian]))
+        .to.emit(gatewayConfigMock, "ReinitializeGatewayConfigV2")
+        .withArgs(toValues([DefaultCustodian]));
     });
 
     it("Should emit UpdatePauser event on update pauser call", async function () {

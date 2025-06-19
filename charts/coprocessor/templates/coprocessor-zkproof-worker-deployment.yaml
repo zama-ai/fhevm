@@ -1,0 +1,74 @@
+{{- if .Values.zkProofWorker.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-zkproof-worker
+    app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
+  name: {{ include "zkProofWorkerName" . }}
+spec:
+  replicas: {{ .Values.zkProofWorker.replicas | default 0 }}
+  selector:
+    matchLabels:
+      app: coprocessor-zkproof-worker
+  {{- if .Values.zkProofWorker.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.zkProofWorker.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-zkproof-worker
+        app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- if and .Values.zkProofWorker.affinity .Values.zkProofWorker.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.zkProofWorker.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.zkProofWorker.tolerations .Values.zkProofWorker.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.zkProofWorker.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.zkProofWorker.serviceAccountName }}
+      serviceAccountName: {{ .Values.zkProofWorker.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: coprocessor-zkproof-worker
+          image: {{ .Values.zkProofWorker.image.name }}:{{ .Values.zkProofWorker.image.tag }}
+          command: ["zkproof_worker"]
+          args:
+{{ toYaml .Values.zkProofWorker.args | nindent 12 }}
+          env:
+{{ toYaml .Values.zkProofWorker.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.zkProofWorker.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.zkProofWorker.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.zkProofWorker.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.zkProofWorker.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.zkProofWorker.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.zkProofWorker.probes .Values.zkProofWorker.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.zkProofWorker.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.zkProofWorker.probes .Values.zkProofWorker.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.zkProofWorker.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end -}}
