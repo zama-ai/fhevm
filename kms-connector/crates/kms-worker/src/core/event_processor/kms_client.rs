@@ -12,11 +12,19 @@ use std::time::{Duration, Instant};
 use tonic::{Code, Request, Response, Status, transport::Channel};
 use tracing::{error, info, warn};
 
+/// The struct handling the communication with the KMS Core.
 #[derive(Clone, Debug)]
 pub struct KmsClient {
+    /// The internal KMS Core client from the `kms_grpc` crate.
     inner: CoreServiceEndpointClient<Channel>,
+
+    /// The timeout to retrieve the response of a public decryption operation.
     public_decryption_timeout: Duration,
+
+    /// The timeout to retrieve the response of a user decryption operation.
     user_decryption_timeout: Duration,
+
+    /// The interval between retries.
     retry_interval: Duration,
 }
 

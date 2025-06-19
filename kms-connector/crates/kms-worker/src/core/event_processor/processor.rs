@@ -7,6 +7,7 @@ use connector_utils::types::{
     GatewayEvent, KmsGrpcRequest, KmsResponse, db::GatewayEventTransaction,
 };
 
+/// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
     type Event: Send;
 
@@ -16,9 +17,13 @@ pub trait EventProcessor: Send {
     ) -> impl Future<Output = anyhow::Result<KmsResponse>> + Send;
 }
 
+/// Struct that processes Gateway's events coming from a `Postgres` database.
 #[derive(Clone)]
 pub struct DbEventProcessor<P: Provider> {
+    /// The GRPC client used to communicate with the KMS Core.
     kms_client: KmsClient,
+
+    /// The entity used to process decryption requests.
     decryption_processor: DecryptionProcessor<P>,
 }
 
@@ -30,6 +35,7 @@ impl<P: Provider> DbEventProcessor<P> {
         }
     }
 
+    /// Prepares the GRPC request associated to the received `event`.
     async fn prepare_request(&self, event: GatewayEvent) -> anyhow::Result<KmsGrpcRequest> {
         match event {
             GatewayEvent::PublicDecryption(req) => {
@@ -46,7 +52,7 @@ impl<P: Provider> DbEventProcessor<P> {
                     )
                     .await
             }
-            _ => todo!(),
+            _ => unimplemented!(),
         }
     }
 }

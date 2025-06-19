@@ -24,8 +24,12 @@ use std::borrow::Cow;
 use tracing::info;
 
 #[derive(Clone)]
+/// The struct responsible of processing incoming decryption requests.
 pub struct DecryptionProcessor<P: Provider> {
+    /// The EIP712 domain of the `Decryption` contract.
     domain: Eip712Domain,
+
+    /// The entity used to collect ciphertexts from S3 buckets.
     s3_service: S3Service<P>,
 }
 

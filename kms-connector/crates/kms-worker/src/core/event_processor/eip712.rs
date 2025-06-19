@@ -8,6 +8,7 @@ use tracing::warn;
 
 const ERR_PARSE_CHECKSUMMED: &str = "error parsing checksummed address";
 
+/// Converts an alloy EIP-712 domain into protobuf domain.
 pub fn alloy_to_protobuf_domain(domain: &Eip712Domain) -> anyhow::Result<Eip712DomainMsg> {
     let name = domain
         .name
@@ -38,7 +39,7 @@ pub fn alloy_to_protobuf_domain(domain: &Eip712Domain) -> anyhow::Result<Eip712D
     Ok(domain_msg)
 }
 
-/// Convert a protobuf domain message to an alloy EIP-712 domain
+/// Converts a protobuf domain message to an alloy EIP-712 domain
 pub fn protobuf_to_alloy_domain(pb_domain: &Eip712DomainMsg) -> Result<Eip712Domain> {
     // any salt that has the wrong length will result in an error
     let salt = match pb_domain.salt.as_ref() {
@@ -74,7 +75,7 @@ pub fn protobuf_to_alloy_domain(pb_domain: &Eip712DomainMsg) -> Result<Eip712Dom
     Ok(out)
 }
 
-/// Verify the EIP-712 signature for a user decryption request
+/// Verifies the EIP-712 signature for a user decryption request
 pub fn verify_user_decryption_eip712(req: &UserDecryptionRequest) -> Result<()> {
     // Check if client_address is a valid Ethereum address format
     if !req.client_address.starts_with("0x") {

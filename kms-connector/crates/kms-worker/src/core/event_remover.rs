@@ -1,14 +1,16 @@
 use alloy::primitives::U256;
 use connector_utils::types::{GatewayEvent, db::GatewayEventTransaction};
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
+/// Interface used to remove Gateway's events from some storage.
 pub trait EventRemover: Send {
     type Event;
 
     fn remove_event(&self, event: Self::Event) -> impl Future<Output = ()> + Send;
 }
 
+/// Struct that removes Gateway's events from a `Postgres` database.
 #[derive(Clone)]
 pub struct DbEventRemover {
     db_pool: Pool<Postgres>,
@@ -21,7 +23,7 @@ impl EventRemover for DbEventRemover {
         match self.remove_from_db(&event_tx.event).await {
             Ok(query_result) => {
                 if let Err(e) = event_tx.tx.commit().await {
-                    return warn!("Failed to commit Postgres transaction: {e}");
+                    return error!("Failed to commit Postgres transaction: {e}");
                 }
                 if query_result.rows_affected() == 1 {
                     info!("Successfully removed {} from DB!", event_tx.event);
@@ -34,7 +36,7 @@ impl EventRemover for DbEventRemover {
             }
 
             Err(err) => {
-                warn!("Failed to remove {} from DB: {}", event_tx.event, err);
+                error!("Failed to remove {} from DB: {}", event_tx.event, err);
                 if let Err(e) = event_tx.tx.rollback().await {
                     warn!("Failed to rollback Postgres transaction: {e}");
                 }

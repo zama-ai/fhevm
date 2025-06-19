@@ -2,12 +2,14 @@ use anyhow::anyhow;
 use connector_utils::types::{GatewayEvent, db::GatewayEventTransaction};
 use sqlx::{Pool, Postgres, postgres::PgListener};
 
+/// Interface used to pick Gateway's events from some storage.
 pub trait EventPicker {
     type Event;
 
     fn pick_event(&mut self) -> impl Future<Output = anyhow::Result<Self::Event>>;
 }
 
+// Postgres notifications
 const PUBLIC_DECRYPT_NOTIFICATION: &str = "public_decryption_request_available";
 const USER_DECRYPT_NOTIFICATION: &str = "user_decryption_request_available";
 const PRE_KEYGEN_NOTIFICATION: &str = "preprocess_keygen_request_available";
@@ -16,8 +18,12 @@ const KEYGEN_NOTIFICATION: &str = "keygen_request_available";
 const KSKGEN_NOTIFICATION: &str = "kskgen_request_available";
 const CRSGEN_NOTIFICATION: &str = "crs_request_available";
 
+/// Struct that collects Gateway's events from a `Postgres` database.
 pub struct DbEventPicker {
+    /// The DB connection pool used to query events when notified.
     db_pool: Pool<Postgres>,
+
+    /// The DB listener to watch for notifications.
     db_listener: PgListener,
 }
 
@@ -58,8 +64,12 @@ impl EventPicker for DbEventPicker {
     type Event = GatewayEventTransaction;
 
     async fn pick_event(&mut self) -> anyhow::Result<Self::Event> {
+        // Wait for notification
         let notification = self.db_listener.recv().await?;
+
+        // Init transaction before retrieving event from the DB
         let tx = self.db_pool.begin().await?;
+
         let event = match notification.channel() {
             PUBLIC_DECRYPT_NOTIFICATION => self.pick_public_decryption_request().await?,
             USER_DECRYPT_NOTIFICATION => self.pick_user_decryption_request().await?,

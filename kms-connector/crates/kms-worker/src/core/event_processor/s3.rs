@@ -13,9 +13,13 @@ use tracing::{debug, info, warn};
 // Global cache for coprocessor S3 bucket URLs
 static S3_BUCKET_CACHE: LazyLock<DashMap<Address, String>> = LazyLock::new(DashMap::new);
 
+/// Struct used to fetch ciphertext from S3 buckets.
 #[derive(Clone)]
 pub struct S3Service<P: Provider> {
+    /// The instance of the `GatewayConfig` contract.
     gateway_config_contract: GatewayConfigInstance<(), P>,
+
+    /// An optional S3 bucket fallback configuration.
     fallback_config: Option<S3Config>,
 }
 

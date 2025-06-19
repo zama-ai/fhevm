@@ -12,10 +12,18 @@ use connector_utils::conn::{GatewayProvider, connect_to_db, connect_to_gateway};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+/// Struct processing stored Gateway's events.
 pub struct KmsWorker<E, Proc, Publ, R> {
+    /// The entity responsible for picking events to process.
     event_picker: E,
+
+    /// The entity responsible for processing events.
     event_processor: Proc,
+
+    /// The entity responsible for publishing KMS Core's responses.
     response_publisher: Publ,
+
+    /// The entity responsible for removing events from the database.
     event_remover: R,
 }
 
@@ -27,6 +35,7 @@ where
     R: EventRemover<Event = T> + Clone + Send + 'static,
     T: Send + Sync + 'static,
 {
+    /// Creates a new `KmsWorker<E, Proc, Publ, R>`.
     pub fn new(
         event_picker: E,
         event_processor: Proc,
@@ -41,6 +50,7 @@ where
         }
     }
 
+    /// Starts the `KmsWorker`.
     pub async fn start(self, cancel_token: CancellationToken) {
         info!("Starting KmsWorker");
         tokio::select! {
@@ -49,6 +59,7 @@ where
         }
     }
 
+    /// Runs the event processing loop of the `KmsWorker`.
     async fn run(mut self) {
         loop {
             match self.event_picker.pick_event().await {
@@ -60,7 +71,8 @@ where
         }
     }
 
-    fn spawn_event_processing_task(&self, event: E::Event) {
+    /// Spawns a new task dedicated to the processing of an event.
+    fn spawn_event_processing_task(&self, event: T) {
         let event_processor = self.event_processor.clone();
         let response_publisher = self.response_publisher.clone();
         let event_remover = self.event_remover.clone();
@@ -88,6 +100,7 @@ impl
         DbEventRemover,
     >
 {
+    /// Creates a new `KmsWorker` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<Self> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let provider = connect_to_gateway(&config.gateway_url).await?;
