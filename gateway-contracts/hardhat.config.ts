@@ -19,7 +19,7 @@ import "./tasks/upgradeProxy";
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
-const NUM_ACCOUNTS = 20;
+export const NUM_ACCOUNTS = 30;
 
 const chainIds = {
   hardhat: 31337,

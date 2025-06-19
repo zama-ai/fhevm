@@ -2,6 +2,7 @@ use crate::keyset::fetch_keyset;
 use crate::squash_noise::SquashNoiseCiphertext;
 use crate::HandleItem;
 use crate::KeySet;
+use crate::UploadJob;
 use crate::{Config, DBConfig, ExecutionError};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::compact_hex;
@@ -14,6 +15,7 @@ use std::time::SystemTime;
 use tfhe::set_server_key;
 use tokio::select;
 use tokio::sync::mpsc::Sender;
+use tokio::time::{interval, sleep};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
@@ -30,7 +32,7 @@ enum ConnStatus {
 /// Executes the worker logic for the SnS task.
 pub(crate) async fn run_loop(
     conf: &Config,
-    tx: &Sender<HandleItem>,
+    tx: &Sender<UploadJob>,
     token: CancellationToken,
 ) -> Result<(), ExecutionError> {
     let tenant_api_key = &conf.tenant_api_key;
@@ -63,11 +65,14 @@ pub(crate) async fn run_loop(
             match acquire_connection(&pool, token.clone()).await {
                 ConnStatus::Established(conn) => conn,
                 ConnStatus::Failed => {
-                    tokio::time::sleep(RETRY_DB_CONN_INTERVAL).await;
+                    sleep(RETRY_DB_CONN_INTERVAL).await;
                     continue; // Retry to reacquire a connection
                 }
                 ConnStatus::Cancelled => break,
             };
+
+        let mut gc_ticker = interval(conf.cleanup_interval);
+        let mut polling_ticker = interval(Duration::from_secs(conf.polling_interval.into()));
 
         loop {
             match fetch_and_execute_sns_tasks(&mut conn, tx, &keys, conf).await {
@@ -93,11 +98,15 @@ pub(crate) async fn run_loop(
 
             select! {
                 _ = token.cancelled() => return Ok(()),
-                notification = listener.try_recv() => {
-                    info!(target: "worker", "Received notification {:?}", notification);
+                n = listener.try_recv() => {
+                    info!(target: "worker", "Received notification {:?}", n);
                 },
-                _ = tokio::time::sleep(Duration::from_secs(conf.polling_interval.into())) => {
+                _ = polling_ticker.tick() => {
                     debug!(target: "worker", "Polling timeout, rechecking for tasks");
+                },
+                // Garbage collecting
+                _ = gc_ticker.tick() => {
+                    garbage_collect(&mut conn).await?;
                 }
             }
         }
@@ -106,10 +115,36 @@ pub(crate) async fn run_loop(
     Ok(())
 }
 
+// Clean up the database by removing old ciphertexts128 already uploaded to S3.
+async fn garbage_collect(conn: &mut PoolConnection<Postgres>) -> Result<(), ExecutionError> {
+    let start = SystemTime::now();
+    let rows = sqlx::query!(
+        "UPDATE ciphertexts c
+        SET ciphertext128 = NULL
+        WHERE ciphertext128 is NOT NULL -- needed for getting an accurate rows_affected
+        AND EXISTS (
+            SELECT 1
+            FROM ciphertext_digest d
+            WHERE d.tenant_id = c.tenant_id
+            AND d.handle = c.handle
+            AND d.ciphertext128 IS NOT NULL
+        );"
+    )
+    .execute(conn.as_mut())
+    .await?.rows_affected();
+ 
+    if rows > 0 {
+        let _s = telemetry::tracer_with_start_time("cleanup_ct128", start);
+        info!(target: "worker", "Cleaning up old ciphertexts128, rows_affected: {}", rows);
+    }
+
+    Ok(())
+}
+
 /// Fetch and process SnS tasks from the database.
 async fn fetch_and_execute_sns_tasks(
     conn: &mut PoolConnection<Postgres>,
-    tx: &Sender<HandleItem>,
+    tx: &Sender<UploadJob>,
     keys: &KeySet,
     conf: &DBConfig,
 ) -> Result<(), ExecutionError> {
@@ -124,10 +159,21 @@ async fn fetch_and_execute_sns_tasks(
     let trx = &mut db_txn;
 
     if let Some(mut tasks) = query_sns_tasks(trx, conf.batch_limit).await? {
-        process_tasks(trx, &mut tasks, keys, tx).await?;
+        let t = telemetry::tracer("batch_execution");
+        t.set_attribute("count", tasks.len().to_string());
+
+        process_tasks(&mut tasks, keys, tx)?;
         update_computations_status(trx, &tasks).await?;
+
+        let s = t.child_span("batch_store_ciphertext128");
         update_ciphertext128(trx, &tasks).await?;
         notify_ciphertext128_ready(trx, &conf.notify_channel).await?;
+
+        // Try to enqueue the tasks for upload in the DB
+        // This is a best-effort attempt, as the upload worker might not be available
+        enqueue_upload_tasks(trx, &tasks).await?;
+        telemetry::end_span(s);
+
         db_txn.commit().await?;
     } else {
         db_txn.rollback().await?;
@@ -231,12 +277,21 @@ async fn get_remaining_tasks(
     Ok(records_count.unwrap_or(0))
 }
 
-/// Processes the tasks by decompressing and transforming ciphertexts.
-async fn process_tasks(
+async fn enqueue_upload_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
+    tasks: &[HandleItem],
+) -> Result<(), ExecutionError> {
+    for task in tasks.iter() {
+        task.enqueue_upload_task(db_txn).await?;
+    }
+    Ok(())
+}
+
+/// Processes the tasks by decompressing and transforming ciphertexts.
+fn process_tasks(
     tasks: &mut [HandleItem],
     keys: &KeySet,
-    tx: &Sender<HandleItem>,
+    tx: &Sender<UploadJob>,
 ) -> Result<(), ExecutionError> {
     for task in tasks.iter_mut() {
         let ct64_compressed = task.ct64_compressed.as_ref();
@@ -282,14 +337,11 @@ async fn process_tasks(
             }
         };
 
-        // Enqueue the task for upload in DB
-        task.enqueue_upload_task(db_txn).await?;
-
         // Start uploading the ciphertexts as soon as the ct128 is computed
         //
         // The service must continue running the squashed noise algorithm,
         // regardless of the availability of the upload worker.
-        if let Err(err) = tx.try_send(task.clone()) {
+        if let Err(err) = tx.try_send(UploadJob::Normal(task.clone())) {
             // This could happen if either we are experiencing a burst of tasks
             // or the upload worker cannot recover the connection to AWS S3
             //
@@ -326,28 +378,23 @@ async fn update_ciphertext128(
             let ciphertext128 = &task.ct128_uncompressed;
             let s = task.otel.child_span("ct128_db_insert");
 
-            // Insert the ciphertext128 into the database only if
-            // the uploader has not already put it in AWS S3
+            // Insert the ciphertext128 into the database for reliability
+            // Later on, we clean up all uploaded ct128
             let res = sqlx::query!(
-                "
-                UPDATE ciphertexts
-                SET ciphertext128 = $1
-                WHERE handle = $2
-                AND EXISTS (
-                    SELECT 1
-                    FROM ciphertext_digest
-                    WHERE handle = $2
-                    AND ciphertext128 IS NULL
-                );",
-                ciphertext128.as_ref(),
-                task.handle
-            )
-            .execute(db_txn.as_mut())
-            .await;
+                    "
+                    UPDATE ciphertexts
+                    SET ciphertext128 = $1
+                    WHERE handle = $2;",
+                    ciphertext128.as_ref(),
+                    task.handle
+                )
+                .execute(db_txn.as_mut())
+                .await;
 
             match res {
-                Ok(_) => {
-                    debug!(target: "worker", handle = ?task.handle, "Inserted ct128 in DB");
+                Ok(val) => {
+                    info!(target: "worker", handle = compact_hex(&task.handle),
+                        query_res = format!("{:?}", val),  "Inserted ct128 in DB");
                     telemetry::end_span(s);
                 }
                 Err(err) => {

@@ -1,4 +1,4 @@
-use crate::{keyset::fetch_keys, squash_noise::safe_deserialize, Config, DBConfig, HandleItem};
+use crate::{keyset::fetch_keys, squash_noise::safe_deserialize, Config, DBConfig, UploadJob};
 use anyhow::Ok;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -9,6 +9,7 @@ use std::{
 use test_harness::instance::DBInstance;
 use tfhe::{prelude::FheDecrypt, ClientKey, SquashedNoiseFheUint};
 use tokio::{sync::mpsc, time::sleep};
+use tracing::Level;
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 const TENANT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";
@@ -81,7 +82,7 @@ async fn test_decryptable(
 async fn setup() -> anyhow::Result<(
     sqlx::PgPool,
     Option<ClientKey>,
-    tokio::sync::mpsc::Receiver<HandleItem>,
+    tokio::sync::mpsc::Receiver<UploadJob>,
     DBInstance,
 )> {
     tracing_subscriber::fmt().json().with_level(true).init();
@@ -97,10 +98,12 @@ async fn setup() -> anyhow::Result<(
             notify_channel: "fhevm".to_string(),
             batch_limit: 10,
             polling_interval: 60000,
+            cleanup_interval: Duration::from_secs(10),
             max_connections: 5,
         },
         s3: crate::S3Config::default(),
         service_name: "test-sns-worker".to_owned(),
+        log_level: Level::INFO,
     };
 
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -108,7 +111,7 @@ async fn setup() -> anyhow::Result<(
         .connect(&conf.db.url)
         .await?;
 
-    let (upload_tx, upload_rx) = mpsc::channel::<HandleItem>(10);
+    let (upload_tx, upload_rx) = mpsc::channel::<UploadJob>(10);
 
     let token = test_instance.parent_token.child_token();
     let (client_key, _) = fetch_keys(&pool, &TENANT_API_KEY.to_owned()).await?;

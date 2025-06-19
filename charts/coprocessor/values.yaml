@@ -71,7 +71,7 @@ dbMigration:
     enabled: false
     items: []
 
-fhevmListener:
+hostListener:
   enabled: false
   nameOverride:
   image:
@@ -94,7 +94,8 @@ fhevmListener:
     - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=ws://host-node:8545
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -105,6 +106,22 @@ fhevmListener:
     limits:
       cpu: 500m
       memory: 512Mi
+  # probes: enable and configure liveness/readiness health checks
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
   affinity:
     enabled: false
   tolerations:
@@ -139,7 +156,8 @@ gwListener:
     - --gw-url=ws://gateway-anvil-node:8546
     - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -150,6 +168,21 @@ gwListener:
     limits:
       cpu: 500m
       memory: 512Mi
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
   affinity:
     enabled: false
   tolerations:
@@ -186,7 +219,8 @@ tfheWorker:
   args:
     - --coprocessor-private-key=/accounts/coprocessor.hex
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -197,6 +231,21 @@ tfheWorker:
     limits:
       cpu: 500m
       memory: 512Mi
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
   tracing:
     enabled: false
     endpoint: ""
@@ -229,7 +278,8 @@ zkProofWorker:
     - --pg-listen-channel="event_zkpok_new_work"
     - --pg-notify-channel="event_zkpok_computed"
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -240,6 +290,21 @@ zkProofWorker:
     limits:
       cpu: 500m
       memory: 512Mi
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
   affinity:
     enabled: false
   tolerations:
@@ -278,7 +343,8 @@ snsWorker:
     - --pg-polling-interval=60
     - --pg-pool-connections=10
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -289,6 +355,21 @@ snsWorker:
     limits:
       cpu: 500m
       memory: 512Mi
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
   affinity:
     enabled: false
   tolerations:
@@ -332,7 +413,8 @@ txSender:
     - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
     - --ciphertext-storage-address=$(CIPHERTEXT_STORAGE_ADDRESS)
   ports:
-    metrics: "9100"
+    metrics: 9100
+    healthcheck: 8080
   serviceMonitor:
     enabled: false
   serviceAccountName:
@@ -343,6 +425,21 @@ txSender:
     limits:
       cpu: 500m
       memory: 512Mi
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
   affinity:
     enabled: false
   tolerations:

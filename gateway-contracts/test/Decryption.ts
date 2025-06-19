@@ -7,6 +7,7 @@ import hre from "hardhat";
 import {
   CiphertextCommits,
   Decryption,
+  Decryption__factory,
   GatewayConfig,
   IDecryption,
   KmsManagement,
@@ -243,6 +244,27 @@ describe("Decryption", function () {
 
     return { ...fixtureData, snsCiphertextMaterials, keyId1 };
   }
+
+  describe("Deployment", function () {
+    let decryptionFactory: Decryption__factory;
+
+    beforeEach(async function () {
+      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      decryption = fixtureData.decryption;
+      owner = fixtureData.owner;
+
+      // Get the Decryption contract factory
+      decryptionFactory = await hre.ethers.getContractFactory("Decryption", owner);
+    });
+
+    it("Should revert because initialization is not from an empty proxy", async function () {
+      await expect(
+        hre.upgrades.upgradeProxy(decryption, decryptionFactory, {
+          call: { fn: "initializeFromEmptyProxy" },
+        }),
+      ).to.be.revertedWithCustomError(decryption, "NotInitializingFromEmptyProxy");
+    });
+  });
 
   describe("Public Decryption", function () {
     let eip712Message: EIP712;

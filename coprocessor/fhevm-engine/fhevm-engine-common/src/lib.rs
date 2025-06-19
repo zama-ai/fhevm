@@ -1,3 +1,4 @@
+pub mod healthz_server;
 pub mod keys;
 pub mod telemetry;
 pub mod tenant_keys;

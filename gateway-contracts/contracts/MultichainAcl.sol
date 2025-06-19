@@ -4,16 +4,22 @@ pragma solidity ^0.8.24;
 import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./interfaces/IMultichainAcl.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
+import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
 
 /// @title MultichainAcl smart contract
 /// @dev See {IMultichainAcl}
-contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks, Pausable {
+contract MultichainAcl is
+    IMultichainAcl,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeableEmptyProxy,
+    GatewayConfigChecks,
+    Pausable
+{
     /// @notice The address of the GatewayConfig contract for protocol state calls.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -78,7 +84,7 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @notice Initializes the contract.
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual reinitializer(2) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(2) {
         __Ownable_init(owner());
         __Pausable_init();
     }

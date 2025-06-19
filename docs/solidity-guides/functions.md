@@ -1,26 +1,35 @@
 # Smart contracts - FHEVM API
 
-This document provides an overview of the functions available in the `FHE` Solidity library. The FHE library provides functionality for working with encrypted types and performing operations on them. It implements fully homomorphic encryption (FHE) operations in Solidity.
+This document provides an overview of the functions available in the `FHE` Solidity library. The FHE library provides
+functionality for working with encrypted types and performing operations on them. It implements fully homomorphic
+encryption (FHE) operations in Solidity.
 
 ## Overview
 
-The `FHE` Solidity library provides essential functionality for working with encrypted data types and performing fully homomorphic encryption (FHE) operations in smart contracts. It is designed to streamline the developer experience while maintaining flexibility and performance.
+The `FHE` Solidity library provides essential functionality for working with encrypted data types and performing fully
+homomorphic encryption (FHE) operations in smart contracts. It is designed to streamline the developer experience while
+maintaining flexibility and performance.
 
 ### **Core Functionality**
 
 - **Homomorphic Operations**: Enables arithmetic, bitwise, and comparison operations on encrypted values.
-- **Ciphertext-Plaintext Interoperability**: Supports operations that mix encrypted and plaintext operands, provided the plaintext operand's size does not exceed the encrypted operand's size.
+- **Ciphertext-Plaintext Interoperability**: Supports operations that mix encrypted and plaintext operands, provided the
+  plaintext operand's size does not exceed the encrypted operand's size.
   - Example: `add(uint8 a, euint8 b)` is valid, but `add(uint32 a, euint16 b)` is not.
   - Ciphertext-plaintext operations are generally faster and consume less gas than ciphertext-ciphertext operations.
-- **Implicit Upcasting**: Automatically adjusts operand types when necessary to ensure compatibility during operations on encrypted data.
+- **Implicit Upcasting**: Automatically adjusts operand types when necessary to ensure compatibility during operations
+  on encrypted data.
 
 ### **Key Features**
 
-- **Flexibility**: Handles a wide range of encrypted data types, including booleans, integers, addresses, and byte arrays.
-- **Performance Optimization**: Prioritizes efficient computation by supporting optimized operator versions for mixed plaintext and ciphertext inputs.
+- **Flexibility**: Handles a wide range of encrypted data types, including booleans, integers, addresses, and byte
+  arrays.
+- **Performance Optimization**: Prioritizes efficient computation by supporting optimized operator versions for mixed
+  plaintext and ciphertext inputs.
 - **Ease of Use**: Offers consistent APIs across all supported data types, enabling a smooth developer experience.
 
-The library ensures that all operations on encrypted data follow the constraints of FHE while abstracting complexity, allowing developers to focus on building privacy-preserving smart contracts.
+The library ensures that all operations on encrypted data follow the constraints of FHE while abstracting complexity,
+allowing developers to focus on building privacy-preserving smart contracts.
 
 ## Types
 
@@ -59,7 +68,6 @@ The library ensures that all operations on encrypted data follow the constraints
 - **Casting between encrypted types**: `FHE.asEbool` converts encrypted integers to encrypted booleans
 - **Casting to encrypted types**: `FHE.asEuintX` converts plaintext values to encrypted types
 - **Casting to encrypted addresses**: `FHE.asEaddress` converts plaintext addresses to encrypted addresses
-- **Casting to encrypted bytes**: `FHE.asEbytesX` converts plaintext bytes to encrypted bytes
 
 #### `asEuint`
 
@@ -69,11 +77,16 @@ The `asEuint` functions serve three purposes:
 - cast a `euintX` typed ciphertext to a `euintY` typed ciphertext, where `X != Y`;
 - trivially encrypt a plaintext value.
 
-The first case is used to process encrypted inputs, e.g. user-provided ciphertexts. Those are generally included in a transaction payload.
+The first case is used to process encrypted inputs, e.g. user-provided ciphertexts. Those are generally included in a
+transaction payload.
 
-The second case is self-explanatory. When `X > Y`, the most significant bits are dropped. When `X < Y`, the ciphertext is padded to the left with trivial encryptions of `0`.
+The second case is self-explanatory. When `X > Y`, the most significant bits are dropped. When `X < Y`, the ciphertext
+is padded to the left with trivial encryptions of `0`.
 
-The third case is used to "encrypt" a public value so that it can be used as a ciphertext. Note that what we call a trivial encryption is **not** secure in any sense. When trivially encrypting a plaintext value, this value is still visible in the ciphertext bytes. More information about trivial encryption can be found [here](https://www.zama.ai/post/tfhe-deep-dive-part-1).
+The third case is used to "encrypt" a public value so that it can be used as a ciphertext. Note that what we call a
+trivial encryption is **not** secure in any sense. When trivially encrypting a plaintext value, this value is still
+visible in the ciphertext bytes. More information about trivial encryption can be found
+[here](https://www.zama.ai/post/tfhe-deep-dive-part-1).
 
 **Examples**
 
@@ -106,7 +119,8 @@ Sets the FHEVM configuration for encrypted operations.
 function isInitialized(T v) internal pure returns (bool)
 ```
 
-Returns true if the encrypted value is initialized, false otherwise. Supported for all encrypted types (T can be ebool, euintX, eaddress, ebytesX).
+Returns true if the encrypted value is initialized, false otherwise. Supported for all encrypted types (T can be ebool,
+euintX, eaddress, ebytesX).
 
 ### Arithmetic operations
 
@@ -164,11 +178,12 @@ function max(uint32 a, euint8 b) internal view returns (euint32)
 
 #### Unary operators (`neg`, `not`)
 
-There are two unary operators: `neg` (`-`) and `not` (`!`). Note that since we work with unsigned integers, the result of negation is interpreted as the modular opposite. The `not` operator returns the value obtained after flipping all the bits of the operand.
+There are two unary operators: `neg` (`-`) and `not` (`!`). Note that since we work with unsigned integers, the result
+of negation is interpreted as the modular opposite. The `not` operator returns the value obtained after flipping all the
+bits of the operand.
 
-{% hint style="info" %}
-More information about the behavior of these operators can be found at the [TFHE-rs docs](https://docs.zama.ai/tfhe-rs/fhe-computation/operations/arithmetic-operations).
-{% endhint %}
+{% hint style="info" %} More information about the behavior of these operators can be found at the
+[TFHE-rs docs](https://docs.zama.ai/tfhe-rs/fhe-computation/operations/arithmetic-operations). {% endhint %}
 
 ### Bitwise operations
 
@@ -176,7 +191,9 @@ More information about the behavior of these operators can be found at the [TFHE
 
 #### Bitwise operations (`AND`, `OR`, `XOR`)
 
-Unlike other binary operations, bitwise operations do not natively accept a mix of ciphertext and plaintext inputs. To ease developer experience, the `FHE` library adds function overloads for these operations. Such overloads implicitely do a trivial encryption before actually calling the operation function, as shown in the examples below.
+Unlike other binary operations, bitwise operations do not natively accept a mix of ciphertext and plaintext inputs. To
+ease developer experience, the `FHE` library adds function overloads for these operations. Such overloads implicitely do
+a trivial encryption before actually calling the operation function, as shown in the examples below.
 
 Available for euint\* types:
 
@@ -222,11 +239,12 @@ function rotr(euint32 a, euint16 b) internal view returns (euint32)
 
 ### Comparison operation (`eq`, `ne`, `ge`, `gt`, `le`, `lt`)
 
-{% hint style="info" %}
-**Note** that in the case of ciphertext-plaintext operations, since our backend only accepts plaintext right operands, calling the operation with a plaintext left operand will actually invert the operand order and call the _opposite_ comparison.
-{% endhint %}
+{% hint style="info" %} **Note** that in the case of ciphertext-plaintext operations, since our backend only accepts
+plaintext right operands, calling the operation with a plaintext left operand will actually invert the operand order and
+call the _opposite_ comparison. {% endhint %}
 
-The result of comparison operations is an encrypted boolean (`ebool`). In the backend, the boolean is represented by an encrypted unsinged integer of bit width 8, but this is abstracted away by the Solidity library.
+The result of comparison operations is an encrypted boolean (`ebool`). In the backend, the boolean is represented by an
+encrypted unsinged integer of bit width 8, but this is abstracted away by the Solidity library.
 
 Available for all encrypted types:
 
@@ -265,7 +283,8 @@ function select(ebool control, T a, T b) internal returns (T)
 
 If control is true, returns a, otherwise returns b. Available for ebool, eaddress, and ebytes\* types.
 
-This operator takes three inputs. The first input `b` is of type `ebool` and the two others of type `euintX`. If `b` is an encryption of `true`, the first integer parameter is returned. Otherwise, the second integer parameter is returned.
+This operator takes three inputs. The first input `b` is of type `ebool` and the two others of type `euintX`. If `b` is
+an encryption of `true`, the first integer parameter is returned. Otherwise, the second integer parameter is returned.
 
 #### Example
 
@@ -280,7 +299,8 @@ function select(ebool b, euint8 val1, euint8 val2) internal view returns (euint8
 
 Random encrypted integers can be generated fully on-chain.
 
-That can only be done during transactions and not on an `eth_call` RPC method, because PRNG state needs to be mutated on-chain during generation.
+That can only be done during transactions and not on an `eth_call` RPC method, because PRNG state needs to be mutated
+on-chain during generation.
 
 #### Example
 
@@ -291,7 +311,8 @@ euint32 r = FHE.randEuint32();
 
 ## Access control functions
 
-The `FHE` library provides a robust set of access control functions for managing permissions on encrypted values. These functions ensure that encrypted data can only be accessed or manipulated by authorized accounts or contracts.
+The `FHE` library provides a robust set of access control functions for managing permissions on encrypted values. These
+functions ensure that encrypted data can only be accessed or manipulated by authorized accounts or contracts.
 
 ### Permission management
 
@@ -305,13 +326,17 @@ function allowTransient(T value, address account) internal
 
 **Descriptions**
 
-- **`allow`**: Grants **permanent access** to a specific address. Permissions are stored persistently in a dedicated ACL contract.
+- **`allow`**: Grants **permanent access** to a specific address. Permissions are stored persistently in a dedicated ACL
+  contract.
 - **`allowThis`**: Grants the **current contract** access to an encrypted value.
-- **`allowTransient`**: Grants **temporary access** to a specific address for the duration of the transaction. Permissions are stored in transient storage for reduced gas costs.
+- **`allowTransient`**: Grants **temporary access** to a specific address for the duration of the transaction.
+  Permissions are stored in transient storage for reduced gas costs.
 
 #### Access control list (ACL) overview
 
-The `allow` and `allowTransient` functions enable fine-grained control over who can access, decrypt, and reencrypt encrypted values. Temporary permissions (`allowTransient`) are ideal for minimizing gas usage in scenarios where access is needed only within a single transaction.
+The `allow` and `allowTransient` functions enable fine-grained control over who can access and decrypt encrypted values.
+Temporary permissions (`allowTransient`) are ideal for minimizing gas usage in scenarios where access is needed only
+within a single transaction.
 
 **Example: granting access**
 
@@ -343,9 +368,8 @@ function isSenderAllowed(T value) internal view returns (bool)
 - **`isAllowed`**: Checks whether a specific address has permission to access a ciphertext.
 - **`isSenderAllowed`**: Similar to `isAllowed`, but automatically checks permissions for the `msg.sender`.
 
-{% hint style="info" %}
-Both functions return `true` if the ciphertext is authorized for the specified address, regardless of whether the allowance is stored in the ACL contract or in transient storage.
-{% endhint %}
+{% hint style="info" %} Both functions return `true` if the ciphertext is authorized for the specified address,
+regardless of whether the allowance is stored in the ACL contract or in transient storage. {% endhint %}
 
 #### Verifying Permissions
 
@@ -374,7 +398,8 @@ function cleanTransientStorage() internal
 
 ### Description
 
-- **`cleanTransientStorage`**: Removes all temporary permissions from transient storage. Use this function at the end of a transaction to ensure no residual permissions remain.
+- **`cleanTransientStorage`**: Removes all temporary permissions from transient storage. Use this function at the end of
+  a transaction to ensure no residual permissions remain.
 
 ### Example
 
@@ -395,4 +420,5 @@ function finalize() public {
 - **Uninitialized values**:\
   Uninitialized encrypted values are treated as `0` (for integers) or `false` (for booleans) in computations.
 - **Implicit casting**:\
-  Type conversion between encrypted integers of different bit widths is supported through implicit casting, allowing seamless operations without additional developer intervention.
+  Type conversion between encrypted integers of different bit widths is supported through implicit casting, allowing
+  seamless operations without additional developer intervention.

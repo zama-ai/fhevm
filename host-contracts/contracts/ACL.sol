@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {fhevmExecutorAdd} from "../addresses/FHEVMExecutorAddress.sol";
@@ -15,7 +15,7 @@ import {ACLEvents} from "./ACLEvents.sol";
  * or decrypt encrypted values in fhEVM. By defining and enforcing these permissions, the ACL ensures that encrypted data remains
  * secure while still being usable within authorized contexts.
  */
-contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable, PausableUpgradeable, ACLEvents {
+contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgradeable, ACLEvents {
     /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
     /// @param delegatee delegatee address.
     /// @param contractAddress contract address.
@@ -63,7 +63,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable, PausableUpgradeable, A
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -83,13 +83,27 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable, PausableUpgradeable, A
     }
 
     /**
-     * @notice Re-initializes the contract.
+     * @notice  Initializes the contract.
+     * @param initialPauser Pauser address
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitialize(address initialPauser) public virtual reinitializer(2) {
+    function initializeFromEmptyProxy(address initialPauser) public virtual onlyFromEmptyProxy reinitializer(3) {
         __Ownable_init(owner());
         __Pausable_init();
 
+        if (initialPauser == address(0)) {
+            revert InvalidNullPauser();
+        }
+
+        ACLStorage storage $ = _getACLStorage();
+        $.pauser = initialPauser;
+    }
+
+    /**
+     * @notice Re-initializes the contract from V1, adding new storage variable pauser.
+     * @param initialPauser Pauser address
+     */
+    function reinitializeV2(address initialPauser) public virtual reinitializer(3) {
         if (initialPauser == address(0)) {
             revert InvalidNullPauser();
         }

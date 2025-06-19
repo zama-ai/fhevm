@@ -1,50 +1,36 @@
-## Get Started
+- [Overview](overview.md)
 
-- [Overview](solidity-overview.md)
-- [Quick Start guide](overview.md)
-- [Quick Start - Hardhat](hardhat/README.md)
-  - [Prerequisites](hardhat/prerequisites.md)
-  - [1. Setting up Hardhat](hardhat/1.-setting-up-hardhat.md)
-  - [2. Quick start](hardhat/2.-quickstart.md)
+## Getting Started
 
-## Encrypted Types & Operations
+- [What is FHEVM Solidity](getting-started/overview.md)
+- [Set up Hardhat](hardhat/setup.md)
+- [Quick Start - Tutorial](getting-started/README.md)
+  - [1. Setting up Hardhat](hardhat/setup.md)
+  - [2. Write a simple contract](getting-started/write_a_simple_contract.md)
+  - [3. Turn it into FHEVM](getting-started/turn_into_fhevm.md)
 
+## Smart Contract
+
+- [Configuration](configure.md)
+  - [Contract addresses](contract_addresses.md)
 - [Supported types](types.md)
-- [Operations on encrypted types](operations.md)
-- [AsEbool, asEuintXX, and asEaddress operations](asEXXoperators.md)
-
-## Access & Inputs
-
+- [Operations on encrypted types](operations/README.md)
+  - [AsEbool, asEuintXX, and asEaddress operations](operations/asEXXoperators.md)
+  - [Generate random numbers](operations/random.md)
 - [Encrypted Inputs](inputs.md)
 - [Access Control List](acl/README.md)
   - [ACL examples](acl/acl_examples.md)
+- [Logics](logics/README.md)
+  - [Branching](logics/conditions.md)
+  - [Dealing with branches and conditions](logics/loop.md)
+  - [Error handling](logics/error_handling.md)
+- [Decryption](decryption/oracle.md) -[Debugging](decryption/debugging.md)
 
-## Decryption & Re-encryption
+## Development Guide
 
-- [Decryption](decryption/decrypt.md)
-- [Decryption in depth](decryption/decrypt_details.md)
-- [Re-encryption](decryption/reencryption.md)
-
-## Control Flow & Logic
-
-- [Branching in FHE](conditions.md)
-- [Dealing with branches and conditions](loop.md)
-- [Generate random numbers](random.md)
-
-## Configuration & Contracts
-
-- [Key features](key_concepts.md)
-- [Configuration](configure.md)
-- [fhevm contracts](contracts.md)
-
-## Tooling & Debugging
-
-- [Using Foundry](foundry.md)
-- [Mocked mode](mocked.md)
-- [HCU estimation](hcu.md)
-- [Debug decrypt](debug_decrypt.md)
-- [Error handling](error_handling.md)
-
-## API
-
-- [fhevm API](functions.md)
+- [Hardhat module](hardhat/README.md)
+  - [Setup Hardhat](hardhat/setup.md)
+  - [Test](hardhat/test.md)
+  - [Deployment](hardhat/deploy.md)
+- [Foundry](foundry.md)
+- [HCU Estimator](hcu.md)

@@ -5,8 +5,9 @@ services:
     env_file:
       - ../env/staging/.env.relayer.local
     command:
-    - fhevm-relayer
+    - /bin/server
+    - --config-file=/app/config/local.yaml
     volumes: 
-      - ../config/relayer/local.yaml.local:/app/config/local.yaml
+      - ../config/relayer/local.yaml:/app/config/local.yaml
     ports:
       - "3000:3000"

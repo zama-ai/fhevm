@@ -1,10 +1,6 @@
 environment: development
 
-inputproof:
-  url: "0.0.0.0:3000"
-
-
-
+http_endpoint: "0.0.0.0:3000"
 
 transaction:
   private_key_fhevm_env: FHEVM_PRIVATE_KEY
@@ -23,6 +19,10 @@ transaction:
     max_attempts: 75
     base_delay_secs: 3
     max_delay_secs: 225
+
+metrics_endpoint: "0.0.0.0:9898"
+http_metrics:
+  histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
 
 
 log:

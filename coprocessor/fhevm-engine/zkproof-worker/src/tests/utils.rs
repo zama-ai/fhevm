@@ -1,5 +1,6 @@
-use std::time::Duration;
-
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
+use tokio::sync::RwLock;
 use fhevm_engine_common::{tenant_keys, utils::safe_serialize};
 use test_harness::instance::DBInstance;
 use tokio::time::sleep;
@@ -31,8 +32,10 @@ pub async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
         .await
         .unwrap();
 
+    let last_active_at = Arc::new(RwLock::new(SystemTime::now()));
+    let db_pool = pool.clone();
     tokio::spawn(async move {
-        crate::verifier::execute_verify_proofs_loop(&conf)
+        crate::verifier::execute_verify_proofs_loop(db_pool, conf.clone(), last_active_at.clone() )
             .await
             .unwrap();
     });

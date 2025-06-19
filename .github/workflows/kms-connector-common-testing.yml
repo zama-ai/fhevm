@@ -1,5 +1,11 @@
 # Main build workflow that handles both x86 and ARM builds
-name: KMS Connector Common Testing
+name: kms-connector-common-testing
+
+permissions:
+  contents: 'read'
+  pull-requests: write
+  packages: 'write'
+  id-token: 'write'
 
 on:
   workflow_call:
@@ -72,7 +78,8 @@ env:
   RUST_IMAGE_VERSION: '1.86.0'
 
 jobs:
-  compile-rust-unit-tests:
+  test:
+    name: kms-connector-common-testing/test (bpr)
     timeout-minutes: 500
     runs-on: ${{ inputs.runs-on }}
     services:
@@ -91,6 +98,7 @@ jobs:
         with:
           submodules: true
           token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+          persist-credentials: 'false'
 
       - name: Setup Home
         if: "${{ !contains(inputs.runs-on, 'ubuntu') }}"
@@ -196,6 +204,9 @@ jobs:
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           version: "26.x"
+
+      - name: Install foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
       - name: Setup usage of private repo
         run: git config --global url."https://${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}@github.com".insteadOf ssh://git@github.com

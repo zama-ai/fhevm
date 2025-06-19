@@ -7,11 +7,13 @@ metadata:
     app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
   name: {{ include "tfheWorkerName" . }}
 spec:
-  clusterIP: None
   ports:
     - name: metrics
       port: {{ .Values.tfheWorker.ports.metrics }}
-      targetPort: {{ .Values.tfheWorker.ports.metrics }}
+      targetPort: metrics
+    - name: healthcheck
+      port: {{ .Values.tfheWorker.ports.healthcheck }}
+      targetPort: healthcheck
   selector:
     app: coprocessor-tfhe-worker
     app.kubernetes.io/name: {{ include "tfheWorkerName" . }}

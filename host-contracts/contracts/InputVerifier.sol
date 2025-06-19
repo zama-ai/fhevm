@@ -5,10 +5,10 @@ import {FHEVMExecutor} from "./FHEVMExecutor.sol";
 
 // Importing OpenZeppelin contracts for cryptographic signature verification and access control.
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {EIP712UpgradeableCrossChain} from "./EIP712UpgradeableCrossChain.sol";
+import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 
 /**
  * @title    InputVerifier.
@@ -16,7 +16,7 @@ import {EIP712UpgradeableCrossChain} from "./EIP712UpgradeableCrossChain.sol";
  *           This contract is called by the FHEVMExecutor inside verifyCiphertext function
  * @dev      The contract uses EIP712UpgradeableCrossChain for cryptographic operations.
  */
-contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain {
+contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain {
     /// @notice         Emitted when a signer is added.
     /// @param signer   The address of the signer that was added.
     event SignerAdded(address indexed signer);
@@ -127,14 +127,17 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     }
 
     /**
-     * @notice  Re-initializes the contract.
+     * @notice  Initializes the contract.
+     * @param verifyingContractSource InputVerification contract address from Gateway chain.
+     * @param chainIDSource chainID of Gateway chain.
+     * @param initialSigners initial set of coprocessors.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitialize(
+    function initializeFromEmptyProxy(
         address verifyingContractSource,
         uint64 chainIDSource,
         address[] calldata initialSigners
-    ) public virtual reinitializer(2) {
+    ) public virtual onlyFromEmptyProxy reinitializer(2) {
         __Ownable_init(owner());
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
         uint256 initialSignersLen = initialSigners.length;

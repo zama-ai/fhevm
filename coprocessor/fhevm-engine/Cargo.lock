@@ -2646,7 +2646,7 @@ dependencies = [
 
 [[package]]
 name = "coprocessor"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "actix-web",
  "alloy",
@@ -3421,9 +3421,12 @@ name = "fhevm-engine-common"
 version = "0.6.1"
 dependencies = [
  "anyhow",
+ "axum",
  "bigdecimal",
  "bincode",
+ "bytesize",
  "hex",
+ "http 1.3.1",
  "lru 0.13.0",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -3434,11 +3437,13 @@ dependencies = [
  "rand 0.9.1",
  "rand_chacha 0.3.1",
  "serde",
+ "serde_json",
  "sha3",
  "sqlx",
  "strum 0.26.3",
  "tfhe",
  "tokio",
+ "tokio-util",
  "tonic",
  "tonic-build",
  "tracing",
@@ -3446,7 +3451,7 @@ dependencies = [
 
 [[package]]
 name = "fhevm-listener"
-version = "0.0.1"
+version = "0.7.0"
 dependencies = [
  "alloy",
  "alloy-eips",
@@ -3466,6 +3471,8 @@ dependencies = [
  "serial_test",
  "sqlx",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -6711,7 +6718,7 @@ dependencies = [
 
 [[package]]
 name = "sns-executor"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "aligned-vec",
  "anyhow",
@@ -8893,7 +8900,7 @@ dependencies = [
 
 [[package]]
 name = "zkproof-worker"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "alloy-primitives 1.2.0",
  "anyhow",

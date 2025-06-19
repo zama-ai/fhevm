@@ -1,4 +1,5 @@
 use clap::Parser;
+use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -75,6 +76,13 @@ pub struct Args {
     /// Coprocessor service name in OTLP traces
     #[arg(long, default_value = "coprocessor")]
     pub service_name: String,
+
+    /// Log level for the application
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(Level),
+        default_value_t = Level::INFO)]
+    pub log_level: Level,
 }
 
 pub fn parse_args() -> Args {

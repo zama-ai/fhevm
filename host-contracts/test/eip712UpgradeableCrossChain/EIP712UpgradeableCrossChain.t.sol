@@ -5,8 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
-import {EIP712UpgradeableCrossChain} from "../../contracts/EIP712UpgradeableCrossChain.sol";
+import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
+import {EIP712UpgradeableCrossChain} from "../../contracts/shared/EIP712UpgradeableCrossChain.sol";
 
 contract MockEIP712UpgradeableCrossChain is UUPSUpgradeable, EIP712UpgradeableCrossChain {
     /// @custom:oz-upgrades-unsafe-allow constructor

@@ -1,5 +1,5 @@
 # Run all fhevm coprocessor benchmarks on a GPU instance on Hyperstack and return parsed results to Slab CI bot.
-name: Coprocessor GPU benchmarks
+name: coprocessor-benchmark-gpu
 
 on:
   workflow_dispatch:
@@ -41,9 +41,10 @@ env:
 
 jobs:
   parse-inputs:
+    name: coprocessor-benchmark-gpu/parse-inputs
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     outputs:
       profile: ${{ steps.parse_profile.outputs.profile }}
       hardware_name: ${{ steps.parse_hardware_name.outputs.name }}
@@ -59,11 +60,11 @@ jobs:
           echo "name=$(echo '${{ inputs.profile }}' | sed 's|.*[[:space:]](\(.*\))|\1|')" >> "${GITHUB_OUTPUT}"
 
   setup-instance:
-    name: Setup instance (fhevm-coprocessor-benchmarks-gpu)
+    name: coprocessor-benchmark-gpu/setup-instance
     needs: parse-inputs
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -78,14 +79,14 @@ jobs:
           backend: hyperstack
           profile: ${{ needs.parse-inputs.outputs.profile }}
 
-  fhevm-coprocessor-benchmarks-gpu:
-    name: Coprocessor GPU benchmarks on (${{ needs.parse-inputs.outputs.profile }})
+  benchmark:
+    name: coprocessor-benchmark-gpu/benchmark-gpu (bpr)
     needs: [ parse-inputs, setup-instance ]
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     continue-on-error: true
     timeout-minutes: 720  # 12 hours
     permissions:
-      contents: read
+      contents: 'read'
     strategy:
       fail-fast: false
       # explicit include-based build matrix, of known valid options
@@ -210,12 +211,12 @@ jobs:
           --slab-url "${{ secrets.SLAB_URL }}"
 
   teardown-instance:
-    name: Teardown instance (fhevm-backend-gpu L40 test)
+    name: coprocessor-benchmark-gpu/teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
-    needs: [ setup-instance, fhevm-coprocessor-benchmarks-gpu ]
+    needs: [ setup-instance, benchmark ]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     steps:
       - name: Stop remote instance
         id: stop-instance

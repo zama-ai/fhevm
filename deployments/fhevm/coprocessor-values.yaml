@@ -52,7 +52,7 @@ dbMigration:
       cpu: 1
       memory: 4Gi
 
-fhevmListener:
+hostListener:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
