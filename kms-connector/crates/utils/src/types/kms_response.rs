@@ -7,9 +7,10 @@ use crate::types::{
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{PublicDecryptionResponse, UserDecryptionResponse};
+use sqlx::{Row, postgres::PgRow};
 use tracing::{debug, info};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum KmsResponse {
     PublicDecryption {
         decryption_id: U256,
@@ -102,6 +103,24 @@ impl KmsResponse {
             decryption_id,
             user_decrypted_shares: serialized_response_payload,
             signature: grpc_response.signature,
+        })
+    }
+}
+
+impl KmsResponse {
+    pub fn from_public_decryption_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(KmsResponse::PublicDecryption {
+            decryption_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
+            decrypted_result: row.try_get("decrypted_result")?,
+            signature: row.try_get("signature")?,
+        })
+    }
+
+    pub fn from_user_decryption_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(KmsResponse::UserDecryption {
+            decryption_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
+            user_decrypted_shares: row.try_get("user_decrypted_shares")?,
+            signature: row.try_get("signature")?,
         })
     }
 }

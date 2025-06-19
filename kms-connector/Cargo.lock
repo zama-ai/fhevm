@@ -2269,6 +2269,8 @@ version = "0.1.0-rc6"
 dependencies = [
  "alloy",
  "anyhow",
+ "aws-config",
+ "aws-sdk-kms",
  "bincode",
  "clap",
  "config",
@@ -6891,8 +6893,7 @@ version = "0.1.0-rc6"
 dependencies = [
  "alloy",
  "anyhow",
- "aws-config",
- "aws-sdk-kms",
+ "connector-tests",
  "connector-utils",
  "fhevm_gateway_rust_bindings",
  "serde",
