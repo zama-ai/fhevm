@@ -34,7 +34,7 @@ use std::path::PathBuf;
 
 fn main() -> Result<()> {
     // Initialize SDK
-    let mut sdk = FhevmSdkBuilder::new()
+    let sdk = FhevmSdkBuilder::new()
         .with_keys_directory(PathBuf::from("./keys"))
         .with_gateway_chain_id(43113)
         .with_host_chain_id(11155111)
