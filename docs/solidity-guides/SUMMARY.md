@@ -35,5 +35,5 @@
   - [Test](hardhat/test.md)
   - [Deployment](hardhat/deploy.md)
 - [Foundry](foundry.md)
-- [HCU Estimator](hcu.md)
+- [HCU](hcu.md)
 - [Migrate to v0.7](migration.md)
