@@ -1,14 +1,19 @@
 - [Overview](example-overview.md)
 
-## Dapps Examples
+## Smart contract examples
 
-- Deberry
-- Confidential Token Portfolio
+- Function examples
 
-## Smart Contract Templates
+  - [FHEAdd](fheadd.md)
+  - [FHEIfThenElse](fheifthenelse.md)
+  - [FHEEncryptSingleValue](fhe-encrypt-single-value.md)
+  - [FHEEncryptMultipleValue](fhe-encrypt-multiple-value.md)
+  - [FHEDecryptSingleValue](fhe-decrypt-single-value.md)
 
-- Finance
-- Governance
-- ERC20
-- Utilities
-- [See all tutorials](see-all-tutorials.md)
+- Use case examples
+  - [FHE Counter](fhe-counter.md)
+  - [Confidential ERC20 Wrapper](erc20-wrapper.md)
+
+## dApp examples
+
+- Coming Soon
