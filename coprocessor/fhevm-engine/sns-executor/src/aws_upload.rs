@@ -1,8 +1,4 @@
 use crate::{Config, ExecutionError, HandleItem, S3Config, UploadJob};
-use aws_config::retry::RetryConfig;
-use aws_config::timeout::TimeoutConfig;
-use aws_config::BehaviorVersion;
-use aws_sdk_s3::config::Builder;
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::head_bucket::HeadBucketError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
@@ -19,7 +15,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use tokio::select;
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinHandle;
@@ -41,15 +37,16 @@ pub(crate) async fn process_s3_uploads(
     mut jobs: mpsc::Receiver<UploadJob>,
     jobs_tx: mpsc::Sender<UploadJob>,
     token: CancellationToken,
+    client: Arc<aws_sdk_s3::Client>,
+    is_ready: Arc<AtomicBool>,
 ) -> Result<(), ExecutionError> {
-    // Client construction is expensive due to connection thread pool initialization, and should
-    // be done once at application start-up.
-    let (client, is_ready) = create_s3_client(conf).await;
-    let is_ready = Arc::new(AtomicBool::new(is_ready));
+    let (is_ready_res, _) = check_is_ready(&client, conf).await;
+    is_ready.store(is_ready_res, Ordering::Release);
 
     let pool = Arc::new(
         PgPoolOptions::new()
             .max_connections(conf.db.max_connections)
+            .acquire_timeout(conf.db.timeout)
             .connect(&conf.db.url)
             .await?,
     );
@@ -93,8 +90,8 @@ pub(crate) async fn process_s3_uploads(
                 let mut trx = pool.begin().await?;
 
                 let item = match job {
-                    UploadJob::Normal(item) => 
-                    {  
+                    UploadJob::Normal(item) =>
+                    {
                         item.enqueue_upload_task(&mut trx).await?;
                         item
                     },
@@ -468,7 +465,6 @@ async fn do_resubmits_loop(
     let mut recheck_ticker = interval(retry_conf.recheck_duration);
     let mut resubmit_ticker = interval(retry_conf.regular_recheck_duration);
 
-
     loop {
         select! {
             _ = token.cancelled() => {
@@ -557,43 +553,11 @@ async fn try_resubmit(
     }
 }
 
-/// Configure and create the S3 client.
-///
-/// Logs errors if the connection fails or if any buckets are missing.
-/// Even in the event of a failure or missing buckets, the function returns a valid
-/// S3 client capable of retrying S3 operations later.
-async fn create_s3_client(conf: &Config) -> (Arc<aws_sdk_s3::Client>, bool) {
-    let s3config = &conf.s3;
-
-    let sdk_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-    let timeout_config = TimeoutConfig::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .operation_attempt_timeout(s3config.retry_policy.max_retries_timeout)
-        .build();
-
-    let retry_config = RetryConfig::standard()
-        .with_max_attempts(s3config.retry_policy.max_retries_per_upload)
-        .with_max_backoff(s3config.retry_policy.max_backoff);
-
-    let config = Builder::from(&sdk_config)
-        .timeout_config(timeout_config)
-        .retry_config(retry_config)
-        .build();
-
-    let client = Arc::new(Client::from_conf(config));
-    let (is_ready, is_connected) = check_is_ready(&client, conf).await;
-    if is_connected {
-        info!("Connected to S3, is_ready: {}", is_ready);
-    }
-
-    (client, is_ready)
-}
-
 /// Checks if the S3 client is ready by verifying the existence of both
 /// the ct64 and ct128 buckets.
 ///
 /// Returns is_ready and is_connected status.
-async fn check_is_ready(client: &Client, conf: &Config) -> (bool, bool) {
+pub(crate) async fn check_is_ready(client: &Client, conf: &Config) -> (bool, bool) {
     // Check if the S3 client is ready
     //
     // By checking the existence of both ct64 and ct128 buckets here,

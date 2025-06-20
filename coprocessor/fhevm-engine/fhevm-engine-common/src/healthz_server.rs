@@ -130,17 +130,14 @@ impl<S: HealthCheckService + Send + Sync + 'static> HttpServer<S> {
 
     async fn version_handler(State(service): State<Arc<S>>) -> impl IntoResponse {
         let version = service.get_version();
-        (
-            StatusCode::OK,
-            Json(serde_json::json!(version)),
-        )
+        (StatusCode::OK, Json(serde_json::json!(version)))
     }
 }
 
 #[derive(Clone, Default)]
 pub struct HealthStatus {
-    pub checks: HashMap<&'static str, bool>,
-    pub error_details: Vec<String>,
+    checks: HashMap<&'static str, bool>,
+    error_details: Vec<String>,
 }
 
 impl HealthStatus {
@@ -159,6 +156,14 @@ impl HealthStatus {
             }
         }
         self.checks.insert("database", is_connected);
+    }
+
+    pub fn set_custom_check(&mut self, check: &'static str, value: bool) {
+        self.checks.insert(check, value);
+    }
+
+    pub fn add_error_details(&mut self, details: String) {
+        self.error_details.push(details);
     }
 
     pub fn is_healthy(&self) -> bool {
