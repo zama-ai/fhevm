@@ -1,5 +1,7 @@
-## Migration
+# Migration
+
 This document provides instructions on migrating from FHEVM v0.6 to v0.7.
+
 ## From 0.6.x
 
 ### Package and library
@@ -58,4 +60,4 @@ Block gas limit has been removed in favor of HCU (Homomorphic Complexity Unit) l
 - **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed
   in parallel. This limit is set to **20,000,000** HCU.
 
-  You can read more about [HCU on the dedicated page](hcu.md).
+You can read more about [HCU on the dedicated page](hcu.md).

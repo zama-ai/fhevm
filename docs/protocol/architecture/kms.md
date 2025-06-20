@@ -1,41 +1,45 @@
 # KMS
 
-This document explains one of the key components of the Zama Protocol - The Key Management Service (KMS), responsible for the secure generation, management, and usage of encryption keys needed to enable confidential smart contracts.&#x20;
+This document explains one of the key components of the Zama Protocol - The Key Management Service (KMS), responsible
+for the secure generation, management, and usage of encryption keys needed to enable confidential smart contracts.&#x20;
 
 ## What is the KMS?
 
 The KMS is a decentralized network of MPC (Multi-Party Computation) nodes that:
 
-* Generate global FHE keys
-* Decrypt ciphertexts securely
-* Support zero-knowledge proof infrastructure
-* Manage key lifecycles with NIST compliance
-* Provide public and user-targeted decryptions
+- Generate global FHE keys
+- Decrypt ciphertexts securely
+- Support zero-knowledge proof infrastructure
+- Manage key lifecycles with NIST compliance
+- Provide public and user-targeted decryptions
 
-It works entirely off-chain, but is orchestrated through the Gateway, which initiates and tracks all key-related operations. This separation of powers ensures strong decentralization and auditability.
+It works entirely off-chain, but is orchestrated through the Gateway, which initiates and tracks all key-related
+operations. This separation of powers ensures strong decentralization and auditability.
 
 ## Key responsibilities
 
 ### FHE key generation
 
-* The KMS generates a global public/private key pair used across all host chains.
-* This key enables composability—encrypted data can be shared between contracts and chains.
-* The private FHE key is never reconstructed; instead, it is secret-shared among the MPC nodes.
+- The KMS generates a global public/private key pair used across all host chains.
+- This key enables composability—encrypted data can be shared between contracts and chains.
+- The private FHE key is never reconstructed; instead, it is secret-shared among the MPC nodes.
 
-The system follows the NIST SP 800-57 key lifecycle model, managing key states such as Active, Suspended, Deactivated,and Destroyed to ensure proper rotation and forward security.
+The system follows the NIST SP 800-57 key lifecycle model, managing key states such as Active, Suspended,
+Deactivated,and Destroyed to ensure proper rotation and forward security.
 
-* Threshold Decryption via MPC The KMS performs decryption using a threshold protocol—at least a minimum number of MPC\
+- Threshold Decryption via MPC The KMS performs decryption using a threshold protocol—at least a minimum number of MPC\
   parties (e.g., 9 out of 13) must collaborate to decrypt a value.
-* This protects against compromise: no individual party has access to the full key.
-* Supports both:
-  * Public decryption (e.g., for smart contracts)
-  * User decryption (privately returned, re-encrypted for the user)
+- This protects against compromise: no individual party has access to the full key.
+- Supports both:
+  - Public decryption (e.g., for smart contracts)
+  - User decryption (privately returned, re-encrypted for the user)
 
 All decryption operations are signed, and the output can be verified on-chain for full auditability.
 
 ### ZK Proof support
 
-The KMS generates Common Reference Strings (CRS) needed to validate Zero-Knowledge Proofs of Knowledge (ZKPoK) when users submit encrypted values.
+The KMS generates Common Reference Strings (CRS) needed to validate Zero-Knowledge Proofs of Knowledge (ZKPoK) when
+users submit encrypted values.
 
 This ensures encrypted inputs are valid and well-formed.
 
@@ -43,22 +47,24 @@ This ensures encrypted inputs are valid and well-formed.
 
 ### MPC-based key sharing
 
-* The KMS uses 13 MPC nodes, operated by different reputable organizations.
-* Private keys are split using threshold secret sharing.
-* Communications between nodes are secured using mTLS with gRPC.
+- The KMS uses 13 MPC nodes, operated by different reputable organizations.
+- Private keys are split using threshold secret sharing.
+- Communications between nodes are secured using mTLS with gRPC.
 
 ### Honest majority assumption
 
-* The protocol is robust against malicious actors as long as fewer than 1/3 of the nodes collude.
-* Supports guaranteed output delivery even if some nodes are offline or misbehaving.
+- The protocol is robust against malicious actors as long as fewer than 1/3 of the nodes collude.
+- Supports guaranteed output delivery even if some nodes are offline or misbehaving.
 
 ### Secure execution environments
 
-Each MPC node can optionally run in Nitro Enclaves to prevent even the node operator from accessing their own key share. This mitigates insider risks (e.g., selling shares, unauthorized reconstruction).
+Each MPC node can optionally run in Nitro Enclaves to prevent even the node operator from accessing their own key share.
+This mitigates insider risks (e.g., selling shares, unauthorized reconstruction).
 
 ### Auditable via gateway
 
-* All operations are broadcast through the Gateway and recorded as blockchain events. -KMS responses are signed, allowing smart contracts and users to verify results cryptographically.
+- All operations are broadcast through the Gateway and recorded as blockchain events. -KMS responses are signed,
+  allowing smart contracts and users to verify results cryptographically.
 
 ### Key lifecycle management
 
@@ -80,9 +86,9 @@ interoperability.
 
 In addition to robustness through MPC, the KMS also offers a custodial backup system:
 
-* Each MPC party splits its key share into encrypted fragments and sends them to independent custodians.
-* A quorum of custodians can help restore lost shares, enabling recovery even if multiple MPC parties are taken offline.
-* This ensures business continuity and protection from mass outages .
+- Each MPC party splits its key share into encrypted fragments and sends them to independent custodians.
+- A quorum of custodians can help restore lost shares, enabling recovery even if multiple MPC parties are taken offline.
+- This ensures business continuity and protection from mass outages .
 
 ### Workflow example: Public decryption
 

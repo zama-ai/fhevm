@@ -1,4 +1,3 @@
-
 - [Overview](sdk-overview.md)
 
 ## Getting Started
@@ -7,14 +6,15 @@
 - [Node.js tutorial](node.md)
 
 ## FHEVM Relayer
+
 - [Initialization](initialization.md)
 - [Input](input.md)
 - Decryption
-    - [User decrption](user-decryption.md)
-    - [Public decryption](public-decryption.md)
-
+  - [User decrption](user-decryption.md)
+  - [Public decryption](public-decryption.md)
 
 ## Development Guide
+
 - [Debugging](webpack.md)
 - [CLI](cli.md)
 - [Relayer SDK API](fhevmjs.md)

@@ -17,7 +17,10 @@ yarn add @fhevm/sdk
 pnpm add @fhevm/sdk
 ```
 
-`@fhevm/sdk` uses ESM format for web version and commonjs for node version. You need to set the [type to "commonjs" in your package.json](https://nodejs.org/api/packages.html#type) to load the correct version of @fhevm/sdk. If your node project use `"type": "module"`, you can force the loading of the Node version by using `import { createInstance } from '@fhevm/sdk/node';`
+`@fhevm/sdk` uses ESM format for web version and commonjs for node version. You need to set the
+[type to "commonjs" in your package.json](https://nodejs.org/api/packages.html#type) to load the correct version of
+@fhevm/sdk. If your node project use `"type": "module"`, you can force the loading of the Node version by using
+`import { createInstance } from '@fhevm/sdk/node';`
 
 ## Create an instance
 
@@ -45,4 +48,5 @@ createFhevmInstance().then((instance) => {
 });
 ```
 
-You can now use your instance to [encrypt parameters](../smart_contracts/inputs.md) or do a [reencryption](../smart_contracts/decryption/reencryption.md).
+You can now use your instance to [encrypt parameters](../smart_contracts/inputs.md) or do a
+[reencryption](../smart_contracts/decryption/reencryption.md).
