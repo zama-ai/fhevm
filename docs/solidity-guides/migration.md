@@ -1,5 +1,5 @@
 ## Migration
-
+This document provides instructions on migrating from FHEVM v0.6 to v0.7.
 ## From 0.6.x
 
 ### Package and library
