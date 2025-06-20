@@ -294,7 +294,7 @@ impl TransactionService {
         debug!(total_transactions, "Starting transaction maintenance cycle");
 
         // Step 1: Clean up any transactions marked for cleanup
-        self.cleanup_transactions(now);
+        self.cleanup_transactions(now).await;
 
         // Step 2: Process pending transactions
         let pending_transactions: Vec<_> = match self.get_pending_transactions().await {
@@ -433,7 +433,7 @@ impl TransactionService {
         Ok(())
     }
 
-    fn cleanup_transactions(&self, now: Instant) {
+    async fn cleanup_transactions(&self, now: Instant) {
         // Find transactions ready for cleanup
         let to_remove: Vec<_> = self
             .transactions
@@ -454,11 +454,68 @@ impl TransactionService {
         // Remove them
         for request_id in to_remove {
             if let Some((_, record)) = self.transactions.remove(&request_id) {
-                debug!(
-                    ?request_id,
-                    state = ?record.state,
-                    "Cleaned up transaction"
-                );
+                match record.clone().state {
+                    TransactionState::Failed { reason } => {
+                        error!(
+                            request_id = ?request_id,
+                            state = ?record.state,
+                            target = ?record.target,
+                            "Cleaning-up failed transaction: {}", reason
+                        );
+                        if reason.contains("Transaction timed out") {
+                            let address = self.manager.sender_address();
+                            // NOTE: Band-aid solution to nonce management issue
+                            match self
+                                .manager
+                                .nonce_manager
+                                .sync_nonce(self.manager.provider(), address)
+                                .await
+                            {
+                                Ok(new_nonce) => {
+                                    info!(
+                                        "Successfully refreshed nonce of {} to {}",
+                                        address, new_nonce
+                                    );
+                                }
+                                Err(err) => {
+                                    error!(
+                                        "Failed to sync nonce of {} with error: {}",
+                                        address, err
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    TransactionState::Ready => {
+                        // NOTE: should never happen
+                        error!(
+                            request_id = ?request_id,
+                            state = ?record.state,
+                            target = ?record.target,
+                            "Cleaned up ready transaction"
+                        );
+                    }
+                    TransactionState::Pending {
+                        hash,
+                        submit_time,
+                        attempts,
+                    } => {
+                        debug!(
+                            request_id = ?request_id,
+                            state = ?record.state,
+                            target = ?record.target,
+                            "Cleaned up pending transaction {hash} with receipt submitted at {submit_time:?} after {attempts} attempts"
+                        );
+                    }
+                    TransactionState::Confirmed { .. } => {
+                        debug!(
+                            request_id = ?request_id,
+                            state = ?record.state,
+                            target = ?record.target,
+                            "Cleaned up confirmed transaction"
+                        );
+                    }
+                }
             }
         }
     }
