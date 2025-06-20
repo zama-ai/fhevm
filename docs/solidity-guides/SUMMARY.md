@@ -36,4 +36,4 @@
   * [Deployment](hardhat/deploy.md)
 * [Foundry](foundry.md)
 * [HCU Estimator](hcu.md)
-* [Migration guide](migration.md)
+* [Migrate to v0.7](migration.md)
