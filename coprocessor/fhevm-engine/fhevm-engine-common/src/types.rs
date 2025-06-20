@@ -1,3 +1,8 @@
+use alloy::providers::RootProvider;
+use alloy_provider::fillers::{
+    BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
+    NonceFiller,
+};
 use anyhow::Result;
 use bigdecimal::num_bigint::BigInt;
 use tfhe::integer::bigint::StaticUnsignedBigInt;
@@ -800,3 +805,14 @@ impl TryFrom<i16> for AllowEvents {
         }
     }
 }
+
+pub type BlockchainProvider = FillProvider<
+    JoinFill<
+        alloy::providers::Identity,
+        JoinFill<
+            GasFiller,
+            JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>,
+        >,
+    >,
+    RootProvider,
+>;

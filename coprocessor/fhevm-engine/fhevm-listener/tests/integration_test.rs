@@ -286,8 +286,8 @@ async fn test_health() -> Result<(), anyhow::Error> {
         health_port: 8081,
     };
 
-    const LIVENESS_URL: &str = "http://0.0.0.0:8081/liveness";
-    const HEALTHZ_URL: &str = "http://0.0.0.0:8081/healthz";
+    const LIVENESS_URL: &str = "http://127.0.0.1:8081/liveness";
+    const HEALTHZ_URL: &str = "http://127.0.0.1:8081/healthz";
 
     // Start listener in background task
     let listener_handle: tokio::task::JoinHandle<()> = tokio::spawn(main(args.clone()));
