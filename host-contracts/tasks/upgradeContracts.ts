@@ -25,7 +25,7 @@ async function upgradeCurrentToNew(
   newImplementation: string,
   verifyContract: boolean,
   hre: HardhatRuntimeEnvironment,
-  reinitializeArgs?: unknown[],
+  reinitializeArgs: unknown[] = [],
 ) {
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
@@ -117,12 +117,6 @@ task('task:upgradeACL')
     'The new implementation solidity contract path and name, eg: examples/ACLUpgradedExample.sol:ACLUpgradedExample',
   )
   .addOptionalParam(
-    'reinitializeArgs',
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
-  )
-  .addOptionalParam(
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
@@ -135,13 +129,7 @@ task('task:upgradeACL')
     types.boolean,
   )
   .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -156,14 +144,11 @@ task('task:upgradeACL')
       proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
     }
 
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
+    const pauserAddress = getRequiredEnvVar('PAUSER_ADDRESS');
+
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+      pauserAddress,
+    ]);
   });
 
 task('task:upgradeFHEVMExecutor')
@@ -174,12 +159,6 @@ task('task:upgradeFHEVMExecutor')
   .addParam(
     'newImplementation',
     'The new implementation solidity contract path and name, eg: examples/FHEVMExecutorUpgradedExample.sol:FHEVMExecutorUpgradedExample',
-  )
-  .addOptionalParam(
-    'reinitializeArgs',
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
   )
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -194,13 +173,7 @@ task('task:upgradeFHEVMExecutor')
     types.boolean,
   )
   .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -215,14 +188,7 @@ task('task:upgradeFHEVMExecutor')
       proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
     }
 
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
 
 task('task:upgradeKMSVerifier')
@@ -233,12 +199,6 @@ task('task:upgradeKMSVerifier')
   .addParam(
     'newImplementation',
     'The new implementation solidity contract path and name, eg: examples/KMSVerifierUpgradedExample.sol:KMSVerifierUpgradedExample',
-  )
-  .addOptionalParam(
-    'reinitializeArgs',
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
   )
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -253,13 +213,7 @@ task('task:upgradeKMSVerifier')
     types.boolean,
   )
   .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -274,14 +228,7 @@ task('task:upgradeKMSVerifier')
       proxyAddress = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
     }
 
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
 
 task('task:upgradeInputVerifier')
@@ -292,12 +239,6 @@ task('task:upgradeInputVerifier')
   .addParam(
     'newImplementation',
     'The new implementation solidity contract path and name, eg: contracts/InputVerifier2.sol:InputVerifier',
-  )
-  .addOptionalParam(
-    'reinitializeArgs',
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
   )
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -312,13 +253,7 @@ task('task:upgradeInputVerifier')
     types.boolean,
   )
   .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -333,14 +268,7 @@ task('task:upgradeInputVerifier')
       proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
     }
 
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
 
 task('task:upgradeHCULimit')
@@ -351,12 +279,6 @@ task('task:upgradeHCULimit')
   .addParam(
     'newImplementation',
     'The new implementation solidity contract path and name, eg: examples/HCULimitUpgradedExample.sol:HCULimitUpgradedExample',
-  )
-  .addOptionalParam(
-    'reinitializeArgs',
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
   )
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -371,13 +293,7 @@ task('task:upgradeHCULimit')
     types.boolean,
   )
   .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -392,83 +308,5 @@ task('task:upgradeHCULimit')
       proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');
     }
 
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
-
-task('task:upgradeDecryptionOracleContract')
-  .addParam(
-    'currentImplementation',
-    'The currently deployed implementation solidity contract path and name, eg: decryptionOracle/DecryptionOracle.sol:DecryptionOracle',
-  )
-  .addParam(
-    'newImplementation',
-    'The new implementation solidity contract path and name, eg: example/DecryptionOracleUpgradedExample.sol:DecryptionOracleUpgradedExample',
-  )
-  .addOptionalParam(
-    'reinitializeArgs',
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
-  )
-  .addOptionalParam(
-    'useInternalProxyAddress',
-    'If proxy address from the /addresses directory should be used',
-    false,
-    types.boolean,
-  )
-  .addOptionalParam(
-    'verifyContract',
-    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
-    true,
-    types.boolean,
-  )
-  .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts('DecryptionOracle', currentImplementation, newImplementation, hre);
-
-    let proxyAddress: string;
-    if (useInternalProxyAddress) {
-      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.decryptionoracle'));
-      proxyAddress = parsedEnv.DECRYPTION_ORACLE_ADDRESS;
-    } else {
-      proxyAddress = getRequiredEnvVar('DECRYPTION_ORACLE_ADDRESS');
-    }
-
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
-  });
-
-task('task:test').setAction(async function (_, hre) {
-  const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
-  const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
-  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
-
-  const currentImplementationFactory = await hre.ethers.getContractFactory('contracts/ACLV2.sol:ACL', deployer);
-  const acl = await hre.upgrades.forceImport(proxyAddress, currentImplementationFactory);
-  console.log('ACL version:', await acl.getVersion());
-  console.log('ACL pauser:', await acl.getPauser());
-});
