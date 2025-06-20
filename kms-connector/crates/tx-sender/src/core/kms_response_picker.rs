@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use connector_utils::types::KmsResponse;
 use sqlx::{Pool, Postgres, postgres::PgListener};
 use std::future::Future;
+use tracing::info;
 
 /// Interface used to pick KMS Core's responses from some storage.
 pub trait KmsResponsePicker {
@@ -53,6 +54,7 @@ impl KmsResponsePicker for DbKmsResponsePicker {
     async fn pick_response(&mut self) -> anyhow::Result<KmsResponse> {
         // Wait for notification
         let notification = self.db_listener.recv().await?;
+        info!("Received Postgres notification: {}", notification.channel());
 
         let response = match notification.channel() {
             PUBLIC_DECRYPT_NOTIFICATION => pick_public_decryption_response(&self.db_pool).await?,
