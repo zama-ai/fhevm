@@ -1,6 +1,7 @@
 # Roadmap
 
-This document gives a preview of the upcoming features of FHEVM. In addition to what's listed here, you can [submit your feature request](https://github.com/zama-ai/fhevm/issues/new) on GitHub.
+This document gives a preview of the upcoming features of FHEVM. In addition to what's listed here, you can
+[submit your feature request](https://github.com/zama-ai/fhevm/issues/new) on GitHub.
 
 ## Features
 
@@ -21,7 +22,5 @@ This document gives a preview of the upcoming features of FHEVM. In addition to 
 | Rem                   | `FHE.rem`         | Binary             | -           |
 | Set inclusion         | `FHE.isIn()`      | Binary             | -           |
 
-{% hint style="info" %}
-Random encrypted integers that are generated fully on-chain. Currently, implemented as a mockup\
-by using a PRNG in the plain. Not for use in production!
-{% endhint %}
+{% hint style="info" %} Random encrypted integers that are generated fully on-chain. Currently, implemented as a mockup\
+by using a PRNG in the plain. Not for use in production! {% endhint %}
