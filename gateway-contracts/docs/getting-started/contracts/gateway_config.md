@@ -5,7 +5,7 @@ This section describes the `GatewayConfig` contract. It is used to configure set
 Several settings are stored in the contract, which can be separated in several categories:
 
 - [Protocol metadata](#protocol-metadata)
-- [Operators](#operators)
+- [KMS Nodes](#kms-nodes)
 - [Governance accounts](#governance-accounts)
 - [Host chains](#host-chains)
 
@@ -21,14 +21,7 @@ The protocol metadata is used to display information about the protocol. It incl
 
 Currently, it is set at deployment but it is not possible to update them later on.
 
-## Operators
-
-The operators include the Key Management Service (KMS) nodes and coprocessors. Each operator needs to be registered in
-the `GatewayConfig` contract in order to be able to participate in the fhevm protocol.
-
-They serve different purposes, which are described below.
-
-### KMS Node
+## KMS Nodes
 
 A KMS node is part of a set of multiple nodes. Often called the KMS, it refers to a Multi-Party Computation (MPC)
 protocol that manages Fully Homomorphic Encryption (FHE) keys in a decentralized manner. It is used to :
@@ -82,30 +75,9 @@ Both thresholds should be :
 These thresholds are set at deployment and can be updated by the owner later on, as long as the above conditions are
 met.
 
-### Coprocessor
-
-A coprocessor is also part of a set of multiple coprocessors. They are used to :
-
-- perform FHE computations on ciphertexts
-- verify inputs' zero-knowledge proof of knowledge (ZKPoK) based on requests from the `InputVerification` contract
-- handle access controls to ciphertexts for all registered [host chains](#host-chains), which are centralized in the
-  `MultichainAcl` contract
-
-Several metadata are stored for each coprocessor:
-
-- `txSenderAddress` : see [Sender and signer](#sender-and-signer) below.
-- `signerAddress` : see [Sender and signer](#sender-and-signer) below.
-- `s3BucketUrl` : URL of the S3 bucket where the ciphertexts are stored. In the fhevm protocol, this URL is fetched by
-  the KMS connector in order to download the ciphertexts needed for decryption requests.
-
-The fhevm Gateway has a single set of coprocessors, which must be constituted of at least 1 coprocessor.
-
-Currently, they are set at deployment and it is currently _not_ possible to add or remove a coprocessor to the fhevm
-Gateway later on.
-
 ### Sender and signer
 
-Despite the above differences, each operator has both a transaction sender and a signer assigned to it:
+A KMS node has both a transaction sender and a signer assigned to it:
 
 - `txSenderAddress` : address of the account that will send transactions to the fhevm Gateway.
 - `signerAddress` : address associated to the public key used to sign results sent to the fhevm Gateway.
@@ -114,16 +86,13 @@ The current list of transaction senders and signers can be retrieved using the f
 
 - `getKmsTxSenders()`: get all the KMS nodes' transaction senders.
 - `getKmsSigners()`: get all the KMS nodes' signers.
-- `getCoprocessorTxSenders()`: get all the coprocessors' transaction senders.
-- `getCoprocessorSigners()`: get all the coprocessors' signers.
 
-The transaction sender and signer addresses are allowed to be the same for a given operator.
+The transaction sender and signer addresses are allowed to be the same for a given KMS node.
 
-Additionally, the transaction sender address is used for identifying an operator and may be referred to its "identity".
+Additionally, the transaction sender address is used for identifying a KMS node and may be referred to its "identity".
 In particular, these addresses can be used as inputs to following view functions in the `GatewayConfig` contract:
 
 - `getKmsNode(address kmsTxSenderAddress)`: get a KMS node's metadata.
-- `getCoprocessor(address coprocessorTxSenderAddress)`: get a coprocessor's metadata.
 
 ## Governance accounts
 

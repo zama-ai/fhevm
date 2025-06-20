@@ -8,7 +8,6 @@ contract GatewayConfigMock {
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes,
-        Coprocessor[] coprocessors,
         Custodian[] custodians
     );
 
@@ -31,17 +30,15 @@ contract GatewayConfigMock {
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
         KmsNode[] memory initialKmsNodes,
-        Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
     ) public {
         address pauser;
         ProtocolMetadata memory metadata;
         uint256 mpcThreshold;
         KmsNode[] memory kmsNodes = new KmsNode[](1);
-        Coprocessor[] memory coprocessors = new Coprocessor[](1);
         Custodian[] memory custodians = new Custodian[](1);
 
-        emit InitializeGatewayConfig(pauser, metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
+        emit InitializeGatewayConfig(pauser, metadata, mpcThreshold, kmsNodes, custodians);
     }
 
     function reinitializeV2(Custodian[] memory custodians) external {
