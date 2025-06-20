@@ -56,7 +56,7 @@ pub type WalletGatewayProvider =
 
 /// Tries to establish the connection with a RPC node of the Gateway.
 pub async fn connect_to_gateway(gateway_url: &str) -> anyhow::Result<GatewayProvider> {
-    connect_to_gateway_inner(gateway_url, || ProviderBuilder::new()).await
+    connect_to_gateway_inner(gateway_url, ProviderBuilder::new).await
 }
 
 /// Tries to establish the connection with a RPC node of the Gateway, with a `WalletFiller`.

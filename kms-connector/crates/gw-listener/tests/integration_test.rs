@@ -28,7 +28,6 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
     let pending_tx = test_instance
         .decryption_contract()
         .publicDecryptionRequest(vec![])
-        .from(test_instance.anvil().addresses()[0])
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;
@@ -80,7 +79,6 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
             rand_pub_key.clone().into(),
             vec![].into(),
         )
-        .from(test_instance.anvil().addresses()[0])
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;
@@ -127,7 +125,6 @@ async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
     let pending_tx = test_instance
         .kms_management_contract()
         .preprocessKeygenRequest(String::new())
-        .from(test_instance.anvil().addresses()[0])
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;
@@ -167,7 +164,6 @@ async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
     let pending_tx = test_instance
         .kms_management_contract()
         .preprocessKskgenRequest(String::new())
-        .from(test_instance.anvil().addresses()[0])
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;
@@ -208,7 +204,6 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
     let pending_tx = test_instance
         .kms_management_contract()
         .keygenRequest(rand_id)
-        .from(test_instance.anvil().addresses()[0])
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;
@@ -249,7 +244,6 @@ async fn test_publish_kskgen() -> anyhow::Result<()> {
     let pending_tx = test_instance
         .kms_management_contract()
         .kskgenRequest(rand_id, rand_source_key_id, rand_dest_key_id)
-        .from(test_instance.anvil().addresses()[0])
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;
@@ -293,7 +287,6 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
     let pending_tx = test_instance
         .kms_management_contract()
         .crsgenRequest(String::new())
-        .from(test_instance.anvil().addresses()[0])
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;

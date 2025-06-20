@@ -24,7 +24,7 @@ pub const KMS_MANAGEMENT_MOCK_ADDRESS: Address = Address(FixedBytes([
 pub const TEST_MNEMONIC: &str =
     "coyote sketch defense hover finger envelope celery urge panther venue verb cheese";
 
-pub static CHAIN_ID: LazyLock<u32> = LazyLock::new(|| rand::random::<u32>());
+pub static CHAIN_ID: LazyLock<u32> = LazyLock::new(rand::random::<u32>);
 
 pub const DEPLOYER_PRIVATE_KEY: &str =
     "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c";

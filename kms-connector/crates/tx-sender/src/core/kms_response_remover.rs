@@ -19,6 +19,7 @@ pub struct DbKmsResponseRemover {
 
 impl KmsResponseRemover for DbKmsResponseRemover {
     async fn remove_response(&self, response: &KmsResponse) -> anyhow::Result<()> {
+        info!("Removing {response} from DB...");
         let query_result = match response {
             KmsResponse::PublicDecryption { decryption_id, .. } => {
                 self.remove_public_decryption(*decryption_id).await?

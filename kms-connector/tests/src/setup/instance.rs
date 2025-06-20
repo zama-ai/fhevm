@@ -43,7 +43,7 @@ pub async fn test_instance_with_db_and_gw() -> anyhow::Result<TestInstance> {
 /// The integration test environment.
 pub struct TestInstance {
     /// Use to enable tracing during tests.
-    pub _tracing_default_guard: tracing::subscriber::DefaultGuard,
+    pub _tracing_default_guard: Option<tracing::subscriber::DefaultGuard>,
     /// Use to keep the database container running during the tests.
     pub _db_container: ContainerAsync<GenericImage>,
     pub db: Pool<Postgres>,
@@ -60,7 +60,7 @@ impl TestInstance {
             .finish();
 
         Self {
-            _tracing_default_guard: tracing::subscriber::set_default(subscriber),
+            _tracing_default_guard: Some(tracing::subscriber::set_default(subscriber)),
             _db_container: db_container,
             db,
             gateway_instance: None,
@@ -91,6 +91,10 @@ impl TestInstance {
 
     pub fn kms_management_contract(&self) -> &KmsManagementInstance<(), WalletGatewayProvider> {
         &self.gateway().kms_management_contract
+    }
+
+    pub fn disable_tracing(&mut self) {
+        self._tracing_default_guard = None;
     }
 
     fn gateway(&self) -> &GatewayInstance {
