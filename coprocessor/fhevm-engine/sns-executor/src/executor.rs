@@ -161,13 +161,17 @@ pub(crate) async fn run_loop(
         // Continue looping until the service is cancelled or a critical error occurs
         // If a transient db error is encountered, keep retrying until it recovers
 
-        if let Ok(mut value) = last_active_at.try_write() {
+        {
+            let mut value = last_active_at.write().await;
             *value = SystemTime::now();
         }
 
         match fetch_and_execute_sns_tasks(pool, tx, &keys, conf).await {
             Ok(maybe_remaining) => {
                 if maybe_remaining {
+                    if token.is_cancelled() {
+                        return Ok(());
+                    }
                     info!(target: "worker", "More tasks to process, continuing...");
                     continue;
                 }
