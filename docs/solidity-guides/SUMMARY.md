@@ -36,3 +36,4 @@
   * [Deployment](hardhat/deploy.md)
 * [Foundry](foundry.md)
 * [HCU Estimator](hcu.md)
+* [Migration guide](migration.md)
