@@ -6,15 +6,27 @@ mod squash_noise;
 #[cfg(test)]
 mod tests;
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{atomic::AtomicBool, Arc},
+    time::Duration,
+};
 
-use fhevm_engine_common::{telemetry::OtelTracer, types::FhevmError, utils::compact_hex};
+use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
+use aws_sdk_s3::{config::Builder, Client};
+use fhevm_engine_common::{
+    healthz_server::HttpServer, telemetry::OtelTracer, types::FhevmError, utils::compact_hex,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
-use tokio::sync::mpsc::{self, Sender};
+use tokio::{
+    sync::mpsc::{self, Sender},
+    task,
+};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, Level};
+use tracing::{error, info, Level};
+
+use crate::{aws_upload::check_is_ready, executor::SwitchNSquashService};
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
@@ -34,6 +46,7 @@ pub struct DBConfig {
     pub polling_interval: u32,
     pub cleanup_interval: Duration,
     pub max_connections: u32,
+    pub timeout: Duration,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -53,6 +66,12 @@ pub struct S3RetryPolicy {
     pub regular_recheck_duration: Duration,
 }
 
+#[derive(Clone, Debug)]
+pub struct HealthCheckConfig {
+    pub liveness_threshold: Duration,
+    pub port: u16,
+}
+
 #[derive(Clone)]
 pub struct Config {
     pub tenant_api_key: String,
@@ -60,6 +79,7 @@ pub struct Config {
     pub db: DBConfig,
     pub s3: S3Config,
     pub log_level: Level,
+    pub health_checks: HealthCheckConfig,
 }
 
 /// Implement Display for Config
@@ -228,13 +248,29 @@ impl UploadJob {
 
 /// Runs the SnS worker loop
 pub async fn compute_128bit_ct(
-    conf: &Config,
+    conf: Config,
     tx: Sender<UploadJob>,
     token: CancellationToken,
+    client: Arc<Client>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(target: "sns", "Worker started with {}", conf);
+    let port = conf.health_checks.port;
 
-    executor::run_loop(conf, &tx, token).await?;
+    let service =
+        Arc::new(SwitchNSquashService::create(conf, tx, token.child_token(), client).await?);
+
+    let http_server = HttpServer::new(service.clone(), port, token.child_token());
+    let _http_handle = task::spawn(async move {
+        if let Err(err) = http_server.start().await {
+            error!(
+                task = "health_check",
+                "Error while running server: {:?}", err
+            );
+        }
+        anyhow::Ok(())
+    });
+
+    service.run().await?;
 
     info!(target: "sns", "Worker stopped");
     Ok(())
@@ -246,11 +282,45 @@ pub async fn process_s3_uploads(
     rx: mpsc::Receiver<UploadJob>,
     tx: Sender<UploadJob>,
     token: CancellationToken,
+    client: Arc<Client>,
+    is_ready: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(target: "sns", "Uploader started with {:?}", conf.s3);
 
-    aws_upload::process_s3_uploads(conf, rx, tx, token).await?;
+    aws_upload::process_s3_uploads(conf, rx, tx, token, client, is_ready).await?;
 
     info!(target: "sns", "Uploader stopped");
     Ok(())
+}
+
+/// Configure and create the S3 client.
+///
+/// Logs errors if the connection fails or if any buckets are missing.
+/// Even in the event of a failure or missing buckets, the function returns a valid
+/// S3 client capable of retrying S3 operations later.
+pub async fn create_s3_client(conf: &Config) -> (Arc<aws_sdk_s3::Client>, bool) {
+    let s3config = &conf.s3;
+
+    let sdk_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+    let timeout_config = TimeoutConfig::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .operation_attempt_timeout(s3config.retry_policy.max_retries_timeout)
+        .build();
+
+    let retry_config = RetryConfig::standard()
+        .with_max_attempts(s3config.retry_policy.max_retries_per_upload)
+        .with_max_backoff(s3config.retry_policy.max_backoff);
+
+    let config = Builder::from(&sdk_config)
+        .timeout_config(timeout_config)
+        .retry_config(retry_config)
+        .build();
+
+    let client = Arc::new(Client::from_conf(config));
+    let (is_ready, is_connected) = check_is_ready(&client, conf).await;
+    if is_connected {
+        info!("Connected to S3, is_ready: {}", is_ready);
+    }
+
+    (client, is_ready)
 }

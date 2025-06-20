@@ -1,4 +1,7 @@
-use crate::{keyset::fetch_keys, squash_noise::safe_deserialize, Config, DBConfig, UploadJob};
+use crate::{
+    create_s3_client, keyset::fetch_keys, squash_noise::safe_deserialize, Config, DBConfig,
+    UploadJob,
+};
 use anyhow::Ok;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -100,14 +103,20 @@ async fn setup() -> anyhow::Result<(
             polling_interval: 60000,
             cleanup_interval: Duration::from_secs(10),
             max_connections: 5,
+            timeout: Duration::from_secs(5),
         },
         s3: crate::S3Config::default(),
         service_name: "test-sns-worker".to_owned(),
         log_level: Level::INFO,
+        health_checks: crate::HealthCheckConfig {
+            liveness_threshold: Duration::from_secs(10),
+            port: 8080,
+        },
     };
 
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(conf.db.max_connections)
+        .acquire_timeout(conf.db.timeout)
         .connect(&conf.db.url)
         .await?;
 
@@ -115,9 +124,10 @@ async fn setup() -> anyhow::Result<(
 
     let token = test_instance.parent_token.child_token();
     let (client_key, _) = fetch_keys(&pool, &TENANT_API_KEY.to_owned()).await?;
+    let (client, _) = create_s3_client(&conf).await;
 
     tokio::spawn(async move {
-        crate::compute_128bit_ct(&conf, upload_tx, token)
+        crate::compute_128bit_ct(conf, upload_tx, token, client)
             .await
             .expect("valid worker");
         Ok(())

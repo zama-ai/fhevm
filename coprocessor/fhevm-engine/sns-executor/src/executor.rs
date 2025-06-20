@@ -1,122 +1,210 @@
+use crate::aws_upload::check_is_ready;
 use crate::keyset::fetch_keyset;
 use crate::squash_noise::SquashNoiseCiphertext;
 use crate::HandleItem;
 use crate::KeySet;
 use crate::UploadJob;
 use crate::{Config, DBConfig, ExecutionError};
+use aws_sdk_s3::Client;
+use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::telemetry;
+use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::compact_hex;
-use sqlx::pool::PoolConnection;
 use sqlx::postgres::PgListener;
-use sqlx::{Acquire, PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 use tfhe::set_server_key;
 use tokio::select;
 use tokio::sync::mpsc::Sender;
-use tokio::time::{interval, sleep};
+use tokio::sync::RwLock;
+use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
-
 const RETRY_DB_CONN_INTERVAL: Duration = Duration::from_secs(5);
+const S3_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
-enum ConnStatus {
-    Established(sqlx::pool::PoolConnection<sqlx::Postgres>),
-    Failed,
-    Cancelled,
+pub struct SwitchNSquashService {
+    pool: PgPool,
+    conf: Config,
+    // Timestamp of the last moment the service was active
+    last_active_at: Arc<RwLock<SystemTime>>,
+    s3_client: Arc<Client>,
+    token: CancellationToken,
+    tx: Sender<UploadJob>,
+}
+impl HealthCheckService for SwitchNSquashService {
+    async fn health_check(&self) -> HealthStatus {
+        let mut status = HealthStatus::default();
+        status.set_db_connected(&self.pool).await;
+
+        let mut is_s3_ready: bool = false;
+        let mut is_s3_connected: bool = false;
+
+        // Timeout for S3 readiness check as the S3 client has its internal retry logic
+        match tokio::time::timeout(
+            S3_HEALTH_CHECK_TIMEOUT,
+            check_is_ready(&self.s3_client, &self.conf),
+        )
+        .await
+        {
+            Ok((is_ready, is_connected)) => {
+                is_s3_connected = is_connected;
+                is_s3_ready = is_ready;
+            }
+            Err(_) => {
+                status.add_error_details(
+                    "S3 readiness check timed out. Ensure S3 is reachable and configured correctly.".to_owned(),
+                );
+            }
+        }
+
+        status.set_custom_check("s3_buckets", is_s3_ready);
+        status.set_custom_check("s3_connection", is_s3_connected);
+
+        status
+    }
+
+    async fn is_alive(&self) -> bool {
+        let last_active_at = *self.last_active_at.read().await;
+        let threshold = self.conf.health_checks.liveness_threshold;
+
+        (SystemTime::now()
+            .duration_since(last_active_at)
+            .map(|d| d.as_secs())
+            .unwrap_or(u64::MAX) as u32)
+            < threshold.as_secs() as u32
+    }
+
+    fn get_version(&self) -> Version {
+        // Later, the unknowns will be initialized from build.rs
+        Version {
+            name: "sns-worker",
+            version: "unknown",
+            build: "unknown",
+        }
+    }
+}
+
+impl SwitchNSquashService {
+    pub async fn create(
+        conf: Config,
+        tx: Sender<UploadJob>,
+        token: CancellationToken,
+        s3_client: Arc<Client>,
+    ) -> Result<SwitchNSquashService, ExecutionError> {
+        let t = telemetry::tracer("init_service");
+        let s = t.child_span("pg_connect");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(conf.db.max_connections)
+            .acquire_timeout(conf.db.timeout)
+            .connect(&conf.db.url)
+            .await?;
+
+        telemetry::end_span(s);
+
+        Ok(SwitchNSquashService {
+            pool,
+            conf,
+            last_active_at: Arc::new(RwLock::new(SystemTime::now())),
+            token,
+            s3_client,
+            tx,
+        })
+    }
+
+    pub async fn run(&self) -> Result<(), ExecutionError> {
+        run_loop(
+            &self.conf,
+            &self.tx,
+            &self.pool,
+            self.token.clone(),
+            self.last_active_at.clone(),
+        )
+        .await
+    }
 }
 
 /// Executes the worker logic for the SnS task.
 pub(crate) async fn run_loop(
     conf: &Config,
     tx: &Sender<UploadJob>,
+    pool: &PgPool,
     token: CancellationToken,
+    last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
     let tenant_api_key = &conf.tenant_api_key;
     let conf = &conf.db;
 
-    let t = telemetry::tracer("init_service");
-    let s = t.child_span("pg_connect");
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(conf.max_connections)
-        .connect(&conf.url)
-        .await?;
-    telemetry::end_span(s);
-
-    let mut listener = PgListener::connect_with(&pool).await?;
-
+    let mut listener = PgListener::connect_with(pool).await?;
     info!(target: "worker", "Connected to PostgresDB");
 
     listener
         .listen_all(conf.listen_channels.iter().map(|v| v.as_str()))
         .await?;
 
+    let t = telemetry::tracer("worker_loop_init");
     let s = t.child_span("fetch_keyset");
-    let keys: KeySet = fetch_keyset(&pool, tenant_api_key).await?;
+    let keys: KeySet = fetch_keyset(pool, tenant_api_key).await?;
     telemetry::end_span(s);
-
     t.end();
 
+    info!(target: "worker", "Fetched keyset for tenant");
+
+    let mut gc_ticker = interval(conf.cleanup_interval);
+    let mut polling_ticker = interval(Duration::from_secs(conf.polling_interval.into()));
+
     loop {
-        let mut conn: PoolConnection<Postgres> =
-            match acquire_connection(&pool, token.clone()).await {
-                ConnStatus::Established(conn) => conn,
-                ConnStatus::Failed => {
-                    sleep(RETRY_DB_CONN_INTERVAL).await;
-                    continue; // Retry to reacquire a connection
-                }
-                ConnStatus::Cancelled => break,
-            };
+        // Continue looping until the service is cancelled or a critical error occurs
+        // If a transient db error is encountered, keep retrying until it recovers
 
-        let mut gc_ticker = interval(conf.cleanup_interval);
-        let mut polling_ticker = interval(Duration::from_secs(conf.polling_interval.into()));
+        if let Ok(mut value) = last_active_at.try_write() {
+            *value = SystemTime::now();
+        }
 
-        loop {
-            match fetch_and_execute_sns_tasks(&mut conn, tx, &keys, conf).await {
-                Ok(_) => {
-                    // Check if more tasks are available
-                    let count = get_remaining_tasks(&mut conn).await?;
-                    if count > 0 {
-                        if token.is_cancelled() {
-                            return Ok(());
-                        }
-                        info!(target: "worker", {count}, "SnS tasks available");
-                        continue;
-                    }
-                }
-                Err(ExecutionError::DbError(err)) => {
-                    error!(target: "worker", "Failed to proceed due to DB error: {err}");
-                    break; // Break to reacquire a connection
-                }
-                Err(err) => {
-                    error!(target: "worker", "Failed to process SnS tasks: {err}");
+        match fetch_and_execute_sns_tasks(pool, tx, &keys, conf).await {
+            Ok(maybe_remaining) => {
+                if maybe_remaining {
+                    info!(target: "worker", "More tasks to process, continuing...");
+                    continue;
                 }
             }
+            Err(ExecutionError::DbError(err)) => match err {
+                sqlx::Error::PoolTimedOut | sqlx::Error::Io(_) | sqlx::Error::Tls(_) => {
+                    error!(target: "worker", "Transient DB error occurred: {err}");
+                }
+                _ => {
+                    tokio::time::sleep(RETRY_DB_CONN_INTERVAL).await;
+                }
+            },
+            Err(err) => {
+                error!(target: "worker", "Failed to process SnS tasks: {err}");
+            }
+        }
 
-            select! {
-                _ = token.cancelled() => return Ok(()),
-                n = listener.try_recv() => {
-                    info!(target: "worker", "Received notification {:?}", n);
-                },
-                _ = polling_ticker.tick() => {
-                    debug!(target: "worker", "Polling timeout, rechecking for tasks");
-                },
-                // Garbage collecting
-                _ = gc_ticker.tick() => {
-                    garbage_collect(&mut conn).await?;
+        select! {
+            _ = token.cancelled() => return Ok(()),
+            n = listener.try_recv() => {
+                info!(target: "worker", "Received notification {:?}", n);
+            },
+            _ = polling_ticker.tick() => {
+                debug!(target: "worker", "Polling timeout, rechecking for tasks");
+            },
+            // Garbage collecting
+            _ = gc_ticker.tick() => {
+                if let Err(err) = garbage_collect(pool).await {
+                    error!(target: "worker", "Failed to garbage collect: {err}");
                 }
             }
         }
     }
-
-    Ok(())
 }
 
 // Clean up the database by removing old ciphertexts128 already uploaded to S3.
-async fn garbage_collect(conn: &mut PoolConnection<Postgres>) -> Result<(), ExecutionError> {
+async fn garbage_collect(pool: &PgPool) -> Result<(), ExecutionError> {
     let start = SystemTime::now();
     let rows = sqlx::query!(
         "UPDATE ciphertexts c
@@ -130,9 +218,10 @@ async fn garbage_collect(conn: &mut PoolConnection<Postgres>) -> Result<(), Exec
             AND d.ciphertext128 IS NOT NULL
         );"
     )
-    .execute(conn.as_mut())
-    .await?.rows_affected();
- 
+    .execute(pool)
+    .await?
+    .rows_affected();
+
     if rows > 0 {
         let _s = telemetry::tracer_with_start_time("cleanup_ct128", start);
         info!(target: "worker", "Cleaning up old ciphertexts128, rows_affected: {}", rows);
@@ -143,12 +232,12 @@ async fn garbage_collect(conn: &mut PoolConnection<Postgres>) -> Result<(), Exec
 
 /// Fetch and process SnS tasks from the database.
 async fn fetch_and_execute_sns_tasks(
-    conn: &mut PoolConnection<Postgres>,
+    pool: &PgPool,
     tx: &Sender<UploadJob>,
     keys: &KeySet,
     conf: &DBConfig,
-) -> Result<(), ExecutionError> {
-    let mut db_txn = match conn.begin().await {
+) -> Result<bool, ExecutionError> {
+    let mut db_txn = match pool.begin().await {
         Ok(txn) => txn,
         Err(err) => {
             error!(target: "worker", "Failed to begin transaction: {err}");
@@ -158,7 +247,10 @@ async fn fetch_and_execute_sns_tasks(
 
     let trx = &mut db_txn;
 
+    let mut maybe_remaining = false;
     if let Some(mut tasks) = query_sns_tasks(trx, conf.batch_limit).await? {
+        maybe_remaining = conf.batch_limit as usize == tasks.len();
+
         let t = telemetry::tracer("batch_execution");
         t.set_attribute("count", tasks.len().to_string());
 
@@ -179,23 +271,7 @@ async fn fetch_and_execute_sns_tasks(
         db_txn.rollback().await?;
     }
 
-    Ok(())
-}
-
-async fn acquire_connection(pool: &PgPool, token: CancellationToken) -> ConnStatus {
-    select! {
-        conn = pool.acquire() => match conn {
-            Ok(conn) =>   ConnStatus::Established(conn),
-            Err(err) => {
-                error!(target: "worker", "Failed to acquire connection: {err}");
-                ConnStatus::Failed
-            }
-        },
-        _ = token.cancelled() => {
-            info!(target: "worker", "Cancellation received while acquiring connection");
-            ConnStatus::Cancelled
-        }
-    }
+    Ok(maybe_remaining)
 }
 
 /// Queries the database for a fixed number of tasks.
@@ -243,38 +319,6 @@ async fn query_sns_tasks(
         .collect();
 
     Ok(Some(tasks))
-}
-
-/// Returns the number of remaining tasks in the database.
-async fn get_remaining_tasks(
-    conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
-) -> Result<i64, ExecutionError> {
-    let mut db_txn = match conn.begin().await {
-        Ok(txn) => txn,
-        Err(err) => {
-            error!(target: "worker", "Failed to begin transaction: {err}");
-            return Err(err.into());
-        }
-    };
-
-    let records_count = sqlx::query_scalar!(
-        "
-        SELECT COUNT(*)
-        FROM (
-            SELECT 1
-            FROM pbs_computations a
-            JOIN ciphertexts c 
-            ON a.handle = c.handle
-            WHERE c.ciphertext IS NOT NULL
-            AND a.is_completed = FALSE -- filter out completed tasks
-            FOR UPDATE OF a SKIP LOCKED -- don't count locked rows
-        ) AS unlocked_rows;
-        ",
-    )
-    .fetch_one(db_txn.as_mut())
-    .await?;
-
-    Ok(records_count.unwrap_or(0))
 }
 
 async fn enqueue_upload_tasks(
@@ -381,15 +425,15 @@ async fn update_ciphertext128(
             // Insert the ciphertext128 into the database for reliability
             // Later on, we clean up all uploaded ct128
             let res = sqlx::query!(
-                    "
+                "
                     UPDATE ciphertexts
                     SET ciphertext128 = $1
                     WHERE handle = $2;",
-                    ciphertext128.as_ref(),
-                    task.handle
-                )
-                .execute(db_txn.as_mut())
-                .await;
+                ciphertext128.as_ref(),
+                task.handle
+            )
+            .execute(db_txn.as_mut())
+            .await;
 
             match res {
                 Ok(val) => {
