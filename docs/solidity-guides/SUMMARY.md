@@ -22,6 +22,7 @@
 - [Encrypted Inputs](inputs.md)
 - [Access Control List](acl/README.md)
   - [ACL examples](acl/acl_examples.md)
+  - [Reorgs handling](acl/reorgs_handling.md)
 - [Logics](<README (1).md>)
   - [Branching](logics/conditions.md)
   - [Dealing with branches and conditions](logics/loop.md)
