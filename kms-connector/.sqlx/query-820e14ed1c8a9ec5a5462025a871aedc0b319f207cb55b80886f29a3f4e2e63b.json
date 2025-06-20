@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM public_decryption_responses WHERE decryption_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "820e14ed1c8a9ec5a5462025a871aedc0b319f207cb55b80886f29a3f4e2e63b"
+}
