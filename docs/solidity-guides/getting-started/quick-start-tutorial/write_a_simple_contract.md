@@ -43,12 +43,12 @@ contract Counter {
     return _count;
   }
 
-  /// @notice Increments the counter by 1
+  /// @notice Increments the counter by a specific value
   function increment(uint32 value) external {
     _count += value;
   }
 
-  /// @notice Decrements the counter by 1
+  /// @notice Decrements the counter by a specific value
   function decrement(uint32 value) external {
     require(_count >= value, "Counter: cannot decrement below zero");
     _count -= value;
@@ -89,7 +89,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { ethers } from "hardhat";
 
 describe("Counter", function () {
-  it("Empty test", async function () {
+  it("empty test", async function () {
     console.log("Cool! The test basic skeleton is running!");
   });
 });
@@ -98,7 +98,7 @@ describe("Counter", function () {
 The file contains the following:
 
 - all the required `import` statements we will need during the various tests
-- The `chai` basic statements to run a first empty test named `Empty test` {% endstep %}
+- The `chai` basic statements to run a first empty test named `empty test` {% endstep %}
 
 {% step %}
 
@@ -115,7 +115,7 @@ Output:
 ```sh
   Counter
 Cool! The test basic skeleton is running!
-    ✔ Empty test
+    ✔ empty test
 
 
   1 passing (1ms)
