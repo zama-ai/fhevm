@@ -31,8 +31,7 @@ npm -v
 
 ### Create a new GitHub repository from the FHEVM Hardhat template.
 
-1. On GitHub, navigate to the main page of the
-   [FHEVM Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template) repository.
+1. On GitHub, navigate to the main page of the [FHEVM Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template) repository.
 2. Above the file list, click the green **Use this template** button.
 3. Follow the instructions to create a new repository from the FHEVM Hardhat template.
 
