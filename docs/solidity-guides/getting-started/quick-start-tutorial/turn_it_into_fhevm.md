@@ -1,10 +1,8 @@
-# 3. Turn it into FHEVM
+# Turn it into FHEVM
 
-In this tutorial, you'll learn how to take a basic Solidity smart contract and progressively upgrade it to support Fully
-Homomorphic Encryption using the FHEVM library by Zama.
+In this tutorial, you'll learn how to take a basic Solidity smart contract and progressively upgrade it to support Fully Homomorphic Encryption using the FHEVM library by Zama.
 
-Starting with the plain `Counter.sol` contract that you build from the
-[2. Writing a simple contract](write_a_simple_contract.md), and step-by-step, you’ll learn how to:
+Starting with the plain `Counter.sol` contract that you build from the ["Write a simple contract" tutorial](write_a_simple_contract.md), and step-by-step, you’ll learn how to:
 
 - Replace standard types with encrypted equivalents
 - Integrate zero-knowledge proof validation
@@ -53,8 +51,8 @@ contract Counter {
 }
 ```
 
-This is a plain `Counter` contract that we’ll use as the starting point for adding FHEVM functionality. We will modify
-this contract step-by-step to progressively integrate FHEVM capabilities. {% endstep %}
+This is a plain `Counter` contract that we’ll use as the starting point for adding FHEVM functionality. We will modify this contract step-by-step to progressively integrate FHEVM capabilities. 
+{% endstep %}
 
 {% step %}
 
@@ -105,6 +103,10 @@ This change:
 - Renames the contract to `FHECounter`
 - Inherits from `SepoliaConfig` to enable FHEVM support
 
+{% hint style="warning" %}
+This contract must inherit from the `SepoliaConfig` abstract contract; otherwise, it will not be able to execute any FHEVM-related functionality on Sepolia or Hardhat.
+{% endhint %}
+
 From your project's root directory, run:
 
 ```sh
@@ -121,8 +123,7 @@ Great! Your smart contract is now compiled and ready to use **FHEVM features.**
 
 ## Comment out the `increment()` and `decrement()` Functions
 
-Before we move forward, let’s comment out the `increment()` and `decrement()` functions in `FHECounter`.\
-We'll replace them later with updated versions that support FHE-encrypted operations.
+Before we move forward, let’s comment out the `increment()` and `decrement()` functions in `FHECounter`. We'll replace them later with updated versions that support FHE-encrypted operations.
 
 ```solidity
  /// @notice Increments the counter by a specific value
@@ -175,15 +176,13 @@ function getCount() external view returns (euint32) {
 
 {% step %}
 
-## Step 5: Replace `increment(uint32 value)` with the FHEVM version `increment(externalEuint32 value)`
+## Replace `increment(uint32 value)` with the FHEVM version `increment(externalEuint32 value)`
 
 To support encrypted input, we will update the increment function to accept a value encrypted off-chain.
 
-Instead of using a `uint32`, the new version will accept an `externalEuint32`, which is an encrypted integer produced
-off-chain and sent to the smart contract.
+Instead of using a `uint32`, the new version will accept an `externalEuint32`, which is an encrypted integer produced off-chain and sent to the smart contract.
 
-To ensure the validity of this encrypted value, we also include a second argument:`inputProof`, a bytes array containing
-a Zero-Knowledge Proof of Knowledge (ZKPoK) that proves two things:
+To ensure the validity of this encrypted value, we also include a second argument:`inputProof`, a bytes array containing a Zero-Knowledge Proof of Knowledge (ZKPoK) that proves two things:
 
 1. The `externalEuint32` was encrypted off-chain by the function caller (`msg.sender`)
 2. The `externalEuint32` is bound to the contract (`address(this)`) and can only be processed by it.
@@ -212,8 +211,7 @@ function increment(externalEuint32 inputEuint32, bytes calldata inputProof) exte
 
 ## Convert `externalEuint32` to `euint32`
 
-You cannot directly use `externalEuint32` in FHE operations.\
-To manipulate it with the FHEVM library, you first need to convert it into the native FHE type `euint32`.
+You cannot directly use `externalEuint32` in FHE operations. To manipulate it with the FHEVM library, you first need to convert it into the native FHE type `euint32`.
 
 This conversion is done using:
 
@@ -248,8 +246,7 @@ function increment(externalEuint32 inputEuint32, bytes calldata inputProof) exte
 
 ## Convert `_count += value` into its FHEVM equivalent
 
-To perform the update `_count += value` in a Fully Homomorphic way, we\
-use the `FHE.add()` operator. This function allows us to compute the FHE sum of 2 encrypted integers.
+To perform the update `_count += value` in a Fully Homomorphic way, we use the `FHE.add()` operator. This function allows us to compute the FHE sum of 2 encrypted integers.
 
 #### Replace
 
@@ -271,16 +268,18 @@ function increment(externalEuint32 inputEuint32, bytes calldata inputProof) exte
 }
 ```
 
-{% hint style="info" %} This FHE operation allows the smart contract to process encrypted values without ever decrypting
-them\
-— a core feature of FHEVM that enables on-chain privacy. {% endhint %} {% endstep %} {% endstepper %}
+{% hint style="info" %}
+This FHE operation allows the smart contract to process encrypted values without ever decrypting them — a core feature of FHEVM that enables on-chain privacy. 
+{% endhint %}
+
+{% endstep %} 
+{% endstepper %}
 
 ## Grant FHE Permissions
 
-{% hint style="warning" %} This step is critical!\
-You must grant FHE permissions to both the contract and the caller to ensure the encrypted `_count` value can be
-decrypted off-chain by the caller.\
-Without these 2 permissions, the caller will not be able to compute the clear result. {% endhint %}
+{% hint style="warning" %}
+This step is critical! You must grant FHE permissions to both the contract and the caller to ensure the encrypted `_count` value can be decrypted off-chain by the caller. Without these 2 permissions, the caller will not be able to compute the clear result. 
+{% endhint %}
 
 To grant FHE permission we will call the `FHE.allow()` function.
 
@@ -307,17 +306,15 @@ function increment(externalEuint32 inputEuint32, bytes calldata inputProof) exte
 }
 ```
 
-{% hint style="info" %} We grant **two** FHE permissions here — not just one.\
-In the next part of the tutorial, you'll learn why **both** are necessary. {% endhint %}
+{% hint style="info" %}
+We grant **two** FHE permissions here — not just one. In the next part of the tutorial, you'll learn why **both** are necessary.
+{% endhint %}
 
-🎉 Congratulations! Your smart contract is now fully **FHEVM-compatible**.
+Congratulations! Your smart contract is now fully **FHEVM-compatible**.
 
 Now you should have the following files in your project:
 
-- [`contracts/FHECounter.sol`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#fhecounter.sol)
-  — your Solidity smart FHEVM contract
-- [`test/FHECounter.ts`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#fhecounter.ts)
-  — your FHEVM Hardhat test suite written in TypeScript
+- [`contracts/FHECounter.sol`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#fhecounter.sol) — your Solidity smart FHEVM contract
+- [`test/FHECounter.ts`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#fhecounter.ts) — your FHEVM Hardhat test suite written in TypeScript
 
-Next, we’ll move on to the **TypeScript integration**, where you’ll learn how to interact with your newly upgraded FHEVM
-contract in a test suite.
+In the [next tutorial](test_fhevm_contract.md), we’ll move on to the **TypeScript integration**, where you’ll learn how to interact with your newly upgraded FHEVM contract in a test suite.
