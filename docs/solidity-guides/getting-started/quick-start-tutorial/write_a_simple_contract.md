@@ -1,9 +1,8 @@
-# 2. Write a simple contract
+# Write a simple contract
 
-In this tutorial, you'll write and test a simple regular Solidity smart contract within the FHEVM Hardhat template to
-get familiar with Hardhat workflow.
+In this tutorial, you'll write and test a simple regular Solidity smart contract within the FHEVM Hardhat template to get familiar with Hardhat workflow.
 
-In the [next tutorial](fhecounter.md), you'll learn how to convert this contract into an FHEVM contract.
+In the [next tutorial](turn_it_into_fhevm.md), you'll learn how to convert this contract into an FHEVM contract.
 
 ## Prerequiste
 
@@ -70,7 +69,7 @@ From your project's root directory, run:
 npx hardhat compile
 ```
 
-🎉 Great! Your Smart Contract is now compiled. {% endstep %} {% endstepper %}
+Great! Your Smart Contract is now compiled. {% endstep %} {% endstepper %}
 
 ## Set up the testing environment
 
@@ -123,7 +122,7 @@ Cool! The test basic skeleton is running!
   1 passing (1ms)
 ```
 
-🎉 Great! Your Hardhat test environment is properly setup.
+Great! Your Hardhat test environment is properly setup.
 
 {% endstep %}
 
@@ -133,9 +132,7 @@ Cool! The test basic skeleton is running!
 
 Before interacting with smart contracts in Hardhat tests, we need to initialize signers.
 
-{% hint style="info" %} In the context of Ethereum development, a signer represents an entity (usually a wallet) that
-can send transactions and sign messages.\
-In Hardhat, `ethers.getSigners()` returns a list of pre-funded test accounts. {% endhint %}
+{% hint style="info" %} In the context of Ethereum development, a signer represents an entity (usually a wallet) that can send transactions and sign messages. In Hardhat, `ethers.getSigners()` returns a list of pre-funded test accounts. {% endhint %}
 
 We’ll define three named signers for convenience:
 
@@ -199,8 +196,7 @@ address of user bob is 0x3f0CdAe6ebd93F9F776BCBB7da1D42180cC8fcC1
 
 Now that we have our signers set up, we can deploy the smart contract.
 
-To ensure isolated and deterministic tests, we should deploy a fresh instance of `Counter.sol` before each test. This
-avoids any side effects from previous tests.
+To ensure isolated and deterministic tests, we should deploy a fresh instance of `Counter.sol` before each test. This avoids any side effects from previous tests.
 
 The standard approach is to define a `deployFixture()` function that handles contract deployment.
 
@@ -269,7 +265,7 @@ describe("Counter", function () {
 });
 ```
 
-▶️ **Run the test:**
+**Run the test:**
 
 From your project's root directory, run:
 
@@ -300,7 +296,7 @@ Now everything is up and running, you can start testing your contract functions.
 
 Everything is up and running, we can now call the `Counter.sol` view function `getCount()` !
 
-✍️ Just below the test block `it("should be deployed", async function () {...}`,
+Just below the test block `it("should be deployed", async function () {...}`,
 
 add the following unit test:
 
@@ -340,8 +336,7 @@ Counter.getCount() === 0
 
 ## Call the contract `increment()` transaction function
 
-Just below the test block `it("count should be zero after deployment", async function () {...}`, add the following test
-block:
+Just below the test block `it("count should be zero after deployment", async function () {...}`, add the following test block:
 
 ```ts
 it("increment the counter by 1", async function () {
@@ -445,6 +440,4 @@ These files form the foundation of a basic Hardhat-based smart contract project.
 
 Now that you've written and tested a basic Solidity smart contract, you're ready to take the next step.
 
-In the [next tutorial](fhecounter.md), we’ll transform this standard `Counter.sol` contract into a trivial
-FHEVM-compatible version — allowing the counter value to be stored and updated using trivial fully homomorphic
-encryption.
+In the [next tutorial](turn_it_into_fhevm.md), we’ll transform this standard `Counter.sol` contract into `FHECounter.sol`, a trivial FHEVM-compatible version — allowing the counter value to be stored and updated using trivial fully homomorphic encryption.

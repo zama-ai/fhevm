@@ -1,6 +1,6 @@
-# 1. Set up Hardhat
+# Set up Hardhat
 
-This tutorial guides you to set up the development environment with FHEVM Hardhat template.
+In this section, you’ll learn how to set up a FHEVM Hardhat development environment using the **FHEVM Hardhat template** as a starting point for building and testing fully homomorphic encrypted smart contracts.
 
 ## Create a local Hardhat Project
 
@@ -14,8 +14,7 @@ Ensure that Node.js is installed on your machine.
   [official website](https://nodejs.org/en).
 - Use an **even-numbered** version (e.g., `v18.x`, `v20.x`)
 
-{% hint style="warning" %} **Hardhat** does not support odd-numbered Node.js versions. If you’re using one (e.g., v21.x,
-v23.x), Hardhat will display a persistent warning message and may behave unexpectedly. {% endhint %}
+{% hint style="warning" %} **Hardhat** does not support odd-numbered Node.js versions. If you’re using one (e.g., v21.x, v23.x), Hardhat will display a persistent warning message and may behave unexpectedly. {% endhint %}
 
 To verify your installation:
 
@@ -65,15 +64,14 @@ From the project root directory, run:
 npm install
 ```
 
-This will install all required dependencies defined in your `package.json`, setting up your local FHEVM Hardhat
-development environment. {% endstep %}
+This will install all required dependencies defined in your `package.json`, setting up your local FHEVM Hardhat development environment. 
+{% endstep %}
 
 {% step %}
 
 ### Set up the Hardhat configuration variables (optional)&#x20;
 
-If you do plan to deploy to the Sepolia Ethereum Testnet, you'll need to set up the following
-[Hardhat Configuration variables](https://hardhat.org/hardhat-runner/docs/guides/configuration-variables).
+If you do plan to deploy to the Sepolia Ethereum Testnet, you'll need to set up the following [Hardhat Configuration variables](https://hardhat.org/hardhat-runner/docs/guides/configuration-variables).
 
 `MNEMONIC`&#x20;
 
@@ -110,9 +108,11 @@ If you skip this step, Hardhat will fall back to these defaults:
 
 ### Missing variable error:
 
-If any of the requested Hardhat Configuration Variables is missing, you'll get an error message like this
-one:`Error HH1201: Cannot find a value for the configuration variable 'MNEMONIC'. Use 'npx hardhat vars set MNEMONIC' to set it or 'npx hardhat vars setup' to list all the configuration variables used by this project.`
-{% endhint %} {% endstep %} {% endstepper %}
+If any of the requested Hardhat Configuration Variables is missing, you'll get an error message like this one:`Error HH1201: Cannot find a value for the configuration variable 'MNEMONIC'. Use 'npx hardhat vars set MNEMONIC' to set it or 'npx hardhat var setup' to list all the configuration variables used by this project.`
+
+{% endhint %}
+{% endstep %}
+{% endstepper %}
 
 Congratulations! You're all set to start building your confidential dApp.
 
@@ -122,22 +122,17 @@ Congratulations! You're all set to start building your confidential dApp.
 
 If you're using Visual Studio Code, there are some extensions available to improve you your development experience:
 
-- [Prettier - Code formatter by prettier.io](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
-  — ID:`esbenp.prettier-vscode`,
-- [ESLint by Microsoft](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) —
-  ID:`dbaeumer.vscode-eslint`
+- [Prettier - Code formatter by prettier.io](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode) — ID:`esbenp.prettier-vscode`,
+- [ESLint by Microsoft](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) — ID:`dbaeumer.vscode-eslint`
 
 Solidity support (pick one only):
 
-- [Solidity by Juan Blanco](https://marketplace.visualstudio.com/items?itemName=JuanBlanco.solidity) —
-  ID:`juanblanco.solidity`
-- [Solidity by Nomic Foundation](https://marketplace.visualstudio.com/items?itemName=NomicFoundation.hardhat-solidity) —
-  ID:`nomicfoundation.hardhat-solidity`
+- [Solidity by Juan Blanco](https://marketplace.visualstudio.com/items?itemName=JuanBlanco.solidity) — ID:`juanblanco.solidity`
+- [Solidity by Nomic Foundation](https://marketplace.visualstudio.com/items?itemName=NomicFoundation.hardhat-solidity) — ID:`nomicfoundation.hardhat-solidity`
 
 ### Rest set the Hardhat project
 
-If you'd like to start from a clean slate, you can reset your FHEVM Hardhat project by removing all example code and
-generated files.&#x20;
+If you'd like to start from a clean slate, you can reset your FHEVM Hardhat project by removing all example code and generated files.
 
 ```sh
 # Navigate to the root of your new FHEVM Hardhat project
