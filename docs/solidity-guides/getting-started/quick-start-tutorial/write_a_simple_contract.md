@@ -428,10 +428,8 @@ Counter.getCount() === 0
 
 Now you have succesefully write and test your counter contract. You should have the following files in your project:
 
-- [`contracts/Counter.sol`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#counter.sol)
-  — your Solidity smart contract
-- [`test/Counter.ts`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#counter.ts)
-  — your Hardhat test suite written in TypeScript
+- [`contracts/Counter.sol`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#counter.sol) — your Solidity smart contract
+- [`test/Counter.ts`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#counter.ts) — your Hardhat test suite written in TypeScript
 
 These files form the foundation of a basic Hardhat-based smart contract project.
 
