@@ -13,7 +13,9 @@ Ensure that Node.js is installed on your machine.
 - Download and install the recommended LTS (Long-Term Support) version from the [official website](https://nodejs.org/en).
 - Use an **even-numbered** version (e.g., `v18.x`, `v20.x`)
 
-{% hint style="warning" %} **Hardhat** does not support odd-numbered Node.js versions. If you’re using one (e.g., v21.x, v23.x), Hardhat will display a persistent warning message and may behave unexpectedly. {% endhint %}
+{% hint style="warning" %}
+**Hardhat** does not support odd-numbered Node.js versions. If you’re using one (e.g., v21.x, v23.x), Hardhat will display a persistent warning message and may behave unexpectedly.
+{% endhint %}
 
 To verify your installation:
 
@@ -33,9 +35,11 @@ npm -v
 2. Above the file list, click the green **Use this template** button.
 3. Follow the instructions to create a new repository from the FHEVM Hardhat template.
 
-{% hint style="info" %} See Github doc:
-[Creating a repository from a template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template#creating-a-repository-from-a-template)
-{% endhint %} {% endstep %}
+{% hint style="info" %} 
+See Github doc: [Creating a repository from a template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template#creating-a-repository-from-a-template)
+{% endhint %} 
+
+{% endstep %}
 
 {% step %}
 
@@ -101,7 +105,9 @@ If you skip this step, Hardhat will fall back to these defaults:
 - `MNEMONIC` = "test test test test test test test test test test test junk"
 - `INFURA_API_KEY` = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
 
-{% hint style="warning" %} These defaults are not suitable for real deployments. {% endhint %}
+{% hint style="warning" %}
+These defaults are not suitable for real deployments.
+{% endhint %}
 
 {% hint style="warning" %}
 
