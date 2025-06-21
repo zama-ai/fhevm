@@ -11,7 +11,7 @@ In the [next tutorial](turn_it_into_fhevm.md), you'll learn how to convert this 
 
 ## What you'll learn
 
-By the end of this tutorial, you will learn to&#x20;
+By the end of this tutorial, you will learn to:
 
 - Write a minimal Solidity contract using Hardhat.
 - Test the contract using TypeScript and Hardhat’s testing framework.
@@ -131,7 +131,9 @@ Great! Your Hardhat test environment is properly setup.
 
 Before interacting with smart contracts in Hardhat tests, we need to initialize signers.
 
-{% hint style="info" %} In the context of Ethereum development, a signer represents an entity (usually a wallet) that can send transactions and sign messages. In Hardhat, `ethers.getSigners()` returns a list of pre-funded test accounts. {% endhint %}
+{% hint style="info" %}
+In the context of Ethereum development, a signer represents an entity (usually a wallet) that can send transactions and sign messages. In Hardhat, `ethers.getSigners()` returns a list of pre-funded test accounts.
+{% endhint %}
 
 We’ll define three named signers for convenience:
 
@@ -219,7 +221,7 @@ beforeEach(async () => {
 
 This ensures each test runs with a clean, independent contract instance.
 
-Let's put it together. Now your`test/Counter.ts` should look like the following:&#x20;
+Let's put it together. Now your`test/Counter.ts` should look like the following:
 
 ```ts
 import { Counter, Counter__factory } from "../types";
@@ -283,7 +285,8 @@ Counter has been deployed at address 0x7553CB9124f974Ee475E5cE45482F90d5B6076BC
   1 passing (7ms)
 ```
 
-{% endstep %} {% endstepper %}
+{% endstep %}
+{% endstepper %}
 
 ## Test functions
 

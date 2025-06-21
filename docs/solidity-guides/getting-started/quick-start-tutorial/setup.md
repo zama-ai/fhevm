@@ -4,7 +4,8 @@ In this section, you’ll learn how to set up a FHEVM Hardhat development enviro
 
 ## Create a local Hardhat Project
 
-{% stepper %} {% step %}
+{% stepper %}
+{% step %}
 
 ### Install a Node.js TLS version
 
@@ -35,7 +36,7 @@ npm -v
 2. Above the file list, click the green **Use this template** button.
 3. Follow the instructions to create a new repository from the FHEVM Hardhat template.
 
-{% hint style="info" %} 
+{% hint style="info" %}
 See Github doc: [Creating a repository from a template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template#creating-a-repository-from-a-template)
 {% endhint %} 
 
@@ -72,13 +73,13 @@ This will install all required dependencies defined in your `package.json`, sett
 
 {% step %}
 
-### Set up the Hardhat configuration variables (optional)&#x20;
+### Set up the Hardhat configuration variables (optional)
 
 If you do plan to deploy to the Sepolia Ethereum Testnet, you'll need to set up the following [Hardhat Configuration variables](https://hardhat.org/hardhat-runner/docs/guides/configuration-variables).
 
-`MNEMONIC`&#x20;
+`MNEMONIC`
 
-A mnemonic is a 12-word seed phrase used to generate your Ethereum wallet keys.&#x20;
+A mnemonic is a 12-word seed phrase used to generate your Ethereum wallet keys.
 
 1. Get one by creating a wallet with [MetaMask](https://metamask.io/), or using any trusted mnemonic generator.
 2. Set it up in your Hardhat project:
@@ -87,9 +88,9 @@ A mnemonic is a 12-word seed phrase used to generate your Ethereum wallet keys.&
 npx hardhat vars set MNEMONIC
 ```
 
-`INFURA_API_KEY`&#x20;
+`INFURA_API_KEY`
 
-The INFURA project key allows you to connect to Ethereum testnets like Sepolia.&#x20;
+The INFURA project key allows you to connect to Ethereum testnets like Sepolia.
 
 1. Obtain one by following the[ Infura + MetaMask](https://docs.metamask.io/services/get-started/infura/) setup guide.
 2. Configure it in your project:
@@ -121,7 +122,7 @@ If any of the requested Hardhat Configuration Variables is missing, you'll get a
 
 Congratulations! You're all set to start building your confidential dApp.
 
-## Optional settings&#x20;
+## Optional settings
 
 ### Install VSCode extensions
 

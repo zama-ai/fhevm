@@ -314,9 +314,7 @@ Congratulations! Your smart contract is now fully **FHEVM-compatible**.
 
 Now you should have the following files in your project:
 
-- [`contracts/FHECounter.sol`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#fhecounter.sol)
-  — your Solidity smart FHEVM contract
-- [`test/FHECounter.ts`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#fhecounter.ts)
-  — your FHEVM Hardhat test suite written in TypeScript
+- [`contracts/FHECounter.sol`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#fhecounter.sol) — your Solidity smart FHEVM contract
+- [`test/FHECounter.ts`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#fhecounter.ts) — your FHEVM Hardhat test suite written in TypeScript
 
-Next, we’ll move on to the **TypeScript integration**, where you’ll learn how to interact with your newly upgraded FHEVM contract in a test suite.
+In the [next tutorial](test_fhevm_contract.md), we’ll move on to the **TypeScript integration**, where you’ll learn how to interact with your newly upgraded FHEVM contract in a test suite.

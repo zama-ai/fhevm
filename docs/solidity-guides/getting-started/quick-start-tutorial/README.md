@@ -23,17 +23,18 @@ In **about 30 minutes**, you'll go from a basic Solidity contract to a fully con
 1. Set up your development environment
 2. Write a simple Solidity smart contract
 3. Convert it into an FHEVM-compatible confidential contract
+4. Test your FHEVM-compatible confidential contract
 
 ## Prerequisite
 
 - A basic understanding of **Solidity** library and **Ethereum**.
-- Some familarity with **Hardhat.**
+- Some familiarity with **Hardhat.**
 
 {% hint style="info" %}
 
 #### About Hardhat
 
-[**Hardhat**](https://hardhat.org/) is a development environment for compiling, deploying, testing, and debugging Ethereum smart contracts. It’s widely used in the Ethereum ecosystem.&#x20;
+[**Hardhat**](https://hardhat.org/) is a development environment for compiling, deploying, testing, and debugging Ethereum smart contracts. It’s widely used in the Ethereum ecosystem.
 
 In this tutorial, we'll introduce the FHEVM hardhat template that provides an easy way to use FHEVM. 
 
