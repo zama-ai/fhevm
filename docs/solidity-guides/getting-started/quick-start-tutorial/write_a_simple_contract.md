@@ -7,8 +7,7 @@ In the [next tutorial](turn_it_into_fhevm.md), you'll learn how to convert this 
 ## Prerequiste
 
 - [Set up your Hardhat envrionment](quick-start-tutorial/setup.md).
-- Make sure that you Hardhat project is clean and ready to start. See the instructions
-  [here](quick-start-tutorial/setup.md#rest-set-the-hardhat-envrionment).
+- Make sure that you Hardhat project is clean and ready to start. See the instructions [here](quick-start-tutorial/setup.md#rest-set-the-hardhat-envrionment).
 
 ## What you'll learn
 
@@ -21,7 +20,7 @@ By the end of this tutorial, you will learn to&#x20;
 
 {% stepper %} {% step %}
 
-## Step 1: Create `Counter.sol`
+## Create `Counter.sol`
 
 Go to your project's `contracts` directory:
 
@@ -61,7 +60,7 @@ contract Counter {
 
 {% step %}
 
-## Step 2: Compile `Counter.sol`
+## Compile `Counter.sol`
 
 From your project's root directory, run:
 

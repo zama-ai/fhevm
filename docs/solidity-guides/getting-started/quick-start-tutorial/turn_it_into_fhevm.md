@@ -172,7 +172,7 @@ function getCount() external view returns (euint32) {
 
 {% step %}
 
-## Step 5: Replace `increment(uint32 value)` with the FHEVM version `increment(externalEuint32 value)`
+## Replace `increment(uint32 value)` with the FHEVM version `increment(externalEuint32 value)`
 
 To support encrypted input, we will update the increment function to accept a value encrypted off-chain.
 

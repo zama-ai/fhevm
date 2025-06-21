@@ -10,8 +10,7 @@ In this section, you’ll learn how to set up a FHEVM Hardhat development enviro
 
 Ensure that Node.js is installed on your machine.
 
-- Download and install the recommended LTS (Long-Term Support) version from the
-  [official website](https://nodejs.org/en).
+- Download and install the recommended LTS (Long-Term Support) version from the [official website](https://nodejs.org/en).
 - Use an **even-numbered** version (e.g., `v18.x`, `v20.x`)
 
 {% hint style="warning" %} **Hardhat** does not support odd-numbered Node.js versions. If you’re using one (e.g., v21.x, v23.x), Hardhat will display a persistent warning message and may behave unexpectedly. {% endhint %}
