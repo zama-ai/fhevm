@@ -23,6 +23,9 @@ RUN mkdir /fhevm-keys && \
     cargo fetch && \
     SQLX_OFFLINE=true cargo build --release -p coprocessor --bin utils
 
+# Avoid a conflict with prod stage
+RUN rm -rf /lib/apk
+
 # Stage 2: Runtime image
 FROM cgr.dev/chainguard/glibc-dynamic:latest AS prod
 
