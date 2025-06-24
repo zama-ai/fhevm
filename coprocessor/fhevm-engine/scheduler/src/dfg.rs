@@ -11,6 +11,7 @@ pub struct OpNode {
     result: DFGTaskResult,
     result_handle: Handle,
     inputs: Vec<DFGTaskInput>,
+    #[cfg(feature = "gpu")]
     locality: i32,
 }
 pub type OpEdge = u8;
@@ -44,6 +45,7 @@ impl DFGraph {
             result: None,
             result_handle: rh,
             inputs,
+            #[cfg(feature = "gpu")]
             locality: -1,
         }))
     }
@@ -66,7 +68,7 @@ impl DFGraph {
         Ok(())
     }
 
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     pub fn get_results(&mut self) -> Vec<(Handle, Result<(i16, Vec<u8>)>)> {
         let mut res = Vec::with_capacity(self.graph.node_count());
         for index in 0..self.graph.node_count() {

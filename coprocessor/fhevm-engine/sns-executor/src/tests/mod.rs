@@ -138,7 +138,7 @@ struct TestFile {
 
 /// Creates a test-file from handle, ciphertext64 and plaintext
 /// Can be used to update/create_new ciphertext64.bin file
-#[allow(dead_code)]
+#[expect(dead_code)]
 fn write_test_file(filename: &str) {
     let handle: [u8; 32] = hex::decode("TBD").unwrap().try_into().unwrap();
     let ciphertext64 = hex::decode("TBD").unwrap();

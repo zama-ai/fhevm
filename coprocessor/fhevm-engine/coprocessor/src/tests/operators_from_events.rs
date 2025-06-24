@@ -66,7 +66,7 @@ fn binary_op_to_event(
         .parse()
         .unwrap();
     let s_byte = |is_scalar: bool| ScalarByte::from(is_scalar as u8);
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     let scalarByte = s_byte(op.is_scalar);
     let lhs = *lhs;
     let rhs = if op.is_scalar && op.bits <= 256 {
@@ -221,7 +221,7 @@ fn binary_op_to_event(
 }
 
 fn next_handle() -> Handle {
-    #[allow(non_upper_case_globals)]
+    #[expect(non_upper_case_globals)]
     static count: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let v = count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     as_handle(&BigInt::from(v))

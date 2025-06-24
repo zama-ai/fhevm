@@ -304,9 +304,7 @@ impl Database {
         } else {
             prev_event
         };
-        let Some(block_number) = prev_event.block_number else {
-            return None;
-        };
+        let block_number = prev_event.block_number?;
         let Some(block_hash) = prev_event.block_hash else {
             return Some(block_number); // but cannot write to db
         };
@@ -322,7 +320,7 @@ impl Database {
         )
         .execute(&self.pool)
         .await;
-        return Some(block_number);
+        Some(block_number)
     }
 
     pub async fn read_last_valid_block(&mut self) -> Option<i64> {

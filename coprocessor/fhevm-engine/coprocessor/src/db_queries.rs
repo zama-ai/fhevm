@@ -58,7 +58,6 @@ pub async fn check_if_api_key_is_valid<T>(
     }
 }
 
-#[allow(dead_code)] // gpu server key currently not used
 pub struct FetchTenantKeyResult {
     pub chain_id: i32,
     pub verifying_contract_address: String,

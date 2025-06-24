@@ -22,7 +22,7 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn new(
         input_verification_address: Address,
         ciphertext_commits_address: Address,

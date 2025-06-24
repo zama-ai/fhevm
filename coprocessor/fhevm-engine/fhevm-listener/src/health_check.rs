@@ -102,14 +102,14 @@ impl Health {
 
     pub async fn check_database_connected(&mut self, database_url: &str) {
         let Ok(options) = database_url.parse::<PgConnectOptions>() else {
-            self.message += &format!("Bad Database url.\n");
+            self.message += "Bad Database url.\n";
             self.database_connected = false;
             self.unhealthy();
             return;
         };
         let pool = PgPoolOptions::new().max_connections(1).connect_with(options.clone()).await;
         if let Err(_err) = pool {
-            self.message += &format!("Database connection failed.\n");
+            self.message += "Database connection failed.\n";
             self.database_connected = false;
             self.unhealthy();
             return;
@@ -123,7 +123,7 @@ impl Health {
             .connect_ws(ws)
             .await;
         if let Err(_err) = provider {
-            self.message += &format!("Blockchain connection failed.\n");
+            self.message += "Blockchain connection failed.\n";
             self.blockchain_connected = false;
             self.unhealthy();
             return;
@@ -159,13 +159,13 @@ impl HealthCheck {
     pub fn new(
         port: u16,
         cancel_token: CancellationToken,
-        database_url: &String,
-        blockchain_url: &String,
+        database_url: &str,
+        blockchain_url: &str,
     ) -> Self {
         let health_state = HealthStateContent {
                 status: Health::initial(),
-                database_url: database_url.clone(),
-                blockchain_url: blockchain_url.clone(),
+                database_url: database_url.to_owned(),
+                blockchain_url: blockchain_url.to_owned(),
         };
         Self {
             health_state: Arc::new(RwLock::new(health_state)),
