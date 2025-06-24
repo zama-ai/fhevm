@@ -170,7 +170,7 @@ impl FhevmExecutorService {
         FhevmExecutorService { keys }
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn process_computation(
         comp: &SyncComputation,
         state: &mut ComputationState,
@@ -250,7 +250,6 @@ impl FhevmExecutorService {
         Ok(())
     }
 
-    #[allow(dead_code)]
     fn get_ciphertext(
         comp: &SyncComputation,
         result_handle: &Handle,
@@ -280,7 +279,6 @@ impl FhevmExecutorService {
         }
     }
 
-    #[allow(dead_code)]
     fn compute(
         comp: &SyncComputation,
         result_handle: Handle,

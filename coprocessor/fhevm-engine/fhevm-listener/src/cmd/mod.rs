@@ -207,7 +207,7 @@ impl InfiniteLogIter {
         provider: &RProvider,
         filter: &Filter,
     ) {
-        let logs = provider.get_logs(&filter).await.expect("BLA2");
+        let logs = provider.get_logs(filter).await.expect("BLA2");
         self.catchup_logs.extend(logs);
     }
 
@@ -414,7 +414,7 @@ impl InfiniteLogIter {
         if self.current_event.is_some() {
             self.last_block_event_count += 1;
         };
-        return self.current_event.clone();
+        self.current_event.clone()
     }
 
     fn is_first_of_block(&self) -> bool {
@@ -427,21 +427,21 @@ impl InfiniteLogIter {
     }
 
     fn reestimated_block_time(&mut self) {
-        match (&self.current_event, &self.prev_event) {
-            (
-                Some(Log {
+        let Some(Log {
                     block_timestamp: Some(curr_t),
                     block_number: Some(curr_n),
                     ..
-                }),
-                Some(Log {
+                }) = &self.current_event else {
+            return;
+        };
+        let Some(Log {
                     block_timestamp: Some(prev_t),
                     block_number: Some(prev_n),
                     ..
-                }),
-            ) => self.block_time = (curr_t - prev_t) / (curr_n - prev_n),
-            _ => (),
-        }
+                }) = &self.prev_event else {
+            return;
+        };
+        self.block_time = (curr_t - prev_t) / (curr_n - prev_n);
     }
 }
 

@@ -197,9 +197,6 @@ pub struct TfheTenantKeys {
     #[cfg(feature = "gpu")]
     pub gpu_sks: Vec<tfhe::CudaServerKey>,
 
-    // only used in tests, that's why we put dead_code
-    #[allow(dead_code)]
     pub pks: tfhe::CompactPublicKey,
-    #[allow(dead_code)]
     pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
 }

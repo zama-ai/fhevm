@@ -508,7 +508,7 @@ pub mod shortint_utils {
     ///
     /// Parameters must have the same values between message and carry modulus.
     /// Grouping factor 2, 3 and 4 are the only ones that are supported.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn multi_bit_num_threads(
         message_modulus: u64,
         carry_modulus: u64,
@@ -529,7 +529,7 @@ pub mod shortint_utils {
             .copied()
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub static PARAMETERS_SET: OnceLock<ParametersSet> = OnceLock::new();
 
     pub enum ParametersSet {
@@ -537,7 +537,7 @@ pub mod shortint_utils {
         All,
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     impl ParametersSet {
         pub fn from_env() -> Result<Self, String> {
             let raw_value = env::var("__TFHE_RS_PARAMS_SET").unwrap_or("default".to_string());
@@ -549,12 +549,12 @@ pub mod shortint_utils {
         }
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn init_parameters_set() {
         PARAMETERS_SET.get_or_init(|| ParametersSet::from_env().unwrap());
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     #[derive(Clone, Copy, Debug)]
     pub enum DesiredNoiseDistribution {
         Gaussian,
@@ -562,14 +562,14 @@ pub mod shortint_utils {
         Both,
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     #[derive(Clone, Copy, Debug)]
     pub enum DesiredBackend {
         Cpu,
         Gpu,
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     impl DesiredBackend {
         fn matches_parameter_name_backend(&self, param_name: &str) -> bool {
             matches!(
@@ -579,7 +579,7 @@ pub mod shortint_utils {
         }
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn filter_parameters<'a, P: Copy + Into<PBSParameters>>(
         params: &[(&'a P, &'a str)],
         desired_noise_distribution: DesiredNoiseDistribution,
@@ -777,7 +777,7 @@ pub fn write_to_json<
     fs::write(params_directory, serde_json::to_string(&record).unwrap()).unwrap();
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[cfg(feature = "gpu")]
 pub const GPU_MAX_SUPPORTED_POLYNOMIAL_SIZE: usize = 16384;
 
@@ -797,7 +797,7 @@ pub struct EnvConfig {
 }
 
 impl EnvConfig {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn new() -> Self {
         let is_multi_bit = match env::var("__TFHE_RS_PARAM_TYPE") {
             Ok(val) => val.to_lowercase() == "multi_bit",
@@ -835,7 +835,7 @@ impl EnvConfig {
     }
 
     /// Get precisions values to benchmark.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn bit_sizes(&self) -> Vec<usize> {
         if self.is_fast_bench {
             FAST_BENCH_BIT_SIZES.to_vec()

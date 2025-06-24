@@ -48,8 +48,6 @@ impl std::fmt::Debug for ExecNode {
     }
 }
 
-#[allow(dead_code)] // Allow dead code as the sks may not be used in
-                    // GPU mode until we schedule on both CPU and GPU at the same time
 pub struct Scheduler<'a> {
     graph: &'a mut Dag<OpNode, OpEdge>,
     edges: Dag<(), OpEdge>,
