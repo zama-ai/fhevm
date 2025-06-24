@@ -349,7 +349,12 @@ async fn retry_on_transport_error(#[case] signer_type: SignerType) -> anyhow::Re
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(
+                // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
+                WsConnect::new(env.ws_endpoint_url())
+                    .with_max_retries(2)
+                    .with_retry_interval(Duration::from_millis(100)),
+            )
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -444,7 +449,7 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
     let env =
         TestEnvironment::new_with_config(signer_type, conf, force_per_test_localstack).await?;
 
-    // Create a provider without a random wallet without funds.
+    // Create a provider with a random wallet without funds.
     let wallet: EthereumWallet = PrivateKeySigner::random().into();
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()

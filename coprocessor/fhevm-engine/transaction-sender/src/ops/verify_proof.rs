@@ -1,5 +1,6 @@
 use super::TransactionOperation;
 use crate::nonce_managed_provider::NonceManagedProvider;
+use crate::overprovision_gas_limit::try_overprovision_gas_limit;
 use crate::AbstractSigner;
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, U256};
@@ -118,8 +119,17 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         current_retry_count: i32,
     ) -> anyhow::Result<()> {
         info!("Processing proof with proof ID {}", txn_request.0);
-        let txn_req = txn_request.1.into();
-        let transaction = match self.provider.send_transaction(txn_req.clone()).await {
+        let overprovisioned_txn_req = try_overprovision_gas_limit(
+            txn_request.1,
+            &*self.provider,
+            self.conf.gas_limit_overprovision_percent,
+        )
+        .await;
+        let transaction = match self
+            .provider
+            .send_transaction(overprovisioned_txn_req.clone())
+            .await
+        {
             Ok(txn) => txn,
             Err(e) => {
                 if let Some(InputVerificationErrors::CoprocessorSignerAlreadyVerified(_)) =
@@ -139,7 +149,10 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
                 } else {
-                    error!("Transaction {:?} sending failed with error: {}", txn_req, e);
+                    error!(
+                        "Transaction {:?} sending failed with error: {}",
+                        overprovisioned_txn_req, e
+                    );
                     self.update_retry_count_by_proof_id(
                         txn_request.0,
                         current_retry_count,
