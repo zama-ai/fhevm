@@ -20,8 +20,7 @@ Configuration has been renamed from `SepoliaZamaConfig` to `SepoliaConfig`.
 import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 ```
 
-Also, the function to define manually the Coprocessor has been renamed from `setFHEVM` to `setCoprocessor`, and the
-function to define the oracle has been changed to `setDecryptionOracle`.
+Also, the function to define manually the Coprocessor has been renamed from `setFHEVM` to `setCoprocessor`, and the function to define the oracle has been changed to `setDecryptionOracle`.
 
 ```solidity
 constructor () {
@@ -34,8 +33,7 @@ You can read more about [Configuration on the dedicated page](configure.md).
 
 ### Decryption Oracle
 
-Previously, an abstract contract `GatewayCaller` was used to request decryption. It has been replaced by
-`FHE.requestDecryption`:
+Previously, an abstract contract `GatewayCaller` was used to request decryption. It has been replaced by `FHE.requestDecryption`:
 
 ```solidity
 function requestBoolInfinite() public {
@@ -55,9 +53,7 @@ You can read more about [Decryption Oracle on the dedicated page](decryption/ora
 
 Block gas limit has been removed in favor of HCU (Homomorphic Complexity Unit) limit. FHEVM 0.7.0 includes two limits:
 
-- **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be
-  processed in order. This limit is set to **5,000,000** HCU.
-- **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed
-  in parallel. This limit is set to **20,000,000** HCU.
+- **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order. This limit is set to **5,000,000** HCU.
+- **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel. This limit is set to **20,000,000** HCU.
 
 You can read more about [HCU on the dedicated page](hcu.md).

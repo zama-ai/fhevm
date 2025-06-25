@@ -8,8 +8,8 @@
 - [Set up Hardhat](getting-started/quick-start-tutorial/setup.md)
 - [Quick Start Tutorial](getting-started/quick-start-tutorial/README.md)
   - [1. Set up Hardhat](getting-started/quick-start-tutorial/setup.md)
-  - [2. Write a simple contract](getting-started/write_a_simple_contract.md)
-  - [3. Turn it into FHEVM](getting-started/fhecounter.md)
+  - [2. Write a simple contract](getting-started/quick-start-tutorial/write_a_simple_contract.md)
+  - [3. Turn it into FHEVM](getting-started/quick-start-tutorial/turn_it_into_fhevm.md)
 
 ## Smart Contract
 

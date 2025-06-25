@@ -1,7 +1,6 @@
 # Operations on encrypted types
 
-This document outlines the operations supported on encrypted types in the `FHE` library, enabling arithmetic, bitwise,
-comparison, and more on Fully Homomorphic Encryption (FHE) ciphertexts.
+This document outlines the operations supported on encrypted types in the `FHE` library, enabling arithmetic, bitwise, comparison, and more on Fully Homomorphic Encryption (FHE) ciphertexts.
 
 ## Arithmetic operations
 
@@ -18,8 +17,7 @@ The following arithmetic operations are supported for encrypted integers (`euint
 | Min                          | `FHE.min`     |        | Binary |
 | Max                          | `FHE.max`     |        | Binary |
 
-{% hint style="info" %} Division (FHE.div) and remainder (FHE.rem) operations are currently supported only with
-plaintext divisors. {% endhint %}
+{% hint style="info" %} Division (FHE.div) and remainder (FHE.rem) operations are currently supported only with plaintext divisors. {% endhint %}
 
 ## Bitwise operations
 
@@ -36,11 +34,7 @@ The FHE library also supports bitwise operations, including shifts and rotations
 | Rotate Right | `FHE.rotr`    |        | Binary |
 | Rotate Left  | `FHE.rotl`    |        | Binary |
 
-The shift operators `FHE.shr` and `FHE.shl` can take any encrypted type `euintX` as a first operand and either a
-`uint8`or a `euint8` as a second operand, however the second operand will always be computed modulo the number of bits
-of the first operand. For example, `FHE.shr(euint64 x, 70)` is equivalent to `FHE.shr(euint64 x, 6)` because
-`70 % 64 = 6`. This differs from the classical shift operators in Solidity, where there is no intermediate modulo
-operation, so for instance any `uint64` shifted right via `>>` would give a null result.
+The shift operators `FHE.shr` and `FHE.shl` can take any encrypted type `euintX` as a first operand and either a `uint8`or a `euint8` as a second operand, however the second operand will always be computed modulo the number of bits of the first operand. For example, `FHE.shr(euint64 x, 70)` is equivalent to `FHE.shr(euint64 x, 6)` because `70 % 64 = 6`. This differs from the classical shift operators in Solidity, where there is no intermediate modulo operation, so for instance any `uint64` shifted right via `>>` would give a null result.
 
 ## Comparison operations
 
@@ -57,8 +51,7 @@ Encrypted integers can be compared using the following functions:
 
 ## Ternary operation
 
-The `FHE.select` function is a ternary operation that selects one of two encrypted values based on an encrypted
-condition:
+The `FHE.select` function is a ternary operation that selects one of two encrypted values based on an encrypted condition:
 
 | Name   | Function name | Symbol | Type    |
 | ------ | ------------- | ------ | ------- |
@@ -78,8 +71,7 @@ Here are some best practices to follow when using encrypted operations in your s
 
 ### Use the appropriate encrypted type size
 
-Choose the smallest encrypted type that can accommodate your data to optimize gas costs. For example, use `euint8` for
-small numbers (0-255) rather than `euint256`.
+Choose the smallest encrypted type that can accommodate your data to optimize gas costs. For example, use `euint8` for small numbers (0-255) rather than `euint256`.
 
 ❌ Avoid using oversized types:
 
@@ -99,8 +91,7 @@ euint8 percentage = FHE.asEuint8(75);  // percentage fits in 8 bits
 
 ### Use scalar operands when possible to save gas
 
-Some FHE operators exist in two versions: one where all operands are ciphertexts handles, and another where one of the
-operands is an unencrypted scalar. Whenever possible, use the scalar operand version, as this will save a lot of gas.
+Some FHE operators exist in two versions: one where all operands are ciphertexts handles, and another where one of the operands is an unencrypted scalar. Whenever possible, use the scalar operand version, as this will save a lot of gas.
 
 ❌ For example, this snippet cost way more in gas:
 
@@ -122,11 +113,9 @@ Despite both leading to the same encrypted result!
 
 ### Beware of overflows of FHE arithmetic operators
 
-FHE arithmetic operators can overflow. Do not forget to take into account such a possibility when implementing FHEVM
-smart contracts.
+FHE arithmetic operators can overflow. Do not forget to take into account such a possibility when implementing FHEVM smart contracts.
 
-❌ For example, if you wanted to create a mint function for an encrypted ERC20 token with an encrypted `totalSupply`
-state variable, this code is vulnerable to overflows:
+❌ For example, if you wanted to create a mint function for an encrypted ERC20 token with an encrypted `totalSupply` state variable, this code is vulnerable to overflows:
 
 ```solidity
 function mint(externalEuint32 encryptedAmount, bytes calldata inputProof) public {
@@ -153,18 +142,14 @@ function mint(externalEuint32 encryptedAmount, bytes calldata inputProof) public
 }
 ```
 
-Notice that we did not check separately the overflow on `balances[msg.sender]` but only on `totalSupply` variable,
-because `totalSupply` is the sum of the balances of all the users, so `balances[msg.sender]` could never overflow if
-`totalSupply` did not.
+Notice that we did not check separately the overflow on `balances[msg.sender]` but only on `totalSupply` variable, because `totalSupply` is the sum of the balances of all the users, so `balances[msg.sender]` could never overflow if `totalSupply` did not.
 
 ## Additional Resources
 
 - For detailed API specifications, visit the [fhevm API Documentation](../references/functions.md).
-- Check our [Roadmap](../developer/roadmap.md) for upcoming features or submit a feature request on
-  [GitHub](https://github.com/zama-ai/fhevm-solidity/issues/new?template=feature-request.md).
+- Check our [Roadmap](../developer/roadmap.md) for upcoming features or submit a feature request on [GitHub](https://github.com/zama-ai/fhevm-solidity/issues/new?template=feature-request.md).
 - Join the discussion on the [Community Forum](https://community.zama.ai/c/fhevm/15).
 
 {% hint style="success" %} **Zama 5-Question Developer Survey**
 
-We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries.
-**👉** [**Click here**](https://www.zama.ai/developer-survey) to participate. {% endhint %}
+We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. **👉** [**Click here**](https://www.zama.ai/developer-survey) to participate. {% endhint %}

@@ -1,7 +1,6 @@
 # Roadmap
 
-This document gives a preview of the upcoming features of FHEVM. In addition to what's listed here, you can
-[submit your feature request](https://github.com/zama-ai/fhevm/issues/new) on GitHub.
+This document gives a preview of the upcoming features of FHEVM. In addition to what's listed here, you can [submit your feature request](https://github.com/zama-ai/fhevm/issues/new) on GitHub.
 
 ## Features
 

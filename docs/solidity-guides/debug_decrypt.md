@@ -1,26 +1,19 @@
 # Debugging with `debug.decrypt[XX]`
 
-This guide explains how to use the `debug.decrypt[XX]` functions for debugging encrypted data in mocked environments
-during development with fhevm.
+This guide explains how to use the `debug.decrypt[XX]` functions for debugging encrypted data in mocked environments during development with fhevm.
 
-{% hint style="warning" %} The `debug.decrypt[XX]` functions should not be used in production as they rely on private
-keys. {% endhint %}
+{% hint style="warning" %} The `debug.decrypt[XX]` functions should not be used in production as they rely on private keys. {% endhint %}
 
 ## Overview
 
-The `debug.decrypt[XX]` functions allow you to decrypt encrypted handles into plaintext values. This feature is useful
-for debugging encrypted operations such as transfers, balance checks, and other computations involving FHE-encrypted
-data.
+The `debug.decrypt[XX]` functions allow you to decrypt encrypted handles into plaintext values. This feature is useful for debugging encrypted operations such as transfers, balance checks, and other computations involving FHE-encrypted data.
 
 ### Key points
 
 - **Environment**: The `debug.decrypt[XX]` functions work **only in mocked environments** (e.g., `hardhat` network).
-- **Production limitation**: In production, decryption is performed asynchronously via the relayer and requires an
-  authorized onchain request.
-- **Encrypted types**: The `debug.decrypt[XX]` functions supports various encrypted types, including integers, and
-  booleans.
-- **Bypass ACL authorization**: The `debug.decrypt[XX]` functions allow decryption without ACL authorization, useful for
-  verifying encrypted operations during development and testing.
+- **Production limitation**: In production, decryption is performed asynchronously via the relayer and requires an authorized onchain request.
+- **Encrypted types**: The `debug.decrypt[XX]` functions supports various encrypted types, including integers, and booleans.
+- **Bypass ACL authorization**: The `debug.decrypt[XX]` functions allow decryption without ACL authorization, useful for verifying encrypted operations during development and testing.
 
 ## Supported functions
 
@@ -66,11 +59,9 @@ const plaintextValue: bigint = await debug.decrypt64(handle64);
 console.log("Decrypted Balance:", plaintextValue);
 ```
 
-{% hint style="info" %} To utilize the debug functions, import the
-[utils.ts](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/test/utils.ts) file. {% endhint %}
+{% hint style="info" %} To utilize the debug functions, import the [utils.ts](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/test/utils.ts) file. {% endhint %}
 
-For a more complete example, refer to the
-[ConfidentialERC20 test file](https://github.com/zama-ai/fhevm-hardhat-template/blob/f9505a67db31c988f49b6f4210df47ca3ce97841/test/confidentialERC20/ConfidentialERC20.ts#L181-L205).
+For a more complete example, refer to the [ConfidentialERC20 test file](https://github.com/zama-ai/fhevm-hardhat-template/blob/f9505a67db31c988f49b6f4210df47ca3ce97841/test/confidentialERC20/ConfidentialERC20.ts#L181-L205).
 
 ### Example: decrypting byte arrays
 
@@ -85,8 +76,7 @@ console.log("Decrypted Bytes:", decryptedBytes);
 
 ### Verifying types
 
-Each decryption function includes a **type verification step** to ensure the provided handle matches the expected
-encrypted type. If the type is mismatched, an error is thrown.
+Each decryption function includes a **type verification step** to ensure the provided handle matches the expected encrypted type. If the type is mismatched, an error is thrown.
 
 ```typescript
 function verifyType(handle: bigint, expectedType: number) {
@@ -99,8 +89,7 @@ function verifyType(handle: bigint, expectedType: number) {
 
 ### Environment checks
 
-{% hint style="danger" %} The functions only work in the `hardhat` network. Attempting to use them in a production
-environment will result in an error. {% endhint %}
+{% hint style="danger" %} The functions only work in the `hardhat` network. Attempting to use them in a production environment will result in an error. {% endhint %}
 
 ```typescript
 if (network.name !== "hardhat") {
@@ -110,6 +99,5 @@ if (network.name !== "hardhat") {
 
 ## **Best practices**
 
-- **Use only for debugging**: These functions require access to private keys and are meant exclusively for local testing
-  and debugging.
+- **Use only for debugging**: These functions require access to private keys and are meant exclusively for local testing and debugging.
 - **Production decryption**: For production, always use the asynchronous relayer-based decryption.

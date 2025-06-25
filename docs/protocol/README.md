@@ -14,18 +14,10 @@ layout:
 
 # Welcome
 
-<<<<<<< HEAD
 **Welcome to the Zama Confidential Blockchain Protocol Docs.**\
 The docs aim to guide you to build confidential dApps on top of any L1 or L2 using Fully Homomorphic Encryption (FHE).
 
 ## Where to go next
-=======
-Welcome to the Zama Protocol Documentation, your guide to building confidential applications on public blockchains using
-**Fully Homomorphic Encryption (FHE)**.
-
-Zama Protocol enables developers to write smart contracts that compute on encrypted data without ever decrypting it.
-This means sensitive user inputs, interactions, and outcomes can remain private onchain.
->>>>>>> main
 
 If you're completely new to FHE or the Zama Protocol, we suggest first checking out the [Litepaper](https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/Edp93qMUwAKDm540ieDj/), which offers a thorough overview of the protocol.&#x20;
 
@@ -45,5 +37,5 @@ Otherwise:
 
 Ask technical questions and discuss with the community.
 
-* [Community forum](https://community.zama.ai/c/fhevm/15)
-* [Discord channel](https://discord.com/invite/fhe-org)
+- [Community forum](https://community.zama.ai/c/fhevm/15)
+- [Discord channel](https://discord.com/invite/fhe-org)
