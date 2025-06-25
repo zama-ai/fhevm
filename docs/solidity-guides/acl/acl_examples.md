@@ -1,7 +1,6 @@
 # ACL examples
 
-This page provides detailed instructions and examples on how to use and implement the ACL (Access Control List) in
-fhevm. For an overview of ACL concepts and their importance, refer to the [access control list (ACL) overview](./).
+This page provides detailed instructions and examples on how to use and implement the ACL (Access Control List) in fhevm. For an overview of ACL concepts and their importance, refer to the [access control list (ACL) overview](./).
 
 ---
 
@@ -59,8 +58,7 @@ ciphertext.allowThis();
 
 #### Make publicly decryptable
 
-To make a ciphertext publicly decryptable, you can use the `FHE.makePubliclyDecryptable(ciphertext)` function. This
-grants decryption rights to anyone, which is useful for scenarios where the encrypted value should be accessible by all.
+To make a ciphertext publicly decryptable, you can use the `FHE.makePubliclyDecryptable(ciphertext)` function. This grants decryption rights to anyone, which is useful for scenarios where the encrypted value should be accessible by all.
 
 ```solidity
 // Grant public decryption right to a ciphertext
@@ -74,8 +72,7 @@ ciphertext.makePubliclyDecryptable();
 - **Purpose**: Makes the ciphertext decryptable by anyone.
 - **Use Case**: When you want to publish encrypted results or data.
 
-> You can combine multiple allowance methods (such as `.allow()`, `.allowThis()`, `.allowTransient()`) directly on
-> ciphertext objects to grant access to several addresses or contracts in a single, fluent statement.
+> You can combine multiple allowance methods (such as `.allow()`, `.allowThis()`, `.allowTransient()`) directly on ciphertext objects to grant access to several addresses or contracts in a single, fluent statement.
 >
 > **Example**
 >
@@ -91,14 +88,11 @@ ciphertext.makePubliclyDecryptable();
 
 ### Verifying sender access
 
-When processing ciphertexts as input, it’s essential to validate that the sender is authorized to interact with the
-provided encrypted data. Failing to perform this verification can expose the system to inference attacks where malicious
-actors attempt to deduce private information.
+When processing ciphertexts as input, it’s essential to validate that the sender is authorized to interact with the provided encrypted data. Failing to perform this verification can expose the system to inference attacks where malicious actors attempt to deduce private information.
 
 #### Example scenario: Confidential ERC20 attack
 
-Consider an **Confidential ERC20 token**. An attacker controlling two accounts, **Account A** and **Account B**, with
-100 tokens in Account A, could exploit the system as follows:
+Consider an **Confidential ERC20 token**. An attacker controlling two accounts, **Account A** and **Account B**, with 100 tokens in Account A, could exploit the system as follows:
 
 1. The attacker attempts to send the target user's encrypted balance from **Account A** to **Account B**.
 2. Observing the transaction outcome, the attacker gains information:
@@ -107,8 +101,7 @@ Consider an **Confidential ERC20 token**. An attacker controlling two accounts, 
 
 This type of attack allows the attacker to infer private balances without explicit access.
 
-To prevent this, always use the `FHE.isSenderAllowed()` function to verify that the sender has legitimate access to the
-encrypted amount being transferred.
+To prevent this, always use the `FHE.isSenderAllowed()` function to verify that the sender has legitimate access to the encrypted amount being transferred.
 
 ---
 
@@ -125,17 +118,13 @@ function transfer(address to, euint64 encryptedAmount, bytes calldata inputProof
 }
 ```
 
-By enforcing this check, you can safeguard against inference attacks and ensure that encrypted values are only
-manipulated by authorized entities.
+By enforcing this check, you can safeguard against inference attacks and ensure that encrypted values are only manipulated by authorized entities.
 
 ## ACL for user decryption
 
-If a ciphertext can be decrypt by a user, explicit access must be granted to them. Additionally, the user decryption
-mechanism requires the signature of a public key associated with the contract address. Therefore, a value that needs to
-be decrypted must be explicitly authorized for both the user and the contract.
+If a ciphertext can be decrypt by a user, explicit access must be granted to them. Additionally, the user decryption mechanism requires the signature of a public key associated with the contract address. Therefore, a value that needs to be decrypted must be explicitly authorized for both the user and the contract.
 
-Due to the user decryption mechanism, a user signs a public key associated with a specific contract; therefore, the
-ciphertext also needs to be allowed for the contract.
+Due to the user decryption mechanism, a user signs a public key associated with a specific contract; therefore, the ciphertext also needs to be allowed for the contract.
 
 ### Example: Secure Transfer in ConfidentialERC20
 
@@ -161,5 +150,4 @@ function transfer(address to, euint64 encryptedAmount) public {
 
 ---
 
-By understanding how to grant and verify permissions, you can effectively manage access to encrypted data in your FHEVM
-smart contracts. For additional context, see the [ACL overview](./).
+By understanding how to grant and verify permissions, you can effectively manage access to encrypted data in your FHEVM smart contracts. For additional context, see the [ACL overview](./).

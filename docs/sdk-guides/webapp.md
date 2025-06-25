@@ -1,38 +1,28 @@
 # Build a web application
 
-This document guides you through building a web application using the @fhevm/sdk library. You can either start with a
-template or directly integrate the library into your project.
+This document guides you through building a web application using the @fhevm/sdk library. You can either start with a template or directly integrate the library into your project.
 
 ## Using a template
 
-`@fhevm/sdk` is working out of the box and we recommend you to use it. We also provide three GitHub templates to start
-your project with everything set.
+`@fhevm/sdk` is working out of the box and we recommend you to use it. We also provide three GitHub templates to start your project with everything set.
 
 ### React + TypeScript
 
-You can use [this template](https://github.com/zama-ai/fhevmjs-react-template) to start an application with @fhevm/sdk,
-using Vite + React + TypeScript.
+You can use [this template](https://github.com/zama-ai/fhevmjs-react-template) to start an application with @fhevm/sdk, using Vite + React + TypeScript.
 
 ### NextJS + Typescript
 
-You can also use [this template](https://github.com/zama-ai/fhevmjs-next-template) to start an application with
-@fhevm/sdk, using Next + TypeScript.
+You can also use [this template](https://github.com/zama-ai/fhevmjs-next-template) to start an application with @fhevm/sdk, using Next + TypeScript.
 
 ## Using the mocked coprocessor for frontend
 
-As an alternative to use the real coprocessor deployed on Sepolia to help you develop your dApp faster and without
-needing testnet tokens, you can use a mocked fhevm. Currently, we recommend you to use the `ConfidentialERC20` dApp
-example available on the `mockedFrontend` branch of the
-[React template](https://github.com/zama-ai/fhevm-react-template/tree/mockedFrontend). Follow the README on this branch,
-and you will be able to deploy exactly the same dApp both on Sepolia as well as on the mocked coprocessor seamlessly.
+As an alternative to use the real coprocessor deployed on Sepolia to help you develop your dApp faster and without needing testnet tokens, you can use a mocked fhevm. Currently, we recommend you to use the `ConfidentialERC20` dApp example available on the `mockedFrontend` branch of the [React template](https://github.com/zama-ai/fhevm-react-template/tree/mockedFrontend). Follow the README on this branch, and you will be able to deploy exactly the same dApp both on Sepolia as well as on the mocked coprocessor seamlessly.
 
 ## Using directly the library
 
 ### Step 1: Setup the library
 
-`@fhevm/sdk` consists of multiple files, including WASM files and WebWorkers, which can make packaging these components
-correctly in your setup cumbersome. To simplify this process, especially if you're developing a dApp with server-side
-rendering (SSR), we recommend using our CDN.
+`@fhevm/sdk` consists of multiple files, including WASM files and WebWorkers, which can make packaging these components correctly in your setup cumbersome. To simplify this process, especially if you're developing a dApp with server-side rendering (SSR), we recommend using our CDN.
 
 #### Using UMD CDN
 
@@ -81,10 +71,7 @@ yarn add @fhevm/sdk
 pnpm add @fhevm/sdk
 ```
 
-`@fhevm/sdk` uses ESM format. You need to set the
-[type to "module" in your package.json](https://nodejs.org/api/packages.html#type). If your node project use
-`"type": "commonjs"` or no type, you can force the loading of the web version by using
-`import { createInstance } from '@fhevm/sdk/web';`
+`@fhevm/sdk` uses ESM format. You need to set the [type to "module" in your package.json](https://nodejs.org/api/packages.html#type). If your node project use `"type": "commonjs"` or no type, you can force the loading of the web version by using `import { createInstance } from '@fhevm/sdk/web';`
 
 ```javascript
 import { initFhevm, createInstance } from "@fhevm/sdk";
@@ -92,8 +79,7 @@ import { initFhevm, createInstance } from "@fhevm/sdk";
 
 ### Step 2: Initialize your project
 
-To use the library in your project, you need to load the WASM of [TFHE](https://www.npmjs.com/package/tfhe) first with
-`initFhevm`.
+To use the library in your project, you need to load the WASM of [TFHE](https://www.npmjs.com/package/tfhe) first with `initFhevm`.
 
 ```javascript
 import { initFhevm } from "@fhevm/sdk/bundle";
@@ -132,5 +118,4 @@ init().then((instance) => {
 });
 ```
 
-You can now use your instance to [encrypt parameters](../smart_contracts/inputs.md) or do a
-[reencryption](../smart_contracts/decryption/reencryption.md).
+You can now use your instance to [encrypt parameters](../smart_contracts/inputs.md) or do a [reencryption](../smart_contracts/decryption/reencryption.md).

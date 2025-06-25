@@ -7,9 +7,9 @@
 - [What is FHEVM Solidity](getting-started/overview.md)
 - [Set up Hardhat](getting-started/quick-start-tutorial/setup.md)
 - [Quick Start Tutorial](getting-started/quick-start-tutorial/README.md)
-  - [1. Write a simple contract](getting-started/quick-start-tutorial/write_a_simple_contract.md)
-  - [2. Turn it into FHEVM](getting-started/quick-start-tutorial/turn_it_into_fhevm.md)
-  - [3. Test the FHEVM contract](getting-started/quick-start-tutorial/test_the_fhevm_contract.md)
+  - [1. Set up Hardhat](getting-started/quick-start-tutorial/setup.md)
+  - [2. Write a simple contract](getting-started/quick-start-tutorial/write_a_simple_contract.md)
+  - [3. Turn it into FHEVM](getting-started/quick-start-tutorial/turn_it_into_fhevm.md)
 
 ## Smart Contract
 

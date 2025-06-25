@@ -36,6 +36,6 @@ In **about 30 minutes**, you'll go from a basic Solidity contract to a fully con
 
 [**Hardhat**](https://hardhat.org/) is a development environment for compiling, deploying, testing, and debugging Ethereum smart contracts. It’s widely used in the Ethereum ecosystem.
 
-In this tutorial, we'll introduce the FHEVM hardhat template that provides an easy way to use FHEVM. 
+In this tutorial, we'll introduce the FHEVM hardhat template that provides an easy way to use FHEVM.
 
 {% endhint %}
