@@ -14,7 +14,7 @@ On Ethereum, a reorg can be up to 95 slots deep in the worst case, so waiting fo
 contract PrivateKeySale {
   euint256 privateKey;
   bool isAlreadyBought = false;
-  
+
   constructor(externalEuint256 _privateKey, bytes inputProof) {
     privateKey = FHE.fromExternal(_privateKey, inputProof);
     FHE.allowThis(privateKey);
@@ -39,7 +39,7 @@ contract PrivateKeySale {
   bool isAlreadyBought = false;
   uint256 blockWhenBought = 0;
   address buyer;
-  
+
   constructor(externalEuint256 _privateKey, bytes inputProof) {
     privateKey = FHE.fromExternal(_privateKey, inputProof);
     FHE.allowThis(privateKey);
@@ -55,7 +55,7 @@ contract PrivateKeySale {
 
   function requestACL() external {
     require(isBought, "Private key has not been bought yet");
-    require(block.number > blockWhenBought+95, "Too early to request ACL, risk of reorg");
+    require(block.number > blockWhenBought + 95, "Too early to request ACL, risk of reorg");
     FHE.allow(privateKey, buyer);
   }
 }
@@ -63,4 +63,4 @@ contract PrivateKeySale {
 
 This approach ensures that at least 96 blocks have elapsed between the transaction that purchases the private key and the transaction that authorizes the buyer to decrypt it.
 
-*Note:* This type of contract worsens the user experience by adding a timelock before users can decrypt data, so it should be used sparingly: only when leaked information could be critically important and high-value.
+_Note:_ This type of contract worsens the user experience by adding a timelock before users can decrypt data, so it should be used sparingly: only when leaked information could be critically important and high-value.

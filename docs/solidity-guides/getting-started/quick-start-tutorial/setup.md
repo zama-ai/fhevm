@@ -4,8 +4,7 @@ In this section, you’ll learn how to set up a FHEVM Hardhat development enviro
 
 ## Create a local Hardhat Project
 
-{% stepper %}
-{% step %}
+{% stepper %} {% step %}
 
 ### Install a Node.js TLS version
 
@@ -14,9 +13,7 @@ Ensure that Node.js is installed on your machine.
 - Download and install the recommended LTS (Long-Term Support) version from the [official website](https://nodejs.org/en).
 - Use an **even-numbered** version (e.g., `v18.x`, `v20.x`)
 
-{% hint style="warning" %}
-**Hardhat** does not support odd-numbered Node.js versions. If you’re using one (e.g., v21.x, v23.x), Hardhat will display a persistent warning message and may behave unexpectedly.
-{% endhint %}
+{% hint style="warning" %} **Hardhat** does not support odd-numbered Node.js versions. If you’re using one (e.g., v21.x, v23.x), Hardhat will display a persistent warning message and may behave unexpectedly. {% endhint %}
 
 To verify your installation:
 
@@ -35,9 +32,7 @@ npm -v
 2. Above the file list, click the green **Use this template** button.
 3. Follow the instructions to create a new repository from the FHEVM Hardhat template.
 
-{% hint style="info" %}
-See Github doc: [Creating a repository from a template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template#creating-a-repository-from-a-template)
-{% endhint %} 
+{% hint style="info" %} See Github doc: [Creating a repository from a template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template#creating-a-repository-from-a-template) {% endhint %}
 
 {% endstep %}
 
@@ -67,8 +62,7 @@ From the project root directory, run:
 npm install
 ```
 
-This will install all required dependencies defined in your `package.json`, setting up your local FHEVM Hardhat development environment. 
-{% endstep %}
+This will install all required dependencies defined in your `package.json`, setting up your local FHEVM Hardhat development environment. {% endstep %}
 
 {% step %}
 
@@ -105,9 +99,7 @@ If you skip this step, Hardhat will fall back to these defaults:
 - `MNEMONIC` = "test test test test test test test test test test test junk"
 - `INFURA_API_KEY` = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
 
-{% hint style="warning" %}
-These defaults are not suitable for real deployments.
-{% endhint %}
+{% hint style="warning" %} These defaults are not suitable for real deployments. {% endhint %}
 
 {% hint style="warning" %}
 
@@ -115,9 +107,7 @@ These defaults are not suitable for real deployments.
 
 If any of the requested Hardhat Configuration Variables is missing, you'll get an error message like this one:`Error HH1201: Cannot find a value for the configuration variable 'MNEMONIC'. Use 'npx hardhat vars set MNEMONIC' to set it or 'npx hardhat var setup' to list all the configuration variables used by this project.`
 
-{% endhint %}
-{% endstep %}
-{% endstepper %}
+{% endhint %} {% endstep %} {% endstepper %}
 
 Congratulations! You're all set to start building your confidential dApp.
 

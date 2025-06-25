@@ -131,9 +131,7 @@ Great! Your Hardhat test environment is properly setup.
 
 Before interacting with smart contracts in Hardhat tests, we need to initialize signers.
 
-{% hint style="info" %}
-In the context of Ethereum development, a signer represents an entity (usually a wallet) that can send transactions and sign messages. In Hardhat, `ethers.getSigners()` returns a list of pre-funded test accounts.
-{% endhint %}
+{% hint style="info" %} In the context of Ethereum development, a signer represents an entity (usually a wallet) that can send transactions and sign messages. In Hardhat, `ethers.getSigners()` returns a list of pre-funded test accounts. {% endhint %}
 
 We’ll define three named signers for convenience:
 
@@ -285,8 +283,7 @@ Counter has been deployed at address 0x7553CB9124f974Ee475E5cE45482F90d5B6076BC
   1 passing (7ms)
 ```
 
-{% endstep %}
-{% endstepper %}
+{% endstep %} {% endstepper %}
 
 ## Test functions
 
