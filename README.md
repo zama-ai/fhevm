@@ -27,7 +27,7 @@
 > [!NOTE] 
 >
 > The official launch of the **Zama Confidential Blockchain Protocol** is coming on **July 1st, 2025**. <br>
-> [**Sign up here**]() to get early access to the product, full docs, and examples.
+> [**Sign up here**](zama.ai/public-testnet) to get early access to the product, full docs, and examples.
 
 
 ## About
