@@ -92,7 +92,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         server_maximum_ciphertexts_to_get: 20000,
         work_items_batch_size: ecfg.batch_size,
         tenant_key_cache_size: 4,
-        coprocessor_fhe_threads: 128,
+        coprocessor_fhe_threads: 1,
         maximum_handles_per_input: 255,
         tokio_threads: 16,
         pg_pool_max_connections: 2,
@@ -310,8 +310,8 @@ pub mod shortint_utils {
     use tfhe::shortint::parameters::list_compression::CompressionParameters;
     use tfhe::shortint::parameters::ShortintKeySwitchingParameters;
     use tfhe::shortint::{
-        AtomicPatternParameters, CarryModulus, ClassicPBSParameters, MessageModulus, MultiBitPBSParameters, PBSParameters,
-        ShortintParameterSet,
+        AtomicPatternParameters, CarryModulus, ClassicPBSParameters, MessageModulus,
+        MultiBitPBSParameters, PBSParameters, ShortintParameterSet,
     };
 
     /// An iterator that yields a succession of combinations
@@ -377,7 +377,7 @@ pub mod shortint_utils {
             }
         }
     }
-    
+
     impl From<ShortintKeySwitchingParameters> for CryptoParametersRecord<u64> {
         fn from(params: ShortintKeySwitchingParameters) -> Self {
             CryptoParametersRecord {

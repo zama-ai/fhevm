@@ -8,7 +8,7 @@ use tfhe::{core_crypto::gpu::get_number_of_gpus, prelude::*, FheUint2, GpuIndex}
 lazy_static! {
     pub static ref gpu_mem_reservation: Vec<std::sync::atomic::AtomicU64> = (0
         ..get_number_of_gpus())
-        .map(|_| std::sync::atomic::AtomicU64::new(15000000000))
+        .map(|_| std::sync::atomic::AtomicU64::new(0))
         .collect::<Vec<_>>();
 }
 
@@ -64,14 +64,17 @@ pub fn get_supported_ct_size_on_gpu(ct_type: i16) -> u64 {
 //    - if it doesn't, we remove from the pool and for now simply retry after a short interval
 // TODO: refine retrying, possibly targeting a different GPU where appropriate
 pub fn reserve_memory_on_gpu(amount: u64, idx: usize) {
-    let amount = amount + 10000000;
+    //let amount = amount + 5000000;
     println!(" \t GPU {} Reserving  {}", idx, amount);
     loop {
         let old_pool_size =
             gpu_mem_reservation[idx].fetch_add(amount, std::sync::atomic::Ordering::SeqCst);
         println!(
-            " \t GPU {} Reserving  {} - pool is {}",
-            idx, amount, old_pool_size
+            " \t GPU {} Reserving  {} - pool is {} -- free mem {}",
+            idx,
+            amount,
+            old_pool_size,
+            tfhe::core_crypto::gpu::get_free_cuda_mem(GpuIndex::new(idx as u32))
         );
 
         if check_valid_cuda_malloc(old_pool_size + amount, GpuIndex::new(idx as u32)) {
@@ -88,7 +91,8 @@ pub fn reserve_memory_on_gpu(amount: u64, idx: usize) {
     }
 }
 pub fn release_memory_on_gpu(amount: u64, idx: usize) {
-    let amount = amount + 10000000;
+    return;
+    //let amount = amount + 5000000;
     let current_pool_size = gpu_mem_reservation[idx].load(std::sync::atomic::Ordering::SeqCst);
     assert!(current_pool_size >= amount);
     let _ = gpu_mem_reservation[idx].fetch_sub(amount, std::sync::atomic::Ordering::SeqCst);
