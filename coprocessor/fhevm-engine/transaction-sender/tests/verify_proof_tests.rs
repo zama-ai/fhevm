@@ -7,10 +7,12 @@ use alloy::{providers::ProviderBuilder, sol};
 use common::SignerType;
 use common::{CiphertextCommits, InputVerification, TestEnvironment};
 use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use rand::random;
 use rstest::*;
 use serial_test::serial;
 use sqlx::{Postgres, QueryBuilder};
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::sleep;
 use transaction_sender::{FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender};
@@ -198,11 +200,9 @@ async fn verify_proof_response_concurrent_success(
         event_filter
             .into_stream()
             .take(count)
-            .collect::<Vec<_>>()
+            .map_ok(|event| (event.0.zkProofId, event))
+            .try_collect::<HashMap<_, _>>()
             .await
-            .into_iter()
-            .map(|item| item.unwrap())
-            .collect::<Vec<_>>()
     });
 
     let contract_chain_id = 42u64;
@@ -226,9 +226,12 @@ async fn verify_proof_response_concurrent_success(
         .execute(&env.db_pool)
         .await?;
 
-    let events = events_handle.await?;
-    for (i, event) in events.iter().enumerate().take(count) {
-        let proof_id = i;
+    let events: HashMap<U256, _> = events_handle.await??;
+    for proof_id in 0..count {
+        let event = events
+            .get(&U256::from(proof_id))
+            .expect("Event for proof ID not found");
+
         let expected_proof_id = U256::from(proof_id);
         let expected_handles: Vec<FixedBytes<32>> =
             vec![FixedBytes([1u8; 32]), FixedBytes([1u8; 32])];
@@ -611,7 +614,7 @@ async fn verify_proof_response_other_reversal(
         provider.clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
-        Some(1_000_000),
+        Some(1_000_000_000_000_000),
     )
     .await?;
 
@@ -710,7 +713,7 @@ async fn reject_proof_response_other_reversal(
         provider.clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
-        Some(1_000_000),
+        Some(1_000_000_000_000_000),
     )
     .await?;
 

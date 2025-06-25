@@ -33,6 +33,8 @@ pub struct ConfigSettings {
     // Health check related settings
     pub health_check_port: u16,
     pub health_check_timeout: Duration,
+
+    pub gas_limit_overprovision_percent: u32,
 }
 
 impl Default for ConfigSettings {
@@ -59,6 +61,7 @@ impl Default for ConfigSettings {
             review_after_unlimited_retries: 30,
             health_check_port: 8080,
             health_check_timeout: Duration::from_secs(4),
+            gas_limit_overprovision_percent: 120,
         }
     }
 }

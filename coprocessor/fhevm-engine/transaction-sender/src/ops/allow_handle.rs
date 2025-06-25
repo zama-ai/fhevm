@@ -4,7 +4,10 @@ use std::{
     time::Duration,
 };
 
-use crate::{nonce_managed_provider::NonceManagedProvider, ops::common::try_into_array, REVIEW};
+use crate::{
+    nonce_managed_provider::NonceManagedProvider, ops::common::try_into_array,
+    overprovision_gas_limit::try_overprovision_gas_limit, REVIEW,
+};
 
 use super::TransactionOperation;
 use alloy::{
@@ -73,8 +76,17 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
 
         info!("Processing transaction, handle: {}", h);
 
-        let txn_req = txn_request.into();
-        let transaction = match self.provider.send_transaction(txn_req.clone()).await {
+        let overprovisioned_txn_req = try_overprovision_gas_limit(
+            txn_request,
+            &*self.provider,
+            self.conf.gas_limit_overprovision_percent,
+        )
+        .await;
+        let transaction = match self
+            .provider
+            .send_transaction(overprovisioned_txn_req.clone())
+            .await
+        {
             Ok(txn) => txn,
             Err(e) if self.already_allowed_error(&e).is_some() => {
                 warn!(
@@ -93,7 +105,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
             {
                 warn!(
                     "Transaction {:?} sending failed with unlimited retry error: {}, handle: {}",
-                    txn_req, e, h
+                    overprovisioned_txn_req, e, h
                 );
                 self.increment_txn_unlimited_retries_count(
                     key,
@@ -109,7 +121,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
             Err(e) => {
                 warn!(
                     "Transaction {:?} sending failed with error: {}, handle: {}",
-                    txn_req, e, h
+                    overprovisioned_txn_req, e, h
                 );
                 self.increment_txn_limited_retries_count(
                     key,
