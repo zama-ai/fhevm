@@ -1,8 +1,8 @@
+use fhevm_engine_common::{tenant_keys, utils::safe_serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::RwLock;
-use fhevm_engine_common::{tenant_keys, utils::safe_serialize};
 use test_harness::instance::DBInstance;
+use tokio::sync::RwLock;
 use tokio::time::sleep;
 
 use crate::auxiliary::ZkData;
@@ -35,7 +35,7 @@ pub async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
     let last_active_at = Arc::new(RwLock::new(SystemTime::now()));
     let db_pool = pool.clone();
     tokio::spawn(async move {
-        crate::verifier::execute_verify_proofs_loop(db_pool, conf.clone(), last_active_at.clone() )
+        crate::verifier::execute_verify_proofs_loop(db_pool, conf.clone(), last_active_at.clone())
             .await
             .unwrap();
     });

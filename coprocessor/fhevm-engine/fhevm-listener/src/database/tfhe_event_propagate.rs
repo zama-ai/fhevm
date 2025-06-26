@@ -8,10 +8,10 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Uuid;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
-use tracing::warn;
 use std::time::Duration;
 use tracing::error;
 use tracing::info;
+use tracing::warn;
 
 use fhevm_engine_common::types::SupportedFheOperations;
 

@@ -14,12 +14,10 @@ use axum::{
 };
 use serde::Serialize;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-use tracing::{error, info};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-
-
+use tracing::{error, info};
 
 /// Represents the health status of the transaction sender service
 #[derive(Clone, Debug, Serialize)]
@@ -42,7 +40,6 @@ const OK: u16 = StatusCode::OK.as_u16();
 const INTERNAL_SERVER_ERROR: u16 = StatusCode::INTERNAL_SERVER_ERROR.as_u16();
 
 impl Health {
-
     pub fn initial() -> Self {
         Self {
             database_connected: false,
@@ -78,7 +75,10 @@ impl Health {
     }
 
     pub fn tick(&mut self) {
-        self.last_tick = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        self.last_tick = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
     }
 
     pub fn unhealthy(&mut self) {
@@ -92,7 +92,10 @@ impl Health {
             // not connected yet
             return;
         }
-        let timestamp_now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let timestamp_now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let elapsed_time = timestamp_now - self.last_tick;
         if elapsed_time > 30 {
             self.message += &format!("Last tick is too old {elapsed_time}.\n");
@@ -107,7 +110,10 @@ impl Health {
             self.unhealthy();
             return;
         };
-        let pool = PgPoolOptions::new().max_connections(1).connect_with(options.clone()).await;
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(options.clone())
+            .await;
         if let Err(_err) = pool {
             self.message += "Database connection failed.\n";
             self.database_connected = false;
@@ -119,9 +125,7 @@ impl Health {
 
     pub async fn check_blockchain_connected(&mut self, blockchain_url: &str) {
         let ws = WsConnect::new(blockchain_url);
-        let provider = ProviderBuilder::new()
-            .connect_ws(ws)
-            .await;
+        let provider = ProviderBuilder::new().connect_ws(ws).await;
         if let Err(_err) = provider {
             self.message += "Blockchain connection failed.\n";
             self.blockchain_connected = false;
@@ -154,7 +158,6 @@ pub struct HealthCheck {
     pub cancel_token: CancellationToken,
 }
 
-
 impl HealthCheck {
     pub fn new(
         port: u16,
@@ -163,9 +166,9 @@ impl HealthCheck {
         blockchain_url: &str,
     ) -> Self {
         let health_state = HealthStateContent {
-                status: Health::initial(),
-                database_url: database_url.to_owned(),
-                blockchain_url: blockchain_url.to_owned(),
+            status: Health::initial(),
+            database_url: database_url.to_owned(),
+            blockchain_url: blockchain_url.to_owned(),
         };
         Self {
             health_state: Arc::new(RwLock::new(health_state)),
@@ -189,8 +192,8 @@ impl HealthCheck {
         let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
         let listener = TcpListener::bind(addr).await?;
-        let server =
-            axum::serve(listener, app.into_make_service()).with_graceful_shutdown(shutdown);
+        let server = axum::serve(listener, app.into_make_service())
+            .with_graceful_shutdown(shutdown);
         info!("HealthCheck server started on {}", addr);
         if let Err(err) = server.await {
             error!("HTTP server error: {}", err);
@@ -202,7 +205,6 @@ impl HealthCheck {
     pub async fn connected(&self) {
         self.health_state.write().await.status.connected()
     }
-
 }
 
 async fn health_handler(
@@ -210,11 +212,18 @@ async fn health_handler(
 ) -> impl IntoResponse {
     let mut health_state = state_health.read().await.clone();
     health_state.status.check_last_tick();
-    health_state.status.check_database_connected(&health_state.database_url).await;
-    health_state.status.check_blockchain_connected(&health_state.blockchain_url).await;
+    health_state
+        .status
+        .check_database_connected(&health_state.database_url)
+        .await;
+    health_state
+        .status
+        .check_blockchain_connected(&health_state.blockchain_url)
+        .await;
     let health = health_state.status;
     let result = (
-        StatusCode::from_u16(health.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        StatusCode::from_u16(health.status_code)
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
         Json(serde_json::json!({
             "status_code": health.status_code,
             "status": health.status,

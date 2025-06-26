@@ -36,7 +36,11 @@ fn main() {
     let ecfg = EnvConfig::new();
     let mut c = Criterion::default().sample_size(10).configure_from_args();
     let bench_name = "erc20::transfer";
-    let bench_optimization_target = if cfg!(feature = "latency") {"opt_latency"} else {"opt_throughput"};
+    let bench_optimization_target = if cfg!(feature = "latency") {
+        "opt_latency"
+    } else {
+        "opt_throughput"
+    };
 
     let mut group = c.benchmark_group(bench_name);
     if ecfg.benchmark_type == "LATENCY" || ecfg.benchmark_type == "ALL" {

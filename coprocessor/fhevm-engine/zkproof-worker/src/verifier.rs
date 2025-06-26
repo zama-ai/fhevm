@@ -25,8 +25,8 @@ use std::time::SystemTime;
 use tfhe::set_server_key;
 
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
-use tokio::{select, time::Duration};
 use tokio::time::interval;
+use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
@@ -63,12 +63,12 @@ impl HealthCheckService for ZkProofService {
             .duration_since(last_active_at)
             .map(|d| d.as_secs())
             .unwrap_or(u64::MAX) as u32)
-        < threshold
+            < threshold
     }
 
     fn get_version(&self) -> Version {
         // Later, the unknowns will be initialized from build.rs
-        Version{
+        Version {
             name: "zkproof-worker",
             version: "unknown",
             build: "unknown",
@@ -136,7 +136,8 @@ pub async fn execute_verify_proofs_loop(
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         task_set.spawn(async move {
-            if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache, last_active_at).await {
+            if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache, last_active_at).await
+            {
                 error!("executor failed with {}", err);
             }
         });

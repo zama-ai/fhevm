@@ -35,7 +35,11 @@ fn test_random_contract_address() -> String {
 fn main() {
     let ecfg = EnvConfig::new();
     let mut c = Criterion::default().sample_size(10).configure_from_args();
-    let bench_optimization_target = if cfg!(feature = "latency") {"opt_latency"} else {"opt_throughput"};
+    let bench_optimization_target = if cfg!(feature = "latency") {
+        "opt_latency"
+    } else {
+        "opt_throughput"
+    };
 
     let bench_name = "dex::swap_request";
     let mut group = c.benchmark_group(bench_name);
