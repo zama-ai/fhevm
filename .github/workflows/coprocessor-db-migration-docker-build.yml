@@ -1,4 +1,4 @@
-name: coprocessor-db-migration-docker-build
+name: coprocessor/db-migration/docker-build
 on:
   pull_request:
   push:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   check-changes:
-    name: coprocessor-db-migration-docker-build/check-changes
+    name: trigger
     permissions:
       actions: 'read'
       contents: 'read'
@@ -32,7 +32,7 @@ jobs:
               - .github/workflows/coprocessor-db-migration-docker-build.yml
               - coprocessor/fhevm-engine/db-migration/**
   build:
-    name: coprocessor-db-migration-docker-build/build (bpr)
+    name: run
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-db-migration == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6323a1e8e260961562b66a9f33a608f86cd6c831

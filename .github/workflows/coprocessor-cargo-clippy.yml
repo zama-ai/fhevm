@@ -1,4 +1,4 @@
-name: coprocessor-cargo-clippy
+name: coprocessor/clippy
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   check-changes:
-    name: coprocessor-cargo-clippy/check-changes
+    name: trigger
     permissions:
       actions: 'read'
       contents: 'read'
@@ -29,7 +29,7 @@ jobs:
               - .github/workflows/coprocessor-cargo-clippy.yml
               - coprocessor/fhevm-engine/**
   cargo-clippy:
-    name: coprocessor-cargo-clippy/cargo-clippy
+    name: run
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
     permissions:

@@ -1,4 +1,4 @@
-name: coprocessor-cargo-test
+name: coprocessor/cargo-test
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   check-changes:
-    name: coprocessor-cargo-test/check-changes
+    name: trigger
     permissions:
       actions: 'read'
       contents: 'read'
@@ -30,7 +30,7 @@ jobs:
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
   cargo-tests:
-    name: coprocessor-cargo-test/cargo-tests (bpr)
+    name: run
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
     permissions:

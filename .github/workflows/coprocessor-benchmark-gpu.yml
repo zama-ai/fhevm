@@ -1,5 +1,5 @@
 # Run all fhevm coprocessor benchmarks on a GPU instance on Hyperstack and return parsed results to Slab CI bot.
-name: coprocessor-benchmark-gpu
+name: coprocessor/benchmark-gpu
 
 on:
   workflow_dispatch:
@@ -68,7 +68,7 @@ env:
 
 jobs:
   parse-inputs:
-    name: coprocessor-benchmark-gpu/parse-inputs
+    name: parse-inputs
     runs-on: ubuntu-latest
     permissions:
       contents: 'read'
@@ -87,7 +87,7 @@ jobs:
           echo "name=$(echo '${{ inputs.profile }}' | sed 's|.*[[:space:]](\(.*\))|\1|')" >> "${GITHUB_OUTPUT}"
 
   setup-instance:
-    name: coprocessor-benchmark-gpu/setup-instance
+    name: setup
     needs: parse-inputs
     runs-on: ubuntu-latest
     permissions:
@@ -106,8 +106,8 @@ jobs:
           backend: hyperstack
           profile: ${{ needs.parse-inputs.outputs.profile }}
 
-  benchmark:
-    name: coprocessor-benchmark-gpu/benchmark-gpu (bpr)
+  benchmark-gpu:
+    name: run
     needs: [ parse-inputs, setup-instance ]
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     continue-on-error: true
@@ -247,9 +247,9 @@ jobs:
           --slab-url "${{ secrets.SLAB_URL }}"
 
   teardown-instance:
-    name: coprocessor-benchmark-gpu/teardown
+    name: teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
-    needs: [ setup-instance, benchmark ]
+    needs: [ setup-instance, benchmark-gpu ]
     runs-on: ubuntu-latest
     permissions:
       contents: 'read'

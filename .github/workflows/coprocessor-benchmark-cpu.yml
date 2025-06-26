@@ -1,5 +1,5 @@
 # Run fhevm coprocessor benchmarks on a CPU instance and return parsed results to Slab.
-name: coprocessor-benchmarks-cpu
+name: coprocessor/benchmarks-cpu
 
 on:
   workflow_dispatch:
@@ -38,7 +38,7 @@ env:
 
 jobs:
   setup-instance:
-    name: coprocessor-benchmarks-cpu/setup-instance
+    name: setup
     runs-on: ubuntu-latest
     permissions:
       contents: 'read'
@@ -57,7 +57,7 @@ jobs:
           profile: bench
 
   benchmarks-cpu:
-    name: coprocessor-benchmarks-cpu/benchmarks-cpu (bpr)
+    name: run
     needs: setup-instance
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     continue-on-error: true
@@ -192,7 +192,7 @@ jobs:
           --slab-url "${{ secrets.SLAB_URL }}"
 
   teardown-instance:
-    name: coprocessor-benchmarks-cpu/teardown
+    name: teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
     needs: [ setup-instance, benchmarks-cpu ]
     runs-on: ubuntu-latest
