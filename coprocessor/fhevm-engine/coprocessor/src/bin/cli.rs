@@ -212,9 +212,9 @@ fn insert_tenant(
     let public_params_file =
         std::fs::read(&public_params_file).expect("Can't read public params file");
     let _ = alloy::primitives::Address::from_str(&acl_contract_address)
-        .expect("Can't parse acl contract adddress");
+        .expect("Can't parse acl contract address");
     let _ = alloy::primitives::Address::from_str(&verifying_contract_address)
-        .expect("Can't parse input verifier adddress");
+        .expect("Can't parse input verifier address");
     let tenant_api_key = Uuid::from_str(&tenant_api_key).expect("Can't parse tenant api key");
 
     tokio::runtime::Builder::new_current_thread()
