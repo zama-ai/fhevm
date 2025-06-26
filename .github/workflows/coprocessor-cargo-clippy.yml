@@ -77,5 +77,8 @@ jobs:
 
     - name: Run clippy
       run: |
-        SQLX_OFFLINE=true cargo clippy -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
+        # For now, only specify the `bench latency throughput` features as the
+        # other ones require specific dependencies (e.g. GPU, etc.).
+        SQLX_OFFLINE=true cargo clippy --all-targets --features "bench latency throughput" \
+          -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
       working-directory: coprocessor/fhevm-engine

@@ -315,8 +315,8 @@ async fn swap_request_whitepaper(
         let has_enough_funds_handle_0 = next_handle();
         let new_to_amount_target_handle_0 = next_handle();
         let new_to_amount_handle_0 = next_handle();
-        let new_from_amount_target_handle_0 = next_handle();
-        let new_from_amount_handle_0 = next_handle();
+        let _new_from_amount_target_handle_0 = next_handle();
+        let _new_from_amount_handle_0 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
             output_handle: has_enough_funds_handle_0.clone(),
@@ -362,8 +362,8 @@ async fn swap_request_whitepaper(
         let has_enough_funds_handle_1 = next_handle();
         let new_to_amount_target_handle_1 = next_handle();
         let new_to_amount_handle_1 = next_handle();
-        let new_from_amount_target_handle_1 = next_handle();
-        let new_from_amount_handle_1 = next_handle();
+        let _new_from_amount_target_handle_1 = next_handle();
+        let _new_from_amount_handle_1 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
             output_handle: has_enough_funds_handle_1.clone(),
@@ -616,7 +616,7 @@ async fn swap_request_no_cmux(
         let cast_has_enough_funds_handle_0 = next_handle();
         let select_amount_handle_0 = next_handle();
         let new_to_amount_handle_0 = next_handle();
-        let new_from_amount_handle_0 = next_handle();
+        let _new_from_amount_handle_0 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
             output_handle: has_enough_funds_handle_0.clone(),
@@ -670,7 +670,7 @@ async fn swap_request_no_cmux(
         let cast_has_enough_funds_handle_1 = next_handle();
         let select_amount_handle_1 = next_handle();
         let new_to_amount_handle_1 = next_handle();
-        let new_from_amount_handle_1 = next_handle();
+        let _new_from_amount_handle_1 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
             output_handle: has_enough_funds_handle_1.clone(),
@@ -915,8 +915,8 @@ async fn swap_claim_whitepaper(
         let big_amount_1_out = next_handle();
         let amount_0_out = next_handle();
         let amount_1_out = next_handle();
-        let new_balance_0 = next_handle();
-        let new_balance_1 = next_handle();
+        let _new_balance_0 = next_handle();
+        let _new_balance_1 = next_handle();
         if total_dex_token_1_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
@@ -1295,8 +1295,8 @@ async fn swap_claim_no_cmux(
         let big_amount_1_out = next_handle();
         let amount_0_out = next_handle();
         let amount_1_out = next_handle();
-        let new_balance_0 = next_handle();
-        let new_balance_1 = next_handle();
+        let _new_balance_0 = next_handle();
+        let _new_balance_1 = next_handle();
         if total_dex_token_1_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
@@ -1690,8 +1690,8 @@ async fn swap_request_whitepaper_dep(
         let has_enough_funds_handle_0 = next_handle();
         let new_to_amount_target_handle_0 = next_handle();
         let new_to_amount_handle_0 = next_handle();
-        let new_from_amount_target_handle_0 = next_handle();
-        let new_from_amount_handle_0 = next_handle();
+        let _new_from_amount_target_handle_0 = next_handle();
+        let _new_from_amount_handle_0 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
             output_handle: has_enough_funds_handle_0.clone(),
@@ -1737,8 +1737,8 @@ async fn swap_request_whitepaper_dep(
         let has_enough_funds_handle_1 = next_handle();
         let new_to_amount_target_handle_1 = next_handle();
         let new_to_amount_handle_1 = next_handle();
-        let new_from_amount_target_handle_1 = next_handle();
-        let new_from_amount_handle_1 = next_handle();
+        let _new_from_amount_target_handle_1 = next_handle();
+        let _new_from_amount_handle_1 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
             output_handle: has_enough_funds_handle_1.clone(),
@@ -1996,7 +1996,7 @@ async fn swap_request_no_cmux_dep(
         let cast_has_enough_funds_handle_0 = next_handle();
         let select_amount_handle_0 = next_handle();
         let new_to_amount_handle_0 = next_handle();
-        let new_from_amount_handle_0 = next_handle();
+        let _new_from_amount_handle_0 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
             output_handle: has_enough_funds_handle_0.clone(),
@@ -2050,7 +2050,7 @@ async fn swap_request_no_cmux_dep(
         let cast_has_enough_funds_handle_1 = next_handle();
         let select_amount_handle_1 = next_handle();
         let new_to_amount_handle_1 = next_handle();
-        let new_from_amount_handle_1 = next_handle();
+        let _new_from_amount_handle_1 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
             output_handle: has_enough_funds_handle_1.clone(),
@@ -2300,8 +2300,8 @@ async fn swap_claim_whitepaper_dep(
         let big_amount_1_out = next_handle();
         let amount_0_out = next_handle();
         let amount_1_out = next_handle();
-        let new_balance_0 = next_handle();
-        let new_balance_1 = next_handle();
+        let _new_balance_0 = next_handle();
+        let _new_balance_1 = next_handle();
         if total_dex_token_1_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
@@ -2690,8 +2690,8 @@ async fn swap_claim_no_cmux_dep(
         let big_amount_1_out = next_handle();
         let amount_0_out = next_handle();
         let amount_1_out = next_handle();
-        let new_balance_0 = next_handle();
-        let new_balance_1 = next_handle();
+        let _new_balance_0 = next_handle();
+        let _new_balance_1 = next_handle();
         if total_dex_token_1_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
