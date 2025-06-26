@@ -38,8 +38,8 @@ use crate::ACLTest::ACLTestInstance;
 use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
 
 const NB_EVENTS_PER_WALLET: i64 = 400;
-const DATABASE_URL: &str = "postgresql://postgres:postgres@localhost:5432/coprocessor";
-
+const DATABASE_URL: &str =
+    "postgresql://postgres:postgres@localhost:5432/coprocessor";
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
@@ -290,7 +290,8 @@ async fn test_health() -> Result<(), anyhow::Error> {
     const HEALTHZ_URL: &str = "http://0.0.0.0:8081/healthz";
 
     // Start listener in background task
-    let listener_handle: tokio::task::JoinHandle<()> = tokio::spawn(main(args.clone()));
+    let listener_handle: tokio::task::JoinHandle<()> =
+        tokio::spawn(main(args.clone()));
     for _ in 1..10 {
         let response = reqwest::get(LIVENESS_URL).await;
         if response.is_ok() && response.unwrap().status().is_success() {

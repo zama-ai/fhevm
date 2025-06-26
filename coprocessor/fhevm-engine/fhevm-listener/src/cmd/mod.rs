@@ -26,7 +26,6 @@ use crate::contracts::{AclContract, TfheContract};
 use crate::database::tfhe_event_propagate::{ChainId, Database};
 use crate::health_check::{HealthCheck, HealthState};
 
-
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
@@ -87,11 +86,7 @@ pub struct Args {
         default_value_t = Level::INFO)]
     pub log_level: Level,
 
-    #[arg(
-        long,
-        default_value = "8080",
-        help = "Health check port"
-    )]
+    #[arg(long, default_value = "8080", help = "Health check port")]
     pub health_port: u16,
 }
 
@@ -428,17 +423,19 @@ impl InfiniteLogIter {
 
     fn reestimated_block_time(&mut self) {
         let Some(Log {
-                    block_timestamp: Some(curr_t),
-                    block_number: Some(curr_n),
-                    ..
-                }) = &self.current_event else {
+            block_timestamp: Some(curr_t),
+            block_number: Some(curr_n),
+            ..
+        }) = &self.current_event
+        else {
             return;
         };
         let Some(Log {
-                    block_timestamp: Some(prev_t),
-                    block_number: Some(prev_n),
-                    ..
-                }) = &self.prev_event else {
+            block_timestamp: Some(prev_t),
+            block_number: Some(prev_n),
+            ..
+        }) = &self.prev_event
+        else {
             return;
         };
         self.block_time = (curr_t - prev_t) / (curr_n - prev_n);
@@ -465,18 +462,23 @@ pub async fn main(args: Args) {
 
     let cancel_token = CancellationToken::new();
     let health_check = HealthCheck::new(
-        args.health_port, cancel_token, &args.database_url, &args.url);
+        args.health_port,
+        cancel_token,
+        &args.database_url,
+        &args.url,
+    );
     {
         let health_check_clone = health_check.clone();
         tokio::spawn(async move {
             health_check_clone
-            .start_http_server()
-            .await
-            .expect("Failed to start health check server");
+                .start_http_server()
+                .await
+                .expect("Failed to start health check server");
         });
     }
 
-    let mut log_iter = InfiniteLogIter::new(&args, health_check.health_state.clone());
+    let mut log_iter =
+        InfiniteLogIter::new(&args, health_check.health_state.clone());
     let chain_id = log_iter.get_chain_id_or_panic().await;
     info!(chain_id = chain_id, "Chain ID");
 
