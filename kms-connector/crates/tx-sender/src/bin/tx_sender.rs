@@ -2,13 +2,22 @@ use connector_utils::{
     cli::{Cli, Subcommands},
     signal::install_signal_handlers,
 };
+use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use tx_sender::core::{Config, TransactionSender};
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> ExitCode {
+    if let Err(err) = run().await {
+        error!("{err}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
+}
+
+async fn run() -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))

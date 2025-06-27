@@ -2,12 +2,13 @@ use alloy::{
     node_bindings::{Anvil, AnvilInstance},
     primitives::{Address, FixedBytes},
 };
-use connector_utils::conn::GatewayProvider;
+use connector_utils::conn::WalletGatewayProvider;
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     gatewayconfig::GatewayConfig::{self, GatewayConfigInstance},
     kmsmanagement::KmsManagement::{self, KmsManagementInstance},
 };
+use std::sync::LazyLock;
 use testcontainers::{GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
 
 pub const DECRYPTION_MOCK_ADDRESS: Address = Address(FixedBytes([
@@ -23,12 +24,16 @@ pub const KMS_MANAGEMENT_MOCK_ADDRESS: Address = Address(FixedBytes([
 pub const TEST_MNEMONIC: &str =
     "coyote sketch defense hover finger envelope celery urge panther venue verb cheese";
 
+pub static CHAIN_ID: LazyLock<u32> = LazyLock::new(rand::random::<u32>);
+
+pub const DEPLOYER_PRIVATE_KEY: &str =
+    "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c";
+
 pub async fn setup_anvil_gateway() -> anyhow::Result<AnvilInstance> {
-    let chain_id = rand::random::<u32>();
     let anvil = Anvil::new()
         .mnemonic(TEST_MNEMONIC)
         .block_time(1)
-        .chain_id(chain_id as u64)
+        .chain_id(*CHAIN_ID as u64)
         .try_spawn()?;
     println!("Anvil started...");
 
@@ -37,16 +42,13 @@ pub async fn setup_anvil_gateway() -> anyhow::Result<AnvilInstance> {
             .with_wait_for(WaitFor::message_on_stdout("Mock contract deployment done!"))
             .with_env_var("HARDHAT_NETWORK", "staging")
             .with_env_var("RPC_URL", anvil.endpoint_url().as_str())
-            .with_env_var("CHAIN_ID_GATEWAY", format!("{chain_id}"))
+            .with_env_var("CHAIN_ID_GATEWAY", format!("{}", *CHAIN_ID))
             .with_env_var("MNEMONIC", TEST_MNEMONIC)
             .with_env_var(
                 "DEPLOYER_ADDRESS",
                 "0xCf28E90D4A6dB23c34E1881aEF5fd9fF2e478634",
             ) // accounts[1]
-            .with_env_var(
-                "DEPLOYER_PRIVATE_KEY",
-                "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c",
-            ) // accounts[1]
+            .with_env_var("DEPLOYER_PRIVATE_KEY", DEPLOYER_PRIVATE_KEY) // accounts[1]
             .with_env_var(
                 "PAUSER_ADDRESS",
                 "0xfCefe53c7012a075b8a711df391100d9c431c468",
@@ -62,14 +64,14 @@ pub async fn setup_anvil_gateway() -> anyhow::Result<AnvilInstance> {
 
 pub struct GatewayInstance {
     pub anvil: AnvilInstance,
-    pub provider: GatewayProvider,
-    pub decryption_contract: DecryptionInstance<(), GatewayProvider>,
-    pub gateway_config_contract: GatewayConfigInstance<(), GatewayProvider>,
-    pub kms_management_contract: KmsManagementInstance<(), GatewayProvider>,
+    pub provider: WalletGatewayProvider,
+    pub decryption_contract: DecryptionInstance<(), WalletGatewayProvider>,
+    pub gateway_config_contract: GatewayConfigInstance<(), WalletGatewayProvider>,
+    pub kms_management_contract: KmsManagementInstance<(), WalletGatewayProvider>,
 }
 
 impl GatewayInstance {
-    pub fn new(anvil: AnvilInstance, provider: GatewayProvider) -> Self {
+    pub fn new(anvil: AnvilInstance, provider: WalletGatewayProvider) -> Self {
         let decryption_contract = Decryption::new(DECRYPTION_MOCK_ADDRESS, provider.clone());
         let gateway_config_contract =
             GatewayConfig::new(GATEWAY_CONFIG_MOCK_ADDRESS, provider.clone());

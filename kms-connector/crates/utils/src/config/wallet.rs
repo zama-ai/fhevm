@@ -1,3 +1,4 @@
+use crate::config::{Error, Result};
 use alloy::{
     hex::decode,
     network::{EthereumWallet, IntoWallet},
@@ -6,7 +7,6 @@ use alloy::{
 };
 use aws_config::BehaviorVersion;
 use aws_sdk_kms::Client as KmsClient;
-use connector_utils::config::{Error, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
