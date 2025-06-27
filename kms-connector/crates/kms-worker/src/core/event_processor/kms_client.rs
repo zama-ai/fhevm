@@ -54,7 +54,7 @@ impl KmsClient {
         })?;
 
         for i in 1..=RETRY_NUMBER {
-            info!("Attempting connection to DB... ({i}/{RETRY_NUMBER})");
+            info!("Attempting connection to KMS Core... ({i}/{RETRY_NUMBER})");
 
             match endpoint.connect().await {
                 Ok(channel) => {
@@ -66,7 +66,7 @@ impl KmsClient {
                         config.retry_interval,
                     ));
                 }
-                Err(e) => warn!("DB connection attempt #{i} failed: {e}"),
+                Err(e) => warn!("KMS Core connection attempt #{i} failed: {e}"),
             }
 
             if i != RETRY_NUMBER {

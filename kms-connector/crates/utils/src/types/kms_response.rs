@@ -102,7 +102,7 @@ impl KmsResponse {
         Ok(KmsResponse::UserDecryption {
             decryption_id,
             user_decrypted_shares: serialized_response_payload,
-            signature: grpc_response.signature,
+            signature: grpc_response.external_signature,
         })
     }
 }
