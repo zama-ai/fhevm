@@ -43,7 +43,7 @@ const DATABASE_URL: &str =
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
-    url: &String,
+    url: &str,
     tfhe_contract: FHEVMExecutorTestInstance<P, N>,
     acl_contract: ACLTestInstance<P, N>,
 ) where
@@ -52,12 +52,11 @@ async fn emit_events<P, N>(
         + alloy_provider::Network<TransactionRequest = TransactionRequest>
         + 'static,
 {
-    let url_clone = url.clone();
     let mut providers = vec![];
     for wallet in wallets {
         let provider = ProviderBuilder::new()
             .wallet(wallet.clone())
-            .connect_ws(WsConnect::new(url_clone.clone()))
+            .connect_ws(WsConnect::new(url))
             .await
             .unwrap();
         providers.push(provider);
@@ -73,18 +72,16 @@ async fn emit_events<P, N>(
                 let to_type: ToType = 4_u8;
                 let pt = U256::from(UNIQUE_INT.fetch_add(1, Ordering::SeqCst));
                 let txn_req = tfhe_contract
-                    .trivialEncrypt(pt.clone(), to_type.clone())
-                    .into_transaction_request()
-                    .into();
+                    .trivialEncrypt(pt, to_type)
+                    .into_transaction_request();
                 let pending_txn =
                     provider.send_transaction(txn_req).await.unwrap();
                 let receipt = pending_txn.get_receipt().await.unwrap();
                 assert!(receipt.status());
                 let add: Vec<_> = provider.signer_addresses().collect();
                 let txn_req = acl_contract
-                    .allow(pt.clone().into(), add[0].clone())
-                    .into_transaction_request()
-                    .into();
+                    .allow(pt.into(), add[0])
+                    .into_transaction_request();
                 let pending_txn =
                     provider.send_transaction(txn_req).await.unwrap();
                 let receipt = pending_txn.get_receipt().await.unwrap();
@@ -95,7 +92,7 @@ async fn emit_events<P, N>(
     }
     if let Err(err) = try_join_all(threads).await {
         eprintln!("{err}");
-        assert!(false);
+        panic!("Failed to join futures");
     }
 }
 
@@ -138,12 +135,11 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         .execute(&db_pool)
         .await?;
 
-    let coprocessor_api_key = Some(
+    let coprocessor_api_key =
         sqlx::query!("SELECT tenant_api_key FROM tenants LIMIT 1")
             .fetch_one(&db_pool)
             .await?
-            .tenant_api_key,
-    );
+            .tenant_api_key;
 
     let provider = ProviderBuilder::new()
         .wallet(wallets[0].clone())
@@ -160,7 +156,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         acl_contract_address: None,
         tfhe_contract_address: None,
         database_url: DATABASE_URL.into(),
-        coprocessor_api_key,
+        coprocessor_api_key: Some(coprocessor_api_key),
         start_at_block: None,
         end_at_block: None,
         catchup_margin: 5,
@@ -194,8 +190,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     eprintln!("First kill, check database valid block has been updated");
     listener_handle.abort();
     let mut database =
-        Database::new(&DATABASE_URL, &coprocessor_api_key.unwrap(), chain_id)
-            .await;
+        Database::new(DATABASE_URL, &coprocessor_api_key, chain_id).await;
     let last_block = database.read_last_valid_block().await;
     assert!(last_block.is_some());
     assert!(last_block.unwrap() > 1);
