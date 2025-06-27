@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "../shared/Structs.sol";
+import { ContextStatus } from "../shared/Enums.sol";
 
 /**
  * @title Interface for the CiphertextCommits contract.
@@ -18,10 +19,20 @@ interface ICiphertextCommits {
      */
     event AddCiphertextMaterial(
         bytes32 indexed ctHandle,
+        uint256 indexed contextId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest,
         address[] coprocessorTxSenders
     );
+
+    /**
+     * @notice Error indicating that the coprocessor context is no longer valid for adding the ciphertext material.
+     * A context is valid if it is active or suspended.
+     * @param ctHandle The handle of the ciphertext.
+     * @param contextId The context ID of the coprocessor.
+     * @param contextStatus The status of the coprocessor context.
+     */
+    error InvalidCoprocessorContextAddCiphertext(bytes32 ctHandle, uint256 contextId, ContextStatus contextStatus);
 
     /**
      * @notice Error indicating that the given coprocessor transaction sender has already added the handle.

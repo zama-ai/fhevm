@@ -131,7 +131,7 @@ contract KmsManagement is
     function initializeFromEmptyProxy(
         string memory fheParamsName,
         bytes32 fheParamsDigest
-    ) public virtual onlyFromEmptyProxy reinitializer(2) {
+    ) public virtual onlyFromEmptyProxy reinitializer(3) {
         __Ownable_init(owner());
         __Pausable_init();
 
@@ -139,6 +139,9 @@ contract KmsManagement is
         $.fheParamsDigests[fheParamsName] = fheParamsDigest;
         $._fheParamsInitialized[fheParamsName] = true;
     }
+
+    /// @notice Reinitializes the contract.
+    function reinitializeV2() external reinitializer(3) {}
 
     /// @dev Modifier to check if the given FHE params name is initialized
     modifier fheParamsInitialized(string calldata fheParamsName) {
@@ -435,7 +438,10 @@ contract KmsManagement is
     }
 
     /// @dev See {IKmsManagement-activateKeyResponse}.
-    function activateKeyResponse(uint256 keyId) external virtual onlyCoprocessorTxSender whenNotPaused {
+    /// @dev TODO: This function should only be called by the coprocessor transaction sender,
+    /// @dev update this once integrating keygen in the gateway
+    /// @dev See https://github.com/zama-ai/fhevm/issues/33
+    function activateKeyResponse(uint256 keyId) external virtual whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A coprocessor can only respond once
@@ -557,7 +563,10 @@ contract KmsManagement is
     /// @param coprocessorCounter The number of coprocessors that agreed
     /// @return Whether the consensus is reached
     function _isCoprocessorConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
+        // TODO: Get the consensus threshold from the context associated to the keygen
+        // See https://github.com/zama-ai/fhevm/issues/33
+        // uint256 consensusThreshold = COPROCESSOR_CONTEXTS.getCoprocessorMajorityThresholdFromContext(coprocessorContextId);
+        uint256 consensusThreshold = 0;
         return coprocessorCounter >= consensusThreshold;
     }
 
