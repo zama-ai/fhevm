@@ -8,14 +8,14 @@ By following this guide, you will learn how to:
 * Design an auction that is private, fair, and transparent
 
 
-## Why FHE
+# Why FHE
 In most onchain auctions, **bids are fully public**. Anyone can inspect the blockchain or monitor pending transactions to see how much each participant has bid. This breaks fairness as all it takes to win is to send a new bid with just one wei higher than the current highest.
 
 Existing solutions like commit-reveal schemes attempt to hide bids during a preliminary commit phase. However, they come with several drawbacks: increased transaction overhead, poor user experience (e.g., requiring users to send funds to EOAs via `CREATE2`), and delays caused by the need for multiple auction phases.
 
 Fully Homomorphic Encryption (FHE) to enable participants to submit encrypted bids directly to a smart contract in a single step, eliminating multi-phase complexity, improving user experience, and preserving bid secrecy without ever revealing or decrypting them.
 
-## Project setup
+# Project setup
 
 First, you need to install a new project by cloning the Zama Hardhat template repository:
 
@@ -29,7 +29,7 @@ Then install the dependencies:
 npm install
 ```
 
-## Create the smart contracts
+# Create the smart contracts
 
 Let’s now create a new contract called `BlindAuction.sol` in the `./contracts/` folder. To enable FHE operations in our contract, we will need to inherit our contract from `SepoliaConfig`. This configuration provides the necessary parameters and network-specific settings required to interact with Zama’s FHEVM.
 
@@ -104,7 +104,7 @@ mapping(address account => euint64 bidAmount) private bids;
 
 {% endhint %}
 
-### Create our bid function
+## Create our bid function
 
 Let’s now create our bid function, where the user will transfer a confidential amount and send it to the auction smart contract.
 Since we want bids to remain private, users must first encrypt their bid amount locally. This encrypted value will then be used to securely transfer funds from the `ConfidentialERC20` token that we’ve set as the payment method.
@@ -224,7 +224,7 @@ function bid(
 }
 ```
 
-### Auction resolution phase
+## Auction resolution phase
 
 Once all participants have placed their bids, it’s time to move to the resolution phase, where we will need to reveal the winner address. First, we will need to decrypt the winner’s address as it is currently encrypted. To do so, we can use the `DecryptionOracle` provided by Zama. This oracle will be in charge of handling securely the decryption of an encrypted value and will return the result via a callback. To implement this, let create a function that will call the `DecryptionOracle`:
 
@@ -262,7 +262,7 @@ function resolveAuctionCallback(
 
 To ensure that it is the expected data we are waiting for, we need to verify the `requestId` parameter and the signatures, which verify the computation logic done. Once verified, we can update the winner’s address.
 
-### Claiming rewards & refunds
+## Claiming rewards & refunds
 
 Alright, once the winner is revealed, we can now allow the winner to claim his reward and the other one to get refunded.
 
@@ -305,7 +305,7 @@ function withdraw(address bidder) public onlyAfterWinnerRevealed {
 }
 ```
 
-## Conclusion
+# Conclusion
 
 In this guide, we have walked through how to build a sealed-bid NFT auction using Fully Homomorphic Encryption (FHE) onchain.
 
