@@ -1,34 +1,32 @@
+This tutorial explains how to build a sealed-bid NFT auction using Fully Homomorphic Encryption (FHE). In this system, participants submit encrypted bids for a single NFT. Bids remain confidential during the auction, and only the winner’s information is revealed at the end.
 
-This tutorial explains how to create your own sealed-bid auction for NFTs using FHE step by step. In this auction mechanism, participants will compete to win a single NFT. Anyone can participate by placing a bid and locking funds into the contract. No one knows who has the highest bid. We only reveal, at the end of the auction, the winner who set the highest bid and who can claim the NFT. And the other participants can then get refunds.
+By following this guide, you will learn how to:
 
-By the end of this tutorial, you will learn how to:
+* Accept and process encrypted bids
+* Compare bids securely without revealing their values
+* Reveal the winner after the auction concludes
+* Design an auction that is private, fair, and transparent
 
-- Accept and process encrypted bids
-- Compare bids without revealing them
-- Reveal the winner only after the auction ends
-- Create a system that is transparent, fair, and private
 
-There will be also some tips and some considerations that could help you in your FHE journey.
-
-## Context
+## Why FHE
 In most onchain auctions, **bids are fully public**. Anyone can inspect the blockchain or monitor pending transactions to see how much each participant has bid. This breaks fairness as all it takes to win is to send a new bid with just one wei higher than the current highest.
 
 Existing solutions like commit-reveal schemes attempt to hide bids during a preliminary commit phase. However, they come with several drawbacks: increased transaction overhead, poor user experience (e.g., requiring users to send funds to EOAs via `CREATE2`), and delays caused by the need for multiple auction phases.
 
-To overcome these limitations, we propose using Fully Homomorphic Encryption (FHE) to enable participants to submit encrypted bids directly to a smart contract in a single step, eliminating multi-phase complexity, improving user experience, and preserving bid secrecy without ever revealing or decrypting them.
+Fully Homomorphic Encryption (FHE) to enable participants to submit encrypted bids directly to a smart contract in a single step, eliminating multi-phase complexity, improving user experience, and preserving bid secrecy without ever revealing or decrypting them.
 
 ## Project setup
 
-First, we need to install a new project. For that, we are going to use our hardhat template
+First, you need to install a new project by cloning the Zama Hardhat template repository:
 
 ```bash
 git clone https://github.com/zama-ai/fhevm-hardhat-template
 ```
 
-Then using bun, you can install the dependencies
+Then install the dependencies:
 
 ```bash
-bun install
+npm install
 ```
 
 ## Create the smart contracts
@@ -37,6 +35,7 @@ Let’s now create a new contract called `BlindAuction.sol` in the `./contracts/
 
 Let’s also create some state variable that is going to be used in our auction.
 For the payment, we will rely on a `ConfidentialERC20`. Indeed, we cannot use traditional ERC20, because even if the state in our auction is private, anyone can still monitor blockchain transactions and guess the bid value. By using a `ConfidentialERC20` we ensure the amount stays hidden. This `ConfidentialERC20` can be used with any ERC20, you will only need to wrap your token to hide future transfers.
+
 Our contract will also include an `ERC721` token representing the NFT being auctioned and the address of the auction’s beneficiary. Finally, we’ll define some time-related parameters to control the auction’s duration.
 
 ```solidity
@@ -99,8 +98,11 @@ eaddress private winningAddress;
 mapping(address account => euint64 bidAmount) private bids;
 ```
 
-> Note: As you may notice, in our code we are using euint64, which represents an encrypted 64-bit unsigned integer. Unlike standard Solidity type, where there is not that much difference between uint64 and uint256, in FHE the size of your data has a significant effect on performance. The larger the representation, the more expensive the computation becomes. That is for this reason, we recommend you to choose wisely your number representation based on your use case. Here for instance, euint64 is more than enough to handle token balance.
-> 
+{% hint style="info" %}
+
+ As you may notice, in our code we are using euint64, which represents an encrypted 64-bit unsigned integer. Unlike standard Solidity type, where there is not that much difference between uint64 and uint256, in FHE the size of your data has a significant effect on performance. The larger the representation, the more expensive the computation becomes. That is for this reason, we recommend you to choose wisely your number representation based on your use case. Here for instance, euint64 is more than enough to handle token balance.
+
+{% endhint %}
 
 ### Create our bid function
 

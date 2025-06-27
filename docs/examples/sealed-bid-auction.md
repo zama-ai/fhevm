@@ -425,6 +425,7 @@ describe("ConfidentialERC20", function () {
 });
 
 ```
+{% endtab %}
 
 {% tab title="BlindAuction.fixture.ts" %}
 ```ts
@@ -480,8 +481,6 @@ export async function deployBlindAuctionFixture(owner: HardhatEthersSigner) {
 
 
 ```
-{% endtab %}
-
 {% endtab %}
 
 {% endtabs %}
