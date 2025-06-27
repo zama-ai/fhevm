@@ -753,6 +753,8 @@ pub fn perform_fhe_operation(
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     use crate::gpu_memory::{get_op_size_on_gpu, release_memory_on_gpu, reserve_memory_on_gpu};
 
+    println!("Executing op {}", fhe_operation_int);
+
     let mut gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, input_operands);
     let _ = input_operands
         .iter()

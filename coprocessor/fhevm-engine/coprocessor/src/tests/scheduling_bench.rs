@@ -11,6 +11,7 @@ use crate::tests::utils::{
 };
 use fhevm_engine_common::utils::safe_serialize;
 use std::str::FromStr;
+use tfhe::shortint::parameters::v1_3::V1_3_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
 use tonic::metadata::MetadataValue;
 
 pub fn test_random_user_address() -> String {
@@ -784,3 +785,57 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
     );
     Ok(())
 }
+
+use tfhe::set_server_key;
+use tfhe::shortint::parameters::PARAM_GPU_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+use tfhe::{prelude::*, FheUint128, GpuIndex};
+
+#[tokio::test]
+async fn test_mem_tracking() {
+    let config = tfhe::ConfigBuilder::with_custom_parameters(
+        PARAM_GPU_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
+    )
+    .build();
+
+    let ck = tfhe::ClientKey::generate(config);
+    let compressed_server_key = tfhe::CompressedServerKey::new(&ck);
+    let gpu_key = compressed_server_key.decompress_to_specific_gpu(GpuIndex::new(0));
+    set_server_key(gpu_key.clone());
+
+    let lhs = FheUint128::try_encrypt_trivial(330u128).expect("trivial encrypt 128");
+    let rhs = FheUint128::try_encrypt_trivial(11u128).expect("trivial encrypt 128");
+
+    let div_size = lhs.get_div_size_on_gpu(&rhs);
+    println!("Division size {div_size}");
+    assert!(check_valid_cuda_malloc(div_size, GpuIndex::new(0)));
+    let res = lhs / rhs;
+
+    let res: u128 = res.decrypt(&ck);
+    assert_eq!(res, 30);
+}
+
+//             let mut amount_0_out = pending_1_in.clone();
+//             if total_dex_token_1_in != 0 {
+//                 let big_pending_1_in = BigFheType::cast_from(pending_1_in.clone());
+//                 let big_amount_0_out = (big_pending_1_in * total_dex_token_0_out as u128)
+//                     / total_dex_token_1_in as u128;
+//                 amount_0_out = FheType::cast_from(big_amount_0_out);
+//             }
+
+// let mut amount_1_out = pending_0_in.clone();
+//             if total_dex_token_0_in != 0 {
+//                 let big_pending_0_in = BigFheType::cast_from(pending_0_in.clone());
+//                 let big_amount_1_out = (big_pending_0_in * total_dex_token_1_out as u128)
+//                     / total_dex_token_0_in as u128;
+//                 amount_1_out = FheType::cast_from(big_amount_1_out);
+//             }
+
+//         let has_enough_funds = (from_amount).ge(amount);
+
+//     let mut new_to_amount = to_amount + amount;
+//     new_to_amount = has_enough_funds.if_then_else(&new_to_amount, to_amount);
+
+//     let mut new_from_amount = from_amount - amount;
+//     new_from_amount = has_enough_funds.if_then_else(&new_from_amount, from_amount);
+
+//     (new_from_amount, new_to_amount)
