@@ -1,4 +1,4 @@
-name: coprocessor-host-listener-docker-build
+name: coprocessor/host-listener/docker-build
 
 on:
   pull_request:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   check-changes:
-    name: coprocessor-host-listener-docker-build/check-changes
+    name: trigger
     permissions:
       actions: 'read'
       contents: 'read'
@@ -37,7 +37,7 @@ jobs:
               - host-contracts/contracts/*Events.sol
               - host-contracts/contracts/shared/**
   build:
-    name: coprocessor-host-listener-docker-build/build
+    name: run
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-host-listener == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6323a1e8e260961562b66a9f33a608f86cd6c831

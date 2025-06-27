@@ -1,4 +1,4 @@
-name: coprocessor-dependency-analysis
+name: coprocessor/dependency-analysis
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   check-changes:
-    name: coprocessor-dependency-analysis/check-changes
+    name: trigger
     permissions:
       actions: 'read'
       contents: 'read'
@@ -29,7 +29,7 @@ jobs:
               - .github/workflows/coprocessor-dependency-analysis.yml
               - coprocessor/fhevm-engine/**
   dependencies-check:
-    name: coprocessor-dependency-analysis/dependencies-check (bpr)
+    name: run
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
     runs-on: ubuntu-latest
