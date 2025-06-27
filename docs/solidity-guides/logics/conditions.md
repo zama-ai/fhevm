@@ -42,7 +42,9 @@ function bid(externalEuint64 encryptedValue, bytes calldata inputProof) external
 }
 ```
 
-{% hint style="info" %} This is a simplified example to demonstrate the functionality. {% endhint %}
+{% hint style="info" %} 
+This is a simplified example to demonstrate the functionality. 
+{% endhint %}
 
 ### How Does It Work?
 
@@ -109,7 +111,9 @@ function transferPrize(uint256 requestId, address auctionWinner, bytes memory si
 }
 ```
 
-{% hint style="info" %} This is a simplified example to demonstrate the functionality. {% endhint %}
+{% hint style="info" %} 
+This is a simplified example to demonstrate the functionality. 
+{% endhint %}
 
 As you can see the in the above example, the path to move from an encrypted condition to a decrypted business logic must be async and requires calling the decryption oracle contract to reveal the result of the logic using encrypted variables.
 

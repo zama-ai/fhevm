@@ -131,7 +131,9 @@ Great! Your Hardhat test environment is properly setup.
 
 Before interacting with smart contracts in Hardhat tests, we need to initialize signers.
 
-{% hint style="info" %} In the context of Ethereum development, a signer represents an entity (usually a wallet) that can send transactions and sign messages. In Hardhat, `ethers.getSigners()` returns a list of pre-funded test accounts. {% endhint %}
+{% hint style="info" %} 
+In the context of Ethereum development, a signer represents an entity (usually a wallet) that can send transactions and sign messages. In Hardhat, `ethers.getSigners()` returns a list of pre-funded test accounts. 
+{% endhint %}
 
 We’ll define three named signers for convenience:
 
@@ -428,8 +430,8 @@ Counter.getCount() === 0
 
 Now you have succesefully write and test your counter contract. You should have the following files in your project:
 
-- [`contracts/Counter.sol`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#counter.sol) — your Solidity smart contract
-- [`test/Counter.ts`](https://app.gitbook.com/s/UTmYJ1UQyasGNx2K8Aqd/smart-contract-examples/use-case-examples/fhe-counter#counter.ts) — your Hardhat test suite written in TypeScript
+- [`contracts/Counter.sol`](https://docs.zama.ai/protocol/examples/smart-contract-examples/smart-contract-examples/use-case-examples/fhe-counter#counter.sol) — your Solidity smart contract
+- [`test/Counter.ts`](https://docs.zama.ai/protocol/examples/smart-contract-examples/smart-contract-examples/use-case-examples/fhe-counter#counter.ts) — your Hardhat test suite written in TypeScript
 
 These files form the foundation of a basic Hardhat-based smart contract project.
 

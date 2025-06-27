@@ -1,11 +1,13 @@
 This example demonstrates how to a simple contract with conditions using FHEVM, in comparison to a simple counter.
 
-{% hint style="info" %} To run this example correctly, make sure the files are placed in the following directories:
+{% hint style="info" %} 
+To run this example correctly, make sure the files are placed in the following directories:
 
 - `.sol` file → `<your-project-root-dir>/contracts/`
 - `.ts` file → `<your-project-root-dir>/test/`
 
-This ensures Hardhat can compile and test your contracts as expected. {% endhint %}
+This ensures Hardhat can compile and test your contracts as expected. 
+{% endhint %}
 
 {% tabs %}
 
