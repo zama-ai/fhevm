@@ -3,8 +3,11 @@
 The use of `@zama-fhe/relayer-sdk` requires a setup phase.
 This consists in the instantiation of the `FhevmInstance`.
 This object holds all the configuration and methods needed to interact with an FHEVM using a Relayer.
+It can be created using the following code snippet:
 
 ```ts
+import { createInstance } from '@zama-fhe/relayer-sdk';
+
 const instance = await createInstance({
       // ACL_CONTRACT_ADDRESS (FHEVM Host chain)
       aclContractAddress: '0x687820221192C5B662b25367F70076A37bc79b6c',
@@ -31,8 +34,16 @@ const instance = await createInstance({
 
 ```
 
-The information regarding the configuration of Sepolia's FHEVM and associated Relayer maintained by Zama can be found in the [contract addresses page](../solidity-guides/contract_addresses.md).
+or the even simpler:
 
+```ts
+import { createInstance, SepoliaConfig } from '@zama-fhe/relayer-sdk';
+
+const instance = await createInstance(SepoliaConfig);
+
+```
+
+The information regarding the configuration of Sepolia's FHEVM and associated Relayer maintained by Zama can be found in the `SepoliaConfig` object or in the [contract addresses page](../solidity-guides/contract_addresses.md).
 The `gatewayChainId` is `55815`.
 The `chainId` is the chain-id of the FHEVM chain, so for Sepolia it would be `11155111`.
 
