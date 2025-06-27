@@ -46,33 +46,39 @@ describe('get-dapp-raw-stats', () => {
       }
 
       const chainId = 11155111
-      const createDappResult = await manager.dapp.createDApp({
+      const createDapp = await manager.dapp.createDApp({
         token,
         teamId,
         name: faker.string.alphanumeric(10),
         chainId,
         address: faker.string.hexadecimal({ length: 40 }),
       })
-      expect(createDappResult.success).toBe(true)
-      if (createDappResult.success) {
-        dappId = createDappResult.data.id
+      if (createDapp.success) {
+        dappId = createDapp.data.id
+      } else {
+        console.warn(`failed to create dapp: ${createDapp.errors[0].message}`)
+        expect(createDapp.success).toBe(true)
       }
     })
 
     describe('when a logged in user gets the dapp stats', () => {
-      let result: GraphQlResponse<DAppStats>
+      let getDappRawStats: GraphQlResponse<DAppStats>
 
       beforeEach(async () => {
-        result = await manager.dapp.getDappRawStats({
+        getDappRawStats = await manager.dapp.getDappRawStats({
           token,
           dappId,
         })
       })
 
       test('then it should return an empty array', () => {
-        expect(result.success).toBe(true)
-        if (result.success) {
-          expect(result.data.rawStats.length).toBe(0)
+        if (getDappRawStats.success) {
+          expect(getDappRawStats.data.rawStats.length).toBe(0)
+        } else {
+          console.warn(
+            `failed to get dapp raw stats: ${getDappRawStats.errors[0].message}`,
+          )
+          expect(getDappRawStats.success).toBe(true)
         }
       })
 
@@ -106,22 +112,23 @@ describe('get-dapp-raw-stats', () => {
         teamId = result.data.user.teams[0].id
       }
 
-      const createDappResult = await manager.dapp.createDApp({
+      const createDapp = await manager.dapp.createDApp({
         token,
         teamId,
         name: faker.string.alphanumeric(10),
+        chainId: 11155111, // Sepolia
         address: faker.string.hexadecimal({ length: 40 }),
       })
-      if (createDappResult.success) {
-        dappId = createDappResult.data.id
+      if (createDapp.success) {
+        dappId = createDapp.data.id
         // TODO: move to a GraphQL endpoint when implemented
         await manager.prismaClient.dapp.update({
           data: { deletedAt: new Date() },
           where: { id: dappId },
         })
       } else {
-        expect(createDappResult.success, 'it should succeed').toBe(true)
-        console.log(`createDapp: ${JSON.stringify(createDappResult)}`)
+        console.warn(`failed to create dapp: ${createDapp.errors[0].message}`)
+        expect(createDapp.success, 'it should succeed').toBe(true)
       }
     })
 

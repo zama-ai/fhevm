@@ -47,28 +47,26 @@ export class GetDappRawStatsUseCase implements UseCase<Input, Output> {
               this.logger.debug(
                 `publishing dappStatsRequested for dappId=${dappId} on chainId=${dapp.chainId} and address=${dapp.address}`,
               )
-              return dapp.chainId.isSome() && dapp.address.isSome()
-                ? this.producer
-                    .publish(
-                      back.dappStatsRequested(
-                        {
-                          // TODO: retrieve the `requestId` from the adapter
-                          requestId: generateRequestId(),
-                          dAppId: dappId.value,
-                          chainId: dapp.chainId.unwrap().value,
-                          address: dapp.address.unwrap().value,
-                        },
-                        {
-                          correlationId: randomUUID(),
-                        },
-                      ),
-                    )
-                    .orElse(() => {
-                      this.logger.warn(
-                        `failed to publish dappStatsRequested for dappId=${dappId}`,
-                      )
-                    })
-                : Task.of(void 0)
+              return this.producer
+                .publish(
+                  back.dappStatsRequested(
+                    {
+                      // TODO: retrieve the `requestId` from the adapter
+                      requestId: generateRequestId(),
+                      dAppId: dappId.value,
+                      chainId: dapp.chainId.value,
+                      address: dapp.address.value,
+                    },
+                    {
+                      correlationId: randomUUID(),
+                    },
+                  ),
+                )
+                .orElse(() => {
+                  this.logger.warn(
+                    `failed to publish dappStatsRequested for dappId=${dappId}`,
+                  )
+                })
             }),
         ]),
       )

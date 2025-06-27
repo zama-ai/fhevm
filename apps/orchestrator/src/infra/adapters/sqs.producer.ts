@@ -1,4 +1,7 @@
-import { EventProducer } from '#workflows/interfaces/event.producer.js'
+import {
+  EVENT_PRODUCER,
+  type EventProducer,
+} from '#workflows/interfaces/event.producer.js'
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'

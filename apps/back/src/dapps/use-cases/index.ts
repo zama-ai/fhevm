@@ -4,12 +4,10 @@ export {
   ApiKeyAllowRequestWithFeatureFlag,
   API_KEY_ALLOWS_REQUEST,
 } from './api-key-allows-request.use-case.js'
-export { AppDeployment } from './app-deployment.use-case.js'
 export { AppUpdatesSubscription } from './app-updates-subscription.use-case.js'
 export { CreateApiKey } from './create-api-key.use-case.js'
 export { CreateDapp } from './create-dapp.use-case.js'
 export { DeleteApiKey } from './delete-api-key.use-case.js'
-export { DeployDApp } from './deploy-dapp.use-case.js'
 export { GetAllApiKeys } from './get-all-api-keys.use-case.js'
 export { GetApiKeyByToken } from './get-api-key-by-token.use-case.js'
 export { GetApiKey } from './get-api-key.use-case.js'

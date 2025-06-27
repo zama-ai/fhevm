@@ -1,34 +1,7 @@
 import { TeamType } from '#teams/infra/grapqhl/types/team.type.js'
-import { Field, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql'
+import { Field, ID, Int, ObjectType } from '@nestjs/graphql'
 import { ApiKeyType } from './api-key.type.js'
 import { DappStatsType } from './stat.type.js'
-
-export enum DappStatus {
-  DRAFT = 'DRAFT',
-  DEPLOYING = 'DEPLOYING',
-  LIVE = 'LIVE',
-  FAILED = 'FAILED',
-  DELETED = 'DELETED',
-  ARCHIVED = 'ARCHIVED',
-}
-
-registerEnumType(DappStatus, {
-  name: 'DappStatus',
-  valuesMap: {
-    DRAFT: {
-      description: 'Still being worked on',
-    },
-    DEPLOYING: {
-      description: 'We are deploying it',
-    },
-    LIVE: {
-      description: 'You can use it now',
-    },
-    DELETED: {
-      deprecationReason: 'Not implmented yet',
-    },
-  },
-})
 
 @ObjectType('RawStats')
 export class RawStatsType {
@@ -53,13 +26,10 @@ export class DappType {
   @Field({ nullable: false })
   name: string
 
-  @Field(() => DappStatus, { nullable: false })
-  status: DappStatus
+  @Field(() => Int, { nullable: false, description: 'Chain ID' })
+  chainId: number
 
-  @Field(() => Int, { nullable: true, description: 'Chain ID' })
-  chainId: number | null
-
-  @Field({ nullable: true })
+  @Field({ nullable: false })
   address: string
 
   // TODO: Discuss wether this should be kept or not

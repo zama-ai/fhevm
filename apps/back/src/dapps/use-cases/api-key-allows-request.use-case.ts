@@ -53,12 +53,7 @@ export class ApiKeyAllowsRequest implements IApiKeyAllowsRequest {
             return
           }
 
-          if (
-            chainId.isSome() &&
-            chainId.unwrap().equals(input.chainId) &&
-            address.isSome() &&
-            address.unwrap().equals(input.address)
-          ) {
+          if (chainId.equals(input.chainId) && address.equals(input.address)) {
             resolve(void 0)
           } else {
             reject(unauthorizedError('Current API key does not allow request'))

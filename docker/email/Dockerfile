@@ -16,7 +16,6 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm --filter "./packages/**" build
 # RUN pnpx prisma generate --schema apps/email/prisma/schema.prisma
 RUN pnpm --filter=email build
-# RUN pnpm --filter=email run copy:generated
 RUN pnpm deploy --filter=email --prod /prod/email
 RUN cp -r apps/email/dist /prod/email/
 

@@ -1,10 +1,13 @@
-import { EVENT_PRODUCER, PUBSUB } from '#constants.js'
+import { PUBSUB } from '#constants.js'
 import {
   AddressValidation,
   AddressValidationEvents,
   isAddressValidationEvent,
 } from '#workflows/entities/address-validation.js'
-import { EventProducer } from '#workflows/interfaces/event.producer.js'
+import {
+  EVENT_PRODUCER,
+  type EventProducer,
+} from '#workflows/interfaces/event.producer.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { back, web3 } from 'messages'
 import {

@@ -102,6 +102,7 @@ export class SetupManager {
             configuration,
             () => ({
               aws: {
+                useConfigCredentials: true,
                 accessKeyId: 'test',
                 secretAccessKey: 'test',
                 endpoint: this.awsEndpoint,

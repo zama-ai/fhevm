@@ -1,34 +1,23 @@
 import { z } from 'zod'
-import type { AppError, Option, Result, Unbrand } from 'utils'
+import type { AppError, Result, Unbrand } from 'utils'
 import { Entity, ok, fail, validationError, some, none } from 'utils'
 import { DAppId } from './value-objects.js'
 import { TeamId } from '#teams/domain/entities/value-objects.js'
 import { ChainId } from '#chains/domain/entities/value-objects.js'
 import { Web3Address } from '#shared/entities/value-objects/web3-address.js'
 
-const status = z.enum([
-  'DRAFT',
-  'DEPLOYING',
-  'LIVE',
-  'FAILED',
-  'ARCHIVED',
-  'DELETED',
-])
-
 const schema = z.object({
   id: DAppId.schema,
   name: z.string(),
-  status,
   teamId: TeamId.schema,
-  chainId: ChainId.schema.nullish(),
-  address: Web3Address.schema.nullish(),
+  chainId: ChainId.schema,
+  address: Web3Address.schema,
   createdAt: z
     .date()
     .refine(date => date <= new Date(), 'CreatedAt should be in the past'),
 })
 
 export type DAppProps = Unbrand<z.infer<typeof schema>>
-export type DAppStatus = z.infer<typeof status>
 
 export class DApp
   extends Entity<DAppProps>
@@ -37,8 +26,8 @@ export class DApp
       Omit<DAppProps, 'id' | 'teamId' | 'chainId' | 'address'> & {
         id: DAppId
         teamId: TeamId
-        chainId: Option<ChainId>
-        address: Option<Web3Address>
+        chainId: ChainId
+        address: Web3Address
       }
     >
 {
@@ -58,13 +47,12 @@ export class DApp
   }: {
     teamId: string
     name: string
-    chainId?: number
-    address?: string
+    chainId: number
+    address: string
   }): Result<DApp, AppError> {
     return DApp.parse({
       id: DAppId.random().value,
       name,
-      status: 'DRAFT',
       teamId,
       chainId,
       address,
@@ -80,22 +68,18 @@ export class DApp
     return this.get('name')
   }
 
-  get status() {
-    return this.get('status')
-  }
-
   get teamId() {
     return new TeamId(this.get('teamId'))
   }
 
-  get chainId(): Option<ChainId> {
+  get chainId(): ChainId {
     const chainId = this.get('chainId')
-    return chainId ? some(new ChainId(chainId)) : none()
+    return new ChainId(chainId)
   }
 
-  get address(): Option<Web3Address> {
+  get address(): Web3Address {
     const address = this.get('address')
-    return address ? some(new Web3Address(address)) : none()
+    return new Web3Address(address)
   }
 
   get createdAt() {

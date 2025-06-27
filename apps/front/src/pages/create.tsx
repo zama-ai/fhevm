@@ -44,7 +44,6 @@ const CREATE_DAPP = graphql(`
       name
       chainId
       address
-      status
     }
   }
 `)

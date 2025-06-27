@@ -13,9 +13,6 @@ import {
 
 type EventTypes =
   | 'dapp:created'
-  | 'dapp:validation:requested'
-  | 'dapp:validation:confirmed'
-  | 'dapp:validation:failed'
   | 'address:validation:requested'
   | 'address:validation:confirmed'
   | 'address:validation:failed'
@@ -46,19 +43,6 @@ function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
 
 const schemas = [
   genSchema('dapp:created', { dAppId: z.string() }),
-  genSchema('dapp:validation:requested', {
-    dAppId: z.string(),
-    chainId: chainId,
-    address: web3Address,
-  }),
-  genSchema('dapp:validation:confirmed', {
-    dAppId: z.string(),
-    owner: web3Address.optional(),
-  }),
-  genSchema('dapp:validation:failed', {
-    dAppId: z.string(),
-    reason: z.string(),
-  }),
   genSchema('address:validation:requested', {
     chainId: chainId,
     address: web3Address,
@@ -111,7 +95,7 @@ const schemas = [
     publicKey: z.string(),
   }),
   genSchema('httpz:private-decrypt:completed', {
-    response: z.array(userDecryptResponse)
+    response: z.array(userDecryptResponse),
   }),
   genSchema('httpz:public-decrypt:requested', {
     ciphertextHandles: z.array(z.string().startsWith('0x').length(66)).min(1),

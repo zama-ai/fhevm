@@ -202,7 +202,6 @@ describe('public decrypt', () => {
             return size > 0
           })
           const message = await manager.getMessageFromOrchQueue()
-          console.log(`\x1b[33mmessage received: ${message}\x1b[0m`)
           const event = JSON.parse(message!)
           if (!back.isBackEvent(event)) {
             expect(false, 'event is not a BackEvent').toBeTruthy()
@@ -213,9 +212,6 @@ describe('public decrypt', () => {
           const responseMessage = back.httpzPublicDecryptCompleted(
             { requestId, response: [{ decryptedValue, signatures }] },
             { correlationId: faker.string.uuid() },
-          )
-          console.log(
-            `\x1b[33m[${back.isBackEvent(responseMessage)}]responseMessage: ${JSON.stringify(responseMessage)}\x1b[0m`,
           )
           await manager.sendMessage(responseMessage)
 

@@ -16,7 +16,6 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm --filter "./packages/**" build
 RUN pnpx prisma generate --schema apps/back/prisma/schema.prisma
 RUN pnpm --filter=back build
-RUN pnpm --filter=back run copy:generated
 RUN pnpm deploy --filter=back --prod /prod/back
 RUN cp -r apps/back/dist /prod/back/
 

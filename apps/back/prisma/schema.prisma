@@ -16,15 +16,6 @@ datasource db {
   url      = env("APP__DB__URL")
 }
 
-enum DappStatus {
-  DRAFT
-  DEPLOYING
-  LIVE
-  FAILED
-  ARCHIVED
-  DELETED
-}
-
 enum StatsType {
   COMPUTATION
   ENCRYPTION
@@ -66,9 +57,8 @@ model Team {
 model Dapp {
   id        String     @id
   name      String
-  chainId   Int?
-  address   String?
-  status    DappStatus @default(DRAFT)
+  chainId   Int
+  address   String
   teamId    String
   team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
   updatedAt DateTime   @updatedAt

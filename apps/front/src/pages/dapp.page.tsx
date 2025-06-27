@@ -18,7 +18,6 @@ const GET_DAPP_DETAILS = graphql(`
     dapp(input: { id: $dappId }) {
       id
       name
-      status
       rawStats {
         id
         name
@@ -78,7 +77,6 @@ const SUB_DAPP_UPDATED = gql(`
     dappUpdated(input: { id: $dappId }) {
       id
       name
-      status
       rawStats {
         id
         name

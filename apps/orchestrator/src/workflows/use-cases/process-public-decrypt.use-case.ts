@@ -1,9 +1,12 @@
-import { EVENT_PRODUCER, PUBSUB } from '#constants.js'
+import { PUBSUB } from '#constants.js'
 import {
   isPublicDecrypt,
   PublicDecrypt,
 } from '#workflows/entities/public-decrypt.js'
-import { EventProducer } from '#workflows/interfaces/event.producer.js'
+import {
+  EVENT_PRODUCER,
+  type EventProducer,
+} from '#workflows/interfaces/event.producer.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { back, relayer } from 'messages'
 import { AppError, IPubSub, Task, UseCase } from 'utils'

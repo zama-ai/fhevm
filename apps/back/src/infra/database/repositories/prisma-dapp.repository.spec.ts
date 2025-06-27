@@ -12,7 +12,7 @@ import { AppError, every, executeTask, isAppError } from 'utils'
 import { faker } from '@faker-js/faker'
 import { z } from 'zod'
 import { TeamId } from '#teams/domain/entities/value-objects.js'
-import { Dapp, DappStatus, StatsType } from '#prisma/client/index.js'
+import { Dapp, StatsType } from '#prisma/client/index.js'
 import { ApiKey } from '#dapps/domain/entities/api-key.js'
 import { TestBed } from '@suites/unit'
 import { Mocked } from '@suites/doubles.vitest'
@@ -173,10 +173,7 @@ describe('PrismaDappRepository', () => {
         dapp = {
           id: dappId.value,
           name: faker.string.alphanumeric(10),
-          status: 'LIVE',
-          chainId: ChainId.from(
-            faker.number.int({ min: 1, max: 100_000 }),
-          ).unwrap().value,
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
           address: faker.string.hexadecimal({ length: 40 }),
           teamId: TeamId.random().value,
           updatedAt: faker.date.past(),
@@ -246,10 +243,7 @@ describe('PrismaDappRepository', () => {
         const props = {
           id: dappId.value,
           name: faker.string.alphanumeric(10),
-          status: 'LIVE' as DappStatus,
-          chainId: ChainId.from(
-            faker.number.int({ min: 1, max: 100_000 }),
-          ).unwrap().value,
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
           address: faker.string.hexadecimal({ length: 40 }),
           teamId: TeamId.random().value,
           updatedAt: faker.date.past(),
@@ -343,10 +337,7 @@ describe('PrismaDappRepository', () => {
         prisma.dapp.findUnique.mockResolvedValue({
           id: dappId.value,
           name: faker.string.alphanumeric(10),
-          status: 'LIVE' as DappStatus,
-          chainId: ChainId.from(
-            faker.number.int({ min: 1, max: 100_000 }),
-          ).unwrap().value,
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
           address: faker.string.hexadecimal({ length: 40 }),
           teamId: TeamId.random().value,
           updatedAt: faker.date.past(),

@@ -182,7 +182,6 @@ const ME = `
         dapps {
           id
           name
-          status
         }
       }
     }

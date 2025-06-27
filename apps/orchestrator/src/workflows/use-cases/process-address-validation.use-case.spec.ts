@@ -10,11 +10,14 @@ import {
 import { ProcessAddressValidation } from './process-address-validation.use-case.js'
 import { AppError, IPubSub, PubSub, Task } from 'utils'
 import { back, web3 } from 'messages'
-import type { EventProducer } from '#workflows/interfaces/event.producer.js'
+import {
+  EVENT_PRODUCER,
+  type EventProducer,
+} from '#workflows/interfaces/event.producer.js'
 import { faker } from '@faker-js/faker'
 import { AddressValidationEvents } from '#workflows/entities/address-validation.js'
 import { TestBed } from '@suites/unit'
-import { EVENT_PRODUCER, PUBSUB } from '#constants.js'
+import { PUBSUB } from '#constants.js'
 
 describe(ProcessAddressValidation, () => {
   let pubsub: IPubSub<AddressValidationEvents>

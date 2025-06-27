@@ -5,17 +5,13 @@ import { NavAppBlock } from './nav-app-block.js'
 type OwnProps = {
   id: string
   name: string
-  status: string
 }
 
-export function NavApp({ id, name, status }: OwnProps) {
-  const color = ['LIVE', 'DEPLOYING'].includes(status)
-    ? 'green.200'
-    : 'gray.300'
+export function NavApp({ id, name }: OwnProps) {
   return (
     <NavLink to={`/dapp/${id}`}>
       {({ isActive }) => (
-        <PureNavApp name={name} color={color} isActive={isActive} />
+        <PureNavApp name={name} color={'green.200'} isActive={isActive} />
       )}
     </NavLink>
   )

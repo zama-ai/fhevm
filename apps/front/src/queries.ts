@@ -14,7 +14,6 @@ export const GET_ME = graphql(`
         dapps {
           id
           name
-          status
           createdAt
         }
       }

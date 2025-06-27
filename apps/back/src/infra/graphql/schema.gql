@@ -94,11 +94,10 @@ type RawStats {
 type Dapp {
   id: ID!
   name: String!
-  status: DappStatus!
 
   """Chain ID"""
-  chainId: Int
-  address: String
+  chainId: Int!
+  address: String!
   teamId: String! @deprecated(reason: "Do not use this, it shall go away when I find a way to make it disappear")
   team: Team!
 
@@ -112,20 +111,6 @@ type Dapp {
   rawStats: [RawStats!]!
   apiKeys: [ApiKey!]!
   chain: Chain
-}
-
-enum DappStatus {
-  """Still being worked on"""
-  DRAFT
-
-  """We are deploying it"""
-  DEPLOYING
-
-  """You can use it now"""
-  LIVE
-  FAILED
-  DELETED @deprecated(reason: "Not implmented yet")
-  ARCHIVED
 }
 
 type ValidateAddress {
@@ -209,7 +194,6 @@ type Mutation {
   changePassword(input: ChangePasswordInput!): Boolean!
   createDapp(input: CreateDappInput!): Dapp!
   updateDapp(input: UpdateDappInput!): Dapp!
-  deployDapp(input: DeployDAppInput!): Dapp!
   createApiKey(input: CreateApiKeyInput!): CreateApiKey!
   updateApiKey(input: UpdateApiKeyInput!): ApiKey!
   deleteApiKey(input: DeleteApiKeyInput!): ID!
@@ -286,10 +270,6 @@ input UpdateDappInput {
   Your smart contract address, it should start with 0x and have 42 characters
   """
   address: String
-}
-
-input DeployDAppInput {
-  dappId: String!
 }
 
 input CreateApiKeyInput {

@@ -16,7 +16,6 @@ type OwnProps = {
   dapps: Array<{
     id: string
     name: string
-    status: string
   }>
 }
 
@@ -42,15 +41,14 @@ export function Navigation({ dapps }: OwnProps) {
             <PureNavApp name={title} color="gray.300" isActive />
           )}
           {dapps.map(dapp => (
-            <NavApp
-              key={dapp.id}
-              id={dapp.id}
-              name={dapp.name}
-              status={dapp.status}
-            />
+            <NavApp key={dapp.id} id={dapp.id} name={dapp.name} />
           ))}
         </List.Root>
-        <NavBlock title="Documentation" icon={DocumentationIcon} to="https://docs.zama.ai/fhevm" />
+        <NavBlock
+          title="Documentation"
+          icon={DocumentationIcon}
+          to="https://docs.zama.ai/fhevm"
+        />
         <NavBlock
           title="Community"
           icon={CommunityIcon}

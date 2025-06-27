@@ -12,9 +12,10 @@ describe('Dapp', () => {
       params = {
         id: DAppId.random().value,
         name: faker.string.alphanumeric(10),
-        status: faker.helpers.arrayElement(['DRAFT', 'DEPLOYING', 'LIVE']),
         teamId: TeamId.random().value,
         createdAt: new Date(Date.now() - 1000),
+        chainId: faker.number.int({ min: 1, max: 100_000 }),
+        address: faker.string.hexadecimal({ length: 40 }),
       }
     })
     test('should parse a valid dapp', () => {
@@ -39,17 +40,6 @@ describe('Dapp', () => {
         expect(result.isFail()).toBe(true)
         if (result.isFail()) {
           expect(result.error.message).toContain('name')
-        }
-      })
-
-      test('status is not a valid status', () => {
-        const result = DApp.parse({
-          ...params,
-          status: faker.string.alphanumeric(),
-        })
-        expect(result.isFail()).toBe(true)
-        if (result.isFail()) {
-          expect(result.error.message).toContain('status')
         }
       })
 
@@ -106,6 +96,8 @@ describe('Dapp', () => {
       const result = DApp.create({
         name: faker.string.alphanumeric(10),
         teamId: TeamId.random().value,
+        chainId: faker.number.int({ min: 1, max: 100_000 }),
+        address: faker.string.hexadecimal({ length: 40 }),
       })
       expect(result.isOk()).toBe(true)
       dapp = result.unwrap()
@@ -116,10 +108,6 @@ describe('Dapp', () => {
 
     test('should generate a dapp id', () => {
       expect(dapp.id.value).toBeTruthy()
-    })
-
-    test('status should be DRAFT', () => {
-      expect(dapp.status).toBe('DRAFT')
     })
 
     test('createdAt should be now', () => {

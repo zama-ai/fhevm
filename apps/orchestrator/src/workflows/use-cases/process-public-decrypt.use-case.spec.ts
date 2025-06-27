@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, Mocked, test } from 'vitest'
 import { AppError, IPubSub, PubSub, Task } from 'utils'
 import { back, relayer } from 'messages'
-import { EventProducer } from '#workflows/interfaces/event.producer.js'
-import { EVENT_PRODUCER, PUBSUB } from '#constants.js'
+import {
+  EVENT_PRODUCER,
+  EventProducer,
+} from '#workflows/interfaces/event.producer.js'
+import { PUBSUB } from '#constants.js'
 import { faker } from '@faker-js/faker'
 import { TestBed } from '@suites/unit'
 import { ProcessPublicDecrypt } from './process-public-decrypt.use-case.js'

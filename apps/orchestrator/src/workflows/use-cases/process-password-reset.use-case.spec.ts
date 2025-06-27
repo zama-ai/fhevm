@@ -3,10 +3,13 @@ import { ProcessPasswordReset } from './process-password-reset.use-case.js'
 import { beforeEach, describe, expect, Mocked, test } from 'vitest'
 import { IPubSub, PubSub, Task } from 'utils'
 import { PasswordResetEvents } from '#workflows/entities/password-reset.js'
-import { EVENT_PRODUCER, PUBSUB } from '#constants.js'
+import { PUBSUB } from '#constants.js'
 import { back } from 'messages'
 import { faker } from '@faker-js/faker'
-import { EventProducer } from '#workflows/interfaces/event.producer.js'
+import {
+  EVENT_PRODUCER,
+  type EventProducer,
+} from '#workflows/interfaces/event.producer.js'
 
 describe(ProcessPasswordReset, () => {
   let useCase: ProcessPasswordReset

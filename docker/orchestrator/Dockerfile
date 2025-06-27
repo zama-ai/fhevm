@@ -16,7 +16,6 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm --filter "./packages/**" build
 RUN pnpm --filter=orchestrator prisma:generate
 RUN pnpm --filter=orchestrator build
-RUN pnpm --filter=orchestrator run copy:generated
 RUN pnpm deploy --filter=orchestrator --prod /prod/orchestrator
 RUN cp -r apps/orchestrator/dist /prod/orchestrator/
 

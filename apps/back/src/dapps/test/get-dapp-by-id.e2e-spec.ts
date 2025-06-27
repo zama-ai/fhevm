@@ -52,6 +52,7 @@ describe('get-dapp-by-id', () => {
         token,
         teamId,
         name: faker.string.alphanumeric(10),
+        chainId: 11155111, // Sepolia
         address: faker.string.hexadecimal({ length: 40 }),
       })
       expect(createDappResult.success).toBe(true)
@@ -176,6 +177,7 @@ describe('get-dapp-by-id', () => {
         token,
         teamId,
         name: faker.string.alphanumeric(10),
+        chainId: 11155111, // Sepolia
         address: faker.string.hexadecimal({ length: 40 }),
       })
       if (createDappResult.success) {

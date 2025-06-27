@@ -1,4 +1,3 @@
-import { DAppStatus } from '#dapps/domain/entities/dapp.js'
 import { faker } from '@faker-js/faker'
 import { GraphQlResponse, SetupManager } from './setup.manager.js'
 import { AuthManager } from './auth.manager.js'
@@ -7,18 +6,12 @@ import { GraphQl } from './graphql.js'
 export interface DApp {
   id: string
   name: string
-  address: string | null
-  status: DAppStatus
+  chainId: number
+  address: string
   team: {
     id: string
     name: string
   }
-}
-
-export interface DeployDappResult {
-  id: string
-  status: DAppStatus
-  name: string
 }
 
 export interface DAppStats {
@@ -93,8 +86,8 @@ export class DappManager {
     address,
   }: ({ token: string; teamId: string } | { token?: never; teamId?: never }) & {
     name: string
-    chainId?: number
-    address?: string
+    chainId: number
+    address: string
   }): Promise<GraphQlResponse<DApp>> {
     if (!token) {
       const result = await this.auth.signup(
@@ -160,17 +153,6 @@ export class DappManager {
       .mutate(UPDATE_DAPP, { appId: dappId, name, chainId, address })
       .exec('updateDapp')
   }
-
-  async deployDApp({ token, dappId }: { token: string; dappId: string }) {
-    return GraphQl.request<
-      { deployDapp: DeployDappResult },
-      { dappId: string }
-    >(this.httpServer)
-      .auth(token)
-      .mutate(DEPLOY_DAPP, { dappId })
-      .exec('deployDapp')
-  }
-
   async getDappRawStats({
     token,
     dappId,
@@ -221,13 +203,12 @@ export class DappManager {
 }
 
 const CREATE_DAPP = `
-  mutation createDApp($teamId: String!, $name: String!, $chainId: Int, $address: String) {
+  mutation createDApp($teamId: String!, $name: String!, $chainId: Int!, $address: String!) {
     createDapp(input: { teamId: $teamId, name: $name, chainId: $chainId, address: $address }) {
       id
       name
       chainId
       address
-      status
       team {
         id
         name
@@ -241,8 +222,8 @@ const GET_DAPP = `
     dapp(input: { id: $appId }) {
       id
       name
+      chainId
       address
-      status
       team {
         id
         name
@@ -258,21 +239,10 @@ const UPDATE_DAPP = `
       name
       chainId
       address
-      status
       team {
         id
         name
       }
-    }
-  }
-`
-
-const DEPLOY_DAPP = `
-  mutation DeployDapp($dappId: String!) {
-    deployDapp(input: { dappId: $dappId }) {
-      id
-      name
-      status
     }
   }
 `

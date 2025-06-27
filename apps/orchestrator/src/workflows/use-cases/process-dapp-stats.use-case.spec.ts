@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, Mocked, test } from 'vitest'
 import { ProcessDAppStats } from './process-dapp-stats.use-case.js'
-import { EVENT_PRODUCER, PUBSUB } from '#constants.js'
+import { PUBSUB } from '#constants.js'
 import { AppError, IPubSub, PubSub, Task } from 'utils'
 import { back, operationNames, web3 } from 'messages'
-import { EventProducer } from '#workflows/interfaces/event.producer.js'
+import {
+  EVENT_PRODUCER,
+  type EventProducer,
+} from '#workflows/interfaces/event.producer.js'
 import { faker } from '@faker-js/faker'
 import { DAppStatsEvents } from '#workflows/entities/dapp-stats.js'
 import { TestBed } from '@suites/unit'

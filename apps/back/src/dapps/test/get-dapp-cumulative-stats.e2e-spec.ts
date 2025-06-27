@@ -54,6 +54,7 @@ describe('get-dapp-cumulative-stats', () => {
         token,
         teamId,
         name: faker.string.alphanumeric(10),
+        chainId: 11155111, // Sepolia
         address: faker.string.hexadecimal({ length: 40 }),
       })
       expect(createDappResult.success).toBe(true)

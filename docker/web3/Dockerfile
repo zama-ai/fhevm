@@ -16,7 +16,6 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm --filter "./packages/**" build
 RUN pnpm --filter=web3 prisma:generate
 RUN pnpm --filter=web3 build
-RUN pnpm --filter=web3 run copy:generated
 RUN pnpm deploy --filter=web3 --prod /prod/web3
 RUN cp -r apps/web3/dist /prod/web3/
 

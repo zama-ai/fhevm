@@ -52,12 +52,14 @@ describe('fetch all dapps', () => {
             token,
             teamId,
             name: faker.string.alphanumeric(10),
+            chainId: 11155111, // Sepolia
             address: faker.string.hexadecimal({ length: 40 }),
           }),
           manager.dapp.createDApp({
             token,
             teamId,
             name: faker.string.alphanumeric(10),
+            chainId: 11155111, // Sepolia
             address: faker.string.hexadecimal({ length: 40 }),
           }),
         ])

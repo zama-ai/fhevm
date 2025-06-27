@@ -2,8 +2,11 @@ import { beforeEach, describe, expect, Mocked, test } from 'vitest'
 import { ProcessInputProof } from './process-input-proof.use-case.js'
 import { AppError, IPubSub, PubSub, Task } from 'utils'
 import { back, relayer } from 'messages'
-import { EventProducer } from '#workflows/interfaces/event.producer.js'
-import { EVENT_PRODUCER, PUBSUB } from '#constants.js'
+import {
+  EVENT_PRODUCER,
+  type EventProducer,
+} from '#workflows/interfaces/event.producer.js'
+import { PUBSUB } from '#constants.js'
 import { faker } from '@faker-js/faker'
 import { InputProofEvents } from '#workflows/entities/input-proof.js'
 import { TestBed } from '@suites/unit'

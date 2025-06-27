@@ -14,8 +14,8 @@ interface Input {
   dapp: {
     teamId: string
     name: string
-    chainId?: number
-    address?: string
+    chainId: number
+    address: string
   }
   user: User
 }

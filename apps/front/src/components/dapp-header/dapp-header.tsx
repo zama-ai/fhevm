@@ -5,7 +5,6 @@ import {
 } from '@/__generated__/graphql'
 
 import { InplaceInput } from '@/components/inplace-input/inplace-input'
-import { DappStatus } from '@/components/dapp-status/dapp-status.js'
 import { useDappUpdate } from '@/components/dapp-header/use-dapp-update'
 
 type OwnProps = {
@@ -32,7 +31,6 @@ export function DappHeader({ dapp, dappUpdated }: OwnProps) {
           }}
         />
       </Box>
-      <DappStatus status={data.status} ml="2" size="xs" />
     </Stack>
   )
 }

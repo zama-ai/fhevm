@@ -20,7 +20,6 @@ import {
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
 import { JwtAuthGuard } from '#auth/infra/guards/jwt-auth-guard.js'
 import { User } from '#users/domain/entities/user.js'
-import { DeployDAppInput } from './dto/inputs/deploy-dapp.input.js'
 import { DAppId } from '../domain/entities/value-objects.js'
 import { TeamType } from '#teams/infra/grapqhl/types/team.type.js'
 import { QueryDappInput } from './dto/inputs/query-dapp.input.js'
@@ -44,7 +43,6 @@ export class DappsResolver {
     private readonly updateDappUC: uc.UpdateDapp,
     private readonly getDappByIdUC: uc.GetDappById,
     private readonly getTeamByIdUC: GetTeamById,
-    private readonly deployDappUC: uc.DeployDApp,
     private readonly getDappRawStatsUC: uc.GetDappRawStatsUseCase,
     private readonly appUpdatesSubscriptionUC: uc.AppUpdatesSubscription,
   ) {}
@@ -59,43 +57,63 @@ export class DappsResolver {
 
   @Query(() => DappType, { name: 'dapp' })
   @UseGuards(JwtAuthGuard)
-  dapp(@Args('input') input: QueryDappInput, @CurrentUser() user: User) {
+  async dapp(@Args('input') input: QueryDappInput, @CurrentUser() user: User) {
     this.logger.verbose(`resolving dapp ${input.id}`)
-    return DAppId.from(input.id)
-      .asyncChain(dappId =>
-        this.getDappByIdUC.execute({ dappId, userId: user.id }),
-      )
-      .toPromise()
+    try {
+      const dapp = await DAppId.from(input.id)
+        .asyncChain(dappId =>
+          this.getDappByIdUC.execute({ dappId, userId: user.id }),
+        )
+        .toPromise()
+      this.logger.debug(`dapp: ${JSON.stringify(dapp)}`)
+      return dapp
+    } catch (err) {
+      this.logger.warn(`failed to resolve dapp: ${(err as any).message ?? err}`)
+      throw err
+    }
   }
 
   @Mutation(() => DappType, { name: 'createDapp' })
   @UseGuards(JwtAuthGuard)
-  createDapp(@Args('input') input: CreateDappInput, @CurrentUser() user: User) {
+  async createDapp(
+    @Args('input') input: CreateDappInput,
+    @CurrentUser() user: User,
+  ) {
     this.logger.verbose(`creating dapp ${JSON.stringify(input)}`)
-    return this.createDappUC.execute({ dapp: input, user }).toPromise()
+    try {
+      const dapp = await this.createDappUC
+        .execute({ dapp: input, user })
+        .toPromise()
+      this.logger.log(`dapp ${dapp.id} created`)
+      return dapp
+    } catch (err) {
+      this.logger.warn(`failed to create dapp: ${(err as any).message ?? err}`)
+      throw err
+    }
   }
 
   @Mutation(() => DappType, { name: 'updateDapp' })
   @UseGuards(JwtAuthGuard)
-  updateDapp(@Args('input') input: UpdateDappInput, @CurrentUser() user: User) {
+  async updateDapp(
+    @Args('input') input: UpdateDappInput,
+    @CurrentUser() user: User,
+  ) {
     this.logger.verbose(
       `updating dapp ${input.id} with ${JSON.stringify(input)}`,
     )
-    const { id, ...props } = input
-    return DAppId.from(id)
-      .asyncChain(dappId =>
-        this.updateDappUC.execute({ dapp: { id: dappId, ...props }, user }),
-      )
-      .toPromise()
-  }
-
-  @Mutation(() => DappType, { name: 'deployDapp' })
-  @UseGuards(JwtAuthGuard)
-  deployDapp(@Args('input') input: DeployDAppInput, @CurrentUser() user: User) {
-    this.logger.verbose(`deploying dapp ${input.dappId}`)
-    return DAppId.from(input.dappId)
-      .asyncChain(dappId => this.deployDappUC.execute({ dappId, user }))
-      .toPromise()
+    try {
+      const { id, ...props } = input
+      const dapp = await DAppId.from(id)
+        .asyncChain(dappId =>
+          this.updateDappUC.execute({ dapp: { id: dappId, ...props }, user }),
+        )
+        .toPromise()
+      this.logger.log(`dapp ${dapp.id} updated`)
+      return dapp
+    } catch (err) {
+      this.logger.warn(`failed to update dapp: ${(err as any).message ?? err}`)
+      throw err
+    }
   }
 
   @Subscription(() => DappType, {
@@ -122,31 +140,54 @@ export class DappsResolver {
 
   @ResolveField(() => ChainType, { name: 'chain', nullable: true })
   async getDappChain(@Parent() dapp: DappType): Promise<ChainProps | null> {
-    return dapp.chainId
-      ? this.getChainByIdUC
-          .execute({ id: dapp.chainId })
-          .map(chain => chain.toJSON())
-          .toPromise()
-      : null
+    try {
+      const chain = (await dapp.chainId)
+        ? this.getChainByIdUC
+            .execute({ id: dapp.chainId })
+            .map(chain => chain.toJSON())
+            .toPromise()
+        : null
+      this.logger.debug(`chain: ${JSON.stringify(chain)}`)
+      return chain
+    } catch (err) {
+      this.logger.warn(
+        `failed to resolve chain: ${(err as any).message ?? err}`,
+      )
+      throw err
+    }
   }
 
   @ResolveField(() => TeamType, { name: 'team' })
   async team(@Parent() dapp: DappType): Promise<TeamProps> {
     const { teamId } = dapp
     this.logger.verbose(`resolving team field for dappId=${dapp.id}`)
-    return this.getTeamByIdUC
-      .execute(teamId)
-      .map(team => team.toJSON())
-      .toPromise()
+    try {
+      const team = await this.getTeamByIdUC
+        .execute(teamId)
+        .map(team => team.toJSON())
+        .toPromise()
+      this.logger.log(`team: ${JSON.stringify(team)}`)
+      return team
+    } catch (err) {
+      this.logger.warn(`failed to resolve team: ${(err as any).message ?? err}`)
+      throw err
+    }
   }
 
   @ResolveField(() => [RawStatsType], { name: 'rawStats' })
   async rawStats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
     this.logger.verbose(`resolving raw stats field for dappId=${dapp.id}`)
-    const result = await this.getDappRawStatsUC
-      .execute({ dappId: dapp.id })
-      .toPromise()
-    return result.stats
+    try {
+      const result = await this.getDappRawStatsUC
+        .execute({ dappId: dapp.id })
+        .toPromise()
+      return result.stats
+    } catch (err) {
+      this.logger.warn(
+        `failed to resolve raw stats: ${(err as any).message ?? err}`,
+      )
+      throw err
+    }
   }
 
   @ResolveField(() => DappStatsType, { name: 'stats' })
@@ -162,8 +203,16 @@ export class DappsResolver {
     @Args('input') input: ValidateAddressInput,
   ): Promise<ValidateAddress> {
     this.logger.verbose(`validating address ${input.chainId}/${input.address}`)
-    const result = await this.validateAddressUC.execute(input).toPromise()
-    return result
+    try {
+      const result = await this.validateAddressUC.execute(input).toPromise()
+      this.logger.verbose(`result: ${JSON.stringify(result)}`)
+      return result
+    } catch (err) {
+      this.logger.warn(
+        `failed to validate address: ${(err as any).message ?? err}`,
+      )
+      throw err
+    }
   }
 
   @ResolveField(() => [ApiKeyType], { name: 'apiKeys' })
@@ -172,16 +221,23 @@ export class DappsResolver {
     @Parent() dapp: DappType,
   ): Promise<ApiKeyType[]> {
     this.logger.verbose(`resolving apiKeys field for ${dapp.id}`)
-    const apiKeys = await this.getAllApiKeysUC
-      .execute({ dappId: dapp.id }, { user })
-      .toPromise()
-    this.logger.verbose(`apiKeys: ${JSON.stringify(apiKeys)}`)
-    return apiKeys.map(apiKey => ({
-      id: apiKey.id,
-      name: apiKey.name,
-      description: apiKey.description,
-      createdAt: Number(apiKey.createdAt),
-      dappId: apiKey.dappId,
-    }))
+    try {
+      const apiKeys = await this.getAllApiKeysUC
+        .execute({ dappId: dapp.id }, { user })
+        .toPromise()
+      this.logger.verbose(`apiKeys: ${JSON.stringify(apiKeys)}`)
+      return apiKeys.map(apiKey => ({
+        id: apiKey.id,
+        name: apiKey.name,
+        description: apiKey.description,
+        createdAt: Number(apiKey.createdAt),
+        dappId: apiKey.dappId,
+      }))
+    } catch (err) {
+      this.logger.warn(
+        `failed to resolve apiKeys: ${(err as any).message ?? err}`,
+      )
+      throw err
+    }
   }
 }

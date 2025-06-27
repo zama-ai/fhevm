@@ -40,14 +40,9 @@ export class PrismaDAppRepository implements DAppRepository {
           data: {
             id: data.id.value,
             name: data.name,
-            status: data.status,
             teamId: data.teamId.value,
-            chainId: data.chainId
-              .map<number | null>(chain => chain.value)
-              .unwrapOr(null),
-            address: data.address
-              .map<string | null>(address => address.value)
-              .unwrapOr(null),
+            chainId: data.chainId.value,
+            address: data.address.value,
             createdAt: data.createdAt,
           },
         })

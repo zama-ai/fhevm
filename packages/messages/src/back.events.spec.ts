@@ -48,37 +48,6 @@ describe('back', () => {
         ),
       },
       {
-        event: back.dappValidationRequested(
-          {
-            requestId: generateRequestId(),
-            dAppId: faker.string.alphanumeric(10),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
-      },
-      {
-        event: back.dappValidationConfirmed(
-          {
-            requestId: generateRequestId(),
-            dAppId: faker.string.alphanumeric(10),
-            owner: faker.string.hexadecimal({ length: 40 }),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
-      },
-      {
-        event: back.dappValidationFailed(
-          {
-            requestId: generateRequestId(),
-            dAppId: faker.string.alphanumeric(10),
-            reason: faker.lorem.paragraph(),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
-      },
-      {
         event: back.dappStatsRequested(
           {
             requestId: generateRequestId(),

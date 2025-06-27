@@ -24,7 +24,6 @@ export const UPDATE_DAPP = gql(`
     updateDapp(input: { id: $dappId, name: $name, address: $address }) {
       id
       name
-      status
       address
       team {
         id

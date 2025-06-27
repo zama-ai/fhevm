@@ -52,6 +52,8 @@ describe('create-dapp', () => {
           token,
           teamId,
           name: faker.string.alphanumeric(10),
+          chainId: 11155111, // Sepolia
+          address: faker.string.hexadecimal({ length: 40 }),
         })
         if (result.success) {
           dapp = result.data
@@ -59,11 +61,6 @@ describe('create-dapp', () => {
           console.log(`failed to create dapp: ${JSON.stringify(result)}`)
           expect(result.success, 'Failed to create dApp').toBe(true)
         }
-      })
-
-      test('then it creates a DRAFT dapp', () => {
-        expect(dapp).toBeDefined()
-        expect(dapp?.status).toBe('DRAFT')
       })
 
       test('then it associates the dapp with the right team', () => {
@@ -81,6 +78,8 @@ describe('create-dapp', () => {
           token: faker.string.uuid(),
           teamId: faker.string.uuid(),
           name: faker.string.alphanumeric(10),
+          chainId: 11155111, // Sepolia
+          address: faker.string.hexadecimal({ length: 40 }),
         })
       })
 

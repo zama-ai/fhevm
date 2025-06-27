@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, chai, describe, expect, test } from 'vitest'
 import { CreateApiKey } from './create-api-key.use-case.js'
 import { executeTask, notFoundError, Task, UnitOfWork } from 'utils'
 // import { mock, MockProxy } from 'vitest-mock-extended'
@@ -48,8 +48,8 @@ describe('CreateApiKey', () => {
           DApp.parse({
             id: dappId.value,
             name: faker.string.alphanumeric(10),
-            status: 'LIVE',
             teamId: TeamId.random().value,
+            chainId: faker.number.int({ min: 1, max: 100_000 }),
             address: faker.string.hexadecimal({ length: 40 }),
             createdAt: faker.date.past(),
           }).unwrap(),

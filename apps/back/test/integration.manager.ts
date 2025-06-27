@@ -14,7 +14,7 @@ import { UserManager } from './user.manager.js'
 
 export type { GraphQlResponse } from './setup.manager.js'
 export type { User } from './auth.manager.js'
-export type { DApp, DeployDappResult } from './dapp.manager.js'
+export type { DApp } from './dapp.manager.js'
 
 export class IntegrationManager {
   readonly setup = new SetupManager()

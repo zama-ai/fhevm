@@ -49,6 +49,7 @@ describe('store-dapp-stats', () => {
         token,
         teamId,
         name: faker.string.alphanumeric(10),
+        chainId: 11155111, // Sepolia
         address,
       })
       expect(createDappResult.success).toBe(true)
