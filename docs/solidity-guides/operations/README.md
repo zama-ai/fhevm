@@ -17,7 +17,9 @@ The following arithmetic operations are supported for encrypted integers (`euint
 | Min                          | `FHE.min`     |        | Binary |
 | Max                          | `FHE.max`     |        | Binary |
 
-{% hint style="info" %} Division (FHE.div) and remainder (FHE.rem) operations are currently supported only with plaintext divisors. {% endhint %}
+{% hint style="info" %} 
+Division (FHE.div) and remainder (FHE.rem) operations are currently supported only with plaintext divisors. 
+{% endhint %}
 
 ## Bitwise operations
 
@@ -150,6 +152,4 @@ Notice that we did not check separately the overflow on `balances[msg.sender]` b
 - Check our [Roadmap](../developer/roadmap.md) for upcoming features or submit a feature request on [GitHub](https://github.com/zama-ai/fhevm-solidity/issues/new?template=feature-request.md).
 - Join the discussion on the [Community Forum](https://community.zama.ai/c/fhevm/15).
 
-{% hint style="success" %} **Zama 5-Question Developer Survey**
 
-We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. **👉** [**Click here**](https://www.zama.ai/developer-survey) to participate. {% endhint %}
