@@ -35,7 +35,7 @@ async fn test_parallel_event_picker_one_events() -> anyhow::Result<()> {
 
     // Should wait forever
     if let Ok(res) = timeout(Duration::from_millis(300), event_picker1.pick_event()).await {
-        panic!("Timeout was expected, got result instead: {:?}", res);
+        panic!("Timeout was expected, got result instead: {res:?}");
     }
 
     println!("Checking PublicDecryptionRequest data...");

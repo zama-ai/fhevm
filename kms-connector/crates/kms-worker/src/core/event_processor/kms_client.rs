@@ -189,8 +189,7 @@ where
                     // Check if we've exceeded the timeout
                     if start.elapsed() >= timeout {
                         return Err(Status::deadline_exceeded(format!(
-                            "Operation timed out after {:?}",
-                            timeout
+                            "Operation timed out after {timeout:?}"
                         )));
                     }
                     // Result not ready yet, wait and retry

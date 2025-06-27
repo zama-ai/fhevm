@@ -106,8 +106,7 @@ impl KmsServiceImpl {
                         // Check if we've exceeded the timeout
                         if start.elapsed() >= timeout {
                             return Err(Status::deadline_exceeded(format!(
-                                "Operation timed out after {:?}",
-                                timeout
+                                "Operation timed out after {timeout:?}"
                             )));
                         }
                         // Result not ready yet, wait and retry
@@ -154,7 +153,7 @@ impl KmsService for KmsServiceImpl {
         let mut client = self
             .get_client()
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
 
         // Send initial request
         client.public_decrypt(request).await?;
@@ -166,7 +165,7 @@ impl KmsService for KmsServiceImpl {
                 let mut client = self
                     .get_client()
                     .await
-                    .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
+                    .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
                 client.get_public_decryption_result(request).await
             }
         })
@@ -212,7 +211,7 @@ impl KmsService for KmsServiceImpl {
         let mut client = self
             .get_client()
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
 
         // Send initial request
         client.user_decrypt(request).await?;
@@ -224,7 +223,7 @@ impl KmsService for KmsServiceImpl {
                 let mut client = self
                     .get_client()
                     .await
-                    .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
+                    .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
                 client.get_user_decryption_result(request).await
             }
         })
