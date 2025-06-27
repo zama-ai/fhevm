@@ -1,4 +1,4 @@
-This example demonstrate how to build an confidential counter using FHEVM, in comparison to a simple counter.
+This example demonstrates how to build an confidential counter using FHEVM, in comparison to a simple counter.
 
 {% hint style="info" %} To run this example correctly, make sure the files are placed in the following directories:
 
@@ -26,12 +26,12 @@ contract Counter {
     return _count;
   }
 
-  /// @notice Increments the counter by 1
+  /// @notice Increments the counter by a specific value
   function increment(uint32 value) external {
     _count += value;
   }
 
-  /// @notice Decrements the counter by 1
+  /// @notice Decrements the counter by a specific value
   function decrement(uint32 value) external {
     require(_count > value, "Counter: cannot decrement below zero");
     _count -= value;
