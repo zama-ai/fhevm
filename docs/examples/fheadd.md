@@ -1,4 +1,4 @@
-This example demonstrate how to write a simple "a + b" contract using FHEVM.
+This example demonstrates how to write a simple "a + b" contract using FHEVM.
 
 {% hint style="info" %} To run this example correctly, make sure the files are placed in the following directories:
 

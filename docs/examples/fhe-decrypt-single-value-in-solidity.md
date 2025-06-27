@@ -1,4 +1,4 @@
-This example demonstrate demonstrates the FHE decryption mechanism in Solidity.
+This example demonstrates the FHE decryption mechanism in Solidity.
 
 {% hint style="info" %} To run this example correctly, make sure the files are placed in the following directories:
 

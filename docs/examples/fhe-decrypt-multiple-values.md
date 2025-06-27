@@ -1,4 +1,4 @@
-This example demonstrate demonstrates the FHE decryption mechanism with multiple values.
+This example demonstrates the FHE decryption mechanism with multiple values.
 
 {% hint style="info" %} To run this example correctly, make sure the files are placed in the following directories:
 
