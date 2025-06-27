@@ -1,7 +1,7 @@
 use anyhow::anyhow;
-use connector_utils::types::{GatewayEvent, db::GatewayEventTransaction};
-use sqlx::{Pool, Postgres, Transaction, postgres::PgListener};
-use tracing::{debug, warn};
+use connector_utils::types::GatewayEvent;
+use sqlx::{Pool, Postgres, postgres::PgListener};
+use tracing::{debug, info, warn};
 
 /// Interface used to pick Gateway's events from some storage.
 pub trait EventPicker {
@@ -62,24 +62,22 @@ impl DbEventPicker {
 }
 
 impl EventPicker for DbEventPicker {
-    type Event = GatewayEventTransaction;
+    type Event = GatewayEvent;
 
     async fn pick_event(&mut self) -> anyhow::Result<Self::Event> {
         loop {
             // Wait for notification
             let notification = self.db_listener.recv().await?;
-
-            // Init transaction before retrieving event from the DB
-            let mut tx = self.db_pool.begin().await?;
+            info!("Received Postgres notification: {}", notification.channel());
 
             let query_result = match notification.channel() {
-                PUBLIC_DECRYPT_NOTIFICATION => pick_public_decryption_request(&mut tx).await,
-                USER_DECRYPT_NOTIFICATION => pick_user_decryption_request(&mut tx).await,
-                PRE_KEYGEN_NOTIFICATION => pick_pre_keygen_request(&mut tx).await,
-                PRE_KSKGEN_NOTIFICATION => pick_pre_kskgen_request(&mut tx).await,
-                KEYGEN_NOTIFICATION => pick_keygen_request(&mut tx).await,
-                KSKGEN_NOTIFICATION => pick_kskgen_request(&mut tx).await,
-                CRSGEN_NOTIFICATION => pick_crsgen_request(&mut tx).await,
+                PUBLIC_DECRYPT_NOTIFICATION => self.pick_public_decryption_request().await,
+                USER_DECRYPT_NOTIFICATION => self.pick_user_decryption_request().await,
+                PRE_KEYGEN_NOTIFICATION => self.pick_pre_keygen_request().await,
+                PRE_KSKGEN_NOTIFICATION => self.pick_pre_kskgen_request().await,
+                KEYGEN_NOTIFICATION => self.pick_keygen_request().await,
+                KSKGEN_NOTIFICATION => self.pick_kskgen_request().await,
+                CRSGEN_NOTIFICATION => self.pick_crsgen_request().await,
                 channel => {
                     warn!("Unexpected notification: {channel}");
                     continue;
@@ -87,7 +85,10 @@ impl EventPicker for DbEventPicker {
             };
 
             match query_result {
-                Ok(event) => return Ok(GatewayEventTransaction::new(tx, event)),
+                Ok(event) => {
+                    info!("Picked event {event} successfully");
+                    return Ok(event);
+                }
                 Err(sqlx::Error::RowNotFound) => {
                     debug!("Event has already been picked");
                 }
@@ -97,114 +98,151 @@ impl EventPicker for DbEventPicker {
     }
 }
 
-async fn pick_public_decryption_request(
-    tx: &mut Transaction<'static, Postgres>,
-) -> sqlx::Result<GatewayEvent> {
-    let row = sqlx::query(
-        "
-            SELECT decryption_id, sns_ct_materials
-            FROM public_decryption_requests
-            LIMIT 1 FOR UPDATE SKIP LOCKED
-        ",
-    )
-    .fetch_one(tx.as_mut())
-    .await?;
-    let event = GatewayEvent::from_public_decryption_row(&row)?;
-    Ok(event)
-}
+impl DbEventPicker {
+    async fn pick_public_decryption_request(&self) -> sqlx::Result<GatewayEvent> {
+        let row = sqlx::query(
+            "
+                UPDATE public_decryption_requests
+                SET under_process = TRUE
+                FROM (
+                    SELECT decryption_id
+                    FROM public_decryption_requests
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE public_decryption_requests.decryption_id = req.decryption_id
+                RETURNING req.decryption_id, sns_ct_materials
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
+        let event = GatewayEvent::from_public_decryption_row(&row)?;
+        Ok(event)
+    }
 
-async fn pick_user_decryption_request(
-    tx: &mut Transaction<'static, Postgres>,
-) -> sqlx::Result<GatewayEvent> {
-    let row = sqlx::query(
-        "
-            SELECT decryption_id, sns_ct_materials, user_address, public_key
-            FROM user_decryption_requests
-            LIMIT 1 FOR UPDATE SKIP LOCKED
-        ",
-    )
-    .fetch_one(tx.as_mut())
-    .await?;
-    let event = GatewayEvent::from_user_decryption_row(&row)?;
-    Ok(event)
-}
+    async fn pick_user_decryption_request(&self) -> sqlx::Result<GatewayEvent> {
+        let row = sqlx::query(
+            "
+                UPDATE user_decryption_requests
+                SET under_process = TRUE
+                FROM (
+                    SELECT decryption_id
+                    FROM user_decryption_requests
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE user_decryption_requests.decryption_id = req.decryption_id
+                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
+        let event = GatewayEvent::from_user_decryption_row(&row)?;
+        Ok(event)
+    }
 
-async fn pick_pre_keygen_request(
-    tx: &mut Transaction<'static, Postgres>,
-) -> sqlx::Result<GatewayEvent> {
-    let row = sqlx::query(
-        "
-            SELECT pre_keygen_request_id, fhe_params_digest
-            FROM preprocess_keygen_requests
-            LIMIT 1 FOR UPDATE SKIP LOCKED
-        ",
-    )
-    .fetch_one(tx.as_mut())
-    .await?;
-    let event = GatewayEvent::from_pre_keygen_row(&row)?;
-    Ok(event)
-}
+    async fn pick_pre_keygen_request(&self) -> sqlx::Result<GatewayEvent> {
+        let row = sqlx::query(
+            "
+                UPDATE preprocess_keygen_requests
+                SET under_process = TRUE
+                FROM (
+                    SELECT pre_keygen_request_id
+                    FROM preprocess_keygen_requests
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE preprocess_keygen_requests.pre_keygen_request_id = req.pre_keygen_request_id
+                RETURNING req.pre_keygen_request_id, fhe_params_digest
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
+        let event = GatewayEvent::from_pre_keygen_row(&row)?;
+        Ok(event)
+    }
 
-async fn pick_pre_kskgen_request(
-    tx: &mut Transaction<'static, Postgres>,
-) -> sqlx::Result<GatewayEvent> {
-    let row = sqlx::query(
-        "
-            SELECT pre_kskgen_request_id, fhe_params_digest
-            FROM preprocess_kskgen_requests
-            LIMIT 1 FOR UPDATE SKIP LOCKED
-        ",
-    )
-    .fetch_one(tx.as_mut())
-    .await?;
-    let event = GatewayEvent::from_pre_kskgen_row(&row)?;
-    Ok(event)
-}
+    async fn pick_pre_kskgen_request(&self) -> sqlx::Result<GatewayEvent> {
+        let row = sqlx::query(
+            "
+                UPDATE preprocess_kskgen_requests
+                SET under_process = TRUE
+                FROM (
+                    SELECT pre_kskgen_request_id
+                    FROM preprocess_kskgen_requests
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE preprocess_kskgen_requests.pre_kskgen_request_id = req.pre_kskgen_request_id
+                RETURNING req.pre_kskgen_request_id, fhe_params_digest
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
+        let event = GatewayEvent::from_pre_kskgen_row(&row)?;
+        Ok(event)
+    }
 
-async fn pick_keygen_request(
-    tx: &mut Transaction<'static, Postgres>,
-) -> sqlx::Result<GatewayEvent> {
-    let row = sqlx::query(
-        "
-            SELECT pre_key_id, fhe_params_digest
-            FROM keygen_requests
-            LIMIT 1 FOR UPDATE SKIP LOCKED
-        ",
-    )
-    .fetch_one(tx.as_mut())
-    .await?;
-    let event = GatewayEvent::from_keygen_row(&row)?;
-    Ok(event)
-}
+    async fn pick_keygen_request(&self) -> sqlx::Result<GatewayEvent> {
+        let row = sqlx::query(
+            "
+                UPDATE keygen_requests
+                SET under_process = TRUE
+                FROM (
+                    SELECT pre_key_id
+                    FROM keygen_requests
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE keygen_requests.pre_key_id = req.pre_key_id
+                RETURNING req.pre_key_id, fhe_params_digest
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
+        let event = GatewayEvent::from_keygen_row(&row)?;
+        Ok(event)
+    }
 
-async fn pick_kskgen_request(
-    tx: &mut Transaction<'static, Postgres>,
-) -> sqlx::Result<GatewayEvent> {
-    let row = sqlx::query(
-        "
-            SELECT pre_ksk_id, source_key_id, dest_key_id, fhe_params_digest
-            FROM kskgen_requests
-            LIMIT 1 FOR UPDATE SKIP LOCKED
-        ",
-    )
-    .fetch_one(tx.as_mut())
-    .await?;
-    let event = GatewayEvent::from_kskgen_row(&row)?;
-    Ok(event)
-}
+    async fn pick_kskgen_request(&self) -> sqlx::Result<GatewayEvent> {
+        let row = sqlx::query(
+            "
+                UPDATE kskgen_requests
+                SET under_process = TRUE
+                FROM (
+                    SELECT pre_ksk_id
+                    FROM kskgen_requests
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE kskgen_requests.pre_ksk_id = req.pre_ksk_id
+                RETURNING req.pre_ksk_id, source_key_id, dest_key_id, fhe_params_digest
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
+        let event = GatewayEvent::from_kskgen_row(&row)?;
+        Ok(event)
+    }
 
-async fn pick_crsgen_request(
-    tx: &mut Transaction<'static, Postgres>,
-) -> sqlx::Result<GatewayEvent> {
-    let row = sqlx::query(
-        "
-            SELECT crsgen_request_id, fhe_params_digest
-            FROM crsgen_requests
-            LIMIT 1 FOR UPDATE SKIP LOCKED
-        ",
-    )
-    .fetch_one(tx.as_mut())
-    .await?;
-    let event = GatewayEvent::from_crsgen_row(&row)?;
-    Ok(event)
+    async fn pick_crsgen_request(&self) -> sqlx::Result<GatewayEvent> {
+        let row = sqlx::query(
+            "
+                UPDATE crsgen_requests
+                SET under_process = TRUE
+                FROM (
+                    SELECT crsgen_request_id
+                    FROM crsgen_requests
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE crsgen_requests.crsgen_request_id = req.crsgen_request_id
+                RETURNING req.crsgen_request_id, fhe_params_digest
+            ",
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
+        let event = GatewayEvent::from_crsgen_row(&row)?;
+        Ok(event)
+    }
 }

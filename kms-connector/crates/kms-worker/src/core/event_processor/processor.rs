@@ -3,9 +3,7 @@ use crate::core::event_processor::{
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
 };
 use alloy::providers::Provider;
-use connector_utils::types::{
-    GatewayEvent, KmsGrpcRequest, KmsResponse, db::GatewayEventTransaction,
-};
+use connector_utils::types::{GatewayEvent, KmsGrpcRequest, KmsResponse};
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -58,10 +56,10 @@ impl<P: Provider> DbEventProcessor<P> {
 }
 
 impl<P: Provider> EventProcessor for DbEventProcessor<P> {
-    type Event = GatewayEventTransaction;
+    type Event = GatewayEvent;
 
-    async fn process(self, event_tx: &Self::Event) -> anyhow::Result<KmsResponse> {
-        let request = self.prepare_request(event_tx.event.clone()).await?;
+    async fn process(self, event: &Self::Event) -> anyhow::Result<KmsResponse> {
+        let request = self.prepare_request(event.clone()).await?;
         let grpc_response = self.kms_client.send_request(request).await?;
         KmsResponse::process(grpc_response)
     }

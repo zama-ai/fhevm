@@ -31,16 +31,16 @@ async fn test_parallel_event_picker_one_events() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking PublicDecryptionRequest...");
-    let event_tx0 = event_picker0.pick_event().await?;
+    let event0 = event_picker0.pick_event().await?;
 
     // Should wait forever
     if let Ok(res) = timeout(Duration::from_millis(300), event_picker1.pick_event()).await {
-        panic!("Timeout was expected, got result instead: {:?}", res);
+        panic!("Timeout was expected, got result instead: {res:?}");
     }
 
     println!("Checking PublicDecryptionRequest data...");
     assert_eq!(
-        event_tx0.event,
+        event0,
         GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: id0,
             snsCtMaterials: sns_ct.clone(),
@@ -82,19 +82,19 @@ async fn test_parallel_event_picker_two_events() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking the two PublicDecryptionRequest...");
-    let event_tx0 = event_picker0.pick_event().await?;
-    let event_tx1 = event_picker1.pick_event().await?;
+    let event0 = event_picker0.pick_event().await?;
+    let event1 = event_picker1.pick_event().await?;
 
     println!("Checking PublicDecryptionRequest data...");
     assert_eq!(
-        event_tx0.event,
+        event0,
         GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: id0,
             snsCtMaterials: sns_ct.clone(),
         })
     );
     assert_eq!(
-        event_tx1.event,
+        event1,
         GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: id1,
             snsCtMaterials: sns_ct,

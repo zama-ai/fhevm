@@ -107,10 +107,10 @@ impl RawConfig {
 
         let settings = builder
             .build()
-            .map_err(|e| Error::Config(format!("Failed to build config: {}", e)))?;
+            .map_err(|e| Error::Config(format!("Failed to build config: {e}")))?;
 
         settings
             .try_deserialize()
-            .map_err(|e| Error::Config(format!("Failed to deserialize config: {}", e)))
+            .map_err(|e| Error::Config(format!("Failed to deserialize config: {e}")))
     }
 }

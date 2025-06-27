@@ -198,7 +198,7 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
             match tokio::time::timeout(Duration::from_secs(5), handle).await {
                 Ok(result) => {
                     if let Err(e) = result {
-                        errors.push(format!("Task failed: {}", e));
+                        errors.push(format!("Task failed: {e}"));
                     }
                 }
                 Err(_) => {
