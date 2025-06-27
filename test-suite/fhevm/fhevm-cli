@@ -188,6 +188,41 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
           docker_args+=("-g" "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt")
           ;;
+        host-listener-disconnect-erc)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] DISCONNECT ERC${RESET}"
+          docker_args+=("-g" "should transfer tokens between two users.")
+          echo -e "${YELLOW}${BOLD}[SIMULATING] Disconnect host-listener${RESET}"
+          docker network disconnect fhevm_default fhevm-host-listener || echo "Was already disconnected"
+          docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}" &
+          sleep 45
+          echo -e "${YELLOW}${BOLD}[SIMULATING] Reconnect host-listener${RESET}"
+          docker network connect fhevm_default fhevm-host-listener
+          wait
+          exit 0
+          ;;
+        host-listener-disconnect-input-proof)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] DISCONNECT INPUT PROOF${RESET}"
+          docker_args+=("-g" "test user input uint64")
+          docker logs fhevm-host-listener > FULLLOGS
+          FIRSTLINE=$(wc -l < FULLLOGS)
+          echo -e "${YELLOW}${BOLD}[SIMULATING] Disconnect host-listener${RESET}"
+          docker network disconnect fhevm_default fhevm-host-listener || echo "Was already disconnected"
+          docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
+          docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
+          sleep 60
+          echo -e "${YELLOW}${BOLD}[SIMULATING] Reconnect host-listener${RESET}"
+          docker network connect fhevm_default fhevm-host-listener
+          docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
+          docker logs fhevm-host-listener > FULLLOGS
+          tail -n+${FIRSTLINE} FULLLOGS > LOGS
+          echo Test logs
+          cat LOGS
+          echo "Allowed handles"
+          grep "data: Allowed" LOGS | grep -o "handle: [0-9a-fx]\+" | sort -u
+          test $(grep "data: Allowed" LOGS | grep -o "handle: [0-9a-fx]\+" | sort -u | wc -l) -ge 3
+          test $(grep "data: Allowed" LOGS | grep -o "handle: [0-9a-fx]\+" | sort -u | wc -l) -le 6
+          exit 0
+          ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
           docker exec -it fhevm-test-suite-e2e-debug bash
