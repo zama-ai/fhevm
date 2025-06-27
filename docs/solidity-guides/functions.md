@@ -120,6 +120,8 @@ function mul(T a, T b) internal returns (T)
 - Arithmetic: `FHE.add`, `FHE.sub`, `FHE.mul`, `FHE.min`, `FHE.max`, `FHE.neg`, `FHE.div`, `FHE.rem`
   - Note: `div` and `rem` operations are supported only with plaintext divisors
 
+> :warning: Functions with FHE operations cannot be marked as `view` since FHE operations cost gas to execute since they always involve a state-change. For instance, you cannot compute and return the encrypted sum of two encrypted values in a view function.
+
 #### Arithmetic operations (`add`, `sub`, `mul`, `div`, `rem`)
 
 Performs the operation homomorphically.
