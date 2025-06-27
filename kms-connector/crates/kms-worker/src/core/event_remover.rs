@@ -1,5 +1,5 @@
 use alloy::primitives::U256;
-use connector_utils::types::{GatewayEvent, db::GatewayEventTransaction};
+use connector_utils::types::GatewayEvent;
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
 use tracing::{error, info, warn};
 
@@ -17,30 +17,22 @@ pub struct DbEventRemover {
 }
 
 impl EventRemover for DbEventRemover {
-    type Event = GatewayEventTransaction;
+    type Event = GatewayEvent;
 
-    async fn remove_event(&self, event_tx: Self::Event) {
-        match self.remove_from_db(&event_tx.event).await {
+    async fn remove_event(&self, event: Self::Event) {
+        match self.remove_from_db(&event).await {
             Ok(query_result) => {
-                if let Err(e) = event_tx.tx.commit().await {
-                    return error!("Failed to commit Postgres transaction: {e}");
-                }
                 if query_result.rows_affected() == 1 {
-                    info!("Successfully removed {} from DB!", event_tx.event);
+                    info!("Successfully removed {event} from DB!");
                 } else {
                     warn!(
                         "Unexpected query result while removing {}: {:?}",
-                        event_tx.event, query_result
+                        event, query_result
                     )
                 }
             }
 
-            Err(err) => {
-                error!("Failed to remove {} from DB: {}", event_tx.event, err);
-                if let Err(e) = event_tx.tx.rollback().await {
-                    warn!("Failed to rollback Postgres transaction: {e}");
-                }
-            }
+            Err(err) => error!("Failed to remove {event} from DB: {err}"),
         }
     }
 }

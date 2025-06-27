@@ -35,11 +35,11 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking PublicDecryptionRequest...");
-    let event_tx = event_picker.pick_event().await?;
+    let event = event_picker.pick_event().await?;
 
     println!("Checking PublicDecryptionRequest data...");
     assert_eq!(
-        event_tx.event,
+        event,
         GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: decryption_id,
             snsCtMaterials: sns_ct,
@@ -80,7 +80,7 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
 
     println!("Checking UserDecryptionRequest data...");
     assert_eq!(
-        event_tx.event,
+        event_tx,
         GatewayEvent::UserDecryption(UserDecryptionRequest {
             decryptionId: decryption_id,
             snsCtMaterials: sns_ct,
@@ -115,7 +115,7 @@ async fn test_pick_preprocess_keygen() -> anyhow::Result<()> {
 
     println!("Checking PreprocessKeygenRequest data...");
     assert_eq!(
-        event_tx.event,
+        event_tx,
         GatewayEvent::PreprocessKeygen(PreprocessKeygenRequest {
             preKeygenRequestId: pre_keygen_request_id,
             fheParamsDigest: fhe_params_digest,
@@ -148,7 +148,7 @@ async fn test_pick_preprocess_kskgen() -> anyhow::Result<()> {
 
     println!("Checking PreprocessKskgenRequest data...");
     assert_eq!(
-        event_tx.event,
+        event_tx,
         GatewayEvent::PreprocessKskgen(PreprocessKskgenRequest {
             preKskgenRequestId: pre_kskgen_request_id,
             fheParamsDigest: fhe_params_digest,
@@ -181,7 +181,7 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
 
     println!("Checking KeygenRequest data...");
     assert_eq!(
-        event_tx.event,
+        event_tx,
         GatewayEvent::Keygen(KeygenRequest {
             preKeyId: pre_key_id,
             fheParamsDigest: fhe_params_digest,
@@ -218,7 +218,7 @@ async fn test_pick_kskgen() -> anyhow::Result<()> {
 
     println!("Checking KskgenRequest data...");
     assert_eq!(
-        event_tx.event,
+        event_tx,
         GatewayEvent::Kskgen(KskgenRequest {
             preKskId: pre_ksk_id,
             sourceKeyId: source_key_id,
@@ -249,11 +249,11 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking CrsgenRequest...");
-    let event_tx = event_picker.pick_event().await?;
+    let event = event_picker.pick_event().await?;
 
     println!("Checking CrsgenRequest data...");
     assert_eq!(
-        event_tx.event,
+        event,
         GatewayEvent::Crsgen(CrsgenRequest {
             crsgenRequestId: crsgen_request_id,
             fheParamsDigest: fhe_params_digest,
