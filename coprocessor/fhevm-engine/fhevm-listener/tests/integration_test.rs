@@ -161,13 +161,21 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         end_at_block: None,
         catchup_margin: 5,
         log_level: Level::INFO,
-        health_port: 8080,
+        health_port: 8082,
     };
 
     // Start listener in background task
     let listener_handle = tokio::spawn(main(args.clone()));
 
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    for delay in 0..60 {
+        const HEALTHZ_URL: &str = "http://127.0.0.1:8082/healthz";
+        let response = reqwest::get(HEALTHZ_URL).await;
+        if response.is_ok() && response.unwrap().status().is_success() {
+            eprintln!("Listener healthy after {} seconds", delay);
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    }
 
     // Emit first batch of events
     let wallets_clone = wallets.clone();
@@ -184,7 +192,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         .await;
     });
 
-    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 
     // Kill the listener
     eprintln!("First kill, check database valid block has been updated");
@@ -278,11 +286,11 @@ async fn test_health() -> Result<(), anyhow::Error> {
         end_at_block: None,
         catchup_margin: 5,
         log_level: Level::INFO,
-        health_port: 8081,
+        health_port: 8083,
     };
 
-    const LIVENESS_URL: &str = "http://0.0.0.0:8081/liveness";
-    const HEALTHZ_URL: &str = "http://0.0.0.0:8081/healthz";
+    const LIVENESS_URL: &str = "http://127.0.0.1:8083/liveness";
+    const HEALTHZ_URL: &str = "http://127.0.0.1:8083/healthz";
 
     // Start listener in background task
     let listener_handle: tokio::task::JoinHandle<()> =
