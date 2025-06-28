@@ -1,5 +1,6 @@
 
-## Smart contract examples
+## Basic
+- [FHE counter](fhe-counter.md)
 - FHE Operations
   - [Add](fheadd.md)
   - [If then else](fheifthenelse.md)
@@ -12,4 +13,9 @@
 - Decryption in Solidity
   - [Decrypt single value in Solidity](fhe-decrypt-single-value-in-solidity.md)
   - [Decrypt multiple values in Solidity](fhe-decrypt-multiple-values-in-solidity.md)
-- [FHE counter](fhe-counter.md)
+
+
+## Advanced
+
+- [Sealed-bid auction](sealed-bid-auction.md)
+  - [Tutorial](sealed-bid-auction-tutorial.md)
