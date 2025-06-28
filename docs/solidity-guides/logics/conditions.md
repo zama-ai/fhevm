@@ -6,7 +6,7 @@ This document covers encrypted branching and how to move from an encrypted condi
 
 ## What is confidential branching?
 
-In FHEVM, when you perform [comparison operations](../references/functions.md#comparison-operation-eq-ne-ge-gt-le-lt), the result is an encrypted boolean (`ebool`). Since encrypted booleans do not support standard boolean operations like `if` statements or logical operators, conditional logic must be implemented using specialized methods.
+In FHEVM, when you perform [comparison operations](../functions.md#comparison-operation-eq-ne-ge-gt-le-lt), the result is an encrypted boolean (`ebool`). Since encrypted booleans do not support standard boolean operations like `if` statements or logical operators, conditional logic must be implemented using specialized methods.
 
 To facilitate conditional assignments, FHEVM provides the `FHE.select` function, which acts as a ternary operator for encrypted values.
 
@@ -42,7 +42,9 @@ function bid(externalEuint64 encryptedValue, bytes calldata inputProof) external
 }
 ```
 
-{% hint style="info" %} This is a simplified example to demonstrate the functionality. {% endhint %}
+{% hint style="info" %} 
+This is a simplified example to demonstrate the functionality. 
+{% endhint %}
 
 ### How Does It Work?
 
@@ -109,7 +111,9 @@ function transferPrize(uint256 requestId, address auctionWinner, bytes memory si
 }
 ```
 
-{% hint style="info" %} This is a simplified example to demonstrate the functionality. {% endhint %}
+{% hint style="info" %} 
+This is a simplified example to demonstrate the functionality. 
+{% endhint %}
 
 As you can see the in the above example, the path to move from an encrypted condition to a decrypted business logic must be async and requires calling the decryption oracle contract to reveal the result of the logic using encrypted variables.
 
