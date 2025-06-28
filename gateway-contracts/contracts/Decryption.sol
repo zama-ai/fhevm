@@ -114,6 +114,9 @@ contract Decryption is
     string private constant EIP712_PUBLIC_DECRYPT_TYPE =
         "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult)";
 
+    bytes32 private constant DOMAIN_TYPE_HASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
     /// @notice The hash of the PublicDecryptVerification structure typed data definition used for signature validation.
     bytes32 private constant EIP712_PUBLIC_DECRYPT_TYPE_HASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
 
@@ -641,10 +644,6 @@ contract Decryption is
     function _hashUserDecryptRequestVerification(
         UserDecryptRequestVerification memory userDecryptRequestVerification
     ) internal view virtual returns (bytes32) {
-        // Could be a constant
-        bytes32 TYPE_HASH = keccak256(
-            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-        );
         bytes32 structHash = keccak256(
             abi.encode(
                 EIP712_USER_DECRYPT_REQUEST_TYPE_HASH,
@@ -657,7 +656,7 @@ contract Decryption is
         );
         bytes32 domainSeparatorV4 = keccak256(
             abi.encode(
-                TYPE_HASH,
+                DOMAIN_TYPE_HASH,
                 _EIP712NameHash(),
                 _EIP712VersionHash(),
                 userDecryptRequestVerification.contractsChainId,
