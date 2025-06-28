@@ -6,6 +6,7 @@ import { ciphertextCommitsAddress } from "../addresses/CiphertextCommitsAddress.
 import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IGatewayConfig.sol";
@@ -640,19 +641,30 @@ contract Decryption is
     function _hashUserDecryptRequestVerification(
         UserDecryptRequestVerification memory userDecryptRequestVerification
     ) internal view virtual returns (bytes32) {
-        return
-            _hashTypedDataV4(
-                keccak256(
-                    abi.encode(
-                        EIP712_USER_DECRYPT_REQUEST_TYPE_HASH,
-                        keccak256(userDecryptRequestVerification.publicKey),
-                        keccak256(abi.encodePacked(userDecryptRequestVerification.contractAddresses)),
-                        userDecryptRequestVerification.contractsChainId,
-                        userDecryptRequestVerification.startTimestamp,
-                        userDecryptRequestVerification.durationDays
-                    )
-                )
-            );
+        // Could be a constant
+        bytes32 TYPE_HASH = keccak256(
+            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(
+                EIP712_USER_DECRYPT_REQUEST_TYPE_HASH,
+                keccak256(userDecryptRequestVerification.publicKey),
+                keccak256(abi.encodePacked(userDecryptRequestVerification.contractAddresses)),
+                userDecryptRequestVerification.contractsChainId,
+                userDecryptRequestVerification.startTimestamp,
+                userDecryptRequestVerification.durationDays
+            )
+        );
+        bytes32 domainSeparatorV4 = keccak256(
+            abi.encode(
+                TYPE_HASH,
+                _EIP712NameHash(),
+                _EIP712VersionHash(),
+                userDecryptRequestVerification.contractsChainId,
+                address(this)
+            )
+        );
+        return MessageHashUtils.toTypedDataHash(domainSeparatorV4, structHash);
     }
 
     /// @notice Computes the hash of a given DelegatedUserDecryptRequestVerification structured data.
