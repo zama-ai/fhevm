@@ -17,6 +17,13 @@ layout:
 **Welcome to the Zama Confidential Blockchain Protocol Docs.**\
 The docs aim to guide you to build confidential dApps on top of any L1 or L2 using Fully Homomorphic Encryption (FHE).
 
+
+{% hint style="warning" %}
+
+**Since the Zama Protocol testnet has not been audited yet, don't publish any sensitive data to it.**
+
+{% endhint %}
+
 ## Where to go next
 
 If you're completely new to FHE or the Zama Protocol, we suggest first checking out the [Litepaper](https://docs.zama.ai/protocol/zama-protocol-litepaper), which offers a thorough overview of the protocol.
