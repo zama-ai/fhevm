@@ -698,7 +698,6 @@ describe("Decryption", function () {
       // Create EIP712 messages
       const decryptionAddress = await decryption.getAddress();
       const eip712RequestMessage = createEIP712RequestUserDecrypt(
-        gatewayChainId,
         decryptionAddress,
         publicKey,
         contractAddresses,
@@ -1157,7 +1156,6 @@ describe("Decryption", function () {
       // Create EIP712 message using the fake contract address list
       const decryptionAddress = await decryption.getAddress();
       const fakeEip712RequestMessage = createEIP712RequestUserDecrypt(
-        gatewayChainId,
         decryptionAddress,
         publicKey,
         fakeContractAddresses,
