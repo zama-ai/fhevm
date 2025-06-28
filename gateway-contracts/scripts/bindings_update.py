@@ -16,7 +16,7 @@ GW_CRATE_DIR = GW_ROOT_DIR.joinpath("rust_bindings")
 GW_CONTRACTS_DIR = GW_ROOT_DIR.joinpath("contracts")
 GW_MOCKS_DIR = GW_CONTRACTS_DIR.joinpath("mocks")
 
-ALLOWED_FORGE_VERSIONS = ["1.2.2-v1.2.2", "1.2.2-stable"]
+ALLOWED_FORGE_VERSIONS = ["1.2.2-v1.2.2", "1.2.2-stable", '1.2.3-stable']
 
 
 def init_cli() -> ArgumentParser:

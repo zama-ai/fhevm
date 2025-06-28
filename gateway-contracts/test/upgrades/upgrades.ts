@@ -72,7 +72,7 @@ describe("Upgrades", function () {
     });
     const decryption = await upgrades.upgradeProxy(emptyUUPS, this.decryptionFactory);
     await decryption.waitForDeployment();
-    expect(await decryption.getVersion()).to.equal("Decryption v0.1.0");
+    expect(await decryption.getVersion()).to.equal("Decryption v0.2.0");
     const decryption2 = await upgrades.upgradeProxy(decryption, this.decryptionFactoryUpgraded);
     await decryption2.waitForDeployment();
     expect(await decryption2.getVersion()).to.equal("Decryption v0.2.0");
