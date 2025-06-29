@@ -6,12 +6,12 @@ This document provides an overview of the `@fhevm/sdk` library, detailing its in
 
 ## Init (browser)
 
-If you are using `@fhevm/sdk` in a web application, you need to initialize it before creating an instance. To do this, you should call `initFhevm` and wait for the promise to resolve.
+If you are using `@fhevm/sdk` in a web application, you need to initialize it before creating an instance. To do this, you should call `initSDK` and wait for the promise to resolve.
 
 ```javascript
 import { fhevmInstance, createInstance } from "@fhevm/sdk/node";
 
-initFhevm().then(() => {
+initSDK().then(() => {
   const instance = await createInstance({
     network: window.ethereum,
     gatewayUrl: "https://gateway.sepolia.zama.ai",

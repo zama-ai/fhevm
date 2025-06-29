@@ -58,7 +58,7 @@ resolve: {
 
 ```javascript
 const start = async () => {
-  await window.fhevm.initFhevm(); // load wasm needed
+  await window.fhevm.initSDK(); // load wasm needed
   const instance = window.fhevm
     .createInstance({
       kmsContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
