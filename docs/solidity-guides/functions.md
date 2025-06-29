@@ -120,6 +120,8 @@ function mul(T a, T b) internal returns (T)
 - Arithmetic: `FHE.add`, `FHE.sub`, `FHE.mul`, `FHE.min`, `FHE.max`, `FHE.neg`, `FHE.div`, `FHE.rem`
   - Note: `div` and `rem` operations are supported only with plaintext divisors
 
+> :warning: Functions with FHE operations cannot be marked as `view` since FHE operations cost gas to execute since they always involve a state-change. For instance, you cannot compute and return the encrypted sum of two encrypted values in a view function.
+
 #### Arithmetic operations (`add`, `sub`, `mul`, `div`, `rem`)
 
 Performs the operation homomorphically.
@@ -165,7 +167,9 @@ function max(uint32 a, euint8 b) internal view returns (euint32)
 
 There are two unary operators: `neg` (`-`) and `not` (`!`). Note that since we work with unsigned integers, the result of negation is interpreted as the modular opposite. The `not` operator returns the value obtained after flipping all the bits of the operand.
 
-{% hint style="info" %} More information about the behavior of these operators can be found at the [TFHE-rs docs](https://docs.zama.ai/tfhe-rs/fhe-computation/operations/arithmetic-operations). {% endhint %}
+{% hint style="info" %} 
+More information about the behavior of these operators can be found at the [TFHE-rs docs](https://docs.zama.ai/tfhe-rs/fhe-computation/operations/arithmetic-operations). 
+{% endhint %}
 
 ### Bitwise operations
 
@@ -219,7 +223,9 @@ function rotr(euint32 a, euint16 b) internal view returns (euint32)
 
 ### Comparison operation (`eq`, `ne`, `ge`, `gt`, `le`, `lt`)
 
-{% hint style="info" %} **Note** that in the case of ciphertext-plaintext operations, since our backend only accepts plaintext right operands, calling the operation with a plaintext left operand will actually invert the operand order and call the _opposite_ comparison. {% endhint %}
+{% hint style="info" %} 
+**Note** that in the case of ciphertext-plaintext operations, since our backend only accepts plaintext right operands, calling the operation with a plaintext left operand will actually invert the operand order and call the _opposite_ comparison. 
+{% endhint %}
 
 The result of comparison operations is an encrypted boolean (`ebool`). In the backend, the boolean is represented by an encrypted unsinged integer of bit width 8, but this is abstracted away by the Solidity library.
 
@@ -338,7 +344,9 @@ function isSenderAllowed(T value) internal view returns (bool)
 - **`isAllowed`**: Checks whether a specific address has permission to access a ciphertext.
 - **`isSenderAllowed`**: Similar to `isAllowed`, but automatically checks permissions for the `msg.sender`.
 
-{% hint style="info" %} Both functions return `true` if the ciphertext is authorized for the specified address, regardless of whether the allowance is stored in the ACL contract or in transient storage. {% endhint %}
+{% hint style="info" %} 
+Both functions return `true` if the ciphertext is authorized for the specified address, regardless of whether the allowance is stored in the ACL contract or in transient storage. 
+{% endhint %}
 
 #### Verifying Permissions
 

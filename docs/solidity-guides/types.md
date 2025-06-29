@@ -12,7 +12,9 @@ The `FHE` library offers a robust type system with encrypted integer types, enab
 - Arithmetic operations on `e(u)int` types are **unchecked**, meaning they wrap around on overflow. This design choice ensures confidentiality by avoiding the leakage of information through error detection.
 - Future versions of the `FHE` library will support encrypted integers with overflow checking, but with the trade-off of exposing limited information about the operands.
 
-{% hint style="info" %} Encrypted integers with overflow checking will soon be available in the `FHE` library. These will allow reversible arithmetic operations but may reveal some information about the input values. {% endhint %}
+{% hint style="info" %} 
+Encrypted integers with overflow checking will soon be available in the `FHE` library. These will allow reversible arithmetic operations but may reveal some information about the input values. 
+{% endhint %}
 
 Encrypted integers in FHEVM are represented as FHE ciphertexts, abstracted using ciphertext handles. These types, prefixed with `e` (for example, `euint64`) act as secure wrappers over the ciphertext handles.
 
@@ -34,4 +36,6 @@ The `FHE` library currently supports the following encrypted types:
 > **Note:**  
 > Division (`div`) and remainder (`rem`) operations are only supported when the right-hand side (`rhs`) operand is a plaintext (non-encrypted) value. Attempting to use an encrypted value as `rhs` will result in a panic. This restriction ensures correct and secure computation within the current framework.
 
-{% hint style="info" %} Higher-precision integer types are available in the `TFHE-rs` library and can be added to `fhevm` as needed. {% endhint %}
+{% hint style="info" %} 
+Higher-precision integer types are available in the `TFHE-rs` library and can be added to `fhevm` as needed. 
+{% endhint %}
