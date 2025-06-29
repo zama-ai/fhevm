@@ -58,7 +58,7 @@ resolve: {
 
 ```javascript
 const start = async () => {
-  await window.fhevm.initFhevm(); // load wasm needed
+  await window.fhevm.initSDK(); // load wasm needed
   const config = { ...SepoliaConfig, network: window.ethereum } ;
   config.network = window.ethereum;
   const instance = window.fhevm
