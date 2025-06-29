@@ -51,7 +51,7 @@ If you prefer You can also use the `@zama-fhe/relayer-sdk` as a ES module:
   import { initFhevm, createInstance, SepoliaConfig } from "https://cdn.zama.ai/relayer-sdk-js/0.1.0-7/relayer-sdk-js.js";
 
   await initFhevm();
-  let config = SepoliaConfig;
+  const config = { ...SepoliaConfig, network: window.ethereum } ;
   config.network = window.ethereum;
   const instance = await createInstance(config);
 </script>
@@ -99,7 +99,8 @@ import { initFhevm, createInstance, SepoliaConfig } from "@zama-fhe/relayer-sdk/
 
 const init = async () => {
   await initFhevm(); // Load FHE
-  return createInstance(SepoliaConfig);
+  const config = { ...SepoliaConfig, network: window.ethereum } ;
+  return createInstance(config);
 };
 
 init().then((instance) => {
