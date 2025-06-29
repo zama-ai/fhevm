@@ -16,13 +16,13 @@ const buffer = instance.createEncryptedInput(
 // We add the values with associated data-type method
 buffer.add64(BigInt(23393893233));
 buffer.add64(BigInt(1));
-<!-- buffer.addBool(false); -->
-<!-- buffer.add8(BigInt(43)); -->
-<!-- buffer.add16(BigInt(87)); -->
-<!-- buffer.add32(BigInt(2339389323)); -->
-<!-- buffer.add128(BigInt(233938932390)); -->
-<!-- buffer.addAddress('0xa5e1defb98EFe38EBb2D958CEe052410247F4c80'); -->
-<!-- buffer.add256(BigInt('2339389323922393930')); -->
+// buffer.addBool(false);
+// buffer.add8(BigInt(43));
+// buffer.add16(BigInt(87));
+// buffer.add32(BigInt(2339389323));
+// buffer.add128(BigInt(233938932390));
+// buffer.addAddress('0xa5e1defb98EFe38EBb2D958CEe052410247F4c80');
+// buffer.add256(BigInt('2339389323922393930'));
 
 // This will encrypt the values, generate a proof of knowledge for it, and then upload the ciphertexts using the relayer.
 // This action will return the list of ciphertext handles.
