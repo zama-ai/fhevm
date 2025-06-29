@@ -1,6 +1,6 @@
 # Build a web application
 
-This document guides you through building a web application using the `@zama-fhe/relayer-sdk` library. 
+This document guides you through building a web application using the `@zama-fhe/relayer-sdk` library.
 
 <!-- NOTE: uncomment once templates are updated to latest testnet -->
 
@@ -33,7 +33,7 @@ This document guides you through building a web application using the `@zama-fhe
 Include this line at the top of your project.
 
 ```html
-<script src="https://cdn.zama.ai/relayer-sdk-js/0.1.0-7/relayer-sdk-js.umd.cjs" type="text/javascript"></script>
+<script src="https://cdn.zama.ai/relayer-sdk-js/0.1.0-9/relayer-sdk-js.umd.cjs" type="text/javascript"></script>
 ```
 
 In your project, you can use the bundle import if you install `@zama-fhe/relayer-sdk` package:
@@ -48,10 +48,10 @@ If you prefer You can also use the `@zama-fhe/relayer-sdk` as a ES module:
 
 ```html
 <script type="module">
-  import { initSDK, createInstance, SepoliaConfig } from "https://cdn.zama.ai/relayer-sdk-js/0.1.0-7/relayer-sdk-js.js";
+  import { initSDK, createInstance, SepoliaConfig } from "https://cdn.zama.ai/relayer-sdk-js/0.1.0-9/relayer-sdk-js.js";
 
   await initSDK();
-  const config = { ...SepoliaConfig, network: window.ethereum } ;
+  const config = { ...SepoliaConfig, network: window.ethereum };
   config.network = window.ethereum;
   const instance = await createInstance(config);
 </script>
@@ -99,7 +99,7 @@ import { initSDK, createInstance, SepoliaConfig } from "@zama-fhe/relayer-sdk/bu
 
 const init = async () => {
   await initSDK(); // Load FHE
-  const config = { ...SepoliaConfig, network: window.ethereum } ;
+  const config = { ...SepoliaConfig, network: window.ethereum };
   return createInstance(config);
 };
 
