@@ -34,7 +34,8 @@
 
 - [Hardhat Plugin](hardhat/README.md)
   - [Setup Hardhat](getting-started/quick-start-tutorial/setup.md)
-  - [Test](hardhat/test.md)
+  - [Write FHEVM Tests in Hardhat](hardhat/write_test.md)
+  - [Run FHEVM Tests in Hardhat](hardhat/run_test.md)
 - [Foundry](foundry.md)
 - [HCU](hcu.md)
 - [Migrate to v0.7](migration.md)
