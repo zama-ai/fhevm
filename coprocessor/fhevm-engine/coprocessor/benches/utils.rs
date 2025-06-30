@@ -791,8 +791,10 @@ pub struct EnvConfig {
     pub is_multi_bit: bool,
     pub is_fast_bench: bool,
     pub batch_size: i32,
+    #[allow(dead_code)]
     pub scheduling_policy: String,
     pub benchmark_type: String,
+    #[allow(dead_code)]
     pub optimization_target: String,
 }
 

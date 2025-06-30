@@ -1,6 +1,6 @@
 # See all tutorials
 
-## Solidity smart contracts templates - `fhevm-contracts`
+## Solidity smart contracts templates - `fhevm-contracts` (Legacy)
 
 The [fhevm-contracts repository](https://github.com/zama-ai/fhevm-contracts) provides a comprehensive collection of secure, pre-tested Solidity templates optimized for fhevm development. These templates leverage the FHE library to enable encrypted computations while maintaining security and extensibility.
 
@@ -43,11 +43,6 @@ The library includes templates for common use cases like tokens and governance, 
 - [How to do Confidential Transactions Directly on Ethereum?](https://www.youtube.com/watch?v=aDv2WYOpVqA) - Nov 2024
 - [Zama - FHE on Ethereum (Presentation at The Zama CoFHE Shop during EthCC 7)](https://www.youtube.com/watch?v=WngC5cvV_fc&ab_channel=Zama) - Jul 2024
 
-{% hint style="success" %}
-**Zama 5-Question Developer Survey**
-
-We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. **👉** [**Click here**](https://www.zama.ai/developer-survey) to participate.
-{% endhint %}
 
 ### Legacy - Not compatible with latest fhevm
 

@@ -55,7 +55,7 @@ impl KmsWallet {
 
         // Convert hex string to bytes
         let bytes = decode(private_key)
-            .map_err(|e| WalletError::InvalidPrivateKey(format!("Invalid hex encoding: {}", e)))?;
+            .map_err(|e| WalletError::InvalidPrivateKey(format!("Invalid hex encoding: {e}")))?;
 
         // Ensure the key is the correct length
         if bytes.len() != 32 {
@@ -66,10 +66,9 @@ impl KmsWallet {
         }
 
         // Create a signing key from the bytes
-        let signing_key = alloy::signers::k256::ecdsa::SigningKey::from_bytes(
-            bytes.as_slice().into(),
-        )
-        .map_err(|e| WalletError::InvalidPrivateKey(format!("Invalid private key: {}", e)))?;
+        let signing_key =
+            alloy::signers::k256::ecdsa::SigningKey::from_bytes(bytes.as_slice().into())
+                .map_err(|e| WalletError::InvalidPrivateKey(format!("Invalid private key: {e}")))?;
 
         // Create signer from the signing key
         let signer = PrivateKeySigner::from_signing_key(signing_key).with_chain_id(chain_id);
@@ -168,7 +167,7 @@ mod tests {
 
         // Test with 0x prefix
         let wallet_with_prefix =
-            KmsWallet::from_private_key_str(&format!("0x{}", private_key), Some(TEST_CHAIN_ID))
+            KmsWallet::from_private_key_str(&format!("0x{private_key}"), Some(TEST_CHAIN_ID))
                 .unwrap();
         assert_eq!(wallet_with_prefix.address(), expected_address);
     }

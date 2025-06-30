@@ -1,50 +1,55 @@
-This example demonstrate how to build an confidential counter using FHEVM, in comparison to a simple counter.
+This example demonstrates how to build an confidential counter using FHEVM, in comparison to a simple counter.
 
-{% hint style="info" %}
+{% hint style="info" %} 
 To run this example correctly, make sure the files are placed in the following directories:
-- `.sol`  file → `<your-project-root-dir>/contracts/`
+
+- `.sol` file → `<your-project-root-dir>/contracts/`
 - `.ts` file → `<your-project-root-dir>/test/`
 
-This ensures Hardhat can compile and test your contracts as expected.
+This ensures Hardhat can compile and test your contracts as expected. 
 {% endhint %}
 
 ## A simple counter
+
 {% tabs %}
 
-{% tab title="counter.sol" %} 
+{% tab title="counter.sol" %}
+
 ```solidity
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
 /// @title A simple counter contract
 contract Counter {
-    uint32 private _count;
+  uint32 private _count;
 
-    /// @notice Returns the current count
-    function getCount() external view returns (uint32) {
-        return _count;
-    }
+  /// @notice Returns the current count
+  function getCount() external view returns (uint32) {
+    return _count;
+  }
 
-    /// @notice Increments the counter by 1
-    function increment(uint32 value) external {
-        _count += value;
-    }
+  /// @notice Increments the counter by a specific value
+  function increment(uint32 value) external {
+    _count += value;
+  }
 
-    /// @notice Decrements the counter by 1
-    function decrement(uint32 value) external {
-        require(_count > value, "Counter: cannot decrement below zero");
-        _count -= value;
-    }
+  /// @notice Decrements the counter by a specific value
+  function decrement(uint32 value) external {
+    require(_count > value, "Counter: cannot decrement below zero");
+    _count -= value;
+  }
 }
 ```
+
 {% endtab %}
 
-{% tab title="counter.ts" %} 
+{% tab title="counter.ts" %}
+
 ```ts
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { ethers } from "hardhat";
 import { Counter, Counter__factory } from "../types";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
+import { ethers } from "hardhat";
 
 type Signers = {
   deployer: HardhatEthersSigner;
@@ -100,6 +105,7 @@ describe("Counter", function () {
   });
 });
 ```
+
 {% endtab %}
 
 {% endtabs %}
@@ -108,57 +114,60 @@ describe("Counter", function () {
 
 {% tabs %}
 
-{% tab title="FHECounter.sol" %} 
+{% tab title="FHECounter.sol" %}
+
 ```solidity
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {FHE, euint32, externalEuint32} from "@fhevm/solidity/lib/FHE.sol";
-import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import { FHE, euint32, externalEuint32 } from "@fhevm/solidity/lib/FHE.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /// @title A simple FHE counter contract
 contract FHECounter is SepoliaConfig {
-    euint32 private _count;
+  euint32 private _count;
 
-    /// @notice Returns the current count
-    function getCount() external view returns (euint32) {
-        return _count;
-    }
+  /// @notice Returns the current count
+  function getCount() external view returns (euint32) {
+    return _count;
+  }
 
-    /// @notice Increments the counter by a specified encrypted value.
-    /// @dev This example omits overflow/underflow checks for simplicity and readability.
-    /// In a production contract, proper range checks should be implemented.
-    function increment(externalEuint32 inputEuint32, bytes calldata inputProof) external {
-        euint32 encryptedEuint32 = FHE.fromExternal(inputEuint32, inputProof);
+  /// @notice Increments the counter by a specified encrypted value.
+  /// @dev This example omits overflow/underflow checks for simplicity and readability.
+  /// In a production contract, proper range checks should be implemented.
+  function increment(externalEuint32 inputEuint32, bytes calldata inputProof) external {
+    euint32 encryptedEuint32 = FHE.fromExternal(inputEuint32, inputProof);
 
-        _count = FHE.add(_count, encryptedEuint32);
+    _count = FHE.add(_count, encryptedEuint32);
 
-        FHE.allowThis(_count);
-        FHE.allow(_count, msg.sender);
-    }
+    FHE.allowThis(_count);
+    FHE.allow(_count, msg.sender);
+  }
 
-    /// @notice Decrements the counter by a specified encrypted value.
-    /// @dev This example omits overflow/underflow checks for simplicity and readability.
-    /// In a production contract, proper range checks should be implemented.
-    function decrement(externalEuint32 inputEuint32, bytes calldata inputProof) external {
-        euint32 encryptedEuint32 = FHE.fromExternal(inputEuint32, inputProof);
+  /// @notice Decrements the counter by a specified encrypted value.
+  /// @dev This example omits overflow/underflow checks for simplicity and readability.
+  /// In a production contract, proper range checks should be implemented.
+  function decrement(externalEuint32 inputEuint32, bytes calldata inputProof) external {
+    euint32 encryptedEuint32 = FHE.fromExternal(inputEuint32, inputProof);
 
-        _count = FHE.sub(_count, encryptedEuint32);
+    _count = FHE.sub(_count, encryptedEuint32);
 
-        FHE.allowThis(_count);
-        FHE.allow(_count, msg.sender);
-    }
+    FHE.allowThis(_count);
+    FHE.allow(_count, msg.sender);
+  }
 }
 ```
+
 {% endtab %}
 
-{% tab title="FHECounter.ts" %} 
+{% tab title="FHECounter.ts" %}
+
 ```ts
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { ethers, fhevm } from "hardhat";
 import { FHECounter, FHECounter__factory } from "../types";
-import { expect } from "chai";
 import { FhevmType } from "@fhevm/hardhat-plugin";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { expect } from "chai";
+import { ethers, fhevm } from "hardhat";
 
 type Signers = {
   deployer: HardhatEthersSigner;
@@ -253,6 +262,7 @@ describe("FHECounter", function () {
   });
 });
 ```
+
 {% endtab %}
 
 {% endtabs %}

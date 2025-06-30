@@ -33,6 +33,11 @@ impl Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Service Name: {}", self.service_name)?;
         writeln!(f, "Database URL: {}", self.database_url)?;
+        writeln!(
+            f,
+            "  Database connection pool size: {}",
+            self.database_pool_size
+        )?;
         writeln!(f, "Gateway URL: {}", self.gateway_url)?;
         writeln!(f, "Chain ID: {}", self.chain_id)?;
         writeln!(f, "{}", self.decryption_contract)?;
@@ -100,9 +105,7 @@ mod tests {
         unsafe {
             env::remove_var("KMS_CONNECTOR_DATABASE_URL");
             env::remove_var("KMS_CONNECTOR_GATEWAY_URL");
-            env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINT");
             env::remove_var("KMS_CONNECTOR_CHAIN_ID");
-            env::remove_var("KMS_CONNECTOR_PRIVATE_KEY");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
@@ -161,12 +164,7 @@ mod tests {
                 "postgres://postgres:postgres@localhost",
             );
             env::set_var("KMS_CONNECTOR_GATEWAY_URL", "ws://localhost:9545");
-            env::set_var("KMS_CONNECTOR_KMS_CORE_ENDPOINT", "http://localhost:50053");
             env::set_var("KMS_CONNECTOR_CHAIN_ID", "31888");
-            env::set_var(
-                "KMS_CONNECTOR_PRIVATE_KEY",
-                "8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f",
-            );
             env::set_var(
                 "KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS",
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
@@ -250,10 +248,10 @@ mod tests {
     impl RawConfig {
         pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
             let content = toml::to_string_pretty(self)
-                .map_err(|e| Error::InvalidConfig(format!("Failed to serialize config: {}", e)))?;
+                .map_err(|e| Error::InvalidConfig(format!("Failed to serialize config: {e}")))?;
 
             fs::write(path, content)
-                .map_err(|e| Error::InvalidConfig(format!("Failed to write config file: {}", e)))?;
+                .map_err(|e| Error::InvalidConfig(format!("Failed to write config file: {e}")))?;
 
             Ok(())
         }

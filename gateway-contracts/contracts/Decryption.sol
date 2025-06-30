@@ -6,6 +6,7 @@ import { ciphertextCommitsAddress } from "../addresses/CiphertextCommitsAddress.
 import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IGatewayConfig.sol";
@@ -113,6 +114,9 @@ contract Decryption is
     string private constant EIP712_PUBLIC_DECRYPT_TYPE =
         "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult)";
 
+    bytes32 private constant DOMAIN_TYPE_HASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
     /// @notice The hash of the PublicDecryptVerification structure typed data definition used for signature validation.
     bytes32 private constant EIP712_PUBLIC_DECRYPT_TYPE_HASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
 
@@ -146,7 +150,7 @@ contract Decryption is
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -200,11 +204,16 @@ contract Decryption is
     /// @dev Contract name and version for EIP712 signature validation are defined here
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(2) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(4) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
         __Pausable_init();
     }
+
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    function reinitializeV2() public virtual reinitializer(4) {}
 
     /// @dev See {IDecryption-publicDecryptionRequest}.
     function publicDecryptionRequest(bytes32[] calldata ctHandles) external virtual whenNotPaused {
@@ -640,19 +649,26 @@ contract Decryption is
     function _hashUserDecryptRequestVerification(
         UserDecryptRequestVerification memory userDecryptRequestVerification
     ) internal view virtual returns (bytes32) {
-        return
-            _hashTypedDataV4(
-                keccak256(
-                    abi.encode(
-                        EIP712_USER_DECRYPT_REQUEST_TYPE_HASH,
-                        keccak256(userDecryptRequestVerification.publicKey),
-                        keccak256(abi.encodePacked(userDecryptRequestVerification.contractAddresses)),
-                        userDecryptRequestVerification.contractsChainId,
-                        userDecryptRequestVerification.startTimestamp,
-                        userDecryptRequestVerification.durationDays
-                    )
-                )
-            );
+        bytes32 structHash = keccak256(
+            abi.encode(
+                EIP712_USER_DECRYPT_REQUEST_TYPE_HASH,
+                keccak256(userDecryptRequestVerification.publicKey),
+                keccak256(abi.encodePacked(userDecryptRequestVerification.contractAddresses)),
+                userDecryptRequestVerification.contractsChainId,
+                userDecryptRequestVerification.startTimestamp,
+                userDecryptRequestVerification.durationDays
+            )
+        );
+        bytes32 domainSeparatorV4 = keccak256(
+            abi.encode(
+                DOMAIN_TYPE_HASH,
+                _EIP712NameHash(),
+                _EIP712VersionHash(),
+                userDecryptRequestVerification.contractsChainId,
+                address(this)
+            )
+        );
+        return MessageHashUtils.toTypedDataHash(domainSeparatorV4, structHash);
     }
 
     /// @notice Computes the hash of a given DelegatedUserDecryptRequestVerification structured data.

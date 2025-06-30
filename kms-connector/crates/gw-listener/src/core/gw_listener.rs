@@ -10,7 +10,7 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-/// Struct monitoring and handling Gateway's events.
+/// Struct monitoring and storing Gateway's events.
 #[derive(Clone)]
 pub struct GatewayListener<Prov, Publ>
 where

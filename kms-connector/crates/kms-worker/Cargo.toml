@@ -1,0 +1,38 @@
+[package]
+name = "kms-worker"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+version.workspace = true
+
+[dependencies]
+connector-utils.workspace = true
+fhevm_gateway_rust_bindings.workspace = true
+
+alloy.workspace = true
+anyhow.workspace = true
+bincode.workspace = true
+dashmap.workspace = true
+kms-grpc.workspace = true
+serde.workspace = true
+sha3.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+connector-tests.workspace = true
+serial_test.workspace = true
+tempfile.workspace = true
+testcontainers.workspace = true
+toml.workspace = true
+tracing-test.workspace = true
+
+[[bin]]
+name = "kms-worker"
+path = "src/bin/kms_worker.rs"

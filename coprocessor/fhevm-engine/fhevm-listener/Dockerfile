@@ -30,6 +30,9 @@ WORKDIR /app/coprocessor/fhevm-engine
 RUN cargo fetch && \
     SQLX_OFFLINE=true cargo build --release -p fhevm-listener
 
+# Avoid a conflict with prod stage
+RUN rm -rf /lib/apk
+
 # Stage 3: Runtime image
 FROM cgr.dev/chainguard/glibc-dynamic:latest AS prod
 

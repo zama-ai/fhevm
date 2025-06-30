@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use crate::{nonce_managed_provider::NonceManagedProvider, REVIEW};
+use crate::{
+    nonce_managed_provider::NonceManagedProvider,
+    overprovision_gas_limit::try_overprovision_gas_limit, REVIEW,
+};
 
 use super::common::try_into_array;
 use super::TransactionOperation;
@@ -47,8 +50,17 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
 
         info!("Processing transaction, handle: {}", h);
 
-        let txn_req = txn_request.into();
-        let transaction = match self.provider.send_transaction(txn_req.clone()).await {
+        let overprovisioned_txn_req = try_overprovision_gas_limit(
+            txn_request,
+            &*self.provider,
+            self.conf.gas_limit_overprovision_percent,
+        )
+        .await;
+        let transaction = match self
+            .provider
+            .send_transaction(overprovisioned_txn_req.clone())
+            .await
+        {
             Ok(txn) => txn,
             Err(e) if self.already_added_error(&e).is_some() => {
                 warn!(
@@ -67,7 +79,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
             {
                 warn!(
                     "Transaction {:?} sending failed with unlimited retry error: {}, handle: {}",
-                    txn_req, e, h
+                    overprovisioned_txn_req, e, h
                 );
                 self.increment_txn_unlimited_retries_count(
                     handle,
@@ -83,7 +95,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
             Err(e) => {
                 warn!(
                     "Transaction {:?} sending failed with error: {}, handle: {}",
-                    txn_req, e, h
+                    overprovisioned_txn_req, e, h
                 );
                 self.increment_txn_limited_retries_count(
                     handle,

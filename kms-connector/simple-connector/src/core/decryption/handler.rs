@@ -104,7 +104,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
 
         // Convert alloy domain to protobuf domain
         let domain_msg = alloy_to_protobuf_domain(&domain)
-            .map_err(|e| crate::error::Error::Config(format!("Failed to convert domain: {}", e)))?;
+            .map_err(|e| crate::error::Error::Config(format!("Failed to convert domain: {e}")))?;
 
         info!(
             "Eip712Domain constructed: name={} version={} chain_id={} verifying_contract={} salt=None",

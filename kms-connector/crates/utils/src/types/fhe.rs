@@ -1,11 +1,11 @@
 use alloy::{
     dyn_abi::DynSolValue,
     hex,
-    primitives::{Address, Bytes, U256, Uint},
+    primitives::{Bytes, U256, Uint},
 };
 use kms_grpc::kms::v1::TypedPlaintext;
 use tfhe::FheTypes;
-use tracing::{error, info};
+use tracing::error;
 
 /// Gets the string representation of a FHE type.
 pub fn fhe_type_to_string(fhe_type: i32) -> &'static str {
@@ -59,31 +59,6 @@ pub fn extract_fhe_type_from_handle(bytes: &[u8]) -> i32 {
     } else {
         error!("Handle too short: {} bytes, expected 32 bytes", bytes.len());
         FheTypes::Bool as i32
-    }
-}
-
-/// Extracts the FHE type and log the result details.
-pub fn log_and_extract_result<T>(
-    _result: &T,
-    fhe_type: i32,
-    request_id: U256,
-    user_addr: Option<Address>,
-) where
-    T: AsRef<[u8]>,
-{
-    let fhe_type_str = fhe_type_to_string(fhe_type);
-
-    match user_addr {
-        Some(addr) => info!(
-            "User decryption result type: {} for request {} (user: 0x{})",
-            fhe_type_str,
-            request_id,
-            hex::encode(addr)
-        ),
-        None => info!(
-            "Public decryption result type: {} for request {}",
-            fhe_type_str, request_id
-        ),
     }
 }
 

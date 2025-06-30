@@ -31,6 +31,10 @@ pub struct Args {
     #[arg(long, default_value_t = 10)]
     pub pg_pool_connections: u32,
 
+    /// Postgres acquire timeout
+    #[arg(long, default_value = "15s", value_parser = parse_duration)]
+    pub pg_timeout: Duration,
+
     /// Postgres database url. If unspecified DATABASE_URL environment variable
     /// is used
     #[arg(long)]
@@ -81,6 +85,16 @@ pub struct Args {
         value_parser = clap::value_parser!(Level),
         default_value_t = Level::INFO)]
     pub log_level: Level,
+
+    /// HTTP server port for health checks
+    #[arg(long, default_value_t = 8080)]
+    pub health_check_port: u16,
+
+    /// Liveness threshold for health checks
+    /// Exceeding this threshold means that the worker is stuck
+    /// and will be restarted by the orchestrator
+    #[arg(long, default_value = "70s", value_parser = parse_duration)]
+    pub liveness_threshold: Duration,
 }
 
 pub fn parse_args() -> Args {

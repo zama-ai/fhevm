@@ -2,10 +2,10 @@
 //!
 //! The `raw` module is first used to deserialize the configuration.
 
-use crate::core::config::wallet::{AwsKmsConfig, KmsWallet};
-
 use super::raw::RawConfig;
-use connector_utils::config::{ContractConfig, DeserializeRawConfig, Error, Result};
+use connector_utils::config::{
+    AwsKmsConfig, ContractConfig, DeserializeRawConfig, Error, KmsWallet, Result,
+};
 use std::{
     fmt::{self, Display},
     path::Path,
@@ -60,7 +60,7 @@ impl Config {
         if let Some(config_path) = &path {
             info!("Loading config from: {}", config_path.as_ref().display());
         } else {
-            info!("Loading confing using environment variables only");
+            info!("Loading config using environment variables only");
         }
 
         let raw_config = RawConfig::from_env_and_file(path)?;
@@ -296,10 +296,10 @@ mod tests {
     impl RawConfig {
         pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
             let content = toml::to_string_pretty(self)
-                .map_err(|e| Error::InvalidConfig(format!("Failed to serialize config: {}", e)))?;
+                .map_err(|e| Error::InvalidConfig(format!("Failed to serialize config: {e}")))?;
 
             fs::write(path, content)
-                .map_err(|e| Error::InvalidConfig(format!("Failed to write config file: {}", e)))?;
+                .map_err(|e| Error::InvalidConfig(format!("Failed to write config file: {e}")))?;
 
             Ok(())
         }

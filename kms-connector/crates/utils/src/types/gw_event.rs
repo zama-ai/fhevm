@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::types::db::SnsCiphertextMaterialDbItem;
 use alloy::primitives::U256;
 use fhevm_gateway_rust_bindings::{
@@ -91,6 +93,28 @@ impl GatewayEvent {
             crsgenRequestId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crsgen_request_id")?),
             fheParamsDigest: row.try_get::<[u8; 32], _>("fhe_params_digest")?.into(),
         }))
+    }
+}
+
+impl Display for GatewayEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GatewayEvent::PublicDecryption(e) => {
+                write!(f, "PublicDecryptionRequest #{}", e.decryptionId)
+            }
+            GatewayEvent::UserDecryption(e) => {
+                write!(f, "UserDecryptionRequest #{}", e.decryptionId)
+            }
+            GatewayEvent::PreprocessKeygen(e) => {
+                write!(f, "PreprocessKeygenRequest #{}", e.preKeygenRequestId)
+            }
+            GatewayEvent::PreprocessKskgen(e) => {
+                write!(f, "PreprocessKskgenRequest #{}", e.preKskgenRequestId)
+            }
+            GatewayEvent::Keygen(e) => write!(f, "KeygenRequest #{}", e.preKeyId),
+            GatewayEvent::Kskgen(e) => write!(f, "KskgenRequest #{}", e.preKskId),
+            GatewayEvent::Crsgen(e) => write!(f, "CrsgenRequest #{}", e.crsgenRequestId),
+        }
     }
 }
 

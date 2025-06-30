@@ -13,7 +13,7 @@ import './tasks/accounts';
 import './tasks/etherscanVerify';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
-import './tasks/upgradeProxy';
+import './tasks/upgradeContracts';
 
 const NUM_ACCOUNTS = 15;
 
