@@ -73,6 +73,8 @@ services:
       - fhevm_listener
       - --database-url=${DATABASE_URL}
       - --coprocessor-api-key=${TENANT_API_KEY}
+      - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
+      - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_URL}
     depends_on:
       db:
