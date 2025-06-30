@@ -19,5 +19,6 @@
 - [Feature request](https://github.com/zama-ai/fhevm/issues/new?assignees=&labels=enhancement&projects=&template=feature-request.md&title=)
 - [Bug report](https://github.com/zama-ai/fhevm/issues/new?assignees=&labels=bug&projects=&template=bug_report_fhevm.md&title=)
 - [Status](https://status.zama.ai/)
-- [White paper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper-v2.pdf)
+- [White paper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
 - [Release note](https://github.com/zama-ai/fhevm/releases)
+- [Previous docs (v0.6)](https://docs.zama.ai/fhevm/0.6)
