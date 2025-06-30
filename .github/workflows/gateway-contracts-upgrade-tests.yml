@@ -40,9 +40,10 @@ jobs:
           persist-credentials: 'false'
 
       - name: Get latest tag
+        id: get-latest-tag
         run: |
           git fetch --tags
-          echo "tag=$(git describe --tags `git rev-list --tags --max-count=1`)" >> $GITHUB_OUTPUT
+          echo "tag=$(git describe --tags "$(git rev-list --tags --max-count=1)")" >> "$GITHUB_OUTPUT"
 
       - name: Checkout the latest release code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
