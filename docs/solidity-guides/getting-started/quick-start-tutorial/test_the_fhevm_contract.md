@@ -403,6 +403,8 @@ FHECounter has been deployed at address 0x7553CB9124f974Ee475E5cE45482F90d5B6076
 
 Similarly to the previous test, we’ll now call the `decrement()` function using an encrypted input.
 
+Replace :
+
 ```ts
 //   it("decrement the counter by 1", async function () {
 //     // First increment, count becomes 1
