@@ -32,6 +32,10 @@ contract KmsManagement is
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
+    /// Constant used for making sure the version number using in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 2;
+
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.KmsManagement
     struct KmsManagementStorage {
@@ -131,7 +135,7 @@ contract KmsManagement is
     function initializeFromEmptyProxy(
         string memory fheParamsName,
         bytes32 fheParamsDigest
-    ) public virtual onlyFromEmptyProxy reinitializer(2) {
+    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __Pausable_init();
 
