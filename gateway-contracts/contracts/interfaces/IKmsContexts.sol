@@ -29,14 +29,12 @@ interface IKmsContexts {
     /**
      * @notice Emitted when the KmsContexts initialization is completed.
      * @param decryptionThresholds The decryption thresholds for the KMS context
-     * @param blockPeriods The block periods for the KMS context
      * @param softwareVersion The software version of the KMS context
      * @param mpcThreshold The MPC threshold for the KMS context
      * @param kmsNodes The KMS nodes for the KMS context
      */
-    event Initialization(
+    event InitializeKmsContexts(
         DecryptionThresholds decryptionThresholds,
-        KmsBlockPeriods blockPeriods,
         bytes8 softwareVersion,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes
@@ -54,15 +52,13 @@ interface IKmsContexts {
      */
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
-    event UpdateKmsContextGenerationBlockPeriod(uint256 newKmsContextGenerationBlockPeriod);
-    event UpdateKmsContextSuspensionBlockPeriod(uint256 newKmsContextSuspensionBlockPeriod);
-
     /**
      * @notice Emitted when a new KMS context has been registered.
      * @param activeKmsContext The current active KMS context.
      * @param newKmsContext The new KMS context.
+     * @param blockPeriods The block periods.
      */
-    event NewKmsContext(KmsContext activeKmsContext, KmsContext newKmsContext);
+    event NewKmsContext(KmsContext activeKmsContext, KmsContext newKmsContext, KmsBlockPeriods blockPeriods);
 
     /**
      * @notice Emitted when a key resharing needs to be done among the new KMS nodes.
@@ -199,18 +195,19 @@ interface IKmsContexts {
 
     /**
      * @notice Add a new KMS context to the KmsContexts contract.
-     * @param preActivationBlockPeriod The pre-activation block period.
      * @param softwareVersion The software version.
      * @param reshareKeys Whether to reshare keys.
      * @param mpcThreshold The MPC threshold.
      * @param kmsNodes The set of KMS nodes representing the KMS context.
+     * @param kmsBlockPeriods The block periods.
+     * @param decryptionThresholds The decryption thresholds.
      */
     function addKmsContext(
-        uint256 preActivationBlockPeriod,
         bytes8 softwareVersion,
         bool reshareKeys,
         uint256 mpcThreshold,
         KmsNode[] calldata kmsNodes,
+        KmsBlockPeriods calldata kmsBlockPeriods,
         DecryptionThresholds calldata decryptionThresholds
     ) external;
 
@@ -248,8 +245,6 @@ interface IKmsContexts {
      * @return The KMS node's metadata.
      */
     function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
-
-    function getKmsNodes() external view returns (KmsNode[] memory);
 
     /**
      * @notice Get the list of all KMS nodes' transaction sender addresses currently registered.

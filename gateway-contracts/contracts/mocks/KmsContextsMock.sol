@@ -4,9 +4,8 @@ import "../shared/Structs.sol";
 import "../shared/Enums.sol";
 
 contract KmsContextsMock {
-    event Initialization(
+    event InitializeKmsContexts(
         DecryptionThresholds decryptionThresholds,
-        KmsBlockPeriods blockPeriods,
         bytes8 softwareVersion,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes
@@ -16,11 +15,7 @@ contract KmsContextsMock {
 
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
-    event UpdateKmsContextGenerationBlockPeriod(uint256 newKmsContextGenerationBlockPeriod);
-
-    event UpdateKmsContextSuspensionBlockPeriod(uint256 newKmsContextSuspensionBlockPeriod);
-
-    event NewKmsContext(KmsContext activeKmsContext, KmsContext newKmsContext);
+    event NewKmsContext(KmsContext activeKmsContext, KmsContext newKmsContext, KmsBlockPeriods blockPeriods);
 
     event StartKeyResharing(KmsContext activeKmsContext, KmsContext newKmsContext, uint256 generationBlockNumber);
 
@@ -43,19 +38,17 @@ contract KmsContextsMock {
     uint256 kmsContextCount;
 
     function initializeFromEmptyProxy(
-        DecryptionThresholds calldata initialDecryptionThresholds,
-        KmsBlockPeriods calldata initialBlockPeriods,
         bytes8 initialSoftwareVersion,
         uint256 initialMpcThreshold,
-        KmsNode[] calldata initialKmsNodes
+        KmsNode[] calldata initialKmsNodes,
+        DecryptionThresholds calldata initialDecryptionThresholds
     ) public {
         DecryptionThresholds memory decryptionThresholds;
-        KmsBlockPeriods memory blockPeriods;
         bytes8 softwareVersion;
         uint256 mpcThreshold;
         KmsNode[] memory kmsNodes = new KmsNode[](1);
 
-        emit Initialization(decryptionThresholds, blockPeriods, softwareVersion, mpcThreshold, kmsNodes);
+        emit InitializeKmsContexts(decryptionThresholds, softwareVersion, mpcThreshold, kmsNodes);
     }
 
     function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external {
@@ -66,27 +59,19 @@ contract KmsContextsMock {
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
     }
 
-    function updateKmsContextGenerationBlockPeriod(uint256 newKmsContextGenerationBlockPeriod) external {
-        emit UpdateKmsContextGenerationBlockPeriod(newKmsContextGenerationBlockPeriod);
-    }
-
-    function updateKmsContextSuspensionBlockPeriod(uint256 newKmsContextSuspensionBlockPeriod) external {
-        emit UpdateKmsContextSuspensionBlockPeriod(newKmsContextSuspensionBlockPeriod);
-    }
-
     function addKmsContext(
-        uint256 preActivationBlockPeriod,
         bytes8 softwareVersion,
         bool reshareKeys,
         uint256 mpcThreshold,
         KmsNode[] calldata kmsNodes,
+        KmsBlockPeriods calldata blockPeriods,
         DecryptionThresholds calldata decryptionThresholds
     ) external {
         KmsContext memory activeKmsContext;
         KmsContext memory newKmsContext;
         uint256 generationBlockNumber;
 
-        emit NewKmsContext(activeKmsContext, newKmsContext);
+        emit NewKmsContext(activeKmsContext, newKmsContext, blockPeriods);
 
         emit StartKeyResharing(activeKmsContext, newKmsContext, generationBlockNumber);
     }

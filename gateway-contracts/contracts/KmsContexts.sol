@@ -48,7 +48,6 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         /// @notice The KMS context lifecycle
         ContextLifecycle.ContextLifecycleStorage kmsContextLifecycle;
         uint256 kmsContextGenerationBlockPeriod;
-        mapping(uint256 contextId => uint256 kmsContextPreActivationBlockPeriod) kmsContextPreActivationBlockPeriod;
         uint256 kmsContextSuspensionBlockPeriod;
         /// @notice The KMS contexts
         mapping(uint256 contextId => KmsContext kmsContext) kmsContexts;
@@ -56,7 +55,6 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         uint256 kmsContextCount;
         /// @notice Wether a KMS node is done with key resharing
         mapping(uint256 contextId => mapping(address kmsSignerAddress => bool doneKeyResharing)) kmsNodeDoneKeyResharing;
-        mapping(uint256 contextId => uint256 activationBlockNumber) kmsContextActivationBlockNumber;
         /// @notice Verified signatures for key resharing responses
         mapping(uint256 contextId => bytes[] verifiedSignatures) verifiedKeyResharingSignatures;
         /// @notice The KMS nodes' metadata
@@ -69,9 +67,11 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         mapping(uint256 contextId => address[] kmsTxSenderAddresses) kmsTxSenderAddresses;
         /// @notice The KMS nodes' signer address list
         mapping(uint256 contextId => address[] kmsSignerAddresses) kmsSignerAddresses;
-        mapping(uint256 contextId => uint256 generationBlockNumber) kmsContextGenerationBlockNumber;
         mapping(uint256 contextId => uint256 preActivationBlockNumber) kmsContextPreActivationBlockNumber;
-        mapping(uint256 contextId => uint256 suspensionBlockNumber) kmsContextSuspensionBlockNumber;
+        mapping(uint256 contextId => uint256 activationBlockNumber) kmsContextActivationBlockNumber;
+        mapping(uint256 contextId => uint256 deactivatedBlockNumber) kmsContextDeactivatedBlockNumber;
+        mapping(uint256 contextId => uint256 kmsContextPreActivationBlockPeriod) kmsContextPreActivationBlockPeriod;
+        mapping(uint256 contextId => uint256 suspendedBlockPeriod) kmsContextSuspendedBlockPeriod;
         /// @notice The public decryption threshold per KMS context
         mapping(uint256 contextId => uint256 threshold) publicDecryptionThreshold;
         /// @notice The user decryption threshold per KMS context
@@ -100,17 +100,15 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
     /// @notice Initializes the contract
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
     /// @param initialDecryptionThresholds The decryption thresholds for the KMS context
-    /// @param initialBlockPeriods The block periods for the KMS context
     /// @param initialSoftwareVersion The software version of the KMS context
     /// @param initialMpcThreshold The MPC threshold for the KMS context
     /// @param initialKmsNodes The KMS nodes for the KMS context
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
-        DecryptionThresholds calldata initialDecryptionThresholds,
-        KmsBlockPeriods calldata initialBlockPeriods,
         bytes8 initialSoftwareVersion,
         uint256 initialMpcThreshold,
-        KmsNode[] calldata initialKmsNodes
+        KmsNode[] calldata initialKmsNodes,
+        DecryptionThresholds calldata initialDecryptionThresholds
     ) public virtual onlyFromEmptyProxy reinitializer(2) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
@@ -131,11 +129,8 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         // cases, the context must be pre-activated first.
         ContextLifecycle.setActive($.kmsContextLifecycle, newKmsContext.contextId);
 
-        _setKmsBlockPeriods(initialBlockPeriods, newKmsContext.contextId);
-
-        emit Initialization(
+        emit InitializeKmsContexts(
             initialDecryptionThresholds,
-            initialBlockPeriods,
             initialSoftwareVersion,
             initialMpcThreshold,
             initialKmsNodes
@@ -219,31 +214,13 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
     }
 
-    /// @dev See {IKmsContexts-updateKmsContextGenerationBlockPeriod}.
-    function updateKmsContextGenerationBlockPeriod(
-        uint256 newKmsContextGenerationBlockPeriod
-    ) external virtual onlyOwner whenNotPaused {
-        KmsContextsStorage storage $ = _getKmsContextsStorage();
-        $.kmsContextGenerationBlockPeriod = newKmsContextGenerationBlockPeriod;
-        emit UpdateKmsContextGenerationBlockPeriod(newKmsContextGenerationBlockPeriod);
-    }
-
-    /// @dev See {IKmsContexts-updateKmsContextSuspensionBlockPeriod}.
-    function updateKmsContextSuspensionBlockPeriod(
-        uint256 newKmsContextSuspensionBlockPeriod
-    ) external virtual onlyOwner whenNotPaused {
-        KmsContextsStorage storage $ = _getKmsContextsStorage();
-        $.kmsContextSuspensionBlockPeriod = newKmsContextSuspensionBlockPeriod;
-        emit UpdateKmsContextSuspensionBlockPeriod(newKmsContextSuspensionBlockPeriod);
-    }
-
     /// @dev See {IKmsContexts-addKmsContext}.
     function addKmsContext(
-        uint256 preActivationBlockPeriod,
         bytes8 softwareVersion,
         bool reshareKeys,
         uint256 mpcThreshold,
         KmsNode[] calldata kmsNodes,
+        KmsBlockPeriods calldata blockPeriods,
         DecryptionThresholds calldata decryptionThresholds
     ) external virtual onlyOwner {
         KmsContextsStorage storage $ = _getKmsContextsStorage();
@@ -273,8 +250,13 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
             decryptionThresholds
         );
 
+        // Store the suspended block period for the previous KMS context
+        // This value will be considered once the new KMS context is activated and the old one
+        // is suspended
+        $.kmsContextSuspendedBlockPeriod[activeKmsContext.contextId] = blockPeriods.suspendedBlockPeriod;
+
         // Emit the `NewKmsContext` event in any case
-        emit NewKmsContext(activeKmsContext, newKmsContext);
+        emit NewKmsContext(activeKmsContext, newKmsContext, blockPeriods);
 
         ContextLifecycle.setGenerating($.kmsContextLifecycle, newKmsContext.contextId);
 
@@ -286,16 +268,16 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         // See https://github.com/zama-ai/fhevm/issues/134
         if (reshareKeys) {
             // Store the pre-activation block period that will be taken into account once the key resharing is validated
-            $.kmsContextPreActivationBlockPeriod[newKmsContext.contextId] = preActivationBlockPeriod;
+            $.kmsContextPreActivationBlockPeriod[newKmsContext.contextId] = blockPeriods.preActivationBlockPeriod;
 
             // Set the generation block number until which the key resharing needs to be validated by all KMS nodes
-            uint256 generationBlockNumber = block.number + $.kmsContextGenerationBlockPeriod;
-            $.kmsContextGenerationBlockNumber[newKmsContext.contextId] = generationBlockNumber;
+            uint256 preActivationBlockNumber = block.number + blockPeriods.generationBlockPeriod;
+            $.kmsContextPreActivationBlockNumber[newKmsContext.contextId] = preActivationBlockNumber;
 
-            emit StartKeyResharing(activeKmsContext, newKmsContext, generationBlockNumber);
+            emit StartKeyResharing(activeKmsContext, newKmsContext, preActivationBlockNumber);
         } else {
             // Otherwise, set the KMS context directly to the pre-activation state
-            _preActivateKmsContext(newKmsContext, preActivationBlockPeriod);
+            _preActivateKmsContext(newKmsContext, blockPeriods.preActivationBlockPeriod);
         }
     }
 
@@ -338,32 +320,33 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
 
         uint256 generatingContextId = $.kmsContextLifecycle.generatingContextId;
 
-        if (generatingContextId != 0) {
-            if (block.number > $.kmsContextGenerationBlockNumber[generatingContextId]) {
-                emit InvalidateKeyResharing(generatingContextId);
+        if (generatingContextId != 0 && block.number >= $.kmsContextPreActivationBlockNumber[generatingContextId]) {
+            emit InvalidateKeyResharing(generatingContextId);
 
-                ContextLifecycle.setDestroyed($.kmsContextLifecycle, generatingContextId);
-                emit DestroyKmsContext(generatingContextId);
-            }
+            ContextLifecycle.setDestroyed($.kmsContextLifecycle, generatingContextId);
+            emit DestroyKmsContext(generatingContextId);
         }
 
         uint256 preActivationContextId = $.kmsContextLifecycle.preActivationContextId;
 
-        if (preActivationContextId != 0) {
-            if (block.number > $.kmsContextPreActivationBlockNumber[preActivationContextId]) {
-                uint256 activeContextId = getActiveKmsContextId();
-                ContextLifecycle.setSuspended($.kmsContextLifecycle, activeContextId);
-                emit SuspendKmsContext(activeContextId);
+        if (preActivationContextId != 0 && block.number >= $.kmsContextActivationBlockNumber[preActivationContextId]) {
+            uint256 activeContextId = getActiveKmsContextId();
 
-                ContextLifecycle.setActive($.kmsContextLifecycle, preActivationContextId);
-                emit ActivateKmsContext(preActivationContextId);
-            }
+            // Define the deactivation block number for the current active KMS context
+            uint256 deactivatedBlockNumber = block.number + $.kmsContextSuspendedBlockPeriod[activeContextId];
+            $.kmsContextDeactivatedBlockNumber[activeContextId] = deactivatedBlockNumber;
+
+            ContextLifecycle.setSuspended($.kmsContextLifecycle, activeContextId);
+            emit SuspendKmsContext(activeContextId);
+
+            ContextLifecycle.setActive($.kmsContextLifecycle, preActivationContextId);
+            emit ActivateKmsContext(preActivationContextId);
         }
 
         uint256 suspendedContextId = getSuspendedKmsContextId();
 
         if (suspendedContextId != 0) {
-            if (block.number > $.kmsContextSuspensionBlockNumber[suspendedContextId]) {
+            if (block.number > $.kmsContextDeactivatedBlockNumber[suspendedContextId]) {
                 ContextLifecycle.setDeactivated($.kmsContextLifecycle, suspendedContextId);
                 emit DeactivateKmsContext(suspendedContextId);
             }
@@ -452,11 +435,6 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
         return kmsNode;
     }
 
-    /// @dev See {IKmsContexts-getKmsNodes}.
-    function getKmsNodes() external view virtual returns (KmsNode[] memory) {
-        return getActiveKmsContext().kmsNodes;
-    }
-
     /// @dev See {IKmsContexts-getKmsTxSenders}.
     function getKmsTxSenders() external view virtual returns (address[] memory) {
         uint256 activeContextId = getActiveKmsContextId();
@@ -490,13 +468,6 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
                     Strings.toString(PATCH_VERSION)
                 )
             );
-    }
-
-    function _setKmsBlockPeriods(KmsBlockPeriods calldata kmsBlockPeriods, uint256 contextId) internal virtual {
-        KmsContextsStorage storage $ = _getKmsContextsStorage();
-        $.kmsContextPreActivationBlockPeriod[contextId] = kmsBlockPeriods.preActivationBlockPeriod;
-        $.kmsContextGenerationBlockPeriod = kmsBlockPeriods.generationBlockPeriod;
-        $.kmsContextSuspensionBlockPeriod = kmsBlockPeriods.suspensionBlockPeriod;
     }
 
     /**
@@ -658,10 +629,10 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
 
         ContextLifecycle.setPreActivation($.kmsContextLifecycle, kmsContext.contextId);
 
-        uint256 preActivationBlockNumber = block.number + preActivationBlockPeriod;
-        $.kmsContextPreActivationBlockNumber[kmsContext.contextId] = preActivationBlockNumber;
+        uint256 activationBlockNumber = block.number + preActivationBlockPeriod;
+        $.kmsContextActivationBlockNumber[kmsContext.contextId] = activationBlockNumber;
 
-        emit PreActivateKmsContext(kmsContext, preActivationBlockNumber);
+        emit PreActivateKmsContext(kmsContext, activationBlockNumber);
     }
 
     /**

@@ -45,7 +45,7 @@ struct KmsContext {
 struct KmsBlockPeriods {
     uint256 preActivationBlockPeriod;
     uint256 generationBlockPeriod;
-    uint256 suspensionBlockPeriod;
+    uint256 suspendedBlockPeriod;
 }
 
 /// @notice Struct that represents a coprocessor
