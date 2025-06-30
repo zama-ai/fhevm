@@ -5,7 +5,7 @@
 - [Initialization](initialization.md)
 - [Input](input.md)
 - Decryption
-  - [User decrption](user-decryption.md)
+  - [User decryption](user-decryption.md)
   - [Public decryption](public-decryption.md)
 
 ## Development Guide

@@ -45,7 +45,7 @@ They also emit:
 
 These events are crucial for triggering coprocessor state updates and ensuring proper ACL replication to the Gateway.
 
-→ See the full guide of [ACL](https://app.gitbook.com/s/rDmRmmmSrBgV0SFO4eiZ/smart-contract/acl).
+→ See the full guide of [ACL](https://docs.zama.ai/protocol/solidity-guides/smart-contract/acl).
 
 ### Security role
 

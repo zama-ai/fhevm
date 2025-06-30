@@ -38,10 +38,10 @@ Encrypted data in FHEVM is entirely confidential, meaning that without proper ac
 
 ### Transient vs. permanent allowance
 
-| Allowance type | Purpose | Storage type | Use case |
-| --- | --- | --- | --- |
-| **Transient** | Temporary access during a transaction. | [Transient storage](https://eips.ethereum.org/EIPS/eip-1153) (EIP-1153) | Calling external functions or computations with ciphertexts. Use when wanting to save on gas costs. |
-| **Permanent** | Long-term access across multiple transactions. | Dedicated contract storage | Persistent ciphertexts for contracts or users requiring ongoing access. |
+| Allowance type | Purpose                                        | Storage type                                                            | Use case                                                                                            |
+| -------------- | ---------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Transient**  | Temporary access during a transaction.         | [Transient storage](https://eips.ethereum.org/EIPS/eip-1153) (EIP-1153) | Calling external functions or computations with ciphertexts. Use when wanting to save on gas costs. |
+| **Permanent**  | Long-term access across multiple transactions. | Dedicated contract storage                                              | Persistent ciphertexts for contracts or users requiring ongoing access.                             |
 
 ## Granting and verifying access
 

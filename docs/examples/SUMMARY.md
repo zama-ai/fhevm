@@ -1,5 +1,5 @@
-
 ## Basic
+
 - [FHE counter](fhe-counter.md)
 - FHE Operations
   - [Add](fheadd.md)
@@ -13,7 +13,6 @@
 - Decryption in Solidity
   - [Decrypt single value in Solidity](fhe-decrypt-single-value-in-solidity.md)
   - [Decrypt multiple values in Solidity](fhe-decrypt-multiple-values-in-solidity.md)
-
 
 ## Advanced
 
