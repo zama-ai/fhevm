@@ -5,7 +5,7 @@ use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
-use fhevm_engine_common::utils::{compact_hex, safe_deserialize};
+use fhevm_engine_common::utils::{compact_hex, safe_deserialize_conformant};
 use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
@@ -14,6 +14,7 @@ use sqlx::{postgres::PgListener, PgPool, Row};
 use sqlx::{Postgres, Transaction};
 use std::num::NonZero;
 use std::str::FromStr;
+use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 
@@ -296,7 +297,10 @@ fn try_verify_and_expand_ciphertext_list(
         .assemble()
         .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))?;
 
-    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize(raw_ct)?;
+    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(raw_ct,
+        &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
+            keys.pks.parameters(), &keys.public_params,
+        ))?;
 
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .verify_and_expand(&keys.public_params, &keys.pks, &aux_data_bytes)
