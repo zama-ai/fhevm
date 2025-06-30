@@ -1,10 +1,5 @@
 - [Overview](sdk-overview.md)
 
-## Getting Started
-
-- [Quick Start - React](quick_start_react.md)
-- [Node.js tutorial](node.md)
-
 ## FHEVM Relayer
 
 - [Initialization](initialization.md)
@@ -15,6 +10,6 @@
 
 ## Development Guide
 
+- [Web applications](webapp.md)
 - [Debugging](webpack.md)
 - [CLI](cli.md)
-- [Relayer SDK API](fhevmjs.md)
