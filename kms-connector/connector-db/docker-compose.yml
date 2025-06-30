@@ -1,5 +1,3 @@
-name: kms-connector-db
-
 services:
   kms-connector-db:
     container_name: kms-connector-db
@@ -19,7 +17,7 @@ services:
       - db:/var/lib/postgresql/data
 
   kms-connector-db-migration:
-    container_name: db-migration
+    container_name: kms-connector-db-migration
     build:
       context: ..
       dockerfile: connector-db/Dockerfile

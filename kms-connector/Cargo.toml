@@ -21,7 +21,10 @@ tfhe = "=1.1.3"
 tfhe-versionable = "=0.5.0"
 
 # External dependencies
-alloy = { version = "=0.13.0", default-features = true, features = [
+alloy = { version = "=0.13.0", default-features = false, features = [
+    "essentials",
+    "reqwest-rustls-tls",
+    "std",
     "provider-ws",
     "signer-aws",
 ] }
