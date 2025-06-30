@@ -126,11 +126,11 @@ prepare_all_env_files() {
     log_info "Preparing all local environment files..."
 
     local components=("minio" "core" "gateway" "host" "connector" "coprocessor" "relayer" "test-suite")
-    
+
     for component in "${components[@]}"; do
         prepare_local_env_file "$component" > /dev/null
     done
-    
+
     log_info "All local environment files prepared successfully"
 }
 
@@ -343,10 +343,14 @@ fi
 
 if [ "$FORCE_BUILD" = true ]; then
   run_compose_with_build "connector" "Connector Services" \
-    "kms-connector:running"
+  "kms-connector-gw-listener:running" \
+  "kms-connector-kms-worker:running" \
+  "kms-connector-tx-sender:running"
 else
   run_compose "connector" "Connector Services" \
-    "kms-connector:running"
+  "kms-connector-gw-listener:running" \
+  "kms-connector-kms-worker:running" \
+  "kms-connector-tx-sender:running"
 fi
 
 # External dependency - Relayer
