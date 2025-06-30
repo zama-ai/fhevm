@@ -1,33 +1,45 @@
-# FHEVM library
+# FHE library
 
-The FHEVM Library enables developers to build smart contracts that operate on encrypted data—without requiring any
-knowledge of cryptography. It integrates confidential computing into the standard Solidity development flow by providing
-new encrypted data types, operations, and tools for access control and secure input handling.
+This document offers a high-level overview of the **FHEVM library**, helping you understand how it fits into the broader Zama Protocol. To learn how to use it in practice, see the [Solidity Guides](https://docs.zama.ai/protocol/solidity-guides).
 
-This library is an essential abstraction layer that hides the complexity of fully homomorphic encryption (FHE) and
-interacts seamlessly with offchain components like the coprocessors and the Gateway.
+## What is FHEVM library?
 
-## Encrypted Data Types
+The FHEVM library enables developers to build smart contracts that operate on encrypted data—without requiring any knowledge of cryptography.
 
-The library introduces encrypted variants of common Solidity types, implemented as user-defined value types (internally
-represented as bytes32 handles). These types reference actual ciphertexts stored off-chain.
+It extends the standard Solidity development flow with:
 
-| Category          | Types                          |
-| ----------------- | ------------------------------ |
-| Booleans          | ebool                          |
-| Unsigned integers | euint8, euint16, ..., euint256 |
-| Signed integers   | eint8, eint16, ..., eint256    |
-| Addresses         | eaddress                       |
+- Encrypted data types
+- Arithmetic, logical, and conditional operations on encrypted values
+- Fine-grained access control
+- Secure input handling and attestation support
 
-## Operations on Encrypted Types Each encrypted type supports operations similar to its plaintext counterpart:
+This library serves as an **abstraction layer** over Fully Homomorphic Encryption (FHE) and interacts seamlessly with off-chain components such as the **Coprocessors** and the **Gateway**.
 
-- Arithmetic: add, sub, mul, div, rem, neg
-- Logic: and, or, xor, not
-- Comparison: lt, gt, le, ge, eq, ne, min, max
-- Bit manipulation: shl, shr, rotl, rotr
+## Key features
 
-These operations are symbolically executed on-chain by generating new handles and emitting events for coprocessors to
-process the actual FHE computation off-chain.
+### Encrypted data types
+
+The library introduces encrypted variants of common Solidity types, implemented as user-defined value types. Internally, these are represented as `bytes32` handles that point to encrypted values stored off-chain.
+
+| Category          | Types                                |
+| ----------------- | ------------------------------------ |
+| Booleans          | `ebool`                              |
+| Unsigned integers | `euint8`, `euint16`, ..., `euint256` |
+| Signed integers   | `eint8`, `eint16,` ..., `eint256`    |
+| Addresses         | `eaddress`                           |
+
+→ See the full guide of [Encrypted data types](https://docs.zama.ai/protocol/solidity-guides/smart-contract/types).
+
+### FHE operations
+
+Each encrypted type supports operations similar to its plaintext counterpart:
+
+- Arithmetic: `add`, `sub`, `mul`, `div`, `rem`, `neg`
+- Logic: `and`, `or`, `xor`, `not`
+- Comparison: `lt`, `gt`, `le`, `ge`, `eq`, `ne`, `min`, `max`
+- Bit manipulation: `shl`, `shr`, `rotl`, `rotr`
+
+These operations are symbolically executed on-chain by generating new handles and emitting events for coprocessors to process the actual FHE computation off-chain.
 
 Example:
 
@@ -38,10 +50,11 @@ function compute(euint64 x, euint64 y, euint64 z) public returns (euint64) {
 }
 ```
 
-### Branching with Encrypted Conditions
+→ See the full guide of [Operations on encrypted types](https://docs.zama.ai/protocol/solidity-guides/smart-contract/operations).
 
-Direct if or require statements are not compatible with encrypted booleans. Instead, the library provides a `select`
-operator to emulate conditional logic without revealing which branch was taken:
+### Branching with encrypted Conditions
+
+Direct if or require statements are not compatible with encrypted booleans. Instead, the library provides a `select`operator to emulate conditional logic without revealing which branch was taken:
 
 ```solidity
 ebool condition = FHE.lte(x, y);
@@ -50,12 +63,13 @@ euint64 result = FHE.select(condition, valueIfTrue, valueIfFalse);
 
 This preserves confidentiality even in conditional logic.
 
-### Handling External Encrypted Inputs
+→ See the full guide of [Branching](https://docs.zama.ai/protocol/solidity-guides/smart-contract/logics/conditions).
 
-When users want to pass encrypted inputs (e.g., values they’ve encrypted off-chain or bridged from another chain), they
-provide:
+### Handling external encrypted inputs
 
-- external<Type> values
+When users want to pass encrypted inputs (e.g., values they’ve encrypted off-chain or bridged from another chain), they provide:
+
+- external values
 - A list of coprocessor signatures (attestation)
 
 The function `fromExternal` is used to validate the attestation and extract a usable encrypted handle:
@@ -69,7 +83,9 @@ function handleInput(externalEuint64 param1, externalEbool param2, bytes calldat
 
 This ensures that only authorized, well-formed ciphertexts are accepted by smart contracts.
 
-### Access Control
+→ See the full guide of [Encrypted input](https://docs.zama.ai/protocol/solidity-guides/smart-contract/inputs).
+
+### Access control
 
 The FHE library also exposes methods for managing access to encrypted values using the ACL maintained by host contracts:
 
@@ -81,7 +97,9 @@ The FHE library also exposes methods for managing access to encrypted values usi
 
 These `allow` methods emit events consumed by the coprocessors to replicate the ACL state in the Gateway.
 
-### Pseudo-Random Encrypted Values
+→ See the full guide of [ACL](https://docs.zama.ai/protocol/solidity-guides/smart-contract/acl).
+
+### Pseudo-random encrypted values
 
 The library allows generation of pseudo-random encrypted integers, useful for games, lotteries, or randomized logic:
 
@@ -89,3 +107,5 @@ The library allows generation of pseudo-random encrypted integers, useful for ga
 - `randEuintXXBounded`(uint bound)
 
 These are deterministic across coprocessors and indistinguishable to external observers.
+
+→ See the full guide of [Generate random number](https://docs.zama.ai/protocol/solidity-guides/smart-contract/operations/random).

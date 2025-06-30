@@ -25,7 +25,7 @@ async function upgradeCurrentToNew(
   newImplementation: string,
   verifyContract: boolean,
   hre: HardhatRuntimeEnvironment,
-  reinitializeArgs?: unknown[],
+  reinitializeArgs: unknown[] = [],
 ) {
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
@@ -117,12 +117,6 @@ task("task:upgradeMultichainAcl")
     "The new implementation solidity contract path and name, eg: contracts/examples/MultichainAclUpgradedExample.sol:MultichainAclUpgradedExample",
   )
   .addOptionalParam(
-    "reinitializeArgs",
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
-  )
-  .addOptionalParam(
     "useInternalProxyAddress",
     "If proxy address from the /addresses directory should be used",
     false,
@@ -135,13 +129,7 @@ task("task:upgradeMultichainAcl")
     types.boolean,
   )
   .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -156,14 +144,7 @@ task("task:upgradeMultichainAcl")
       proxyAddress = getRequiredEnvVar("MULTICHAIN_ACL_ADDRESS");
     }
 
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
 
 task("task:upgradeCiphertextCommits")
@@ -174,12 +155,6 @@ task("task:upgradeCiphertextCommits")
   .addParam(
     "newImplementation",
     "The new implementation solidity contract path and name, eg: contracts/examples/CiphertextCommitsUpgradedExample.sol:CiphertextCommitsUpgradedExample",
-  )
-  .addOptionalParam(
-    "reinitializeArgs",
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
   )
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -194,13 +169,7 @@ task("task:upgradeCiphertextCommits")
     types.boolean,
   )
   .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -215,14 +184,7 @@ task("task:upgradeCiphertextCommits")
       proxyAddress = getRequiredEnvVar("CIPHERTEXT_COMMITS_ADDRESS");
     }
 
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
 
 task("task:upgradeDecryption")
@@ -233,12 +195,6 @@ task("task:upgradeDecryption")
   .addParam(
     "newImplementation",
     "The new implementation solidity contract path and name, eg: contracts/examples/DecryptionUpgradedExample.sol:DecryptionUpgradedExample",
-  )
-  .addOptionalParam(
-    "reinitializeArgs",
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
   )
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -253,13 +209,7 @@ task("task:upgradeDecryption")
     types.boolean,
   )
   .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -274,14 +224,7 @@ task("task:upgradeDecryption")
       proxyAddress = getRequiredEnvVar("DECRYPTION_ADDRESS");
     }
 
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
 
 task("task:upgradeGatewayConfig")
@@ -292,12 +235,6 @@ task("task:upgradeGatewayConfig")
   .addParam(
     "newImplementation",
     "The new implementation solidity contract path and name, eg: contracts/examples/GatewayConfigUpgradedExample.sol:GatewayConfigUpgradedExample",
-  )
-  .addOptionalParam(
-    "reinitializeArgs",
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
   )
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -312,13 +249,7 @@ task("task:upgradeGatewayConfig")
     types.boolean,
   )
   .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -333,14 +264,20 @@ task("task:upgradeGatewayConfig")
       proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
     }
 
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
+    // Get custodians from environment variables
+    const numCustodians = parseInt(getRequiredEnvVar("NUM_CUSTODIANS"));
+    const custodians = [];
+    for (let idx = 0; idx < numCustodians; idx++) {
+      custodians.push({
+        txSenderAddress: getRequiredEnvVar(`CUSTODIAN_TX_SENDER_ADDRESS_${idx}`),
+        signerAddress: getRequiredEnvVar(`CUSTODIAN_SIGNER_ADDRESS_${idx}`),
+        encryptionKey: getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`),
+      });
+    }
+
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+      custodians,
+    ]);
   });
 
 task("task:upgradeKmsManagement")
@@ -351,12 +288,6 @@ task("task:upgradeKmsManagement")
   .addParam(
     "newImplementation",
     "The new implementation solidity contract path and name, eg: contracts/examples/KmsManagementUpgradedExample.sol:KmsManagementUpgradedExample",
-  )
-  .addOptionalParam(
-    "reinitializeArgs",
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
   )
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -371,13 +302,7 @@ task("task:upgradeKmsManagement")
     types.boolean,
   )
   .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -392,14 +317,7 @@ task("task:upgradeKmsManagement")
       proxyAddress = getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS");
     }
 
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
 
 task("task:upgradeInputVerification")
@@ -410,12 +328,6 @@ task("task:upgradeInputVerification")
   .addParam(
     "newImplementation",
     "The new implementation solidity contract path and name, eg: contracts/examples/InputVerificationUpgradedExample.sol:InputVerificationUpgradedExample",
-  )
-  .addOptionalParam(
-    "reinitializeArgs",
-    `The reinitialize arguments for the new implementation, a list in JSON format, eg: '[ "arg1", { "arg2Field1": "arg2Value1" }, [{ "arg3Field1": "arg3Value1"}] ]'`,
-    [],
-    types.json,
   )
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -430,13 +342,7 @@ task("task:upgradeInputVerification")
     types.boolean,
   )
   .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      reinitializeArgs,
-      useInternalProxyAddress,
-      verifyContract,
-    }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -451,12 +357,5 @@ task("task:upgradeInputVerification")
       proxyAddress = getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS");
     }
 
-    await upgradeCurrentToNew(
-      proxyAddress,
-      currentImplementation,
-      newImplementation,
-      verifyContract,
-      hre,
-      reinitializeArgs,
-    );
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });

@@ -21,10 +21,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
-alloy = { workspace = true, features = ["provider-anvil-node"] }
-rand.workspace = true
+connector-tests.workspace = true
 serial_test.workspace = true
-sqlx = { workspace = true, features = ["migrate"] }
 tempfile.workspace = true
 testcontainers.workspace = true
 toml.workspace = true

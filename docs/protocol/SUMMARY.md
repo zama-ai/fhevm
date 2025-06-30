@@ -1,3 +1,5 @@
+# Table of contents
+
 - [Welcome](README.md)
 
 ## Protocol
@@ -14,7 +16,6 @@
 ## Developer
 
 - [Contributing](contribute.md)
-- [Development roadmap](roadmap.md)
 - [Feature request](https://github.com/zama-ai/fhevm/issues/new?assignees=&labels=enhancement&projects=&template=feature-request.md&title=)
 - [Bug report](https://github.com/zama-ai/fhevm/issues/new?assignees=&labels=bug&projects=&template=bug_report_fhevm.md&title=)
 - [Status](https://status.zama.ai/)

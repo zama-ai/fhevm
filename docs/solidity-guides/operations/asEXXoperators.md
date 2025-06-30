@@ -1,8 +1,6 @@
 # asEbool, asEuintXX, and asEaddress operations
 
-This documentation covers the `asEbool`, `asEuintXX`, and `asEaddress` operations provided by the FHE library for
-working with encrypted data in the FHEVM. These operations are essential for converting between plaintext and encrypted
-types, as well as handling encrypted inputs.
+This documentation covers the `asEbool`, `asEuintXX`, and `asEaddress` operations provided by the FHE library for working with encrypted data in the FHEVM. These operations are essential for converting between plaintext and encrypted types, as well as handling encrypted inputs.
 
 The operations can be categorized into three main use cases:
 
@@ -16,9 +14,7 @@ Trivial encryption simply put is a plain text in a format of a ciphertext.
 
 ### Overview
 
-Trivial encryption is the process of converting plaintext values into encrypted types (ciphertexts) compatible with FHE
-operators. Although the data is in ciphertext format, it remains publicly visible on-chain, making it useful for
-operations between public and private values.
+Trivial encryption is the process of converting plaintext values into encrypted types (ciphertexts) compatible with FHE operators. Although the data is in ciphertext format, it remains publicly visible on-chain, making it useful for operations between public and private values.
 
 This type of casting involves converting plaintext (unencrypted) values into their encrypted equivalents, such as:
 
@@ -26,8 +22,9 @@ This type of casting involves converting plaintext (unencrypted) values into the
 - `uint` → `euintXX`
 - `address` → `eaddress`
 
-> **Note**: When doing trivial encryption, the data is made compatible with FHE operations but remains publicly visible
-> on-chain unless explicitly encrypted.
+{% hint style="info" %}
+When doing trivial encryption, the data is made compatible with FHE operations but remains publicly visible on-chain unless explicitly encrypted.
+{% endhint %}
 
 #### **Example**
 
@@ -57,8 +54,9 @@ The table below summarizes the available casting functions:
 | `ebool`   | `euintX` | `FHE.asEuintXX` |
 | `euintX`  | `ebool`  | `FHE.asEboolXX` |
 
-{% hint style="info" %} Casting between encrypted types is efficient and often necessary when handling data with
-differing precision requirements. {% endhint %}
+{% hint style="info" %} 
+Casting between encrypted types is efficient and often necessary when handling data with differing precision requirements. 
+{% endhint %}
 
 ### **Workflow for encrypted types**
 
@@ -72,10 +70,9 @@ ebool valueBool = FHE.asEbool(value32);   // Cast to ebool
 
 ### Overview
 
-Encrypted input casting is the process of interpreting a handle (ciphertext reference) and its proof as a specific
-encrypted type. This ensures the validity of the input before it is used in computations.
+Encrypted input casting is the process of interpreting a handle (ciphertext reference) and its proof as a specific encrypted type. This ensures the validity of the input before it is used in computations.
 
-Encrypted inputs is in depth explained in the following section: [encrypted inputs](./inputs.md)
+Encrypted inputs is in depth explained in the following section: [encrypted inputs](../inputs.md)
 
 #### Example
 
@@ -90,7 +87,7 @@ Encrypted input casting validates:
 1.  The input handle references a valid ciphertext.
 2.  The accompanying proof matches the expected type.
 
-For more information, see the [Encrypetd inputs documentation](./inputs.md)
+For more information, see the [Encrypetd inputs documentation](../inputs.md)
 
 ## Overall operation summary
 

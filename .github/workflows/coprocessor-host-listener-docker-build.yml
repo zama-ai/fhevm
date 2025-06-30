@@ -31,7 +31,7 @@ jobs:
           filters: |
             coprocessor-host-listener:
               - .github/workflows/coprocessor-host-listener-docker-build.yml
-              - coprocessor/fhevm-engine/fhevm-listner/**
+              - coprocessor/fhevm-engine/fhevm-listener/**
               - coprocessor/fhevm-engine/Cargo.toml
               - coprocessor/fhevm-engine/Cargo.lock
               - host-contracts/contracts/*Events.sol

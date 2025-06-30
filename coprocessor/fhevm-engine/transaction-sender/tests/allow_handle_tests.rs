@@ -204,7 +204,12 @@ async fn retry_on_transport_error(#[case] signer_type: SignerType) -> anyhow::Re
             .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(
+            // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
+            WsConnect::new(env.ws_endpoint_url())
+                .with_max_retries(2)
+                .with_retry_interval(Duration::from_millis(100)),
+        )
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()

@@ -14,8 +14,7 @@ Please provide a link to the page where the issue is located:
 
 ### **Description**
 
-Describe in detail what part of the documentation is unclear or provide a clear and detailed description of the bug.
-Include any inconsistencies, typos, broken links, or missing information.
+Describe in detail what part of the documentation is unclear or provide a clear and detailed description of the bug. Include any inconsistencies, typos, broken links, or missing information.
 
 <details><summary>For example:</summary>
 <p>
@@ -69,5 +68,4 @@ Choose the impact of the bug on the documentation quality and user experience:
 
 ---
 
-By including these details, we can ensure a faster and more accurate resolution for your issue. Thank you for helping
-improve the `fhevm Gateway's documentation`!
+By including these details, we can ensure a faster and more accurate resolution for your issue. Thank you for helping improve the `fhevm Gateway's documentation`!

@@ -15,6 +15,7 @@ alloy.workspace = true
 anyhow.workspace = true
 aws-config.workspace = true
 aws-sdk-kms.workspace = true
+bincode.workspace = true
 clap.workspace = true
 config.workspace = true
 serde.workspace = true
@@ -22,13 +23,10 @@ sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-tonic.workspace = true       # TODO: under a feature
+tonic.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
 tempfile.workspace = true
 toml.workspace = true
-
-[features]
-wallet = []

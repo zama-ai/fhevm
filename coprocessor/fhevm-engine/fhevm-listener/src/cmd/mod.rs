@@ -20,13 +20,16 @@ use clap::Parser;
 
 use rustls;
 
+use tokio_util::sync::CancellationToken;
+
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::tfhe_event_propagate::{ChainId, Database};
+use crate::health_check::{HealthCheck, HealthState};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
-    #[arg(long, default_value = "ws://0.0.0.0:8746")]
+    #[arg(long, default_value = "ws://0.0.0.0:8545")]
     pub url: String,
 
     #[arg(long, default_value = "false")]
@@ -43,7 +46,7 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value = "postgresql://postgres:testmdp@localhost:5432/postgres"
+        default_value = "postgresql://postgres:postgres@localhost:5432/coprocessor"
     )]
     pub database_url: String,
 
@@ -82,6 +85,9 @@ pub struct Args {
         value_parser = clap::value_parser!(Level),
         default_value_t = Level::INFO)]
     pub log_level: Level,
+
+    #[arg(long, default_value = "8080", help = "Health check port")]
+    pub health_port: u16,
 }
 
 type RProvider = FillProvider<
@@ -113,6 +119,7 @@ struct InfiniteLogIter {
     current_event: Option<Log>,
     last_block_event_count: u64,
     last_block_recheck_planned: u64,
+    health: HealthState,
 }
 enum LogOrBlockTimeout {
     Log(Option<Log>),
@@ -120,7 +127,7 @@ enum LogOrBlockTimeout {
 }
 
 impl InfiniteLogIter {
-    fn new(args: &Args) -> Self {
+    fn new(args: &Args, health: HealthState) -> Self {
         let mut contract_addresses = vec![];
         if let Some(acl_contract_address) = &args.acl_contract_address {
             contract_addresses
@@ -146,6 +153,7 @@ impl InfiniteLogIter {
             current_event: None,
             last_block_event_count: 0,
             last_block_recheck_planned: 0,
+            health,
         }
     }
 
@@ -194,7 +202,7 @@ impl InfiniteLogIter {
         provider: &RProvider,
         filter: &Filter,
     ) {
-        let logs = provider.get_logs(&filter).await.expect("BLA2");
+        let logs = provider.get_logs(filter).await.expect("BLA2");
         self.catchup_logs.extend(logs);
     }
 
@@ -373,6 +381,9 @@ impl InfiniteLogIter {
                 }
                 LogOrBlockTimeout::Log(Some(log)) => {
                     self.current_event = Some(log);
+                    if self.is_first_of_block() {
+                        self.health.write().await.tick();
+                    }
                     let recheck_planned = if !self.no_block_immediate_recheck
                         && self.is_first_of_block()
                     {
@@ -389,16 +400,16 @@ impl InfiniteLogIter {
                     }
                 }
                 LogOrBlockTimeout::BlockTimeout => {
+                    self.health.write().await.tick();
                     self.recheck_prev_block().await;
                     continue;
                 }
             }
         }
-        let Some(current_event) = &self.current_event else {
-            return None;
+        if self.current_event.is_some() {
+            self.last_block_event_count += 1;
         };
-        self.last_block_event_count += 1;
-        return self.current_event.clone();
+        self.current_event.clone()
     }
 
     fn is_first_of_block(&self) -> bool {
@@ -411,21 +422,23 @@ impl InfiniteLogIter {
     }
 
     fn reestimated_block_time(&mut self) {
-        match (&self.current_event, &self.prev_event) {
-            (
-                Some(Log {
-                    block_timestamp: Some(curr_t),
-                    block_number: Some(curr_n),
-                    ..
-                }),
-                Some(Log {
-                    block_timestamp: Some(prev_t),
-                    block_number: Some(prev_n),
-                    ..
-                }),
-            ) => self.block_time = (curr_t - prev_t) / (curr_n - prev_n),
-            _ => (),
-        }
+        let Some(Log {
+            block_timestamp: Some(curr_t),
+            block_number: Some(curr_n),
+            ..
+        }) = &self.current_event
+        else {
+            return;
+        };
+        let Some(Log {
+            block_timestamp: Some(prev_t),
+            block_number: Some(prev_n),
+            ..
+        }) = &self.prev_event
+        else {
+            return;
+        };
+        self.block_time = (curr_t - prev_t) / (curr_n - prev_n);
     }
 }
 
@@ -447,7 +460,25 @@ pub async fn main(args: Args) {
         };
     }
 
-    let mut log_iter = InfiniteLogIter::new(&args);
+    let cancel_token = CancellationToken::new();
+    let health_check = HealthCheck::new(
+        args.health_port,
+        cancel_token,
+        &args.database_url,
+        &args.url,
+    );
+    {
+        let health_check_clone = health_check.clone();
+        tokio::spawn(async move {
+            health_check_clone
+                .start_http_server()
+                .await
+                .expect("Failed to start health check server");
+        });
+    }
+
+    let mut log_iter =
+        InfiniteLogIter::new(&args, health_check.health_state.clone());
     let chain_id = log_iter.get_chain_id_or_panic().await;
     info!(chain_id = chain_id, "Chain ID");
 
@@ -476,6 +507,7 @@ pub async fn main(args: Args) {
     };
 
     log_iter.new_log_stream(true).await;
+    health_check.connected().await;
 
     let mut block_tfhe_errors = 0;
     while let Some(log) = log_iter.next().await {
@@ -535,4 +567,5 @@ pub async fn main(args: Args) {
             }
         }
     }
+    health_check.cancel_token.cancel();
 }

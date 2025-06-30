@@ -1,33 +1,21 @@
 # Error handling
 
-This document explains how to handle errors effectively in FHEVM smart contracts. Since transactions involving encrypted
-data do not automatically revert when conditions are not met, developers need alternative mechanisms to communicate
-errors to users.
+This document explains how to handle errors effectively in FHEVM smart contracts. Since transactions involving encrypted data do not automatically revert when conditions are not met, developers need alternative mechanisms to communicate errors to users.
 
 ## **Challenges in error handling**
 
 In the context of encrypted data:
 
-1. **No automatic reversion**: Transactions do not revert if a condition fails, making it challenging to notify users of
-   issues like insufficient funds or invalid inputs.
-2. **Limited feedback**: Encrypted computations lack direct mechanisms for exposing failure reasons while maintaining
-   confidentiality.
+1. **No automatic reversion**: Transactions do not revert if a condition fails, making it challenging to notify users of issues like insufficient funds or invalid inputs.
+2. **Limited feedback**: Encrypted computations lack direct mechanisms for exposing failure reasons while maintaining confidentiality.
 
 ## **Recommended approach: Error logging with a handler**
 
-To address these challenges, implement an **error handler** that records the most recent error for each user. This
-allows dApps or frontends to query error states and provide appropriate feedback to users.
+To address these challenges, implement an **error handler** that records the most recent error for each user. This allows dApps or frontends to query error states and provide appropriate feedback to users.
 
 ### **Example implementation**
 
-For a complete implementation of error handling, see our reference contracts:
-
-- [EncryptedErrors.sol](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/utils/EncryptedErrors.sol) - Base
-  error handling contract
-- [ConfidentialERC20WithErrors.sol](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/extensions/ConfidentialERC20WithErrors.sol) -
-  Example usage in an ERC20 token
-
-The following contract demonstrates how to implement and use an error handler:
+The following contract snippet demonstrates how to implement and use an error handler:
 
 ```solidity
 struct LastError {
@@ -95,8 +83,7 @@ function _transfer(address from, address to, euint32 amount) internal {
 3. **Conditional updates**:
    - Use the `FHE.select` function to update balances and log errors based on the transfer condition (`canTransfer`).
 4. **Frontend integration**:
-   - The dApp can query `_lastErrors` for a user’s most recent error and display appropriate feedback, such as
-     "Insufficient funds" or "Transaction successful."
+   - The dApp can query `_lastErrors` for a user’s most recent error and display appropriate feedback, such as "Insufficient funds" or "Transaction successful."
 
 ## **Example error query**
 
@@ -124,5 +111,4 @@ function getLastError(address user) public view returns (euint8 error, uint time
 3. **Event-driven notifications**:
    - Enables frontends to react to errors in real time via the `ErrorChanged` event.
 
-By implementing error handlers as demonstrated, developers can ensure a seamless user experience while maintaining the
-privacy and integrity of encrypted data operations.
+By implementing error handlers as demonstrated, developers can ensure a seamless user experience while maintaining the privacy and integrity of encrypted data operations.

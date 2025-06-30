@@ -104,7 +104,7 @@ describe("Upgrades", function () {
     });
     const decryption = await upgrades.upgradeProxy(emptyUUPS, decryptionFactoryV1);
     await decryption.waitForDeployment();
-    expect(await decryption.getVersion()).to.equal("Decryption v0.1.0");
+    expect(await decryption.getVersion()).to.equal("Decryption v0.3.0");
     const decryptionV2 = await upgrades.upgradeProxy(decryption, decryptionFactoryV2);
     await decryptionV2.waitForDeployment();
     expect(await decryptionV2.getVersion()).to.equal("Decryption v1000.0.0");

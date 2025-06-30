@@ -5,7 +5,7 @@ use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
-use fhevm_engine_common::utils::{compact_hex, safe_deserialize};
+use fhevm_engine_common::utils::{compact_hex, safe_deserialize_conformant};
 use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
@@ -14,6 +14,7 @@ use sqlx::{postgres::PgListener, PgPool, Row};
 use sqlx::{Postgres, Transaction};
 use std::num::NonZero;
 use std::str::FromStr;
+use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 
@@ -25,8 +26,8 @@ use std::time::SystemTime;
 use tfhe::set_server_key;
 
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
-use tokio::{select, time::Duration};
 use tokio::time::interval;
+use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
@@ -63,12 +64,12 @@ impl HealthCheckService for ZkProofService {
             .duration_since(last_active_at)
             .map(|d| d.as_secs())
             .unwrap_or(u64::MAX) as u32)
-        < threshold
+            < threshold
     }
 
     fn get_version(&self) -> Version {
         // Later, the unknowns will be initialized from build.rs
-        Version{
+        Version {
             name: "zkproof-worker",
             version: "unknown",
             build: "unknown",
@@ -136,7 +137,8 @@ pub async fn execute_verify_proofs_loop(
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         task_set.spawn(async move {
-            if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache, last_active_at).await {
+            if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache, last_active_at).await
+            {
                 error!("executor failed with {}", err);
             }
         });
@@ -365,7 +367,10 @@ fn try_verify_and_expand_ciphertext_list(
         .assemble()
         .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))?;
 
-    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize(raw_ct)?;
+    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(raw_ct,
+        &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
+            keys.pks.parameters(), &keys.public_params,
+        ))?;
 
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .verify_and_expand(&keys.public_params, &keys.pks, &aux_data_bytes)

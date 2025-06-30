@@ -164,7 +164,7 @@ async fn main() -> Result<()> {
                         }
                         Err(e) => {
                             error!("Connector task failed: {}", e);
-                            return Err(Error::Channel(format!("Task join error: {}", e)));
+                            return Err(Error::Channel(format!("Task join error: {e}")));
                         }
                     }
                 }

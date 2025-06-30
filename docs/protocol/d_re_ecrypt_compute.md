@@ -1,10 +1,8 @@
 # Encryption, decryption, and computation
 
-This section introduces the core cryptographic operations in the FHEVM system, covering how data is encrypted,
-processed, and decrypted — while ensuring complete confidentiality through Fully Homomorphic Encryption (FHE).
+This section introduces the core cryptographic operations in the FHEVM system, covering how data is encrypted, processed, and decrypted — while ensuring complete confidentiality through Fully Homomorphic Encryption (FHE).
 
-The architecture enforces end-to-end encryption, coordinating key flows across the frontend, smart contracts,
-coprocessors, and a secure Key Management System (KMS) operated via threshold MPC.
+The architecture enforces end-to-end encryption, coordinating key flows across the frontend, smart contracts, coprocessors, and a secure Key Management System (KMS) operated via threshold MPC.
 
 ## **FHE keys and their locations**
 
@@ -24,15 +22,12 @@ coprocessors, and a secure Key Management System (KMS) operated via threshold MP
 
 ### **Encryption**
 
-Encryption is the starting point for any interaction with the FHEVM system, ensuring that data is protected before it is
-transmitted or processed.
+Encryption is the starting point for any interaction with the FHEVM system, ensuring that data is protected before it is transmitted or processed.
 
 - **How It Works**:
-  1. The frontend or client application uses the public key to encrypt user-provided plaintext inputs and generates a
-     proof of knowledge of the underlying plaintexts.
+  1. The frontend or client application uses the public key to encrypt user-provided plaintext inputs and generates a proof of knowledge of the underlying plaintexts.
   2. The resulting ciphertext and proof are submitted to the Gateway for verification.
-  3. Coprocessors validate the proof and store the ciphertext off-chain, returning handles and signature that can be
-     used as on-chain parameters.
+  3. Coprocessors validate the proof and store the ciphertext off-chain, returning handles and signature that can be used as on-chain parameters.
 - **Data Flow**:
   - **Source**: Frontend.
   - **Destination**: Coprocessor (for processing).
@@ -47,8 +42,7 @@ Encrypted computations are performed using the **evaluation key** on the coproce
 
 - **How it works**:
   1. The smart contract emits FHE operation events as symbolic instructions.
-  2. These events are picked up by the coprocessor, which evaluates each operation individually using the evaluation
-     key, without ever decrypting the data.
+  2. These events are picked up by the coprocessor, which evaluates each operation individually using the evaluation key, without ever decrypting the data.
   3. The resulting ciphertext is persisted in the coprocessor database, while only a handle is returned on-chain.
 - **Data flow**:
   - **Source**: Blockchain smart contracts (via symbolic execution).
@@ -79,9 +73,7 @@ You can read about the implementation details in [our decryption guide](solidity
 
 #### What is “User Decryption”?
 
-User Decryption is the mechanism that allows users or applications to request private access to decrypted data — without
-exposing the plaintext on-chain. Instead of simply decrypting, the KMS securely decrypts the result with the user’s
-public key, allowing the user to decrypt it client-side only.
+User Decryption is the mechanism that allows users or applications to request private access to decrypted data — without exposing the plaintext on-chain. Instead of simply decrypting, the KMS securely decrypts the result with the user’s public key, allowing the user to decrypt it client-side only.
 
 This guarantees:
 
@@ -93,12 +85,10 @@ This guarantees:
 
 #### Client-side implementation
 
-User decryption is initiated on the client side using the
-[`@zama-ai/relayer-sdk`](https://github.com/zama-ai/relayer-sdk/) library. Here’s the general workflow:
+User decryption is initiated on the client side using the [`@zama-ai/relayer-sdk`](https://github.com/zama-ai/relayer-sdk/) library. Here’s the general workflow:
 
 1. **Retrieve the ciphertext**:
-   - The dApp calls a view function (e.g., `balanceOf`) on the smart contract to get the handle of the ciphertext to be
-     decrypted.
+   - The dApp calls a view function (e.g., `balanceOf`) on the smart contract to get the handle of the ciphertext to be decrypted.
 2. **Generate and sign a keypair**:
    - The dApp generates a keypair for the user.
    - The user signs the public key to ensure authenticity.
@@ -109,8 +99,7 @@ User decryption is initiated on the client side using the
      - The user’s address.
      - The smart contract address.
      - The user’s signature.
-   - The transaction can be sent directly to the Gateway chain from the client application, or routed through a Relayer,
-     which exposes an HTTP endpoint to abstract the transaction handling.
+   - The transaction can be sent directly to the Gateway chain from the client application, or routed through a Relayer, which exposes an HTTP endpoint to abstract the transaction handling.
 4. **Decrypt the encrypted ciphertext**:
    - The dApp receives the encrypted ciphertext under the user's public key from the Gateway/Relayer.
    - The dApp decrypts the ciphertext locally using the user's private key.
@@ -119,16 +108,13 @@ You can read [our user decryption guide explaining how to use it](solidity-guide
 
 ## **Tying It All Together**
 
-The flow of information across the FHEVM components during these operations highlights how the system ensures privacy
-while maintaining usability:
+The flow of information across the FHEVM components during these operations highlights how the system ensures privacy while maintaining usability:
 
-| Operation           |                         |                                                                                                     |
-| ------------------- | ----------------------- | --------------------------------------------------------------------------------------------------- |
-| **Encryption**      | Public Key              | Frontend encrypts data → ciphertext sent to blockchain or coprocessor                               |
-| **Computation**     | Evaluation Key          | Coprocessor executes operations from smart contract events → updated ciphertexts                    |
-| **Decryption**      | Private Key             | Smart contract requests plaintext → Gateway forwards to KMS → result returned on-chain              |
+| Operation |  |  |
+| --- | --- | --- |
+| **Encryption** | Public Key | Frontend encrypts data → ciphertext sent to blockchain or coprocessor |
+| **Computation** | Evaluation Key | Coprocessor executes operations from smart contract events → updated ciphertexts |
+| **Decryption** | Private Key | Smart contract requests plaintext → Gateway forwards to KMS → result returned on-chain |
 | **User decryption** | Private and Target Keys | User requests result → KMS decrypts and encrypts with user’s public key → frontend decrypts locally |
 
-This architecture ensures that sensitive data remains encrypted throughout its lifecycle, with decryption only occurring
-in controlled, secure environments. By separating key roles and processing responsibilities, FHEVM provides a scalable
-and robust framework for private smart contracts.
+This architecture ensures that sensitive data remains encrypted throughout its lifecycle, with decryption only occurring in controlled, secure environments. By separating key roles and processing responsibilities, FHEVM provides a scalable and robust framework for private smart contracts.

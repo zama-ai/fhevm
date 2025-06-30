@@ -119,6 +119,9 @@ struct Conf {
         value_parser = clap::value_parser!(Level),
         default_value_t = Level::INFO)]
     log_level: Level,
+
+    #[arg(long, default_value = "120", value_parser = clap::value_parser!(u32).range(100..))]
+    gas_limit_overprovision_percent: u32,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -223,6 +226,7 @@ async fn main() -> anyhow::Result<()> {
         review_after_unlimited_retries: conf.review_after_unlimited_retries,
         health_check_port: conf.health_check_port,
         health_check_timeout: conf.health_check_timeout,
+        gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
     };
 
     let transaction_sender = std::sync::Arc::new(

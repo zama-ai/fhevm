@@ -137,7 +137,6 @@ export async function getSignaturesPublicDecrypt(
 
 // Create an EIP712 message for a user decryption request
 export function createEIP712RequestUserDecrypt(
-  chainId: number,
   verifyingContract: string,
   publicKey: string,
   contractAddresses: string[],
@@ -168,7 +167,7 @@ export function createEIP712RequestUserDecrypt(
     domain: {
       name: "Decryption",
       version: "1",
-      chainId,
+      chainId: contractsChainId,
       verifyingContract,
     },
     message: {
@@ -199,7 +198,6 @@ export async function getSignaturesUserDecryptRequest(
 
 // Create an EIP712 message for a user decryption request
 export function createEIP712RequestDelegatedUserDecrypt(
-  chainId: number,
   verifyingContract: string,
   publicKey: string,
   contractAddresses: string[],
@@ -232,7 +230,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
     domain: {
       name: "Decryption",
       version: "1",
-      chainId,
+      chainId: contractsChainId,
       verifyingContract,
     },
     message: {

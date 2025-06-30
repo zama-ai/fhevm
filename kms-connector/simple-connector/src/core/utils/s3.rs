@@ -122,7 +122,7 @@ pub async fn retrieve_s3_ciphertext(
     );
 
     // Direct HTTP retrieval
-    let direct_url = format!("{}/{}", s3_bucket_url, digest_hex);
+    let direct_url = format!("{s3_bucket_url}/{digest_hex}");
     let ciphertext = direct_http_retrieval(&direct_url).await?;
     info!(
         "DIRECT HTTP RETRIEVAL SUCCESS: Retrieved {} bytes",
@@ -153,14 +153,14 @@ async fn direct_http_retrieval(url: &str) -> Result<Vec<u8>> {
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(2))
         .build()
-        .map_err(|e| Error::S3Error(format!("Failed to create HTTP client: {}", e)))?;
+        .map_err(|e| Error::S3Error(format!("Failed to create HTTP client: {e}")))?;
 
     // Send the GET request
     let response = client
         .get(url)
         .send()
         .await
-        .map_err(|e| Error::S3Error(format!("HTTP request failed: {}", e)))?;
+        .map_err(|e| Error::S3Error(format!("HTTP request failed: {e}")))?;
 
     // Check if the request was successful
     if !response.status().is_success() {
@@ -174,7 +174,7 @@ async fn direct_http_retrieval(url: &str) -> Result<Vec<u8>> {
     let body = response
         .bytes()
         .await
-        .map_err(|e| Error::S3Error(format!("Failed to read HTTP response body: {}", e)))?;
+        .map_err(|e| Error::S3Error(format!("Failed to read HTTP response body: {e}")))?;
 
     Ok(body.to_vec())
 }
@@ -363,11 +363,8 @@ mod tests {
 
         let minio_url = "http://localhost:9000";
         let bucket = "ct128";
-        let call_url = format!("{}/{}", minio_url, bucket);
-        println!(
-            "Testing S3 ciphertext retrieval from MinIO at URL: {}",
-            call_url
-        );
+        let call_url = format!("{minio_url}/{bucket}");
+        println!("Testing S3 ciphertext retrieval from MinIO at URL: {call_url}");
 
         let digest_hex = "1c37ba3cfd0151dd03584cd4819c6296d6a8b4d7ac3e31554fb0e842eab8ada9";
         let digest_bytes = alloy::hex::decode(digest_hex).expect("Failed to decode hex digest");
@@ -386,12 +383,12 @@ mod tests {
 
                 let calculated_digest = compute_digest(&data);
                 let calculated_hex = encode(&calculated_digest);
-                println!("Retrieved data digest: {}", calculated_hex);
-                println!("Expected digest: {}", digest_hex);
+                println!("Retrieved data digest: {calculated_hex}");
+                println!("Expected digest: {digest_hex}");
             }
             Err(error) => {
                 // This should only happen if both direct HTTP and S3 SDK retrievals fail completely
-                println!("Failed to retrieve ciphertext from MinIO: {}", error);
+                println!("Failed to retrieve ciphertext from MinIO: {error}");
                 println!(
                     "This is expected if MinIO is not running or the bucket/object doesn't exist"
                 );

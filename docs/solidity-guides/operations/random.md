@@ -1,24 +1,19 @@
 # Generate random numbers
 
-This document explains how to generate cryptographically secure random encrypted numbers fully on-chain using the `FHE`
-library in fhevm. These numbers are encrypted and remain confidential, enabling privacy-preserving smart contract logic.
+This document explains how to generate cryptographically secure random encrypted numbers fully on-chain using the `FHE` library in fhevm. These numbers are encrypted and remain confidential, enabling privacy-preserving smart contract logic.
 
 ## **Key notes on random number generation**
 
-- **On-chain execution**: Random number generation must be executed during a transaction, as it requires the
-  pseudo-random number generator (PRNG) state to be updated on-chain. This operation cannot be performed using the
-  `eth_call` RPC method.
-- **Cryptographic security**: The generated random numbers are cryptographically secure and encrypted, ensuring privacy
-  and unpredictability.
+- **On-chain execution**: Random number generation must be executed during a transaction, as it requires the pseudo-random number generator (PRNG) state to be updated on-chain. This operation cannot be performed using the `eth_call` RPC method.
+- **Cryptographic security**: The generated random numbers are cryptographically secure and encrypted, ensuring privacy and unpredictability.
 
-{% hint style="info" %} Random number generation must be performed during transactions, as it requires the pseudo-random
-number generator (PRNG) state to be mutated on-chain. Therefore, it cannot be executed using the `eth_call` RPC method.
+{% hint style="info" %} 
+Random number generation must be performed during transactions, as it requires the pseudo-random number generator (PRNG) state to be mutated on-chain. Therefore, it cannot be executed using the `eth_call` RPC method. 
 {% endhint %}
 
 ## **Basic usage**
 
-The `FHE` library allows you to generate random encrypted numbers of various bit sizes. Below is a list of supported
-types and their usage:
+The `FHE` library allows you to generate random encrypted numbers of various bit sizes. Below is a list of supported types and their usage:
 
 ```solidity
 // Generate random encrypted numbers
@@ -41,8 +36,7 @@ function randomBoolean() public returns (ebool) {
 
 ## **Bounded random numbers**
 
-To generate random numbers within a specific range, you can specify an **upper bound**. The random number will be in the
-range `[0, upperBound - 1]`.
+To generate random numbers within a specific range, you can specify an **upper bound**. The random number will be in the range `[0, upperBound - 1]`.
 
 ```solidity
 // Generate random numbers with upper bounds
@@ -62,10 +56,8 @@ function randomBoundedNumber(uint16 upperBound) public returns (euint16) {
 ## **Security Considerations**
 
 - **Cryptographic security**:\
-  The random numbers are generated using a cryptographically secure pseudo-random number generator (CSPRNG) and remain
-  encrypted until explicitly decrypted.
+  The random numbers are generated using a cryptographically secure pseudo-random number generator (CSPRNG) and remain encrypted until explicitly decrypted.
 - **Gas consumption**:\
-  Each call to a random number generation function consumes gas. Developers should optimize the use of these functions,
-  especially in gas-sensitive contracts.
+  Each call to a random number generation function consumes gas. Developers should optimize the use of these functions, especially in gas-sensitive contracts.
 - **Privacy guarantee**:\
   Random values are fully encrypted, ensuring they cannot be accessed or predicted by unauthorized parties.
