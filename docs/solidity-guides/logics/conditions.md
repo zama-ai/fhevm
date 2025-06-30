@@ -6,7 +6,7 @@ This document covers encrypted branching and how to move from an encrypted condi
 
 ## What is confidential branching?
 
-In FHEVM, when you perform [comparison operations](../functions.md#comparison-operation-eq-ne-ge-gt-le-lt), the result is an encrypted boolean (`ebool`). Since encrypted booleans do not support standard boolean operations like `if` statements or logical operators, conditional logic must be implemented using specialized methods.
+In FHEVM, when you perform [comparison operations](../operations/README.md#comparison-operations), the result is an encrypted boolean (`ebool`). Since encrypted booleans do not support standard boolean operations like `if` statements or logical operators, conditional logic must be implemented using specialized methods.
 
 To facilitate conditional assignments, FHEVM provides the `FHE.select` function, which acts as a ternary operator for encrypted values.
 
@@ -123,4 +123,3 @@ As you can see the in the above example, the path to move from an encrypted cond
 - Encrypted booleans (`ebool`) and values maintain confidentiality, enabling privacy-preserving logic.
 - Developers should account for gas costs and ciphertext behavior when designing conditional operations.
 
-For more information on the supported operations, see the [FHEVM API documentation](../functions.md).

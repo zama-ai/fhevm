@@ -146,10 +146,4 @@ function mint(externalEuint32 encryptedAmount, bytes calldata inputProof) public
 
 Notice that we did not check separately the overflow on `balances[msg.sender]` but only on `totalSupply` variable, because `totalSupply` is the sum of the balances of all the users, so `balances[msg.sender]` could never overflow if `totalSupply` did not.
 
-## Additional Resources
-
-- For detailed API specifications, visit the [fhevm API Documentation](../references/functions.md).
-- Check our [Roadmap](../developer/roadmap.md) for upcoming features or submit a feature request on [GitHub](https://github.com/zama-ai/fhevm-solidity/issues/new?template=feature-request.md).
-- Join the discussion on the [Community Forum](https://community.zama.ai/c/fhevm/15).
-
 

@@ -2,16 +2,11 @@
 
 This section explains how to handle decryption in fhevm. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
 
-{% hint style="info" %} 
-Understanding how encryption, user decryption, and public decryption works is a prerequisite before implementation, see [Encryption, User Decryption, Public Decryption, and Computation](../../protocol/d_re_ecrypt_compute.md). 
-{% endhint %}
-
 Decryption is essential in two primary cases:
 
 1. **Smart contract logic**: A contract requires plaintext values for computations or decision-making.
 2. **User interaction**: Plaintext data needs to be revealed to all users, such as revealing the decision of the vote.
 
-To learn how decryption works see [Encryption, User decryption, Public decryption, and Computation](../../protocol/d_re_ecrypt_compute.md).
 
 ## Overview
 
@@ -109,7 +104,9 @@ Here `callbackName` is a custom name given by the developer to the callback func
 
 `msgValue` is the value in native tokens to be sent to the calling contract during fulfillment, i.e when the callback will be called with the results of decryption.
 
-> _**WARNING:**_ Notice that the callback should always verify the signatures and implement a replay protection mechanism (see below).
+{% hint style="warning" %}
+Notice that the callback should always verify the signatures and implement a replay protection mechanism (see below).
+{% endhint %}
 
 ### `FHE.checkSignatures` function
 

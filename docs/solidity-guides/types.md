@@ -33,8 +33,9 @@ The `FHE` library currently supports the following encrypted types:
 | Euint160 | 160 |  | Eaddress (eq, ne, select) |
 | Euint256 | 256 | and, or, xor, shl, shr, rotl, rotr, eq, ne, neg, not, select, rand, randBounded |  |
 
-> **Note:**  
-> Division (`div`) and remainder (`rem`) operations are only supported when the right-hand side (`rhs`) operand is a plaintext (non-encrypted) value. Attempting to use an encrypted value as `rhs` will result in a panic. This restriction ensures correct and secure computation within the current framework.
+{% hint style="info" %}  
+Division (`div`) and remainder (`rem`) operations are only supported when the right-hand side (`rhs`) operand is a plaintext (non-encrypted) value. Attempting to use an encrypted value as `rhs` will result in a panic. This restriction ensures correct and secure computation within the current framework.
+{% endhint %}
 
 {% hint style="info" %} 
 Higher-precision integer types are available in the `TFHE-rs` library and can be added to `fhevm` as needed. 

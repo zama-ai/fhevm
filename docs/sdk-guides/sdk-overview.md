@@ -1,35 +1,31 @@
 # Relayer SDK
 
-The document provides an overview of the key features of Zama's FHEVM Relayer Javascript SDK.
+**Welcome to the Relayer SDK Docs.**
 
-This SDK provides all the functionnalities to interact with the FHEVM without interacting directly with the [Gateway chain](../protocol/architecture/gateway.md).
-This means that FHEVM clients need only to hold a wallet of the FHEVM host chain.
-All interactions with the Gateway chain are done through HTTP calls to Zama's Relayer, which pays for it on the Gateway chain.
+This section provides an overview of the key features of Zama’s FHEVM Relayer JavaScript SDK.
+The SDK lets you interact with FHEVM smart contracts without dealing directly with the [Gateway Chain](https://docs.zama.ai/protocol/protocol/overview/gateway).
 
-## Setup
+With the Relayer, FHEVM clients only need a wallet on the FHEVM host chain. All interactions with the Gateway chain are handled through HTTP calls to Zama's Relayer, which pays for it on the Gateway chain.
 
-The first step to using the Relayer SDK is to properly setup the configuration to use.
-For more information see the [configuration page.](./initialization.md).
+## Where to go next
 
-## Input registration
+If you’re new to the Zama Protocol, start with the [Litepaper](https://docs.zama.ai/protocol/zama-protocol-litepaper) or the [Protocol Overview](https://docs.zama.ai/protocol) to understand the foundations.
 
-Once the Relayer SDK is setup the first operation to interact with an FHEVM smart contract is to register a new encrypted value.
-For more information see the [input registration page.](./input.md).
+Otherwise:
 
-## User decryption
+🟨 Go to [**Setup guide**](initialization.md) to learn how to configure the Relayer SDK for your project.
 
-Once an FHEVM smart contract did some computation, and set the proper ACL, a user can decrypt the underlying value (if authorized).
-This is done by re-encrypting the encrypted value using the user's set of public/private key.
+🟨 Go to [**Input registration**](input.md) to see how to register new encrypted inputs for your smart contracts.
 
-For more information see the [user/private decryption page.](./user-decryption.md).
-For more information about ACL refer to the [Solidity ACL page](../solidity-guides/acl/README.md).
+🟨 Go to [**User decryption**](user-decryption.md) to enable users to decrypt data with their own keys, once permissions have been granted via Access Control List(ACL).
 
-## Public decryption
+🟨 Go to [**Public decryption**](public-decryption.md) to learn how to decrypt outputs that are publicly accessible, either via HTTP or onchain Oracle.
 
-Once an FHEVM smart contract did some computation, and set the proper ACL, a value could be decrypted by anyone.
-This can be done in two ways, either calling on-chain the public decryption Oracle or through HTTP using the Relayer SDK.
+🟨 Go to [**Solidity ACL Guide**](https://docs.zama.ai/protocol/solidity-guides/smart-contract/acl) for more detailed instructions about access control.
 
-For more information using HTTP see the [HTTP public decryption page.](./public-decryption.md-decryption.md).
-For more information using on-chain Oracle see the [Oracle public decryption page.](../solidity-guides/decryption/oracle.md).
-For more information about ACL refer to the [Solidity ACL page](../solidity-guides/acl/README.md).
+## Help center
+Ask technical questions and discuss with the community.
+
+- [Community forum](https://community.zama.ai/c/fhevm/15)
+- [Discord channel](https://discord.com/invite/fhe-org)
 

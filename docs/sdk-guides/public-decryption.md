@@ -28,7 +28,7 @@ Calling the public decryption endpoint of the Relayer can be done easily using t
     );
 ```
 
-## On-chain Public Decrypt
+## Onchain Public Decrypt
 
-For more details please refer to the on [on-chain Oracle public decryption page](../solidity-guides/decryption/oracle.md).
+For more details please refer to the on [onchain Oracle public decryption page](https://docs.zama.ai/protocol/solidity-guides/smart-contract/oracle).
 
