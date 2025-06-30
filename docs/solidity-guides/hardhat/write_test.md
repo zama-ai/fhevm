@@ -48,7 +48,7 @@ To compute these arguments in TypeScript, you need:
 - The **address of the target smart contract**
 - The **signer’s address** (i.e., the account sending the transaction)
 
-{% stepper %} 
+{% stepper %}
 
 {% step %}
 
@@ -95,7 +95,7 @@ await tx.wait();
 
 {% endstep %}
 
-{% endstepper %} 
+{% endstepper %}
 
 ### Encryption examples
 
@@ -115,7 +115,7 @@ function getEncryptedUint32Value() public view returns (euint32) { returns _encr
 For simplicity, we assume that both Alice’s account and the target smart contract already have the necessary FHE permissions to decrypt this value. For a detailed explanation of how FHE permissions work, see the [`initializeUint32()`](https://docs.zama.ai/protocol/examples/basic/decryption/fhe-decrypt-single-value#tab-decryptsinglevalue.sol) function in [DecryptSingleValue.sol](https://docs.zama.ai/protocol/examples/basic/decryption/fhe-decrypt-single-value#tab-decryptsinglevalue.sol).
 {% endhint %}
 
-{% stepper %} 
+{% stepper %}
 
 {% step %}
 
@@ -146,7 +146,7 @@ If either the target smart contract or the user does **NOT** have FHE permission
 
 {% endstep %}
 
-{% endstepper %} 
+{% endstepper %}
 
 ### Supported Decryption Types
 
@@ -162,4 +162,3 @@ Use the appropriate function for each encrypted data type:
 
 - [Basic decryption examples](https://docs.zama.ai/protocol/examples/basic/decryption)
 - [FHECounter](https://docs.zama.ai/protocol/examples#an-fhe-counter)
-

@@ -26,6 +26,7 @@ The system follows the NIST SP 800-57 key lifecycle model, managing key states s
 ### Threshold Decryption via MPC
 
 The KMS performs decryption using a threshold decryption protocol — at least a minimum number of MPC parties (e.g., 9 out of 13) must participate in the protocol to robustly decrypt a value.
+
 - This protects against compromise: no individual party has access to the full key. And adversary would need to control more than the threshold of KMS nodes to influence the system.
 - The protocol supports both:
   - Public decryption (e.g., for smart contracts)
