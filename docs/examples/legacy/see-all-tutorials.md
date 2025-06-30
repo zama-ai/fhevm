@@ -43,7 +43,6 @@ The library includes templates for common use cases like tokens and governance, 
 - [How to do Confidential Transactions Directly on Ethereum?](https://www.youtube.com/watch?v=aDv2WYOpVqA) - Nov 2024
 - [Zama - FHE on Ethereum (Presentation at The Zama CoFHE Shop during EthCC 7)](https://www.youtube.com/watch?v=WngC5cvV_fc&ab_channel=Zama) - Jul 2024
 
-
 ### Legacy - Not compatible with latest fhevm
 
 - [Build an Encrypted Wordle Game Onchain using FHE and fhevm](https://www.zama.ai/post/build-an-encrypted-wordle-game-onchain-using-fhe-and-zama-fhevm) - February 2024

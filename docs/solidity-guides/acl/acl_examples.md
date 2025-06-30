@@ -2,7 +2,6 @@
 
 This page provides detailed instructions and examples on how to use and implement the ACL (Access Control List) in fhevm. For an overview of ACL concepts and their importance, refer to the [access control list (ACL) overview](./).
 
-
 ## Controlling access: permanent and transient allowances
 
 The ACL system allows you to define two types of permissions for accessing ciphertexts:

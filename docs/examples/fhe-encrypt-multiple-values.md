@@ -1,14 +1,13 @@
 This example demonstrates the FHE encryption mechanism with multiple values.
 
-{% hint style="info" %} 
+{% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
 
 - `.sol` file → `<your-project-root-dir>/contracts/`
 - `.ts` file → `<your-project-root-dir>/test/`
 
-This ensures Hardhat can compile and test your contracts as expected. 
+This ensures Hardhat can compile and test your contracts as expected.
 {% endhint %}
-
 
 {% tabs %}
 
@@ -19,64 +18,63 @@ This ensures Hardhat can compile and test your contracts as expected.
 pragma solidity ^0.8.24;
 
 import {
-    FHE,
-    externalEbool,
-    externalEuint32,
-    externalEaddress,
-    ebool,
-    euint32,
-    eaddress
+  FHE,
+  externalEbool,
+  externalEuint32,
+  externalEaddress,
+  ebool,
+  euint32,
+  eaddress
 } from "@fhevm/solidity/lib/FHE.sol";
-import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /**
  * This trivial example demonstrates the FHE encryption mechanism.
  */
 contract EncryptMultipleValues is SepoliaConfig {
-    ebool private _encryptedEbool;
-    euint32 private _encryptedEuint32;
-    eaddress private _encryptedEaddress;
+  ebool private _encryptedEbool;
+  euint32 private _encryptedEuint32;
+  eaddress private _encryptedEaddress;
 
-    // solhint-disable-next-line no-empty-blocks
-    constructor() {}
+  // solhint-disable-next-line no-empty-blocks
+  constructor() {}
 
-    function initialize(
-        externalEbool inputEbool,
-        externalEuint32 inputEuint32,
-        externalEaddress inputEaddress,
-        bytes calldata inputProof
-    ) external {
-        _encryptedEbool = FHE.fromExternal(inputEbool, inputProof);
-        _encryptedEuint32 = FHE.fromExternal(inputEuint32, inputProof);
-        _encryptedEaddress = FHE.fromExternal(inputEaddress, inputProof);
+  function initialize(
+    externalEbool inputEbool,
+    externalEuint32 inputEuint32,
+    externalEaddress inputEaddress,
+    bytes calldata inputProof
+  ) external {
+    _encryptedEbool = FHE.fromExternal(inputEbool, inputProof);
+    _encryptedEuint32 = FHE.fromExternal(inputEuint32, inputProof);
+    _encryptedEaddress = FHE.fromExternal(inputEaddress, inputProof);
 
-        // For each of the 3 values:
-        // Grant FHE permission to both the contract itself (`address(this)`) and the caller (`msg.sender`),
-        // to allow future decryption by the caller (`msg.sender`).
+    // For each of the 3 values:
+    // Grant FHE permission to both the contract itself (`address(this)`) and the caller (`msg.sender`),
+    // to allow future decryption by the caller (`msg.sender`).
 
-        FHE.allowThis(_encryptedEbool);
-        FHE.allow(_encryptedEbool, msg.sender);
+    FHE.allowThis(_encryptedEbool);
+    FHE.allow(_encryptedEbool, msg.sender);
 
-        FHE.allowThis(_encryptedEuint32);
-        FHE.allow(_encryptedEuint32, msg.sender);
+    FHE.allowThis(_encryptedEuint32);
+    FHE.allow(_encryptedEuint32, msg.sender);
 
-        FHE.allowThis(_encryptedEaddress);
-        FHE.allow(_encryptedEaddress, msg.sender);
-    }
+    FHE.allowThis(_encryptedEaddress);
+    FHE.allow(_encryptedEaddress, msg.sender);
+  }
 
-    function encryptedBool() public view returns (ebool) {
-        return _encryptedEbool;
-    }
+  function encryptedBool() public view returns (ebool) {
+    return _encryptedEbool;
+  }
 
-    function encryptedUint32() public view returns (euint32) {
-        return _encryptedEuint32;
-    }
+  function encryptedUint32() public view returns (euint32) {
+    return _encryptedEuint32;
+  }
 
-    function encryptedAddress() public view returns (eaddress) {
-        return _encryptedEaddress;
-    }
+  function encryptedAddress() public view returns (eaddress) {
+    return _encryptedEaddress;
+  }
 }
-
 ```
 
 {% endtab %}
@@ -85,14 +83,13 @@ contract EncryptMultipleValues is SepoliaConfig {
 
 ```ts
 //TODO;
+import { EncryptMultipleValues, EncryptMultipleValues__factory } from "../../../types";
+import type { Signers } from "../../types";
 import { FhevmType, HardhatFhevmRuntimeEnvironment } from "@fhevm/hardhat-plugin";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import * as hre from "hardhat";
-
-import { EncryptMultipleValues, EncryptMultipleValues__factory } from "../../../types";
-import type { Signers } from "../../types";
 
 async function deployFixture() {
   // Contracts are deployed using the first signer/account by default
@@ -181,10 +178,8 @@ describe("EncryptMultipleValues", function () {
     expect(clearAddress).to.equal(signers.owner.address);
   });
 });
-
 ```
 
 {% endtab %}
 
 {% endtabs %}
-

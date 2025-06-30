@@ -4,7 +4,7 @@ In this tutorial, you’ll learn how to migrate a standard Hardhat test suite - 
 
 ## Set up the FHEVM testing environment
 
-{% stepper %} 
+{% stepper %}
 {% step %}
 
 ## Create a test script `test/FHECounter.ts`
@@ -58,31 +58,31 @@ describe("FHECounter", function () {
     expect(ethers.isAddress(fheCounterContractAddress)).to.eq(true);
   });
 
-//   it("count should be zero after deployment", async function () {
-//     const count = await counterContract.getCount();
-//     console.log(`Counter.getCount() === ${count}`);
-//     // Expect initial count to be 0 after deployment
-//     expect(count).to.eq(0);
-//   });
+  //   it("count should be zero after deployment", async function () {
+  //     const count = await counterContract.getCount();
+  //     console.log(`Counter.getCount() === ${count}`);
+  //     // Expect initial count to be 0 after deployment
+  //     expect(count).to.eq(0);
+  //   });
 
-//   it("increment the counter by 1", async function () {
-//     const countBeforeInc = await counterContract.getCount();
-//     const tx = await counterContract.connect(signers.alice).increment(1);
-//     await tx.wait();
-//     const countAfterInc = await counterContract.getCount();
-//     expect(countAfterInc).to.eq(countBeforeInc + 1n);
-//   });
+  //   it("increment the counter by 1", async function () {
+  //     const countBeforeInc = await counterContract.getCount();
+  //     const tx = await counterContract.connect(signers.alice).increment(1);
+  //     await tx.wait();
+  //     const countAfterInc = await counterContract.getCount();
+  //     expect(countAfterInc).to.eq(countBeforeInc + 1n);
+  //   });
 
-//   it("decrement the counter by 1", async function () {
-//     // First increment, count becomes 1
-//     let tx = await counterContract.connect(signers.alice).increment();
-//     await tx.wait();
-//     // Then decrement, count goes back to 0
-//     tx = await counterContract.connect(signers.alice).decrement(1);
-//     await tx.wait();
-//     const count = await counterContract.getCount();
-//     expect(count).to.eq(0);
-//   });  
+  //   it("decrement the counter by 1", async function () {
+  //     // First increment, count becomes 1
+  //     let tx = await counterContract.connect(signers.alice).increment();
+  //     await tx.wait();
+  //     // Then decrement, count goes back to 0
+  //     tx = await counterContract.connect(signers.alice).decrement(1);
+  //     await tx.wait();
+  //     const count = await counterContract.getCount();
+  //     expect(count).to.eq(0);
+  //   });
 });
 ```
 
@@ -119,14 +119,14 @@ FHECounter has been deployed at address 0x7553CB9124f974Ee475E5cE45482F90d5B6076
 
 Great! Your Hardhat FHEVM test environment is properly setup.
 
-{% endstep %} 
+{% endstep %}
 {% endstepper %}
 
 ## Test functions
 
 Now everything is up and running, you can start testing your contract functions.
 
-{% stepper %} 
+{% stepper %}
 {% step %}
 
 ## Call the contract `getCount()` view function
@@ -145,12 +145,12 @@ Replace the commented‐out test for the legacy `Counter` contract:
 with its FHEVM equivalent:
 
 ```ts
-  it("encrypted count should be uninitialized after deployment", async function () {
-    const encryptedCount = await fheCounterContract.getCount();
-    // Expect initial count to be bytes32(0) after deployment,
-    // (meaning the encrypted count value is uninitialized)
-    expect(encryptedCount).to.eq(ethers.ZeroHash);
-  });  
+it("encrypted count should be uninitialized after deployment", async function () {
+  const encryptedCount = await fheCounterContract.getCount();
+  // Expect initial count to be bytes32(0) after deployment,
+  // (meaning the encrypted count value is uninitialized)
+  expect(encryptedCount).to.eq(ethers.ZeroHash);
+});
 ```
 
 #### What’s different?
@@ -206,16 +206,16 @@ Replace the commented‐out test for the legacy `Counter` contract:
 with the following:
 
 ```ts
-  it("increment the counter by 1", async function () {
-    const encryptedCountBeforeInc = await fheCounterContract.getCount();
-    expect(encryptedCountBeforeInc).to.eq(ethers.ZeroHash);
-    const clearCountBeforeInc = 0;
-    
-    // const tx = await counterContract.connect(signers.alice).increment(1);
-    // await tx.wait();
-    // const countAfterInc = await counterContract.getCount();
-    // expect(countAfterInc).to.eq(countBeforeInc + 1n);
-  });
+it("increment the counter by 1", async function () {
+  const encryptedCountBeforeInc = await fheCounterContract.getCount();
+  expect(encryptedCountBeforeInc).to.eq(ethers.ZeroHash);
+  const clearCountBeforeInc = 0;
+
+  // const tx = await counterContract.connect(signers.alice).increment(1);
+  // await tx.wait();
+  // const countAfterInc = await counterContract.getCount();
+  // expect(countAfterInc).to.eq(countBeforeInc + 1n);
+});
 ```
 
 {% endstep %}
@@ -226,7 +226,7 @@ with the following:
 
 The `increment()` function takes a single argument: the value by which the counter should be incremented. In the initial version of `Counter.sol`, this value is a clear `uint32`.
 
-We’ll switch to passing an encrypted value instead, using FHEVM `externalEuint32` primitive type. This allows us to securely increment the counter without revealing the input value on-chain. 
+We’ll switch to passing an encrypted value instead, using FHEVM `externalEuint32` primitive type. This allows us to securely increment the counter without revealing the input value on-chain.
 
 {% hint style="info" %}
 We are using an `externalEuint32` instead of a regular `euint32`. This tells the FHEVM that the encrypted `uint32` was provided externally (e.g., by a user) and must be verified for integrity and authenticity before it can be used within the contract.
@@ -235,38 +235,38 @@ We are using an `externalEuint32` instead of a regular `euint32`. This tells the
 Replace :
 
 ```ts
-  it("increment the counter by 1", async function () {
-    const encryptedCountBeforeInc = await fheCounterContract.getCount();
-    expect(encryptedCountBeforeInc).to.eq(ethers.ZeroHash);
-    const clearCountBeforeInc = 0;
-    
-    // const tx = await counterContract.connect(signers.alice).increment(1);
-    // await tx.wait();
-    // const countAfterInc = await counterContract.getCount();
-    // expect(countAfterInc).to.eq(countBeforeInc + 1n);
-  });
+it("increment the counter by 1", async function () {
+  const encryptedCountBeforeInc = await fheCounterContract.getCount();
+  expect(encryptedCountBeforeInc).to.eq(ethers.ZeroHash);
+  const clearCountBeforeInc = 0;
+
+  // const tx = await counterContract.connect(signers.alice).increment(1);
+  // await tx.wait();
+  // const countAfterInc = await counterContract.getCount();
+  // expect(countAfterInc).to.eq(countBeforeInc + 1n);
+});
 ```
 
 with the following:
 
 ```ts
-  it("increment the counter by 1", async function () {
-    const encryptedCountBeforeInc = await fheCounterContract.getCount();
-    expect(encryptedCountBeforeInc).to.eq(ethers.ZeroHash);
-    const clearCountBeforeInc = 0;
+it("increment the counter by 1", async function () {
+  const encryptedCountBeforeInc = await fheCounterContract.getCount();
+  expect(encryptedCountBeforeInc).to.eq(ethers.ZeroHash);
+  const clearCountBeforeInc = 0;
 
-    // Encrypt constant 1 as a euint32
-    const clearOne = 1;
-    const encryptedOne = await fhevm
-      .createEncryptedInput(fheCounterContractAddress, signers.alice.address)
-      .add32(clearOne)
-      .encrypt();
+  // Encrypt constant 1 as a euint32
+  const clearOne = 1;
+  const encryptedOne = await fhevm
+    .createEncryptedInput(fheCounterContractAddress, signers.alice.address)
+    .add32(clearOne)
+    .encrypt();
 
-    // const tx = await counterContract.connect(signers.alice).increment(1);
-    // await tx.wait();
-    // const countAfterInc = await counterContract.getCount();
-    // expect(countAfterInc).to.eq(countBeforeInc + 1n);
-  });
+  // const tx = await counterContract.connect(signers.alice).increment(1);
+  // await tx.wait();
+  // const countAfterInc = await counterContract.getCount();
+  // expect(countAfterInc).to.eq(countBeforeInc + 1n);
+});
 ```
 
 {% hint style="info" %}
@@ -285,27 +285,26 @@ Now that we have an encrypted argument, we can call the `increment()` function w
 Below, you’ll notice that the updated `increment()` function now takes **two arguments instead of one.**
 
 This is because the FHEVM requires both:
+
 1. The `externalEuint32` — the encrypted value itself
 2. An accompanying **Zero-Knowledge Proof of Knowledge** (`inputProof`) — which verifies that the encrypted input is securely bound to:
-    - the caller (Alice, the transaction signer), and
-    - the target smart contract (where `increment()` is being executed)
+   - the caller (Alice, the transaction signer), and
+   - the target smart contract (where `increment()` is being executed)
 
 This ensures that the encrypted value cannot be reused in a different context or by a different user, preserving **confidentiality and integrity.**
 
 Replace :
 
 ```ts
-    // const tx = await counterContract.connect(signers.alice).increment(1);
-    // await tx.wait();
+// const tx = await counterContract.connect(signers.alice).increment(1);
+// await tx.wait();
 ```
 
 with the following:
 
 ```ts
-    const tx = await fheCounterContract
-      .connect(signers.alice)
-      .increment(encryptedOne.handles[0], encryptedOne.inputProof);
-    await tx.wait();
+const tx = await fheCounterContract.connect(signers.alice).increment(encryptedOne.handles[0], encryptedOne.inputProof);
+await tx.wait();
 ```
 
 At this point the counter has been successfully incremented by 1 using a **Fully Homomorphic Encryption (FHE)**. In the next step, we will retrieve the updated encrypted counter value and decrypt it locally.
@@ -340,9 +339,10 @@ FHECounter has been deployed at address 0x7553CB9124f974Ee475E5cE45482F90d5B6076
 
 ## Call the `getCount()` function and Decrypt the value
 
-Now that the counter has been incremented using an encrypted input, it's time to **read the updated encrypted value** from the smart contract and **decrypt it** using the `userDecryptEuint` function provided by the FHEVM Hardhat Plugin. 
+Now that the counter has been incremented using an encrypted input, it's time to **read the updated encrypted value** from the smart contract and **decrypt it** using the `userDecryptEuint` function provided by the FHEVM Hardhat Plugin.
 
 The `userDecryptEuint` function takes four parameters:
+
 1. **FhevmType**: The integer type of the FHE-encrypted value. In this case, we're using `FhevmType.euint32` because the counter is a `uint32`.
 2. **Encrypted handle**: A 32-byte FHEVM handle representing the encrypted value you want to decrypt.
 3. **Smart contract address**: The address of the contract that has permission to access the encrypted handle.
@@ -355,21 +355,21 @@ Note: Permissions to access the FHEVM handle are set on-chain using the `FHE.all
 Replace :
 
 ```ts
-    // const countAfterInc = await counterContract.getCount();
-    // expect(countAfterInc).to.eq(countBeforeInc + 1n);
+// const countAfterInc = await counterContract.getCount();
+// expect(countAfterInc).to.eq(countBeforeInc + 1n);
 ```
 
 with the following:
 
 ```ts
-    const encryptedCountAfterInc = await fheCounterContract.getCount();
-    const clearCountAfterInc = await fhevm.userDecryptEuint(
-      FhevmType.euint32,
-      encryptedCountAfterInc,
-      fheCounterContractAddress,
-      signers.alice,
-    );
-    expect(clearCountAfterInc).to.eq(clearCountBeforeInc + clearOne);
+const encryptedCountAfterInc = await fheCounterContract.getCount();
+const clearCountAfterInc = await fhevm.userDecryptEuint(
+  FhevmType.euint32,
+  encryptedCountAfterInc,
+  fheCounterContractAddress,
+  signers.alice,
+);
+expect(clearCountAfterInc).to.eq(clearCountBeforeInc + clearOne);
 ```
 
 ---
@@ -415,40 +415,38 @@ Replace :
 //     await tx.wait();
 //     const count = await counterContract.getCount();
 //     expect(count).to.eq(0);
-//   });  
+//   });
 ```
 
 with the following:
 
 ```ts
-  it("decrement the counter by 1", async function () {
-    // Encrypt constant 1 as a euint32
-    const clearOne = 1;
-    const encryptedOne = await fhevm
-      .createEncryptedInput(fheCounterContractAddress, signers.alice.address)
-      .add32(clearOne)
-      .encrypt();
+it("decrement the counter by 1", async function () {
+  // Encrypt constant 1 as a euint32
+  const clearOne = 1;
+  const encryptedOne = await fhevm
+    .createEncryptedInput(fheCounterContractAddress, signers.alice.address)
+    .add32(clearOne)
+    .encrypt();
 
-    // First increment by 1, count becomes 1
-    let tx = await fheCounterContract
-      .connect(signers.alice)
-      .increment(encryptedOne.handles[0], encryptedOne.inputProof);
-    await tx.wait();
+  // First increment by 1, count becomes 1
+  let tx = await fheCounterContract.connect(signers.alice).increment(encryptedOne.handles[0], encryptedOne.inputProof);
+  await tx.wait();
 
-    // Then decrement by 1, count goes back to 0
-    tx = await fheCounterContract.connect(signers.alice).decrement(encryptedOne.handles[0], encryptedOne.inputProof);
-    await tx.wait();
+  // Then decrement by 1, count goes back to 0
+  tx = await fheCounterContract.connect(signers.alice).decrement(encryptedOne.handles[0], encryptedOne.inputProof);
+  await tx.wait();
 
-    const encryptedCountAfterDec = await fheCounterContract.getCount();
-    const clearCountAfterDec = await fhevm.userDecryptEuint(
-      FhevmType.euint32,
-      encryptedCountAfterDec,
-      fheCounterContractAddress,
-      signers.alice,
-    );
+  const encryptedCountAfterDec = await fheCounterContract.getCount();
+  const clearCountAfterDec = await fhevm.userDecryptEuint(
+    FhevmType.euint32,
+    encryptedCountAfterDec,
+    fheCounterContractAddress,
+    signers.alice,
+  );
 
-    expect(clearCountAfterDec).to.eq(0);
-  });
+  expect(clearCountAfterDec).to.eq(0);
+});
 ```
 
 ---
@@ -486,4 +484,3 @@ By now, your project should include the following files:
 
 - [`contracts/FHECounter.sol`](https://docs.zama.ai/protocol/examples#tab-fhecounter.sol) — your Solidity smart contract
 - [`test/FHECounter.ts`](https://docs.zama.ai/protocol/examples#tab-fhecounter.ts) — your Hardhat test suite written in TypeScript
-

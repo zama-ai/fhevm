@@ -12,15 +12,15 @@ The FHEVM Hardhat plugin provides three **FHEVM runtime modes** tailored for dif
 
 ### Summary
 
-| Mode                                                          | Encryption         | Persistent | Chain     | Speed          | Usage                                             |
-| ------------------------------------------------------------- | ------------------ | ---------- | --------- | -------------- | ------------------------------------------------- |
-| Hardhat (default)         | 🧪 Mock            | ❌ No      | In-Memory | ⚡⚡ Very Fast | Fast local testing and coverage                   |
-| Hardhat Node               | 🧪 Mock            | ✅ Yes     | Server    | ⚡ Fast        | Frontend integration and local persistent testing |
-| Sepolia Testnet | 🔐 Real Encryption | ✅ Yes     | Server    | 🐢 Slow        | Full-stack validation with real encrypted data    |
+| Mode              | Encryption         | Persistent | Chain     | Speed          | Usage                                             |
+| ----------------- | ------------------ | ---------- | --------- | -------------- | ------------------------------------------------- |
+| Hardhat (default) | 🧪 Mock            | ❌ No      | In-Memory | ⚡⚡ Very Fast | Fast local testing and coverage                   |
+| Hardhat Node      | 🧪 Mock            | ✅ Yes     | Server    | ⚡ Fast        | Frontend integration and local persistent testing |
+| Sepolia Testnet   | 🔐 Real Encryption | ✅ Yes     | Server    | 🐢 Slow        | Full-stack validation with real encrypted data    |
 
 ## The FHEVM Hardhat Template
 
-To demonstrate the three available testing modes, we'll use the [fhevm-hardhat-template](https://github.com/zama-ai/fhevm-hardhat-template), which comes with the FHEVM Hardhat Plugin pre-installed, a basic `FHECounter` smart contract, and ready-to-use tasks for interacting with a deployed instance of this contract. 
+To demonstrate the three available testing modes, we'll use the [fhevm-hardhat-template](https://github.com/zama-ai/fhevm-hardhat-template), which comes with the FHEVM Hardhat Plugin pre-installed, a basic `FHECounter` smart contract, and ready-to-use tasks for interacting with a deployed instance of this contract.
 
 ## Run on Hardhat (default)
 
@@ -34,7 +34,7 @@ npx hardhat test --network hardhat
 
 You can also run your tests against a local Hardhat node, allowing you to deploy contract instances and interact with them in a persistent environment.
 
-{% stepper %} 
+{% stepper %}
 {% step %}
 
 #### Launch the Hardhat Node server:
@@ -77,7 +77,7 @@ npx hardhat fhevm check-fhevm-compatibility --network localhost --address <deplo
 {% endstep %}
 {% step %}
 
-####  Interact with the deployed `FHECounter` smart contract
+#### Interact with the deployed `FHECounter` smart contract
 
 From the root project directory:
 
@@ -106,7 +106,7 @@ npx hardhat --network localhost task:decrypt-count
 
 To test your FHEVM smart contract using real encrypted values, you can run your tests on the Sepolia Testnet.
 
-{% stepper %} 
+{% stepper %}
 {% step %}
 
 #### Rebuild the project for Sepolia

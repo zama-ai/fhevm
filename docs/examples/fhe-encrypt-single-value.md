@@ -1,14 +1,13 @@
 This example demonstrates the FHE encryption mechanism and highlights a common pitfall developers may encounter.
 
-{% hint style="info" %} 
+{% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
 
 - `.sol` file → `<your-project-root-dir>/contracts/`
 - `.ts` file → `<your-project-root-dir>/test/`
 
-This ensures Hardhat can compile and test your contracts as expected. 
+This ensures Hardhat can compile and test your contracts as expected.
 {% endhint %}
-
 
 {% tabs %}
 
@@ -18,32 +17,31 @@ This ensures Hardhat can compile and test your contracts as expected.
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {FHE, externalEuint32, euint32} from "@fhevm/solidity/lib/FHE.sol";
-import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import { FHE, externalEuint32, euint32 } from "@fhevm/solidity/lib/FHE.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /**
  * This trivial example demonstrates the FHE encryption mechanism.
  */
 contract EncryptSingleValue is SepoliaConfig {
-    euint32 private _encryptedEuint32;
+  euint32 private _encryptedEuint32;
 
-    // solhint-disable-next-line no-empty-blocks
-    constructor() {}
+  // solhint-disable-next-line no-empty-blocks
+  constructor() {}
 
-    function initialize(externalEuint32 inputEuint32, bytes calldata inputProof) external {
-        _encryptedEuint32 = FHE.fromExternal(inputEuint32, inputProof);
+  function initialize(externalEuint32 inputEuint32, bytes calldata inputProof) external {
+    _encryptedEuint32 = FHE.fromExternal(inputEuint32, inputProof);
 
-        // Grant FHE permission to both the contract itself (`address(this)`) and the caller (`msg.sender`),
-        // to allow future decryption by the caller (`msg.sender`).
-        FHE.allowThis(_encryptedEuint32);
-        FHE.allow(_encryptedEuint32, msg.sender);
-    }
+    // Grant FHE permission to both the contract itself (`address(this)`) and the caller (`msg.sender`),
+    // to allow future decryption by the caller (`msg.sender`).
+    FHE.allowThis(_encryptedEuint32);
+    FHE.allow(_encryptedEuint32, msg.sender);
+  }
 
-    function encryptedUint32() public view returns (euint32) {
-        return _encryptedEuint32;
-    }
+  function encryptedUint32() public view returns (euint32) {
+    return _encryptedEuint32;
+  }
 }
-
 ```
 
 {% endtab %}
@@ -51,14 +49,13 @@ contract EncryptSingleValue is SepoliaConfig {
 {% tab title="EncryptSingleValue.ts" %}
 
 ```ts
+import { EncryptSingleValue, EncryptSingleValue__factory } from "../../../types";
+import type { Signers } from "../../types";
 import { FhevmType, HardhatFhevmRuntimeEnvironment } from "@fhevm/hardhat-plugin";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import * as hre from "hardhat";
-
-import { EncryptSingleValue, EncryptSingleValue__factory } from "../../../types";
-import type { Signers } from "../../types";
 
 async function deployFixture() {
   // Contracts are deployed using the first signer/account by default
@@ -106,7 +103,6 @@ describe("EncryptSingleValue", function () {
     // This grants the bound contract FHE permissions to receive and process the encrypted value,
     // but only when it is sent by the bound user.
     const input = fhevm.createEncryptedInput(contractAddress, signers.alice.address);
-
 
     // Add a uint32 value to the list of values to encrypt locally.
     input.add32(123456);
@@ -164,10 +160,8 @@ describe("EncryptSingleValue", function () {
     }
   });
 });
-
 ```
 
 {% endtab %}
 
 {% endtabs %}
-

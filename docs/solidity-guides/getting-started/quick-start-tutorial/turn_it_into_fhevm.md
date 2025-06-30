@@ -102,8 +102,8 @@ This change:
 - Renames the contract to `FHECounter`
 - Inherits from `SepoliaConfig` to enable FHEVM support
 
-{% hint style="warning" %} 
-This contract must inherit from the `SepoliaConfig` abstract contract; otherwise, it will not be able to execute any FHEVM-related functionality on Sepolia or Hardhat. 
+{% hint style="warning" %}
+This contract must inherit from the `SepoliaConfig` abstract contract; otherwise, it will not be able to execute any FHEVM-related functionality on Sepolia or Hardhat.
 {% endhint %}
 
 From your project's root directory, run:
@@ -267,16 +267,16 @@ function increment(externalEuint32 inputEuint32, bytes calldata inputProof) exte
 }
 ```
 
-{% hint style="info" %} 
-This FHE operation allows the smart contract to process encrypted values without ever decrypting them — a core feature of FHEVM that enables on-chain privacy. 
+{% hint style="info" %}
+This FHE operation allows the smart contract to process encrypted values without ever decrypting them — a core feature of FHEVM that enables on-chain privacy.
 {% endhint %}
 
 {% endstep %} {% endstepper %}
 
 ## Grant FHE Permissions
 
-{% hint style="warning" %} 
-This step is critical! You must grant FHE permissions to both the contract and the caller to ensure the encrypted `_count` value can be decrypted off-chain by the caller. Without these 2 permissions, the caller will not be able to compute the clear result. 
+{% hint style="warning" %}
+This step is critical! You must grant FHE permissions to both the contract and the caller to ensure the encrypted `_count` value can be decrypted off-chain by the caller. Without these 2 permissions, the caller will not be able to compute the clear result.
 {% endhint %}
 
 To grant FHE permission we will call the `FHE.allow()` function.
@@ -304,8 +304,8 @@ function increment(externalEuint32 inputEuint32, bytes calldata inputProof) exte
 }
 ```
 
-{% hint style="info" %} 
-We grant **two** FHE permissions here — not just one. In the next part of the tutorial, you'll learn why **both** are necessary. 
+{% hint style="info" %}
+We grant **two** FHE permissions here — not just one. In the next part of the tutorial, you'll learn why **both** are necessary.
 {% endhint %}
 
 Congratulations! Your smart contract is now fully **FHEVM-compatible**.

@@ -1,12 +1,12 @@
 This example demonstrates how to build an confidential counter using FHEVM, in comparison to a simple counter.
 
-{% hint style="info" %} 
+{% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
 
 - `.sol` file → `<your-project-root-dir>/contracts/`
 - `.ts` file → `<your-project-root-dir>/test/`
 
-This ensures Hardhat can compile and test your contracts as expected. 
+This ensures Hardhat can compile and test your contracts as expected.
 {% endhint %}
 
 ## A simple counter
