@@ -312,7 +312,7 @@ Congratulations! Your smart contract is now fully **FHEVM-compatible**.
 
 Now you should have the following files in your project:
 
-- [`contracts/FHECounter.sol`](https://docs.zama.ai/protocol/examples/smart-contract-examples/smart-contract-examples/use-case-examples/fhe-counter#fhecounter.sol) — your Solidity smart FHEVM contract
-- [`test/FHECounter.ts`](https://docs.zama.ai/protocol/examples/smart-contract-examples/smart-contract-examples/use-case-examples/fhe-counter#fhecounter.ts) — your FHEVM Hardhat test suite written in TypeScript
+- [`contracts/FHECounter.sol`](https://docs.zama.ai/protocol/examples/basic/fhe-counter#fhecounter.sol) — your Solidity smart FHEVM contract
+- [`test/FHECounter.ts`](https://docs.zama.ai/protocol/examples/basic/fhe-counter#fhecounter.ts) — your FHEVM Hardhat test suite written in TypeScript
 
 In the [next tutorial](test_fhevm_contract.md), we’ll move on to the **TypeScript integration**, where you’ll learn how to interact with your newly upgraded FHEVM contract in a test suite.

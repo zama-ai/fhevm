@@ -6,8 +6,8 @@ In the [next tutorial](turn_it_into_fhevm.md), you'll learn how to convert this 
 
 ## Prerequiste
 
-- [Set up your Hardhat envrionment](quick-start-tutorial/setup.md).
-- Make sure that you Hardhat project is clean and ready to start. See the instructions [here](quick-start-tutorial/setup.md#rest-set-the-hardhat-envrionment).
+- [Set up your Hardhat envrionment](setup.md).
+- Make sure that you Hardhat project is clean and ready to start. See the instructions [here](setup.md#rest-set-the-hardhat-envrionment).
 
 ## What you'll learn
 
@@ -430,8 +430,8 @@ Counter.getCount() === 0
 
 Now you have succesefully write and test your counter contract. You should have the following files in your project:
 
-- [`contracts/Counter.sol`](https://docs.zama.ai/protocol/examples/smart-contract-examples/smart-contract-examples/use-case-examples/fhe-counter#counter.sol) — your Solidity smart contract
-- [`test/Counter.ts`](https://docs.zama.ai/protocol/examples/smart-contract-examples/smart-contract-examples/use-case-examples/fhe-counter#counter.ts) — your Hardhat test suite written in TypeScript
+- [`contracts/Counter.sol`](https://docs.zama.ai/protocol/examples/basic/fhe-counter#counter.sol) — your Solidity smart contract
+- [`test/Counter.ts`](https://docs.zama.ai/protocol/examples/basic/fhe-counter#counter.ts) — your Hardhat test suite written in TypeScript
 
 These files form the foundation of a basic Hardhat-based smart contract project.
 

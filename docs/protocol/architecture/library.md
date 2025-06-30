@@ -1,6 +1,6 @@
 # FHE library
 
-This document offers a high-level overview of the **FHEVM library**, helping you understand how it fits into the broader Zama Protocol. To learn how to use it in practice, see the [Solidity Guides](https://app.gitbook.com/o/-MIF05xPVoj0l_wnOGB7/s/rDmRmmmSrBgV0SFO4eiZ/).
+This document offers a high-level overview of the **FHEVM library**, helping you understand how it fits into the broader Zama Protocol. To learn how to use it in practice, see the [Solidity Guides](https://docs.zama.ai/protocol/solidity-guides).
 
 ## What is FHEVM library?
 
@@ -28,7 +28,7 @@ The library introduces encrypted variants of common Solidity types, implemented 
 | Signed integers   | `eint8`, `eint16,` ..., `eint256`    |
 | Addresses         | `eaddress`                           |
 
-→ See the full guide of [Encrypted data types](https://app.gitbook.com/s/rDmRmmmSrBgV0SFO4eiZ/smart-contract/types).
+→ See the full guide of [Encrypted data types](https://docs.zama.ai/protocol/solidity-guides/smart-contract/types).
 
 ### FHE operations
 
@@ -50,7 +50,7 @@ function compute(euint64 x, euint64 y, euint64 z) public returns (euint64) {
 }
 ```
 
-→ See the full guide of [Operations on encrypted types](https://app.gitbook.com/s/rDmRmmmSrBgV0SFO4eiZ/smart-contract/operations).
+→ See the full guide of [Operations on encrypted types](https://docs.zama.ai/protocol/solidity-guides/smart-contract/operations).
 
 ### Branching with encrypted Conditions
 
@@ -63,7 +63,7 @@ euint64 result = FHE.select(condition, valueIfTrue, valueIfFalse);
 
 This preserves confidentiality even in conditional logic.
 
-→ See the full guide of [Branching](https://app.gitbook.com/s/rDmRmmmSrBgV0SFO4eiZ/smart-contract/logics/conditions).
+→ See the full guide of [Branching](https://docs.zama.ai/protocol/solidity-guides/smart-contract/logics/conditions).
 
 ### Handling external encrypted inputs
 
@@ -83,7 +83,7 @@ function handleInput(externalEuint64 param1, externalEbool param2, bytes calldat
 
 This ensures that only authorized, well-formed ciphertexts are accepted by smart contracts.
 
-→ See the full guide of [Encrypted input](https://app.gitbook.com/s/rDmRmmmSrBgV0SFO4eiZ/smart-contract/inputs).
+→ See the full guide of [Encrypted input](https://docs.zama.ai/protocol/solidity-guides/smart-contract/inputs).
 
 ### Access control
 
@@ -97,7 +97,7 @@ The FHE library also exposes methods for managing access to encrypted values usi
 
 These `allow` methods emit events consumed by the coprocessors to replicate the ACL state in the Gateway.
 
-→ See the full guide of [ACL](https://app.gitbook.com/s/rDmRmmmSrBgV0SFO4eiZ/smart-contract/acl).
+→ See the full guide of [ACL](https://docs.zama.ai/protocol/solidity-guides/smart-contract/acl).
 
 ### Pseudo-random encrypted values
 
@@ -108,4 +108,4 @@ The library allows generation of pseudo-random encrypted integers, useful for ga
 
 These are deterministic across coprocessors and indistinguishable to external observers.
 
-→ See the full guide of [Generate random numbe](https://app.gitbook.com/s/rDmRmmmSrBgV0SFO4eiZ/smart-contract/operations/random)r.
+→ See the full guide of [Generate random number](https://docs.zama.ai/protocol/solidity-guides/smart-contract/operations/random).

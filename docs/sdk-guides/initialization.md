@@ -43,11 +43,11 @@ const instance = await createInstance(SepoliaConfig);
 
 ```
 
-The information regarding the configuration of Sepolia's FHEVM and associated Relayer maintained by Zama can be found in the `SepoliaConfig` object or in the [contract addresses page](../solidity-guides/contract_addresses.md).
+The information regarding the configuration of Sepolia's FHEVM and associated Relayer maintained by Zama can be found in the `SepoliaConfig` object or in the [contract addresses page](https://docs.zama.ai/protocol/solidity-guides/smart-contract/configure/contract_addresses).
 The `gatewayChainId` is `55815`.
 The `chainId` is the chain-id of the FHEVM chain, so for Sepolia it would be `11155111`.
 
 
 {% hint style="info" %}
-For more information on the Relayer's part in the overall architecture please refer to [the Relayer's page in the architecture documentation](../protocol/architecture/relayer_oracle.md).
+For more information on the Relayer's part in the overall architecture please refer to [the Relayer's page in the architecture documentation](https://docs.zama.ai/protocol/protocol/overview/relayer_oracle).
 {% endhint %}

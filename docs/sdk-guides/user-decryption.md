@@ -7,10 +7,6 @@ User decryption in FHEVM enables the secure sharing or reuse of encrypted data u
 
 This feature is essential for scenarios where encrypted data must be transferred between contracts, dApps, or users while maintaining its confidentiality.
 
-{% hint style="info" %} 
-Before implementing user decryption ensure you are familiar with the foundational concepts of encryption, decryption, and computation. Refer to [Encryption, Decryption, and Computation](../protocol/d_re_ecrypt_compute.md). 
-{% endhint %}
-
 ## When to use user decryption
 
 User decryption is particularly useful for **allowing individual users to securely access and decrypt their private data**, such as balances or counters, while maintaining data confidentiality.

@@ -22,7 +22,9 @@ This type of casting involves converting plaintext (unencrypted) values into the
 - `uint` → `euintXX`
 - `address` → `eaddress`
 
-> **Note**: When doing trivial encryption, the data is made compatible with FHE operations but remains publicly visible on-chain unless explicitly encrypted.
+{% hint style="info" %}
+When doing trivial encryption, the data is made compatible with FHE operations but remains publicly visible on-chain unless explicitly encrypted.
+{% endhint %}
 
 #### **Example**
 
@@ -70,7 +72,7 @@ ebool valueBool = FHE.asEbool(value32);   // Cast to ebool
 
 Encrypted input casting is the process of interpreting a handle (ciphertext reference) and its proof as a specific encrypted type. This ensures the validity of the input before it is used in computations.
 
-Encrypted inputs is in depth explained in the following section: [encrypted inputs](./inputs.md)
+Encrypted inputs is in depth explained in the following section: [encrypted inputs](../inputs.md)
 
 #### Example
 
@@ -85,7 +87,7 @@ Encrypted input casting validates:
 1.  The input handle references a valid ciphertext.
 2.  The accompanying proof matches the expected type.
 
-For more information, see the [Encrypetd inputs documentation](./inputs.md)
+For more information, see the [Encrypetd inputs documentation](../inputs.md)
 
 ## Overall operation summary
 
