@@ -1,15 +1,11 @@
 # User decryption
 
-This document explains how to perform user decryption. 
+This document explains how to perform user decryption.
 User decryption is required when you want a user to access their private data without it being exposed to the blockchain.
 
-User decryption in FHEVM enables the secure sharing or reuse of encrypted data under a new public key without exposing the plaintext. 
+User decryption in FHEVM enables the secure sharing or reuse of encrypted data under a new public key without exposing the plaintext.
 
 This feature is essential for scenarios where encrypted data must be transferred between contracts, dApps, or users while maintaining its confidentiality.
-
-{% hint style="info" %} 
-Before implementing user decryption ensure you are familiar with the foundational concepts of encryption, decryption, and computation. Refer to [Encryption, Decryption, and Computation](../protocol/d_re_ecrypt_compute.md). 
-{% endhint %}
 
 ## When to use user decryption
 
@@ -45,7 +41,6 @@ contract ConfidentialERC20 {
 Here, `balanceOf` allows retrieval of the user’s encrypted balance handle stored on the blockchain.
 Doing this will return the ciphertext handle, an identifier for the underlying ciphertext.
 
-
 {% hint style="warning" %}
 For the user to be able to user decrypt (also called re-encrypt) the ciphertext value the access control (ACL) needs to be set properly using the `FHE.allow(ciphertext, address)` function in the solidity contract holding the ciphertext.
 For more details on the topic please refer to [the ACL documentation](../solidity-guides/acl/README.md).
@@ -70,15 +65,10 @@ const handleContractPairs = [
   },
 ];
 const startTimeStamp = Math.floor(Date.now() / 1000).toString();
-const durationDays = '10'; // String for consistency
+const durationDays = "10"; // String for consistency
 const contractAddresses = [contractAddress];
 
-const eip712 = instance.createEIP712(
-  keypair.publicKey, 
-  contractAddresses, 
-  startTimeStamp, 
-  durationDays
-);
+const eip712 = instance.createEIP712(keypair.publicKey, contractAddresses, startTimeStamp, durationDays);
 
 const signature = await signer.signTypedData(
   eip712.domain,
@@ -92,7 +82,7 @@ const result = await instance.userDecrypt(
   handleContractPairs,
   keypair.privateKey,
   keypair.publicKey,
-  signature.replace('0x', ''),
+  signature.replace("0x", ""),
   contractAddresses,
   signer.address,
   startTimeStamp,

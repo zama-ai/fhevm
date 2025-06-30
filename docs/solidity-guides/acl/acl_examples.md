@@ -2,8 +2,6 @@
 
 This page provides detailed instructions and examples on how to use and implement the ACL (Access Control List) in fhevm. For an overview of ACL concepts and their importance, refer to the [access control list (ACL) overview](./).
 
----
-
 ## Controlling access: permanent and transient allowances
 
 The ACL system allows you to define two types of permissions for accessing ciphertexts:
@@ -84,7 +82,7 @@ ciphertext.makePubliclyDecryptable();
 > ciphertext.allowThis().allow(address1);
 > ```
 
-## 🔧 Best practices
+## Best practices
 
 ### Verifying sender access
 
@@ -147,7 +145,5 @@ function transfer(address to, euint64 encryptedAmount) public {
   FHE.allow(newBalanceFrom, from);
 }
 ```
-
----
 
 By understanding how to grant and verify permissions, you can effectively manage access to encrypted data in your FHEVM smart contracts. For additional context, see the [ACL overview](./).

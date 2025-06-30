@@ -48,11 +48,5 @@ contract MyContract {
 With `my_contract` the contract in question using `ethers` it is possible to call the add function as following.
 
 ```js
-my_contract.add(
-ciphertexts.handles[0],
-ciphertexts.handles[1],
-ciphertexts.inputProof
-)
-
+my_contract.add(ciphertexts.handles[0], ciphertexts.handles[1], ciphertexts.inputProof);
 ```
-

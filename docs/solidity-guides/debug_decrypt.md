@@ -2,8 +2,8 @@
 
 This guide explains how to use the `debug.decrypt[XX]` functions for debugging encrypted data in mocked environments during development with fhevm.
 
-{% hint style="warning" %} 
-The `debug.decrypt[XX]` functions should not be used in production as they rely on private keys. 
+{% hint style="warning" %}
+The `debug.decrypt[XX]` functions should not be used in production as they rely on private keys.
 {% endhint %}
 
 ## Overview
@@ -61,8 +61,8 @@ const plaintextValue: bigint = await debug.decrypt64(handle64);
 console.log("Decrypted Balance:", plaintextValue);
 ```
 
-{% hint style="info" %} 
-To utilize the debug functions, import the [utils.ts](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/test/utils.ts) file. 
+{% hint style="info" %}
+To utilize the debug functions, import the [utils.ts](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/test/utils.ts) file.
 {% endhint %}
 
 For a more complete example, refer to the [ConfidentialERC20 test file](https://github.com/zama-ai/fhevm-hardhat-template/blob/f9505a67db31c988f49b6f4210df47ca3ce97841/test/confidentialERC20/ConfidentialERC20.ts#L181-L205).
@@ -93,8 +93,8 @@ function verifyType(handle: bigint, expectedType: number) {
 
 ### Environment checks
 
-{% hint style="danger" %} 
-The functions only work in the `hardhat` network. Attempting to use them in a production environment will result in an error. 
+{% hint style="danger" %}
+The functions only work in the `hardhat` network. Attempting to use them in a production environment will result in an error.
 {% endhint %}
 
 ```typescript
