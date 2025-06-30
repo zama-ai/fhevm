@@ -10,6 +10,7 @@
   - [1. Set up Hardhat](getting-started/quick-start-tutorial/setup.md)
   - [2. Write a simple contract](getting-started/quick-start-tutorial/write_a_simple_contract.md)
   - [3. Turn it into FHEVM](getting-started/quick-start-tutorial/turn_it_into_fhevm.md)
+  - [4. Test the FHEVM contract](getting-started/quick-start-tutorial/test_the_fhevm_contract.md)
 
 ## Smart Contract
 
