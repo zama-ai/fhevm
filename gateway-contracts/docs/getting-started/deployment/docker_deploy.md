@@ -6,11 +6,9 @@ Here is an example of how to deploy contracts on a local network using Docker.
 
 All needed environment variables are defined in the [Environment variables](./env_variables.md) documentation.
 
-For deploying the fhevm gateway contracts, these variables need to be set in an `.env` file. However, the following
-`make` commands automatically copy the `.env.example` file to `.env` and update it with the correct values:
+For deploying the fhevm gateway contracts, these variables need to be set in an `.env` file. However, the following `make` commands automatically copy the `.env.example` file to `.env` and update it with the correct values:
 
-**Important**: By default, the accounts used are already funded. If other addresses are used, make sure they are funded
-as well.
+**Important**: By default, the accounts used are already funded. If other addresses are used, make sure they are funded as well.
 
 ## Docker deployment
 
@@ -52,8 +50,7 @@ docker logs add-host-chains
 
 If the logs show `Host chains registration done!`, the host chains were registered successfully.
 
-Both steps are required and should be run in this particular order before interacting with the contracts. In particular,
-if host chains are not registered properly, several transactions are expected to be reverted.
+Both steps are required and should be run in this particular order before interacting with the contracts. In particular, if host chains are not registered properly, several transactions are expected to be reverted.
 
 ### Clean up
 

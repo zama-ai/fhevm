@@ -150,7 +150,7 @@ contract Decryption is
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -204,16 +204,16 @@ contract Decryption is
     /// @dev Contract name and version for EIP712 signature validation are defined here
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(4) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(5) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
         __Pausable_init();
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      */
-    function reinitializeV2() public virtual reinitializer(4) {}
+    function reinitializeV3() public virtual reinitializer(5) {}
 
     /// @dev See {IDecryption-publicDecryptionRequest}.
     function publicDecryptionRequest(bytes32[] calldata ctHandles) external virtual whenNotPaused {
@@ -643,6 +643,20 @@ contract Decryption is
             );
     }
 
+    /// @notice Computes the hash of the hashed struct using a custom chain ID for the eip712 domain
+    /// @param chainId The chain ID
+    /// @param structHash The hash of the struct
+    /// @dev This could be improved along https://github.com/zama-ai/fhevm/issues/424
+    function _hashTypedDataV4CustomChainId(
+        uint256 chainId,
+        bytes32 structHash
+    ) internal view virtual returns (bytes32) {
+        bytes32 domainSeparatorV4 = keccak256(
+            abi.encode(DOMAIN_TYPE_HASH, _EIP712NameHash(), _EIP712VersionHash(), chainId, address(this))
+        );
+        return MessageHashUtils.toTypedDataHash(domainSeparatorV4, structHash);
+    }
+
     /// @notice Computes the hash of a given UserDecryptRequestVerification structured data.
     /// @param userDecryptRequestVerification The UserDecryptRequestVerification structure to hash.
     /// @return The hash of the UserDecryptRequestVerification structure.
@@ -659,16 +673,7 @@ contract Decryption is
                 userDecryptRequestVerification.durationDays
             )
         );
-        bytes32 domainSeparatorV4 = keccak256(
-            abi.encode(
-                DOMAIN_TYPE_HASH,
-                _EIP712NameHash(),
-                _EIP712VersionHash(),
-                userDecryptRequestVerification.contractsChainId,
-                address(this)
-            )
-        );
-        return MessageHashUtils.toTypedDataHash(domainSeparatorV4, structHash);
+        return _hashTypedDataV4CustomChainId(userDecryptRequestVerification.contractsChainId, structHash);
     }
 
     /// @notice Computes the hash of a given DelegatedUserDecryptRequestVerification structured data.
@@ -677,20 +682,18 @@ contract Decryption is
     function _hashDelegatedUserDecryptRequestVerification(
         DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification
     ) internal view virtual returns (bytes32) {
-        return
-            _hashTypedDataV4(
-                keccak256(
-                    abi.encode(
-                        EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH,
-                        keccak256(delegatedUserDecryptRequestVerification.publicKey),
-                        keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.contractAddresses)),
-                        delegatedUserDecryptRequestVerification.delegatorAddress,
-                        delegatedUserDecryptRequestVerification.contractsChainId,
-                        delegatedUserDecryptRequestVerification.startTimestamp,
-                        delegatedUserDecryptRequestVerification.durationDays
-                    )
-                )
-            );
+        bytes32 structHash = keccak256(
+            abi.encode(
+                EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH,
+                keccak256(delegatedUserDecryptRequestVerification.publicKey),
+                keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.contractAddresses)),
+                delegatedUserDecryptRequestVerification.delegatorAddress,
+                delegatedUserDecryptRequestVerification.contractsChainId,
+                delegatedUserDecryptRequestVerification.startTimestamp,
+                delegatedUserDecryptRequestVerification.durationDays
+            )
+        );
+        return _hashTypedDataV4CustomChainId(delegatedUserDecryptRequestVerification.contractsChainId, structHash);
     }
 
     /// @notice Computes the hash of a given UserDecryptResponseVerification structured data.
