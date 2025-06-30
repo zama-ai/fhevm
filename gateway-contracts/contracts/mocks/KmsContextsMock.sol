@@ -42,7 +42,7 @@ contract KmsContextsMock {
 
     uint256 kmsContextCount;
 
-    function initialize(
+    function initializeFromEmptyProxy(
         DecryptionThresholds calldata initialDecryptionThresholds,
         KmsBlockPeriods calldata initialBlockPeriods,
         bytes8 initialSoftwareVersion,

@@ -169,7 +169,6 @@ contract Decryption is
         mapping(uint256 decryptionId =>
             mapping(address kmsSigner => bool alreadyResponded))
                 _kmsNodeAlreadySigned;
-        mapping(uint256 decryptionId => uint256 contextId) decryptionContextId;
         // ----------------------------------------------------------------------------------------------
         // Public decryption state variables:
         // ----------------------------------------------------------------------------------------------
@@ -191,6 +190,10 @@ contract Decryption is
         mapping(uint256 decryptionId => bool userDecryptionDone) userDecryptionDone;
         /// @notice The user decrypted shares received from user decryption responses.
         mapping(uint256 decryptionId => bytes[] shares) userDecryptedShares;
+        // ----------------------------------------------------------------------------------------------
+        // KMS contexts variables:
+        // ----------------------------------------------------------------------------------------------
+        mapping(uint256 decryptionId => uint256 contextId) decryptionContextId;
     }
 
     /// @dev Storage location has been computed using the following command:

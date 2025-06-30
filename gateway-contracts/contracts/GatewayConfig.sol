@@ -27,17 +27,50 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.GatewayConfig
     struct GatewayConfigStorage {
+        // ----------------------------------------------------------------------------------------------
+        // Pauser state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice The pauser's address
         address pauser;
-        /// @notice The protocol's metadata
-        ProtocolMetadata protocolMetadata;
         // ----------------------------------------------------------------------------------------------
-        // Coprocessor state variables:
+        // Transaction sender and signer state variables:
         // ----------------------------------------------------------------------------------------------
+        /// @notice The KMS nodes' transaction sender addresses
+        mapping(address kmsTxSenderAddress => bool isKmsTxSender) _isKmsTxSender; // deprecated
+        /// @notice The KMS nodes' signer addresses
+        mapping(address kmsSignerAddress => bool isKmsSigner) _isKmsSigner; // deprecated
         /// @notice The coprocessors' transaction sender addresses
         mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender) _isCoprocessorTxSender;
         /// @notice The coprocessors' signer addresses
         mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner;
+        // ----------------------------------------------------------------------------------------------
+        // Host chains state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The host chains' registered status
+        mapping(uint256 chainId => bool isRegistered) _isHostChainRegistered;
+        // ----------------------------------------------------------------------------------------------
+        // Protocol metadata state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The protocol's metadata
+        ProtocolMetadata protocolMetadata;
+        // ----------------------------------------------------------------------------------------------
+        // KMS nodes state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The KMS nodes' metadata
+        mapping(address kmsTxSenderAddress => KmsNode kmsNode) kmsNodes; // deprecated
+        /// @notice The KMS nodes' transaction sender address list
+        address[] kmsTxSenderAddresses; // deprecated
+        /// @notice The KMS nodes' signer address list
+        address[] kmsSignerAddresses; // deprecated
+        /// @notice The MPC threshold
+        uint256 mpcThreshold; // deprecated
+        /// @notice The threshold to consider for public decryption consensus
+        uint256 publicDecryptionThreshold; // deprecated
+        /// @notice The threshold to consider for user decryption consensus
+        uint256 userDecryptionThreshold; // deprecated
+        // ----------------------------------------------------------------------------------------------
+        // Coprocessors state variables (deprecated):
+        // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessors' metadata
         mapping(address coprocessorTxSenderAddress => Coprocessor coprocessor) coprocessors;
         /// @notice The coprocessors' transaction sender address list
@@ -45,14 +78,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @notice The coprocessors' signer address list
         address[] coprocessorSignerAddresses;
         // ----------------------------------------------------------------------------------------------
-        // Host chain state variables:
+        // Host chains state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The host chains' metadata
         HostChain[] hostChains;
-        /// @notice The host chains' registered status
-        mapping(uint256 chainId => bool isRegistered) _isHostChainRegistered;
         // ----------------------------------------------------------------------------------------------
-        // Custodians:
+        // Custodians state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The custodians' metadata
         mapping(address custodianTxSenderAddress => Custodian custodian) custodians;

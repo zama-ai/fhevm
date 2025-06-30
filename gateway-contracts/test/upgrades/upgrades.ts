@@ -14,6 +14,8 @@ import {
   GatewayConfig__factory,
   InputVerificationV2Example__factory,
   InputVerification__factory,
+  KmsContextsV2Example__factory,
+  KmsContexts__factory,
   KmsManagementV2Example__factory,
   KmsManagement__factory,
   MultichainAclV2Example__factory,
@@ -33,6 +35,8 @@ describe("Upgrades", function () {
   let gatewayConfigFactoryV3: GatewayConfigV3Example__factory;
   let inputVerificationFactoryV1: InputVerification__factory;
   let inputVerificationFactoryV2: InputVerificationV2Example__factory;
+  let kmsContextsFactoryV1: KmsContexts__factory;
+  let kmsContextsFactoryV2: KmsContextsV2Example__factory;
   let kmsManagementFactoryV1: KmsManagement__factory;
   let kmsManagementFactoryV2: KmsManagementV2Example__factory;
   let multichainAclFactoryV1: MultichainAcl__factory;
@@ -54,6 +58,9 @@ describe("Upgrades", function () {
 
     inputVerificationFactoryV1 = await ethers.getContractFactory("InputVerification", owner);
     inputVerificationFactoryV2 = await ethers.getContractFactory("InputVerificationV2Example", owner);
+
+    kmsContextsFactoryV1 = await ethers.getContractFactory("KmsContexts", owner);
+    kmsContextsFactoryV2 = await ethers.getContractFactory("KmsContextsV2Example", owner);
 
     kmsManagementFactoryV1 = await ethers.getContractFactory("KmsManagement", owner);
     kmsManagementFactoryV2 = await ethers.getContractFactory("KmsManagementV2Example", owner);
@@ -147,6 +154,19 @@ describe("Upgrades", function () {
     const inputVerificationV2 = await upgrades.upgradeProxy(inputVerification, inputVerificationFactoryV2);
     await inputVerificationV2.waitForDeployment();
     expect(await inputVerificationV2.getVersion()).to.equal("InputVerification v1000.0.0");
+  });
+
+  it("Should deploy upgradable KmsContexts", async function () {
+    const emptyUUPS = await upgrades.deployProxy(emptyUUPSFactory, [owner.address], {
+      initializer: "initialize",
+      kind: "uups",
+    });
+    const kmsContexts = await upgrades.upgradeProxy(emptyUUPS, kmsContextsFactoryV1);
+    await kmsContexts.waitForDeployment();
+    expect(await kmsContexts.getVersion()).to.equal("KmsContexts v0.1.0");
+    const kmsContextsV2 = await upgrades.upgradeProxy(kmsContexts, kmsContextsFactoryV2);
+    await kmsContextsV2.waitForDeployment();
+    expect(await kmsContextsV2.getVersion()).to.equal("KmsContexts v1000.0.0");
   });
 
   it("Should allow original owner to upgrade the original GatewayConfig and transfer ownership", async function () {

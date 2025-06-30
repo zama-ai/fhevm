@@ -9,6 +9,7 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./shared/Pausable.sol";
 import { ContextLifecycle } from "./libraries/ContextLifecycle.sol";
+import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { KmsContext, KmsBlockPeriods, DecryptionThresholds } from "./shared/Structs.sol";
 import { ContextStatus } from "./shared/Enums.sol";
 
@@ -18,7 +19,7 @@ import { ContextStatus } from "./shared/Enums.sol";
  * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and host chains.
  * @dev See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
-contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable, UUPSUpgradeable, Pausable {
+contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy, Pausable {
     /// @notice The typed data structure for the EIP712 signature to validate in key resharing responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
     /// @dev EIP712_KEY_RESHARING_TYPE is, but we keep it the same for clarity.
@@ -103,13 +104,14 @@ contract KmsContexts is IKmsContexts, EIP712Upgradeable, Ownable2StepUpgradeable
     /// @param initialSoftwareVersion The software version of the KMS context
     /// @param initialMpcThreshold The MPC threshold for the KMS context
     /// @param initialKmsNodes The KMS nodes for the KMS context
-    function initialize(
+    /// @custom:oz-upgrades-validate-as-initializer
+    function initializeFromEmptyProxy(
         DecryptionThresholds calldata initialDecryptionThresholds,
         KmsBlockPeriods calldata initialBlockPeriods,
         bytes8 initialSoftwareVersion,
         uint256 initialMpcThreshold,
         KmsNode[] calldata initialKmsNodes
-    ) public virtual reinitializer(2) {
+    ) public virtual onlyFromEmptyProxy reinitializer(2) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
         __Pausable_init();
