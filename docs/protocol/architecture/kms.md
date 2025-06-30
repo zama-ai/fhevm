@@ -4,7 +4,7 @@ This document explains one of the key components of the Zama Protocol - The Key 
 
 ## What is the KMS?
 
-The KMS is a decentralized network of several MPC (Multi-Party Computation) nodes that:
+The KMS is a decentralized network of several nodes (also called "parties") that run an MPC (Multi-Party Computation) protocol:
 
 - Securely generate global FHE keys
 - Decrypt ciphertexts securely for public and user-targeted decryptions
@@ -54,7 +54,8 @@ This ensures encrypted inputs are valid and well-formed, and that a user has kno
 
 ### Secure execution environments
 
-Each MPC by default runs in an Nitro Enclave to prevent even the node operator from accessing their own key share directly. This mitigates insider risks (e.g., selling shares, unauthorized reconstruction).
+Each MPC node runs by default inside an AWS Nitro Enclave, a secure execution environment that prevents even node operators from accessing their own key shares.
+This design mitigates insider risks, such as unauthorized key reconstruction or selling of shares.
 
 ### Auditable via gateway
 
@@ -74,22 +75,21 @@ The KMS adheres to a formal key lifecycle, as per NIST SP 800-57:
 | Compromised    | Flagged for misuse; only decryption allowed.                       |
 | Destroyed      | Key material is deleted permanently.                               |
 
-Key Switching is supported via FHE to move ciphertexts between concrete keys during rotation, maintaining
-interoperability.
+The KMS supports key switching using FHE, allowing ciphertexts to be securely transferred between keys during rotation. This maintains interoperability across key updates.
 
 ### Backup & recovery
 
 In addition to robustness through MPC, the KMS also offers a custodial backup system:
 
-- Each MPC party splits its key share into encrypted fragments and sends them to independent custodians.
-- A quorum of custodians can help restore lost shares, enabling recovery even if multiple MPC parties are taken offline.
-- This ensures business continuity and protection from outages.
-- These recovery operations always require a quorum of operators and are auditable on-chain.
+- Each MPC node splits its key share into encrypted fragments, distributing them to independent custodians.
+- If a share is lost, a quorum of custodians can collaboratively restore it, ensuring recovery even if several MPC nodes are offline.
+- This approach guarantees business continuity and resilience against outages.
+- All recovery operations require a quorum of operators and are fully auditable on-chain.
 
 ### Workflow example: Public decryption
 
 1. A smart contract requests decryption via an oracle.
 2. The Gateway verifies permissions (i.e. that the contract is allowed to decrypt the ciphertext) and emits an event.
-3. KMS parties retrieve the ciphertext, verify it, and run the MPC decryption protocol to jointly compute the plaintext.
+3. KMS parties retrieve the ciphertext, verify it, and run the MPC decryption protocol to jointly compute the plaintext and sign their result.
 4. Once a quorum agrees on the plaintext result, it is published (with signatures).
 5. The oracle posts the plaintext back on-chain and contracts can verify the authenticity using the KMS signatures.
