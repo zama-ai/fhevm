@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   check-changes:
-    name: gateway-contracts-deploymenent-tests/check-changes
+    name: gateway-contracts-deployment-tests/check-changes
     permissions:
       actions: 'read'
       contents: 'read'

@@ -34,11 +34,17 @@ jobs:
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout previous release code
+      - name: Get latest tag
+        id: get-latest-tag
+        run: |
+          git fetch --tags
+          echo "tag=$(git describe --tags `git rev-list --tags --max-count=1`)" >> $GITHUB_OUTPUT
+
+      - name: Checkout the latest release code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: v0.7.0
-          path: previous-fhevm
+          ref: ${{ steps.get-latest-tag.outputs.tag }}
+          path: latest-fhevm
           persist-credentials: 'false'
 
       - name: Set up Docker Buildx
@@ -51,14 +57,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and start Docker services from previous release
-        working-directory: previous-fhevm/gateway-contracts
+      - name: Build and start Docker services from latest release
+        working-directory: latest-fhevm/gateway-contracts
         run: |
           make docker-compose-build
           make docker-compose-up
 
-      - name: Check smart contract deployment from previous release
-        working-directory: previous-fhevm/gateway-contracts
+      - name: Check smart contract deployment from latest release
+        working-directory: latest-fhevm/gateway-contracts
         run: |
 
           ## Check Contracts Deployment
@@ -110,18 +116,19 @@ jobs:
           HARDHAT_NETWORK: staging
           CHAIN_ID_GATEWAY: 54321
           RPC_URL: http://localhost:8546
+        # The task:deployEmptyUUPSProxies is required to generate the proxy contract addresses, which are then used
+        # for compiling the current and new implementations during the upgrade task.
         run: |
           cp .env.example .env
-          cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
+          cp -r ../../latest-fhevm/gateway-contracts/contracts ./latest-contracts
           npx hardhat task:deployEmptyUUPSProxies
           npx hardhat task:upgradeGatewayConfig \
-            --current-implementation previous-contracts/GatewayConfig.sol:GatewayConfig \
+            --current-implementation latest-contracts/GatewayConfig.sol:GatewayConfig \
             --new-implementation contracts/GatewayConfig.sol:GatewayConfig \
-            --reinitialize-args '[[{ "txSenderAddress": "0x30D7Fe34c8fD3417C8aa5F63cDb1f81e012c2042", "signerAddress": "0xdE4c747d9922EBF05EBb8937847F9C6097E847DD", "encryptionKey": "0xea8b8b710d770493a41b588808ea8e09d986561f73d523227718233f3b4742de793f18a9885136a9e7054b00ba0050a17f0c7d1bf180aaff5ece0fa3343afb1b" }]]' \
             --verify-contract false
 
       - name: Clean up
-        working-directory: previous-fhevm/gateway-contracts
+        working-directory: latest-fhevm/gateway-contracts
         if: always()
         run: |
           make docker-compose-down
