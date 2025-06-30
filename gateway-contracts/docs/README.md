@@ -1,6 +1,8 @@
 ---
 description: >-
   The fhevm Gateway.
+
+
 layout:
   title:
     visible: true
@@ -24,8 +26,7 @@ Learn the basics of fhevm Gateway, set it up, and make it run with ease.
 
 ### Supports
 
-Ask technical questions and discuss with the community. Our team of experts usually answers within 24 hours in working
-days.
+Ask technical questions and discuss with the community. Our team of experts usually answers within 24 hours in working days.
 
 - [Community forum](https://community.zama.ai/c/fhevm/15)
 - [Discord channel](https://discord.com/invite/fhe-org)
@@ -44,5 +45,4 @@ Collaborate with us to advance the FHE spaces and drive innovation together.
 
 ---
 
-We value your feedback! [Take a 5-question developer survey](http://zama.ai/developer-survey) to improve the fhevm
-Gateway and the documentation and help other developers use FHE.
+We value your feedback! [Take a 5-question developer survey](http://zama.ai/developer-survey) to improve the fhevm Gateway and the documentation and help other developers use FHE.

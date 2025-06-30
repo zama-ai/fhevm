@@ -14,11 +14,9 @@ npm install
 
 All needed environment variables are defined in the [Environment variables](./env_variables.md) documentation.
 
-For deploying the fhevm gateway contracts, these variables need to be set in an `.env` file. However, the following
-`make` commands automatically copy the `.env.example` file to `.env` and update it with the correct values:
+For deploying the fhevm gateway contracts, these variables need to be set in an `.env` file. However, the following `make` commands automatically copy the `.env.example` file to `.env` and update it with the correct values:
 
-**Important**: By default, the accounts used are already funded. If other addresses are used, make sure they are funded
-as well.
+**Important**: By default, the accounts used are already funded. If other addresses are used, make sure they are funded as well.
 
 ## Hardhat node
 
@@ -40,10 +38,8 @@ make deploy-contracts-local
 
 This:
 
-- deploys the contracts through the `deployAllGatewayContracts` task found in
-  [deploy.ts](../../../tasks/deployment/contracts.ts)
-- adds the host chains to the `GatewayConfig` contract through the `addHostChainsToGatewayConfig` task found in
-  [addHostChains.ts](../../../tasks/addHostChains.ts)
+- deploys the contracts through the `deployAllGatewayContracts` task found in [deploy.ts](../../../tasks/deployment/contracts.ts)
+- adds the host chains to the `GatewayConfig` contract through the `addHostChainsToGatewayConfig` task found in [addHostChains.ts](../../../tasks/addHostChains.ts)
 
 ## Run tests
 

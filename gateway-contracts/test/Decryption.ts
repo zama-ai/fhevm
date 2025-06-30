@@ -1466,7 +1466,6 @@ describe("Decryption", function () {
       // Create EIP712 messages
       const decryptionAddress = await decryption.getAddress();
       const eip712RequestMessage = createEIP712RequestDelegatedUserDecrypt(
-        gatewayChainId,
         decryptionAddress,
         publicKey,
         contractAddresses,
