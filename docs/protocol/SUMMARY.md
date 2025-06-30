@@ -21,3 +21,4 @@
 - [Status](https://status.zama.ai/)
 - [White paper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
 - [Release note](https://github.com/zama-ai/fhevm/releases)
+- [Previous docs (v0.6)](https://docs.zama.ai/fhevm/0.6)
