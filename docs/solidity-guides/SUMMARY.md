@@ -32,7 +32,7 @@
 
 ## Development Guide
 
-- [Hardhat module](hardhat/README.md)
+- [Hardhat Plugin](hardhat/README.md)
   - [Setup Hardhat](getting-started/quick-start-tutorial/setup.md)
   - [Test](hardhat/test.md)
   - [Deployment](hardhat/deploy.md)
