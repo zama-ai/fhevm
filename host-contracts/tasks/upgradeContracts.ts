@@ -63,6 +63,7 @@ async function upgradeCurrentToNew(
     const implementationAddress = await hre.upgrades.erc1967.getImplementationAddress(proxyAddress);
     await hre.run('verify:verify', {
       address: implementationAddress,
+      contract: newImplementation,
       constructorArguments: [],
     });
   }
