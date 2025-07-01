@@ -1,8 +1,8 @@
 # Encrypted Inputs
 
-This document introduces the concept of encrypted inputs in the fhevm, explaining their role, structure, validation process, and how developers can integrate them into smart contracts and applications.
+This document introduces the concept of encrypted inputs in the FHEVM, explaining their role, structure, validation process, and how developers can integrate them into smart contracts and applications.
 
-Encrypted inputs are a core feature of fhevm, enabling users to push encrypted data onto the blockchain while ensuring data confidentiality and integrity.
+Encrypted inputs are a core feature of FHEVM, enabling users to push encrypted data onto the blockchain while ensuring data confidentiality and integrity.
 
 ## What are encrypted inputs?
 
@@ -18,7 +18,7 @@ Encrypted inputs are data values submitted by users in ciphertext form. These in
 
 When a function in a smart contract is called, it may accept two types of parameters for encrypted inputs:
 
-1. **`externalEbool`, `externalEaddress`,`externalEuintXX`**: Refers to the index of the encrypted parameter, representing a specific encrypted input handle.
+1. **`externalEbool`, `externalEaddress`,`externalEuintXX`**: Refers to the index of the encrypted parameter within the proof, representing a specific encrypted input handle.
 2. **`bytes`**: Contains the ciphertext and the associated zero-knowledge proof used for validation.
 
 Here’s an example of a Solidity function accepting multiple encrypted parameters:
@@ -41,21 +41,31 @@ In this example, `param1`, `param2`, and `param3` are encrypted inputs for `eboo
 In the below example, we use Alice's address to create the encrypted inputs and submits the transaction.
 
 ```typescript
-import * as hre from "hardhat";
 import { fhevm } from "hardhat";
 
-const input = hre.fhevm.createEncryptedInput(contract.address, signers.alice.address);
-input.add64(transferAmount);
+const input = fhevm.createEncryptedInput(contract.address, signers.alice.address);
+input.addBool(canTransfer); // at index 0
+input.add64(transferAmount); // at index 1
+input.add8(transferType); // at index 2
 const encryptedInput = await input.encrypt();
+
+const externalEboolParam1 = encryptedInput.handles[0];
+const externalEuint64Param2 = encryptedInput.handles[1];
+const externalEuint8Param3 = encryptedInput.handles[2];
+const inputProof = encryptedInput.inputProof;
 
 tx = await myContract
   .connect(signers.alice)
   [
     "exampleFunction(bytes32,bytes32,bytes32,bytes)"
-  ](signers.bob.address, encryptedInput.handles[0], encryptedInput.handles[1], encryptedInput.handles[2], encryptedTransferAmount.inputProof);
+  ](signers.bob.address, externalEboolParam1, externalEuint64Param2, externalEuint8Param3, inputProof);
 
 await tx.wait();
 ```
+
+### Input Order
+
+Developers are free to design the function parameters in any order. There is no required correspondence between the order in which encrypted inputs are constructed in TypeScript and the order of arguments in the Solidity function. 
 
 ## Validating encrypted inputs
 
@@ -76,6 +86,9 @@ function myExample(externalEuint64 encryptedAmount, externalEbool encryptedToggl
 
   // Toggle the user's encrypted flag
   userFlags[msg.sender] = FHE.not(toggleFlag);
+
+  // FHE permissions and function logic here
+  ...
 }
 
 // Function to retrieve a user's encrypted balance
@@ -120,4 +133,4 @@ function transfer(
 - **Frontend encryption**: Always encrypt inputs using the FHE public key on the client side to ensure data confidentiality.
 - **Proof management**: Ensure that the correct zero-knowledge proof is associated with each encrypted input to avoid validation errors.
 
-Encrypted inputs and their validation form the backbone of secure and private interactions in the fhevm. By leveraging these tools, developers can create robust, privacy-preserving smart contracts without compromising functionality or scalability.
+Encrypted inputs and their validation form the backbone of secure and private interactions in the FHEVM. By leveraging these tools, developers can create robust, privacy-preserving smart contracts without compromising functionality or scalability.
