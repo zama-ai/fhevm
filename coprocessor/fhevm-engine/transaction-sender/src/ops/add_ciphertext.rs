@@ -153,7 +153,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         err.as_error_resp()
             .and_then(|payload| payload.as_decoded_interface_error::<CiphertextCommitsErrors>())
             .map(|error| match error {
-                CiphertextCommitsErrors::CoprocessorTxSenderAlreadyAdded(c) => {
+                CiphertextCommitsErrors::CoprocessorAlreadyAdded(c) => {
                     c.coprocessorTxSenderAddress
                 }
             })
