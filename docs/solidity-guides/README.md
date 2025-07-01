@@ -5,6 +5,7 @@
 This section will guide you through writing confidential smart contracts in Solidity using the FHEVM library. With Fully Homomorphic Encryption(FHE), your contracts can operate directly on encrypted data without ever decrypting it onchain.
 
 ## Where to go next
+
 If you’re new to the Zama Protocol, start with the [Litepaper](https://docs.zama.ai/protocol/zama-protocol-litepaper) or the [Protocol Overview](https://docs.zama.ai/protocol) to understand the foundations.
 
 Otherwise:
@@ -20,6 +21,7 @@ Otherwise:
 🟨 Go to [**Migration Guide**](migration.md) if you're upgrading from a previous version to v0.7.
 
 ## Help center
+
 Ask technical questions and discuss with the community.
 
 - [Community forum](https://community.zama.ai/c/fhevm/15)

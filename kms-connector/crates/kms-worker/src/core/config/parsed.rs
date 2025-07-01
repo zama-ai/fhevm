@@ -9,7 +9,7 @@ use std::{
     path::Path,
     time::Duration,
 };
-use tracing::{info, warn};
+use tracing::info;
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug)]
@@ -30,14 +30,20 @@ pub struct Config {
     pub gateway_config_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,
-    /// Timeout for public decryption requests in seconds (default: 300s / 5min)
+
+    /// Timeout to get public decryption responses from KMS Core (default: 300s / 5min)
     pub public_decryption_timeout: Duration,
-    /// Timeout for user decryption requests in seconds (default: 300s / 5min)
+    /// Timeout to get user decryption responses from KMS Core (default: 300s / 5min)
     pub user_decryption_timeout: Duration,
-    /// Retry interval (default: 5s).
-    pub retry_interval: Duration,
+    /// Retry interval for GRPC requests to the KMS Core (default: 5s).
+    pub grpc_retry_interval: Duration,
+
     /// S3 configuration for ciphertext storage (optional).
     pub s3_config: Option<S3Config>,
+    /// Number of retries for S3 ciphertext retrieval (default: 3).
+    pub s3_ciphertext_retrieval_retries: u8,
+    /// Timeout to connect to a S3 bucket (default: 2s).
+    pub s3_connect_timeout: Duration,
 
     // TODO: implement to increase security
     /// Whether to verify coprocessors against the `GatewayConfig` contract (defaults to false).
@@ -68,7 +74,17 @@ impl Display for Config {
             "User Decryption Timeout: {}s",
             self.user_decryption_timeout.as_secs()
         )?;
-        write!(f, "Retry Interval: {}s", self.retry_interval.as_secs())?;
+        write!(f, "Retry Interval: {}s", self.grpc_retry_interval.as_secs())?;
+        writeln!(
+            f,
+            "Number of retries for S3 ciphertext retrieval: {}",
+            self.s3_ciphertext_retrieval_retries
+        )?;
+        writeln!(
+            f,
+            "S3 ciphertext retrieval timeout: {}s",
+            self.s3_connect_timeout.as_secs()
+        )?;
 
         Ok(())
     }
@@ -105,15 +121,11 @@ impl Config {
             return Err(Error::EmptyField("KMS Core endpoint".to_string()));
         }
 
-        // Check S3 configuration - warn but don't fail if missing
-        if raw_config.s3_config.is_none() {
-            warn!("Optional S3 configuration is not provided. Some functionality may be limited.");
-        }
-
         let public_decryption_timeout =
             Duration::from_secs(raw_config.public_decryption_timeout_secs);
         let user_decryption_timeout = Duration::from_secs(raw_config.user_decryption_timeout_secs);
-        let retry_interval = Duration::from_secs(raw_config.retry_interval_secs);
+        let grpc_retry_interval = Duration::from_secs(raw_config.grpc_retry_interval_secs);
+        let s3_ciphertext_retrieval_timeout = Duration::from_secs(raw_config.s3_connect_timeout);
 
         Ok(Self {
             database_url: raw_config.database_url,
@@ -126,8 +138,10 @@ impl Config {
             service_name: raw_config.service_name,
             public_decryption_timeout,
             user_decryption_timeout,
-            retry_interval,
+            grpc_retry_interval,
             s3_config: raw_config.s3_config,
+            s3_ciphertext_retrieval_retries: raw_config.s3_ciphertext_retrieval_retries,
+            s3_connect_timeout: s3_ciphertext_retrieval_timeout,
             verify_coprocessors: raw_config.verify_coprocessors,
         })
     }
@@ -162,7 +176,9 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_S3_CONFIG__BUCKET");
             env::remove_var("KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS");
             env::remove_var("KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS");
-            env::remove_var("KMS_CONNECTOR_RETRY_INTERVAL_SECS");
+            env::remove_var("KMS_CONNECTOR_GRPC_RETRY_INTERVAL_SECS");
+            env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES");
+            env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
         }
     }
 
@@ -199,8 +215,8 @@ mod tests {
             config.user_decryption_timeout.as_secs()
         );
         assert_eq!(
-            raw_config.retry_interval_secs,
-            config.retry_interval.as_secs()
+            raw_config.grpc_retry_interval_secs,
+            config.grpc_retry_interval.as_secs()
         );
         assert_eq!(
             raw_config.decryption_contract.domain_name.unwrap(),
@@ -247,7 +263,9 @@ mod tests {
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
             env::set_var("KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS", "600");
             env::set_var("KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS", "600");
-            env::set_var("KMS_CONNECTOR_RETRY_INTERVAL_SECS", "10");
+            env::set_var("KMS_CONNECTOR_GRPC_RETRY_INTERVAL_SECS", "10");
+            env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES", "5");
+            env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4");
         }
 
         // Load config from environment
@@ -268,7 +286,9 @@ mod tests {
         assert_eq!(config.service_name, "kms-connector-test");
         assert_eq!(config.public_decryption_timeout.as_secs(), 600);
         assert_eq!(config.user_decryption_timeout.as_secs(), 600);
-        assert_eq!(config.retry_interval.as_secs(), 10);
+        assert_eq!(config.grpc_retry_interval.as_secs(), 10);
+        assert_eq!(config.s3_ciphertext_retrieval_retries, 5);
+        assert_eq!(config.s3_connect_timeout.as_secs(), 4);
 
         cleanup_env_vars();
     }

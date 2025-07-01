@@ -59,12 +59,10 @@ resolve: {
 ```javascript
 const start = async () => {
   await window.fhevm.initSDK(); // load wasm needed
-  const config = { ...SepoliaConfig, network: window.ethereum } ;
+  const config = { ...SepoliaConfig, network: window.ethereum };
   config.network = window.ethereum;
-  const instance = window.fhevm
-    .createInstance(config)
-    .then((instance) => {
-      console.log(instance);
-    });
+  const instance = window.fhevm.createInstance(config).then((instance) => {
+    console.log(instance);
+  });
 };
 ```

@@ -63,7 +63,7 @@ impl KmsClient {
                         channel,
                         config.public_decryption_timeout,
                         config.user_decryption_timeout,
-                        config.retry_interval,
+                        config.grpc_retry_interval,
                     ));
                 }
                 Err(e) => warn!("KMS Core connection attempt #{i} failed: {e}"),

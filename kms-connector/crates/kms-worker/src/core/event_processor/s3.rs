@@ -1,5 +1,5 @@
 use crate::core::config::{Config, S3Config};
-use alloy::{hex::encode, primitives::Address, providers::Provider, transports::http::reqwest};
+use alloy::{hex, primitives::Address, providers::Provider, transports::http::reqwest};
 use anyhow::anyhow;
 use dashmap::DashMap;
 use fhevm_gateway_rust_bindings::{
@@ -8,9 +8,9 @@ use fhevm_gateway_rust_bindings::{
 };
 use sha3::{Digest, Keccak256};
 use std::{sync::LazyLock, time::Duration};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
-// Global cache for coprocessor S3 bucket URLs
+/// Global cache for coprocessor S3 bucket URLs.
 static S3_BUCKET_CACHE: LazyLock<DashMap<Address, String>> = LazyLock::new(DashMap::new);
 
 /// Struct used to fetch ciphertext from S3 buckets.
@@ -21,6 +21,12 @@ pub struct S3Service<P: Provider> {
 
     /// An optional S3 bucket fallback configuration.
     fallback_config: Option<S3Config>,
+
+    /// Number of retries for S3 ciphertext retrieval.
+    s3_ciphertext_retrieval_retries: u8,
+
+    /// Timeout for S3 ciphertext retrieval in seconds.
+    s3_connect_timeout: Duration,
 }
 
 impl<P> S3Service<P>
@@ -34,6 +40,8 @@ where
         Self {
             gateway_config_contract,
             fallback_config: config.s3_config.clone(),
+            s3_ciphertext_retrieval_retries: config.s3_ciphertext_retrieval_retries,
+            s3_connect_timeout: config.s3_connect_timeout,
         }
     }
 
@@ -211,70 +219,136 @@ where
         &self,
         sns_materials: Vec<SnsCiphertextMaterial>,
     ) -> Vec<(Vec<u8>, Vec<u8>)> {
-        // Process all SNS ciphertext materials
         let mut sns_ciphertext_materials = Vec::new();
-        for sns_material in sns_materials {
-            let extracted_ct_handle = sns_material.ctHandle.to_vec();
-            let extracted_sns_ciphertext_digest = sns_material.snsCiphertextDigest.to_vec();
-            let coprocessor_addresses = sns_material.coprocessorTxSenderAddresses;
 
+        for sns_material in sns_materials {
             // Get S3 URL and retrieve ciphertext
             // 1. For each SNS material, we try to retrieve its ciphertext from multiple possible S3 URLs
+            //    1.1. We try to fetch the ciphertext for `self.s3_ct_retrieval_retries` times fo each S3 URL
             // 2. Once we successfully retrieve a ciphertext from any of those URLs, we break out of the S3 URLs loop
             // 3. Then we continue processing the next SNS material in the outer loop
             let s3_urls = self
-                .prefetch_coprocessor_buckets(coprocessor_addresses)
+                .prefetch_coprocessor_buckets(sns_material.coprocessorTxSenderAddresses)
                 .await;
 
+            let ct_digest = sns_material.snsCiphertextDigest.as_slice();
+            let ct_digest_hex = hex::encode(ct_digest);
             if s3_urls.is_empty() {
-                warn!(
-                    "No S3 URLs found for ciphertext digest {}",
-                    alloy::hex::encode(&extracted_sns_ciphertext_digest)
-                );
+                warn!("No S3 URLs found for ciphertext digest {ct_digest_hex}",);
                 continue;
             }
 
-            let mut ciphertext_retrieved = false;
-            for s3_url in s3_urls {
-                match retrieve_s3_ciphertext(
-                    s3_url.clone(),
-                    extracted_sns_ciphertext_digest.clone(),
-                )
+            match self
+                .retrieve_s3_ciphertext_with_retry(s3_urls, ct_digest, &ct_digest_hex)
                 .await
-                {
-                    Ok(ciphertext) => {
-                        info!(
-                            "Successfully retrieved ciphertext for digest {} from S3 URL {}",
-                            alloy::hex::encode(&extracted_sns_ciphertext_digest),
-                            s3_url
-                        );
-                        sns_ciphertext_materials.push((extracted_ct_handle.clone(), ciphertext));
-                        ciphertext_retrieved = true;
-                        break; // We want to stop as soon as ciphertext corresponding to extracted_sns_ciphertext_digest is retrieved
-                    }
-                    Err(error) => {
-                        // Log warning but continue trying other URLs
-                        warn!(
-                            "Failed to retrieve ciphertext for digest {} from S3 URL {}: {}",
-                            alloy::hex::encode(&extracted_sns_ciphertext_digest),
-                            s3_url,
-                            error
-                        );
-                        // Continue to the next URL
-                    }
+            {
+                Some(ciphertext) => {
+                    sns_ciphertext_materials.push((sns_material.ctHandle.to_vec(), ciphertext));
                 }
-            }
-
-            if !ciphertext_retrieved {
-                warn!(
-                    "Failed to retrieve ciphertext for digest {} from any S3 URL",
-                    alloy::hex::encode(&extracted_sns_ciphertext_digest)
-                );
-                // Continue to the next SNS material
+                None => error!(
+                    "Failed to retrieve ciphertext for digest {ct_digest_hex} from any S3 URL"
+                ),
             }
         }
 
         sns_ciphertext_materials
+    }
+
+    /// Retrieves a ciphertext from S3 with `self.s3_ct_retrieval_retries` retries.
+    pub async fn retrieve_s3_ciphertext_with_retry(
+        &self,
+        s3_urls: Vec<String>,
+        ciphertext_digest: &[u8],
+        digest_hex: &str,
+    ) -> Option<Vec<u8>> {
+        for i in 1..=self.s3_ciphertext_retrieval_retries {
+            for s3_url in s3_urls.iter() {
+                match self
+                    .retrieve_s3_ciphertext(s3_url, ciphertext_digest, digest_hex)
+                    .await
+                {
+                    Ok(ciphertext) => {
+                        info!(
+                            attempt = i,
+                            "Successfully retrieved ciphertext for digest {digest_hex} from S3 URL {s3_url}"
+                        );
+                        return Some(ciphertext);
+                    }
+                    Err(e) => warn!(
+                        attempt = i,
+                        "Failed to retrieve ciphertext for digest {digest_hex} from S3 URL {s3_url}: {e}"
+                    ),
+                }
+            }
+        }
+        None
+    }
+
+    /// Retrieves a ciphertext from S3 using the bucket URLs and ciphertext digest.
+    pub async fn retrieve_s3_ciphertext(
+        &self,
+        s3_bucket_url: &str,
+        ciphertext_digest: &[u8],
+        digest_hex: &str,
+    ) -> anyhow::Result<Vec<u8>> {
+        info!(
+            "S3 RETRIEVAL START: Retrieving ciphertext with digest {} from S3 bucket {}",
+            digest_hex, s3_bucket_url
+        );
+
+        // Direct HTTP retrieval
+        let direct_url = format!("{s3_bucket_url}/{digest_hex}");
+        let ciphertext = self.direct_http_retrieval(&direct_url).await?;
+        info!(
+            "DIRECT HTTP RETRIEVAL SUCCESS: Retrieved {} bytes",
+            ciphertext.len()
+        );
+
+        // Verify digest
+        let calculated_digest = compute_digest(&ciphertext);
+        if calculated_digest != ciphertext_digest {
+            let calculated_digest_hex = hex::encode(&calculated_digest);
+            return Err(anyhow!(
+                "DIGEST MISMATCH: Expected: {digest_hex}, Got: {calculated_digest_hex}",
+            ));
+        }
+        info!("DIRECT HTTP RETRIEVAL COMPLETE: Successfully verified ciphertext digest");
+
+        Ok(ciphertext)
+    }
+
+    /// Retrieves a file directly via HTTP.
+    async fn direct_http_retrieval(&self, url: &str) -> anyhow::Result<Vec<u8>> {
+        debug!("Attempting direct HTTP retrieval from URL: {}", url);
+
+        // Create a reqwest client with appropriate timeouts
+        let client = reqwest::Client::builder()
+            .connect_timeout(self.s3_connect_timeout)
+            .build()
+            .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
+
+        // Send the GET request
+        let response = client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+
+        // Check if the request was successful
+        if !response.status().is_success() {
+            return Err(anyhow!(
+                "HTTP request failed with status: {}",
+                response.status()
+            ));
+        }
+
+        // Read the response body
+        let body = response
+            .bytes()
+            .await
+            .map_err(|e| anyhow!("Failed to read HTTP response body: {}", e))?;
+
+        Ok(body.to_vec())
     }
 }
 
@@ -298,83 +372,13 @@ pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
     let mut hasher = Keccak256::new();
     hasher.update(ct);
     let result = hasher.finalize().to_vec();
-    debug!("Digest computed: {}", encode(&result));
+    debug!("Digest computed: {}", hex::encode(&result));
     result
-}
-
-/// Retrieves a ciphertext from S3 using the bucket URL and ciphertext digest.
-pub async fn retrieve_s3_ciphertext(
-    s3_bucket_url: String,
-    ciphertext_digest: Vec<u8>,
-) -> anyhow::Result<Vec<u8>> {
-    let digest_hex = encode(&ciphertext_digest);
-    info!(
-        "S3 RETRIEVAL START: Retrieving ciphertext with digest {} from S3 bucket {}",
-        digest_hex, s3_bucket_url
-    );
-
-    // Direct HTTP retrieval
-    let direct_url = format!("{s3_bucket_url}/{digest_hex}");
-    let ciphertext = direct_http_retrieval(&direct_url).await?;
-    info!(
-        "DIRECT HTTP RETRIEVAL SUCCESS: Retrieved {} bytes",
-        ciphertext.len()
-    );
-
-    // Verify digest
-    let calculated_digest = compute_digest(&ciphertext);
-    if calculated_digest != ciphertext_digest {
-        warn!(
-            "DIGEST MISMATCH: Expected: {}, Got: {}",
-            encode(ciphertext_digest),
-            encode(&calculated_digest)
-        );
-    } else {
-        info!("DIRECT HTTP RETRIEVAL COMPLETE: Successfully verified ciphertext digest");
-    }
-
-    // Return data even with digest mismatch for non-failability
-    Ok(ciphertext)
-}
-
-/// Retrieves a file directly via HTTP.
-async fn direct_http_retrieval(url: &str) -> anyhow::Result<Vec<u8>> {
-    debug!("Attempting direct HTTP retrieval from URL: {}", url);
-
-    // Create a reqwest client with appropriate timeouts
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(2))
-        .build()
-        .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
-
-    // Send the GET request
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-
-    // Check if the request was successful
-    if !response.status().is_success() {
-        return Err(anyhow!(
-            "HTTP request failed with status: {}",
-            response.status()
-        ));
-    }
-
-    // Read the response body
-    let body = response
-        .bytes()
-        .await
-        .map_err(|e| anyhow!("Failed to read HTTP response body: {}", e))?;
-
-    Ok(body.to_vec())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tracing_subscriber::fmt;
 
     #[test]
     fn test_compute_digest_empty_input() {
@@ -423,55 +427,8 @@ mod tests {
         assert_eq!(digest.len(), 32);
         // The digest of 1MB of zeros is deterministic
         assert_eq!(
-            encode(&digest),
+            hex::encode(&digest),
             "7b6ff0a03e9c5a8e77a2059bf28e26a7f0e8d3939a7cfe2193908ad8d683be90"
         );
-    }
-
-    // TODO: to remove after integration: sanity check
-    // This test requires a running MinIO server
-    #[ignore]
-    #[tokio::test]
-    async fn test_retrieve_s3_ciphertext_minio() {
-        // Initialize tracing for this test
-        let subscriber = fmt()
-            .with_max_level(tracing::Level::INFO)
-            .with_test_writer()
-            .finish();
-        let _guard = tracing::subscriber::set_default(subscriber);
-
-        let minio_url = "http://localhost:9000";
-        let bucket = "ct128";
-        let call_url = format!("{minio_url}/{bucket}");
-        println!("Testing S3 ciphertext retrieval from MinIO at URL: {call_url}");
-
-        let digest_hex = "1c37ba3cfd0151dd03584cd4819c6296d6a8b4d7ac3e31554fb0e842eab8ada9";
-        let digest_bytes = alloy::hex::decode(digest_hex).expect("Failed to decode hex digest");
-
-        // Test the full retrieval function
-        let result = retrieve_s3_ciphertext(call_url, digest_bytes.clone()).await;
-
-        match result {
-            Ok(data) => {
-                println!(
-                    "Successfully retrieved {} bytes from MinIO via call_s3_ciphertext_retrieval",
-                    data.len()
-                );
-
-                assert!(!data.is_empty(), "Retrieved data should not be empty");
-
-                let calculated_digest = compute_digest(&data);
-                let calculated_hex = encode(&calculated_digest);
-                println!("Retrieved data digest: {calculated_hex}");
-                println!("Expected digest: {digest_hex}");
-            }
-            Err(error) => {
-                // This should only happen if both direct HTTP and S3 SDK retrievals fail completely
-                println!("Failed to retrieve ciphertext from MinIO: {error}");
-                println!(
-                    "This is expected if MinIO is not running or the bucket/object doesn't exist"
-                );
-            }
-        }
     }
 }

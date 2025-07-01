@@ -16,7 +16,7 @@ overrides:
       tabWidth: 4
   - files: "*.md"
     options:
-      proseWrap: never
+      proseWrap: preserve
   - files: "*.ts"
     options:
       importOrder: ["<THIRD_PARTY_MODULES>", "^[./]"]

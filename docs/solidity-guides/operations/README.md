@@ -17,8 +17,8 @@ The following arithmetic operations are supported for encrypted integers (`euint
 | Min                          | `FHE.min`     |        | Binary |
 | Max                          | `FHE.max`     |        | Binary |
 
-{% hint style="info" %} 
-Division (FHE.div) and remainder (FHE.rem) operations are currently supported only with plaintext divisors. 
+{% hint style="info" %}
+Division (FHE.div) and remainder (FHE.rem) operations are currently supported only with plaintext divisors.
 {% endhint %}
 
 ## Bitwise operations
@@ -145,5 +145,3 @@ function mint(externalEuint32 encryptedAmount, bytes calldata inputProof) public
 ```
 
 Notice that we did not check separately the overflow on `balances[msg.sender]` but only on `totalSupply` variable, because `totalSupply` is the sum of the balances of all the users, so `balances[msg.sender]` could never overflow if `totalSupply` did not.
-
-

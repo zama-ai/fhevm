@@ -42,8 +42,8 @@ function bid(externalEuint64 encryptedValue, bytes calldata inputProof) external
 }
 ```
 
-{% hint style="info" %} 
-This is a simplified example to demonstrate the functionality. 
+{% hint style="info" %}
+This is a simplified example to demonstrate the functionality.
 {% endhint %}
 
 ### How Does It Work?
@@ -99,7 +99,9 @@ function bid(externalEuint64 encryptedValue, bytes calldata inputProof) external
 }
 
 function revealWinner() external onlyAfterEnd {
-  uint256 requestId = FHE.requestDecryption(highestBidder, this.transferPrize.selector);
+  bytes32[] memory cts = new bytes32[](2);
+  cts[0] = FHE.toBytes32(highestBidder);
+  uint256 requestId = FHE.requestDecryption(cts, this.transferPrize.selector);
 }
 
 function transferPrize(uint256 requestId, address auctionWinner, bytes memory signatures) external {
@@ -111,8 +113,8 @@ function transferPrize(uint256 requestId, address auctionWinner, bytes memory si
 }
 ```
 
-{% hint style="info" %} 
-This is a simplified example to demonstrate the functionality. 
+{% hint style="info" %}
+This is a simplified example to demonstrate the functionality.
 {% endhint %}
 
 As you can see the in the above example, the path to move from an encrypted condition to a decrypted business logic must be async and requires calling the decryption oracle contract to reveal the result of the logic using encrypted variables.
@@ -122,4 +124,3 @@ As you can see the in the above example, the path to move from an encrypted cond
 - **`FHE.select`** is a powerful tool for conditional logic on encrypted values.
 - Encrypted booleans (`ebool`) and values maintain confidentiality, enabling privacy-preserving logic.
 - Developers should account for gas costs and ciphertext behavior when designing conditional operations.
-

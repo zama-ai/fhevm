@@ -110,11 +110,11 @@ You can read [our user decryption guide explaining how to use it](solidity-guide
 
 The flow of information across the FHEVM components during these operations highlights how the system ensures privacy while maintaining usability:
 
-| Operation |  |  |
-| --- | --- | --- |
-| **Encryption** | Public Key | Frontend encrypts data → ciphertext sent to blockchain or coprocessor |
-| **Computation** | Evaluation Key | Coprocessor executes operations from smart contract events → updated ciphertexts |
-| **Decryption** | Private Key | Smart contract requests plaintext → Gateway forwards to KMS → result returned on-chain |
+| Operation           |                         |                                                                                                     |
+| ------------------- | ----------------------- | --------------------------------------------------------------------------------------------------- |
+| **Encryption**      | Public Key              | Frontend encrypts data → ciphertext sent to blockchain or coprocessor                               |
+| **Computation**     | Evaluation Key          | Coprocessor executes operations from smart contract events → updated ciphertexts                    |
+| **Decryption**      | Private Key             | Smart contract requests plaintext → Gateway forwards to KMS → result returned on-chain              |
 | **User decryption** | Private and Target Keys | User requests result → KMS decrypts and encrypts with user’s public key → frontend decrypts locally |
 
 This architecture ensures that sensitive data remains encrypted throughout its lifecycle, with decryption only occurring in controlled, secure environments. By separating key roles and processing responsibilities, FHEVM provides a scalable and robust framework for private smart contracts.
