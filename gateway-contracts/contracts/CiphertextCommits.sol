@@ -37,6 +37,10 @@ contract CiphertextCommits is
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
+    /// Constant used for making sure the version number using in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 2;
+
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.CiphertextCommits
     struct CiphertextCommitsStorage {
@@ -77,7 +81,7 @@ contract CiphertextCommits is
      * @dev This function needs to be public in order to be called by the UUPS proxy.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(2) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __Pausable_init();
     }
