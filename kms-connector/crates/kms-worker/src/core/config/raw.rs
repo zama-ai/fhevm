@@ -33,10 +33,14 @@ pub struct RawConfig {
     pub public_decryption_timeout_secs: u64,
     #[serde(default = "default_user_decryption_timeout")]
     pub user_decryption_timeout_secs: u64,
-    #[serde(default = "default_retry_interval")]
-    pub retry_interval_secs: u64,
+    #[serde(default = "default_grpc_retry_interval")]
+    pub grpc_retry_interval_secs: u64,
     #[serde(default)]
     pub s3_config: Option<S3Config>,
+    #[serde(default = "default_s3_ciphertext_retrieval_retries")]
+    pub s3_ciphertext_retrieval_retries: u8,
+    #[serde(default = "default_s3_connect_timeout")]
+    pub s3_connect_timeout: u64,
     #[serde(default = "default_verify_coprocessors")]
     pub verify_coprocessors: bool,
 }
@@ -57,8 +61,16 @@ fn default_user_decryption_timeout() -> u64 {
     300 // 5 minutes
 }
 
-fn default_retry_interval() -> u64 {
+fn default_grpc_retry_interval() -> u64 {
     5 // 5 seconds
+}
+
+fn default_s3_ciphertext_retrieval_retries() -> u8 {
+    3 // 3 seconds
+}
+
+fn default_s3_connect_timeout() -> u64 {
+    2 // 2 seconds
 }
 
 fn default_verify_coprocessors() -> bool {
@@ -89,7 +101,9 @@ impl Default for RawConfig {
             service_name: "kms-connector".to_string(),
             public_decryption_timeout_secs: 300,
             user_decryption_timeout_secs: 300,
-            retry_interval_secs: 5,
+            grpc_retry_interval_secs: 5,
+            s3_ciphertext_retrieval_retries: 3,
+            s3_connect_timeout: 2,
             s3_config: None,
             verify_coprocessors: false,
         }

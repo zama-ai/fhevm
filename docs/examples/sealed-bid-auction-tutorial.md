@@ -2,13 +2,13 @@ This tutorial explains how to build a sealed-bid NFT auction using Fully Homomor
 
 By following this guide, you will learn how to:
 
-* Accept and process encrypted bids
-* Compare bids securely without revealing their values
-* Reveal the winner after the auction concludes
-* Design an auction that is private, fair, and transparent
-
+- Accept and process encrypted bids
+- Compare bids securely without revealing their values
+- Reveal the winner after the auction concludes
+- Design an auction that is private, fair, and transparent
 
 # Why FHE
+
 In most onchain auctions, **bids are fully public**. Anyone can inspect the blockchain or monitor pending transactions to see how much each participant has bid. This breaks fairness as all it takes to win is to send a new bid with just one wei higher than the current highest.
 
 Existing solutions like commit-reveal schemes attempt to hide bids during a preliminary commit phase. However, they come with several drawbacks: increased transaction overhead, poor user experience (e.g., requiring users to send funds to EOAs via `CREATE2`), and delays caused by the need for multiple auction phases.
@@ -47,43 +47,42 @@ import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 // ...
 
 contract BlindAuction is SepoliaConfig {
+  /// @notice The recipient of the highest bid once the auction ends
+  address public beneficiary;
 
-    /// @notice The recipient of the highest bid once the auction ends
-    address public beneficiary;
+  /// @notice Confidenctial Payment Token
+  ConfidentialERC20 public confidentialERC20;
 
-    /// @notice Confidenctial Payment Token
-    ConfidentialERC20 public confidentialERC20;
+  /// @notice Token for the auction
+  IERC721 public nftContract;
+  uint256 public tokenId;
 
-    /// @notice Token for the auction
-    IERC721 public nftContract;
-    uint256 public tokenId;
+  /// @notice Auction duration
+  uint256 public auctionStartTime;
+  uint256 public auctionEndTime;
 
-    /// @notice Auction duration
-    uint256 public auctionStartTime;
-    uint256 public auctionEndTime;
+  // ...
 
-    // ...
+  constructor(
+    address _nftContractAddress,
+    address _confidentialERC20Address,
+    uint256 _tokenId,
+    uint256 _auctionStartTime,
+    uint256 _auctionEndTime
+  ) {
+    beneficiary = msg.sender;
+    confidentialERC20 = ConfidentialERC20(_confidentialERC20Address);
+    nftContract = IERC721(_nftContractAddress);
 
-    constructor(
-        address _nftContractAddress,
-        address _confidentialERC20Address,
-        uint256 _tokenId,
-        uint256 _auctionStartTime,
-        uint256 _auctionEndTime
-    ) {
-        beneficiary = msg.sender;
-        confidentialERC20 = ConfidentialERC20(_confidentialERC20Address);
-        nftContract = IERC721(_nftContractAddress);
+    // Transfer the NFT to the contract for the auction
+    nftContract.safeTransferFrom(msg.sender, address(this), _tokenId);
 
-        // Transfer the NFT to the contract for the auction
-        nftContract.safeTransferFrom(msg.sender, address(this), _tokenId);
+    require(_auctionStartTime < _auctionEndTime, "INVALID_TIME");
+    auctionStartTime = _auctionStartTime;
+    auctionEndTime = _auctionEndTime;
+  }
 
-        require(_auctionStartTime < _auctionEndTime, "INVALID_TIME");
-        auctionStartTime = _auctionStartTime;
-        auctionEndTime = _auctionEndTime;
-    }
-
-    // ...
+  // ...
 }
 ```
 
@@ -100,7 +99,7 @@ mapping(address account => euint64 bidAmount) private bids;
 
 {% hint style="info" %}
 
- As you may notice, in our code we are using euint64, which represents an encrypted 64-bit unsigned integer. Unlike standard Solidity type, where there is not that much difference between uint64 and uint256, in FHE the size of your data has a significant effect on performance. The larger the representation, the more expensive the computation becomes. That is for this reason, we recommend you to choose wisely your number representation based on your use case. Here for instance, euint64 is more than enough to handle token balance.
+As you may notice, in our code we are using euint64, which represents an encrypted 64-bit unsigned integer. Unlike standard Solidity type, where there is not that much difference between uint64 and uint256, in FHE the size of your data has a significant effect on performance. The larger the representation, the more expensive the computation becomes. That is for this reason, we recommend you to choose wisely your number representation based on your use case. Here for instance, euint64 is more than enough to handle token balance.
 
 {% endhint %}
 
@@ -122,6 +121,7 @@ function bid(
 ```
 
 Here, we accept two parameters:
+
 - Encrypted Amount: The user’s bid amount, encrypted using FHE.
 - Input Proof: A Zero-Knowledge Proof ensuring the validity of the encrypted data.
 
@@ -139,7 +139,6 @@ euint64 sentBalance = FHE.sub(balanceAfter, balanceBefore);
 Notice that here, we are not using the amount provided by the user as a source of trust. Indeed, in case the user has not enough funds, when calling the `transferFrom()`, **the transaction will not be reverted, but instead transfer silently a `0` value**. This design choice protects eventual leaks as reverted transactions can unintentionally reveal some information on the data.
 
 > Note: To dive deeper into how FHE works, each FHE operation done on chain will emit an event used to construct a computation graph. This graph is then executed by the Zama fhEVM. Thus, the FHE operation is not directly done on the smart contract side, but rather follows the source graph generated by it.
-> 
 
 Once the payment is done, we need to update the bid balance of the user. Notice here that the user can increase his previous bid if he wants:
 
@@ -181,46 +180,43 @@ Another point that we want to mention is the `FHE.select()` function. As mention
 Alright, it seems our bidding function is ready. Here is the full code we have seen so far:
 
 ```solidity
-function bid(
-    externalEuint64 encryptedAmount,
-    bytes calldata inputProof
-) public onlyDuringAuction nonReentrant {
+function bid(externalEuint64 encryptedAmount, bytes calldata inputProof) public onlyDuringAuction nonReentrant {
+  // Get and verify the amount from the user
+  euint64 amount = FHE.fromExternal(encryptedAmount, inputProof);
 
-    // Get and verify the amount from the user
-    euint64 amount = FHE.fromExternal(encryptedAmount, inputProof);
+  // Transfer the confidential token as payment
+  euint64 balanceBefore = confidentialERC20.balanceOf(address(this));
+  FHE.allowTransient(amount, address(confidentialERC20));
+  confidentialERC20.transferFrom(msg.sender, address(this), amount);
+  euint64 balanceAfter = confidentialERC20.balanceOf(address(this));
+  euint64 sentBalance = FHE.sub(balanceAfter, balanceBefore);
 
-    // Transfer the confidential token as payment
-    euint64 balanceBefore = confidentialERC20.balanceOf(address(this));
-    FHE.allowTransient(amount, address(confidentialERC20));
-    confidentialERC20.transferFrom(msg.sender, address(this), amount);
-    euint64 balanceAfter = confidentialERC20.balanceOf(address(this));
-    euint64 sentBalance = FHE.sub(balanceAfter, balanceBefore);
+  // Need to update the bid balance
+  euint64 previousBid = bids[msg.sender];
+  if (FHE.isInitialized(previousBid)) {
+    // The user increase his bid
+    euint64 newBid = FHE.add(previousBid, sentBalance);
+    bids[msg.sender] = newBid;
+  } else {
+    // First bid for the user
+    bids[msg.sender] = sentBalance;
+  }
 
-    // Need to update the bid balance
-    euint64 previousBid = bids[msg.sender];
-    if (FHE.isInitialized(previousBid)) {  // The user increase his bid
-        euint64 newBid = FHE.add(previousBid, sentBalance);
-        bids[msg.sender] = newBid;
-    } else {
-        // First bid for the user
-        bids[msg.sender] = sentBalance;
-    }
+  // Compare the total value of the user from the highest bid
+  euint64 currentBid = bids[msg.sender];
+  FHE.allowThis(currentBid);
+  FHE.allow(currentBid, msg.sender);
 
-    // Compare the total value of the user from the highest bid
-    euint64 currentBid = bids[msg.sender];
-    FHE.allowThis(currentBid);
-    FHE.allow(currentBid, msg.sender);
-
-    if (FHE.isInitialized(highestBid)) {
-        ebool isNewWinner = FHE.lt(highestBid, currentBid);
-        highestBid = FHE.select(isNewWinner, currentBid, highestBid);
-        winningAddress = FHE.select(isNewWinner, FHE.asEaddress(msg.sender), winningAddress);
-    } else {
-        highestBid = currentBid;
-        winningAddress = FHE.asEaddress(msg.sender);
-    }
-    FHE.allowThis(highestBid);
-    FHE.allowThis(winningAddress);
+  if (FHE.isInitialized(highestBid)) {
+    ebool isNewWinner = FHE.lt(highestBid, currentBid);
+    highestBid = FHE.select(isNewWinner, currentBid, highestBid);
+    winningAddress = FHE.select(isNewWinner, FHE.asEaddress(msg.sender), winningAddress);
+  } else {
+    highestBid = currentBid;
+    winningAddress = FHE.asEaddress(msg.sender);
+  }
+  FHE.allowThis(highestBid);
+  FHE.allowThis(winningAddress);
 }
 ```
 
@@ -230,12 +226,9 @@ Once all participants have placed their bids, it’s time to move to the resolut
 
 ```solidity
 function decryptWinningAddress() public onlyAfterEnd {
-    bytes32[] memory cts = new bytes32[](1);
-    cts[0] = FHE.toBytes32(winningAddress);
-    _latestRequestId = FHE.requestDecryption(
-        cts,
-        this.resolveAuctionCallback.selector
-    );
+  bytes32[] memory cts = new bytes32[](1);
+  cts[0] = FHE.toBytes32(winningAddress);
+  _latestRequestId = FHE.requestDecryption(cts, this.resolveAuctionCallback.selector);
 }
 ```
 
@@ -248,15 +241,11 @@ Notice also that we have restricted this function to be called only when the auc
 We can now write our `resolveAuctionCallback` callback function:
 
 ```solidity
-function resolveAuctionCallback(
-    uint256 requestId,
-    address resultWinnerAddress,
-    bytes[] memory signatures
-) public {
-    require(requestId == _latestRequestId, "Invalid requestId");
-    FHE.checkSignatures(requestId, signatures);
+function resolveAuctionCallback(uint256 requestId, address resultWinnerAddress, bytes[] memory signatures) public {
+  require(requestId == _latestRequestId, "Invalid requestId");
+  FHE.checkSignatures(requestId, signatures);
 
-    winnerAddress = resultWinnerAddress;
+  winnerAddress = resultWinnerAddress;
 }
 ```
 
@@ -268,40 +257,40 @@ Alright, once the winner is revealed, we can now allow the winner to claim his r
 
 ```solidity
 function winnerClaimPrize() public onlyAfterWinnerRevealed {
-    require(winnerAddress == msg.sender, "Only winner can claim item");
-    require(!isNftClaimed, "NFT has already been claimed");
-    isNftClaimed = true;
+  require(winnerAddress == msg.sender, "Only winner can claim item");
+  require(!isNftClaimed, "NFT has already been claimed");
+  isNftClaimed = true;
 
-    // Reset bid value
-    bids[msg.sender] = FHE.asEuint64(0);
-    FHE.allowThis(bids[msg.sender]);
-    FHE.allow(bids[msg.sender], msg.sender);
+  // Reset bid value
+  bids[msg.sender] = FHE.asEuint64(0);
+  FHE.allowThis(bids[msg.sender]);
+  FHE.allow(bids[msg.sender], msg.sender);
 
-    // Transfer the highest bid to the beneficiary
-    FHE.allowTransient(highestBid, address(confidentialERC20));
-    confidentialERC20.transfer(beneficiary, highestBid);
+  // Transfer the highest bid to the beneficiary
+  FHE.allowTransient(highestBid, address(confidentialERC20));
+  confidentialERC20.transfer(beneficiary, highestBid);
 
-    // Send the NFT to the winner
-    nftContract.safeTransferFrom(address(this), msg.sender, tokenId);
+  // Send the NFT to the winner
+  nftContract.safeTransferFrom(address(this), msg.sender, tokenId);
 }
 ```
 
 ```solidity
 function withdraw(address bidder) public onlyAfterWinnerRevealed {
-    if (bidder == winnerAddress) revert TooLateError(auctionEndTime);
+  if (bidder == winnerAddress) revert TooLateError(auctionEndTime);
 
-    // Get the user bid value
-    euint64 amount = bids[bidder];
-    FHE.allowTransient(amount, address(confidentialERC20));
+  // Get the user bid value
+  euint64 amount = bids[bidder];
+  FHE.allowTransient(amount, address(confidentialERC20));
 
-    // Reset user bid value
-    euint64 newBid = FHE.asEuint64(0);
-    bids[bidder] = newBid;
-    FHE.allowThis(newBid);
-    FHE.allow(newBid, bidder);
+  // Reset user bid value
+  euint64 newBid = FHE.asEuint64(0);
+  bids[bidder] = newBid;
+  FHE.allowThis(newBid);
+  FHE.allow(newBid, bidder);
 
-    // Refund the user with his bid amount
-    confidentialERC20.transfer(bidder, amount);
+  // Refund the user with his bid amount
+  confidentialERC20.transfer(bidder, amount);
 }
 ```
 

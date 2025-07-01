@@ -1,14 +1,13 @@
 This example demonstrates the FHE decryption mechanism and highlights a common pitfall developers may encounter.
 
-{% hint style="info" %} 
+{% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
 
 - `.sol` file → `<your-project-root-dir>/contracts/`
 - `.ts` file → `<your-project-root-dir>/test/`
 
-This ensures Hardhat can compile and test your contracts as expected. 
+This ensures Hardhat can compile and test your contracts as expected.
 {% endhint %}
-
 
 {% tabs %}
 
@@ -18,56 +17,55 @@ This ensures Hardhat can compile and test your contracts as expected.
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {FHE, euint32} from "@fhevm/solidity/lib/FHE.sol";
-import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import { FHE, euint32 } from "@fhevm/solidity/lib/FHE.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /**
  * This trivial example demonstrates the FHE decryption mechanism
  * and highlights a common pitfall developers may encounter.
  */
 contract DecryptSingleValue is SepoliaConfig {
-    euint32 private _trivialEuint32;
+  euint32 private _trivialEuint32;
 
-    // solhint-disable-next-line no-empty-blocks
-    constructor() {}
+  // solhint-disable-next-line no-empty-blocks
+  constructor() {}
 
-    function initializeUint32(uint32 value) external {
-        // Compute a trivial FHE formula _trivialEuint32 = value + 1
-        _trivialEuint32 = FHE.add(FHE.asEuint32(value), FHE.asEuint32(1));
+  function initializeUint32(uint32 value) external {
+    // Compute a trivial FHE formula _trivialEuint32 = value + 1
+    _trivialEuint32 = FHE.add(FHE.asEuint32(value), FHE.asEuint32(1));
 
-        // Grant FHE permissions to:
-        // ✅ The contract caller (`msg.sender`): allows them to decrypt `_trivialEuint32`.
-        // ✅ The contract itself (`address(this)`): allows it to operate on `_trivialEuint32` and
-        //    also enables the caller to perform decryption.
-        //
-        // Note: If you forget to call `FHE.allowThis(_trivialEuint32)`, the user will NOT be able
-        //       to decrypt the value! Both the contract and the caller must have FHE permissions
-        //       for decryption to succeed.
-        FHE.allowThis(_trivialEuint32);
-        FHE.allow(_trivialEuint32, msg.sender);
-    }
+    // Grant FHE permissions to:
+    // ✅ The contract caller (`msg.sender`): allows them to decrypt `_trivialEuint32`.
+    // ✅ The contract itself (`address(this)`): allows it to operate on `_trivialEuint32` and
+    //    also enables the caller to perform decryption.
+    //
+    // Note: If you forget to call `FHE.allowThis(_trivialEuint32)`, the user will NOT be able
+    //       to decrypt the value! Both the contract and the caller must have FHE permissions
+    //       for decryption to succeed.
+    FHE.allowThis(_trivialEuint32);
+    FHE.allow(_trivialEuint32, msg.sender);
+  }
 
-    function initializeUint32Wrong(uint32 value) external {
-        // Compute a trivial FHE formula _trivialEuint32 = value + 1
-        _trivialEuint32 = FHE.add(FHE.asEuint32(value), FHE.asEuint32(1));
+  function initializeUint32Wrong(uint32 value) external {
+    // Compute a trivial FHE formula _trivialEuint32 = value + 1
+    _trivialEuint32 = FHE.add(FHE.asEuint32(value), FHE.asEuint32(1));
 
-        // ❌ Common FHE permission mistake:
-        // ================================================================
-        // We grant FHE permissions to the contract caller (`msg.sender`),
-        // expecting they will be able to decrypt the encrypted value later.
-        //
-        // However, this will fail! 💥
-        // The contract itself (`address(this)`) also needs FHE permissions to allow decryption.
-        // Without granting the contract access using `FHE.allowThis(...)`,
-        // the decryption attempt by the user will not succeed.
-        FHE.allow(_trivialEuint32, msg.sender);
-    }
+    // ❌ Common FHE permission mistake:
+    // ================================================================
+    // We grant FHE permissions to the contract caller (`msg.sender`),
+    // expecting they will be able to decrypt the encrypted value later.
+    //
+    // However, this will fail! 💥
+    // The contract itself (`address(this)`) also needs FHE permissions to allow decryption.
+    // Without granting the contract access using `FHE.allowThis(...)`,
+    // the decryption attempt by the user will not succeed.
+    FHE.allow(_trivialEuint32, msg.sender);
+  }
 
-    function encryptedUint32() public view returns (euint32) {
-        return _trivialEuint32;
-    }
+  function encryptedUint32() public view returns (euint32) {
+    return _trivialEuint32;
+  }
 }
-
 ```
 
 {% endtab %}
@@ -75,14 +73,13 @@ contract DecryptSingleValue is SepoliaConfig {
 {% tab title="DecryptSingleValue.ts" %}
 
 ```ts
+import { DecryptSingleValue, DecryptSingleValue__factory } from "../../../types";
+import type { Signers } from "../../types";
 import { FhevmType, HardhatFhevmRuntimeEnvironment } from "@fhevm/hardhat-plugin";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import * as hre from "hardhat";
-
-import { DecryptSingleValue, DecryptSingleValue__factory } from "../../../types";
-import type { Signers } from "../../types";
 
 async function deployFixture() {
   // Contracts are deployed using the first signer/account by default
@@ -152,10 +149,8 @@ describe("DecryptSingleValue", function () {
     ).to.be.rejectedWith(new RegExp("^dapp contract (.+) is not authorized to user decrypt handle (.+)."));
   });
 });
-
 ```
 
 {% endtab %}
 
 {% endtabs %}
-

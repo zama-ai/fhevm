@@ -7,7 +7,6 @@ Decryption is essential in two primary cases:
 1. **Smart contract logic**: A contract requires plaintext values for computations or decision-making.
 2. **User interaction**: Plaintext data needs to be revealed to all users, such as revealing the decision of the vote.
 
-
 ## Overview
 
 Decryption in FHEVM is an asynchronous process that involves the Relayer and Key Management System (KMS). Here’s an example of how to safely request decryption in a contract.

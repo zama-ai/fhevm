@@ -24,8 +24,8 @@ Otherwise:
 🟨 Go to [**Solidity ACL Guide**](https://docs.zama.ai/protocol/solidity-guides/smart-contract/acl) for more detailed instructions about access control.
 
 ## Help center
+
 Ask technical questions and discuss with the community.
 
 - [Community forum](https://community.zama.ai/c/fhevm/15)
 - [Discord channel](https://discord.com/invite/fhe-org)
-

@@ -54,8 +54,8 @@ The table below summarizes the available casting functions:
 | `ebool`   | `euintX` | `FHE.asEuintXX` |
 | `euintX`  | `ebool`  | `FHE.asEboolXX` |
 
-{% hint style="info" %} 
-Casting between encrypted types is efficient and often necessary when handling data with differing precision requirements. 
+{% hint style="info" %}
+Casting between encrypted types is efficient and often necessary when handling data with differing precision requirements.
 {% endhint %}
 
 ### **Workflow for encrypted types**

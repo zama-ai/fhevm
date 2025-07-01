@@ -17,7 +17,6 @@ layout:
 **Welcome to the Zama Confidential Blockchain Protocol Docs.**\
 The docs aim to guide you to build confidential dApps on top of any L1 or L2 using Fully Homomorphic Encryption (FHE).
 
-
 {% hint style="warning" %}
 
 The Zama Protocol Testnet is not audited and is not intended for production use. **Do not publish any critical or sensitive data**. For production workloads, please wait for the Mainnet release.
