@@ -4,7 +4,7 @@
 
 ## Protocol
 
-- [FHE on Blockchain](architecture/overview.md)
+- [FHE on blockchain](architecture/overview.md)
   - [FHE library](architecture/library.md)
   - [Host contracts](architecture/hostchain.md)
   - [Coprocessor](architecture/coprocessor.md)
