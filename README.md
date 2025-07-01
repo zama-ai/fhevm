@@ -9,7 +9,7 @@
 <hr/>
 
 <p align="center">
-  <a href="fhevm-whitepaper-v2.pdf"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/fhevm"> 📒 Documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a> | <a href="https://github.com/zama-ai/awesome-zama"> 📚 FHE resources by Zama</a>
+  <a href="fhevm-whitepaper.pdf"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/protocol"> 📒 Documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a> | <a href="https://github.com/zama-ai/awesome-zama"> 📚 FHE resources by Zama</a>
 </p>
 
 <p align="center">
@@ -26,8 +26,8 @@
 
 > [!NOTE] 
 >
-> The official launch of the **Zama Confidential Blockchain Protocol** is coming on **July 1st, 2025**. <br>
-> [**Sign up here**](https://www.zama.ai/public-testnet) to get early access to the product, full docs, and examples.
+> The Zama Confidential Blockchain Protocol Public Testnet is live.
+> Read the litepaper [here](https://docs.zama.ai/protocol/zama-protocol-litepaper)
 
 
 ## About
@@ -92,7 +92,7 @@ The directories of this repository are organized in the following way:
 - **Security:** The underlying FHE crypto-scheme of FHEVM is quantum-resistant. Decryption is managed via a key management system (KMS) using multi-party computation (MPC), ensuring security even if some parties are compromised or misbehaving.
 - **Symbolic execution of FHE computations:** All FHE operations are executed symbolically on the host chain, significantly reducing execution time. The actual computations on encrypted data are offloaded asynchronously to our coprocessor, allowing for faster, efficient, and scalable processing.
 
-_Learn more about FHEVM features in the [documentation](https://docs.zama.ai/fhevm) and in our [whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper-v2.pdf)._
+_Learn more about FHEVM features in the [documentation](https://docs.zama.ai/protocol) and in our [whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)._
 <br></br>
 
 ### Use cases
@@ -106,14 +106,14 @@ FHEVM is built for developers to write confidential smart contracts without the 
 - **Confidential voting**: Prevents bribery and blackmailing by keeping votes private.
 - **Encrypted DIDs**: Store identities on-chain and generate attestations without ZK.
 
-_Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/tutorials/see-all-tutorials)._
+_Learn more use cases in the [list of examples](https://docs.zama.ai/protocol/examples)._
 <br></br>
 
 
 ## Resources
-- [Documentation](https://docs.zama.ai/fhevm) — Official documentation of FHEVM.
-- [Whitepaper](./fhevm-whitepaper-v2.pdf) — Technical overview of FHEVM's cryptographic design.
-- [Tutorials](https://docs.zama.ai/fhevm/tutorials/see-all-tutorials) — Examples of building confidential smart contracts.
+- [Documentation](https://docs.zama.ai/protocol) — Official documentation of FHEVM.
+- [Whitepaper](./fhevm-whitepaper.pdf) — Technical overview of FHEVM's cryptographic design.
+- [Tutorials](https://docs.zama.ai/protocol/examples) — Examples of building confidential smart contracts.
 - [Awesome Zama – FHEVM](https://github.com/zama-ai/awesome-zama?tab=readme-ov-file#fhevm) — Curated articles, talks, and ecosystem projects.
 
 <p align="right">
