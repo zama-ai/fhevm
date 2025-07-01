@@ -150,7 +150,7 @@ This enables private, homomorphic computation on encrypted integers.
 #### Replace
 
 ```solidity
-uint32 _counter;
+uint32 _count;
 ```
 
 and
@@ -162,7 +162,7 @@ function getCount() external view returns (uint32) {
 #### With :
 
 ```solidity
-euint32 _counter;
+euint32 _count;
 ```
 
 and
@@ -307,6 +307,48 @@ function increment(externalEuint32 inputEuint32, bytes calldata inputProof) exte
 {% hint style="info" %}
 We grant **two** FHE permissions here — not just one. In the next part of the tutorial, you'll learn why **both** are necessary.
 {% endhint %}
+
+## Convert `decrement()` to its FHEVM equivalent 
+
+Just like with the `increment()` migration, we’ll now convert the `decrement()` function to its FHEVM-compatible version.
+
+Replace :
+
+```solidity
+/// @notice Decrements the counter by a specific value
+function decrement(uint32 value) external {
+  require(_count >= value, "Counter: cannot decrement below zero");
+  _count -= value;
+}
+```
+
+with the following :
+
+```solidity
+/// @notice Decrements the counter by a specific value
+/// @dev This example omits overflow/underflow checks for simplicity and readability.
+/// In a production contract, proper range checks should be implemented.
+function decrement(externalEuint32 inputEuint32, bytes calldata inputProof) external {
+  euint32 encryptedEuint32 = FHE.fromExternal(inputEuint32, inputProof);
+
+  _count = FHE.sub(_count, encryptedEuint32);
+
+  FHE.allowThis(_count);
+  FHE.allow(_count, msg.sender);
+}
+```
+
+{% hint style="warning" %}
+The `increment()` and `decrement()` functions do not perform any overflow or underflow checks.
+{% endhint %}
+
+## Compile `FHECounter.sol`
+
+From your project's root directory, run:
+
+```sh
+npx hardhat compile
+```
 
 Congratulations! Your smart contract is now fully **FHEVM-compatible**.
 

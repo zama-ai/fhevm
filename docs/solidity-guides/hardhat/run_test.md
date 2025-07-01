@@ -143,7 +143,7 @@ If an internal exception is raised, it likely means the contract was not properl
 {% endstep %}
 {% step %}
 
-#### Interact with the deployed `ConfidentialERC20` contract
+#### Interact with the deployed `FHECounter` contract
 
 From the root project directory:
 
