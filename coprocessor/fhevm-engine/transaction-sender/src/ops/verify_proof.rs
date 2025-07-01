@@ -122,7 +122,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         let transaction = match self.provider.send_transaction(txn_req.clone()).await {
             Ok(txn) => txn,
             Err(e) => {
-                if let Some(InputVerificationErrors::CoprocessorSignerAlreadyVerified(_)) =
+                if let Some(InputVerificationErrors::CoprocessorAlreadyVerified(_)) =
                     e.as_error_resp().and_then(|payload| {
                         payload.as_decoded_interface_error::<InputVerificationErrors>()
                     })
@@ -130,7 +130,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
                     warn!( "Coprocessor has already verified the proof with ID {}, removing it from the DB", txn_request.0);
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
-                } else if let Some(InputVerificationErrors::CoprocessorSignerAlreadyRejected(_)) =
+                } else if let Some(InputVerificationErrors::CoprocessorAlreadyRejected(_)) =
                     e.as_error_resp().and_then(|payload| {
                         payload.as_decoded_interface_error::<InputVerificationErrors>()
                     })
