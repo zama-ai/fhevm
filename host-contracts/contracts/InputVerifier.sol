@@ -117,6 +117,10 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         uint256 threshold; /// @notice The threshold for the number of signers required for a signature to be valid
     }
 
+    /// Constant used for making sure the version number using in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 2;
+
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant InputVerifierStorageLocation =
         0x3f7d7a96c8c7024e92d37afccfc9b87773a33b9bc22e23134b683e74a50ace00;
@@ -137,7 +141,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         address verifyingContractSource,
         uint64 chainIDSource,
         address[] calldata initialSigners
-    ) public virtual onlyFromEmptyProxy reinitializer(2) {
+    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
         uint256 initialSignersLen = initialSigners.length;
