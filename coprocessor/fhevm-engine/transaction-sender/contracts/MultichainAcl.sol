@@ -5,7 +5,8 @@ pragma solidity ^0.8.24;
 /// @dev source: github.com/zama-ai/fhevm-gateway/blob/main/contracts/MultichainAcl.sol
 /// @notice This contract is a mock of the MultichainAcl contract from L2.
 contract MultichainAcl {
-    error CoprocessorAlreadyAllowed(address coprocessor, bytes32 ctHandle);
+    error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address coprocessor);
+    error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
 
     event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
@@ -18,14 +19,14 @@ contract MultichainAcl {
 
     function allowAccount(bytes32 ctHandle, address accountAddress) public {
         if (alreadyAllowedRevert) {
-            revert CoprocessorAlreadyAllowed(msg.sender, ctHandle);
+            revert CoprocessorAlreadyAllowedAccount(ctHandle, accountAddress, msg.sender);
         }
         emit AllowAccount(ctHandle, accountAddress);
     }
 
     function allowPublicDecrypt(bytes32 ctHandle) public {
         if (alreadyAllowedRevert) {
-            revert CoprocessorAlreadyAllowed(msg.sender, ctHandle);
+            revert CoprocessorAlreadyAllowedPublicDecrypt(ctHandle, msg.sender);
         }
         emit AllowPublicDecrypt(ctHandle);
     }
