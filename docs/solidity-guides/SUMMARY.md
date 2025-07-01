@@ -39,3 +39,4 @@
 - [Foundry](foundry.md)
 - [HCU](hcu.md)
 - [Migrate to v0.7](migration.md)
+- [How to Transform Your Smart Contract into a FHEVM Smart Contract?](transform_smart_contract_with_fhevm.md)
