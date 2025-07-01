@@ -31,7 +31,11 @@ address = "0x0000000000000000000000000000000000000002"
 
 # user_decryption_timeout_secs = 300
 
-# retry_interval_secs = 5
+# grpc_retry_interval_secs = 5
+
+# s3_ciphertext_retrieval_retries = 3
+
+# s3_connect_timeout = 5
 
 # [s3_config]
 # region = "us-east-1"

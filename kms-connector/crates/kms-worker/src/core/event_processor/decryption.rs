@@ -46,7 +46,7 @@ where
             )),
             chain_id: Some(U256::from(config.chain_id)),
             verifying_contract: Some(config.decryption_contract.address),
-            salt: None, // TODO: verify policy on this
+            salt: None,
         };
 
         Self { s3_service, domain }
