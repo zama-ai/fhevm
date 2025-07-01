@@ -10,9 +10,21 @@ contract InputVerification {
         bytes[] signatures
     );
     event RejectProofResponse(uint256 indexed zkProofId);
+ /**
+     * @notice Error indicating that the coprocessor has already verified the ZKPoK.
+     * @param zkProofId The ID of the ZKPoK.
+     * @param txSender The transaction sender address of the coprocessor that has already verified.
+     * @param signer The signer address of the coprocessor that has already verified.
+     */
+    error CoprocessorAlreadyVerified(uint256 zkProofId, address txSender, address signer);
 
-    error CoprocessorSignerAlreadyVerified(uint256 zkProofId, address signer);
-    error CoprocessorSignerAlreadyRejected(uint256 zkProofId, address signer);
+    /**
+     * @notice Error indicating that the coprocessor has already rejected the ZKPoK.
+     * @param zkProofId The ID of the ZKPoK.
+     * @param txSender The transaction sender address of the coprocessor that has already rejected.
+     * @param signer The signer address of the coprocessor that has already rejected.
+     */
+    error CoprocessorAlreadyRejected(uint256 zkProofId, address txSender, address signer);
 
     bool alreadyVerifiedRevert;
     bool alreadyRejectedRevert;
@@ -38,7 +50,7 @@ contract InputVerification {
         }
 
         if (alreadyVerifiedRevert) {
-            revert CoprocessorSignerAlreadyVerified(zkProofId, msg.sender);
+            revert CoprocessorAlreadyVerified(zkProofId, msg.sender, msg.sender);
         }
 
         bytes[] memory signatures = new bytes[](1);
@@ -52,7 +64,7 @@ contract InputVerification {
         }
 
         if (alreadyRejectedRevert) {
-            revert CoprocessorSignerAlreadyRejected(zkProofId, msg.sender);
+            revert CoprocessorAlreadyRejected(zkProofId, msg.sender, msg.sender);
         }
 
         emit RejectProofResponse(zkProofId);
