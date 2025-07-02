@@ -39,7 +39,7 @@ jobs:
         with:
           # This version should be updated whenever we release new contract versions or
           # touch a contract upgrade path.
-          ref: 0.7.4
+          ref: v0.7.4
           path: previous-fhevm
           persist-credentials: 'false'
 
