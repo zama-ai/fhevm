@@ -10,7 +10,7 @@ spec:
   replicas: {{ .Values.tfheWorker.replicas | default 0 }}
   selector:
     matchLabels:
-      app: coprocessor-server
+      app: coprocessor-tfhe-worker
   {{- if .Values.tfheWorker.updateStrategy }}
   strategy:
     {{- toYaml .Values.tfheWorker.updateStrategy | nindent 4 }}
@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       labels:
-        app: coprocessor-server
+        app: coprocessor-tfhe-worker
         app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
@@ -43,7 +43,7 @@ spec:
       serviceAccountName: {{ .Values.tfheWorker.serviceAccountName }}
       {{- end }}
       containers:
-        - name: coprocessor-server
+        - name: coprocessor-tfhe-worker
           image: {{ .Values.tfheWorker.image.name }}:{{ .Values.tfheWorker.image.tag }}
           command: ["coprocessor"]
           args:
