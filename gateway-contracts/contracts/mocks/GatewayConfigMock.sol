@@ -44,7 +44,7 @@ contract GatewayConfigMock {
         emit InitializeGatewayConfig(pauser, metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
     }
 
-    function reinitializeV2(Custodian[] memory custodians) external {
+    function reinitializeV2(Custodian[] memory custodians) public {
         emit ReinitializeGatewayConfigV2(custodians);
     }
 
