@@ -80,11 +80,11 @@ jobs:
                 .sort(semver.rcompare);
 
               previousTag = matchingTags[0] || '';
-              console.log(`Detected release branch '${branch}', using latest tag: ${previousTag}`);
+              console.log(`Detected release branch '${targetBranch}', using latest tag: ${previousTag}`);
             } else {
               // Get latest valid semver tag, including prereleases
               previousTag = tagNames.sort(semver.rcompare)[0] || '';
-              console.log(`Detected feature branch '${branch}', using latest tag: ${previousTag}`);
+              console.log(`Detected non-release branch '${targetBranch}', using latest tag: ${previousTag}`);
             }
 
             core.setOutput('tag', previousTag);
