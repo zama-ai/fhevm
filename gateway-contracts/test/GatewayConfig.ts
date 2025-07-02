@@ -575,6 +575,15 @@ describe("GatewayConfig", function () {
           expect(hostChainIds).to.include(Number(hostChain.chainId));
         }
       });
+
+      it("Should get host chain's metadata", async function () {
+        const hostChains = await gatewayConfig.getHostChains();
+
+        for (let i = 0; i < hostChainIds.length; i++) {
+          const hostChain = await gatewayConfig.getHostChain(i);
+          expect(hostChain).to.deep.equal(hostChains[i]);
+        }
+      });
     });
 
     describe("Pauser", function () {
