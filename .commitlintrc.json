@@ -1,3 +1,8 @@
+git init
+echo "Hello Zama" > readme.md
+git add .
+git commit -m "Commit 1"
+# Lặp lại 5 lần với nội dung khác hoặc sửa file nhỏ
 {
   "extends": ["@commitlint/config-conventional"]
 }
