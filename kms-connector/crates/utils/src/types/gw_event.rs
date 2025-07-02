@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use crate::types::db::SnsCiphertextMaterialDbItem;
 use alloy::primitives::U256;
 use fhevm_gateway_rust_bindings::{
@@ -11,7 +9,13 @@ use fhevm_gateway_rust_bindings::{
         PreprocessKskgenRequest,
     },
 };
-use sqlx::{Row, postgres::PgRow};
+use sqlx::{
+    Pool, Postgres, Row,
+    postgres::{PgArguments, PgRow},
+    query::Query,
+};
+use std::fmt::Display;
+use tracing::{info, warn};
 
 /// The events emitted by the Gateway which are monitored by the KMS Connector.
 #[derive(Clone, Debug, PartialEq)]
@@ -26,6 +30,7 @@ pub enum GatewayEvent {
 }
 
 impl GatewayEvent {
+    /// Create a new `GatewayEvent::PublicDecryption` from a `PgRow`.
     pub fn from_public_decryption_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let sns_ct_materials = row
             .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
@@ -39,6 +44,7 @@ impl GatewayEvent {
         }))
     }
 
+    /// Create a new `GatewayEvent::UserDecryption` from a `PgRow`.
     pub fn from_user_decryption_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let sns_ct_materials = row
             .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
@@ -54,6 +60,7 @@ impl GatewayEvent {
         }))
     }
 
+    /// Create a new `GatewayEvent::PreprocessKeygen` from a `PgRow`.
     pub fn from_pre_keygen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         Ok(GatewayEvent::PreprocessKeygen(PreprocessKeygenRequest {
             preKeygenRequestId: U256::from_le_bytes(
@@ -63,6 +70,7 @@ impl GatewayEvent {
         }))
     }
 
+    /// Create a new `GatewayEvent::PreprocessKskgen` from a `PgRow`.
     pub fn from_pre_kskgen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         Ok(GatewayEvent::PreprocessKskgen(PreprocessKskgenRequest {
             preKskgenRequestId: U256::from_le_bytes(
@@ -72,6 +80,7 @@ impl GatewayEvent {
         }))
     }
 
+    /// Create a new `GatewayEvent::Keygen` from a `PgRow`.
     pub fn from_keygen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         Ok(GatewayEvent::Keygen(KeygenRequest {
             preKeyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_key_id")?),
@@ -79,6 +88,7 @@ impl GatewayEvent {
         }))
     }
 
+    /// Create a new `GatewayEvent::Kskgen` from a `PgRow`.
     pub fn from_kskgen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         Ok(GatewayEvent::Kskgen(KskgenRequest {
             preKskId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_ksk_id")?),
@@ -88,11 +98,117 @@ impl GatewayEvent {
         }))
     }
 
+    /// Create a new `GatewayEvent::Crsgen` from a `PgRow`.
     pub fn from_crsgen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         Ok(GatewayEvent::Crsgen(CrsgenRequest {
             crsgenRequestId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crsgen_request_id")?),
             fheParamsDigest: row.try_get::<[u8; 32], _>("fhe_params_digest")?.into(),
         }))
+    }
+
+    /// Sets the `under_process` field of the event as `FALSE` in the database.
+    pub async fn mark_as_free(&self, db: &Pool<Postgres>) {
+        match self {
+            GatewayEvent::PublicDecryption(e) => {
+                Self::mark_public_decryption_as_free(db, e.decryptionId).await
+            }
+            GatewayEvent::UserDecryption(e) => {
+                Self::mark_user_decryption_as_free(db, e.decryptionId).await
+            }
+            GatewayEvent::PreprocessKeygen(e) => {
+                Self::mark_pre_keygen_as_free(db, e.preKeygenRequestId).await
+            }
+            GatewayEvent::PreprocessKskgen(e) => {
+                Self::mark_pre_kskgen_as_free(db, e.preKskgenRequestId).await
+            }
+            GatewayEvent::Keygen(e) => Self::mark_keygen_as_free(db, e.preKeyId).await,
+            GatewayEvent::Kskgen(e) => Self::mark_kskgen_as_free(db, e.preKskId).await,
+            GatewayEvent::Crsgen(e) => Self::mark_crsgen_as_free(db, e.crsgenRequestId).await,
+        }
+    }
+
+    /// Sets the `under_process` field of the `PublicDecryptionRequest` as `FALSE` in the database.
+    pub async fn mark_public_decryption_as_free(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE public_decryption_requests SET under_process = FALSE WHERE decryption_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_free_event_query(db, query, format!("PublicDecryptionRequest #{id}")).await;
+    }
+
+    /// Sets the `under_process` field of the `UserDecryptionRequest` as `FALSE` in the database.
+    pub async fn mark_user_decryption_as_free(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE user_decryption_requests SET under_process = FALSE WHERE decryption_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_free_event_query(db, query, format!("UserDecryptionRequest #{id}")).await;
+    }
+
+    /// Sets the `under_process` field of the `PreprocessKeygenRequest` as `FALSE` in the database.
+    pub async fn mark_pre_keygen_as_free(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE preprocess_keygen_requests SET under_process = FALSE WHERE pre_keygen_request_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_free_event_query(db, query, format!("PreprocessKeygenRequest #{id}")).await;
+    }
+
+    /// Sets the `under_process` field of the `PreprocessKskgenRequest` as `FALSE` in the database.
+    pub async fn mark_pre_kskgen_as_free(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE preprocess_kskgen_requests SET under_process = FALSE WHERE pre_kskgen_request_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_free_event_query(db, query, format!("PreprocessKskgenRequest #{id}")).await;
+    }
+
+    /// Sets the `under_process` field of the `KeyRequest` as `FALSE` in the database.
+    pub async fn mark_keygen_as_free(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE keygen_requests SET under_process = FALSE WHERE pre_key_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_free_event_query(db, query, format!("KeyRequest #{id}")).await;
+    }
+
+    /// Sets the `under_process` field of the `KskgenRequest` as `FALSE` in the database.
+    pub async fn mark_kskgen_as_free(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE kskgen_requests SET under_process = FALSE WHERE pre_ksk_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_free_event_query(db, query, format!("KskgenRequest #{id}")).await;
+    }
+
+    /// Sets the `under_process` field of the `CrsgenRequest` as `FALSE` in the database.
+    pub async fn mark_crsgen_as_free(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE crsgen_requests SET under_process = FALSE WHERE crsgen_request_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_free_event_query(db, query, format!("CrsgenRequest #{id}")).await;
+    }
+
+    /// Executes the free event query and checks its result.
+    async fn execute_free_event_query(
+        db: &Pool<Postgres>,
+        query: Query<'_, Postgres, PgArguments>,
+        event_str: String,
+    ) {
+        let query_result = match query.execute(db).await {
+            Ok(result) => result,
+            Err(e) => return warn!("Failed to mark event as free: {e}"),
+        };
+
+        if query_result.rows_affected() == 1 {
+            info!("Successfully restore {event_str} as free in DB");
+        } else {
+            warn!(
+                "Unexpected query result while restoring {} as free: {:?}",
+                event_str, query_result
+            )
+        }
     }
 }
 

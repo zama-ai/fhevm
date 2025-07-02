@@ -68,8 +68,8 @@ impl Display for Config {
         writeln!(f, "Chain ID: {}", self.chain_id)?;
         writeln!(f, "{}", self.decryption_contract)?;
         writeln!(f, "{}", self.gateway_config_contract)?;
-        write!(f, "Events batch size: {}", self.events_batch_size)?;
-        write!(f, "GRPC Requests Retries: {}", self.grpc_request_retries)?;
+        writeln!(f, "Events batch size: {}", self.events_batch_size)?;
+        writeln!(f, "GRPC Requests Retries: {}", self.grpc_request_retries)?;
         writeln!(
             f,
             "Public Decryption Timeout: {}s",
@@ -80,7 +80,7 @@ impl Display for Config {
             "User Decryption Timeout: {}s",
             self.user_decryption_timeout.as_secs()
         )?;
-        write!(
+        writeln!(
             f,
             "GRPC Poll Interval: {}s",
             self.grpc_poll_interval.as_secs()
@@ -134,7 +134,7 @@ impl Config {
         let public_decryption_timeout =
             Duration::from_secs(raw_config.public_decryption_timeout_secs);
         let user_decryption_timeout = Duration::from_secs(raw_config.user_decryption_timeout_secs);
-        let grpc_retry_interval = Duration::from_secs(raw_config.grpc_poll_interval_secs);
+        let grpc_poll_interval = Duration::from_secs(raw_config.grpc_poll_interval_secs);
         let s3_ciphertext_retrieval_timeout = Duration::from_secs(raw_config.s3_connect_timeout);
 
         Ok(Self {
@@ -150,7 +150,7 @@ impl Config {
             grpc_request_retries: raw_config.grpc_request_retries,
             public_decryption_timeout,
             user_decryption_timeout,
-            grpc_poll_interval: grpc_retry_interval,
+            grpc_poll_interval,
             s3_config: raw_config.s3_config,
             s3_ciphertext_retrieval_retries: raw_config.s3_ciphertext_retrieval_retries,
             s3_connect_timeout: s3_ciphertext_retrieval_timeout,

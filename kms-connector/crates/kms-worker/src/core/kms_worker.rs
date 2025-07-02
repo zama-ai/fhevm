@@ -133,7 +133,6 @@ mod tests {
 
         logs_contain("Event has been picked");
         logs_contain("Response has been published");
-        logs_contain("Event has been removed");
     }
 
     struct MockEventPicker {
