@@ -107,57 +107,12 @@ async fn tfhe_worker_cycle(
         let mut s = tracer.start_with_context("query_work_items", &loop_ctx);
         let the_work = query!(
             "
-            WITH RECURSIVE dependent_computations(tenant_id, output_handle, dependencies, fhe_operation, is_scalar, produced_handles) AS (
-                SELECT c.tenant_id, c.output_handle, c.dependencies, c.fhe_operation, c.is_scalar, ARRAY[ROW(c.tenant_id, c.output_handle)]
-                FROM computations c
-                WHERE is_completed = false
-                AND is_error = false
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM unnest(c.dependencies) WITH ORDINALITY AS elems(v, dep_index)
-                    WHERE (c.tenant_id, elems.v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )
-                    -- don't select scalar operands
-                    AND (
-                        NOT c.is_scalar
-                        OR c.is_scalar AND NOT elems.dep_index = 2
-                    )
-                    -- ignore fhe random, trivial encrypt operations, all inputs are scalars
-                    AND NOT c.fhe_operation = ANY(ARRAY[24, 26, 27])
-                )
-              UNION ALL
-                SELECT c.tenant_id, c.output_handle, c.dependencies, c.fhe_operation, c.is_scalar, dc.produced_handles || ROW(c.tenant_id, c.output_handle)
-                FROM dependent_computations dc, computations c
-                WHERE is_completed = false
-                AND is_error = false
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM unnest(c.dependencies) WITH ORDINALITY AS elems(v, dep_index)
-                    WHERE (c.tenant_id, elems.v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )
-                    AND NOT ROW(c.tenant_id, elems.v) = ANY(dc.produced_handles)
-                    -- don't select scalar operands
-                    AND (
-                        NOT c.is_scalar
-                        OR c.is_scalar AND NOT elems.dep_index = 2
-                    )
-                    -- ignore fhe random, trivial encrypt operations, all inputs are scalars
-                    AND NOT c.fhe_operation = ANY(ARRAY[24, 26, 27])
-                )
-                AND dc.output_handle = ANY(c.dependencies)
-                AND dc.tenant_id = c.tenant_id
-                AND NOT ROW(c.tenant_id, c.output_handle) = ANY(dc.produced_handles)
-            ) SEARCH DEPTH FIRST BY output_handle SET computation_order,
-           limited_computations AS (
-              SELECT tenant_id, output_handle
-              FROM dependent_computations
-              GROUP BY tenant_id, output_handle
-              ORDER BY min(computation_order)
-              LIMIT $1
-            )
             SELECT tenant_id, output_handle, dependencies, fhe_operation, is_scalar
             FROM computations
-            WHERE (tenant_id, output_handle) IN (
-              SELECT tenant_id, output_handle FROM limited_computations
-            )
+            WHERE is_completed = false
+            AND is_error = false
+            ORDER BY created_at
+            LIMIT $1
             FOR UPDATE SKIP LOCKED
         ",
             args.work_items_batch_size as i32
@@ -377,6 +332,27 @@ async fn tfhe_worker_cycle(
             for (idx, w) in work.iter().enumerate() {
                 // Filter out computations that could not complete
                 if uncomputable.contains_key(&idx) {
+                    // Update timestamp of uncomputable computation
+                    let mut s =
+                        tracer.start_with_context("update_unschedulable_computation", &loop_ctx);
+                    s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
+                    s.set_attribute(KeyValue::new(
+                        "handle",
+                        format!("0x{}", hex::encode(&w.output_handle)),
+                    ));
+                    let _ = query!(
+                        "
+                            UPDATE computations
+                            SET created_at = CURRENT_TIMESTAMP
+                            WHERE tenant_id = $1
+                            AND output_handle = $2
+                        ",
+                        w.tenant_id,
+                        w.output_handle
+                    )
+                    .execute(trx.as_mut())
+                    .await?;
+                    s.end();
                     continue;
                 }
                 let r = &mut res
