@@ -83,7 +83,7 @@ The directories of this repository are organized in the following way:
   <br></br>
 ### Main features
 
-- **Privacy by design:** Building decentralized apps with full privacy and confidentiality on Ethereum, leveraging FHE.
+- *Privacy by design:* Building decentralized apps with full privacy and confidentiality on Ethereum, leveraging FHE.
 - **Solidity integration:** Write FHEVM contracts like any standard Solidity contract using Solidity. Compatible with existing toolchains — such as Hardhat and Foundry (*coming soon*).
 - **Programmable privacy:**  Define exactly what data is encrypted and write the access control logic directly in your smart contracts.
 - **High precision encrypted integers :** Up to 256 bits of precision for integers.
