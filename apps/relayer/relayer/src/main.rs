@@ -268,12 +268,9 @@ async fn main() {
     let settings = match RelayerConfiguration::new(args.config_file) {
         Ok(value) => value,
         Err(error) => {
-            let error_msg = format!(
-                "Unrecoverable error parsing relayer configuration: {:?}",
-                error
-            );
+            let error_msg = format!("Unrecoverable error parsing relayer configuration: {error:?}");
             error!(error_msg);
-            panic!("{:?}", error_msg)
+            panic!("{error_msg:?}")
         }
     };
 
@@ -324,10 +321,7 @@ async fn main() {
         match TransactionService::new(&settings.gateway_chain.chain_config.ws_url, signer).await {
             Ok(value) => value,
             Err(error) => {
-                let err_msg = format!(
-                    "Couldn't initialize gateway transaction service: {:?}",
-                    error
-                );
+                let err_msg = format!("Couldn't initialize gateway transaction service: {error:?}");
                 error!(err_msg);
                 panic!("{}", err_msg);
             }
@@ -372,7 +366,7 @@ async fn main() {
         {
             Ok(value) => value,
             Err(error) => {
-                let err_msg = format!("Couldn't initialize host transaction service: {:?}", error);
+                let err_msg = format!("Couldn't initialize host transaction service: {error:?}");
                 error!(err_msg);
                 panic!("{}", err_msg);
             }

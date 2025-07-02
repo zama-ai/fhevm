@@ -1002,7 +1002,7 @@ where
     let serialized_message = match serde_json::to_string(&message) {
         Ok(value) => value,
         Err(err) => {
-            let err_msg = format!("Error serializing message to JSON: {:?}", err);
+            let err_msg = format!("Error serializing message to JSON: {err:?}");
             return Err(err_msg);
         }
     };
@@ -1017,7 +1017,7 @@ where
         .await
     {
         Err(error) => {
-            let err_msg = format!("Error publishing: {:?}", error);
+            let err_msg = format!("Error publishing: {error:?}");
             return Err(err_msg);
         }
         Ok(response) => response,

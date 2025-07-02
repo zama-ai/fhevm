@@ -96,7 +96,7 @@ pub async fn wait_for_ct_priv_dec_availability(
     let url = match Url::parse(&gateway_http_url) {
         Ok(url) => url,
         Err(e) => {
-            return Err(format!("Invalid URL {} : {}", gateway_http_url, e).to_string());
+            return Err(format!("Invalid URL {gateway_http_url} : {e}").to_string());
         }
     };
     let provider = ProviderBuilder::new().connect_http(url);
@@ -142,7 +142,7 @@ pub async fn wait_for_ct_priv_dec_availability(
                     "Max retries {} reached for public decryption readiness check",
                     max_retries
                 );
-                return Err(format!("Max retries reached: {}", max_retries).to_string());
+                return Err(format!("Max retries reached: {max_retries}").to_string());
             }
         }
     }
@@ -163,7 +163,7 @@ pub async fn wait_for_ct_pub_dec_availability(
     let url = match Url::parse(&gateway_http_url) {
         Ok(url) => url,
         Err(e) => {
-            return Err(format!("Invalid URL {} : {}", gateway_http_url, e).to_string());
+            return Err(format!("Invalid URL {gateway_http_url} : {e}").to_string());
         }
     };
     let provider = ProviderBuilder::new().connect_http(url);
@@ -208,7 +208,7 @@ pub async fn wait_for_ct_pub_dec_availability(
                     "Max retries {} reached for public decryption readiness check",
                     max_retries
                 );
-                return Err(format!("Max retries reached: {}", max_retries).to_string());
+                return Err(format!("Max retries reached: {max_retries}").to_string());
             }
         }
     }
@@ -513,7 +513,7 @@ fn fetch_or_store_request_from_response(
                         Ok(None)
                     }
                     Err(error) => {
-                        let msg = format!("Insertion failure: {:?}", error);
+                        let msg = format!("Insertion failure: {error:?}");
                         Err(msg.to_string())
                     }
                 }
@@ -539,7 +539,7 @@ fn fetch_or_store_request_from_response(
                     Ok(None)
                 }
                 Err(error) => {
-                    let msg = format!("Insertion failure: {:?}", error);
+                    let msg = format!("Insertion failure: {error:?}");
                     Err(msg.to_string())
                 }
             }
@@ -556,7 +556,7 @@ fn fixed_bytes_to_hex_string(bytes: &FixedBytes<32>) -> String {
 
     // Convert each byte to hex and append to the result
     for byte in bytes.as_slice() {
-        write!(result, "{:02x}", byte).unwrap();
+        write!(result, "{byte:02x}").unwrap();
     }
 
     result
@@ -991,7 +991,7 @@ impl ZWSRelayerHandler {
                     let calldata = match ComputeCalldata::public_decryption_req(handles.clone()) {
                         Ok(value) => value,
                         Err(error) => {
-                            let err_msg = format!("Error computing calldata: {:?}", error);
+                            let err_msg = format!("Error computing calldata: {error:?}");
                             error!(err_msg);
                             return;
                         }

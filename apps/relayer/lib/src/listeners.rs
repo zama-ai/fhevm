@@ -387,20 +387,16 @@ pub async fn http_listener(
 
     // Define the socket address for the server to listen on.
     // TODO: set this as a config parameter
-    let addr: SocketAddr = format!("{}:{}", host, port)
-        .parse()
-        .expect("Invalid address");
+    let addr: SocketAddr = format!("{host}:{port}").parse().expect("Invalid address");
 
-    println!("Server listening on http://{}", addr);
+    println!("Server listening on http://{addr}");
 
     // Start the server with hyper underneath.
     let listener = match tokio::net::TcpListener::bind(addr).await {
         Ok(listener) => listener,
         Err(error) => {
-            let msg_value = format!(
-                "Error creating TcpListener with address: {:?}. Error: {:?}",
-                addr, error
-            );
+            let msg_value =
+                format!("Error creating TcpListener with address: {addr:?}. Error: {error:?}");
             error!(msg_value);
             return;
         }
@@ -408,7 +404,7 @@ pub async fn http_listener(
     match axum::serve(listener, app).await {
         Ok(_) => {}
         Err(error) => {
-            let msg_value = format!("Error serving with axum: {:?}", error);
+            let msg_value = format!("Error serving with axum: {error:?}");
             error!(msg_value);
         }
     };
