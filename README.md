@@ -37,7 +37,7 @@
 
 FHEVM ensures both confidentiality and composability, with the following guarantees:
 - **End-to-end encryption of transactions and state:** Data included in transactions is encrypted and never visible to anyone.
-- **Composability and data availability on-chain:** States are updated while remaining encrypted at all times.
+- *Composability and data availability on-chain:* States are updated while remaining encrypted at all times.
 - **No impact on existing dApps and state:** Encrypted state co-exists alongside public one, and doesn't impact existing dApps.
 <br></br>
 
