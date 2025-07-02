@@ -1,7 +1,6 @@
 # Environment variables
 
-This section describes the environment variables used for deployment. A complete example of an expected `.env` file is
-given in the [`.env.example`](../../../.env.example) file.
+This section describes the environment variables used for deployment. A complete example of an expected `.env` file is given in the [`.env.example`](../../../.env.example) file.
 
 Environment variables can be separated in 3 categories:
 
@@ -9,13 +8,9 @@ Environment variables can be separated in 3 categories:
 - [`KmsManagement` parameters](./env_variables.md#kmsmanagement-parameters)
 - [Deployment settings](./env_variables.md#deployment-settings)
 
-Except for deployment settings, the values are then stored in the deployed contracts and are not always allowed to be
-updated after. In the following, the values are given as examples. Most of them are from the `.env.example` file and are
-used for local testing. The expected types are also given as comments and should be respected, else the deployment is
-expected to fail.
+Except for deployment settings, the values are then stored in the deployed contracts and are not always allowed to be updated after. In the following, the values are given as examples. Most of them are from the `.env.example` file and are used for local testing. The expected types are also given as comments and should be respected, else the deployment is expected to fail.
 
-Besides, the accounts found in the `.env.example` file are already-funded hardhat accounts generated with the following
-command:
+Besides, the accounts found in the `.env.example` file are already-funded hardhat accounts generated with the following command:
 
 ```bash
 make get-accounts
@@ -23,9 +18,7 @@ make get-accounts
 
 ## Summary
 
-Here's the complete list of environment variables used for deploying the fhevm gateway. More detailed information can be
-found in [this section](#in-details) below. Solidity types are defined in
-[Solidity's documentation](https://docs.soliditylang.org/en/latest/types.html).
+Here's the complete list of environment variables used for deploying the fhevm gateway. More detailed information can be found in [this section](#in-details) below. Solidity types are defined in [Solidity's documentation](https://docs.soliditylang.org/en/latest/types.html).
 
 | Environment Variable                | Description                                  | Solidity Type | Default                                                                                             | Comment                                                                       |
 | ----------------------------------- | -------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
@@ -56,15 +49,13 @@ found in [this section](#in-details) below. Solidity types are defined in
 | `CHAIN_ID_GATEWAY`                  | Chain ID of the gateway network              | uint256       | 31337                                                                                               | It should be consistent with the `HARDHAT_NETWORK` value                      |
 | `MNEMONIC`                          | "Mnemonic phrase for address generation      | string        | "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer" | -                                                                             |
 | `RPC_URL`                           | URL of the RPC node                          | string        | "http://127.0.0.1:8757"                                                                             | -                                                                             |
-| `GATEWAY_CONFIG_ADDRESS`            | Address of the GatewayConfig contract        | address       | -                                                                                                   | Only for non-staging/production settings                                      |
+| `GATEWAY_CONFIG_ADDRESS`            | Address of the GatewayConfig contract        | address       | -                                                                                                   | Only for production settings                                                  |
 
 ## In details
 
 ### GatewayConfig values
 
-These values are crucial for the fhevm Gateway protocol and are set in the `GatewayConfig` contract at deployment for
-most of them. To understand what each value is used for, please refer to the
-[GatewayConfig](../contracts/gateway_config.md) documentation.
+These values are crucial for the fhevm Gateway protocol and are set in the `GatewayConfig` contract at deployment for most of them. To understand what each value is used for, please refer to the [GatewayConfig](../contracts/gateway_config.md) documentation.
 
 #### At deployment
 
@@ -96,8 +87,7 @@ PUBLIC_DECRYPTION_THRESHOLD="3" # (uint256)
 USER_DECRYPTION_THRESHOLD="3" # (uint256)
 ```
 
-`PUBLIC_DECRYPTION_THRESHOLD` and `USER_DECRYPTION_THRESHOLD` must be non-null and less or equal to the number of KMS
-nodes registered below.
+`PUBLIC_DECRYPTION_THRESHOLD` and `USER_DECRYPTION_THRESHOLD` must be non-null and less or equal to the number of KMS nodes registered below.
 
 In practice in the fhevm protocol, they are set to values using the following formulas:
 
@@ -114,10 +104,7 @@ These values might change in the future.
 NUM_KMS_NODES="1" # (number)
 ```
 
-`NUM_KMS_NODES` is the number of KMS nodes to register in the `GatewayConfig` contract. It it not stored in it and is
-only used within the deployment script. The following metadata variables must be set for each KMS node, indexed by a
-node number starting from 0. If not enough variables are set, the deployment will fail. If, on the contrary, too many
-variables are set, the deployment will succeed but the extra ones will be ignored.
+`NUM_KMS_NODES` is the number of KMS nodes to register in the `GatewayConfig` contract. It it not stored in it and is only used within the deployment script. The following metadata variables must be set for each KMS node, indexed by a node number starting from 0. If not enough variables are set, the deployment will fail. If, on the contrary, too many variables are set, the deployment will succeed but the extra ones will be ignored.
 
 ```bash
 KMS_TX_SENDER_ADDRESS_0="0xc1d91b49A1B3D1324E93F86778C44a03f1063f1b" # (address)
@@ -131,10 +118,7 @@ KMS_NODE_IP_ADDRESS_0="127.0.0.1" # (string)
 NUM_COPROCESSORS="3" # (number)
 ```
 
-`NUM_COPROCESSORS` is the number of coprocessors to register in the `GatewayConfig` contract. It it not stored in it and
-is only used within the deployment script. The following metadata variables must be set for each coprocessor, indexed by
-a coprocessor number starting from 0. If not enough variables are set, the deployment will fail. If, on the contrary,
-too many variables are set, the deployment will succeed but the extra ones will be ignored.
+`NUM_COPROCESSORS` is the number of coprocessors to register in the `GatewayConfig` contract. It it not stored in it and is only used within the deployment script. The following metadata variables must be set for each coprocessor, indexed by a coprocessor number starting from 0. If not enough variables are set, the deployment will fail. If, on the contrary, too many variables are set, the deployment will succeed but the extra ones will be ignored.
 
 ```bash
 COPROCESSOR_TX_SENDER_ADDRESS_0="0x6518D50aDc9036Df37119eA465a8159E34417E2E" # (address)
@@ -144,8 +128,7 @@ COPROCESSOR_S3_BUCKET_URL_0="s3://bucket-1" # (string)
 
 #### After deployment
 
-The following values are set after deployment in a separate script. However, they are still necessary for the fhevm
-Gateway protocol to be fully functional.
+The following values are set after deployment in a separate script. However, they are still necessary for the fhevm Gateway protocol to be fully functional.
 
 - Host chains:
 
@@ -153,10 +136,7 @@ Gateway protocol to be fully functional.
 NUM_HOST_CHAINS="1" # (number)
 ```
 
-`NUM_HOST_CHAINS` is the number of host chains to register in the `GatewayConfig` contract. It it not stored in it and
-is only used within the deployment script. The following metadata variables must be set for each host chain, indexed by
-a host chain number starting from 0. If not enough variables are set, the script will fail. If, on the contrary, too
-many variables are set, the script will succeed but the extra ones will be ignored.
+`NUM_HOST_CHAINS` is the number of host chains to register in the `GatewayConfig` contract. It it not stored in it and is only used within the deployment script. The following metadata variables must be set for each host chain, indexed by a host chain number starting from 0. If not enough variables are set, the script will fail. If, on the contrary, too many variables are set, the script will succeed but the extra ones will be ignored.
 
 ```bash
 HOST_CHAIN_CHAIN_ID_0="2025" # (uint256)
@@ -170,9 +150,7 @@ HOST_CHAIN_WEBSITE_0="https://host-chain-2025.com" # (string)
 
 ### KmsManagement parameters
 
-🚧 **Important** 🚧: The `KmsManagement` contract is currently neither used nor up-to-date. It will be reworked in the
-future. See [this issue](https://github.com/zama-ai/fhevm-gateway/issues/108) for more details. Still, the associated
-environment variables are required, else the deployment script will fail.
+🚧 **Important** 🚧: The `KmsManagement` contract is currently neither used nor up-to-date. It will be reworked in the future. See [this issue](https://github.com/zama-ai/fhevm-gateway/issues/108) for more details. Still, the associated environment variables are required, else the deployment script will fail.
 
 The following values are set in the `KmsManagement` contract at deployment.
 
@@ -201,8 +179,7 @@ This is the private key of the deployer account, used to deploy the contracts.
 HARDHAT_NETWORK="hardhat" # (string)
 ```
 
-This is the network on which the contracts are expected to be deployed. Possible values are: `hardhat`, `localGateway`,
-`staging`, `zwsDev`, `testnet`.
+This is the network on which the contracts are expected to be deployed. Possible values are: `hardhat`, `localGateway`, `staging`, `zwsDev`, `testnet`.
 
 - Chain ID
 
@@ -210,8 +187,7 @@ This is the network on which the contracts are expected to be deployed. Possible
 CHAIN_ID_GATEWAY="31337" # (uint256)
 ```
 
-This is the chain ID of the network on which the contracts are expected to be deployed. It should be consistent with the
-`HARDHAT_NETWORK` value as such:
+This is the chain ID of the network on which the contracts are expected to be deployed. It should be consistent with the `HARDHAT_NETWORK` value as such:
 
 - `hardhat`: "31337
 - `localGateway`: 123456
@@ -235,9 +211,9 @@ RPC_URL="http://127.0.0.1:8757" # (string)
 
 This is the URL of the RPC node for the fhevm gateway network.
 
-#### Local docker-compose deployment only
+#### After deploying contracts in production
 
-Some additional settings are needed when deploying the contracts through docker-compose locally.
+Some additional settings are needed after deploying the contracts in a production setting.
 
 - GatewayConfig address
 
@@ -245,5 +221,4 @@ Some additional settings are needed when deploying the contracts through docker-
 GATEWAY_CONFIG_ADDRESS="0xC7D45661a345eC5cA0e8521CFEF7e32FDA0Daa68" # (address)
 ```
 
-This (static) address is needed for adding host chains to the GatewayConfig contract as a separate service. In a proper
-staging/production setting, this environment variable will be dynamically set after running the deployment service.
+This (static) address is needed for adding host chains to the GatewayConfig contract separately. In a proper production setting, this environment variable needs to be dynamically set after deploying the contracts.

@@ -9,6 +9,7 @@ const { exec } = require("child_process");
 const CONTRACTS_DIR = path.join(__dirname, "../contracts");
 const INTERFACES_DIR = path.join(CONTRACTS_DIR, "/interfaces");
 const MOCKS_DIR = path.join(CONTRACTS_DIR, "/mocks");
+const SHARED_STRUCTS_FILE = "shared/Structs.sol";
 
 // Logging functions
 const logInfo = (msg) => console.log(`\x1b[34m[*]\x1b[0m ${msg}`);
@@ -143,6 +144,17 @@ function generateAllMockContracts() {
 }
 
 /**
+ * @description Parses a shared file and extracts its struct definitions
+ * @param {string} sharedFilePath - Path to the shared file
+ * @returns {BaseASTNode[]} - Array of struct definitions
+ */
+function parseSharedFile(sharedFilePath) {
+  const sharedContent = fs.readFileSync(sharedFilePath, "utf8");
+  const parsedShared = parser.parse(sharedContent);
+  return parsedShared.children.filter((child) => child.type === "StructDefinition");
+}
+
+/**
  * @description Creates a mock contract based on the provided contract and interface contents.
  * @param {string} contractContent - The content of the contract file
  * @param {string} interfaceContent - The content of the interface file
@@ -157,11 +169,8 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
   const parsedInterface = parser.parse(interfaceContent);
   const interfaceDefinition = parsedInterface.children.find((child) => child.type === "ContractDefinition");
 
-  // Parse the shared structs file and extract its definitions
-  const sharedStructsFilePath = path.join(CONTRACTS_DIR, "/shared/Structs.sol");
-  const sharedStructsContent = fs.readFileSync(sharedStructsFilePath, "utf8");
-  const parsedSharedStructs = parser.parse(sharedStructsContent);
-  const sharedStructDefinitions = parsedSharedStructs.children.filter((child) => child.type === "StructDefinition");
+  // Parse shared files and extract their definitions
+  const sharedStructsDefinitions = parseSharedFile(path.join(CONTRACTS_DIR, SHARED_STRUCTS_FILE));
 
   // Extract EventDefinitions from the interface definition
   const eventDefinitions = interfaceDefinition.subNodes.filter((node) => node.type === "EventDefinition");
@@ -185,7 +194,7 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
   const mockFunctions = generateMockFunctions(
     functionDefinitions,
     eventDefinitions,
-    structDefinitions.concat(sharedStructDefinitions),
+    structDefinitions.concat(sharedStructsDefinitions),
   );
 
   const spdxLine = "// SPDX-License-Identifier: BSD-3-Clause-Clear";
@@ -194,13 +203,16 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
 
   // Import shared structs if needed
   const importsSharedStructs = parsedInterface.children.some(
-    (child) => child.type === "ImportDirective" && child.path.includes("shared/Structs.sol"),
+    (child) => child.type === "ImportDirective" && child.path.includes(SHARED_STRUCTS_FILE),
   );
-  let structsImportLine = importsSharedStructs ? 'import "../shared/Structs.sol";' : "";
+
+  let imports = [];
+  if (importsSharedStructs) imports.push(`import "../${SHARED_STRUCTS_FILE}";`);
+  const importsLines = imports.join("\n");
 
   // Build the mock contract
   const contractName = `${contractDefinition.name}Mock`;
-  let mockContract = `${spdxLine}\n${pragmaLine}\n${structsImportLine}\n\ncontract ${contractName} {\n\n`;
+  let mockContract = `${spdxLine}\n${pragmaLine}\n${importsLines}\n\ncontract ${contractName} {\n\n`;
 
   // Append struct lines
   mockContract += mockStruct + "\n\n";
@@ -243,8 +255,7 @@ function generateMockStructs(structDefinitions) {
       const structName = struct.name;
       const members = struct.members
         .map((member) => {
-          const typeName = member.typeName.name || member.typeName.namePath;
-          return `${typeName} ${member.name};`;
+          return getParameterType(member.typeName) + ` ${member.name};`;
         })
         .join("\n");
 
@@ -312,45 +323,61 @@ function generateMockFunctions(functionDefinitions, eventDefinitions, structDefi
       // Initialize the mock function's header
       let mockFunction = `function ${functionDef.name}(${functionParameters}) ${functionDef.visibility} {\n`;
 
+      // Track declared parameters to avoid duplicates
+      const declaredParameters = new Set();
+      const allDeclarations = [];
+
       // Build the mock implementation for each emit statement
       emitStatements.forEach((emitStatement) => {
         const eventName = emitStatement.eventCall.expression.name;
         const eventDefinition = eventDefinitions.find((event) => event.name === eventName);
         const eventArguments = [];
 
-        // Generate default declarations for all event arguments
-        const defaultDeclarations = eventDefinition.parameters
-          .map((parameter) => {
-            const parameterName = parameter.name;
-            eventArguments.push(parameterName);
+        // Generate declarations only for parameters that haven't been declared yet
+        eventDefinition.parameters.forEach((parameter) => {
+          const parameterName = parameter.name;
+          eventArguments.push(parameterName);
+
+          // Skip the parameter if it is one of the function's input parameters
+          const skipDeclaration = functionDef.parameters.some((p) => p.name === parameter.name);
+          if (skipDeclaration) return "";
+
+          if (!declaredParameters.has(parameterName)) {
             const parameterType = getParameterType(parameter.typeName);
 
-            // Skip parameters received in function parameters
-            const skipDeclaration = functionDef.parameters.some((p) => p.name === parameter.name);
-            if (skipDeclaration) return "";
-
-            // Check if the parameter is a counter ID assignation variable
+            let declaration;
             const idCounterAssignment = idCounterAssignments.find((assignment) => assignment.idVar === parameterName);
+
+            // Check if the parameter is a counter ID assignation variable and declare it
             if (idCounterAssignment) {
-              return `${idCounterAssignment.counterVar}++;\n${parameterType} ${parameterName} = ${idCounterAssignment.counterVar};`;
+              declaration = `${idCounterAssignment.counterVar}++;\n${parameterType} ${parameterName} = ${idCounterAssignment.counterVar};`;
+              // Else, check if the parameter type is an array and declare it in memory
+            } else if (parameterType.endsWith("[]")) {
+              declaration = `${parameterType} memory ${parameterName} = new ${parameterType}(1);`;
+              // Else, check if the parameter type is a struct, string, or bytes and declare it in memory
+            } else if (
+              structDefinitions.some((structDef) => structDef.name === parameterType) ||
+              ["string", "bytes"].includes(parameterType)
+            ) {
+              declaration = `${parameterType} memory ${parameterName};`;
+              // Else, declare as local type in stack (i.e. uint, bool, address, etc.)
+            } else {
+              declaration = `${parameterType} ${parameterName};`;
             }
 
-            const isStruct = structDefinitions.some((structDef) => structDef.name === parameterType);
-            // Check if the parameter type is an array and declare it in memory
-            if (parameterType.endsWith("[]")) {
-              return `${parameterType} memory ${parameterName} = new ${parameterType}(1);`;
-              // Check if the parameter type is a struct, string, or bytes and declare it in memory
-            } else if (isStruct || ["string", "bytes"].includes(parameterType)) {
-              return `${parameterType} memory ${parameterName};`;
-            }
-            // Declare as local type in stack (i.e. uint, bool, address, etc.)
-            return `${parameterType} ${parameterName};`;
-          })
-          .join("\n");
+            allDeclarations.push(declaration);
+            declaredParameters.add(parameterName);
+          }
+        });
 
-        // Append the default declarations and emit statement to the mock function
-        mockFunction += `${defaultDeclarations}\nemit ${eventName}(${eventArguments.join(", ")});\n\n`;
+        // Append the emit statement
+        mockFunction += `emit ${eventName}(${eventArguments.join(", ")});\n\n`;
       });
+
+      // Add all declarations at the beginning of the function
+      if (allDeclarations.length > 0) {
+        mockFunction = mockFunction.replace("{\n", `{\n${allDeclarations.join("\n")}\n\n`);
+      }
 
       // Close the mock function
       mockFunction += `}\n`;

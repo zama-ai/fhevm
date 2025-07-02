@@ -55,6 +55,7 @@ pub mod FHETypeBitSizes {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"s\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x000\x14`\x80`@R_\x80\xFD",
     );
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -180,6 +181,7 @@ pub mod FHETypeBitSizes {
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UnsupportedFHEType(uint8)` and selector `0xbe7830b1`.
 ```solidity
@@ -251,6 +253,7 @@ error UnsupportedFHEType(FheType fheType);
         }
     };
     ///Container for all the [`FHETypeBitSizes`](self) custom errors.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum FHETypeBitSizesErrors {
         #[allow(missing_docs)]

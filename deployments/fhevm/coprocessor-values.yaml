@@ -52,7 +52,7 @@ dbMigration:
       cpu: 1
       memory: 4Gi
 
-fhevmListener:
+hostListener:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
@@ -74,7 +74,7 @@ fhevmListener:
     - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=ws://host-anvil-node:8545
   serviceMonitor:
-    enabled: true
+    enabled: false
 
 gwListener:
   enabled: true
@@ -99,7 +99,7 @@ gwListener:
     - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
     - --verify-proof-req-database-channel="event_zkpok_new_work"
   serviceMonitor:
-    enabled: true
+    enabled: false
 
 tfheWorker:
   enabled: true
@@ -127,7 +127,7 @@ tfheWorker:
     - --service-name=coprocessor-tfhe-worker
     - --coprocessor-private-key=/accounts/coprocessor.hex
   serviceMonitor:
-    enabled: true
+    enabled: false
   tracing:
     enabled: true
     endpoint: "http://observability-zws-dev-observability-alloy.observability.svc.cluster.local:4317"
@@ -186,7 +186,7 @@ zkProofWorker:
     - --pg-pool-connections=5
     - --worker-thread-count=4
   serviceMonitor:
-    enabled: true
+    enabled: false
   resources:
     requests:
       cpu: 1
@@ -255,7 +255,7 @@ snsWorker:
     - --pg-polling-interval=60
     - --pg-pool-connections=10
   serviceMonitor:
-    enabled: true
+    enabled: false
   resources:
     requests:
       cpu: 1
@@ -328,4 +328,4 @@ txSender:
     - --gateway-url=http://gateway-fhevm-staging-anvil-node:8546
     - --private-key=$(TX_SENDER_PRIVATE_KEY)
   serviceMonitor:
-    enabled: true
+    enabled: false

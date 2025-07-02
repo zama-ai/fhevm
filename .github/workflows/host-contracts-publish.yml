@@ -1,23 +1,25 @@
-name: Fhevm Host Contracts npm Publish
+name: host-contracts-publish
 
 on:
   workflow_dispatch:
     inputs:
       release:
         description: "Set to true for release tagging"
+        type: boolean
         required: false
         default: false
 
 jobs:
   publish:
+    name: host-contracts-publish/publish
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./host-contracts
     permissions:
-      contents: read
-      id-token: write
-      packages: write
+      contents: 'read'
+      id-token: 'write'
+      packages: 'write'
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -37,6 +39,12 @@ jobs:
         working-directory: host-contracts
         run: npm ci --include=optional
 
+      - name: Deploy empty proxy contracts
+        env:
+          HARDHAT_NETWORK: hardhat
+        working-directory: host-contracts
+        run: npm run deploy:emptyProxies
+
       - name: Compile host contracts
         working-directory: host-contracts
         run: npm run compile
@@ -51,7 +59,7 @@ jobs:
         with:
           package: ./host-contracts/package.json
           tag: prerelease
-          token: ${{ secrets.NPM_TOKEN }}
+          token: ${{ secrets.FHEVM_NPM_TOKEN }}
           provenance: true
           access: public
 
@@ -60,6 +68,6 @@ jobs:
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
           package: ./host-contracts/package.json
-          token: ${{ secrets.NPM_TOKEN }}
+          token: ${{ secrets.FHEVM_NPM_TOKEN }}
           provenance: true
           access: public

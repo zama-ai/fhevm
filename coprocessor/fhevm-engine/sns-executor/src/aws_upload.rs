@@ -1,11 +1,8 @@
-use crate::{Config, ExecutionError, HandleItem, S3Config};
-use aws_config::retry::RetryConfig;
-use aws_config::timeout::TimeoutConfig;
-use aws_config::BehaviorVersion;
-use aws_sdk_s3::config::Builder;
+use crate::{Config, ExecutionError, HandleItem, S3Config, UploadJob};
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::head_bucket::HeadBucketError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
+use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::telemetry::{self};
@@ -18,31 +15,38 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use tokio::select;
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinHandle;
+use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 // TODO: Use a config TOML to set these values
 pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
 
+// Default batch size for fetching pending uploads
+// There might be pending uploads in the database
+// with sizes of 32MiB so the batch size is set to 10
+const DEFAULT_BATCH_SIZE: usize = 10;
+
 /// Process the S3 uploads
 pub(crate) async fn process_s3_uploads(
     conf: &Config,
-    mut tasks: mpsc::Receiver<HandleItem>,
-    tasks_tx: mpsc::Sender<HandleItem>,
+    mut jobs: mpsc::Receiver<UploadJob>,
+    jobs_tx: mpsc::Sender<UploadJob>,
     token: CancellationToken,
+    client: Arc<aws_sdk_s3::Client>,
+    is_ready: Arc<AtomicBool>,
 ) -> Result<(), ExecutionError> {
-    // Client construction is expensive due to connection thread pool initialization, and should
-    // be done once at application start-up.
-    let (client, is_ready) = create_s3_client(conf).await;
-    let is_ready = Arc::new(AtomicBool::new(is_ready));
+    let (is_ready_res, _) = check_is_ready(&client, conf).await;
+    is_ready.store(is_ready_res, Ordering::Release);
 
     let pool = Arc::new(
         PgPoolOptions::new()
             .max_connections(conf.db.max_connections)
+            .acquire_timeout(conf.db.timeout)
             .connect(&conf.db.url)
             .await?,
     );
@@ -55,7 +59,7 @@ pub(crate) async fn process_s3_uploads(
         let token = token.clone();
         let pool = pool.clone();
         async move {
-            do_resubmits_loop(client, pool, &conf, tasks_tx, token, is_ready)
+            do_resubmits_loop(client, pool, &conf, jobs_tx, token, is_ready)
                 .await
                 .unwrap_or_else(|err| {
                     error!("Failed to spawn do_resubmits_loop: {}", err);
@@ -70,40 +74,53 @@ pub(crate) async fn process_s3_uploads(
 
     loop {
         select! {
-            task = tasks.recv() => {
-                let task = match task {
-                    Some(task) => task,
+            job = jobs.recv() => {
+                let job = match job {
+                    Some(job) => job,
                     None => return Ok(()),
                 };
-                debug!("Received task, handle: {}", hex::encode(&task.handle));
-
-                let mut trx_lock = pool.begin().await?;
-                task.enqueue_upload_task(&mut trx_lock).await?;
-
-                if let Err(err) = sqlx::query!(
-                    "SELECT * FROM ciphertext_digest
-                    WHERE handle = $2 AND tenant_id = $1 AND
-                    (ciphertext128 IS NULL OR ciphertext IS NULL)
-                    FOR UPDATE SKIP LOCKED",
-                    task.tenant_id,
-                    task.handle,
-                )
-                .fetch_one(trx_lock.as_mut())
-                .await {
-                    error!("Failed to lock pending uploads {}, handle: {}", err, compact_hex(&task.handle));
-                    trx_lock.rollback().await?;
-                    continue;
-                }
 
                 if !is_ready.load(Ordering::Acquire) {
                     // If the S3 setup is not ready, we need to wait for its ready status
                     // before we can continue spawning uploading job
                     info!("Upload task skipped, S3 connection still not ready");
-
-                    // Ensure that the uploading task is enqueued in the DB
-                    trx_lock.commit().await?;
                     continue;
                 }
+
+                let mut trx = pool.begin().await?;
+
+                let item = match job {
+                    UploadJob::Normal(item) =>
+                    {
+                        item.enqueue_upload_task(&mut trx).await?;
+                        item
+                    },
+                    UploadJob::DatabaseLock(item) => {
+                        if let Err(err) = sqlx::query!(
+                            "SELECT * FROM ciphertext_digest
+                                    WHERE handle = $2 AND tenant_id = $1 AND
+                                    (ciphertext128 IS NULL OR ciphertext IS NULL)
+                                    FOR UPDATE SKIP LOCKED",
+                            item.tenant_id,
+                            item.handle,
+                        )
+                        .fetch_one(trx.as_mut())
+                        .await
+                        {
+                            warn!(
+                                "Failed to lock pending uploads {}, handle: {}",
+                                err,
+                                compact_hex(&item.handle)
+                            );
+                            trx.rollback().await?;
+                            continue;
+                        }
+                        item
+                    },
+                 };
+
+
+                debug!("Received task, handle: {}", hex::encode(&item.handle));
 
                 // Cleanup completed tasks
                 upload_jobs.retain(|h| !h.is_finished());
@@ -129,10 +146,10 @@ pub(crate) async fn process_s3_uploads(
 
                 // Spawn a new task to upload the ciphertexts
                 let h = tokio::spawn(async move {
-                    let s = task.otel.child_span("upload_s3");
-                        if let Err(err) = upload_ciphertexts(trx_lock, task, &client, &conf).await {
+                    let s = item.otel.child_span("upload_s3");
+                        if let Err(err) = upload_ciphertexts(trx, item, &client, &conf).await {
                             if let ExecutionError::S3TransientError(_) = err {
-                                ready_flag.store(false, Ordering::Release );
+                                ready_flag.store(false, Ordering::Release);
                                 info!("S3 setup is not ready, due to transient error: {}", err);
                             }else {
                                 error!("Failed to upload ciphertexts: {}", err);
@@ -189,8 +206,9 @@ async fn upload_ciphertexts(
 
     let mut jobs = vec![];
 
-    if let Some(ct128_bytes) = task.ct128_uncompressed.clone() {
-        let ct128_digest = compute_digest(&ct128_bytes);
+    if !task.ct128_uncompressed.is_empty() {
+        let ct128_bytes = task.ct128_uncompressed.as_ref();
+        let ct128_digest = compute_digest(ct128_bytes);
         info!(
             "Uploading ct128, handle: {}, len: {}, tenant: {}",
             handle_as_hex,
@@ -214,7 +232,7 @@ async fn upload_ciphertexts(
                     .put_object()
                     .bucket(conf.bucket_ct128.clone())
                     .key(key)
-                    .body(ct128_bytes.into())
+                    .body(ByteStream::from(ct128_bytes.clone()))
                     .send(),
                 UploadResult::CtType128((ct128_digest.clone(), span)),
             ));
@@ -231,7 +249,8 @@ async fn upload_ciphertexts(
         }
     }
 
-    if let Some(ct64_compressed) = task.ct64_compressed.clone() {
+    if !task.ct64_compressed.is_empty() {
+        let ct64_compressed = task.ct64_compressed.as_ref();
         info!(
             "Uploading ct64, handle: {}, len: {}, tenant: {}",
             handle_as_hex,
@@ -239,7 +258,7 @@ async fn upload_ciphertexts(
             task.tenant_id,
         );
 
-        let ct64_digest = compute_digest(&ct64_compressed);
+        let ct64_digest = compute_digest(ct64_compressed);
 
         let key = hex::encode(&ct64_digest);
 
@@ -257,7 +276,7 @@ async fn upload_ciphertexts(
                     .put_object()
                     .bucket(conf.bucket_ct64.clone())
                     .key(key)
-                    .body(ct64_compressed.into())
+                    .body(ByteStream::from(ct64_compressed.clone()))
                     .send(),
                 UploadResult::CtType64((ct64_digest.clone(), span)),
             ));
@@ -336,7 +355,7 @@ fn compute_digest(ct: &[u8]) -> Vec<u8> {
 async fn fetch_pending_uploads(
     db_pool: &Pool<Postgres>,
     limit: i64,
-) -> Result<Vec<HandleItem>, ExecutionError> {
+) -> Result<Vec<UploadJob>, ExecutionError> {
     let rows = sqlx::query!(
         "SELECT tenant_id, handle, ciphertext, ciphertext128
         FROM ciphertext_digest 
@@ -348,11 +367,11 @@ async fn fetch_pending_uploads(
     .fetch_all(db_pool)
     .await?;
 
-    let mut tasks = Vec::new();
+    let mut jobs = Vec::new();
 
     for row in rows {
-        let mut ct64_compressed: Option<Vec<u8>> = None;
-        let mut ct128_uncompressed: Option<Vec<u8>> = None;
+        let mut ct64_compressed = Arc::new(Vec::new());
+        let mut ct128_uncompressed = Arc::new(Vec::new());
         let ciphertext_digest = row.ciphertext;
         let ciphertext128_digest = row.ciphertext128;
         let handle = row.handle;
@@ -368,7 +387,7 @@ async fn fetch_pending_uploads(
             .await
             {
                 if let Some(record) = row {
-                    ct64_compressed = Some(record.ciphertext);
+                    ct64_compressed = Arc::new(record.ciphertext);
                 } else {
                     error!("Missing ciphertext, handle: {}", hex::encode(&handle));
                 }
@@ -386,25 +405,35 @@ async fn fetch_pending_uploads(
             .await
             {
                 if let Some(record) = row {
-                    ct128_uncompressed = record.ciphertext128;
+                    match record.ciphertext128 {
+                        Some(ct) if !ct.is_empty() => {
+                            ct128_uncompressed = Arc::new(ct);
+                        }
+                        _ => {
+                            warn!("Fetched empty ct128, handle: {}", hex::encode(&handle));
+                        }
+                    }
                 } else {
                     error!("Missing ciphertext128, handle: {}", hex::encode(&handle));
                 }
             }
         }
 
-        if ct64_compressed.is_some() || ct128_uncompressed.is_some() {
-            tasks.push(HandleItem {
+        if !ct64_compressed.is_empty() || !ct128_uncompressed.is_empty() {
+            let item = HandleItem {
                 tenant_id: row.tenant_id,
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128_uncompressed,
                 otel: telemetry::tracer_with_handle("recovery_task", handle),
-            });
+            };
+
+            // Instruct the uploader to acquire DB lock when processing the item
+            jobs.push(UploadJob::DatabaseLock(item));
         }
     }
 
-    Ok(tasks)
+    Ok(jobs)
 }
 
 /// Resubmit for uploading ciphertexts.
@@ -414,18 +443,27 @@ async fn do_resubmits_loop(
     client: Arc<aws_sdk_s3::Client>,
     pool: Arc<Pool<Postgres>>,
     conf: &Config,
-    tasks: mpsc::Sender<HandleItem>,
+    tasks: mpsc::Sender<UploadJob>,
     token: CancellationToken,
     is_ready: Arc<AtomicBool>,
 ) -> Result<(), ExecutionError> {
     // Retry to resubmit all upload tasks at the start-up
-    try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone())
-        .await
-        .unwrap_or_else(|err| {
-            error!("Failed to resubmit tasks: {}", err);
-        });
+    try_resubmit(
+        &pool,
+        is_ready.clone(),
+        tasks.clone(),
+        token.clone(),
+        DEFAULT_BATCH_SIZE,
+    )
+    .await
+    .unwrap_or_else(|err| {
+        error!("Failed to resubmit tasks: {}", err);
+    });
 
     let retry_conf = &conf.s3.retry_policy;
+
+    let mut recheck_ticker = interval(retry_conf.recheck_duration);
+    let mut resubmit_ticker = interval(retry_conf.regular_recheck_duration);
 
     loop {
         select! {
@@ -433,107 +471,93 @@ async fn do_resubmits_loop(
                 return Ok(())
             },
             // Recheck S3 ready status
-            _ = tokio::time::sleep(retry_conf.recheck_duration) => {
+            _ = recheck_ticker.tick() => {
                 if !is_ready.load(Ordering::Acquire) {
                     info!("Recheck S3 setup ...");
                     let (is_ready_res, _) = check_is_ready(&client, conf).await;
                     if is_ready_res {
                         info!("Reconnected to S3, buckets exist");
                         is_ready.store(true, Ordering::Release);
-                        try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone()).await
+                        try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE).await
                             .unwrap_or_else(|err| {
                                 error!("Failed to resubmit tasks: {}", err);
                             });
                     }
                 }
             }
-
-            // A regular resubmit to ensure there no left over tasks
-
-            _ = tokio::time::sleep(retry_conf.regular_recheck_duration) => {
-                try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone()).await
+            // A regular resubmit to ensure there no remaining tasks
+            _ = resubmit_ticker.tick() => {
+                info!("Retry resubmit ...");
+                try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE).await
                     .unwrap_or_else(|err| {
                         error!("Failed to resubmit tasks: {}", err);
-                    });
+                });
             }
         }
     }
 }
 
+/// Attempts to resubmit all pending uploads from the database.
+///
+/// If the S3 setup is not ready, it will skip resubmitting.
+///
+/// This function will keep fetching pending uploads in batches until there are no more
 async fn try_resubmit(
     pool: &PgPool,
     is_ready: Arc<AtomicBool>,
-    tasks: mpsc::Sender<HandleItem>,
+    tasks: mpsc::Sender<UploadJob>,
     token: CancellationToken,
+    batch_size: usize,
 ) -> Result<(), ExecutionError> {
-    if !is_ready.load(Ordering::SeqCst) {
-        info!("S3 setup is not ready, skipping resubmit");
-        return Ok(());
-    }
+    loop {
+        if !is_ready.load(Ordering::SeqCst) {
+            info!("S3 setup is not ready, skipping resubmit");
+            return Ok(());
+        }
 
-    match fetch_pending_uploads(pool, 10).await {
-        // TODO: const, token
-        Ok(recovery_tasks) => {
-            info!(
-                target: "worker",
-                action = "retry_s3_uploads",
-                "Fetched {} pending uploads from the database",
-                recovery_tasks.len()
-            );
-            // Resubmit for uploading ciphertexts
-            for task in recovery_tasks {
-                select! {
-                    _ = tasks.send(task.clone()) => {
-                        debug!("Task sent to upload worker, handle: {}", hex::encode(&task.handle));
-                    },
-                    _ = token.cancelled() => {
-                        return Ok(())
+        match fetch_pending_uploads(pool, batch_size as i64).await {
+            Ok(jobs) => {
+                info!(
+                    target: "worker",
+                    action = "retry_s3_uploads",
+                    "Fetched {} pending uploads from the database",
+                    jobs.len()
+                );
+                let jobs_count = jobs.len();
+                // Resubmit for uploading ciphertexts
+                for task in jobs {
+                    select! {
+                        _ = tasks.send(task.clone()) => {
+                            info!("resubmitted, handle: {}", compact_hex(task.handle()));
+                        },
+                        _ = token.cancelled() => {
+                            return Ok(());
+                        }
                     }
                 }
+
+                if jobs_count < batch_size {
+                    info!(
+                        target: "worker",
+                        action = "retry_s3_uploads",
+                        "No (more) pending uploads to resubmit"
+                    );
+                    return Ok(());
+                }
+            }
+            Err(err) => {
+                error!("Failed to fetch pending uploads: {}", err);
+                return Err(err);
             }
         }
-        Err(err) => error!("Failed to fetch pending uploads: {}", err),
-    };
-    Ok(())
-}
-
-/// Configure and create the S3 client.
-///
-/// Logs errors if the connection fails or if any buckets are missing.
-/// Even in the event of a failure or missing buckets, the function returns a valid
-/// S3 client capable of retrying S3 operations later.
-async fn create_s3_client(conf: &Config) -> (Arc<aws_sdk_s3::Client>, bool) {
-    let s3config = &conf.s3;
-
-    let sdk_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-    let timeout_config = TimeoutConfig::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .operation_attempt_timeout(s3config.retry_policy.max_retries_timeout)
-        .build();
-
-    let retry_config = RetryConfig::standard()
-        .with_max_attempts(s3config.retry_policy.max_retries_per_upload)
-        .with_max_backoff(s3config.retry_policy.max_backoff);
-
-    let config = Builder::from(&sdk_config)
-        .timeout_config(timeout_config)
-        .retry_config(retry_config)
-        .build();
-
-    let client = Arc::new(Client::from_conf(config));
-    let (is_ready, is_connected) = check_is_ready(&client, conf).await;
-    if is_connected {
-        info!("Connected to S3, is_ready: {}", is_ready);
     }
-
-    (client, is_ready)
 }
 
 /// Checks if the S3 client is ready by verifying the existence of both
 /// the ct64 and ct128 buckets.
 ///
 /// Returns is_ready and is_connected status.
-async fn check_is_ready(client: &Client, conf: &Config) -> (bool, bool) {
+pub(crate) async fn check_is_ready(client: &Client, conf: &Config) -> (bool, bool) {
     // Check if the S3 client is ready
     //
     // By checking the existence of both ct64 and ct128 buckets here,

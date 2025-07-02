@@ -87,7 +87,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(true);
   });
 
-  it('Select ebytes64', async function () {
+  it.skip('Select ebytes64', async function () {
     const tx = await this.contract.test_select_ebytes64(
       true,
       '0x6798aa6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
@@ -104,7 +104,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(ethers.toBeHex(BigInt('0xaaaaaaaa'), 64));
   });
 
-  it('Select ebytes128', async function () {
+  it.skip('Select ebytes128', async function () {
     const tx = await this.contract.test_select_ebytes128(
       true,
       '0x6798aa6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
@@ -121,7 +121,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(ethers.toBeHex(BigInt('0xaaaaaaaa'), 128));
   });
 
-  it('Select ebytes256', async function () {
+  it.skip('Select ebytes256', async function () {
     const tx = await this.contract.test_select_ebytes256(
       true,
       '0x6798aa6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
@@ -737,7 +737,7 @@ describe('FHEVM manual operations', function () {
     expect(res4).to.equal(true);
   });
 
-  it('eq ebytes256,ebytes256 true', async function () {
+  it.skip('eq ebytes256,ebytes256 true', async function () {
     const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAliceA.addBytes256(bigIntToBytes256(18446744073709550022n));
     const encryptedAmountA = await inputAliceA.encrypt();
@@ -759,7 +759,7 @@ describe('FHEVM manual operations', function () {
     expect(decRes).to.equal(true);
   });
 
-  it('eq ebytes256,ebytes256 false', async function () {
+  it.skip('eq ebytes256,ebytes256 false', async function () {
     const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAliceA.addBytes256(bigIntToBytes256(18446744073709550022n));
     const encryptedAmountA = await inputAliceA.encrypt();
@@ -781,7 +781,7 @@ describe('FHEVM manual operations', function () {
     expect(decRes).to.equal(false);
   });
 
-  it('ne ebytes256,ebytes256 true', async function () {
+  it.skip('ne ebytes256,ebytes256 true', async function () {
     const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAliceA.addBytes256(bigIntToBytes256(18446744073709550022n));
     const encryptedAmountA = await inputAliceA.encrypt();
@@ -803,7 +803,7 @@ describe('FHEVM manual operations', function () {
     expect(decRes).to.equal(true);
   });
 
-  it('ne ebytes256,ebytes256 false', async function () {
+  it.skip('ne ebytes256,ebytes256 false', async function () {
     const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAliceA.addBytes256(bigIntToBytes256(184467440184467440184467440184467440n));
     const encryptedAmountA = await inputAliceA.encrypt();
@@ -825,7 +825,7 @@ describe('FHEVM manual operations', function () {
     expect(decRes).to.equal(false);
   });
 
-  it('ebytes64 eq ebytes64', async function () {
+  it.skip('ebytes64 eq ebytes64', async function () {
     const tx = await this.contract.eqEbytes64(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
@@ -839,7 +839,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(false);
   });
 
-  it('ebytes64 eq ebytes64 - scalarL', async function () {
+  it.skip('ebytes64 eq ebytes64 - scalarL', async function () {
     const tx = await this.contract.eqEbytes64ScalarL(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaa',
@@ -853,7 +853,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(true);
   });
 
-  it('ebytes64 eq ebytes64 - scalarR', async function () {
+  it.skip('ebytes64 eq ebytes64 - scalarR', async function () {
     const tx = await this.contract.eqEbytes64ScalarR(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaa',
@@ -867,7 +867,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(true);
   });
 
-  it('ebytes64 ne ebytes64', async function () {
+  it.skip('ebytes64 ne ebytes64', async function () {
     const tx = await this.contract.neEbytes64(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
@@ -881,7 +881,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(true);
   });
 
-  it('ebytes64 ne ebytes64 - scalarL', async function () {
+  it.skip('ebytes64 ne ebytes64 - scalarL', async function () {
     const tx = await this.contract.neEbytes64ScalarL(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaa',
@@ -895,7 +895,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(false);
   });
 
-  it('ebytes64 ne ebytes64 - scalarR', async function () {
+  it.skip('ebytes64 ne ebytes64 - scalarR', async function () {
     const tx = await this.contract.neEbytes64ScalarR(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaa',
@@ -909,7 +909,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(false);
   });
 
-  it('ebytes128 eq ebytes128', async function () {
+  it.skip('ebytes128 eq ebytes128', async function () {
     const tx = await this.contract.eqEbytes128(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabbd4fdd06bd752b24ffb9f307805c4e698bf10aed0a47a103e5c1ade64bd31eb73',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabbd4fdd06bd752b24ffb9f307805c4e698bf10aed0a47a103e5c1ade64bd31eb73',
@@ -926,7 +926,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(false);
   });
 
-  it('ebytes128 eq ebytes128 - scalarL', async function () {
+  it.skip('ebytes128 eq ebytes128 - scalarL', async function () {
     const tx = await this.contract.eqEbytes128ScalarL(
       '0x6d4b2086ba8e3d2104fbf4a8dfe9679d6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6d4b2086ba8e3d2104fbf4a8dfe9679d6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaa',
@@ -940,7 +940,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(true);
   });
 
-  it('ebytes128 eq ebytes128 - scalarR', async function () {
+  it.skip('ebytes128 eq ebytes128 - scalarR', async function () {
     const tx = await this.contract.eqEbytes128ScalarR(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaa',
@@ -954,7 +954,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(true);
   });
 
-  it('ebytes128 ne ebytes128', async function () {
+  it.skip('ebytes128 ne ebytes128', async function () {
     const tx = await this.contract.neEbytes128(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabbd4fdd06bd752b24ffb9f307805c4e698bf10aed0a47a103e5c1ade64bd31eb73',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabbd4fdd06bd752b24ffb9f307805c4e698bf10aed0a47a103e5c1ade64bd31eb73',
@@ -971,7 +971,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(true);
   });
 
-  it('ebytes128 ne ebytes128 - scalarL', async function () {
+  it.skip('ebytes128 ne ebytes128 - scalarL', async function () {
     const tx = await this.contract.neEbytes128ScalarL(
       '0x6d4b2086ba8e3d2104fbf4a8dfe9679d6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6d4b2086ba8e3d2104fbf4a8dfe9679d6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaa',
@@ -985,7 +985,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(false);
   });
 
-  it('ebytes128 ne ebytes128 - scalarR', async function () {
+  it.skip('ebytes128 ne ebytes128 - scalarR', async function () {
     const tx = await this.contract.neEbytes128ScalarR(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaa',
@@ -999,7 +999,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(false);
   });
 
-  it('ebytes256 eq ebytes256 - scalarL', async function () {
+  it.skip('ebytes256 eq ebytes256 - scalarL', async function () {
     const tx = await this.contract.eqEbytes256ScalarL(
       '0x6d4b2086ba8e3d2104fbf4a8dfe9679d6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6d4b2086ba8e3d2104fbf4a8dfe9679d6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaa',
@@ -1013,7 +1013,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(true);
   });
 
-  it('ebytes256 eq ebytes256 - scalarR', async function () {
+  it.skip('ebytes256 eq ebytes256 - scalarR', async function () {
     const tx = await this.contract.eqEbytes256ScalarR(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabbaa',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaaaa',
@@ -1027,7 +1027,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(true);
   });
 
-  it('ebytes256 ne ebytes256 - scalarL', async function () {
+  it.skip('ebytes256 ne ebytes256 - scalarL', async function () {
     const tx = await this.contract.neEbytes256ScalarL(
       '0x6d4b2086ba8e3d2104fbf4a8dfe9679d6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabb',
       '0x6d4b2086ba8e3d2104fbf4a8dfe9679d6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaa',
@@ -1041,7 +1041,7 @@ describe('FHEVM manual operations', function () {
     expect(res2).to.equal(false);
   });
 
-  it('ebytes256 ne ebytes256 - scalarR', async function () {
+  it.skip('ebytes256 ne ebytes256 - scalarR', async function () {
     const tx = await this.contract.neEbytes256ScalarR(
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbabbaa',
       '0x6bb8166128b0e7a16f60dc255c953288d03107895b0904ea18f7a242bf335fbaaaaa',

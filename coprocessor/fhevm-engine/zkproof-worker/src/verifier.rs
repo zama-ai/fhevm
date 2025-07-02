@@ -5,14 +5,16 @@ use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
-use fhevm_engine_common::utils::{compact_hex, safe_deserialize};
+use fhevm_engine_common::utils::{compact_hex, safe_deserialize_conformant};
 use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{postgres::PgListener, PgPool, Row};
+use sqlx::{Postgres, Transaction};
 use std::num::NonZero;
 use std::str::FromStr;
+use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 
@@ -20,9 +22,13 @@ use crate::{auxiliary, Config, ExecutionError};
 use anyhow::Result;
 
 use std::sync::Arc;
+use std::time::SystemTime;
 use tfhe::set_server_key;
 
+use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
+use tokio::time::interval;
 use tokio::{select, time::Duration};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 const MAX_CACHED_TENANT_KEYS: usize = 100;
@@ -35,9 +41,81 @@ pub(crate) struct Ciphertext {
     ct_version: i16,
 }
 
+pub struct ZkProofService {
+    pool: PgPool,
+    conf: Config,
+    _cancel_token: CancellationToken,
+
+    // Timestamp of the last moment the service was active
+    last_active_at: Arc<RwLock<SystemTime>>,
+}
+impl HealthCheckService for ZkProofService {
+    async fn health_check(&self) -> HealthStatus {
+        let mut status = HealthStatus::default();
+        status.set_db_connected(&self.pool).await;
+        status
+    }
+
+    async fn is_alive(&self) -> bool {
+        let last_active_at = *self.last_active_at.read().await;
+        let threshold = self.conf.pg_polling_interval + 10;
+
+        (SystemTime::now()
+            .duration_since(last_active_at)
+            .map(|d| d.as_secs())
+            .unwrap_or(u64::MAX) as u32)
+            < threshold
+    }
+
+    fn get_version(&self) -> Version {
+        // Later, the unknowns will be initialized from build.rs
+        Version {
+            name: "zkproof-worker",
+            version: "unknown",
+            build: "unknown",
+        }
+    }
+}
+
+impl ZkProofService {
+    pub async fn create(conf: Config, cancel_token: CancellationToken) -> ZkProofService {
+        // Each worker needs at least 3 pg connections
+        let pool_connections =
+            std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
+        let t = telemetry::tracer("init_service");
+        let _s = t.child_span("pg_connect");
+
+        // DB Connection pool is shared amongst all workers
+        let pool = PgPoolOptions::new()
+            .max_connections(pool_connections)
+            .connect(&conf.database_url)
+            .await
+            .expect("valid db pool");
+
+        ZkProofService {
+            pool,
+            conf,
+            _cancel_token: cancel_token,
+            last_active_at: Arc::new(RwLock::new(SystemTime::UNIX_EPOCH)),
+        }
+    }
+
+    pub async fn run(&self) -> Result<(), ExecutionError> {
+        execute_verify_proofs_loop(
+            self.pool.clone(),
+            self.conf.clone(),
+            self.last_active_at.clone(),
+        )
+        .await
+    }
+}
 /// Executes the main loop for handling verify_proofs requests inserted in the
 /// database
-pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionError> {
+pub async fn execute_verify_proofs_loop(
+    pool: PgPool,
+    conf: Config,
+    last_active_at: Arc<RwLock<SystemTime>>,
+) -> Result<(), ExecutionError> {
     info!("Starting with config {:?}", conf);
 
     // Tenants key cache is shared amongst all workers
@@ -45,21 +123,7 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
         NonZero::new(MAX_CACHED_TENANT_KEYS).unwrap(),
     )));
 
-    // Each worker needs at least 3 pg connections
-    let pool_connections = std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
-
-    let t = telemetry::tracer("init_service");
-    let s = t.child_span("pg_connect");
-
-    // DB Connection pool is shared amongst all workers
-    let pool = PgPoolOptions::new()
-        .max_connections(pool_connections)
-        .connect(&conf.database_url)
-        .await
-        .expect("valid db pool");
-
-    telemetry::end_span(s);
-
+    let t = telemetry::tracer("init_workers");
     let mut s = t.child_span("start_workers");
     telemetry::attribute(&mut s, "count", conf.worker_thread_count.to_string());
     let mut task_set = JoinSet::new();
@@ -68,11 +132,13 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
         let conf = conf.clone();
         let tenant_key_cache = tenant_key_cache.clone();
         let pool = pool.clone();
+        let last_active_at = last_active_at.clone();
 
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         task_set.spawn(async move {
-            if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache).await {
+            if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache, last_active_at).await
+            {
                 error!("executor failed with {}", err);
             }
         });
@@ -94,17 +160,23 @@ async fn execute_worker(
     conf: &Config,
     pool: &sqlx::Pool<sqlx::Postgres>,
     tenant_key_cache: &Arc<RwLock<LruCache<i32, TfheTenantKeys>>>,
+    last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
     let mut listener = PgListener::connect_with(pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
-    let idle_poll_interval = Duration::from_secs(conf.pg_polling_interval as u64);
+
+    let mut idle_event = interval(Duration::from_secs(conf.pg_polling_interval as u64));
 
     loop {
+        if let Ok(mut value) = last_active_at.try_write() {
+            *value = SystemTime::now();
+        }
+
         if let Err(e) = execute_verify_proof_routine(pool, tenant_key_cache, conf).await {
             error!(target: "zkpok", "Execution err: {}", e);
         } else {
             let count = get_remaining_tasks(pool).await?;
-            if count > 0 {
+            if get_remaining_tasks(pool).await? > 0 {
                 info!(target: "zkpok", {count}, "ZkPok tasks available");
                 continue;
             }
@@ -124,7 +196,7 @@ async fn execute_worker(
                     },
                 };
             },
-            _ = tokio::time::sleep(idle_poll_interval) => {
+            _ = idle_event.tick() => {
                 debug!(target: "zkpok", "Polling timeout, rechecking for tasks");
             }
         }
@@ -206,7 +278,7 @@ async fn execute_verify_proof_routine(
                 });
                 verified = true;
                 let count = cts.len();
-                insert_ciphertexts(pool, tenant_id, cts, blob_hash).await?;
+                insert_ciphertexts(&mut txn, tenant_id, cts, blob_hash).await?;
 
                 info!(message = "Ciphertexts inserted", request_id);
                 t.set_attribute("count", count.to_string());
@@ -295,11 +367,14 @@ fn try_verify_and_expand_ciphertext_list(
         .assemble()
         .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))?;
 
-    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize(raw_ct)?;
+    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(raw_ct,
+        &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
+            keys.pks.parameters(), &keys.public_params,
+        ))?;
 
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .verify_and_expand(&keys.public_params, &keys.pks, &aux_data_bytes)
-        .map_err(|_| ExecutionError::InvalidProof(request_id))?;
+        .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))?;
 
     Ok(extract_ct_list(&expanded)?)
 }
@@ -384,13 +459,11 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
 }
 
 pub(crate) async fn insert_ciphertexts(
-    pool: &PgPool,
+    db_txn: &mut Transaction<'_, Postgres>,
     tenant_id: i32,
     cts: Vec<Ciphertext>,
     blob_hash: Vec<u8>,
 ) -> Result<(), ExecutionError> {
-    let mut tx = pool.begin().await?;
-
     for (i, ct) in cts.iter().enumerate() {
         sqlx::query!(
             r#"
@@ -408,7 +481,7 @@ pub(crate) async fn insert_ciphertexts(
             &blob_hash,
             i as i32,
         )
-        .execute(&mut *tx)
+        .execute(db_txn.as_mut())
         .await?;
     }
 
@@ -418,9 +491,7 @@ pub(crate) async fn insert_ciphertexts(
         "SELECT pg_notify($1, 'zk-worker')",
         EVENT_CIPHERTEXT_COMPUTED
     )
-    .execute(&mut *tx)
+    .execute(db_txn.as_mut())
     .await?;
-
-    tx.commit().await?;
     Ok(())
 }

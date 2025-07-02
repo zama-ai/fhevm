@@ -1,10 +1,14 @@
+use std::sync::{atomic::AtomicBool, Arc};
+
 use fhevm_engine_common::telemetry;
 use sns_executor::{
-    compute_128bit_ct, process_s3_uploads, Config, DBConfig, HandleItem, S3Config, S3RetryPolicy,
+    compute_128bit_ct, create_s3_client, process_s3_uploads, Config, DBConfig, HealthCheckConfig,
+    S3Config, S3RetryPolicy, UploadJob,
 };
+
 use tokio::{signal::unix, spawn, sync::mpsc};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, Level};
+use tracing::error;
 mod utils;
 
 fn handle_sigint(token: CancellationToken) {
@@ -33,6 +37,8 @@ fn construct_config() -> Config {
             batch_limit: args.work_items_batch_size,
             polling_interval: args.pg_polling_interval,
             max_connections: args.pg_pool_connections,
+            cleanup_interval: args.cleanup_interval,
+            timeout: args.pg_timeout,
         },
         s3: S3Config {
             bucket_ct128: args.bucket_name_ct128,
@@ -43,8 +49,13 @@ fn construct_config() -> Config {
                 max_backoff: args.s3_max_backoff,
                 max_retries_timeout: args.s3_max_retries_timeout,
                 recheck_duration: args.s3_recheck_duration,
-                regular_recheck_duration: args.s3_recheck_duration,
+                regular_recheck_duration: args.s3_regular_recheck_duration,
             },
+        },
+        log_level: args.log_level,
+        health_checks: HealthCheckConfig {
+            liveness_threshold: args.liveness_threshold,
+            port: args.health_check_port,
         },
     }
 }
@@ -57,7 +68,7 @@ async fn main() {
     tracing_subscriber::fmt()
         .json()
         .with_level(true)
-        .with_max_level(Level::INFO)
+        .with_max_level(config.log_level)
         .init();
 
     // Handle SIGINIT signals
@@ -67,7 +78,7 @@ async fn main() {
     // to avoid blocking the worker
     // and to allow for some burst of uploads
     let (uploads_tx, uploads_rx) =
-        mpsc::channel::<HandleItem>(10 * config.s3.max_concurrent_uploads as usize);
+        mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
 
     if let Err(err) = telemetry::setup_otlp(&config.service_name) {
         panic!("Error while initializing tracing: {:?}", err);
@@ -76,8 +87,13 @@ async fn main() {
     let conf = config.clone();
     let token = parent.child_token();
     let tx = uploads_tx.clone();
+    // Initialize the S3 uploader
+    let (client, is_ready) = create_s3_client(&conf).await;
+    let is_ready = Arc::new(AtomicBool::new(is_ready));
+    let s3 = client.clone();
+
     spawn(async move {
-        if let Err(err) = process_s3_uploads(&conf, uploads_rx, tx, token).await {
+        if let Err(err) = process_s3_uploads(&conf, uploads_rx, tx, token, s3, is_ready).await {
             error!("Failed to run the upload-worker : {:?}", err);
         }
     });
@@ -86,7 +102,7 @@ async fn main() {
 
     let conf = config.clone();
     let token = parent.child_token();
-    if let Err(err) = compute_128bit_ct(&conf, uploads_tx, token).await {
+    if let Err(err) = compute_128bit_ct(conf, uploads_tx, token, client).await {
         error!("SnS worker failed: {:?}", err);
     }
 }

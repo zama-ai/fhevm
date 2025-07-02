@@ -29,7 +29,6 @@ start-local-node: clean
 
 deploy-contracts-local:
 	cp $(ENV_PATH) .env
-	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:faucetToPrivate --private-key $(DEPLOYER_PRIVATE_KEY)
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:deployAllGatewayContracts
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:addHostChainsToGatewayConfig --use-internal-gateway-config-address true
 
@@ -48,11 +47,14 @@ docker-compose-up: docker-compose-down
 docker-compose-down:
 	docker compose -vvv down -v --remove-orphans
 
-check-bindings:
+check-bindings: ensure-addresses
 	python3 scripts/bindings_update.py check
 
-update-bindings:
+update-bindings: ensure-addresses
 	python3 scripts/bindings_update.py update
+
+lint-bindings:
+	cd rust_bindings && cargo clippy -- -D warnings && cd ..
 
 check-mocks:
 	node scripts/mock_contracts_cli.js check
@@ -60,21 +62,31 @@ check-mocks:
 update-mocks:
 	node scripts/mock_contracts_cli.js update
 
-# Here, we purposely use a logical OR (||) instead of an if statement with a negation to avoid having 
-# discrepancies between running locally and in the CI. This is because some shell environments 
+# Here, we purposely use a logical OR (||) instead of an if statement with a negation to avoid having
+# discrepancies between running locally and in the CI. This is because some shell environments
 # handle exit statuses of pipelines differently.
-check-selectors:
+check-selectors: ensure-addresses
 	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 | diff ./selectors.txt - &> /dev/null || { \
 		echo "Contract selectors are not up-to-date."; \
 		echo "Please run 'make update-selectors' to update them."; \
 		exit 1; \
 	}
 
-update-selectors:
+update-selectors: ensure-addresses
 	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 > ./selectors.txt
 
 # Conform to pre-commit checks
 conformance: prettier update-bindings update-mocks update-selectors
+
+# Deploy the empty proxy addresses
+deploy-empty-proxies:
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployEmptyUUPSProxies
+
+# Ensure that the empty proxy addresses exists as these are required for contract compilation.
+# In addition, ensure that the addresses match the ones used in local development in order to
+# avoid discrepancies between local and CI (e.g., when generating and checking rust bindings).
+ensure-addresses:
+	ENV_PATH=$(ENV_PATH) npx ts-node scripts/ensure_proxy_addresses.ts
 
 # Make sure we only use allowed licenses for dependencies
 check-licenses:
@@ -86,7 +98,7 @@ check-licenses:
 	fi
 
 # Bump the prerelease version of the Gateway and its rust bindings crate
-# This command : 
+# This command:
 # - Bumps the npm version of the Gateway, creates a new commit and tag
 # - Updates the rust bindings and aligns the version with the npm version
 # - Adds these changes to the above commit
@@ -94,3 +106,7 @@ prerelease:
 	npm version prerelease
 	$(MAKE) update-bindings
 	git add ./rust_bindings && git commit --amend --no-edit
+
+# Get the size of the contracts
+get-contracts-sized: 
+	forge build --sizes

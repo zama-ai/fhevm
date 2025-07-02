@@ -134,10 +134,10 @@ describe('FHEVM operations 4', function () {
     this.instances = instances;
   });
 
-  it('test operator "eq" overload (euint32, euint8) => ebool test 1 (71887424, 243)', async function () {
+  it('test operator "eq" overload (euint32, euint8) => ebool test 1 (928574664, 45)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(71887424n);
-    input.add8(243n);
+    input.add32(928574664n);
+    input.add8(45n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.eq_euint32_euint8(
       encryptedAmount.handles[0],
@@ -149,10 +149,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "eq" overload (euint32, euint8) => ebool test 2 (239, 243)', async function () {
+  it('test operator "eq" overload (euint32, euint8) => ebool test 2 (41, 45)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(239n);
-    input.add8(243n);
+    input.add32(41n);
+    input.add8(45n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.eq_euint32_euint8(
       encryptedAmount.handles[0],
@@ -164,10 +164,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "eq" overload (euint32, euint8) => ebool test 3 (243, 243)', async function () {
+  it('test operator "eq" overload (euint32, euint8) => ebool test 3 (45, 45)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(243n);
-    input.add8(243n);
+    input.add32(45n);
+    input.add8(45n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.eq_euint32_euint8(
       encryptedAmount.handles[0],
@@ -179,10 +179,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "eq" overload (euint32, euint8) => ebool test 4 (243, 239)', async function () {
+  it('test operator "eq" overload (euint32, euint8) => ebool test 4 (45, 41)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(243n);
-    input.add8(239n);
+    input.add32(45n);
+    input.add8(41n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.eq_euint32_euint8(
       encryptedAmount.handles[0],
@@ -194,10 +194,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ne" overload (euint32, euint8) => ebool test 1 (3189370522, 104)', async function () {
+  it('test operator "ne" overload (euint32, euint8) => ebool test 1 (3408180882, 47)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(3189370522n);
-    input.add8(104n);
+    input.add32(3408180882n);
+    input.add8(47n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ne_euint32_euint8(
       encryptedAmount.handles[0],
@@ -209,10 +209,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ne" overload (euint32, euint8) => ebool test 2 (100, 104)', async function () {
+  it('test operator "ne" overload (euint32, euint8) => ebool test 2 (43, 47)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(100n);
-    input.add8(104n);
+    input.add32(43n);
+    input.add8(47n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ne_euint32_euint8(
       encryptedAmount.handles[0],
@@ -224,10 +224,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ne" overload (euint32, euint8) => ebool test 3 (104, 104)', async function () {
+  it('test operator "ne" overload (euint32, euint8) => ebool test 3 (47, 47)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(104n);
-    input.add8(104n);
+    input.add32(47n);
+    input.add8(47n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ne_euint32_euint8(
       encryptedAmount.handles[0],
@@ -239,10 +239,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ne" overload (euint32, euint8) => ebool test 4 (104, 100)', async function () {
+  it('test operator "ne" overload (euint32, euint8) => ebool test 4 (47, 43)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(104n);
-    input.add8(100n);
+    input.add32(47n);
+    input.add8(43n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ne_euint32_euint8(
       encryptedAmount.handles[0],
@@ -254,10 +254,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ge" overload (euint32, euint8) => ebool test 1 (3276421700, 233)', async function () {
+  it('test operator "ge" overload (euint32, euint8) => ebool test 1 (1348427722, 49)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(3276421700n);
-    input.add8(233n);
+    input.add32(1348427722n);
+    input.add8(49n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ge_euint32_euint8(
       encryptedAmount.handles[0],
@@ -269,10 +269,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ge" overload (euint32, euint8) => ebool test 2 (229, 233)', async function () {
+  it('test operator "ge" overload (euint32, euint8) => ebool test 2 (45, 49)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(229n);
-    input.add8(233n);
+    input.add32(45n);
+    input.add8(49n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ge_euint32_euint8(
       encryptedAmount.handles[0],
@@ -284,10 +284,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ge" overload (euint32, euint8) => ebool test 3 (233, 233)', async function () {
+  it('test operator "ge" overload (euint32, euint8) => ebool test 3 (49, 49)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(233n);
-    input.add8(233n);
+    input.add32(49n);
+    input.add8(49n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ge_euint32_euint8(
       encryptedAmount.handles[0],
@@ -299,10 +299,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ge" overload (euint32, euint8) => ebool test 4 (233, 229)', async function () {
+  it('test operator "ge" overload (euint32, euint8) => ebool test 4 (49, 45)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(233n);
-    input.add8(229n);
+    input.add32(49n);
+    input.add8(45n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ge_euint32_euint8(
       encryptedAmount.handles[0],
@@ -314,10 +314,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "gt" overload (euint32, euint8) => ebool test 1 (713594163, 153)', async function () {
+  it('test operator "gt" overload (euint32, euint8) => ebool test 1 (2743784517, 92)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(713594163n);
-    input.add8(153n);
+    input.add32(2743784517n);
+    input.add8(92n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.gt_euint32_euint8(
       encryptedAmount.handles[0],
@@ -329,10 +329,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "gt" overload (euint32, euint8) => ebool test 2 (149, 153)', async function () {
+  it('test operator "gt" overload (euint32, euint8) => ebool test 2 (88, 92)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(149n);
-    input.add8(153n);
+    input.add32(88n);
+    input.add8(92n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.gt_euint32_euint8(
       encryptedAmount.handles[0],
@@ -344,10 +344,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "gt" overload (euint32, euint8) => ebool test 3 (153, 153)', async function () {
+  it('test operator "gt" overload (euint32, euint8) => ebool test 3 (92, 92)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(153n);
-    input.add8(153n);
+    input.add32(92n);
+    input.add8(92n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.gt_euint32_euint8(
       encryptedAmount.handles[0],
@@ -359,10 +359,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "gt" overload (euint32, euint8) => ebool test 4 (153, 149)', async function () {
+  it('test operator "gt" overload (euint32, euint8) => ebool test 4 (92, 88)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(153n);
-    input.add8(149n);
+    input.add32(92n);
+    input.add8(88n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.gt_euint32_euint8(
       encryptedAmount.handles[0],
@@ -374,10 +374,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "le" overload (euint32, euint8) => ebool test 1 (1380089484, 212)', async function () {
+  it('test operator "le" overload (euint32, euint8) => ebool test 1 (157572641, 83)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(1380089484n);
-    input.add8(212n);
+    input.add32(157572641n);
+    input.add8(83n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.le_euint32_euint8(
       encryptedAmount.handles[0],
@@ -389,25 +389,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "le" overload (euint32, euint8) => ebool test 2 (208, 212)', async function () {
+  it('test operator "le" overload (euint32, euint8) => ebool test 2 (79, 83)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(208n);
-    input.add8(212n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract2.le_euint32_euint8(
-      encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const res = await decryptBool(await this.contract2.resEbool());
-    expect(res).to.equal(true);
-  });
-
-  it('test operator "le" overload (euint32, euint8) => ebool test 3 (212, 212)', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(212n);
-    input.add8(212n);
+    input.add32(79n);
+    input.add8(83n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.le_euint32_euint8(
       encryptedAmount.handles[0],
@@ -419,10 +404,25 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "le" overload (euint32, euint8) => ebool test 4 (212, 208)', async function () {
+  it('test operator "le" overload (euint32, euint8) => ebool test 3 (83, 83)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(212n);
-    input.add8(208n);
+    input.add32(83n);
+    input.add8(83n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract2.le_euint32_euint8(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decryptBool(await this.contract2.resEbool());
+    expect(res).to.equal(true);
+  });
+
+  it('test operator "le" overload (euint32, euint8) => ebool test 4 (83, 79)', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
+    input.add32(83n);
+    input.add8(79n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.le_euint32_euint8(
       encryptedAmount.handles[0],
@@ -434,10 +434,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "lt" overload (euint32, euint8) => ebool test 1 (3755175785, 155)', async function () {
+  it('test operator "lt" overload (euint32, euint8) => ebool test 1 (3940452686, 80)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(3755175785n);
-    input.add8(155n);
+    input.add32(3940452686n);
+    input.add8(80n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.lt_euint32_euint8(
       encryptedAmount.handles[0],
@@ -449,10 +449,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "lt" overload (euint32, euint8) => ebool test 2 (151, 155)', async function () {
+  it('test operator "lt" overload (euint32, euint8) => ebool test 2 (76, 80)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(151n);
-    input.add8(155n);
+    input.add32(76n);
+    input.add8(80n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.lt_euint32_euint8(
       encryptedAmount.handles[0],
@@ -464,10 +464,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "lt" overload (euint32, euint8) => ebool test 3 (155, 155)', async function () {
+  it('test operator "lt" overload (euint32, euint8) => ebool test 3 (80, 80)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(155n);
-    input.add8(155n);
+    input.add32(80n);
+    input.add8(80n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.lt_euint32_euint8(
       encryptedAmount.handles[0],
@@ -479,10 +479,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "lt" overload (euint32, euint8) => ebool test 4 (155, 151)', async function () {
+  it('test operator "lt" overload (euint32, euint8) => ebool test 4 (80, 76)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(155n);
-    input.add8(151n);
+    input.add32(80n);
+    input.add8(76n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.lt_euint32_euint8(
       encryptedAmount.handles[0],
@@ -494,10 +494,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "min" overload (euint32, euint8) => euint32 test 1 (93039686, 105)', async function () {
+  it('test operator "min" overload (euint32, euint8) => euint32 test 1 (3113779294, 69)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(93039686n);
-    input.add8(105n);
+    input.add32(3113779294n);
+    input.add8(69n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.min_euint32_euint8(
       encryptedAmount.handles[0],
@@ -506,13 +506,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(105n);
+    expect(res).to.equal(69n);
   });
 
-  it('test operator "min" overload (euint32, euint8) => euint32 test 2 (101, 105)', async function () {
+  it('test operator "min" overload (euint32, euint8) => euint32 test 2 (65, 69)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(101n);
-    input.add8(105n);
+    input.add32(65n);
+    input.add8(69n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.min_euint32_euint8(
       encryptedAmount.handles[0],
@@ -521,13 +521,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(101n);
+    expect(res).to.equal(65n);
   });
 
-  it('test operator "min" overload (euint32, euint8) => euint32 test 3 (105, 105)', async function () {
+  it('test operator "min" overload (euint32, euint8) => euint32 test 3 (69, 69)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(105n);
-    input.add8(105n);
+    input.add32(69n);
+    input.add8(69n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.min_euint32_euint8(
       encryptedAmount.handles[0],
@@ -536,13 +536,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(105n);
+    expect(res).to.equal(69n);
   });
 
-  it('test operator "min" overload (euint32, euint8) => euint32 test 4 (105, 101)', async function () {
+  it('test operator "min" overload (euint32, euint8) => euint32 test 4 (69, 65)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(105n);
-    input.add8(101n);
+    input.add32(69n);
+    input.add8(65n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.min_euint32_euint8(
       encryptedAmount.handles[0],
@@ -551,13 +551,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(101n);
+    expect(res).to.equal(65n);
   });
 
-  it('test operator "max" overload (euint32, euint8) => euint32 test 1 (2270582713, 17)', async function () {
+  it('test operator "max" overload (euint32, euint8) => euint32 test 1 (3087058654, 42)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(2270582713n);
-    input.add8(17n);
+    input.add32(3087058654n);
+    input.add8(42n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.max_euint32_euint8(
       encryptedAmount.handles[0],
@@ -566,13 +566,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(2270582713n);
+    expect(res).to.equal(3087058654n);
   });
 
-  it('test operator "max" overload (euint32, euint8) => euint32 test 2 (13, 17)', async function () {
+  it('test operator "max" overload (euint32, euint8) => euint32 test 2 (38, 42)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(13n);
-    input.add8(17n);
+    input.add32(38n);
+    input.add8(42n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.max_euint32_euint8(
       encryptedAmount.handles[0],
@@ -581,13 +581,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(17n);
+    expect(res).to.equal(42n);
   });
 
-  it('test operator "max" overload (euint32, euint8) => euint32 test 3 (17, 17)', async function () {
+  it('test operator "max" overload (euint32, euint8) => euint32 test 3 (42, 42)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(17n);
-    input.add8(17n);
+    input.add32(42n);
+    input.add8(42n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.max_euint32_euint8(
       encryptedAmount.handles[0],
@@ -596,13 +596,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(17n);
+    expect(res).to.equal(42n);
   });
 
-  it('test operator "max" overload (euint32, euint8) => euint32 test 4 (17, 13)', async function () {
+  it('test operator "max" overload (euint32, euint8) => euint32 test 4 (42, 38)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(17n);
-    input.add8(13n);
+    input.add32(42n);
+    input.add8(38n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.max_euint32_euint8(
       encryptedAmount.handles[0],
@@ -611,13 +611,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(17n);
+    expect(res).to.equal(42n);
   });
 
-  it('test operator "add" overload (euint32, euint16) => euint32 test 1 (53316, 2)', async function () {
+  it('test operator "add" overload (euint32, euint16) => euint32 test 1 (60753, 3)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(53316n);
-    input.add16(2n);
+    input.add32(60753n);
+    input.add16(3n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.add_euint32_euint16(
       encryptedAmount.handles[0],
@@ -626,13 +626,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(53318n);
+    expect(res).to.equal(60756n);
   });
 
-  it('test operator "add" overload (euint32, euint16) => euint32 test 2 (12069, 12073)', async function () {
+  it('test operator "add" overload (euint32, euint16) => euint32 test 2 (27186, 27190)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(12069n);
-    input.add16(12073n);
+    input.add32(27186n);
+    input.add16(27190n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.add_euint32_euint16(
       encryptedAmount.handles[0],
@@ -641,13 +641,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(24142n);
+    expect(res).to.equal(54376n);
   });
 
-  it('test operator "add" overload (euint32, euint16) => euint32 test 3 (12073, 12073)', async function () {
+  it('test operator "add" overload (euint32, euint16) => euint32 test 3 (27190, 27190)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(12073n);
-    input.add16(12073n);
+    input.add32(27190n);
+    input.add16(27190n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.add_euint32_euint16(
       encryptedAmount.handles[0],
@@ -656,13 +656,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(24146n);
+    expect(res).to.equal(54380n);
   });
 
-  it('test operator "add" overload (euint32, euint16) => euint32 test 4 (12073, 12069)', async function () {
+  it('test operator "add" overload (euint32, euint16) => euint32 test 4 (27190, 27186)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(12073n);
-    input.add16(12069n);
+    input.add32(27190n);
+    input.add16(27186n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.add_euint32_euint16(
       encryptedAmount.handles[0],
@@ -671,13 +671,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(24142n);
+    expect(res).to.equal(54376n);
   });
 
-  it('test operator "sub" overload (euint32, euint16) => euint32 test 1 (53993, 53993)', async function () {
+  it('test operator "sub" overload (euint32, euint16) => euint32 test 1 (48306, 48306)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(53993n);
-    input.add16(53993n);
+    input.add32(48306n);
+    input.add16(48306n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.sub_euint32_euint16(
       encryptedAmount.handles[0],
@@ -689,10 +689,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(0n);
   });
 
-  it('test operator "sub" overload (euint32, euint16) => euint32 test 2 (53993, 53989)', async function () {
+  it('test operator "sub" overload (euint32, euint16) => euint32 test 2 (48306, 48302)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(53993n);
-    input.add16(53989n);
+    input.add32(48306n);
+    input.add16(48302n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.sub_euint32_euint16(
       encryptedAmount.handles[0],
@@ -704,9 +704,9 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(4n);
   });
 
-  it('test operator "mul" overload (euint32, euint16) => euint32 test 1 (29244, 2)', async function () {
+  it('test operator "mul" overload (euint32, euint16) => euint32 test 1 (20203, 2)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(29244n);
+    input.add32(20203n);
     input.add16(2n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.mul_euint32_euint16(
@@ -716,13 +716,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(58488n);
+    expect(res).to.equal(40406n);
   });
 
-  it('test operator "mul" overload (euint32, euint16) => euint32 test 2 (147, 147)', async function () {
+  it('test operator "mul" overload (euint32, euint16) => euint32 test 2 (190, 190)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(147n);
-    input.add16(147n);
+    input.add32(190n);
+    input.add16(190n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.mul_euint32_euint16(
       encryptedAmount.handles[0],
@@ -731,13 +731,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(21609n);
+    expect(res).to.equal(36100n);
   });
 
-  it('test operator "mul" overload (euint32, euint16) => euint32 test 3 (147, 147)', async function () {
+  it('test operator "mul" overload (euint32, euint16) => euint32 test 3 (190, 190)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(147n);
-    input.add16(147n);
+    input.add32(190n);
+    input.add16(190n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.mul_euint32_euint16(
       encryptedAmount.handles[0],
@@ -746,13 +746,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(21609n);
+    expect(res).to.equal(36100n);
   });
 
-  it('test operator "mul" overload (euint32, euint16) => euint32 test 4 (147, 147)', async function () {
+  it('test operator "mul" overload (euint32, euint16) => euint32 test 4 (190, 190)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(147n);
-    input.add16(147n);
+    input.add32(190n);
+    input.add16(190n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.mul_euint32_euint16(
       encryptedAmount.handles[0],
@@ -761,13 +761,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(21609n);
+    expect(res).to.equal(36100n);
   });
 
-  it('test operator "and" overload (euint32, euint16) => euint32 test 1 (2547900854, 41531)', async function () {
+  it('test operator "and" overload (euint32, euint16) => euint32 test 1 (1834165412, 40108)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(2547900854n);
-    input.add16(41531n);
+    input.add32(1834165412n);
+    input.add16(40108n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.and_euint32_euint16(
       encryptedAmount.handles[0],
@@ -776,13 +776,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(41010n);
+    expect(res).to.equal(1188n);
   });
 
-  it('test operator "and" overload (euint32, euint16) => euint32 test 2 (41527, 41531)', async function () {
+  it('test operator "and" overload (euint32, euint16) => euint32 test 2 (40104, 40108)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(41527n);
-    input.add16(41531n);
+    input.add32(40104n);
+    input.add16(40108n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.and_euint32_euint16(
       encryptedAmount.handles[0],
@@ -791,13 +791,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(41523n);
+    expect(res).to.equal(40104n);
   });
 
-  it('test operator "and" overload (euint32, euint16) => euint32 test 3 (41531, 41531)', async function () {
+  it('test operator "and" overload (euint32, euint16) => euint32 test 3 (40108, 40108)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(41531n);
-    input.add16(41531n);
+    input.add32(40108n);
+    input.add16(40108n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.and_euint32_euint16(
       encryptedAmount.handles[0],
@@ -806,13 +806,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(41531n);
+    expect(res).to.equal(40108n);
   });
 
-  it('test operator "and" overload (euint32, euint16) => euint32 test 4 (41531, 41527)', async function () {
+  it('test operator "and" overload (euint32, euint16) => euint32 test 4 (40108, 40104)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(41531n);
-    input.add16(41527n);
+    input.add32(40108n);
+    input.add16(40104n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.and_euint32_euint16(
       encryptedAmount.handles[0],
@@ -821,13 +821,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(41523n);
+    expect(res).to.equal(40104n);
   });
 
-  it('test operator "or" overload (euint32, euint16) => euint32 test 1 (1109833194, 16568)', async function () {
+  it('test operator "or" overload (euint32, euint16) => euint32 test 1 (2622445754, 22817)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(1109833194n);
-    input.add16(16568n);
+    input.add32(2622445754n);
+    input.add16(22817n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.or_euint32_euint16(
       encryptedAmount.handles[0],
@@ -836,13 +836,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(1109849594n);
+    expect(res).to.equal(2622446011n);
   });
 
-  it('test operator "or" overload (euint32, euint16) => euint32 test 2 (16564, 16568)', async function () {
+  it('test operator "or" overload (euint32, euint16) => euint32 test 2 (22813, 22817)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(16564n);
-    input.add16(16568n);
+    input.add32(22813n);
+    input.add16(22817n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.or_euint32_euint16(
       encryptedAmount.handles[0],
@@ -851,13 +851,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(16572n);
+    expect(res).to.equal(22845n);
   });
 
-  it('test operator "or" overload (euint32, euint16) => euint32 test 3 (16568, 16568)', async function () {
+  it('test operator "or" overload (euint32, euint16) => euint32 test 3 (22817, 22817)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(16568n);
-    input.add16(16568n);
+    input.add32(22817n);
+    input.add16(22817n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.or_euint32_euint16(
       encryptedAmount.handles[0],
@@ -866,13 +866,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(16568n);
+    expect(res).to.equal(22817n);
   });
 
-  it('test operator "or" overload (euint32, euint16) => euint32 test 4 (16568, 16564)', async function () {
+  it('test operator "or" overload (euint32, euint16) => euint32 test 4 (22817, 22813)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(16568n);
-    input.add16(16564n);
+    input.add32(22817n);
+    input.add16(22813n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.or_euint32_euint16(
       encryptedAmount.handles[0],
@@ -881,13 +881,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(16572n);
+    expect(res).to.equal(22845n);
   });
 
-  it('test operator "xor" overload (euint32, euint16) => euint32 test 1 (86472927, 12396)', async function () {
+  it('test operator "xor" overload (euint32, euint16) => euint32 test 1 (718911449, 60491)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(86472927n);
-    input.add16(12396n);
+    input.add32(718911449n);
+    input.add16(60491n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.xor_euint32_euint16(
       encryptedAmount.handles[0],
@@ -896,13 +896,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(86460595n);
+    expect(res).to.equal(718887826n);
   });
 
-  it('test operator "xor" overload (euint32, euint16) => euint32 test 2 (12392, 12396)', async function () {
+  it('test operator "xor" overload (euint32, euint16) => euint32 test 2 (60487, 60491)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(12392n);
-    input.add16(12396n);
+    input.add32(60487n);
+    input.add16(60491n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.xor_euint32_euint16(
       encryptedAmount.handles[0],
@@ -911,13 +911,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(4n);
+    expect(res).to.equal(12n);
   });
 
-  it('test operator "xor" overload (euint32, euint16) => euint32 test 3 (12396, 12396)', async function () {
+  it('test operator "xor" overload (euint32, euint16) => euint32 test 3 (60491, 60491)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(12396n);
-    input.add16(12396n);
+    input.add32(60491n);
+    input.add16(60491n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.xor_euint32_euint16(
       encryptedAmount.handles[0],
@@ -929,10 +929,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(0n);
   });
 
-  it('test operator "xor" overload (euint32, euint16) => euint32 test 4 (12396, 12392)', async function () {
+  it('test operator "xor" overload (euint32, euint16) => euint32 test 4 (60491, 60487)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(12396n);
-    input.add16(12392n);
+    input.add32(60491n);
+    input.add16(60487n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.xor_euint32_euint16(
       encryptedAmount.handles[0],
@@ -941,13 +941,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(4n);
+    expect(res).to.equal(12n);
   });
 
-  it('test operator "eq" overload (euint32, euint16) => ebool test 1 (2270600417, 7386)', async function () {
+  it('test operator "eq" overload (euint32, euint16) => ebool test 1 (524855818, 2572)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(2270600417n);
-    input.add16(7386n);
+    input.add32(524855818n);
+    input.add16(2572n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.eq_euint32_euint16(
       encryptedAmount.handles[0],
@@ -959,10 +959,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "eq" overload (euint32, euint16) => ebool test 2 (7382, 7386)', async function () {
+  it('test operator "eq" overload (euint32, euint16) => ebool test 2 (2568, 2572)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(7382n);
-    input.add16(7386n);
+    input.add32(2568n);
+    input.add16(2572n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.eq_euint32_euint16(
       encryptedAmount.handles[0],
@@ -974,10 +974,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "eq" overload (euint32, euint16) => ebool test 3 (7386, 7386)', async function () {
+  it('test operator "eq" overload (euint32, euint16) => ebool test 3 (2572, 2572)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(7386n);
-    input.add16(7386n);
+    input.add32(2572n);
+    input.add16(2572n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.eq_euint32_euint16(
       encryptedAmount.handles[0],
@@ -989,10 +989,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "eq" overload (euint32, euint16) => ebool test 4 (7386, 7382)', async function () {
+  it('test operator "eq" overload (euint32, euint16) => ebool test 4 (2572, 2568)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(7386n);
-    input.add16(7382n);
+    input.add32(2572n);
+    input.add16(2568n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.eq_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1004,10 +1004,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ne" overload (euint32, euint16) => ebool test 1 (3038715609, 20293)', async function () {
+  it('test operator "ne" overload (euint32, euint16) => ebool test 1 (1951074594, 35540)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(3038715609n);
-    input.add16(20293n);
+    input.add32(1951074594n);
+    input.add16(35540n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ne_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1019,10 +1019,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ne" overload (euint32, euint16) => ebool test 2 (20289, 20293)', async function () {
+  it('test operator "ne" overload (euint32, euint16) => ebool test 2 (35536, 35540)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(20289n);
-    input.add16(20293n);
+    input.add32(35536n);
+    input.add16(35540n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ne_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1034,10 +1034,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ne" overload (euint32, euint16) => ebool test 3 (20293, 20293)', async function () {
+  it('test operator "ne" overload (euint32, euint16) => ebool test 3 (35540, 35540)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(20293n);
-    input.add16(20293n);
+    input.add32(35540n);
+    input.add16(35540n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ne_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1049,10 +1049,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ne" overload (euint32, euint16) => ebool test 4 (20293, 20289)', async function () {
+  it('test operator "ne" overload (euint32, euint16) => ebool test 4 (35540, 35536)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(20293n);
-    input.add16(20289n);
+    input.add32(35540n);
+    input.add16(35536n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ne_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1064,10 +1064,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ge" overload (euint32, euint16) => ebool test 1 (3961727886, 41348)', async function () {
+  it('test operator "ge" overload (euint32, euint16) => ebool test 1 (329344743, 19762)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(3961727886n);
-    input.add16(41348n);
+    input.add32(329344743n);
+    input.add16(19762n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ge_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1079,10 +1079,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ge" overload (euint32, euint16) => ebool test 2 (41344, 41348)', async function () {
+  it('test operator "ge" overload (euint32, euint16) => ebool test 2 (19758, 19762)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(41344n);
-    input.add16(41348n);
+    input.add32(19758n);
+    input.add16(19762n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ge_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1094,10 +1094,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ge" overload (euint32, euint16) => ebool test 3 (41348, 41348)', async function () {
+  it('test operator "ge" overload (euint32, euint16) => ebool test 3 (19762, 19762)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(41348n);
-    input.add16(41348n);
+    input.add32(19762n);
+    input.add16(19762n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ge_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1109,10 +1109,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ge" overload (euint32, euint16) => ebool test 4 (41348, 41344)', async function () {
+  it('test operator "ge" overload (euint32, euint16) => ebool test 4 (19762, 19758)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(41348n);
-    input.add16(41344n);
+    input.add32(19762n);
+    input.add16(19758n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.ge_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1124,10 +1124,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "gt" overload (euint32, euint16) => ebool test 1 (3082262537, 34785)', async function () {
+  it('test operator "gt" overload (euint32, euint16) => ebool test 1 (2286634721, 51712)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(3082262537n);
-    input.add16(34785n);
+    input.add32(2286634721n);
+    input.add16(51712n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.gt_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1139,10 +1139,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "gt" overload (euint32, euint16) => ebool test 2 (34781, 34785)', async function () {
+  it('test operator "gt" overload (euint32, euint16) => ebool test 2 (51708, 51712)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(34781n);
-    input.add16(34785n);
+    input.add32(51708n);
+    input.add16(51712n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.gt_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1154,10 +1154,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "gt" overload (euint32, euint16) => ebool test 3 (34785, 34785)', async function () {
+  it('test operator "gt" overload (euint32, euint16) => ebool test 3 (51712, 51712)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(34785n);
-    input.add16(34785n);
+    input.add32(51712n);
+    input.add16(51712n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.gt_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1169,10 +1169,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "gt" overload (euint32, euint16) => ebool test 4 (34785, 34781)', async function () {
+  it('test operator "gt" overload (euint32, euint16) => ebool test 4 (51712, 51708)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(34785n);
-    input.add16(34781n);
+    input.add32(51712n);
+    input.add16(51708n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.gt_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1184,10 +1184,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "le" overload (euint32, euint16) => ebool test 1 (828532079, 53689)', async function () {
+  it('test operator "le" overload (euint32, euint16) => ebool test 1 (232161966, 45175)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(828532079n);
-    input.add16(53689n);
+    input.add32(232161966n);
+    input.add16(45175n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.le_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1199,25 +1199,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "le" overload (euint32, euint16) => ebool test 2 (53685, 53689)', async function () {
+  it('test operator "le" overload (euint32, euint16) => ebool test 2 (45171, 45175)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(53685n);
-    input.add16(53689n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract2.le_euint32_euint16(
-      encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const res = await decryptBool(await this.contract2.resEbool());
-    expect(res).to.equal(true);
-  });
-
-  it('test operator "le" overload (euint32, euint16) => ebool test 3 (53689, 53689)', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(53689n);
-    input.add16(53689n);
+    input.add32(45171n);
+    input.add16(45175n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.le_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1229,10 +1214,25 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "le" overload (euint32, euint16) => ebool test 4 (53689, 53685)', async function () {
+  it('test operator "le" overload (euint32, euint16) => ebool test 3 (45175, 45175)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(53689n);
-    input.add16(53685n);
+    input.add32(45175n);
+    input.add16(45175n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract2.le_euint32_euint16(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decryptBool(await this.contract2.resEbool());
+    expect(res).to.equal(true);
+  });
+
+  it('test operator "le" overload (euint32, euint16) => ebool test 4 (45175, 45171)', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
+    input.add32(45175n);
+    input.add16(45171n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.le_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1244,10 +1244,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "lt" overload (euint32, euint16) => ebool test 1 (3227817736, 36444)', async function () {
+  it('test operator "lt" overload (euint32, euint16) => ebool test 1 (1490052603, 13245)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(3227817736n);
-    input.add16(36444n);
+    input.add32(1490052603n);
+    input.add16(13245n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.lt_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1259,10 +1259,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "lt" overload (euint32, euint16) => ebool test 2 (36440, 36444)', async function () {
+  it('test operator "lt" overload (euint32, euint16) => ebool test 2 (13241, 13245)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(36440n);
-    input.add16(36444n);
+    input.add32(13241n);
+    input.add16(13245n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.lt_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1274,10 +1274,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "lt" overload (euint32, euint16) => ebool test 3 (36444, 36444)', async function () {
+  it('test operator "lt" overload (euint32, euint16) => ebool test 3 (13245, 13245)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(36444n);
-    input.add16(36444n);
+    input.add32(13245n);
+    input.add16(13245n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.lt_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1289,10 +1289,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "lt" overload (euint32, euint16) => ebool test 4 (36444, 36440)', async function () {
+  it('test operator "lt" overload (euint32, euint16) => ebool test 4 (13245, 13241)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(36444n);
-    input.add16(36440n);
+    input.add32(13245n);
+    input.add16(13241n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.lt_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1304,10 +1304,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "min" overload (euint32, euint16) => euint32 test 1 (2155030290, 65025)', async function () {
+  it('test operator "min" overload (euint32, euint16) => euint32 test 1 (3033866947, 9185)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(2155030290n);
-    input.add16(65025n);
+    input.add32(3033866947n);
+    input.add16(9185n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.min_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1316,13 +1316,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(65025n);
+    expect(res).to.equal(9185n);
   });
 
-  it('test operator "min" overload (euint32, euint16) => euint32 test 2 (65021, 65025)', async function () {
+  it('test operator "min" overload (euint32, euint16) => euint32 test 2 (9181, 9185)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(65021n);
-    input.add16(65025n);
+    input.add32(9181n);
+    input.add16(9185n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.min_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1331,13 +1331,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(65021n);
+    expect(res).to.equal(9181n);
   });
 
-  it('test operator "min" overload (euint32, euint16) => euint32 test 3 (65025, 65025)', async function () {
+  it('test operator "min" overload (euint32, euint16) => euint32 test 3 (9185, 9185)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(65025n);
-    input.add16(65025n);
+    input.add32(9185n);
+    input.add16(9185n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.min_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1346,13 +1346,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(65025n);
+    expect(res).to.equal(9185n);
   });
 
-  it('test operator "min" overload (euint32, euint16) => euint32 test 4 (65025, 65021)', async function () {
+  it('test operator "min" overload (euint32, euint16) => euint32 test 4 (9185, 9181)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(65025n);
-    input.add16(65021n);
+    input.add32(9185n);
+    input.add16(9181n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.min_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1361,13 +1361,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(65021n);
+    expect(res).to.equal(9181n);
   });
 
-  it('test operator "max" overload (euint32, euint16) => euint32 test 1 (2797297762, 11123)', async function () {
+  it('test operator "max" overload (euint32, euint16) => euint32 test 1 (2362640443, 30129)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(2797297762n);
-    input.add16(11123n);
+    input.add32(2362640443n);
+    input.add16(30129n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.max_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1376,13 +1376,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(2797297762n);
+    expect(res).to.equal(2362640443n);
   });
 
-  it('test operator "max" overload (euint32, euint16) => euint32 test 2 (11119, 11123)', async function () {
+  it('test operator "max" overload (euint32, euint16) => euint32 test 2 (30125, 30129)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(11119n);
-    input.add16(11123n);
+    input.add32(30125n);
+    input.add16(30129n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.max_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1391,13 +1391,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(11123n);
+    expect(res).to.equal(30129n);
   });
 
-  it('test operator "max" overload (euint32, euint16) => euint32 test 3 (11123, 11123)', async function () {
+  it('test operator "max" overload (euint32, euint16) => euint32 test 3 (30129, 30129)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(11123n);
-    input.add16(11123n);
+    input.add32(30129n);
+    input.add16(30129n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.max_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1406,13 +1406,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(11123n);
+    expect(res).to.equal(30129n);
   });
 
-  it('test operator "max" overload (euint32, euint16) => euint32 test 4 (11123, 11119)', async function () {
+  it('test operator "max" overload (euint32, euint16) => euint32 test 4 (30129, 30125)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(11123n);
-    input.add16(11119n);
+    input.add32(30129n);
+    input.add16(30125n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.max_euint32_euint16(
       encryptedAmount.handles[0],
@@ -1421,13 +1421,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(11123n);
+    expect(res).to.equal(30129n);
   });
 
-  it('test operator "add" overload (euint32, euint32) => euint32 test 1 (3707640632, 431037909)', async function () {
+  it('test operator "add" overload (euint32, euint32) => euint32 test 1 (2078870183, 387745205)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(3707640632n);
-    input.add32(431037909n);
+    input.add32(2078870183n);
+    input.add32(387745205n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.add_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1436,13 +1436,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(4138678541n);
+    expect(res).to.equal(2466615388n);
   });
 
-  it('test operator "add" overload (euint32, euint32) => euint32 test 2 (431037905, 431037909)', async function () {
+  it('test operator "add" overload (euint32, euint32) => euint32 test 2 (775490404, 775490408)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(431037905n);
-    input.add32(431037909n);
+    input.add32(775490404n);
+    input.add32(775490408n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.add_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1451,13 +1451,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(862075814n);
+    expect(res).to.equal(1550980812n);
   });
 
-  it('test operator "add" overload (euint32, euint32) => euint32 test 3 (431037909, 431037909)', async function () {
+  it('test operator "add" overload (euint32, euint32) => euint32 test 3 (775490408, 775490408)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(431037909n);
-    input.add32(431037909n);
+    input.add32(775490408n);
+    input.add32(775490408n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.add_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1466,13 +1466,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(862075818n);
+    expect(res).to.equal(1550980816n);
   });
 
-  it('test operator "add" overload (euint32, euint32) => euint32 test 4 (431037909, 431037905)', async function () {
+  it('test operator "add" overload (euint32, euint32) => euint32 test 4 (775490408, 775490404)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(431037909n);
-    input.add32(431037905n);
+    input.add32(775490408n);
+    input.add32(775490404n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.add_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1481,13 +1481,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract2.resEuint32());
-    expect(res).to.equal(862075814n);
+    expect(res).to.equal(1550980812n);
   });
 
-  it('test operator "sub" overload (euint32, euint32) => euint32 test 1 (2100471867, 2100471867)', async function () {
+  it('test operator "sub" overload (euint32, euint32) => euint32 test 1 (15443261, 15443261)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(2100471867n);
-    input.add32(2100471867n);
+    input.add32(15443261n);
+    input.add32(15443261n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.sub_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1499,10 +1499,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(0n);
   });
 
-  it('test operator "sub" overload (euint32, euint32) => euint32 test 2 (2100471867, 2100471863)', async function () {
+  it('test operator "sub" overload (euint32, euint32) => euint32 test 2 (15443261, 15443257)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract2Address, this.signers.alice.address);
-    input.add32(2100471867n);
-    input.add32(2100471863n);
+    input.add32(15443261n);
+    input.add32(15443257n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract2.sub_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1514,10 +1514,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(4n);
   });
 
-  it('test operator "mul" overload (euint32, euint32) => euint32 test 1 (32435, 45238)', async function () {
+  it('test operator "mul" overload (euint32, euint32) => euint32 test 1 (22470, 182136)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(32435n);
-    input.add32(45238n);
+    input.add32(22470n);
+    input.add32(182136n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1526,13 +1526,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(1467294530n);
+    expect(res).to.equal(4092595920n);
   });
 
-  it('test operator "mul" overload (euint32, euint32) => euint32 test 2 (64869, 64869)', async function () {
+  it('test operator "mul" overload (euint32, euint32) => euint32 test 2 (44938, 44938)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(64869n);
-    input.add32(64869n);
+    input.add32(44938n);
+    input.add32(44938n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1541,13 +1541,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(4207987161n);
+    expect(res).to.equal(2019423844n);
   });
 
-  it('test operator "mul" overload (euint32, euint32) => euint32 test 3 (64869, 64869)', async function () {
+  it('test operator "mul" overload (euint32, euint32) => euint32 test 3 (44938, 44938)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(64869n);
-    input.add32(64869n);
+    input.add32(44938n);
+    input.add32(44938n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1556,13 +1556,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(4207987161n);
+    expect(res).to.equal(2019423844n);
   });
 
-  it('test operator "mul" overload (euint32, euint32) => euint32 test 4 (64869, 64869)', async function () {
+  it('test operator "mul" overload (euint32, euint32) => euint32 test 4 (44938, 44938)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(64869n);
-    input.add32(64869n);
+    input.add32(44938n);
+    input.add32(44938n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1571,13 +1571,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(4207987161n);
+    expect(res).to.equal(2019423844n);
   });
 
-  it('test operator "and" overload (euint32, euint32) => euint32 test 1 (3003715342, 1587121823)', async function () {
+  it('test operator "and" overload (euint32, euint32) => euint32 test 1 (4243271706, 1169099340)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3003715342n);
-    input.add32(1587121823n);
+    input.add32(4243271706n);
+    input.add32(1169099340n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1586,13 +1586,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(302583310n);
+    expect(res).to.equal(1152057352n);
   });
 
-  it('test operator "and" overload (euint32, euint32) => euint32 test 2 (1587121819, 1587121823)', async function () {
+  it('test operator "and" overload (euint32, euint32) => euint32 test 2 (1169099336, 1169099340)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1587121819n);
-    input.add32(1587121823n);
+    input.add32(1169099336n);
+    input.add32(1169099340n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1601,13 +1601,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(1587121819n);
+    expect(res).to.equal(1169099336n);
   });
 
-  it('test operator "and" overload (euint32, euint32) => euint32 test 3 (1587121823, 1587121823)', async function () {
+  it('test operator "and" overload (euint32, euint32) => euint32 test 3 (1169099340, 1169099340)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1587121823n);
-    input.add32(1587121823n);
+    input.add32(1169099340n);
+    input.add32(1169099340n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1616,13 +1616,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(1587121823n);
+    expect(res).to.equal(1169099340n);
   });
 
-  it('test operator "and" overload (euint32, euint32) => euint32 test 4 (1587121823, 1587121819)', async function () {
+  it('test operator "and" overload (euint32, euint32) => euint32 test 4 (1169099340, 1169099336)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1587121823n);
-    input.add32(1587121819n);
+    input.add32(1169099340n);
+    input.add32(1169099336n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1631,13 +1631,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(1587121819n);
+    expect(res).to.equal(1169099336n);
   });
 
-  it('test operator "or" overload (euint32, euint32) => euint32 test 1 (2010899691, 359456836)', async function () {
+  it('test operator "or" overload (euint32, euint32) => euint32 test 1 (1160502017, 1483702409)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(2010899691n);
-    input.add32(359456836n);
+    input.add32(1160502017n);
+    input.add32(1483702409n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1646,13 +1646,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(2013258991n);
+    expect(res).to.equal(1567611785n);
   });
 
-  it('test operator "or" overload (euint32, euint32) => euint32 test 2 (359456832, 359456836)', async function () {
+  it('test operator "or" overload (euint32, euint32) => euint32 test 2 (1160502013, 1160502017)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(359456832n);
-    input.add32(359456836n);
+    input.add32(1160502013n);
+    input.add32(1160502017n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1661,13 +1661,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(359456836n);
+    expect(res).to.equal(1160502269n);
   });
 
-  it('test operator "or" overload (euint32, euint32) => euint32 test 3 (359456836, 359456836)', async function () {
+  it('test operator "or" overload (euint32, euint32) => euint32 test 3 (1160502017, 1160502017)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(359456836n);
-    input.add32(359456836n);
+    input.add32(1160502017n);
+    input.add32(1160502017n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1676,13 +1676,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(359456836n);
+    expect(res).to.equal(1160502017n);
   });
 
-  it('test operator "or" overload (euint32, euint32) => euint32 test 4 (359456836, 359456832)', async function () {
+  it('test operator "or" overload (euint32, euint32) => euint32 test 4 (1160502017, 1160502013)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(359456836n);
-    input.add32(359456832n);
+    input.add32(1160502017n);
+    input.add32(1160502013n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1691,13 +1691,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(359456836n);
+    expect(res).to.equal(1160502269n);
   });
 
-  it('test operator "xor" overload (euint32, euint32) => euint32 test 1 (3158703890, 3260182173)', async function () {
+  it('test operator "xor" overload (euint32, euint32) => euint32 test 1 (37108106, 3772872733)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3158703890n);
-    input.add32(3260182173n);
+    input.add32(37108106n);
+    input.add32(3772872733n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1706,13 +1706,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(2115473807n);
+    expect(res).to.equal(3805757847n);
   });
 
-  it('test operator "xor" overload (euint32, euint32) => euint32 test 2 (3158703886, 3158703890)', async function () {
+  it('test operator "xor" overload (euint32, euint32) => euint32 test 2 (37108102, 37108106)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3158703886n);
-    input.add32(3158703890n);
+    input.add32(37108102n);
+    input.add32(37108106n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1721,13 +1721,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(28n);
+    expect(res).to.equal(12n);
   });
 
-  it('test operator "xor" overload (euint32, euint32) => euint32 test 3 (3158703890, 3158703890)', async function () {
+  it('test operator "xor" overload (euint32, euint32) => euint32 test 3 (37108106, 37108106)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3158703890n);
-    input.add32(3158703890n);
+    input.add32(37108106n);
+    input.add32(37108106n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1739,10 +1739,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(0n);
   });
 
-  it('test operator "xor" overload (euint32, euint32) => euint32 test 4 (3158703890, 3158703886)', async function () {
+  it('test operator "xor" overload (euint32, euint32) => euint32 test 4 (37108106, 37108102)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3158703890n);
-    input.add32(3158703886n);
+    input.add32(37108106n);
+    input.add32(37108102n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1751,13 +1751,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(28n);
+    expect(res).to.equal(12n);
   });
 
-  it('test operator "eq" overload (euint32, euint32) => ebool test 1 (2455841812, 557033823)', async function () {
+  it('test operator "eq" overload (euint32, euint32) => ebool test 1 (1987927751, 3299870577)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(2455841812n);
-    input.add32(557033823n);
+    input.add32(1987927751n);
+    input.add32(3299870577n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1769,10 +1769,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "eq" overload (euint32, euint32) => ebool test 2 (557033819, 557033823)', async function () {
+  it('test operator "eq" overload (euint32, euint32) => ebool test 2 (1987927747, 1987927751)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(557033819n);
-    input.add32(557033823n);
+    input.add32(1987927747n);
+    input.add32(1987927751n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1784,10 +1784,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "eq" overload (euint32, euint32) => ebool test 3 (557033823, 557033823)', async function () {
+  it('test operator "eq" overload (euint32, euint32) => ebool test 3 (1987927751, 1987927751)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(557033823n);
-    input.add32(557033823n);
+    input.add32(1987927751n);
+    input.add32(1987927751n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1799,10 +1799,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "eq" overload (euint32, euint32) => ebool test 4 (557033823, 557033819)', async function () {
+  it('test operator "eq" overload (euint32, euint32) => ebool test 4 (1987927751, 1987927747)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(557033823n);
-    input.add32(557033819n);
+    input.add32(1987927751n);
+    input.add32(1987927747n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1814,10 +1814,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ne" overload (euint32, euint32) => ebool test 1 (2763822782, 1738782489)', async function () {
+  it('test operator "ne" overload (euint32, euint32) => ebool test 1 (984863625, 3431412474)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(2763822782n);
-    input.add32(1738782489n);
+    input.add32(984863625n);
+    input.add32(3431412474n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1829,10 +1829,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ne" overload (euint32, euint32) => ebool test 2 (1738782485, 1738782489)', async function () {
+  it('test operator "ne" overload (euint32, euint32) => ebool test 2 (984863621, 984863625)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1738782485n);
-    input.add32(1738782489n);
+    input.add32(984863621n);
+    input.add32(984863625n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1844,10 +1844,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ne" overload (euint32, euint32) => ebool test 3 (1738782489, 1738782489)', async function () {
+  it('test operator "ne" overload (euint32, euint32) => ebool test 3 (984863625, 984863625)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1738782489n);
-    input.add32(1738782489n);
+    input.add32(984863625n);
+    input.add32(984863625n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1859,10 +1859,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ne" overload (euint32, euint32) => ebool test 4 (1738782489, 1738782485)', async function () {
+  it('test operator "ne" overload (euint32, euint32) => ebool test 4 (984863625, 984863621)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1738782489n);
-    input.add32(1738782485n);
+    input.add32(984863625n);
+    input.add32(984863621n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1874,40 +1874,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ge" overload (euint32, euint32) => ebool test 1 (783800007, 2770416212)', async function () {
+  it('test operator "ge" overload (euint32, euint32) => ebool test 1 (4026144610, 3109238839)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(783800007n);
-    input.add32(2770416212n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract3.ge_euint32_euint32(
-      encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const res = await decryptBool(await this.contract3.resEbool());
-    expect(res).to.equal(false);
-  });
-
-  it('test operator "ge" overload (euint32, euint32) => ebool test 2 (783800003, 783800007)', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(783800003n);
-    input.add32(783800007n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract3.ge_euint32_euint32(
-      encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const res = await decryptBool(await this.contract3.resEbool());
-    expect(res).to.equal(false);
-  });
-
-  it('test operator "ge" overload (euint32, euint32) => ebool test 3 (783800007, 783800007)', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(783800007n);
-    input.add32(783800007n);
+    input.add32(4026144610n);
+    input.add32(3109238839n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1919,10 +1889,25 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ge" overload (euint32, euint32) => ebool test 4 (783800007, 783800003)', async function () {
+  it('test operator "ge" overload (euint32, euint32) => ebool test 2 (3109238835, 3109238839)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(783800007n);
-    input.add32(783800003n);
+    input.add32(3109238835n);
+    input.add32(3109238839n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract3.ge_euint32_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decryptBool(await this.contract3.resEbool());
+    expect(res).to.equal(false);
+  });
+
+  it('test operator "ge" overload (euint32, euint32) => ebool test 3 (3109238839, 3109238839)', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
+    input.add32(3109238839n);
+    input.add32(3109238839n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1934,10 +1919,25 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "gt" overload (euint32, euint32) => ebool test 1 (1188632813, 3886173773)', async function () {
+  it('test operator "ge" overload (euint32, euint32) => ebool test 4 (3109238839, 3109238835)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1188632813n);
-    input.add32(3886173773n);
+    input.add32(3109238839n);
+    input.add32(3109238835n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract3.ge_euint32_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decryptBool(await this.contract3.resEbool());
+    expect(res).to.equal(true);
+  });
+
+  it('test operator "gt" overload (euint32, euint32) => ebool test 1 (319754915, 2254215359)', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
+    input.add32(319754915n);
+    input.add32(2254215359n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1949,10 +1949,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "gt" overload (euint32, euint32) => ebool test 2 (1188632809, 1188632813)', async function () {
+  it('test operator "gt" overload (euint32, euint32) => ebool test 2 (319754911, 319754915)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1188632809n);
-    input.add32(1188632813n);
+    input.add32(319754911n);
+    input.add32(319754915n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1964,10 +1964,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "gt" overload (euint32, euint32) => ebool test 3 (1188632813, 1188632813)', async function () {
+  it('test operator "gt" overload (euint32, euint32) => ebool test 3 (319754915, 319754915)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1188632813n);
-    input.add32(1188632813n);
+    input.add32(319754915n);
+    input.add32(319754915n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1979,10 +1979,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "gt" overload (euint32, euint32) => ebool test 4 (1188632813, 1188632809)', async function () {
+  it('test operator "gt" overload (euint32, euint32) => ebool test 4 (319754915, 319754911)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1188632813n);
-    input.add32(1188632809n);
+    input.add32(319754915n);
+    input.add32(319754911n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint32_euint32(
       encryptedAmount.handles[0],
@@ -1994,10 +1994,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "le" overload (euint32, euint32) => ebool test 1 (3266017861, 1296252605)', async function () {
+  it('test operator "le" overload (euint32, euint32) => ebool test 1 (3813081277, 1147958831)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3266017861n);
-    input.add32(1296252605n);
+    input.add32(3813081277n);
+    input.add32(1147958831n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2009,10 +2009,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "le" overload (euint32, euint32) => ebool test 2 (1296252601, 1296252605)', async function () {
+  it('test operator "le" overload (euint32, euint32) => ebool test 2 (1147958827, 1147958831)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1296252601n);
-    input.add32(1296252605n);
+    input.add32(1147958827n);
+    input.add32(1147958831n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2024,10 +2024,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "le" overload (euint32, euint32) => ebool test 3 (1296252605, 1296252605)', async function () {
+  it('test operator "le" overload (euint32, euint32) => ebool test 3 (1147958831, 1147958831)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1296252605n);
-    input.add32(1296252605n);
+    input.add32(1147958831n);
+    input.add32(1147958831n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2039,10 +2039,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "le" overload (euint32, euint32) => ebool test 4 (1296252605, 1296252601)', async function () {
+  it('test operator "le" overload (euint32, euint32) => ebool test 4 (1147958831, 1147958827)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1296252605n);
-    input.add32(1296252601n);
+    input.add32(1147958831n);
+    input.add32(1147958827n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2054,40 +2054,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "lt" overload (euint32, euint32) => ebool test 1 (68058773, 582124370)', async function () {
+  it('test operator "lt" overload (euint32, euint32) => ebool test 1 (2748635537, 958311251)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(68058773n);
-    input.add32(582124370n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract3.lt_euint32_euint32(
-      encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const res = await decryptBool(await this.contract3.resEbool());
-    expect(res).to.equal(true);
-  });
-
-  it('test operator "lt" overload (euint32, euint32) => ebool test 2 (68058769, 68058773)', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(68058769n);
-    input.add32(68058773n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract3.lt_euint32_euint32(
-      encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const res = await decryptBool(await this.contract3.resEbool());
-    expect(res).to.equal(true);
-  });
-
-  it('test operator "lt" overload (euint32, euint32) => ebool test 3 (68058773, 68058773)', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(68058773n);
-    input.add32(68058773n);
+    input.add32(2748635537n);
+    input.add32(958311251n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2099,10 +2069,25 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "lt" overload (euint32, euint32) => ebool test 4 (68058773, 68058769)', async function () {
+  it('test operator "lt" overload (euint32, euint32) => ebool test 2 (958311247, 958311251)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(68058773n);
-    input.add32(68058769n);
+    input.add32(958311247n);
+    input.add32(958311251n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract3.lt_euint32_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decryptBool(await this.contract3.resEbool());
+    expect(res).to.equal(true);
+  });
+
+  it('test operator "lt" overload (euint32, euint32) => ebool test 3 (958311251, 958311251)', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
+    input.add32(958311251n);
+    input.add32(958311251n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2114,10 +2099,25 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "min" overload (euint32, euint32) => euint32 test 1 (4004162849, 3751955358)', async function () {
+  it('test operator "lt" overload (euint32, euint32) => ebool test 4 (958311251, 958311247)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(4004162849n);
-    input.add32(3751955358n);
+    input.add32(958311251n);
+    input.add32(958311247n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract3.lt_euint32_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decryptBool(await this.contract3.resEbool());
+    expect(res).to.equal(false);
+  });
+
+  it('test operator "min" overload (euint32, euint32) => euint32 test 1 (287613709, 1268459763)', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
+    input.add32(287613709n);
+    input.add32(1268459763n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2126,13 +2126,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(3751955358n);
+    expect(res).to.equal(287613709n);
   });
 
-  it('test operator "min" overload (euint32, euint32) => euint32 test 2 (3751955354, 3751955358)', async function () {
+  it('test operator "min" overload (euint32, euint32) => euint32 test 2 (287613705, 287613709)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3751955354n);
-    input.add32(3751955358n);
+    input.add32(287613705n);
+    input.add32(287613709n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2141,13 +2141,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(3751955354n);
+    expect(res).to.equal(287613705n);
   });
 
-  it('test operator "min" overload (euint32, euint32) => euint32 test 3 (3751955358, 3751955358)', async function () {
+  it('test operator "min" overload (euint32, euint32) => euint32 test 3 (287613709, 287613709)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3751955358n);
-    input.add32(3751955358n);
+    input.add32(287613709n);
+    input.add32(287613709n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2156,13 +2156,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(3751955358n);
+    expect(res).to.equal(287613709n);
   });
 
-  it('test operator "min" overload (euint32, euint32) => euint32 test 4 (3751955358, 3751955354)', async function () {
+  it('test operator "min" overload (euint32, euint32) => euint32 test 4 (287613709, 287613705)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3751955358n);
-    input.add32(3751955354n);
+    input.add32(287613709n);
+    input.add32(287613705n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2171,13 +2171,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(3751955354n);
+    expect(res).to.equal(287613705n);
   });
 
-  it('test operator "max" overload (euint32, euint32) => euint32 test 1 (1722605015, 2466574782)', async function () {
+  it('test operator "max" overload (euint32, euint32) => euint32 test 1 (1500560192, 3872979860)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1722605015n);
-    input.add32(2466574782n);
+    input.add32(1500560192n);
+    input.add32(3872979860n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2186,13 +2186,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(2466574782n);
+    expect(res).to.equal(3872979860n);
   });
 
-  it('test operator "max" overload (euint32, euint32) => euint32 test 2 (1722605011, 1722605015)', async function () {
+  it('test operator "max" overload (euint32, euint32) => euint32 test 2 (1500560188, 1500560192)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1722605011n);
-    input.add32(1722605015n);
+    input.add32(1500560188n);
+    input.add32(1500560192n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2201,13 +2201,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(1722605015n);
+    expect(res).to.equal(1500560192n);
   });
 
-  it('test operator "max" overload (euint32, euint32) => euint32 test 3 (1722605015, 1722605015)', async function () {
+  it('test operator "max" overload (euint32, euint32) => euint32 test 3 (1500560192, 1500560192)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1722605015n);
-    input.add32(1722605015n);
+    input.add32(1500560192n);
+    input.add32(1500560192n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2216,13 +2216,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(1722605015n);
+    expect(res).to.equal(1500560192n);
   });
 
-  it('test operator "max" overload (euint32, euint32) => euint32 test 4 (1722605015, 1722605011)', async function () {
+  it('test operator "max" overload (euint32, euint32) => euint32 test 4 (1500560192, 1500560188)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1722605015n);
-    input.add32(1722605011n);
+    input.add32(1500560192n);
+    input.add32(1500560188n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint32_euint32(
       encryptedAmount.handles[0],
@@ -2231,13 +2231,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt32(await this.contract3.resEuint32());
-    expect(res).to.equal(1722605015n);
+    expect(res).to.equal(1500560192n);
   });
 
-  it('test operator "add" overload (euint32, euint64) => euint64 test 1 (2, 4294022233)', async function () {
+  it('test operator "add" overload (euint32, euint64) => euint64 test 1 (2, 4293221806)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add32(2n);
-    input.add64(4294022233n);
+    input.add64(4293221806n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2246,13 +2246,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(4294022235n);
+    expect(res).to.equal(4293221808n);
   });
 
-  it('test operator "add" overload (euint32, euint64) => euint64 test 2 (1389106424, 1389106428)', async function () {
+  it('test operator "add" overload (euint32, euint64) => euint64 test 2 (2129264170, 2129264172)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1389106424n);
-    input.add64(1389106428n);
+    input.add32(2129264170n);
+    input.add64(2129264172n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2261,13 +2261,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(2778212852n);
+    expect(res).to.equal(4258528342n);
   });
 
-  it('test operator "add" overload (euint32, euint64) => euint64 test 3 (1389106428, 1389106428)', async function () {
+  it('test operator "add" overload (euint32, euint64) => euint64 test 3 (2129264172, 2129264172)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1389106428n);
-    input.add64(1389106428n);
+    input.add32(2129264172n);
+    input.add64(2129264172n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2276,13 +2276,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(2778212856n);
+    expect(res).to.equal(4258528344n);
   });
 
-  it('test operator "add" overload (euint32, euint64) => euint64 test 4 (1389106428, 1389106424)', async function () {
+  it('test operator "add" overload (euint32, euint64) => euint64 test 4 (2129264172, 2129264170)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1389106428n);
-    input.add64(1389106424n);
+    input.add32(2129264172n);
+    input.add64(2129264170n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2291,13 +2291,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(2778212852n);
+    expect(res).to.equal(4258528342n);
   });
 
-  it('test operator "sub" overload (euint32, euint64) => euint64 test 1 (3275630395, 3275630395)', async function () {
+  it('test operator "sub" overload (euint32, euint64) => euint64 test 1 (2514238580, 2514238580)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3275630395n);
-    input.add64(3275630395n);
+    input.add32(2514238580n);
+    input.add64(2514238580n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.sub_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2309,10 +2309,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(0n);
   });
 
-  it('test operator "sub" overload (euint32, euint64) => euint64 test 2 (3275630395, 3275630391)', async function () {
+  it('test operator "sub" overload (euint32, euint64) => euint64 test 2 (2514238580, 2514238576)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3275630395n);
-    input.add64(3275630391n);
+    input.add32(2514238580n);
+    input.add64(2514238576n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.sub_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2324,10 +2324,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(4n);
   });
 
-  it('test operator "mul" overload (euint32, euint64) => euint64 test 1 (2, 2147035356)', async function () {
+  it('test operator "mul" overload (euint32, euint64) => euint64 test 1 (2, 2147246739)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add32(2n);
-    input.add64(2147035356n);
+    input.add64(2147246739n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2336,13 +2336,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(4294070712n);
+    expect(res).to.equal(4294493478n);
   });
 
-  it('test operator "mul" overload (euint32, euint64) => euint64 test 2 (49241, 49241)', async function () {
+  it('test operator "mul" overload (euint32, euint64) => euint64 test 2 (54565, 54565)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(49241n);
-    input.add64(49241n);
+    input.add32(54565n);
+    input.add64(54565n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2351,13 +2351,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(2424676081n);
+    expect(res).to.equal(2977339225n);
   });
 
-  it('test operator "mul" overload (euint32, euint64) => euint64 test 3 (49241, 49241)', async function () {
+  it('test operator "mul" overload (euint32, euint64) => euint64 test 3 (54565, 54565)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(49241n);
-    input.add64(49241n);
+    input.add32(54565n);
+    input.add64(54565n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2366,13 +2366,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(2424676081n);
+    expect(res).to.equal(2977339225n);
   });
 
-  it('test operator "mul" overload (euint32, euint64) => euint64 test 4 (49241, 49241)', async function () {
+  it('test operator "mul" overload (euint32, euint64) => euint64 test 4 (54565, 54565)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(49241n);
-    input.add64(49241n);
+    input.add32(54565n);
+    input.add64(54565n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2381,13 +2381,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(2424676081n);
+    expect(res).to.equal(2977339225n);
   });
 
-  it('test operator "and" overload (euint32, euint64) => euint64 test 1 (552765590, 18442519315734944987)', async function () {
+  it('test operator "and" overload (euint32, euint64) => euint64 test 1 (3530491980, 18439210276688399821)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(552765590n);
-    input.add64(18442519315734944987n);
+    input.add32(3530491980n);
+    input.add64(18439210276688399821n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2396,13 +2396,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(547358866n);
+    expect(res).to.equal(271452236n);
   });
 
-  it('test operator "and" overload (euint32, euint64) => euint64 test 2 (552765586, 552765590)', async function () {
+  it('test operator "and" overload (euint32, euint64) => euint64 test 2 (3530491976, 3530491980)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(552765586n);
-    input.add64(552765590n);
+    input.add32(3530491976n);
+    input.add64(3530491980n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2411,13 +2411,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(552765586n);
+    expect(res).to.equal(3530491976n);
   });
 
-  it('test operator "and" overload (euint32, euint64) => euint64 test 3 (552765590, 552765590)', async function () {
+  it('test operator "and" overload (euint32, euint64) => euint64 test 3 (3530491980, 3530491980)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(552765590n);
-    input.add64(552765590n);
+    input.add32(3530491980n);
+    input.add64(3530491980n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2426,13 +2426,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(552765590n);
+    expect(res).to.equal(3530491980n);
   });
 
-  it('test operator "and" overload (euint32, euint64) => euint64 test 4 (552765590, 552765586)', async function () {
+  it('test operator "and" overload (euint32, euint64) => euint64 test 4 (3530491980, 3530491976)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(552765590n);
-    input.add64(552765586n);
+    input.add32(3530491980n);
+    input.add64(3530491976n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2441,13 +2441,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(552765586n);
+    expect(res).to.equal(3530491976n);
   });
 
-  it('test operator "or" overload (euint32, euint64) => euint64 test 1 (1370480109, 18438935991804355387)', async function () {
+  it('test operator "or" overload (euint32, euint64) => euint64 test 1 (1265695443, 18446434545317482349)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1370480109n);
-    input.add64(18438935991804355387n);
+    input.add32(1265695443n);
+    input.add64(18446434545317482349n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2456,13 +2456,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(18438935992073191423n);
+    expect(res).to.equal(18446434545339531263n);
   });
 
-  it('test operator "or" overload (euint32, euint64) => euint64 test 2 (1370480105, 1370480109)', async function () {
+  it('test operator "or" overload (euint32, euint64) => euint64 test 2 (1265695439, 1265695443)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1370480105n);
-    input.add64(1370480109n);
+    input.add32(1265695439n);
+    input.add64(1265695443n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2471,13 +2471,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(1370480109n);
+    expect(res).to.equal(1265695455n);
   });
 
-  it('test operator "or" overload (euint32, euint64) => euint64 test 3 (1370480109, 1370480109)', async function () {
+  it('test operator "or" overload (euint32, euint64) => euint64 test 3 (1265695443, 1265695443)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1370480109n);
-    input.add64(1370480109n);
+    input.add32(1265695443n);
+    input.add64(1265695443n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2486,13 +2486,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(1370480109n);
+    expect(res).to.equal(1265695443n);
   });
 
-  it('test operator "or" overload (euint32, euint64) => euint64 test 4 (1370480109, 1370480105)', async function () {
+  it('test operator "or" overload (euint32, euint64) => euint64 test 4 (1265695443, 1265695439)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1370480109n);
-    input.add64(1370480105n);
+    input.add32(1265695443n);
+    input.add64(1265695439n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2501,13 +2501,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(1370480109n);
+    expect(res).to.equal(1265695455n);
   });
 
-  it('test operator "xor" overload (euint32, euint64) => euint64 test 1 (1712347993, 18445338651442628253)', async function () {
+  it('test operator "xor" overload (euint32, euint64) => euint64 test 1 (2058901138, 18444969346358607889)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1712347993n);
-    input.add64(18445338651442628253n);
+    input.add32(2058901138n);
+    input.add64(18444969346358607889n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2516,13 +2516,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(18445338652081200580n);
+    expect(res).to.equal(18444969347791509123n);
   });
 
-  it('test operator "xor" overload (euint32, euint64) => euint64 test 2 (1712347989, 1712347993)', async function () {
+  it('test operator "xor" overload (euint32, euint64) => euint64 test 2 (2058901134, 2058901138)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1712347989n);
-    input.add64(1712347993n);
+    input.add32(2058901134n);
+    input.add64(2058901138n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2531,13 +2531,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(12n);
+    expect(res).to.equal(28n);
   });
 
-  it('test operator "xor" overload (euint32, euint64) => euint64 test 3 (1712347993, 1712347993)', async function () {
+  it('test operator "xor" overload (euint32, euint64) => euint64 test 3 (2058901138, 2058901138)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1712347993n);
-    input.add64(1712347993n);
+    input.add32(2058901138n);
+    input.add64(2058901138n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2549,10 +2549,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(0n);
   });
 
-  it('test operator "xor" overload (euint32, euint64) => euint64 test 4 (1712347993, 1712347989)', async function () {
+  it('test operator "xor" overload (euint32, euint64) => euint64 test 4 (2058901138, 2058901134)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1712347993n);
-    input.add64(1712347989n);
+    input.add32(2058901138n);
+    input.add64(2058901134n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2561,13 +2561,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(12n);
+    expect(res).to.equal(28n);
   });
 
-  it('test operator "eq" overload (euint32, euint64) => ebool test 1 (1719913557, 18442439688765407547)', async function () {
+  it('test operator "eq" overload (euint32, euint64) => ebool test 1 (3353602442, 18444404744449370475)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1719913557n);
-    input.add64(18442439688765407547n);
+    input.add32(3353602442n);
+    input.add64(18444404744449370475n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2579,10 +2579,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "eq" overload (euint32, euint64) => ebool test 2 (1719913553, 1719913557)', async function () {
+  it('test operator "eq" overload (euint32, euint64) => ebool test 2 (3353602438, 3353602442)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1719913553n);
-    input.add64(1719913557n);
+    input.add32(3353602438n);
+    input.add64(3353602442n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2594,10 +2594,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "eq" overload (euint32, euint64) => ebool test 3 (1719913557, 1719913557)', async function () {
+  it('test operator "eq" overload (euint32, euint64) => ebool test 3 (3353602442, 3353602442)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1719913557n);
-    input.add64(1719913557n);
+    input.add32(3353602442n);
+    input.add64(3353602442n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2609,10 +2609,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "eq" overload (euint32, euint64) => ebool test 4 (1719913557, 1719913553)', async function () {
+  it('test operator "eq" overload (euint32, euint64) => ebool test 4 (3353602442, 3353602438)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1719913557n);
-    input.add64(1719913553n);
+    input.add32(3353602442n);
+    input.add64(3353602438n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2624,10 +2624,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ne" overload (euint32, euint64) => ebool test 1 (3452703562, 18445276828907635105)', async function () {
+  it('test operator "ne" overload (euint32, euint64) => ebool test 1 (2348689264, 18442770455288909879)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3452703562n);
-    input.add64(18445276828907635105n);
+    input.add32(2348689264n);
+    input.add64(18442770455288909879n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2639,10 +2639,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ne" overload (euint32, euint64) => ebool test 2 (3452703558, 3452703562)', async function () {
+  it('test operator "ne" overload (euint32, euint64) => ebool test 2 (2348689260, 2348689264)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3452703558n);
-    input.add64(3452703562n);
+    input.add32(2348689260n);
+    input.add64(2348689264n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2654,10 +2654,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ne" overload (euint32, euint64) => ebool test 3 (3452703562, 3452703562)', async function () {
+  it('test operator "ne" overload (euint32, euint64) => ebool test 3 (2348689264, 2348689264)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3452703562n);
-    input.add64(3452703562n);
+    input.add32(2348689264n);
+    input.add64(2348689264n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2669,10 +2669,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ne" overload (euint32, euint64) => ebool test 4 (3452703562, 3452703558)', async function () {
+  it('test operator "ne" overload (euint32, euint64) => ebool test 4 (2348689264, 2348689260)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3452703562n);
-    input.add64(3452703558n);
+    input.add32(2348689264n);
+    input.add64(2348689260n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2684,10 +2684,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ge" overload (euint32, euint64) => ebool test 1 (4085322213, 18438610540894872823)', async function () {
+  it('test operator "ge" overload (euint32, euint64) => ebool test 1 (681513244, 18439956019762848847)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(4085322213n);
-    input.add64(18438610540894872823n);
+    input.add32(681513244n);
+    input.add64(18439956019762848847n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2699,10 +2699,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ge" overload (euint32, euint64) => ebool test 2 (4085322209, 4085322213)', async function () {
+  it('test operator "ge" overload (euint32, euint64) => ebool test 2 (681513240, 681513244)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(4085322209n);
-    input.add64(4085322213n);
+    input.add32(681513240n);
+    input.add64(681513244n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2714,10 +2714,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "ge" overload (euint32, euint64) => ebool test 3 (4085322213, 4085322213)', async function () {
+  it('test operator "ge" overload (euint32, euint64) => ebool test 3 (681513244, 681513244)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(4085322213n);
-    input.add64(4085322213n);
+    input.add32(681513244n);
+    input.add64(681513244n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2729,10 +2729,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "ge" overload (euint32, euint64) => ebool test 4 (4085322213, 4085322209)', async function () {
+  it('test operator "ge" overload (euint32, euint64) => ebool test 4 (681513244, 681513240)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(4085322213n);
-    input.add64(4085322209n);
+    input.add32(681513244n);
+    input.add64(681513240n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2744,10 +2744,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "gt" overload (euint32, euint64) => ebool test 1 (936357886, 18439484093531337645)', async function () {
+  it('test operator "gt" overload (euint32, euint64) => ebool test 1 (1663748873, 18438722170294938271)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(936357886n);
-    input.add64(18439484093531337645n);
+    input.add32(1663748873n);
+    input.add64(18438722170294938271n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2759,10 +2759,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "gt" overload (euint32, euint64) => ebool test 2 (936357882, 936357886)', async function () {
+  it('test operator "gt" overload (euint32, euint64) => ebool test 2 (1663748869, 1663748873)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(936357882n);
-    input.add64(936357886n);
+    input.add32(1663748869n);
+    input.add64(1663748873n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2774,10 +2774,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "gt" overload (euint32, euint64) => ebool test 3 (936357886, 936357886)', async function () {
+  it('test operator "gt" overload (euint32, euint64) => ebool test 3 (1663748873, 1663748873)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(936357886n);
-    input.add64(936357886n);
+    input.add32(1663748873n);
+    input.add64(1663748873n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2789,10 +2789,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "gt" overload (euint32, euint64) => ebool test 4 (936357886, 936357882)', async function () {
+  it('test operator "gt" overload (euint32, euint64) => ebool test 4 (1663748873, 1663748869)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(936357886n);
-    input.add64(936357882n);
+    input.add32(1663748873n);
+    input.add64(1663748869n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2804,10 +2804,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "le" overload (euint32, euint64) => ebool test 1 (2868188550, 18442350887404786755)', async function () {
+  it('test operator "le" overload (euint32, euint64) => ebool test 1 (4007150973, 18440487152408523999)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(2868188550n);
-    input.add64(18442350887404786755n);
+    input.add32(4007150973n);
+    input.add64(18440487152408523999n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2819,10 +2819,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "le" overload (euint32, euint64) => ebool test 2 (2868188546, 2868188550)', async function () {
+  it('test operator "le" overload (euint32, euint64) => ebool test 2 (4007150969, 4007150973)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(2868188546n);
-    input.add64(2868188550n);
+    input.add32(4007150969n);
+    input.add64(4007150973n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2834,10 +2834,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "le" overload (euint32, euint64) => ebool test 3 (2868188550, 2868188550)', async function () {
+  it('test operator "le" overload (euint32, euint64) => ebool test 3 (4007150973, 4007150973)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(2868188550n);
-    input.add64(2868188550n);
+    input.add32(4007150973n);
+    input.add64(4007150973n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2849,10 +2849,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "le" overload (euint32, euint64) => ebool test 4 (2868188550, 2868188546)', async function () {
+  it('test operator "le" overload (euint32, euint64) => ebool test 4 (4007150973, 4007150969)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(2868188550n);
-    input.add64(2868188546n);
+    input.add32(4007150973n);
+    input.add64(4007150969n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2864,10 +2864,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "lt" overload (euint32, euint64) => ebool test 1 (3877598044, 18442902282167386297)', async function () {
+  it('test operator "lt" overload (euint32, euint64) => ebool test 1 (3941115237, 18441281291192038419)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3877598044n);
-    input.add64(18442902282167386297n);
+    input.add32(3941115237n);
+    input.add64(18441281291192038419n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2879,10 +2879,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "lt" overload (euint32, euint64) => ebool test 2 (3877598040, 3877598044)', async function () {
+  it('test operator "lt" overload (euint32, euint64) => ebool test 2 (3941115233, 3941115237)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3877598040n);
-    input.add64(3877598044n);
+    input.add32(3941115233n);
+    input.add64(3941115237n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2894,10 +2894,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(true);
   });
 
-  it('test operator "lt" overload (euint32, euint64) => ebool test 3 (3877598044, 3877598044)', async function () {
+  it('test operator "lt" overload (euint32, euint64) => ebool test 3 (3941115237, 3941115237)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3877598044n);
-    input.add64(3877598044n);
+    input.add32(3941115237n);
+    input.add64(3941115237n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2909,10 +2909,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "lt" overload (euint32, euint64) => ebool test 4 (3877598044, 3877598040)', async function () {
+  it('test operator "lt" overload (euint32, euint64) => ebool test 4 (3941115237, 3941115233)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(3877598044n);
-    input.add64(3877598040n);
+    input.add32(3941115237n);
+    input.add64(3941115233n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2924,10 +2924,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(false);
   });
 
-  it('test operator "min" overload (euint32, euint64) => euint64 test 1 (433070948, 18440455504897535457)', async function () {
+  it('test operator "min" overload (euint32, euint64) => euint64 test 1 (3308075156, 18441702414813729607)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(433070948n);
-    input.add64(18440455504897535457n);
+    input.add32(3308075156n);
+    input.add64(18441702414813729607n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2936,13 +2936,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(433070948n);
+    expect(res).to.equal(3308075156n);
   });
 
-  it('test operator "min" overload (euint32, euint64) => euint64 test 2 (433070944, 433070948)', async function () {
+  it('test operator "min" overload (euint32, euint64) => euint64 test 2 (3308075152, 3308075156)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(433070944n);
-    input.add64(433070948n);
+    input.add32(3308075152n);
+    input.add64(3308075156n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2951,13 +2951,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(433070944n);
+    expect(res).to.equal(3308075152n);
   });
 
-  it('test operator "min" overload (euint32, euint64) => euint64 test 3 (433070948, 433070948)', async function () {
+  it('test operator "min" overload (euint32, euint64) => euint64 test 3 (3308075156, 3308075156)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(433070948n);
-    input.add64(433070948n);
+    input.add32(3308075156n);
+    input.add64(3308075156n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2966,13 +2966,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(433070948n);
+    expect(res).to.equal(3308075156n);
   });
 
-  it('test operator "min" overload (euint32, euint64) => euint64 test 4 (433070948, 433070944)', async function () {
+  it('test operator "min" overload (euint32, euint64) => euint64 test 4 (3308075156, 3308075152)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(433070948n);
-    input.add64(433070944n);
+    input.add32(3308075156n);
+    input.add64(3308075152n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2981,13 +2981,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(433070944n);
+    expect(res).to.equal(3308075152n);
   });
 
-  it('test operator "max" overload (euint32, euint64) => euint64 test 1 (1241690110, 18444156226637428515)', async function () {
+  it('test operator "max" overload (euint32, euint64) => euint64 test 1 (529176878, 18440957268015307015)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1241690110n);
-    input.add64(18444156226637428515n);
+    input.add32(529176878n);
+    input.add64(18440957268015307015n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint32_euint64(
       encryptedAmount.handles[0],
@@ -2996,13 +2996,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(18444156226637428515n);
+    expect(res).to.equal(18440957268015307015n);
   });
 
-  it('test operator "max" overload (euint32, euint64) => euint64 test 2 (1241690106, 1241690110)', async function () {
+  it('test operator "max" overload (euint32, euint64) => euint64 test 2 (529176874, 529176878)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1241690106n);
-    input.add64(1241690110n);
+    input.add32(529176874n);
+    input.add64(529176878n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint32_euint64(
       encryptedAmount.handles[0],
@@ -3011,13 +3011,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(1241690110n);
+    expect(res).to.equal(529176878n);
   });
 
-  it('test operator "max" overload (euint32, euint64) => euint64 test 3 (1241690110, 1241690110)', async function () {
+  it('test operator "max" overload (euint32, euint64) => euint64 test 3 (529176878, 529176878)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1241690110n);
-    input.add64(1241690110n);
+    input.add32(529176878n);
+    input.add64(529176878n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint32_euint64(
       encryptedAmount.handles[0],
@@ -3026,13 +3026,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(1241690110n);
+    expect(res).to.equal(529176878n);
   });
 
-  it('test operator "max" overload (euint32, euint64) => euint64 test 4 (1241690110, 1241690106)', async function () {
+  it('test operator "max" overload (euint32, euint64) => euint64 test 4 (529176878, 529176874)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1241690110n);
-    input.add64(1241690106n);
+    input.add32(529176878n);
+    input.add64(529176874n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint32_euint64(
       encryptedAmount.handles[0],
@@ -3041,7 +3041,7 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt64(await this.contract3.resEuint64());
-    expect(res).to.equal(1241690110n);
+    expect(res).to.equal(529176878n);
   });
 
   it('test operator "add" overload (euint32, euint128) => euint128 test 1 (2, 2147483649)', async function () {
@@ -3059,10 +3059,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(2147483651n);
   });
 
-  it('test operator "add" overload (euint32, euint128) => euint128 test 2 (1190053165, 1190053169)', async function () {
+  it('test operator "add" overload (euint32, euint128) => euint128 test 2 (1269503551, 1269503553)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1190053165n);
-    input.add128(1190053169n);
+    input.add32(1269503551n);
+    input.add128(1269503553n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint32_euint128(
       encryptedAmount.handles[0],
@@ -3071,13 +3071,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt128(await this.contract3.resEuint128());
-    expect(res).to.equal(2380106334n);
+    expect(res).to.equal(2539007104n);
   });
 
-  it('test operator "add" overload (euint32, euint128) => euint128 test 3 (1190053169, 1190053169)', async function () {
+  it('test operator "add" overload (euint32, euint128) => euint128 test 3 (1269503553, 1269503553)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1190053169n);
-    input.add128(1190053169n);
+    input.add32(1269503553n);
+    input.add128(1269503553n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint32_euint128(
       encryptedAmount.handles[0],
@@ -3086,13 +3086,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt128(await this.contract3.resEuint128());
-    expect(res).to.equal(2380106338n);
+    expect(res).to.equal(2539007106n);
   });
 
-  it('test operator "add" overload (euint32, euint128) => euint128 test 4 (1190053169, 1190053165)', async function () {
+  it('test operator "add" overload (euint32, euint128) => euint128 test 4 (1269503553, 1269503551)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(1190053169n);
-    input.add128(1190053165n);
+    input.add32(1269503553n);
+    input.add128(1269503551n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint32_euint128(
       encryptedAmount.handles[0],
@@ -3101,13 +3101,13 @@ describe('FHEVM operations 4', function () {
     );
     await tx.wait();
     const res = await decrypt128(await this.contract3.resEuint128());
-    expect(res).to.equal(2380106334n);
+    expect(res).to.equal(2539007104n);
   });
 
-  it('test operator "sub" overload (euint32, euint128) => euint128 test 1 (347211592, 347211592)', async function () {
+  it('test operator "sub" overload (euint32, euint128) => euint128 test 1 (1541154845, 1541154845)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(347211592n);
-    input.add128(347211592n);
+    input.add32(1541154845n);
+    input.add128(1541154845n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.sub_euint32_euint128(
       encryptedAmount.handles[0],
@@ -3119,10 +3119,10 @@ describe('FHEVM operations 4', function () {
     expect(res).to.equal(0n);
   });
 
-  it('test operator "sub" overload (euint32, euint128) => euint128 test 2 (347211592, 347211588)', async function () {
+  it('test operator "sub" overload (euint32, euint128) => euint128 test 2 (1541154845, 1541154841)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
-    input.add32(347211592n);
-    input.add128(347211588n);
+    input.add32(1541154845n);
+    input.add128(1541154841n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.sub_euint32_euint128(
       encryptedAmount.handles[0],

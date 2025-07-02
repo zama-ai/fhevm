@@ -75,22 +75,6 @@ describe('KMSVerifier', function () {
       await awaitAllDecryptionResults();
       expect(await contract.yUint8()).to.equal(42); // even with more than 2 signatures decryption should still succeed
 
-      const contract2 = await contractFactory.connect(this.signers.alice).deploy();
-      const inputAlice = this.instances.alice.createEncryptedInput(
-        await contract2.getAddress(),
-        this.signers.alice.address,
-      );
-      inputAlice.addBytes256(bigIntToBytes256(18446744073709550032n));
-
-      const encryptedAmount = await inputAlice.encrypt();
-      const tx7 = await contract2.requestMixedBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof);
-      await tx7.wait();
-      await awaitAllDecryptionResults();
-
-      expect(await contract2.yBytes256()).to.equal(ethers.toBeHex(18446744073709550032n, 256));
-      expect(await contract2.yBool()).to.equal(true);
-      expect(await contract2.yAddress()).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72'); // testing trustless mixed with ebytes256, in case of several signatures
-
       process.env.NUM_KMS_NODES = '2';
       process.env.KMS_SIGNER_ADDRESS_1 = process.env.KMS_SIGNER_ADDRESS_0;
       const tx8 = await contract.requestUint16();

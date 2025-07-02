@@ -1,28 +1,32 @@
-# Fhevm Test Suite
+## Introduction
 
-## Table of Contents
-
-- **[About](#about)**
-- **[Running the demo](#running-the-demo)**
-- **[Security Policy](#security-policy)**
-- **[FAQ](#faq)**
-- **[Support](#support)**
-
-## About
-
-This repository provides a docker based setup to locally run an integration of Zama Fhevm and Zama KMS (Key Management System).
+This repository provides a docker based setup to locally run an integration of Zama FHEVM and Zama KMS (Key Management System).
 
 For overview of the system, architecture and details on individual components, refer to our [documentation](https://docs.zama.ai/fhevm).
 
+## Main features
 KMS can be configured to two modes:
 
 - Centralized
 - Threshold
 
-## Demo :tada:
+## Table of contents
 
-### All-in-One CLI
+- [Introduction](#introduction)
+- [Main Features](#main-features)
+- [Get Started](#get-started)
+- [Security Policy](#security-policy)
+  - [Handling Sensitive Data](#handling-sensitive-data)
+    - [Environment Files](#environment-files)
+    - [Development Environment](#development-environment)
+    - [Common Sensitive Data](#common-sensitive-data)
+  - [Reporting Security Issues](#reporting-security-issues)
+- [Support](#support)
 
+
+## Get started
+
+### Quickstart
 The test suite offers a unified CLI for all operations:
 
 ```sh
@@ -49,13 +53,39 @@ cd test-suite/fhevm
 ./fhevm-cli clean
 ```
 
-## Security Policy
+### WIP - Forcing Local Builds (`--build`)
 
-### Handling Sensitive Data
+⚠️ **IMPORTANT: THIS FEATURE IS STILL A WORK IN PROGRESS!** ⚠️
+We are actively working to optimize caching for local machines and GitHub runners.
 
-This document outlines security best practices for the fhevm project, particularly regarding the handling of sensitive configuration data.
+🚨 **SECURITY NOTICE:**
+The pre-built Docker images for the FHEVM stack are currently hosted in a **private registry** and are **not publicly available** for direct pulling. This is intentional for security reasons.
 
-#### Environment Files
+Therefore, for external developers or anyone setting up the stack for the first time without access to our private registry, **using the `--build` option is the recommended and necessary way to get started:**
+
+```sh
+./fhevm-cli deploy --build
+```
+
+This command instructs Docker Compose to:
+1.  Build the images locally using the `Dockerfile` and context specified in the respective `docker-compose/*.yml` files for each service. This process uses the source code available in your local checkout (or cloned sub-repositories).
+2.  Tag the newly built images with the versions specified in the `fhevm-cli` script.
+3.  Then, start the services using these freshly built local images.
+
+**Why `--build` is essential for external developers:**
+*   **Image Access:** Since pre-built images are private, `--build` allows you to construct the necessary images from the publicly available source code.
+*   **Local Modifications:** If you have made local changes to any of the Dockerfiles or the build context of a service (e.g., you've cloned one of the sub-repositories like `fhevm-contracts` or `fhevm-coprocessor` into the expected relative paths and made changes), `--build` ensures these changes are incorporated.
+*   **Ensuring Correct Setup:** It guarantees that you are running with images built directly from the provided source, eliminating discrepancies that could arise from attempting to pull non-existent or inaccessible public images.
+
+🚧 **In summary:** Until public images are made available, external users should always use `./fhevm-cli deploy --build` to ensure a successful deployment.
+
+## Security policy
+
+### Handling sensitive data
+
+This document outlines security best practices for the FHEVM project, particularly regarding the handling of sensitive configuration data.
+
+#### Environment files
 
 Our repository contains example environment files `env/staging` that include sensitive values like private keys, mnemonics, and API keys. **These values are for testing purposes only** and should never be used in production environments.
 
@@ -78,7 +108,7 @@ MNEMONIC=${PRODUCTION_MNEMONIC}
 # TEST: TX_SENDER_PRIVATE_KEY=0x8f82b3f482c19a95ac29c82cf048c076ed0de2530c64a73f2d2d7d1e64b5cc6e
 TX_SENDER_PRIVATE_KEY=${SECURE_PRIVATE_KEY}
 ```
-#### Development Environment
+#### Development environment
 
 When developing locally:
 
@@ -88,7 +118,7 @@ When developing locally:
 - Use fake/test data for local development whenever possible
 
 
-#### Common Sensitive Data
+#### Common sensitive data
 The following values should NEVER be committed to repositories:
 
 - Private keys
@@ -97,7 +127,7 @@ The following values should NEVER be committed to repositories:
 - Database credentials
 - JWT secrets
 
-### Reporting Security Issues
+### Reporting security issues
 Please report security vulnerabilities to `security@zama.ia` rather than creating public issues.
 
 Include:
@@ -108,32 +138,12 @@ Include:
 - Suggested mitigation (if any)
 
 
-## FAQ
-
-**Is Zama’s technology free to use?**
-
-> Zama’s libraries are free to use under the BSD 3-Clause Clear license only for development, research, prototyping, and experimentation purposes. However, for any commercial use of Zama's open source code, companies must purchase Zama’s commercial patent license.
->
-> Everything we do is open source and we are very transparent on what it means for our users, you can read more about how we monetize our open source products at Zama in [this blog post](https://www.zama.ai/post/open-source).
-
-**What do I need to do if I want to use Zama’s technology for commercial purposes?**
-
-> To commercially use Zama’s technology you need to be granted Zama’s patent license. Please contact us hello@zama.ai for more information.
-
-**Do you file IP on your technology?**
-
-> Yes, all Zama’s technologies are patented.
-
-**Can you customize a solution for my specific use case?**
-
-> We are open to collaborating and advancing the FHE space with our partners. If you have specific needs, please email us at hello@zama.ai.
-
 ## Support
 
 <a target="_blank" href="https://community.zama.ai">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/tfhe-rs/assets/157474013/08656d0a-3f44-4126-b8b6-8c601dff5380">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/tfhe-rs/assets/157474013/1c9c9308-50ac-4aab-a4b9-469bb8c536a4">
+  <source media="(prefers-color-scheme: dark)" srcset="../docs/.gitbook/assets/support-banner-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="../docs/.gitbook/assets/support-banner-light.png">
   <img alt="Support">
 </picture>
 </a>

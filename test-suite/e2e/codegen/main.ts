@@ -25,7 +25,7 @@ import { ALL_FHE_TYPES } from './types';
  *
  */
 function generateAllFiles() {
-  const numberOfTestSplits = 12;
+  const numberOfTestSplits = 96;
 
   // Validate the FHE types
   validateFHETypes(ALL_FHE_TYPES);

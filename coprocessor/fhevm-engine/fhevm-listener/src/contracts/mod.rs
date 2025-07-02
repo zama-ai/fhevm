@@ -1,10 +1,8 @@
 use alloy::sol;
 
-#[allow(unused_imports)] // required for accessing ::COUNT
-use alloy_sol_types::SolEventInterface;
-
+// contracts are compiled in build.rs/build_contract() using hardhat
+// json are generated in build.rs/build_contract() using hardhat
 sol!(
-    #[allow(missing_docs)]
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     AclContract,
@@ -12,7 +10,6 @@ sol!(
 );
 
 sol!(
-    #[allow(missing_docs)]
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     TfheContract,

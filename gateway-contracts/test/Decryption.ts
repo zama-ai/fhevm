@@ -7,6 +7,7 @@ import hre from "hardhat";
 import {
   CiphertextCommits,
   Decryption,
+  Decryption__factory,
   GatewayConfig,
   IDecryption,
   KmsManagement,
@@ -243,6 +244,27 @@ describe("Decryption", function () {
 
     return { ...fixtureData, snsCiphertextMaterials, keyId1 };
   }
+
+  describe("Deployment", function () {
+    let decryptionFactory: Decryption__factory;
+
+    beforeEach(async function () {
+      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      decryption = fixtureData.decryption;
+      owner = fixtureData.owner;
+
+      // Get the Decryption contract factory
+      decryptionFactory = await hre.ethers.getContractFactory("Decryption", owner);
+    });
+
+    it("Should revert because initialization is not from an empty proxy", async function () {
+      await expect(
+        hre.upgrades.upgradeProxy(decryption, decryptionFactory, {
+          call: { fn: "initializeFromEmptyProxy" },
+        }),
+      ).to.be.revertedWithCustomError(decryption, "NotInitializingFromEmptyProxy");
+    });
+  });
 
   describe("Public Decryption", function () {
     let eip712Message: EIP712;
@@ -526,6 +548,62 @@ describe("Decryption", function () {
       ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
     });
 
+    it("Should public decrypt with 3 valid and 1 malicious signatures", async function () {
+      // Request public decryption
+      await decryption.publicDecryptionRequest(ctHandles);
+
+      const decryptionAddress = await decryption.getAddress();
+
+      // Create a malicious EIP712 message: the decryptedResult is different from the expected one
+      // but the signature is valid (the malicious decryptedResult will be given to the response call)
+      const fakeDecryptedResult = createBytes32();
+      const fakeEip712Message = createEIP712ResponsePublicDecrypt(
+        gatewayChainId,
+        decryptionAddress,
+        ctHandles,
+        fakeDecryptedResult,
+      );
+      const [fakeKmsSignature] = await getSignaturesPublicDecrypt(fakeEip712Message, kmsSigners);
+
+      // Trigger a malicious public decryption response with:
+      // - the first KMS transaction sender (expected)
+      // - a fake signature (unexpected)
+      await decryption
+        .connect(kmsTxSenders[0])
+        .publicDecryptionResponse(decryptionId, fakeDecryptedResult, fakeKmsSignature);
+
+      // Trigger a first valid public decryption response with:
+      // - the second KMS transaction sender
+      // - the second KMS signer's signature
+      await decryption
+        .connect(kmsTxSenders[1])
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
+
+      // Trigger a second valid public decryption response with:
+      // - the third KMS transaction sender
+      // - the third KMS signer's signature
+      const responseTx3 = await decryption
+        .connect(kmsTxSenders[2])
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
+
+      // Trigger a third valid proof verification response with:
+      // - the fourth coprocessor transaction sender
+      // - the fourth coprocessor signer's signature
+      const responseTx4 = await decryption
+        .connect(kmsTxSenders[3])
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3]);
+
+      // Consensus should not be reached at the third transaction since the first was malicious
+      // Check 3rd transaction events: it should not emit an event for public decryption response
+      await expect(responseTx3).to.not.emit(decryption, "PublicDecryptionResponse");
+
+      // Consensus should be reached at the fourth transaction
+      // Check 4th transaction events: it should only contain 3 valid signatures
+      await expect(responseTx4)
+        .to.emit(decryption, "PublicDecryptionResponse")
+        .withArgs(decryptionId, decryptedResult, kmsSignatures.slice(1, 4));
+    });
+
     describe("Checks", function () {
       it("Should not revert because public decryption is ready", async function () {
         await expect(decryption.checkPublicDecryptionReady(ctHandles)).to.not.be.reverted;
@@ -620,7 +698,6 @@ describe("Decryption", function () {
       // Create EIP712 messages
       const decryptionAddress = await decryption.getAddress();
       const eip712RequestMessage = createEIP712RequestUserDecrypt(
-        gatewayChainId,
         decryptionAddress,
         publicKey,
         contractAddresses,
@@ -1079,7 +1156,6 @@ describe("Decryption", function () {
       // Create EIP712 message using the fake contract address list
       const decryptionAddress = await decryption.getAddress();
       const fakeEip712RequestMessage = createEIP712RequestUserDecrypt(
-        gatewayChainId,
         decryptionAddress,
         publicKey,
         fakeContractAddresses,
@@ -1390,7 +1466,6 @@ describe("Decryption", function () {
       // Create EIP712 messages
       const decryptionAddress = await decryption.getAddress();
       const eip712RequestMessage = createEIP712RequestDelegatedUserDecrypt(
-        gatewayChainId,
         decryptionAddress,
         publicKey,
         contractAddresses,

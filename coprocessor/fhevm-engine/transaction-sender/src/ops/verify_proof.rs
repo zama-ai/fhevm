@@ -1,11 +1,11 @@
 use super::TransactionOperation;
 use crate::nonce_managed_provider::NonceManagedProvider;
+use crate::overprovision_gas_limit::try_overprovision_gas_limit;
+use crate::AbstractSigner;
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
-use alloy::signers::local::PrivateKeySigner;
-use alloy::signers::SignerSync;
 use alloy::sol;
 use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
@@ -35,7 +35,7 @@ sol!(
 pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> {
     input_verification_address: Address,
     provider: NonceManagedProvider<P>,
-    signer: PrivateKeySigner,
+    signer: AbstractSigner,
     conf: crate::ConfigSettings,
     gas: Option<u64>,
     gw_chain_id: u64,
@@ -46,7 +46,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
     pub(crate) async fn new(
         input_verification_address: Address,
         provider: NonceManagedProvider<P>,
-        signer: PrivateKeySigner,
+        signer: AbstractSigner,
         conf: crate::ConfigSettings,
         gas: Option<u64>,
         db_pool: Pool<Postgres>,
@@ -119,26 +119,40 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         current_retry_count: i32,
     ) -> anyhow::Result<()> {
         info!("Processing proof with proof ID {}", txn_request.0);
-        let txn_req = txn_request.1.into();
-        let transaction = match self.provider.send_transaction(txn_req.clone()).await {
+        let overprovisioned_txn_req = try_overprovision_gas_limit(
+            txn_request.1,
+            &*self.provider,
+            self.conf.gas_limit_overprovision_percent,
+        )
+        .await;
+        let transaction = match self
+            .provider
+            .send_transaction(overprovisioned_txn_req.clone())
+            .await
+        {
             Ok(txn) => txn,
             Err(e) => {
-                if let Some(InputVerificationErrors::CoprocessorSignerAlreadyVerified(_)) = e
-                    .as_error_resp()
-                    .and_then(|payload| payload.as_decoded_error::<InputVerificationErrors>(true))
+                if let Some(InputVerificationErrors::CoprocessorSignerAlreadyVerified(_)) =
+                    e.as_error_resp().and_then(|payload| {
+                        payload.as_decoded_interface_error::<InputVerificationErrors>()
+                    })
                 {
                     warn!( "Coprocessor has already verified the proof with ID {}, removing it from the DB", txn_request.0);
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
-                } else if let Some(InputVerificationErrors::CoprocessorSignerAlreadyRejected(_)) = e
-                    .as_error_resp()
-                    .and_then(|payload| payload.as_decoded_error::<InputVerificationErrors>(true))
+                } else if let Some(InputVerificationErrors::CoprocessorSignerAlreadyRejected(_)) =
+                    e.as_error_resp().and_then(|payload| {
+                        payload.as_decoded_interface_error::<InputVerificationErrors>()
+                    })
                 {
                     warn!( "Coprocessor has already rejected the proof with ID {}, removing it from the DB", txn_request.0);
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
                 } else {
-                    error!("Transaction {:?} sending failed with error: {}", txn_req, e);
+                    error!(
+                        "Transaction {:?} sending failed with error: {}",
+                        overprovisioned_txn_req, e
+                    );
                     self.update_retry_count_by_proof_id(
                         txn_request.0,
                         current_retry_count,
@@ -263,10 +277,7 @@ where
                         contractChainId: U256::from(row.chain_id),
                     }
                     .eip712_signing_hash(&domain);
-                    let signature = self
-                        .signer
-                        .sign_hash_sync(&signing_hash)
-                        .expect("signing failed");
+                    let signature = self.signer.sign_hash(&signing_hash).await?;
 
                     if let Some(gas) = self.gas {
                         (
@@ -329,5 +340,15 @@ where
             res??;
         }
         Ok(maybe_has_more_work)
+    }
+
+    fn provider(&self) -> &P {
+        self.provider.inner()
+    }
+
+    async fn check_provider_connection(&self) -> anyhow::Result<()> {
+        // Simple check to verify the provider is connected
+        let _ = self.provider.get_block_number().await?;
+        Ok(())
     }
 }

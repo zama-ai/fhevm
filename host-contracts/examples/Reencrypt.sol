@@ -20,9 +20,6 @@ contract Reencrypt {
     euint128 public xUint128;
     eaddress public xAddress;
     euint256 public xUint256;
-    ebytes64 public yBytes64;
-    ebytes128 public yBytes128;
-    ebytes256 public yBytes256;
 
     /// @notice Constructor to initialize encrypted values and set permissions
     constructor() {
@@ -65,29 +62,5 @@ contract Reencrypt {
         xUint256 = FHE.asEuint256(74285495974541385002137713624115238327312291047062397922780925695323480915729);
         FHE.allowThis(xUint256);
         FHE.allow(xUint256, msg.sender);
-
-        yBytes64 = FHE.asEbytes64(
-            FHE.padToBytes64(
-                hex"19d179e0cc7e816dc944582ed4f5652f5951900098fc2e0a15a7ea4dc8cfa4e3b6c54beea5ee95e56b728762f659347ce1d4aa1b05fcc5"
-            )
-        );
-        FHE.allowThis(yBytes64);
-        FHE.allow(yBytes64, msg.sender);
-
-        yBytes128 = FHE.asEbytes128(
-            FHE.padToBytes128(
-                hex"13e7819123de6e2870c7e83bb764508e22d7c3ab8a5aee6bdfb26355ef0d3f1977d651b83bf5f78634fa360aa14debdc3daa6a587b5c2fb1710ab4d6677e62a8577f2d9fecc190ad8b11c9f0a5ec3138b27da1f055437af8c90a9495dad230"
-            )
-        );
-        FHE.allowThis(yBytes128);
-        FHE.allow(yBytes128, msg.sender);
-
-        yBytes256 = FHE.asEbytes256(
-            FHE.padToBytes256(
-                hex"d179e0cc7e816dc944582ed4f5652f5951900098fc2e0a15a7ea4dc8cfa4e3b6c54beea5ee95e56b728762f659347ce1d4aa1b05fcc513e7819123de6e2870c7e83bb764508e22d7c3ab8a5aee6bdfb26355ef0d3f1977d651b83bf5f78634fa360aa14debdc3daa6a587b5c2fb1710ab4d6677e62a8577f2d9fecc190ad8b11c9f0a5ec3138b27da1f055437af8c90a9495dad230"
-            )
-        );
-        FHE.allowThis(yBytes256);
-        FHE.allow(yBytes256, msg.sender);
     }
 }

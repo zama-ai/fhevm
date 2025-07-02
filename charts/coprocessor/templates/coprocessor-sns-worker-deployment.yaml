@@ -28,6 +28,8 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
+      imagePullSecrets:
+        - name: registry-credentials
       restartPolicy: Always
       {{- if and .Values.snsWorker.affinity .Values.snsWorker.affinity.enabled }}
       affinity:
@@ -48,6 +50,12 @@ spec:
 {{ toYaml .Values.snsWorker.args | nindent 12 }}
           env:
 {{ toYaml .Values.snsWorker.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.snsWorker.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
           resources:
             requests:
               cpu: {{ .Values.snsWorker.resources.requests.cpu | default "100m" }}
@@ -55,4 +63,12 @@ spec:
             limits:
               cpu: {{ .Values.snsWorker.resources.limits.cpu | default "500m" }}
               memory: {{ .Values.snsWorker.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.snsWorker.probes .Values.snsWorker.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.snsWorker.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.snsWorker.probes .Values.snsWorker.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.snsWorker.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
 {{- end -}}

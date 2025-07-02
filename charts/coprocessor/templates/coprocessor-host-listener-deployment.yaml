@@ -1,0 +1,74 @@
+{{- if .Values.hostListener.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: {{ include "hostListenerName" . }}
+  name: {{ include "hostListenerName" . }}
+spec:
+  replicas: {{ .Values.hostListener.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener
+  {{- if .Values.hostListener.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.hostListener.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-host-listener
+        app.kubernetes.io/name: {{ include "hostListenerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- if and .Values.hostListener.affinity .Values.hostListener.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.hostListener.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.hostListener.tolerations .Values.hostListener.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.hostListener.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.hostListener.serviceAccountName }}
+      serviceAccountName: {{ .Values.hostListener.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: coprocessor-host-listener
+          image: {{ .Values.hostListener.image.name }}:{{ .Values.hostListener.image.tag }}
+          command: ["fhevm_listener"]
+          args:
+{{ toYaml .Values.hostListener.args | nindent 12 }}
+          env:
+{{ toYaml .Values.hostListener.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.hostListener.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.hostListener.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.hostListener.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.hostListener.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.hostListener.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.hostListener.probes .Values.hostListener.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.hostListener.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.hostListener.probes .Values.hostListener.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.hostListener.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end -}}

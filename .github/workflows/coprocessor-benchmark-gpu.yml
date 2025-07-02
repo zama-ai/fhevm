@@ -1,5 +1,5 @@
 # Run all fhevm coprocessor benchmarks on a GPU instance on Hyperstack and return parsed results to Slab CI bot.
-name: Coprocessor GPU benchmarks
+name: coprocessor-benchmark-gpu
 
 on:
   workflow_dispatch:
@@ -23,6 +23,7 @@ on:
         type: choice
         options:
           - "erc20"
+          - "dex"
           - "synthetics"
           - "all"
       batch_size:
@@ -30,6 +31,32 @@ on:
         required: true
         type: string
         default: "5000"
+      scheduling_policy:
+        description: "Scheduling policy"
+        required: true
+        type: choice
+        options:
+          - "MAX_PARALLELISM"
+          - "MAX_LOCALITY"
+          - "LOOP"
+          - "FINE_GRAIN"
+      optimization_target:
+        description: "Optimization target"
+        required: false
+        type: choice
+        options:
+          - "throughput"
+          - "latency"
+        default: "throughput"
+      benchmark_type:
+        description: "Benchmark type"
+        required: false
+        type: choice
+        options:
+          - "ALL"
+          - "THROUGHPUT"
+          - "LATENCY"
+        default: "ALL"
 
 env:
   CARGO_TERM_COLOR: always
@@ -41,9 +68,10 @@ env:
 
 jobs:
   parse-inputs:
+    name: coprocessor-benchmark-gpu/parse-inputs
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     outputs:
       profile: ${{ steps.parse_profile.outputs.profile }}
       hardware_name: ${{ steps.parse_hardware_name.outputs.name }}
@@ -59,11 +87,11 @@ jobs:
           echo "name=$(echo '${{ inputs.profile }}' | sed 's|.*[[:space:]](\(.*\))|\1|')" >> "${GITHUB_OUTPUT}"
 
   setup-instance:
-    name: Setup instance (fhevm-coprocessor-benchmarks-gpu)
+    name: coprocessor-benchmark-gpu/setup-instance
     needs: parse-inputs
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -78,14 +106,15 @@ jobs:
           backend: hyperstack
           profile: ${{ needs.parse-inputs.outputs.profile }}
 
-  fhevm-coprocessor-benchmarks-gpu:
-    name: Coprocessor GPU benchmarks on (${{ needs.parse-inputs.outputs.profile }})
+  benchmark:
+    name: coprocessor-benchmark-gpu/benchmark-gpu (bpr)
     needs: [ parse-inputs, setup-instance ]
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     continue-on-error: true
     timeout-minutes: 720  # 12 hours
     permissions:
-      contents: read
+      contents: 'read'
+      packages: 'read'
     strategy:
       fail-fast: false
       # explicit include-based build matrix, of known valid options
@@ -124,7 +153,7 @@ jobs:
           {
             echo "BENCH_DATE=$(date --iso-8601=seconds)";
             echo "COMMIT_DATE=$(git --no-pager show -s --format=%cd --date=iso8601-strict ${{ github.sha }})";
-            echo "COMMIT_HASH=$(git describe --tags --dirty)";
+            echo "COMMIT_HASH=$(git rev-parse HEAD)";
           } >> "${GITHUB_ENV}"
 
       - name: Install rust
@@ -154,6 +183,13 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Init database
         run: make init_db
         working-directory: coprocessor/fhevm-engine/coprocessor
@@ -164,14 +200,16 @@ jobs:
           node-version: 20.x
 
       - name: Build contracts
+        env:
+          HARDHAT_NETWORK: hardhat
         run: |
           cp ./host-contracts/.env.example ./host-contracts/.env
           npm --prefix ./host-contracts ci --include=optional
-          cd host-contracts && npm install && npx hardhat compile
+          cd host-contracts && npm install && npm run deploy:emptyProxies && npx hardhat compile
 
       - name: Run benchmarks on GPU
         run: |
-          BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" make "benchmark_${{ inputs.benchmarks }}_gpu"
+          BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" FHEVM_DF_SCHEDULE="${{ inputs.scheduling_policy }}" BENCHMARK_TYPE="${{ inputs.benchmark_type }}" OPTIMIZATION_TARGET="${{ inputs.optimization_target }}" make -e "benchmark_${{ inputs.benchmarks }}_gpu"
         working-directory: coprocessor/fhevm-engine/coprocessor
 
       - name: Parse results
@@ -185,7 +223,8 @@ jobs:
           --commit-date "${{ env.COMMIT_DATE }}" \
           --bench-date "${{ env.BENCH_DATE }}" \
           --walk-subdirs \
-          --name-suffix "operation_batch_size_${{ inputs.batch_size }}"
+          --crate "coprocessor/fhevm-engine/coprocessor" \
+          --name-suffix "operation_batch_size_${{ inputs.batch_size }}-schedule_${{ inputs.scheduling_policy }}-optimization_target_${{ inputs.optimization_target }}"
 
       - name: Upload parsed results artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -208,12 +247,12 @@ jobs:
           --slab-url "${{ secrets.SLAB_URL }}"
 
   teardown-instance:
-    name: Teardown instance (fhevm-backend-gpu L40 test)
+    name: coprocessor-benchmark-gpu/teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
-    needs: [ setup-instance, fhevm-coprocessor-benchmarks-gpu ]
+    needs: [ setup-instance, benchmark ]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     steps:
       - name: Stop remote instance
         id: stop-instance

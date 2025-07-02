@@ -1,10 +1,11 @@
-use alloy::primitives::{Bytes, FixedBytes, Log};
+use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
 
 use fhevm_listener::contracts::TfheContract;
 use fhevm_listener::contracts::TfheContract::TfheContractEvents;
-use fhevm_listener::database::tfhe_event_propagate::{ClearConst, Database as ListenerDatabase, Handle, ToType};
-
+use fhevm_listener::database::tfhe_event_propagate::{
+    ClearConst, Database as ListenerDatabase, Handle, ToType,
+};
 
 use crate::tests::operators::{generate_binary_test_cases, generate_unary_test_cases};
 use crate::tests::utils::{decrypt_ciphertexts, wait_until_all_ciphertexts_computed};
@@ -17,7 +18,6 @@ pub fn supported_types() -> &'static [i32] {
     &[
         0, // bool
         8, // 256 bit
-        9, // ebytes 64
     ]
 }
 
@@ -47,11 +47,6 @@ fn as_scalar_uint(big_int: &BigInt) -> ClearConst {
     ClearConst::from_be_slice(&bytes)
 }
 
-fn to_bytes(big_int: &BigInt) -> Bytes {
-    let (_, bytes) = big_int.to_bytes_be();
-    Bytes::copy_from_slice(&bytes)
-}
-
 fn to_ty(ty: i32) -> ToType {
     ToType::from(ty as u8)
 }
@@ -71,11 +66,9 @@ fn binary_op_to_event(
         .parse()
         .unwrap();
     let s_byte = |is_scalar: bool| ScalarByte::from(is_scalar as u8);
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     let scalarByte = s_byte(op.is_scalar);
     let lhs = *lhs;
-    let use_bytes_when_avail = op.is_scalar && op.bits > 256;
-    let rhs_bytes = to_bytes(r_scalar);
     let rhs = if op.is_scalar && op.bits <= 256 {
         as_scalar_handle(r_scalar)
     } else {
@@ -209,50 +202,26 @@ fn binary_op_to_event(
             scalarByte,
             result,
         }),
-        S::FheEq => {
-            if use_bytes_when_avail {
-                E::FheEqBytes(C::FheEqBytes {
-                    caller,
-                    lhs,
-                    rhs: rhs_bytes,
-                    scalarByte,
-                    result,
-                })
-            } else {
-                E::FheEq(C::FheEq {
-                    caller,
-                    lhs,
-                    rhs,
-                    scalarByte,
-                    result,
-                })
-            }
-        }
-        S::FheNe => {
-            if use_bytes_when_avail {
-                E::FheNeBytes(C::FheNeBytes {
-                    caller,
-                    lhs,
-                    rhs: rhs_bytes,
-                    scalarByte,
-                    result,
-                })
-            } else {
-                E::FheNe(C::FheNe {
-                    caller,
-                    lhs,
-                    rhs,
-                    scalarByte,
-                    result,
-                })
-            }
-        }
+        S::FheEq => E::FheEq(C::FheEq {
+            caller,
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+        }),
+        S::FheNe => E::FheNe(C::FheNe {
+            caller,
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+        }),
         _ => panic!("unknown operation: {:?}", op.operator),
     }
 }
 
 fn next_handle() -> Handle {
-    #[allow(non_upper_case_globals)]
+    #[expect(non_upper_case_globals)]
     static count: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let v = count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     as_handle(&BigInt::from(v))
@@ -287,8 +256,8 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         let rhs_handle = next_handle();
         let output_handle = next_handle();
 
-        let lhs_bytes = to_bytes(&op.lhs);
-        let rhs_bytes = to_bytes(&op.rhs);
+        let lhs_bytes = as_scalar_uint(&op.lhs);
+        let rhs_bytes = as_scalar_uint(&op.rhs);
 
         println!(
             "Operations for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{}",
@@ -298,8 +267,8 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
             .parse()
             .unwrap();
         listener_event_to_db
-            .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncryptBytes(
-                TfheContract::TrivialEncryptBytes {
+            .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
                     caller,
                     pt: lhs_bytes,
                     toType: to_ty(op.input_types),
@@ -309,8 +278,8 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
             .await?;
         if !op.is_scalar {
             listener_event_to_db
-                .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncryptBytes(
-                    TfheContract::TrivialEncryptBytes {
+                .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
                         caller,
                         pt: rhs_bytes,
                         toType: to_ty(op.input_types),
@@ -402,7 +371,7 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
         let input_handle = next_handle();
         let output_handle = next_handle();
 
-        let inp_bytes = to_bytes(&op.inp);
+        let inp_bytes = as_scalar_uint(&op.inp);
 
         println!(
             "Operations for unary test bits:{} op:{} input:{}",
@@ -413,8 +382,8 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
             .parse()
             .unwrap();
         listener_event_to_db
-            .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncryptBytes(
-                TfheContract::TrivialEncryptBytes {
+            .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
                     caller,
                     pt: inp_bytes,
                     toType: to_ty(op.operand_types),
@@ -472,10 +441,10 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
         .unwrap();
 
     listener_event_to_db
-        .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncryptBytes(
-            TfheContract::TrivialEncryptBytes {
+        .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncrypt(
+            TfheContract::TrivialEncrypt {
                 caller,
-                pt: to_bytes(&BigInt::from(0)),
+                pt: as_scalar_uint(&BigInt::from(0)),
                 toType: to_ty(fhe_bool_type),
                 result: false_handle,
             },
@@ -483,10 +452,10 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
         .await?;
 
     listener_event_to_db
-        .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncryptBytes(
-            TfheContract::TrivialEncryptBytes {
+        .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncrypt(
+            TfheContract::TrivialEncrypt {
                 caller,
-                pt: to_bytes(&BigInt::from(1)),
+                pt: as_scalar_uint(&BigInt::from(1)),
                 toType: to_ty(fhe_bool_type),
                 result: true_handle,
             },
@@ -504,10 +473,10 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
         };
 
         listener_event_to_db
-            .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncryptBytes(
-                TfheContract::TrivialEncryptBytes {
+            .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
                     caller,
-                    pt: to_bytes(&left_input),
+                    pt: as_scalar_uint(&left_input),
                     toType: to_ty(*input_types),
                     result: left_handle,
                 },
@@ -515,10 +484,10 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
             .await?;
 
         listener_event_to_db
-            .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncryptBytes(
-                TfheContract::TrivialEncryptBytes {
+            .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
                     caller,
-                    pt: to_bytes(&right_input),
+                    pt: as_scalar_uint(&right_input),
                     toType: to_ty(*input_types),
                     result: right_handle,
                 },
@@ -604,10 +573,10 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
             );
 
             listener_event_to_db
-                .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncryptBytes(
-                    TfheContract::TrivialEncryptBytes {
+                .insert_tfhe_event(&tfhe_event(TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
                         caller,
-                        pt: to_bytes(&BigInt::from(input)),
+                        pt: as_scalar_uint(&BigInt::from(input)),
                         toType: to_ty(*type_from),
                         result: input_handle,
                     },

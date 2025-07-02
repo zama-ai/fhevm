@@ -15,12 +15,12 @@ import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
 import "./tasks/getters";
-import "./tasks/upgradeProxy";
+import "./tasks/upgradeContracts";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
-const NUM_ACCOUNTS = 20;
+export const NUM_ACCOUNTS = 30;
 
 const chainIds = {
   hardhat: 31337,

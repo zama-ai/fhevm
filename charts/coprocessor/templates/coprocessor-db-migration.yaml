@@ -19,6 +19,8 @@ spec:
         app: coprocessor-db-migration
         app.kubernetes.io/name: {{ .Release.Name }}-db-migration
     spec:
+      imagePullSecrets:
+        - name: registry-credentials
       restartPolicy: Never
       {{- if and .Values.dbMigration.affinity .Values.dbMigration.affinity.enabled }}
       affinity:
@@ -54,6 +56,7 @@ spec:
       containers:
       - name: db-migration
         image: {{ .Values.dbMigration.image.name }}:{{ .Values.dbMigration.image.tag }}
+        command: ["/initialize_db.sh"]
         env:
 {{ toYaml .Values.dbMigration.env | nindent 12 }}
         resources:

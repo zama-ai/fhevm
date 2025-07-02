@@ -20,8 +20,7 @@ Include screenshots, relevant logs, or traces if available.
 
 ### **Smart Contract Code Snippet**
 
-If applicable, provide a minimal reproducible example of the smart contract code highlighting the part where the issue
-occurs:
+If applicable, provide a minimal reproducible example of the smart contract code highlighting the part where the issue occurs:
 
 <details><summary>Example</summary>
 <p>

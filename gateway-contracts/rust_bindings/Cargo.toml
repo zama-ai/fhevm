@@ -8,6 +8,7 @@ version = "0.1.0-rc14"
 
 [dependencies]
 alloy = { version = "0.13.0", default-features = false, features = ["contract", "sol-types"] }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
 
 [lib]
 path = "src/mod.rs"

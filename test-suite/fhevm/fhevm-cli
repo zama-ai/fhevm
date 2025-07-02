@@ -4,11 +4,8 @@ set -e
 BLUE='\033[0;34m'
 LIGHT_BLUE='\033[1;34m'
 GREEN='\033[0;32m'
-LIGHT_GREEN='\033[1;32m'
 RED='\033[0;31m'
-LIGHT_RED='\033[1;31m'
 YELLOW='\033[0;33m'
-LIGHT_YELLOW='\033[1;33m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
@@ -17,14 +14,20 @@ RESET='\033[0m'
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT="fhevm"
 
-export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.7.0-rc1"}
-export HOST_VERSION=${HOST_VERSION:-"v0.7.0-rc1"}
-export COPROCESSOR_VERSION=${COPROCESSOR_VERSION:-"v0.7.0-rc1"}
-export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0-rc1"}
-export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.7.0-rc1"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"6cb1acf"}
-export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc14"}
-export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc8"}
+export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.7.0"}
+export HOST_VERSION=${HOST_VERSION:-"v0.7.0"}
+export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.7.0"}
+export HOST_LISTENER_VERSION=${HOST_LISTENER_VERSION:-"v0.7.0"}
+export GW_LISTENER_VERSION=${GW_LISTENER_VERSION:-"v0.7.0"}
+export TX_SENDER_VERSION=${TX_SENDER_VERSION:-"v0.7.0"}
+export TFHE_WORKER_VERSION=${TFHE_WORKER_VERSION:-"v0.7.0"}
+export SNS_WORKER_VERSION=${SNS_WORKER_VERSION:-"v0.7.0"}
+export ZKPROOF_WORKER_VERSION=${ZKPROOF_WORKER_VERSION:-"v0.7.0"}
+export CONNECTOR_VERSION=${CONNECTOR_VERSION:-"v0.7.0"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"v0.7.0"}
+export CORE_VERSION=${CORE_VERSION:-"v0.11.0-rc17"}
+export RELAYER_VERSION=${RELAYER_VERSION:-"v0.1.0-rc13"}
+
 
 function print_logo() {
   echo -e "${LIGHT_BLUE}"
@@ -42,7 +45,7 @@ function usage {
   echo -e "${BOLD}Usage:${RESET} ${YELLOW}fhevm-cli${RESET} ${CYAN}COMMAND [OPTIONS]${RESET}"
   echo
   echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
-  echo -e "  ${YELLOW}deploy${RESET}              Deploy the full fhevm stack"
+  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
   echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|erc20|debug)"
   echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
   echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
@@ -57,6 +60,7 @@ function usage {
   echo
   echo -e "${BOLD}${LIGHT_BLUE}Examples:${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test public-decryption -n staging${RESET}"
@@ -78,7 +82,16 @@ case $COMMAND in
   deploy)
     print_logo
     echo -e "${LIGHT_BLUE}${BOLD}[DEPLOY] Deploying fhevm stack...${RESET}"
-    "${SCRIPT_DIR}/scripts/deploy-fhevm-stack.sh"
+    BUILD_ARG=""
+    if [[ "$1" == "--build" ]]; then
+      BUILD_ARG="--build"
+      shift
+    elif [[ -n "$1" ]]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown argument for deploy: $1${RESET}"
+      usage
+      exit 1
+    fi
+    "${SCRIPT_DIR}/scripts/deploy-fhevm-stack.sh" $BUILD_ARG
     echo -e "${GREEN}${BOLD} [SUCCESS] fhevm stack deployment complete!${RESET}"
     ;;
 
@@ -99,7 +112,7 @@ case $COMMAND in
           shift
           ;;
         -n|--network)
-          if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+          if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
             NETWORK="$2"
             shift 2
           else
@@ -109,7 +122,7 @@ case $COMMAND in
           fi
           ;;
         -g|--grep)
-          if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+          if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
             GREP="$2"
             shift 2
           else
@@ -155,10 +168,6 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
           docker_args+=("-g" "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)")
           ;;
-        public-decryption-ebytes256)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION (ebytes256)${RESET}"
-          docker_args+=("-g" "test async decrypt ebytes256 trivial")
-          ;;
         erc20)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] ERC20${RESET}"
           docker_args+=("-g" "should transfer tokens between two users.")
@@ -173,7 +182,11 @@ case $COMMAND in
           ;;
         operators)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
-          docker_args+=("-g" "FHEVM revert paths|FHEVM manual operations|test operator")
+          docker_args+=("--parallel" "-g" "test operator|FHEVM manual operations")
+          ;;
+        random)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
+          docker_args+=("-g" "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt")
           ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"

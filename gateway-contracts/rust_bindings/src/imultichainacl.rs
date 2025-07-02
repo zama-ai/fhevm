@@ -436,6 +436,7 @@ pub mod IMultichainAcl {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct DelegationAccounts { address delegatorAddress; address delegatedAddress; }
@@ -655,6 +656,7 @@ struct DelegationAccounts { address delegatorAddress; address delegatedAddress; 
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AccountNotAllowedToUseCiphertext(bytes32,address)` and selector `0x160a2b4b`.
 ```solidity
@@ -743,6 +745,7 @@ error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress)
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AccountNotDelegated(uint256,(address,address),address)` and selector `0xc0a41015`.
 ```solidity
@@ -837,6 +840,7 @@ error AccountNotDelegated(uint256 chainId, DelegationAccounts delegationAccounts
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContractsMaxLengthExceeded(uint8,uint256)` and selector `0x116caea3`.
 ```solidity
@@ -925,6 +929,7 @@ error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyAllowedAccount(bytes32,address,address)` and selector `0x6637e32d`.
 ```solidity
@@ -1021,6 +1026,7 @@ error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, addres
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyAllowedPublicDecrypt(bytes32,address)` and selector `0xa6f04d26`.
 ```solidity
@@ -1109,6 +1115,7 @@ error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender)
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyDelegated(uint256,(address,address),address[],address)` and selector `0x0cc695ad`.
 ```solidity
@@ -1220,6 +1227,7 @@ error CoprocessorAlreadyDelegated(uint256 chainId, DelegationAccounts delegation
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `EmptyContractAddresses()` and selector `0x57cfa217`.
 ```solidity
@@ -1285,6 +1293,7 @@ error EmptyContractAddresses();
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `PublicDecryptNotAllowed(bytes32)` and selector `0x4331a85d`.
 ```solidity
@@ -1357,6 +1366,7 @@ error PublicDecryptNotAllowed(bytes32 ctHandle);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AllowAccount(bytes32,address)` and selector `0x18f825f318ffa4ed5bf3f6ed24fd54d33378b0e9f16ddb37c3419691b2e16566`.
 ```solidity
@@ -1472,6 +1482,7 @@ event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AllowPublicDecrypt(bytes32)` and selector `0x0868eca75126ba0a46bbec5eefa883e20a13e6c7d936c9bf47ed886e2eb43d3a`.
 ```solidity
@@ -1578,6 +1589,7 @@ event AllowPublicDecrypt(bytes32 indexed ctHandle);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DelegateAccount(uint256,(address,address),address[])` and selector `0x06c13155cfa90343cb4fba180ce8d383b4f56a5bc7aac0e5d8f194b64672a51e`.
 ```solidity
@@ -1704,6 +1716,7 @@ event DelegateAccount(uint256 indexed chainId, DelegationAccounts delegationAcco
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `allowAccount(bytes32,address)` and selector `0xe638508a`.
 ```solidity
@@ -1845,6 +1858,7 @@ function allowAccount(bytes32 ctHandle, address accountAddress) external;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `allowPublicDecrypt(bytes32)` and selector `0x1d7a8586`.
 ```solidity
@@ -1973,6 +1987,7 @@ function allowPublicDecrypt(bytes32 ctHandle) external;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkAccountAllowed(bytes32,address)` and selector `0x3bce498d`.
 ```solidity
@@ -2118,6 +2133,7 @@ function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external 
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkAccountDelegated(uint256,(address,address),address[])` and selector `0x51c41d0e`.
 ```solidity
@@ -2274,6 +2290,7 @@ function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delega
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkPublicDecryptAllowed(bytes32)` and selector `0x193f3f2c`.
 ```solidity
@@ -2402,6 +2419,7 @@ function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `delegateAccount(uint256,(address,address),address[])` and selector `0xf4c5f493`.
 ```solidity
@@ -2556,6 +2574,7 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
@@ -2564,6 +2583,7 @@ function getVersion() external pure returns (string memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall {}
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -2678,6 +2698,7 @@ function getVersion() external pure returns (string memory);
         }
     };
     ///Container for all the [`IMultichainAcl`](self) function calls.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum IMultichainAclCalls {
         #[allow(missing_docs)]
@@ -2952,6 +2973,7 @@ function getVersion() external pure returns (string memory);
         }
     }
     ///Container for all the [`IMultichainAcl`](self) custom errors.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IMultichainAclErrors {
         #[allow(missing_docs)]
@@ -3260,6 +3282,7 @@ function getVersion() external pure returns (string memory);
         }
     }
     ///Container for all the [`IMultichainAcl`](self) events.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IMultichainAclEvents {
         #[allow(missing_docs)]

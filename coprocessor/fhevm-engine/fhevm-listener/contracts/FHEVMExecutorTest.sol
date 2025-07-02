@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "contracts/FheType.sol";
+import "contracts/shared/FheType.sol";
 import "contracts/FHEEvents.sol";
 
 contract FHEVMExecutorTest is FHEEvents {
@@ -57,17 +57,9 @@ contract FHEVMExecutorTest is FHEEvents {
         bytes32 result = bytes32(keccak256(abi.encodePacked("fheEq", lhs, rhs, scalarByte)));
         emit FheEq(msg.sender, lhs, rhs, scalarByte, result);
     }
-    function fheEq(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) public {
-        bytes32 result = bytes32(keccak256(abi.encodePacked("fheEqBytes", lhs, rhs, scalarByte)));
-        emit FheEqBytes(msg.sender, lhs, rhs, scalarByte, result);
-    }
     function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public {
         bytes32 result = bytes32(keccak256(abi.encodePacked("fheNe", lhs, rhs, scalarByte)));
         emit FheNe(msg.sender, lhs, rhs, scalarByte, result);
-    }
-    function fheNe(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) public {
-        bytes32 result = bytes32(keccak256(abi.encodePacked("fheNeBytes", lhs, rhs, scalarByte)));
-        emit FheNeBytes(msg.sender, lhs, rhs, scalarByte, result);
     }
     function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public {
         bytes32 result = bytes32(keccak256(abi.encodePacked("fheGe", lhs, rhs, scalarByte)));
@@ -120,14 +112,9 @@ contract FHEVMExecutorTest is FHEEvents {
         emit Cast(msg.sender, ct, toType, result);
     }
 
-    function trivialEncrypt(uint256 pt, FheType toType) public {
-        bytes32 result = bytes32(keccak256(abi.encodePacked("trivialEncrypt", pt, toType)));
-        emit TrivialEncrypt(msg.sender, pt, toType, result);
-    }
-
-    function trivialEncrypt(bytes memory pt, FheType toType) public {
-        bytes32 result = bytes32(keccak256(abi.encodePacked("trivialEncryptBytes", pt, toType)));
-        emit TrivialEncryptBytes(msg.sender, pt, toType, result);
+    function trivialEncrypt(uint256 val, FheType toType) public {
+        bytes32 result = bytes32(keccak256(abi.encodePacked("trivialEncrypt", val, toType)));
+        emit TrivialEncrypt(msg.sender, val, toType, result);
     }
 
     function verifyCiphertext(

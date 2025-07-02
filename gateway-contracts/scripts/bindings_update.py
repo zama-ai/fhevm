@@ -16,7 +16,8 @@ GW_CRATE_DIR = GW_ROOT_DIR.joinpath("rust_bindings")
 GW_CONTRACTS_DIR = GW_ROOT_DIR.joinpath("contracts")
 GW_MOCKS_DIR = GW_CONTRACTS_DIR.joinpath("mocks")
 
-ALLOWED_FORGE_VERSIONS = ["1.1.0-v1.1.0", "1.1.0-stable"]
+# To update forge to the latest version locally, run `foundryup` 
+ALLOWED_FORGE_VERSIONS = ["1.2.3-v1.2.3", "1.2.3-stable"]
 
 
 def init_cli() -> ArgumentParser:
@@ -131,8 +132,7 @@ class BindingsUpdater:
         if return_code != 0:
             log_error("ERROR: Some binding files are outdated.")
             log_info(
-                "Run `./scripts/bindings_update.py update` to update the "
-                "bindings."
+                "Run `make update-bindings` to update the bindings."
             )
             sys.exit(ExitStatus.BINDINGS_NOT_UP_TO_DATE.value)
 
@@ -189,8 +189,7 @@ class BindingsUpdater:
                 f"Cargo.toml version: {cargo_toml_version}\n"
             )
             log_info(
-                "Run `./bindings_update.py update` to update the crate's "
-                "version."
+                "Run `make update-bindings` to update the crate's version."
             )
             sys.exit(ExitStatus.CRATE_VERSION_NOT_UP_TO_DATE.value)
         log_success(

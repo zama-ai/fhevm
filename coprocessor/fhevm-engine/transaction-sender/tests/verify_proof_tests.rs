@@ -1,17 +1,21 @@
+use alloy::network::TxSigner;
 use alloy::primitives::FixedBytes;
+use alloy::primitives::U256;
 use alloy::providers::WsConnect;
 use alloy::signers::local::PrivateKeySigner;
-use alloy::{primitives::U256, sol_types::eip712_domain};
-use alloy::{providers::ProviderBuilder, signers::SignerSync, sol, sol_types::SolStruct};
+use alloy::{providers::ProviderBuilder, sol};
+use common::SignerType;
 use common::{CiphertextCommits, InputVerification, TestEnvironment};
 use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use rand::random;
+use rstest::*;
 use serial_test::serial;
 use sqlx::{Postgres, QueryBuilder};
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::sleep;
 use transaction_sender::{FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender};
-
 mod common;
 
 sol! {
@@ -23,19 +27,22 @@ sol! {
     }
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn verify_proof_response_success() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+async fn verify_proof_response_success(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -108,25 +115,10 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
 
     let expected_proof_id = U256::from(proof_id);
     let expected_handles: Vec<FixedBytes<32>> = vec![FixedBytes([1u8; 32]), FixedBytes([1u8; 32])];
-    let domain = eip712_domain! {
-        name: "InputVerification",
-        version: "1",
-        chain_id: provider.get_chain_id().await?,
-        verifying_contract: *input_verification.address(),
-    };
-    let signing_hash = CiphertextVerification {
-        ctHandles: expected_handles.clone(),
-        userAddress: env.user_address,
-        contractAddress: env.contract_address,
-        contractChainId: U256::from(contract_chain_id),
-    }
-    .eip712_signing_hash(&domain);
-    let expected_sig = env.signer.sign_hash_sync(&signing_hash)?;
 
-    // Make sure data in the event is correct, including the deterministic ECDSA signature.
+    // Make sure data in the event is correct.
     assert_eq!(event.0.zkProofId, expected_proof_id);
     assert_eq!(event.0.ctHandles, expected_handles);
-    assert_eq!(event.0.signatures[0].as_ref(), expected_sig.as_bytes());
 
     // Make sure the proof is removed from the database.
     loop {
@@ -149,19 +141,24 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+async fn verify_proof_response_concurrent_success(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -203,11 +200,9 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
         event_filter
             .into_stream()
             .take(count)
-            .collect::<Vec<_>>()
+            .map_ok(|event| (event.0.zkProofId, event))
+            .try_collect::<HashMap<_, _>>()
             .await
-            .into_iter()
-            .map(|item| item.unwrap())
-            .collect::<Vec<_>>()
     });
 
     let contract_chain_id = 42u64;
@@ -231,31 +226,19 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
         .execute(&env.db_pool)
         .await?;
 
-    let events = events_handle.await?;
-    for (i, event) in events.iter().enumerate().take(count) {
-        let proof_id = i;
+    let events: HashMap<U256, _> = events_handle.await??;
+    for proof_id in 0..count {
+        let event = events
+            .get(&U256::from(proof_id))
+            .expect("Event for proof ID not found");
+
         let expected_proof_id = U256::from(proof_id);
         let expected_handles: Vec<FixedBytes<32>> =
             vec![FixedBytes([1u8; 32]), FixedBytes([1u8; 32])];
-        let domain = eip712_domain! {
-            name: "InputVerification",
-            version: "1",
-            chain_id: provider.get_chain_id().await?,
-            verifying_contract: *input_verification.address(),
-        };
-        let signing_hash = CiphertextVerification {
-            ctHandles: expected_handles.clone(),
-            userAddress: env.user_address,
-            contractAddress: env.contract_address,
-            contractChainId: U256::from(contract_chain_id),
-        }
-        .eip712_signing_hash(&domain);
-        let expected_sig = env.signer.sign_hash_sync(&signing_hash)?;
 
-        // Make sure data in the event is correct, including the deterministic ECDSA signature.
+        // Make sure data in the event is correct.
         assert_eq!(event.0.zkProofId, expected_proof_id);
         assert_eq!(event.0.ctHandles, expected_handles);
-        assert_eq!(event.0.signatures[0].as_ref(), expected_sig.as_bytes());
     }
 
     // Make sure the proofs are removed from the database.
@@ -277,19 +260,22 @@ async fn verify_proof_response_concurrent_success() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn reject_proof_response_success() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+async fn reject_proof_response_success(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -382,19 +368,24 @@ async fn reject_proof_response_success() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn verify_proof_response_reversal_already_verified() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+async fn verify_proof_response_reversal_already_verified(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -428,7 +419,9 @@ async fn verify_proof_response_reversal_already_verified() -> anyhow::Result<()>
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     // Record initial transaction count.
-    let initial_tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    let initial_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
 
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
@@ -464,7 +457,9 @@ async fn verify_proof_response_reversal_already_verified() -> anyhow::Result<()>
     }
 
     // Verify that no transaction has been sent.
-    let final_tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    let final_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
     assert_eq!(
         final_tx_count, initial_tx_count,
         "Expected no new transaction to be sent"
@@ -475,19 +470,24 @@ async fn verify_proof_response_reversal_already_verified() -> anyhow::Result<()>
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn reject_proof_response_reversal_already_rejected() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+async fn reject_proof_response_reversal_already_rejected(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -521,7 +521,9 @@ async fn reject_proof_response_reversal_already_rejected() -> anyhow::Result<()>
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     // Record initial transaction count.
-    let initial_tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    let initial_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
 
     sqlx::query!(
         "WITH ins AS (
@@ -556,7 +558,9 @@ async fn reject_proof_response_reversal_already_rejected() -> anyhow::Result<()>
     }
 
     // Verify that no transaction has been sent.
-    let final_tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    let final_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
     assert_eq!(
         final_tx_count, initial_tx_count,
         "Expected no new transaction to be sent"
@@ -567,19 +571,24 @@ async fn reject_proof_response_reversal_already_rejected() -> anyhow::Result<()>
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn verify_proof_response_other_reversal() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+async fn verify_proof_response_other_reversal(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -605,7 +614,7 @@ async fn verify_proof_response_other_reversal() -> anyhow::Result<()> {
         provider.clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
-        Some(1_000_000),
+        Some(1_000_000_000_000_000),
     )
     .await?;
 
@@ -661,19 +670,24 @@ async fn verify_proof_response_other_reversal() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn reject_proof_response_other_reversal() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+async fn reject_proof_response_other_reversal(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -699,7 +713,7 @@ async fn reject_proof_response_other_reversal() -> anyhow::Result<()> {
         provider.clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
-        Some(1_000_000),
+        Some(1_000_000_000_000_000),
     )
     .await?;
 
@@ -751,19 +765,24 @@ async fn reject_proof_response_other_reversal() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+async fn verify_proof_response_other_reversal_gas_estimation(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -844,19 +863,24 @@ async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn reject_proof_response_other_reversal_gas_estimation() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+async fn reject_proof_response_other_reversal_gas_estimation(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -937,21 +961,26 @@ async fn reject_proof_response_other_reversal_gas_estimation() -> anyhow::Result
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
-    let mut env = TestEnvironment::new().await?;
+async fn verify_proof_max_retries_remove_entry(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let mut env = TestEnvironment::new(signer_type).await?;
     env.conf.verify_proof_remove_after_max_retries = true;
     env.conf.verify_proof_resp_max_retries = 2;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -1022,21 +1051,26 @@ async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
-    let mut env = TestEnvironment::new().await?;
+async fn verify_proof_max_retries_do_not_remove_entry(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let mut env = TestEnvironment::new(signer_type).await?;
     env.conf.verify_proof_remove_after_max_retries = false;
     env.conf.verify_proof_resp_max_retries = 2;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );

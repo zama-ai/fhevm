@@ -28,6 +28,8 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
+      imagePullSecrets:
+        - name: registry-credentials
       restartPolicy: Always
       {{- if and .Values.tfheWorker.affinity .Values.tfheWorker.affinity.enabled }}
       affinity:
@@ -58,6 +60,7 @@ spec:
             {{- range $portName, $portValue := .Values.tfheWorker.ports }}
             - name: {{ $portName }}
               containerPort: {{ $portValue }}
+              protocol: TCP
             {{- end }}
           resources:
             requests:
@@ -66,6 +69,14 @@ spec:
             limits:
               cpu: {{ .Values.tfheWorker.resources.limits.cpu | default "500m" }}
               memory: {{ .Values.tfheWorker.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.tfheWorker.probes .Values.tfheWorker.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.tfheWorker.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.tfheWorker.probes .Values.tfheWorker.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.tfheWorker.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
       {{- if .Values.config.enabled }}
           volumeMounts:
             - name: coprocessor-account

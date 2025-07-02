@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use clap::{command, Parser};
 use humantime::parse_duration;
+use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -29,6 +30,10 @@ pub struct Args {
     /// Postgres pool connections
     #[arg(long, default_value_t = 10)]
     pub pg_pool_connections: u32,
+
+    /// Postgres acquire timeout
+    #[arg(long, default_value = "15s", value_parser = parse_duration)]
+    pub pg_timeout: Duration,
 
     /// Postgres database url. If unspecified DATABASE_URL environment variable
     /// is used
@@ -71,6 +76,25 @@ pub struct Args {
 
     #[arg(long, default_value = "120s", value_parser = parse_duration)]
     pub s3_regular_recheck_duration: Duration,
+
+    #[arg(long, default_value = "120s", value_parser = parse_duration)]
+    pub cleanup_interval: Duration,
+
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(Level),
+        default_value_t = Level::INFO)]
+    pub log_level: Level,
+
+    /// HTTP server port for health checks
+    #[arg(long, default_value_t = 8080)]
+    pub health_check_port: u16,
+
+    /// Liveness threshold for health checks
+    /// Exceeding this threshold means that the worker is stuck
+    /// and will be restarted by the orchestrator
+    #[arg(long, default_value = "70s", value_parser = parse_duration)]
+    pub liveness_threshold: Duration,
 }
 
 pub fn parse_args() -> Args {

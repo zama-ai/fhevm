@@ -99,6 +99,7 @@ pub mod SafeCast {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"s\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x000\x14`\x80`@R_\x80\xFD",
     );
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SafeCastOverflowedIntDowncast(uint8,int256)` and selector `0x327269a7`.
 ```solidity
@@ -187,6 +188,7 @@ error SafeCastOverflowedIntDowncast(uint8 bits, int256 value);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SafeCastOverflowedIntToUint(int256)` and selector `0xa8ce4432`.
 ```solidity
@@ -263,6 +265,7 @@ error SafeCastOverflowedIntToUint(int256 value);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SafeCastOverflowedUintDowncast(uint8,uint256)` and selector `0x6dfcc650`.
 ```solidity
@@ -351,6 +354,7 @@ error SafeCastOverflowedUintDowncast(uint8 bits, uint256 value);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SafeCastOverflowedUintToInt(uint256)` and selector `0x24775e06`.
 ```solidity
@@ -428,6 +432,7 @@ error SafeCastOverflowedUintToInt(uint256 value);
         }
     };
     ///Container for all the [`SafeCast`](self) custom errors.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum SafeCastErrors {
         #[allow(missing_docs)]

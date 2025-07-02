@@ -82,6 +82,7 @@ pub mod Errors {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"s\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x000\x14`\x80`@R_\x80\xFD",
     );
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `FailedCall()` and selector `0xd6bda275`.
 ```solidity
@@ -147,6 +148,7 @@ error FailedCall();
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `FailedDeployment()` and selector `0xb06ebf3d`.
 ```solidity
@@ -212,6 +214,7 @@ error FailedDeployment();
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InsufficientBalance(uint256,uint256)` and selector `0xcf479181`.
 ```solidity
@@ -298,6 +301,7 @@ error InsufficientBalance(uint256 balance, uint256 needed);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `MissingPrecompile(address)` and selector `0x42b01bce`.
 ```solidity
@@ -371,6 +375,7 @@ error MissingPrecompile(address);
         }
     };
     ///Container for all the [`Errors`](self) custom errors.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ErrorsErrors {
         #[allow(missing_docs)]

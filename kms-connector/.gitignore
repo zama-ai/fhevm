@@ -2,3 +2,6 @@
 .DS_Store
 kms-connector.sublime-project
 kms-connector.sublime-workspace
+
+.crates.toml
+.crates2.json

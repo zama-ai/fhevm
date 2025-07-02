@@ -7,7 +7,7 @@ use semver::Version;
 use std::{env, fs, path::Path, process::Command};
 
 fn build_contracts() {
-    println!("cargo:rerun-if-changed=../../../host-contracts");
+    println!("cargo:rerun-if-changed=../../../host-contracts/contracts");
     // Step 1: Copy ../../contracts/.env.example to ../../contracts/.env
     let env_example = Path::new("../../../host-contracts/.env.example");
     let env_dest = Path::new("../../../host-contracts/.env");
@@ -15,7 +15,8 @@ fn build_contracts() {
     if env_example.exists() {
         // CI build
         if !env_dest.exists() {
-            fs::copy(env_example, env_dest).expect("Failed to copy .env.example to .env");
+            fs::copy(env_example, env_dest)
+                .expect("Failed to copy .env.example to .env");
             println!("Copied .env.example to .env");
         }
     } else if artefacts.exists() {
@@ -31,7 +32,8 @@ fn build_contracts() {
     if !contracts_dir.exists() {
         panic!("Error: contracts directory not found");
     }
-    env::set_current_dir(contracts_dir).expect("Failed to change to contracts directory");
+    env::set_current_dir(contracts_dir)
+        .expect("Failed to change to contracts directory");
 
     // Step 2: Run `npm ci --include=optional` in ../../contracts
     let npm_ci_status = Command::new("npm")
@@ -43,7 +45,8 @@ fn build_contracts() {
     }
     println!("Ran npm ci successfully");
 
-    // Step 3: Run `npm install && npx hardhat compile` in ../../contracts
+    // Step 3: Run `npm install && HARDHAT_NETWORK=hardhat npm run
+    // deploy:emptyProxies && npx hardhat compile` in ../../contracts
     let npm_install_status = Command::new("npm")
         .arg("install")
         .status()
@@ -52,6 +55,16 @@ fn build_contracts() {
         panic!("Error: npm install failed");
     }
     println!("Ran npm install successfully");
+
+    let npm_run_status = Command::new("npm")
+        .env("HARDHAT_NETWORK", "hardhat")
+        .args(["run", "deploy:emptyProxies"])
+        .status()
+        .expect("Failed to run npm run");
+    if !npm_run_status.success() {
+        panic!("Error: npm tun failed");
+    }
+    println!("Ran npm run successfully");
 
     let hardhat_compile_status = Command::new("npx")
         .args(["hardhat", "compile"])
@@ -70,7 +83,8 @@ fn main() {
     let paths =
         ProjectPathsConfig::hardhat(Path::new(env!("CARGO_MANIFEST_DIR")))
             .unwrap();
-    // Use a specific version due to an issue with libc and libstdc++ in the rust Docker image we use to run it.
+    // Use a specific version due to an issue with libc and libstdc++ in the
+    // rust Docker image we use to run it.
     let solc = Solc::find_or_install(&Version::new(0, 8, 28)).unwrap();
     let project = Project::builder()
         .paths(paths)

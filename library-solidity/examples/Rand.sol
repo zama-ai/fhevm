@@ -16,9 +16,6 @@ contract Rand {
     euint64 public value64Bounded;
     euint128 public value128;
     euint256 public value256;
-    ebytes64 public value512;
-    ebytes128 public value1024;
-    ebytes256 public value2048;
 
     /// @notice Constructor to set FHE configuration
     constructor() {
@@ -113,20 +110,5 @@ contract Rand {
     function generate256UpperBound(uint256 upperBound) public {
         value256 = FHE.randEuint256(upperBound);
         FHE.allowThis(value256);
-    }
-
-    function generate512() public {
-        value512 = FHE.randEbytes64();
-        FHE.allowThis(value512);
-    }
-
-    function generate1024() public {
-        value1024 = FHE.randEbytes128();
-        FHE.allowThis(value1024);
-    }
-
-    function generate2048() public {
-        value2048 = FHE.randEbytes256();
-        FHE.allowThis(value2048);
     }
 }

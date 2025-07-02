@@ -1,52 +1,7 @@
 import { assert } from 'console';
 
-import { AdjustedFheType, AliasFheType, FheType, Operator, OperatorArguments, ReturnType } from './common';
+import { AdjustedFheType, FheType, Operator, OperatorArguments, ReturnType } from './common';
 import { getUint } from './utils';
-
-/**
- * Generates Solidity type aliases from an array of FHE types.
- *
- * This function filters the provided FHE types to include only those that are supported for
- * binary or unary operations. It then maps these types to Solidity type aliases, where each
- * type is represented as a `bytes32`. Additionally, it includes predefined aliases for
- * `externalEXXX`, which is represented as `bytes32`.
- *
- * @param fheTypes - An array of FHE types to generate Solidity type aliases from.
- * @returns A string containing the Solidity type aliases, each on a new line.
- */
-export function createSolidityTypeAliasesFromFheTypes(fheTypes: FheType[]): string {
-  let res = fheTypes
-    .filter((fheType: FheType) => fheType.supportedOperators.length > 0)
-    .map((fheType: FheType) => `type e${fheType.type.toLowerCase()} is bytes32;`);
-
-  res = res.concat(
-    fheTypes
-      .map((fheType: FheType) =>
-        (fheType.aliases?.filter((fheTypeAlias: AliasFheType) => fheTypeAlias.supportedOperators.length > 0) ?? []).map(
-          (fheTypeAlias: AliasFheType) => `type e${fheTypeAlias.type.toLowerCase()} is bytes32;`,
-        ),
-      )
-      .flat(),
-  );
-
-  res = res.concat(
-    fheTypes
-      .filter((fheType: FheType) => fheType.supportedOperators.length > 0)
-      .map((fheType: FheType) => `type externalE${fheType.type.toLowerCase()} is bytes32;`),
-  );
-
-  res = res.concat(
-    fheTypes
-      .map((fheType: FheType) =>
-        (fheType.aliases?.filter((fheTypeAlias: AliasFheType) => fheTypeAlias.supportedOperators.length > 0) ?? []).map(
-          (fheTypeAlias: AliasFheType) => `type externalE${fheTypeAlias.type.toLowerCase()} is bytes32;`,
-        ),
-      )
-      .flat(),
-  );
-
-  return res.join('\n');
-}
 
 /**
  * Generates a Solidity enum definition from an array of FheType objects.
@@ -342,32 +297,6 @@ function coprocessorInterfaceCustomFunctions(): string {
     function trivialEncrypt(uint256 ct, FheType toType) external returns (bytes32 result);
 
     /**
-     * @notice          Does trivial encryption.
-     * @param ct        Value to encrypt.
-     * @param toType    Target type.
-     * @return result   Result value of the target type.
-     */
-    function trivialEncrypt(bytes memory ct, FheType toType) external returns (bytes32 result);
-
-    /**
-     * @notice              Computes FHEEq operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
-     */
-    function fheEq(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) external returns (bytes32 result);
-
-    /**
-     * @notice              Computes FHENe operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
-     */
-    function fheNe(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) external returns (bytes32 result);
-
-    /**
      * @notice              Computes FHEIfThenElse operation.
      * @param control       Control value.
      * @param ifTrue        If true.
@@ -490,7 +419,7 @@ function generateDecryptionOracleInterface(): string {
    * @notice This interface contains the only function required from DecryptionOracle. 
    */
   interface IDecryptionOracle {
-    function requestDecryption(uint256 requestID, bytes32[] calldata ctsHandles, bytes4 callbackSelector) external;
+    function requestDecryption(uint256 requestID, bytes32[] calldata ctsHandles, bytes4 callbackSelector) external payable;
   }
   `;
 }
@@ -504,7 +433,7 @@ export function generateSolidityFHELib(operators: Operator[], fheTypes: FheType[
   import "./Impl.sol";
   import {FheType} from "./FheType.sol";
 
-  ${createSolidityTypeAliasesFromFheTypes(fheTypes)}
+  import "encrypted-types/EncryptedTypes.sol";
 
   ${generateKMSVerifierInterface()}
 
@@ -516,16 +445,6 @@ export function generateSolidityFHELib(operators: Operator[], fheTypes: FheType[
    *          that interact with the FHEVM protocol.
    */
   library FHE {
-
-    /// @notice Returned if the input's length is greater than 64 bytes.
-    error InputLengthAbove64Bytes(uint256 inputLength);
-
-    /// @notice Returned if the input's length is greater than 128 bytes.
-    error InputLengthAbove128Bytes(uint256 inputLength);
-
-    /// @notice Returned if the input's length is greater than 256 bytes.
-    error InputLengthAbove256Bytes(uint256 inputLength);
-
     /// @notice Returned if some handles were already saved for corresponding ID.
     error HandlesAlreadySavedForRequestID();
 
@@ -605,7 +524,7 @@ export function generateSolidityFHELib(operators: Operator[], fheTypes: FheType[
     res.push(handleSolidityTFHEUnaryOperators(fheType, operators)),
   );
 
-  // 9. Handle conversion from plaintext and externalEXXX to all supported types (e.g., externalEbool --> ebool, bytes memory --> ebytes64, uint32 --> euint32)
+  // 9. Handle conversion from plaintext and externalEXXX to all supported types (e.g., externalEbool --> ebool, uint32 --> euint32)
   adjustedFheTypes.forEach((fheType: AdjustedFheType) =>
     res.push(handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType)),
   );
@@ -613,10 +532,7 @@ export function generateSolidityFHELib(operators: Operator[], fheTypes: FheType[
   // 10. Handle rand/randBounded for all supported types
   adjustedFheTypes.forEach((fheType: AdjustedFheType) => res.push(handleSolidityTFHERand(fheType)));
 
-  // 11. Add padding to bytes for all ebytes types
-  adjustedFheTypes.forEach((fheType: AdjustedFheType) => res.push(handleTFHEPadToBytesForEbytes(fheType)));
-
-  // 12. Push ACL Solidity methods
+  // 11. Push ACL Solidity methods
   res.push(generateSolidityACLMethods(adjustedFheTypes));
 
   // 12. Push DecryptionOracle Solidity methods
@@ -696,23 +612,6 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
         return ebool.wrap(Impl.${operator.name}(ebool.unwrap(a), ebool.unwrap(b), false));
     }
 `);
-  } else if (lhsFheType.type == rhsFheType.type && rhsFheType.type.startsWith('Bytes')) {
-    const bytesLength = lhsFheType.bitLength / 8;
-
-    res.push(`
-      /**
-      * @dev Evaluates ${operator.name}(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b) and returns the result.
-      */
-      function ${operator.name}(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b) internal returns (ebool) {
-          if (!isInitialized(a)) {
-              a = asEbytes${bytesLength}(padToBytes${bytesLength}(hex""));
-          }
-          if (!isInitialized(b)) {
-              b = asEbytes${bytesLength}(padToBytes${bytesLength}(hex""));
-          }
-          return ebool.wrap(Impl.${operator.name}(e${lhsFheType.type.toLowerCase()}.unwrap(a), e${rhsFheType.type.toLowerCase()}.unwrap(b), false));
-      }
-  `);
   } else if (lhsFheType.type.startsWith('Address') && rhsFheType.type.startsWith('Address')) {
     res.push(`
       /**
@@ -768,8 +667,6 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
 
   if (fheType.type == 'Bool') {
     implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(b?1:0))${scalarFlag})`;
-  } else if (fheType.type.startsWith('Bytes')) {
-    implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), b${scalarFlag})`;
   } else if (fheType.type.startsWith('Int')) {
     throw new Error('Int types are not supported!');
   } else {
@@ -784,8 +681,6 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
 
   if (fheType.type == 'Bool') {
     implExpressionB = `Impl.${leftOpName}(e${fheType.type.toLowerCase()}.unwrap(b), bytes32(uint256(a?1:0))${scalarFlag})`;
-  } else if (fheType.type.startsWith('Bytes')) {
-    implExpressionB = `Impl.${leftOpName}(e${fheType.type.toLowerCase()}.unwrap(b), a${scalarFlag})`;
   } else if (fheType.type.startsWith('Int')) {
     throw new Error('Int types are not supported yet!');
   } else {
@@ -822,13 +717,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
     function ${operator.name}(e${fheType.type.toLowerCase()} a, ${clearMatchingType.toLowerCase()} b) internal returns (${returnType}) {
         if (!isInitialized(a)) {
             a = asE${fheType.type.toLowerCase()}(${
-              fheType.type == 'Bool'
-                ? 'false'
-                : fheType.type.startsWith('Bytes')
-                  ? `padToBytes${fheType.bitLength / 8}(hex"")`
-                  : fheType.type == 'Address'
-                    ? `${clearMatchingType.toLowerCase()}(0)`
-                    : 0
+              fheType.type == 'Bool' ? 'false' : fheType.type == 'Address' ? `${clearMatchingType.toLowerCase()}(0)` : 0
             });
         }
         return ${returnType}.wrap(${implExpressionA});
@@ -846,13 +735,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
         ${maybeEncryptLeft}
         if (!isInitialized(b)) {
             b = asE${fheType.type.toLowerCase()}(${
-              fheType.type == 'Bool'
-                ? 'false'
-                : fheType.type.startsWith('Bytes')
-                  ? `padToBytes${fheType.bitLength / 8}(hex"")`
-                  : fheType.type == 'Address'
-                    ? `${clearMatchingType.toLowerCase()}(0)`
-                    : 0
+              fheType.type == 'Bool' ? 'false' : fheType.type == 'Address' ? `${clearMatchingType.toLowerCase()}(0)` : 0
             });
         }
         return ${returnType}.wrap(${implExpressionB});
@@ -1022,7 +905,6 @@ function handleSolidityTFHEUnaryOperators(fheType: AdjustedFheType, operators: O
  * The generated functions include:
  * - A function to convert an `einput` handle and its proof to an encrypted type.
  * - If the type is `Bool`, an additional function to convert a plaintext boolean to an encrypted boolean.
- * - If the type is `Bytes`, an additional function to convert plaintext bytes to the respective encrypted type.
  * - For other types, a function to convert a plaintext value to the respective encrypted type.
  */
 function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: AdjustedFheType): string {
@@ -1047,15 +929,6 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
     }
 
     `;
-  } else if (fheType.type.startsWith('Bytes')) {
-    result += `
-      /**
-        * @dev Convert the plaintext bytes to a e${fheType.type.toLowerCase()} value.
-      */
-      function asE${fheType.type.toLowerCase()}(${fheType.clearMatchingTypeAlias} value) internal returns (e${fheType.type.toLowerCase()}) {
-        return e${fheType.type.toLowerCase()}.wrap(Impl.trivialEncrypt(value, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
-      }
-      `;
   } else {
     const value =
       fheType.isAlias && fheType.clearMatchingTypeAlias !== undefined
@@ -1205,11 +1078,23 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
         bytes32[] memory ctsHandles,
         bytes4 callbackSelector
     ) internal returns (uint256 requestID) {
+      requestID = requestDecryption(ctsHandles, callbackSelector, 0);
+    }
+
+    /**
+     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles, with a custom msgValue.
+     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
+     */
+    function requestDecryption(
+        bytes32[] memory ctsHandles,
+        bytes4 callbackSelector,
+        uint256 msgValue
+    ) internal returns (uint256 requestID) {
       DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
       requestID = $.counterRequest;
       FHEVMConfigStruct storage $$ = Impl.getFHEVMConfig();
       IACL($$.ACLAddress).allowForDecryption(ctsHandles);
-      IDecryptionOracle($.DecryptionOracleAddress).requestDecryption(requestID, ctsHandles, callbackSelector);
+      IDecryptionOracle($.DecryptionOracleAddress).requestDecryption{value: msgValue}(requestID, ctsHandles, callbackSelector);
       saveRequestedHandles(requestID, ctsHandles);
       $.counterRequest++;
     }
@@ -1269,15 +1154,6 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
             FheType typeCt = FheType(uint8(handlesList[i][30]));
             if (uint8(typeCt) < 9) {
                 signedDataLength += 32;
-            } else if (typeCt == FheType.Uint512) {
-                //ebytes64
-                signedDataLength += 128;
-            } else if (typeCt == FheType.Uint1024) {
-                //ebytes128
-                signedDataLength += 192;
-            } else if (typeCt == FheType.Uint2048) {
-                //ebytes256
-                signedDataLength += 320;
             } else {
                 revert UnsupportedHandleType();
             }
@@ -1300,39 +1176,6 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
   );
 
   return res.join('');
-}
-
-function handleTFHEPadToBytesForEbytes(fheType: AdjustedFheType): string {
-  if (!fheType.type.startsWith('Bytes')) {
-    return '';
-  }
-
-  const bytesLength = fheType.bitLength / 8;
-
-  return `
-        /**
-         * @dev Left-pad a bytes array with zeros such that it becomes of length ${bytesLength}.
-         */
-        function padToBytes${bytesLength}(bytes memory input) internal pure returns (bytes memory) {
-          uint256 inputLength = input.length;
-    
-          if (inputLength > ${bytesLength}) {
-              revert InputLengthAbove${bytesLength}Bytes(inputLength);
-          }
-    
-          bytes memory result = new bytes(${bytesLength});
-          uint256 paddingLength = ${bytesLength} - inputLength;
-    
-          for (uint256 i = 0; i < paddingLength; i++) {
-              result[i] = 0;
-          }
-
-          for (uint256 i = 0; i < inputLength; i++) {
-              result[paddingLength + i] = input[i];
-          }
-          return result;
-        }
-      `;
 }
 
 function generateCustomMethodsForImpl(): string {
@@ -1390,56 +1233,6 @@ function generateCustomMethodsForImpl(): string {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = IFHEVMExecutor($.FHEVMExecutorAddress).trivialEncrypt(value, toType);
     }
-
-    /**
-     * @notice          Does trivial encryption.
-     * @param value     Value to encrypt.
-     * @param toType    Target type.
-     * @return result   Result value of the target type.
-     */
-    function trivialEncrypt(
-      bytes memory value,
-      FheType toType
-    ) internal returns (bytes32 result) {
-      FHEVMConfigStruct storage $ = getFHEVMConfig();
-        result = IFHEVMExecutor($.FHEVMExecutorAddress).trivialEncrypt(value, toType);
-    }
-
-    /**
-     * @notice              Computes FHEEq operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalar        Scalar byte.
-     * @return result       Result.
-     */
-    function eq(bytes32 lhs, bytes memory rhs, bool scalar) internal returns (bytes32 result) {
-      bytes1 scalarByte;
-      if (scalar) {
-          scalarByte = 0x01;
-      } else {
-          scalarByte = 0x00;
-      }
-      FHEVMConfigStruct storage $ = getFHEVMConfig();
-      result = IFHEVMExecutor($.FHEVMExecutorAddress).fheEq(lhs, rhs, scalarByte);
-  }
-
-  /**
-   * @notice              Computes FHENe operation.
-   * @param lhs           LHS.
-   * @param rhs           RHS.
-   * @param scalar        Scalar byte.
-   * @return result       Result.
-  */
-  function ne(bytes32 lhs, bytes memory rhs, bool scalar) internal returns (bytes32 result) {
-      bytes1 scalarByte;
-      if (scalar) {
-          scalarByte = 0x01;
-      } else {
-          scalarByte = 0x00;
-      }
-      FHEVMConfigStruct storage $ = getFHEVMConfig();
-      result = IFHEVMExecutor($.FHEVMExecutorAddress).fheNe(lhs, rhs, scalarByte);
-  }
 
     function rand(FheType randType) internal returns(bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();

@@ -1,4 +1,4 @@
-{{- if .Values.scDeploy.enabled }}
+{{- if or .Values.scDeploy.enabled .Values.scUpgrade.enabled -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -23,28 +23,65 @@ spec:
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-
     spec:
       serviceAccountName: {{ .Release.Name }}-config-writer
       securityContext:
         {{- toYaml .Values.scDeploy.securityContext | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.scUpgrade.enabled }}
+      initContainers:
+      - name: copy-old-contracts
+        image: {{ .Values.scUpgrade.oldContracts.image.name }}:{{ .Values.scUpgrade.oldContracts.image.tag }}
+        command: ["cp", "-r", "/app/contracts/.", "/app/oldContracts"]
+        volumeMounts:
+          - mountPath: /app/oldContracts
+            name: old-contracts
       containers:
-      - name: deploy
+      - name: upgrade-smart-contracts
+        command: [ "/app/upgrade-contracts.sh" ]
+      {{- else if .Values.scDeploy.enabled }}
+      containers:
+      - name: deploy-smart-contracts
+        command: [ "/app/deploy-contracts.sh" ]
+      {{- end }}
         image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}
-        command: ["/app/deploy-contracts.sh"]
-        {{- if .Values.scDeploy.env }}
         env:
+          - name: DEPLOYED_SMART_CONTRACTS_VERSION
+            valueFrom:
+              configMapKeyRef:
+                name: {{ .Values.scDeploy.configmap.name }}
+                key: contracts.version
+                optional: true
           {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
           - name: MANIFEST_DEFAULT_DIR
-            value: "/app/cache/.openzeppelin"
+            value: "/app/addresses/.openzeppelin"
+        {{- if .Values.scDeploy.env }}
           {{ toYaml .Values.scDeploy.env | nindent 10 }}
         {{- end }}
         volumeMounts:
           - mountPath: /app/deploy-contracts.sh
             subPath: deploy-contracts.sh
             name: config
+          - mountPath: /app/upgrade-contracts.sh
+            subPath: upgrade-contracts.sh
+            name: config
+          {{- if .Values.scUpgrade.enabled }}
+          - mountPath: /app/oldContracts
+            name: old-contracts
+          {{- end }}
           {{- if .Values.persistence.enabled }}
-          - mountPath: /app/cache
+          - mountPath: /app/addresses
             name: persistence
           {{- end }}
         resources:
@@ -63,6 +100,10 @@ spec:
       - name: persistence
         persistentVolumeClaim:
           claimName: {{ include "scVolumeName" . }}
+      {{- end }}
+      {{- if .Values.scUpgrade.enabled }}
+      - name: old-contracts
+        emptyDir: {}
       {{- end }}
       restartPolicy: Never
       imagePullSecrets:

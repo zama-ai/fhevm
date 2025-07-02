@@ -1,5 +1,5 @@
 # Run fhevm coprocessor benchmarks on a CPU instance and return parsed results to Slab.
-name: Coprocessor CPU benchmarks
+name: coprocessor-benchmarks-cpu
 
 on:
   workflow_dispatch:
@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - "erc20"
+          - "dex"
           - "synthetics"
           - "all"
       batch_size:
@@ -17,6 +18,15 @@ on:
         required: true
         type: string
         default: "5000"
+      scheduling_policy:
+        description: "Scheduling policy"
+        required: true
+        type: choice
+        options:
+          - "MAX_PARALLELISM"
+          - "MAX_LOCALITY"
+          - "LOOP"
+          - "FINE_GRAIN"
 
 env:
   CARGO_TERM_COLOR: always
@@ -28,10 +38,10 @@ env:
 
 jobs:
   setup-instance:
-    name: Setup instance (fhevm-coprocessor-benchmarks-cpu)
+    name: coprocessor-benchmarks-cpu/setup-instance
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -46,14 +56,15 @@ jobs:
           backend: aws
           profile: bench
 
-  fhevm-coprocessor-benchmarks-cpu:
-    name: Coprocessor CPU benchmarks (hpc7a.96xlarge)
+  benchmarks-cpu:
+    name: coprocessor-benchmarks-cpu/benchmarks-cpu (bpr)
     needs: setup-instance
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     continue-on-error: true
     timeout-minutes: 720  # 12 hours
     permissions:
-      contents: read
+      contents: 'read'
+      packages: 'read'
     strategy:
       fail-fast: false
       # explicit include-based build matrix, of known valid options
@@ -64,11 +75,12 @@ jobs:
             gcc: 11
 
     steps:
+      - name: Wait for unattended upgrades to complete
+        run: |
+          sudo apt-get update
+
       - name: Install git LFS
         run: |
-          sudo systemctl stop unattended-upgrades
-          sleep 10
-          sudo apt-get update
           sudo apt-get install -y git-lfs
           git lfs install
 
@@ -91,13 +103,16 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Install rust
-        uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
         with:
           toolchain: nightly
 
       - name: Install cargo dependencies
         run: |
           sudo systemctl stop docker
+          DEBIAN_FRONTEND=noninteractive sudo apt-get remove -y docker docker-engine docker.io containerd runc
+          DEBIAN_FRONTEND=noninteractive sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-compose
+          sudo rm -rf /etc/bash_completion.d/docker /usr/local/bin/docker-compose /etc/bash_completion.d/docker-compose
           DEBIAN_FRONTEND=noninteractive sudo apt-get install -y protobuf-compiler cmake \
                                                                  pkg-config libssl-dev \
                                                                  libclang-dev docker-compose-v2 \
@@ -118,6 +133,13 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Init database
         run: make init_db
         working-directory: coprocessor/fhevm-engine/coprocessor
@@ -127,15 +149,13 @@ jobs:
         with:
           node-version: 20.x
 
-      - name: Build contracts
+      - name: Start localstack
         run: |
-          cp ./host-contracts/.env.example ./host-contracts/.env
-          npm --prefix ./host-contracts ci --include=optional
-          cd host-contracts && npm install && npx hardhat compile
+          docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:latest
 
       - name: Run benchmarks on CPU
         run: |
-          BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" make "benchmark_${{ inputs.benchmarks }}_cpu"
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TXN_SENDER_TEST_GLOBAL_LOCALSTACK=1 BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" FHEVM_DF_SCHEDULE="${{ inputs.scheduling_policy }}" make -e "benchmark_${{ inputs.benchmarks }}_cpu"
         working-directory: coprocessor/fhevm-engine/coprocessor
 
       - name: Parse results
@@ -149,7 +169,7 @@ jobs:
           --commit-date "${{ env.COMMIT_DATE }}" \
           --bench-date "${{ env.BENCH_DATE }}" \
           --walk-subdirs \
-          --name-suffix "operation_batch_size_${{ inputs.batch_size }}"
+          --name-suffix "operation_batch_size_${{ inputs.batch_size }}-schedule_${{ inputs.scheduling_policy }}"
 
       - name: Upload parsed results artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -172,12 +192,12 @@ jobs:
           --slab-url "${{ secrets.SLAB_URL }}"
 
   teardown-instance:
-    name: Teardown instance (fhevm-coprocessor-benchmarks-cpu)
+    name: coprocessor-benchmarks-cpu/teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
-    needs: [ setup-instance, fhevm-coprocessor-benchmarks-cpu ]
+    needs: [ setup-instance, benchmarks-cpu ]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: 'read'
     steps:
       - name: Stop remote instance
         id: stop-instance

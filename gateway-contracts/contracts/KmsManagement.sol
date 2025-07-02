@@ -5,8 +5,8 @@ import "./interfaces/IKmsManagement.sol";
 import "./interfaces/IGatewayConfig.sol";
 import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
 
@@ -14,7 +14,13 @@ import "./shared/Pausable.sol";
 /// @dev TODO: This contract is neither used nor up-to-date. It will be reworked in the future.
 /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/108
 /// @dev See {IKmsManagement}.
-contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeable, GatewayConfigChecks, Pausable {
+contract KmsManagement is
+    IKmsManagement,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeableEmptyProxy,
+    GatewayConfigChecks,
+    Pausable
+{
     /// @notice The address of the GatewayConfig contract for protocol state calls.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -25,6 +31,10 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
+
+    /// Constant used for making sure the version number using in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.KmsManagement
@@ -121,7 +131,11 @@ contract KmsManagement is IKmsManagement, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /// @notice Initializes the contract.
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
-    function initialize(string memory fheParamsName, bytes32 fheParamsDigest) public virtual reinitializer(2) {
+    /// @custom:oz-upgrades-validate-as-initializer
+    function initializeFromEmptyProxy(
+        string memory fheParamsName,
+        bytes32 fheParamsDigest
+    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __Pausable_init();
 

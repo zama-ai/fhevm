@@ -9,6 +9,9 @@ use sqlx::types::Uuid;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
 use std::time::Duration;
+use tracing::error;
+use tracing::info;
+use tracing::warn;
 
 use fhevm_engine_common::types::SupportedFheOperations;
 
@@ -76,8 +79,9 @@ impl Database {
         };
         let mut pool = connect().await;
         while let Err(err) = pool {
-            eprintln!(
-                "Database connection failed. {err}. Will retry indefinitively."
+            error!(
+                error = %err,
+                "Database connection failed. Will retry indefinitely."
             );
             tokio::time::sleep(Duration::from_secs(5)).await;
             pool = connect().await;
@@ -107,7 +111,7 @@ impl Database {
             match query().await {
                 Ok(tenant_id) => return tenant_id,
                 Err(err) if retry_on_sqlx_error(&err) => {
-                    eprintln!("Error requesting tenant id, retrying: {err}");
+                    error!(error = %err, "Error requesting tenant id, retrying");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
                 Err(SqlxError::RowNotFound) => {
@@ -200,9 +204,9 @@ impl Database {
             match query().execute(&self.pool).await {
                 Ok(_) => return Ok(()),
                 Err(err) if retry_on_sqlx_error(&err) => {
-                    eprintln!(
-                        "\tDatabase I/O error: {}, will retry indefinitely",
-                        err
+                    error!(
+                        error = %err,
+                        "Database I/O error, will retry indefinitely"
                     );
                     self.reconnect().await;
                 }
@@ -263,10 +267,6 @@ impl Database {
             | E::FheNot(C::FheNot {ct, result, ..})
             => self.insert_computation(tenant_id, result, &[ct], fhe_operation, &NO_SCALAR).await,
 
-            | E::FheEqBytes(C::FheEqBytes {lhs, rhs, scalarByte, result, ..})
-            | E::FheNeBytes(C::FheNeBytes {lhs, rhs, scalarByte, result, ..})
-            => self.insert_computation_bytes(tenant_id, result, &[lhs], &[rhs.to_vec()], fhe_operation, scalarByte).await,
-
             | E::FheRand(C::FheRand {randType, seed, result, ..})
             => self.insert_computation_bytes(tenant_id, result, &[], &[seed.to_vec(), ty(randType)], fhe_operation, &HAS_SCALAR).await,
 
@@ -275,9 +275,6 @@ impl Database {
 
             | E::TrivialEncrypt(C::TrivialEncrypt {pt, toType, result, ..})
             => self.insert_computation_bytes(tenant_id, result, &[], &[as_bytes(pt), ty(toType)], fhe_operation, &HAS_SCALAR).await,
-
-            | E::TrivialEncryptBytes(C::TrivialEncryptBytes {pt, toType, result, ..})
-            => self.insert_computation_bytes(tenant_id, result, &[], &[pt.to_vec(), ty(toType)], fhe_operation, &HAS_SCALAR).await,
 
             | E::Initialized(_)
             | E::OwnershipTransferStarted(_)
@@ -292,26 +289,24 @@ impl Database {
         &mut self,
         opt_event: &Option<alloy_rpc_types::Log>,
         opt_prev_event: &Option<alloy_rpc_types::Log>,
-    ) {
+    ) -> Option<u64> {
         let Some(prev_event) = opt_prev_event else {
-            return;
+            return None;
         };
         let Some(event) = opt_event else {
-            return;
+            return None;
         };
         if prev_event.block_number == event.block_number {
-            return;
+            return None;
         }
         let prev_event = if prev_event.block_number < event.block_number {
             event
         } else {
             prev_event
         };
-        let Some(block_number) = prev_event.block_number else {
-            return;
-        };
+        let block_number = prev_event.block_number?;
         let Some(block_hash) = prev_event.block_hash else {
-            return;
+            return Some(block_number); // but cannot write to db
         };
         let _ = sqlx::query!(
             r#"
@@ -325,6 +320,7 @@ impl Database {
         )
         .execute(&self.pool)
         .await;
+        Some(block_number)
     }
 
     pub async fn read_last_valid_block(&mut self) -> Option<i64> {
@@ -371,9 +367,9 @@ impl Database {
                     .collect::<Vec<_>>();
 
                 for handle in handles.clone() {
-                    println!(
-                        "Allowed for public decryption: {}",
-                        compact_hex(&handle),
+                    info!(
+                        handle = compact_hex(&handle),
+                        "Allowed for public decryption"
                     );
 
                     self.insert_allowed_handle(
@@ -387,36 +383,57 @@ impl Database {
                 self.insert_pbs_computations(&handles).await?;
             }
             AclContractEvents::Initialized(initialized) => {
-                println!("unhandled Acl::Initialized event {:?}", initialized);
+                warn!(event = ?initialized, "unhandled Acl::Initialized event");
             }
             AclContractEvents::NewDelegation(new_delegation) => {
-                println!(
-                    "unhandled Acl::NewDelegation event {:?}",
-                    new_delegation
+                warn!(
+                    event = ?new_delegation,
+                    "unhandled Acl::NewDelegation event"
                 );
             }
             AclContractEvents::OwnershipTransferStarted(
                 ownership_transfer_started,
             ) => {
-                println!(
-                    "unhandled Acl::OwnershipTransferStarted event {:?}",
-                    ownership_transfer_started
+                warn!(
+                    event = ?ownership_transfer_started,
+                    "unhandled Acl::OwnershipTransferStarted event"
                 );
             }
             AclContractEvents::OwnershipTransferred(ownership_transferred) => {
-                println!(
-                    "unhandled Acl::OwnershipTransferred event {:?}",
-                    ownership_transferred
+                warn!(
+                    event = ?ownership_transferred,
+                    "unhandled Acl::OwnershipTransferred event"
                 );
             }
             AclContractEvents::RevokedDelegation(revoked_delegation) => {
-                println!(
-                    "unhandled Acl::RevokedDelegation event {:?}",
-                    revoked_delegation
+                warn!(
+                    event = ?revoked_delegation,
+                    "unhandled Acl::RevokedDelegation event"
                 );
             }
             AclContractEvents::Upgraded(upgraded) => {
-                println!("unhandled Acl::Upgraded event {:?}", upgraded);
+                warn!(
+                    event = ?upgraded,
+                    "unhandled Acl::Upgraded event"
+                );
+            }
+            AclContractEvents::Paused(paused) => {
+                warn!(
+                    event = ?paused,
+                    "unhandled Acl::Paused event"
+                );
+            }
+            AclContractEvents::Unpaused(unpaused) => {
+                warn!(
+                    event = ?unpaused,
+                    "unhandled Acl::Unpaused event"
+                );
+            }
+            AclContractEvents::UpdatePauser(update_pauser) => {
+                warn!(
+                    event = ?update_pauser,
+                    "unhandled Acl::UpdatePauser event"
+                );
             }
         }
 
@@ -444,10 +461,7 @@ impl Database {
                 match query().execute(&self.pool).await {
                     Ok(_) => break,
                     Err(err) if retry_on_sqlx_error(&err) => {
-                        eprintln!(
-                            "\tDatabase I/O error: {}, will retry indefinitely",
-                            err
-                        );
+                        error!(error = %err, "Database I/O error, will retry indefinitely");
                         self.reconnect().await;
                     }
                     Err(sqlx_err) => {
@@ -484,10 +498,7 @@ impl Database {
             match query().execute(&self.pool).await {
                 Ok(_) => break,
                 Err(err) if retry_on_sqlx_error(&err) => {
-                    eprintln!(
-                        "\tDatabase I/O error: {}, will retry indefinitely",
-                        err
-                    );
+                    error!(error = %err, "Database I/O error, will retry indefinitely");
                     self.reconnect().await;
                 }
                 Err(sqlx_err) => {
@@ -516,8 +527,8 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheShr(_) => O::FheShr as i32,
         E::FheRotl(_) => O::FheRotl as i32,
         E::FheRotr(_) => O::FheRotr as i32,
-        E::FheEq(_) | E::FheEqBytes(_) => O::FheEq as i32,
-        E::FheNe(_) | E::FheNeBytes(_) => O::FheNe as i32,
+        E::FheEq(_) => O::FheEq as i32,
+        E::FheNe(_) => O::FheNe as i32,
         E::FheGe(_) => O::FheGe as i32,
         E::FheGt(_) => O::FheGt as i32,
         E::FheLe(_) => O::FheLe as i32,
@@ -527,9 +538,7 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheNeg(_) => O::FheNeg as i32,
         E::FheNot(_) => O::FheNot as i32,
         E::Cast(_) => O::FheCast as i32,
-        E::TrivialEncrypt(_) | E::TrivialEncryptBytes(_) => {
-            O::FheTrivialEncrypt as i32
-        }
+        E::TrivialEncrypt(_) => O::FheTrivialEncrypt as i32,
         E::FheIfThenElse(_) => O::FheIfThenElse as i32,
         E::FheRand(_) => O::FheRand as i32,
         E::FheRandBounded(_) => O::FheRandBounded as i32,
@@ -557,8 +566,8 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheShr(_) => "FheShr",
         E::FheRotl(_) => "FheRotl",
         E::FheRotr(_) => "FheRotr",
-        E::FheEq(_) | E::FheEqBytes(_) => "FheEq",
-        E::FheNe(_) | E::FheNeBytes(_) => "FheNe",
+        E::FheEq(_) => "FheEq",
+        E::FheNe(_) => "FheNe",
         E::FheGe(_) => "FheGe",
         E::FheGt(_) => "FheGt",
         E::FheLe(_) => "FheLe",
@@ -568,7 +577,7 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheNeg(_) => "FheNeg",
         E::FheNot(_) => "FheNot",
         E::Cast(_) => "FheCast",
-        E::TrivialEncrypt(_) | E::TrivialEncryptBytes(_) => "FheTrivialEncrypt",
+        E::TrivialEncrypt(_) => "FheTrivialEncrypt",
         E::FheIfThenElse(_) => "FheIfThenElse",
         E::FheRand(_) => "FheRand",
         E::FheRandBounded(_) => "FheRandBounded",

@@ -4,7 +4,10 @@ use std::{
     time::Duration,
 };
 
-use crate::{nonce_managed_provider::NonceManagedProvider, ops::common::try_into_array, REVIEW};
+use crate::{
+    nonce_managed_provider::NonceManagedProvider, ops::common::try_into_array,
+    overprovision_gas_limit::try_overprovision_gas_limit, REVIEW,
+};
 
 use super::TransactionOperation;
 use alloy::{
@@ -66,15 +69,24 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         &self,
         key: &Key,
         txn_request: impl Into<TransactionRequest>,
-        current_retry_count: i32,
-        current_transport_retry_count: i32,
+        current_limited_retries_count: i32,
+        current_unlimited_retries_count: i32,
     ) -> anyhow::Result<()> {
         let h = compact_hex(&key.handle);
 
         info!("Processing transaction, handle: {}", h);
 
-        let txn_req = txn_request.into();
-        let transaction = match self.provider.send_transaction(txn_req.clone()).await {
+        let overprovisioned_txn_req = try_overprovision_gas_limit(
+            txn_request,
+            &*self.provider,
+            self.conf.gas_limit_overprovision_percent,
+        )
+        .await;
+        let transaction = match self
+            .provider
+            .send_transaction(overprovisioned_txn_req.clone())
+            .await
+        {
             Ok(txn) => txn,
             Err(e) if self.already_allowed_error(&e).is_some() => {
                 warn!(
@@ -85,28 +97,38 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                 self.set_txn_is_sent(key).await?;
                 return Ok(());
             }
-            Err(RpcError::Transport(e))
-                if e.is_retry_err() || matches!(e, TransportErrorKind::BackendGone) =>
+            // Consider transport errors and local usage errors as something that must be retried infinitely.
+            // Local usage are included as they might be transient due to external AWS KMS signers.
+            Err(e)
+                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
+                    || matches!(&e, RpcError::LocalUsageError(_)) =>
             {
                 warn!(
-                    "Transaction {:?} sending failed with transport error: {}, handle: {}",
-                    txn_req, e, h
+                    "Transaction {:?} sending failed with unlimited retry error: {}, handle: {}",
+                    overprovisioned_txn_req, e, h
                 );
-                self.increment_transport_txn_retry_count(
+                self.increment_txn_unlimited_retries_count(
                     key,
                     &e.to_string(),
-                    current_transport_retry_count,
+                    current_unlimited_retries_count,
                 )
                 .await?;
-                bail!("Transaction sending failed with transport error: {}", e);
+                bail!(
+                    "Transaction sending failed with unlimited retry error: {}",
+                    e
+                );
             }
             Err(e) => {
                 warn!(
                     "Transaction {:?} sending failed with error: {}, handle: {}",
-                    txn_req, e, h
+                    overprovisioned_txn_req, e, h
                 );
-                self.increment_txn_retry_count(key, &e.to_string(), current_retry_count)
-                    .await?;
+                self.increment_txn_limited_retries_count(
+                    key,
+                    &e.to_string(),
+                    current_limited_retries_count,
+                )
+                .await?;
                 bail!("Transaction sending failed with error: {}", e);
             }
         };
@@ -124,8 +146,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
             Ok(receipt) => receipt,
             Err(e) => {
                 error!("Getting receipt failed with error: {}", e);
-                self.increment_txn_retry_count(key, &e.to_string(), current_retry_count)
-                    .await?;
+                self.increment_txn_limited_retries_count(
+                    key,
+                    &e.to_string(),
+                    current_limited_retries_count,
+                )
+                .await?;
                 return Err(anyhow::Error::new(e));
             }
         };
@@ -142,8 +168,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                 h
             );
 
-            self.increment_txn_retry_count(key, "receipt status = false", current_retry_count)
-                .await?;
+            self.increment_txn_limited_retries_count(
+                key,
+                "receipt status = false",
+                current_limited_retries_count,
+            )
+            .await?;
 
             return Err(anyhow::anyhow!(
                 "Transaction {} failed with status {}, handle: {}",
@@ -156,9 +186,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
     }
 
     fn already_allowed_error(&self, err: &RpcError<TransportErrorKind>) -> Option<Address> {
-        let validate = true;
         err.as_error_resp()
-            .and_then(|payload| payload.as_decoded_error::<MultichainAclErrors>(validate))
+            .and_then(|payload| payload.as_decoded_interface_error::<MultichainAclErrors>())
             .map(|error| match error {
                 MultichainAclErrors::CoprocessorAlreadyAllowed(c) => c.coprocessor,
             })
@@ -204,23 +233,25 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         }
     }
 
-    async fn increment_txn_retry_count(
+    async fn increment_txn_limited_retries_count(
         &self,
         key: &Key,
         err: &str,
-        current_retry_count: i32,
+        current_limited_retries_count: i32,
     ) -> anyhow::Result<()> {
         debug!("Updating retry count for key {}", key);
 
-        if current_retry_count == (self.conf.allow_handle_max_retries as i32) - 1 {
+        if current_limited_retries_count == (self.conf.allow_handle_max_retries as i32) - 1 {
             error!(
                 action = REVIEW,
-                "Max ({}) retries reached for key {}", key, self.conf.allow_handle_max_retries
+                "Max ({}) limited retries reached for key {}",
+                key,
+                self.conf.allow_handle_max_retries
             );
         } else {
             warn!(
-                "Updating retry count to {} for key {}",
-                current_retry_count + 1,
+                "Updating limited retry count to {} for key {}",
+                current_limited_retries_count + 1,
                 key
             );
         }
@@ -228,7 +259,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         sqlx::query!(
             "UPDATE allowed_handles
             SET
-            txn_retry_count = txn_retry_count + 1,
+            txn_limited_retries_count = txn_limited_retries_count + 1,
             txn_last_error = $1,
             txn_last_error_at = NOW()
             WHERE handle = $2
@@ -244,23 +275,24 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         Ok(())
     }
 
-    async fn increment_transport_txn_retry_count(
+    async fn increment_txn_unlimited_retries_count(
         &self,
         key: &Key,
         err: &str,
-        current_transport_retry_count: i32,
+        current_unlimited_retries_count: i32,
     ) -> anyhow::Result<()> {
-        debug!("Updating transport retry count, {}", key);
+        debug!("Updating unlimited retries count, {}", key);
 
-        if current_transport_retry_count == (self.conf.review_after_transport_retries as i32) - 1 {
+        if current_unlimited_retries_count == (self.conf.review_after_unlimited_retries as i32) - 1
+        {
             error!(
                 action = REVIEW,
-                "{} transport retries reached for key {}", current_transport_retry_count, key
+                "{} unlimited retries reached for key {}", current_unlimited_retries_count, key
             );
         } else {
             warn!(
-                "Updating transport retry count to {}, key {}",
-                current_transport_retry_count + 1,
+                "Updating unlimited retries count to {}, key {}",
+                current_unlimited_retries_count + 1,
                 key
             );
         }
@@ -268,7 +300,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         sqlx::query!(
             "UPDATE allowed_handles
             SET
-            txn_transport_retry_count = txn_transport_retry_count + 1,
+            txn_unlimited_retries_count = txn_unlimited_retries_count + 1,
             txn_last_error = $1,
             txn_last_error_at = NOW()
             WHERE handle = $2
@@ -297,10 +329,10 @@ where
     async fn execute(&self) -> anyhow::Result<bool> {
         let rows = sqlx::query!(
             "
-            SELECT handle, tenant_id, account_address, event_type, txn_retry_count, txn_transport_retry_count
+            SELECT handle, tenant_id, account_address, event_type, txn_limited_retries_count, txn_unlimited_retries_count
             FROM allowed_handles 
             WHERE txn_is_sent = false 
-            AND txn_retry_count < $1
+            AND txn_limited_retries_count < $1
             LIMIT $2;
             ",
             self.conf.allow_handle_max_retries as i32,
@@ -309,8 +341,7 @@ where
         .fetch_all(&self.db_pool)
         .await?;
 
-        let multichain_acl: MultichainAcl::MultichainAclInstance<(), &P> =
-            MultichainAcl::new(self.multichain_acl_address, self.provider.inner());
+        let multichain_acl = MultichainAcl::new(self.multichain_acl_address, self.provider.inner());
 
         info!("Selected {} rows to process", rows.len());
 
@@ -403,8 +434,8 @@ where
                     .send_transaction(
                         &key,
                         txn_request,
-                        row.txn_retry_count,
-                        row.txn_transport_retry_count,
+                        row.txn_limited_retries_count,
+                        row.txn_unlimited_retries_count,
                     )
                     .await
             });
@@ -415,5 +446,15 @@ where
         }
 
         Ok(maybe_has_more_work)
+    }
+
+    fn provider(&self) -> &P {
+        self.provider.inner()
+    }
+
+    async fn check_provider_connection(&self) -> anyhow::Result<()> {
+        // Simple check to verify the provider is connected
+        let _ = self.provider.get_block_number().await?;
+        Ok(())
     }
 }

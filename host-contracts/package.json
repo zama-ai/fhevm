@@ -1,15 +1,16 @@
 {
   "name": "@fhevm/core-contracts",
-  "version": "0.7.0-9",
+  "version": "0.7.0-12",
   "description": "fhevm backend contracts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zama-ai/fhevm-backend.git"
+    "url": "git+https://github.com/zama-ai/fhevm.git"
   },
   "main": "index.js",
   "scripts": {
-    "compile": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
+    "compile": "HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
     "compile:decryptionOracle": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile:specific --contract decryptionOracle",
+    "deploy:emptyProxies": "hardhat task:deployEmptyUUPSProxies",
     "lint": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
@@ -23,6 +24,7 @@
   "author": "",
   "license": "BSD-3-Clause",
   "devDependencies": {
+    "@fhevm/sdk": "^0.7.0-21",
     "@nomicfoundation/hardhat-toolbox": "5.0.0",
     "@nomicfoundation/solidity-analyzer": "0.1.2",
     "@openzeppelin/contracts-upgradeable": "5.1.0",
@@ -36,7 +38,6 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "extra-bigint": "^1.2.0",
-    "@fhevm/sdk": "^0.7.0-21",
     "hardhat": "2.22.18",
     "hardhat-deploy": "^0.11.29",
     "hardhat-ignore-warnings": "^0.2.11",
@@ -50,5 +51,8 @@
   "optionalDependencies": {
     "solidity-comments-darwin-arm64": "0.1.1",
     "solidity-comments-linux-x64-gnu": "0.1.1"
+  },
+  "dependencies": {
+    "encrypted-types": "^0.0.4"
   }
 }

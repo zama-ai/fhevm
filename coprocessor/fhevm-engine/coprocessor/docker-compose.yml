@@ -21,13 +21,21 @@ services:
   db-migration:
     container_name: db-migration
     build:
-      context: ../../.
-      dockerfile: fhevm-engine/fhevm-db/Dockerfile
+      context: ../../../.
+      dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/coprocessor
       TENANT_API_KEY: "a1503fb6-d79b-4e9e-826d-44cf262f3e05"
       ACL_CONTRACT_ADDRESS: "0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2"
       INPUT_VERIFIER_ADDRESS: "0x69dE3158643e738a0724418b21a35FAA20CBb1c5"
+    command:
+      - /initialize_db.sh
+    healthcheck:
+      test: ["CMD-SHELL", "psql --version"]
+      interval: 15s
+      timeout: 5s
+      retries: 1
+      start_period: 5s
     volumes:
       - ../fhevm-keys:/fhevm-keys
     depends_on:

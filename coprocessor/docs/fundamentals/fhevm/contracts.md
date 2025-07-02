@@ -43,11 +43,13 @@ The KMSVerifier contract is also responsible for checking the signatures of KMS 
 The InputVerifier checks the coprocessors accounts' signatures which include the computed handles (the KMS signatures only include the hash of the packed ciphertext, not the handles).
 We trust the handles computation done by the coprocessors before using them in transactions onchain.
 
-## FHEGasLimit Contract
+## HCULimit Contract
 
-This contract is needed for security, especially for coprocessor where we could not tweak native gas to be used for FHE operations as for native: [FHE gas price constants](../../../contracts/contracts/FHEGasLimit.sol#L33-L34).
+We defined a concept named Homomorphic Complexity Units ("HCU") that represents the complexity for a FHE operation.
 
-This contract tracks the FHEGas consumed in each block, and reverts the transactions inside a block if the FHEGas block limit is exceeded.
+When using FHE, the `HCULimit` contract tracks the HCU consumed in each transaction, and reverts if:
+- the limit for sequential FHE operations is exceeded.
+- the limit for non-sequential FHE operations is exceeded.
 
 ## DecryptionOracle Contract
 

@@ -5,7 +5,7 @@ import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 
-const NUM_ACCOUNTS = 15;
+const NUM_ACCOUNTS = 120;
 
 task('compile:specific', 'Compiles only the specified contract')
   .addParam('contract', "The contract's path")
@@ -60,7 +60,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:deployInputVerifier', {
       privateKey: privKeyFhevmDeployer,
     });
-    await hre.run('task:deployFHEGasLimit', {
+    await hre.run('task:deployHCULimit', {
       privateKey: privKeyFhevmDeployer,
     });
     await hre.run('task:deployDecryptionOracle', {
@@ -157,6 +157,9 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 }
 
 const config: HardhatUserConfig = {
+  // workaround a hardhat bug with --parallel --network
+  // https://github.com/NomicFoundation/hardhat/issues/2756
+  defaultNetwork: 'staging',
   mocha: {
     timeout: 300000,
   },

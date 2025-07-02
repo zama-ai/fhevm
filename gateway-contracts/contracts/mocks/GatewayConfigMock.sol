@@ -3,13 +3,16 @@ pragma solidity ^0.8.24;
 import "../shared/Structs.sol";
 
 contract GatewayConfigMock {
-    event Initialization(
+    event InitializeGatewayConfig(
         address pauser,
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes,
-        Coprocessor[] coprocessors
+        Coprocessor[] coprocessors,
+        Custodian[] custodians
     );
+
+    event ReinitializeGatewayConfigV2(Custodian[] custodians);
 
     event UpdatePauser(address newPauser);
 
@@ -21,21 +24,28 @@ contract GatewayConfigMock {
 
     event AddHostChain(HostChain hostChain);
 
-    function initialize(
+    function initializeFromEmptyProxy(
         address initialPauser,
         ProtocolMetadata memory initialMetadata,
         uint256 initialMpcThreshold,
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
         KmsNode[] memory initialKmsNodes,
-        Coprocessor[] memory initialCoprocessors
+        Coprocessor[] memory initialCoprocessors,
+        Custodian[] memory initialCustodians
     ) public {
         address pauser;
         ProtocolMetadata memory metadata;
         uint256 mpcThreshold;
         KmsNode[] memory kmsNodes = new KmsNode[](1);
         Coprocessor[] memory coprocessors = new Coprocessor[](1);
-        emit Initialization(pauser, metadata, mpcThreshold, kmsNodes, coprocessors);
+        Custodian[] memory custodians = new Custodian[](1);
+
+        emit InitializeGatewayConfig(pauser, metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
+    }
+
+    function reinitializeV2(Custodian[] memory custodians) external {
+        emit ReinitializeGatewayConfigV2(custodians);
     }
 
     function updatePauser(address newPauser) external {

@@ -29,7 +29,7 @@ async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
 
 // Creates the wallets used for the tests from the private keys in the .env file.
 // Adds some funds to these wallets.
-async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
+async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCustodians: number) {
   // Get signers
   // - the owner owns the contracts and can initialize the protocol, update FHE params
   // - the pauser can pause the protocol
@@ -84,6 +84,29 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
     coprocessorS3Buckets.push(coprocessorS3Bucket);
   }
 
+  // Load the custodian transaction senders
+  const custodianTxSenders = [];
+  for (let idx = 0; idx < nCustodians; idx++) {
+    const custodianTxSender = await hre.ethers.getSigner(getRequiredEnvVar(`CUSTODIAN_TX_SENDER_ADDRESS_${idx}`));
+    await checkIsHardhatSigner(custodianTxSender);
+    custodianTxSenders.push(custodianTxSender);
+  }
+
+  // Load the custodian signers
+  const custodianSigners = [];
+  for (let idx = 0; idx < nCustodians; idx++) {
+    const custodianSigner = await hre.ethers.getSigner(getRequiredEnvVar(`CUSTODIAN_SIGNER_ADDRESS_${idx}`));
+    await checkIsHardhatSigner(custodianSigner);
+    custodianSigners.push(custodianSigner);
+  }
+
+  // Load the custodian encryption keys
+  const custodianEncryptionKeys = [];
+  for (let idx = 0; idx < nCustodians; idx++) {
+    const custodianEncryptionKey = getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`);
+    custodianEncryptionKeys.push(custodianEncryptionKey);
+  }
+
   return {
     owner,
     pauser,
@@ -93,6 +116,9 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
     coprocessorTxSenders,
     coprocessorSigners,
     coprocessorS3Buckets,
+    custodianTxSenders,
+    custodianSigners,
+    custodianEncryptionKeys,
   };
 }
 
@@ -101,12 +127,13 @@ export async function loadTestVariablesFixture() {
   // Load the number of KMS nodes and coprocessors
   const nKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
   const nCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
+  const nCustodians = parseInt(getRequiredEnvVar("NUM_CUSTODIANS"));
 
   // Load the host chains' chain IDs
   const chainIds = loadHostChainIds();
 
   // Load the transaction senders and signers
-  const fixtureData = await initTestingWallets(nKmsNodes, nCoprocessors);
+  const fixtureData = await initTestingWallets(nKmsNodes, nCoprocessors, nCustodians);
 
   // Load the GatewayConfig contract
   const parsedEnvGatewayConfig = dotenv.parse(fs.readFileSync("addresses/.env.gateway_config"));
@@ -153,6 +180,7 @@ export async function loadTestVariablesFixture() {
     chainIds,
     nKmsNodes,
     nCoprocessors,
+    nCustodians,
     fheParamsName,
     fheParamsDigest,
   };

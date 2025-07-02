@@ -264,123 +264,19 @@ describe('TestAsyncDecrypt', function () {
     expect(y).to.equal(18446744073709550042n);
   });
 
-  it('test async decrypt ebytes64 trivial', async function () {
-    const tx = await this.contract.requestEbytes64Trivial('0x78685689');
-    await tx.wait();
-    await awaitAllDecryptionResults();
-    const y = await this.contract.yBytes64();
-    expect(y).to.equal(ethers.toBeHex(BigInt('0x78685689'), 64));
-  });
-
-  it('test async decrypt ebytes64 non-trivial', async function () {
+  it('test async decrypt mixed', async function () {
+    const uint256Input = BigInt('18446744073709550032');
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAlice.addBytes64(
-      bigIntToBytes64(98870780878070870878787887072921111299111111000000292928818818818818221112111n),
-    );
+    inputAlice.add256(uint256Input);
     const encryptedAmount = await inputAlice.encrypt();
-    const tx = await this.contract.requestEbytes64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    const tx = await this.contract.requestMixed(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     await awaitAllDecryptionResults();
-    const y = await this.contract.yBytes64();
-    expect(y).to.equal(
-      ethers.toBeHex(98870780878070870878787887072921111299111111000000292928818818818818221112111n, 64),
-    );
-  });
 
-  it('test async decrypt ebytes128 trivial', async function () {
-    const tx = await this.contract.requestEbytes128Trivial(
-      '0x8701d11594415047dfac2d9cb87e6631df5a735a2f364fba1511fa7b812dfad2972b809b80ff25ec19591a598081af357cba384cf5aa8e085678ff70bc55faee',
-    );
-    await tx.wait();
-    await awaitAllDecryptionResults();
-    const y = await this.contract.yBytes128();
-    expect(y).to.equal(
-      ethers.toBeHex(
-        BigInt(
-          '0x8701d11594415047dfac2d9cb87e6631df5a735a2f364fba1511fa7b812dfad2972b809b80ff25ec19591a598081af357cba384cf5aa8e085678ff70bc55faee',
-        ),
-        128,
-      ),
-    );
-  });
-
-  it('test async decrypt ebytes128 non-trivial', async function () {
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAlice.addBytes128(
-      bigIntToBytes128(
-        9887078087807087087878788707292111129911111100000029292881881881881822111211198870780878070870878787887072921111299111111000000292928818818818818221112111n,
-      ),
-    );
-    const encryptedAmount = await inputAlice.encrypt();
-    const tx = await this.contract.requestEbytes128NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
-    await tx.wait();
-    await awaitAllDecryptionResults();
-    const y = await this.contract.yBytes128();
-    expect(y).to.equal(
-      ethers.toBeHex(
-        9887078087807087087878788707292111129911111100000029292881881881881822111211198870780878070870878787887072921111299111111000000292928818818818818221112111n,
-        128,
-      ),
-    );
-  });
-
-  it('test async decrypt ebytes256 trivial', async function () {
-    const tx = await this.contract.requestEbytes256Trivial('0x78685689');
-    await tx.wait();
-    await awaitAllDecryptionResults();
-    const y = await this.contract.yBytes256();
-    expect(y).to.equal(ethers.toBeHex(BigInt('0x78685689'), 256));
-  });
-
-  it('test async decrypt ebytes256 non-trivial', async function () {
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAlice.addBytes256(bigIntToBytes256(18446744073709550022n));
-    const encryptedAmount = await inputAlice.encrypt();
-    const tx = await this.contract.requestEbytes256NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
-    await tx.wait();
-    await awaitAllDecryptionResults();
-    const y = await this.contract.yBytes256();
-    expect(y).to.equal(ethers.toBeHex(18446744073709550022n, 256));
-  });
-
-  it('test async decrypt ebytes256 non-trivial with snapshot [skip-on-coverage]', async function () {
-    if (network.name === 'hardhat') {
-      this.snapshotId = await ethers.provider.send('evm_snapshot');
-      const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-      inputAlice.addBytes256(bigIntToBytes256(18446744073709550022n));
-      const encryptedAmount = await inputAlice.encrypt();
-      const tx = await this.contract.requestEbytes256NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
-      await tx.wait();
-      await awaitAllDecryptionResults();
-      const y = await this.contract.yBytes256();
-      expect(y).to.equal(ethers.toBeHex(18446744073709550022n, 256));
-
-      await ethers.provider.send('evm_revert', [this.snapshotId]);
-      const inputAlice2 = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-      inputAlice2.addBytes256(bigIntToBytes256(424242n));
-      const encryptedAmount2 = await inputAlice2.encrypt();
-      const tx2 = await this.contract.requestEbytes256NonTrivial(
-        encryptedAmount2.handles[0],
-        encryptedAmount2.inputProof,
-      );
-      await tx2.wait();
-      await awaitAllDecryptionResults();
-      const y2 = await this.contract.yBytes256();
-      expect(y2).to.equal(ethers.toBeHex(424242n, 256));
-    }
-  });
-
-  it('test async decrypt mixed with ebytes256', async function () {
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAlice.addBytes256(bigIntToBytes256(18446744073709550032n));
-    const encryptedAmount = await inputAlice.encrypt();
-    const tx = await this.contract.requestMixedBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof);
-    await tx.wait();
-    await awaitAllDecryptionResults();
-    const y = await this.contract.yBytes256();
-    expect(y).to.equal(ethers.toBeHex(18446744073709550032n, 256));
-    const y2 = await this.contract.yBytes64();
-    expect(y2).to.equal(ethers.toBeHex(BigInt('0xaaff42'), 64));
+    const y = await this.contract.yUint256();
+    expect(y).to.equal(uint256Input);
+    const y2 = await this.contract.yUint32();
+    expect(y2).to.equal(32);
     const yb = await this.contract.yBool();
     expect(yb).to.equal(true);
     const yAdd = await this.contract.yAddress();

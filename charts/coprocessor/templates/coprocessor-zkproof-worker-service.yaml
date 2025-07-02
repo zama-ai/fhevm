@@ -1,0 +1,21 @@
+{{- if .Values.zkProofWorker.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-zkproof-worker
+    app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
+  name: {{ include "zkProofWorkerName" . }}
+spec:
+  ports:
+    - name: metrics
+      port: {{ .Values.zkProofWorker.ports.metrics }}
+      targetPort: metrics
+    - name: healthcheck
+      port: {{ .Values.zkProofWorker.ports.healthcheck }}
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-zkproof-worker
+    app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
+  type: ClusterIP
+{{- end }}

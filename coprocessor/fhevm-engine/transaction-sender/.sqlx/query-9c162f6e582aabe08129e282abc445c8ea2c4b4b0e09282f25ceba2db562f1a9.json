@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT handle, ciphertext, ciphertext128, tenant_id, txn_limited_retries_count, txn_unlimited_retries_count\n            FROM ciphertext_digest\n            WHERE txn_is_sent = false\n            AND ciphertext IS NOT NULL\n            AND ciphertext128 IS NOT NULL\n            AND txn_limited_retries_count < $1\n            LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "tenant_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "txn_limited_retries_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "txn_unlimited_retries_count",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9c162f6e582aabe08129e282abc445c8ea2c4b4b0e09282f25ceba2db562f1a9"
+}

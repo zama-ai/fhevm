@@ -30,12 +30,9 @@ describe('HTTPPublicDecrypt', function () {
     const handleBool = await this.contract.xBool();
     const handle32 = await this.contract.xUint32();
     const handleAddress = await this.contract.xAddress();
-    const handleBytes128 = await this.contract.xBytes128();
-    const res = await this.instances.alice.publicDecrypt([handleBool, handleBytes128, handle32, handleAddress]);
+    const res = await this.instances.alice.publicDecrypt([handleBool, handle32, handleAddress]);
     const expectedRes = {
       [handleBool]: true,
-      [handleBytes128]:
-        '0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000d3f1e794f90b63477d50293f0ff0d232ca3f485213a1',
       [handle32]: 242n,
       [handleAddress]: '0xfC4382C084fCA3f4fB07c3BCDA906C01797595a8',
     };

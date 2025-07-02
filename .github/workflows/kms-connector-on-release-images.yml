@@ -1,4 +1,4 @@
-name: "Release KMS Connector Create Docker Images"
+name: kms-connector-on-release-images
 
 on:
   release:
@@ -13,12 +13,17 @@ on:
 
 jobs:
   docker-connector:
+    name: kms-connector-on-release-images/docker-connector
     uses: ./.github/workflows/kms-connector-common-docker-big-instance.yml
     permissions:
+      actions: 'read'
       contents: 'read'
       id-token: 'write'
+      pull-requests: 'read'
       packages: 'write'
+      attestations: 'write'
     with:
+      docker-file: './kms-connector/Dockerfile'
       working-directory: "./kms-connector"
       push_image: true
       image-name: 'fhevm/kms-connector'

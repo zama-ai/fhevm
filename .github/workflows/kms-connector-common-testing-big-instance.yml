@@ -1,4 +1,11 @@
-name: KMS Connector Common Testing Big Instance
+name: kms-connector-common-testing-big-instance
+
+permissions:
+  contents: 'read'
+  pull-requests: write
+  packages: 'write'
+  id-token: 'write'
+
 on:
   workflow_call:
     inputs:
@@ -60,7 +67,7 @@ on:
         required: true
       BLOCKCHAIN_ACTIONS_TOKEN:
         required: true
-      NPM_TOKEN:
+      FHEVM_NPM_TOKEN:
         required: false
       AWS_ACCESS_KEY_S3_USER:
         required: true
@@ -72,7 +79,7 @@ env:
 
 jobs:
   start-runner:
-    name: Start self-hosted EC2 runner
+    name: kms-connector-common-testing-big-instance/start-runner
     runs-on: ubuntu-latest
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
@@ -89,11 +96,12 @@ jobs:
           profile: ${{ inputs.slab-backend }}
 
   run-build:
+    name: kms-connector-common-testing-big-instance/run-build
     needs: start-runner
     uses: ./.github/workflows/kms-connector-common-testing.yml
     secrets:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      FHEVM_NPM_TOKEN: ${{ secrets.FHEVM_NPM_TOKEN }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
     with:
@@ -111,7 +119,7 @@ jobs:
       app-cache-dir: ${{ inputs.app-cache-dir }}
 
   stop-runner:
-    name: Stops self-hosted EC2 runner
+    name: kms-connector-common-testing-big-instance/stop-runner
     needs:
       - start-runner
       - run-build

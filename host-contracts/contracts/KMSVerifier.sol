@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {EIP712UpgradeableCrossChain} from "./EIP712UpgradeableCrossChain.sol";
+import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -13,7 +13,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  *          signature verification functions.
  * @dev     The contract uses EIP712UpgradeableCrossChain for cryptographic operations and is deployed using an UUPS proxy.
  */
-contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain {
+contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain {
     /// @notice Returned if the KMS signer to add is already a signer.
     error KMSAlreadySigner();
 
@@ -84,6 +84,10 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         uint256 threshold; /// @notice The threshold for the number of signers required for a signature to be valid
     }
 
+    /// Constant used for making sure the version number using in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 2;
+
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant KMSVerifierStorageLocation =
         0x7e81a744be86773af8644dd7304fa1dc9350ccabf16cfcaa614ddb78b4ce8900;
@@ -101,12 +105,12 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
      * @param initialThreshold Initial threshold, should be non-null and less or equal to the initialSigners length.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitialize(
+    function initializeFromEmptyProxy(
         address verifyingContractSource,
         uint64 chainIDSource,
         address[] calldata initialSigners,
         uint256 initialThreshold
-    ) public virtual reinitializer(2) {
+    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
         defineNewContext(initialSigners, initialThreshold);

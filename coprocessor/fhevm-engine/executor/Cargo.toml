@@ -25,6 +25,8 @@ scheduler = { path = "../scheduler" }
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu", "scheduler/gpu", "fhevm-engine-common/gpu"]
+latency = ["fhevm-engine-common/latency"]
+throughput = ["fhevm-engine-common/throughput"]
 
 [build-dependencies]
 tonic-build = "0.12"

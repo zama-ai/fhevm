@@ -13,6 +13,9 @@ node_modules
 /coverage
 /coverage.json
 
+# Proxy contract addresses
+/addresses
+
 # Common files
 *.env
 *.log

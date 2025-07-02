@@ -1,10 +1,13 @@
 mod common;
 
+use alloy::network::TxSigner;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
 use common::{CiphertextCommits, TestEnvironment};
 
+use common::SignerType;
 use rand::{random, Rng};
+use rstest::*;
 use serial_test::serial;
 use sqlx::PgPool;
 use std::time::Duration;
@@ -14,19 +17,47 @@ use transaction_sender::{
     ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
+async fn insert_ciphertext_digest(
+    pool: &PgPool,
+    tenant_id: i32,
+    handle: &[u8; 32],
+    ciphertext: &[u8],
+    ciphertext128: &[u8],
+    txn_limited_retries_count: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO ciphertext_digest (tenant_id, handle, ciphertext, ciphertext128, txn_limited_retries_count)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+        tenant_id,
+        handle,
+        ciphertext,
+        ciphertext128,
+        txn_limited_retries_count,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn add_ciphertext_digests() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+async fn add_ciphertext_digests(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -53,7 +84,9 @@ async fn add_ciphertext_digests() -> anyhow::Result<()> {
     //  Add a ciphertext digest to database
     let handle = random::<[u8; 32]>();
     // Record initial transaction count.
-    let initial_tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    let initial_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
 
     // Insert a ciphertext digest into the database.
     insert_ciphertext_digest(
@@ -111,19 +144,22 @@ async fn add_ciphertext_digests() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn ciphertext_digest_already_added() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -197,19 +233,22 @@ async fn ciphertext_digest_already_added() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn recover_from_transport_error() -> anyhow::Result<()> {
-    let mut env = TestEnvironment::new().await?;
+async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+    let mut env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -287,24 +326,35 @@ async fn recover_from_transport_error() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn retry_on_transport_error() -> anyhow::Result<()> {
+async fn retry_on_transport_error(#[case] signer_type: SignerType) -> anyhow::Result<()> {
     let conf = ConfigSettings {
         add_ciphertexts_max_retries: 2,
         ..Default::default()
     };
 
-    let mut env = TestEnvironment::new_with_config(conf.clone()).await?;
+    let force_per_test_localstack = false;
+    let mut env =
+        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
+            .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(
+                // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
+                WsConnect::new(env.ws_endpoint_url())
+                    .with_max_retries(2)
+                    .with_retry_interval(Duration::from_millis(100)),
+            )
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -351,10 +401,10 @@ async fn retry_on_transport_error() -> anyhow::Result<()> {
     .execute(&env.db_pool)
     .await?;
 
-    // Make sure the digest is not sent, the retry count is 0 and the transport retry count is greater than the txn max retry count.
+    // Make sure the digest is not sent, the retry count is 0 and the unlimited retry count is greater than the txn max retry count.
     loop {
         let rows = sqlx::query!(
-            "SELECT txn_is_sent, txn_retry_count, txn_transport_retry_count
+            "SELECT txn_is_sent, txn_limited_retries_count, txn_unlimited_retries_count
              FROM ciphertext_digest
              WHERE handle = $1",
             &handle,
@@ -362,8 +412,8 @@ async fn retry_on_transport_error() -> anyhow::Result<()> {
         .fetch_one(&env.db_pool)
         .await?;
         if !rows.txn_is_sent
-            && rows.txn_retry_count == 0
-            && rows.txn_transport_retry_count > conf.add_ciphertexts_max_retries as i32
+            && rows.txn_limited_retries_count == 0
+            && rows.txn_unlimited_retries_count > conf.add_ciphertexts_max_retries as i32
         {
             break;
         }
@@ -382,23 +432,34 @@ async fn retry_on_transport_error() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn retry_mechanism() -> anyhow::Result<()> {
+async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+    use alloy::network::EthereumWallet;
+
     let conf = ConfigSettings {
         add_ciphertexts_max_retries: 3,
         ..Default::default()
     };
 
-    let env = TestEnvironment::new_with_config(conf).await?;
+    let force_per_test_localstack = false;
+    let env =
+        TestEnvironment::new_with_config(signer_type, conf, force_per_test_localstack).await?;
 
-    // Create a provider without a wallet.
+    // Create a provider with a random wallet without funds.
+    let wallet: EthereumWallet = PrivateKeySigner::random().into();
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::new()
-            .on_ws(WsConnect::new(env.ws_endpoint_url()))
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(wallet)
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
-        None,
+        Some(env.wallet.default_signer().address()),
     );
+
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
@@ -441,7 +502,7 @@ async fn retry_mechanism() -> anyhow::Result<()> {
     // Make sure the digest was not tagged as sent.
     for _retries in 0..10 {
         let rows = sqlx::query!(
-            "SELECT txn_is_sent, txn_retry_count
+            "SELECT txn_is_sent, txn_limited_retries_count
              FROM ciphertext_digest
              WHERE handle = $1",
             &handle,
@@ -452,8 +513,8 @@ async fn retry_mechanism() -> anyhow::Result<()> {
         if rows.txn_is_sent {
             panic!("Expected txn_is_sent to be false");
         } else {
-            println!("txn_retry_count: {}", rows.txn_retry_count);
-            if rows.txn_retry_count == env.conf.add_ciphertexts_max_retries as i32 - 1 {
+            println!("txn_retry_count: {}", rows.txn_limited_retries_count);
+            if rows.txn_limited_retries_count == env.conf.add_ciphertexts_max_retries as i32 - 1 {
                 valid_retries_count = true;
                 break;
             }
@@ -480,27 +541,102 @@ async fn retry_mechanism() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn insert_ciphertext_digest(
-    pool: &PgPool,
-    tenant_id: i32,
-    handle: &[u8; 32],
-    ciphertext: &[u8],
-    ciphertext128: &[u8],
-    txn_retry_count: i32,
-) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        r#"
-        INSERT INTO ciphertext_digest (tenant_id, handle, ciphertext, ciphertext128, txn_retry_count)
-        VALUES ($1, $2, $3, $4, $5)
-        "#,
-        tenant_id,
-        handle,
-        ciphertext,
-        ciphertext128,
-        txn_retry_count,
+#[rstest]
+#[case::aws_kms(SignerType::AwsKms)]
+#[tokio::test]
+#[serial(db)]
+async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+    let conf = ConfigSettings {
+        add_ciphertexts_max_retries: 2,
+        ..Default::default()
+    };
+
+    let force_per_test_localstack = true;
+    let mut env =
+        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
+            .await?;
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
+
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
+    let txn_sender = TransactionSender::new(
+        PrivateKeySigner::random().address(),
+        *ciphertext_commits.address(),
+        PrivateKeySigner::random().address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
     )
-    .execute(pool)
     .await?;
 
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+
+    // Simulate an AWS KMS error by stopping the localstack instance.
+    env.stop_localstack().await;
+
+    // Insert a ciphertext digest into the database.
+    let handle = random::<[u8; 32]>();
+    insert_ciphertext_digest(
+        &env.db_pool,
+        tenant_id,
+        &handle,
+        &random::<[u8; 32]>(),
+        &random::<[u8; 32]>(),
+        0,
+    )
+    .await?;
+
+    sqlx::query!(
+        "
+        SELECT pg_notify($1, '')",
+        env.conf.add_ciphertexts_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    // Make sure the digest is not sent, the retry count is 0 and the unlimited retry count is greater than the txn max retry count.
+    loop {
+        let rows = sqlx::query!(
+            "SELECT txn_is_sent, txn_limited_retries_count, txn_unlimited_retries_count
+             FROM ciphertext_digest
+             WHERE handle = $1",
+            &handle,
+        )
+        .fetch_one(&env.db_pool)
+        .await?;
+        if !rows.txn_is_sent
+            && rows.txn_limited_retries_count == 0
+            && rows.txn_unlimited_retries_count > conf.add_ciphertexts_max_retries as i32
+        {
+            break;
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+    sqlx::query!(
+        "
+        delete from tenants where tenant_id = $1",
+        tenant_id
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    env.cancel_token.cancel();
+    run_handle.await??;
     Ok(())
 }

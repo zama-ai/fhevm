@@ -1,7 +1,7 @@
 {
   "name": "@fhevm/solidity",
   "description": "A Solidity library for interacting with fhevm protocol",
-  "version": "0.7.0-4",
+  "version": "0.7.0",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -28,7 +28,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zama-ai/fhevm-solidity.git"
+    "url": "git+https://github.com/zama-ai/fhevm.git"
   },
   "author": "",
   "license": "BSD-3-Clause-Clear",
@@ -37,12 +37,14 @@
   },
   "homepage": "https://github.com/zama-ai/fhevm-solidity#readme",
   "devDependencies": {
-    "@fhevm/core-contracts": "^0.7.0-8",
+    "@fhevm/core-contracts": "^0.7.0-12",
+    "@fhevm/sdk": "^0.7.0-21",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.4",
     "@nomicfoundation/hardhat-network-helpers": "^1.0.6",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.10",
+    "@openzeppelin/contracts": "^5.0.1",
     "@openzeppelin/contracts-upgradeable": "5.0.2",
     "@openzeppelin/hardhat-upgrades": "3.3.0",
     "@trivago/prettier-plugin-sort-imports": "^4.0.0",
@@ -54,6 +56,7 @@
     "@types/node": "^20.14.9",
     "@typescript-eslint/eslint-plugin": "^5.44.0",
     "@typescript-eslint/parser": "^5.44.0",
+    "@zama-fhe/oracle-solidity": "^0.1.0",
     "bigint-buffer": "^1.1.5",
     "chai": "^4.3.7",
     "chalk": "^4.1.2",
@@ -63,7 +66,7 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "ethers": "^6.13.4",
-    "@fhevm/sdk": "^0.7.0-21",
+    "extra-bigint": "^1.1.18",
     "hardhat": "^2.22.10",
     "hardhat-deploy": "^0.11.29",
     "hardhat-gas-reporter": "^1.0.2",
@@ -75,18 +78,18 @@
     "rimraf": "^4.1.2",
     "sha3": "^2.1.4",
     "solidity-coverage": "0.8.15",
+    "sqlite3": "^5.1.7",
     "ts-generator": "^0.1.1",
     "ts-node": "^10.9.2",
     "typechain": "^8.2.0",
     "typescript": "^5.1.6",
-    "web3-validator": "^2.0.6",
-    "@openzeppelin/contracts": "^5.0.1",
-    "@zama-fhe/oracle-solidity": "^0.0.3",
-    "extra-bigint": "^1.1.18",
-    "sqlite3": "^5.1.7"
+    "web3-validator": "^2.0.6"
   },
   "optionalDependencies": {
     "solidity-comments-darwin-arm64": "0.1.1",
     "solidity-comments-linux-x64-gnu": "0.1.1"
+  },
+  "dependencies": {
+    "encrypted-types": "^0.0.4"
   }
 }

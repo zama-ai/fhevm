@@ -8,7 +8,7 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::ConfigSettings;
+use crate::{ConfigSettings, HealthStatus};
 
 sol!(
     #[sol(rpc)]
@@ -76,7 +76,17 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
     ) -> anyhow::Result<()> {
         let input_verification =
             InputVerification::new(self.input_verification_address, &self.provider);
+
         let mut from_block = self.get_last_block_num(db_pool).await?;
+
+        // We call `from_block` here, but we expect that most nodes will not honour it. That doesn't lead to issues as described below.
+        //
+        // We assume that the provider will reconnect internally if the connection is lost and stream.next() will eventually return successfully.
+        // We ensure that by requiring the `provider_max_retries` and `provider_retry_interval` to be set to high enough values in the configuration s.t. retry is essentially infinite.
+        //
+        // That might lead to skipped events, but that is acceptable for input verification requests as the client will eventually retry.
+        // Furthermore, replaying old input verification requests is unnecessary as input verification is a synchronous request/response interaction on the client side.
+        // Finally, no data on the GW will be left in an inconsistent state.
         let filter = input_verification
             .VerifyProofRequest_filter()
             .from_block(from_block)
@@ -196,5 +206,69 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         .execute(db_pool)
         .await?;
         Ok(())
+    }
+
+    /// Checks the health of the gateway listener's connections
+    pub async fn health_check(&self) -> HealthStatus {
+        let mut database_connected = false;
+        let mut blockchain_connected = false;
+        let mut error_details = Vec::new();
+
+        // Check database connection
+        let db_pool_result = PgPoolOptions::new()
+            .max_connections(self.conf.database_pool_size)
+            .connect(&self.conf.database_url)
+            .await;
+
+        match db_pool_result {
+            Ok(pool) => {
+                // Simple query to verify connection is working
+                match sqlx::query("SELECT 1").execute(&pool).await {
+                    Ok(_) => {
+                        database_connected = true;
+                    }
+                    Err(e) => {
+                        error_details.push(format!("Database query error: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                error_details.push(format!("Database connection error: {}", e));
+            }
+        }
+
+        // The provider internal retry may last a long time, so we set a timeout
+        match tokio::time::timeout(
+            self.conf.health_check_timeout,
+            self.provider.get_block_number(),
+        )
+        .await
+        {
+            Ok(Ok(block_num)) => {
+                blockchain_connected = true;
+                info!(
+                    "Blockchain connection healthy, current block: {}",
+                    block_num
+                );
+            }
+
+            Ok(Err(e)) => {
+                error_details.push(format!("Blockchain connection error: {}", e));
+            }
+            Err(_) => {
+                error_details.push("Blockchain connection timeout".to_string());
+            }
+        }
+
+        // Determine overall health status
+        if database_connected && blockchain_connected {
+            HealthStatus::healthy()
+        } else {
+            HealthStatus::unhealthy(
+                database_connected,
+                blockchain_connected,
+                error_details.join("; "),
+            )
+        }
     }
 }

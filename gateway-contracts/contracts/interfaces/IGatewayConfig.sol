@@ -26,14 +26,22 @@ interface IGatewayConfig {
      * @param mpcThreshold The MPC threshold.
      * @param kmsNodes List of KMS nodes.
      * @param coprocessors List of coprocessors.
+     * @param custodians List of custodians.
      */
-    event Initialization(
+    event InitializeGatewayConfig(
         address pauser,
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes,
-        Coprocessor[] coprocessors
+        Coprocessor[] coprocessors,
+        Custodian[] custodians
     );
+
+    /**
+     * @notice Emitted when the GatewayConfigV2 reinitialization is completed.
+     * @param custodians List of custodians.
+     */
+    event ReinitializeGatewayConfigV2(Custodian[] custodians);
 
     /**
      * @notice Emitted when the pauser address has been updated.
@@ -73,6 +81,9 @@ interface IGatewayConfig {
 
     /// @notice Error emitted when the coprocessors list is empty.
     error EmptyCoprocessors();
+
+    /// @notice Error emitted when the custodians list is empty.
+    error EmptyCustodians();
 
     /**
      * @notice Error emitted when the MPC threshold is greater or equal to the number of KMS nodes.
@@ -121,11 +132,23 @@ interface IGatewayConfig {
      */
     error NotCoprocessorTxSender(address txSenderAddress);
 
-    /*C
+    /*
      * @notice Error emitted when an address is not a coprocessor signer.
      * @param signerAddress The address that is not a coprocessor signer.
      */
     error NotCoprocessorSigner(address signerAddress);
+
+    /**
+     * @notice Error emitted when an address is not a custodian transaction sender.
+     * @param txSenderAddress The address that is not a custodian transaction sender.
+     */
+    error NotCustodianTxSender(address txSenderAddress);
+
+    /*
+     * @notice Error emitted when an address is not a custodian signer.
+     * @param signerAddress The address that is not a custodian signer.
+     */
+    error NotCustodianSigner(address signerAddress);
 
     /**
      * @notice Error emitted when a host chain is not registered.
@@ -205,6 +228,18 @@ interface IGatewayConfig {
      * @param signerAddress The address to check.
      */
     function checkIsCoprocessorSigner(address signerAddress) external view;
+
+    /**
+     * @notice Check if an address is a registered custodian transaction sender.
+     * @param txSenderAddress The address to check.
+     */
+    function checkIsCustodianTxSender(address txSenderAddress) external view;
+
+    /**
+     * @notice Check if an address is a registered custodian signer.
+     * @param signerAddress The address to check.
+     */
+    function checkIsCustodianSigner(address signerAddress) external view;
 
     /**
      * @notice Check if a chain ID corresponds to a registered host chain.
@@ -289,6 +324,24 @@ interface IGatewayConfig {
      * @return The host chains' metadata.
      */
     function getHostChains() external view returns (HostChain[] memory);
+
+    /**
+     * @notice Get the metadata of the custodian with the given transaction sender address.
+     * @return The custodian's metadata.
+     */
+    function getCustodian(address custodianTxSender) external view returns (Custodian memory);
+
+    /**
+     * @notice Get the list of all custodians' transaction sender addresses currently registered.
+     * @return The list of custodians' transaction sender addresses.
+     */
+    function getCustodianTxSenders() external view returns (address[] memory);
+
+    /**
+     * @notice Get the list of all custodians' signer addresses currently registered.
+     * @return The list of custodians' signer addresses.
+     */
+    function getCustodianSigners() external view returns (address[] memory);
 
     /**
      * @notice Returns the versions of the GatewayConfig contract in SemVer format.

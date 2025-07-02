@@ -14,6 +14,9 @@ node_modules
 /coverage
 /coverage.json
 
+# Proxy contract addresses
+/addresses
+
 # Hardhat Ignition default folder for deployments against a local node
 ignition/deployments/chain-31337
 
@@ -24,3 +27,4 @@ ignition/deployments/chain-31337
 /out
 lcov.info
 /report
+lib/forge-std

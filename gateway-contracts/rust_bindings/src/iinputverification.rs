@@ -298,6 +298,7 @@ pub mod IInputVerification {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyRejected(uint256,address,address)` and selector `0x2fa73174`.
 ```solidity
@@ -394,6 +395,7 @@ error CoprocessorAlreadyRejected(uint256 zkProofId, address txSender, address si
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyVerified(uint256,address,address)` and selector `0xf9ed431f`.
 ```solidity
@@ -490,6 +492,7 @@ error CoprocessorAlreadyVerified(uint256 zkProofId, address txSender, address si
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ProofNotRejected(uint256)` and selector `0x3acd4253`.
 ```solidity
@@ -564,6 +567,7 @@ error ProofNotRejected(uint256 zkProofId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ProofNotVerified(uint256)` and selector `0xc579a791`.
 ```solidity
@@ -638,6 +642,7 @@ error ProofNotVerified(uint256 zkProofId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `RejectProofResponse(uint256)` and selector `0xe465e141fa8abd95ab7e0855543307f8506ab0170ef664420fb71ab7de0183de`.
 ```solidity
@@ -744,6 +749,7 @@ event RejectProofResponse(uint256 indexed zkProofId);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `VerifyProofRequest(uint256,uint256,address,address,bytes)` and selector `0x18548e08c36e87f31f540ad85cfda94cfd6f63b059c4cd8a0b7eb1ea419083f2`.
 ```solidity
@@ -886,6 +892,7 @@ event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChai
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `VerifyProofResponse(uint256,bytes32[],bytes[])` and selector `0xfe2c43585786a5a658d2ec5df5dea3fb3385b77c94f60f724ff810896f419835`.
 ```solidity
@@ -1014,6 +1021,7 @@ event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkProofRejected(uint256)` and selector `0x1814ae89`.
 ```solidity
@@ -1144,6 +1152,7 @@ function checkProofRejected(uint256 zkProofId) external view;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkProofVerified(uint256)` and selector `0x5a5174eb`.
 ```solidity
@@ -1274,6 +1283,7 @@ function checkProofVerified(uint256 zkProofId) external view;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
@@ -1282,6 +1292,7 @@ function getVersion() external pure returns (string memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall {}
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -1395,6 +1406,7 @@ function getVersion() external pure returns (string memory);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `rejectProofResponse(uint256)` and selector `0x12fe7315`.
 ```solidity
@@ -1525,6 +1537,7 @@ function rejectProofResponse(uint256 zkProofId) external;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `verifyProofRequest(uint256,address,address,bytes)` and selector `0x954d2712`.
 ```solidity
@@ -1693,6 +1706,7 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `verifyProofResponse(uint256,bytes32[],bytes)` and selector `0xbebd1e6a`.
 ```solidity
@@ -1856,6 +1870,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         }
     };
     ///Container for all the [`IInputVerification`](self) function calls.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum IInputVerificationCalls {
         #[allow(missing_docs)]
@@ -2100,6 +2115,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         }
     }
     ///Container for all the [`IInputVerification`](self) custom errors.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IInputVerificationErrors {
         #[allow(missing_docs)]
@@ -2286,6 +2302,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         }
     }
     ///Container for all the [`IInputVerification`](self) events.
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IInputVerificationEvents {
         #[allow(missing_docs)]

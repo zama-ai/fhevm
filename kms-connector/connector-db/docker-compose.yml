@@ -1,0 +1,33 @@
+name: kms-connector-db
+
+services:
+  kms-connector-db:
+    container_name: kms-connector-db
+    image: postgres:17.5
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - db:/var/lib/postgresql/data
+
+  kms-connector-db-migration:
+    container_name: db-migration
+    build:
+      context: ..
+      dockerfile: connector-db/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@kms-connector-db:5432/kms-connector
+    depends_on:
+      kms-connector-db:
+        condition: service_healthy
+
+volumes:
+  db:

@@ -4,10 +4,10 @@ import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
 import { kmsManagementAddress } from "../addresses/KmsManagementAddress.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
 import "./interfaces/IKmsManagement.sol";
+import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
 import "./libraries/HandleOps.sol";
@@ -19,7 +19,7 @@ import "./libraries/HandleOps.sol";
 contract CiphertextCommits is
     ICiphertextCommits,
     Ownable2StepUpgradeable,
-    UUPSUpgradeable,
+    UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
     Pausable
 {
@@ -36,6 +36,10 @@ contract CiphertextCommits is
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
+
+    /// Constant used for making sure the version number using in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.CiphertextCommits
@@ -76,7 +80,8 @@ contract CiphertextCommits is
      * @notice  Initializes the contract.
      * @dev This function needs to be public in order to be called by the UUPS proxy.
      */
-    function initialize() public virtual reinitializer(2) {
+    /// @custom:oz-upgrades-validate-as-initializer
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __Pausable_init();
     }

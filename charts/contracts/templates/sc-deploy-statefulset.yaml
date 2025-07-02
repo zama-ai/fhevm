@@ -25,6 +25,25 @@ spec:
     spec:
       securityContext:
         {{- toYaml .Values.scDeploy.securityContext | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: copy-old-contracts
+          image: {{ .Values.scUpgrade.oldContracts.image.name }}:{{ .Values.scUpgrade.oldContracts.image.tag }}
+          command: ["cp", "-r", "/app/contracts/.", "/app/oldContracts"]
+          volumeMounts:
+            - mountPath: /app/oldContracts
+              name: old-contracts
       containers:
         - name: debug
           image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}
@@ -33,15 +52,20 @@ spec:
           env:
           {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
           - name: MANIFEST_DEFAULT_DIR
-            value: "/app/cache/.openzeppelin"
+            value: "/app/addresses/.openzeppelin"
           {{ toYaml .Values.scDeploy.env | nindent 10 }}
           {{- end }}
           volumeMounts:
             - mountPath: /app/deploy-contracts.sh
               subPath: deploy-contracts.sh
               name: config
+            - mountPath: /app/upgrade-contracts.sh
+              subPath: upgrade-contracts.sh
+              name: config
+            - mountPath: /app/oldContracts
+              name: old-contracts
             {{- if .Values.persistence.enabled }}
-            - mountPath: /app/cache
+            - mountPath: /app/addresses
               name: persistence
             {{- end }}
           resources:
@@ -61,6 +85,8 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "scVolumeName" . }}
       {{- end }}
+        - name: old-contracts
+          emptyDir: {}
       imagePullSecrets:
         - name: registry-credentials
 {{- end }}

@@ -1,18 +1,30 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use alloy::{
     network::EthereumWallet,
     primitives::Address,
     providers::{ProviderBuilder, WsConnect},
-    signers::local::PrivateKeySigner,
+    signers::{aws::AwsSigner, local::PrivateKeySigner, Signer},
     transports::http::reqwest::Url,
 };
-use clap::Parser;
+use anyhow::Context;
+use aws_config::BehaviorVersion;
+use clap::{Parser, ValueEnum};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
+use tracing::{error, info, Level};
 use transaction_sender::{
-    ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
+    get_chain_id, http_server::HttpServer, make_abstract_signer, AbstractSigner, ConfigSettings,
+    FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
+
+use humantime::parse_duration;
+
+#[derive(Parser, Debug, Clone, ValueEnum)]
+enum SignerType {
+    PrivateKey,
+    AwsKms,
+}
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -29,8 +41,11 @@ struct Conf {
     #[arg(short, long)]
     gateway_url: Url,
 
+    #[arg(short, long, value_enum, default_value = "private-key")]
+    signer_type: SignerType,
+
     #[arg(short, long)]
-    private_key: String,
+    private_key: Option<String>,
 
     #[arg(short, long)]
     database_url: Option<String>,
@@ -84,7 +99,29 @@ struct Conf {
     required_txn_confirmations: u16,
 
     #[arg(long, default_value = "30")]
-    review_after_transport_retries: u16,
+    review_after_unlimited_retries: u16,
+
+    #[arg(long, default_value = "1000000")]
+    provider_max_retries: u32,
+
+    #[arg(long, default_value = "4s", value_parser = parse_duration)]
+    provider_retry_interval: Duration,
+
+    /// HTTP server port for health checks
+    #[arg(long, default_value_t = 8080)]
+    health_check_port: u16,
+
+    #[arg(long, default_value = "4s", value_parser = parse_duration)]
+    health_check_timeout: Duration,
+
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(Level),
+        default_value_t = Level::INFO)]
+    log_level: Level,
+
+    #[arg(long, default_value = "120", value_parser = clap::value_parser!(u32).range(100..))]
+    gas_limit_overprovision_percent: u32,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -102,53 +139,138 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().json().with_level(true).init();
     let conf = Conf::parse();
-    let signer = PrivateKeySigner::from_str(conf.private_key.trim())?;
-    let wallet = EthereumWallet::new(signer.clone());
-    let database_url = conf
-        .database_url
-        .clone()
-        .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
+
+    tracing_subscriber::fmt()
+        .json()
+        .with_level(true)
+        .with_max_level(conf.log_level)
+        .init();
+
+    let chain_id = get_chain_id(conf.gateway_url.clone(), conf.provider_retry_interval).await;
+    let abstract_signer: AbstractSigner;
+    match conf.signer_type {
+        SignerType::PrivateKey => {
+            if conf.private_key.is_none() {
+                error!("Private key is required for PrivateKey signer");
+                return Err(anyhow::anyhow!(
+                    "Private key is required for PrivateKey signer"
+                ));
+            }
+            let mut signer = PrivateKeySigner::from_str(conf.private_key.unwrap().trim())?;
+            signer.set_chain_id(Some(chain_id));
+            abstract_signer = make_abstract_signer(signer);
+        }
+        SignerType::AwsKms => {
+            let key_id = std::env::var("AWS_KEY_ID")
+                .context("AWS_KEY_ID environment variable is required for AwsKms signer")?;
+            let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
+            let aws_kms_client = aws_sdk_kms::Client::new(&aws_conf);
+            let signer = AwsSigner::new(aws_kms_client, key_id, Some(chain_id)).await?;
+            abstract_signer = make_abstract_signer(signer);
+        }
+    }
+    let wallet = EthereumWallet::new(abstract_signer.clone());
+    let database_url = match conf.database_url.clone() {
+        Some(url) => url,
+        None => std::env::var("DATABASE_URL").context("DATABASE_URL is undefined")?,
+    };
     let cancel_token = CancellationToken::new();
-    let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
+
+    let provider = loop {
+        match ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet.clone())
-            .on_ws(WsConnect::new(conf.gateway_url))
-            .await?,
-        Some(wallet.default_signer().address()),
+            .connect_ws(
+                WsConnect::new(conf.gateway_url.clone())
+                    .with_max_retries(conf.provider_max_retries)
+                    .with_retry_interval(conf.provider_retry_interval),
+            )
+            .await
+        {
+            Ok(inner_provider) => {
+                info!("Connected to Gateway at {}", conf.gateway_url);
+                break NonceManagedProvider::new(
+                    inner_provider,
+                    Some(wallet.default_signer().address()),
+                );
+            }
+            Err(e) => {
+                error!(
+                    "Failed to connect to Gateway at {} on startup: {}, retrying in {:?}",
+                    conf.gateway_url, e, conf.provider_retry_interval
+                );
+                tokio::time::sleep(conf.provider_retry_interval).await;
+            }
+        }
+    };
+
+    let config = ConfigSettings {
+        database_url,
+        database_pool_size: conf.database_pool_size,
+        verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
+        add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
+        allow_handle_db_channel: conf.allow_handle_database_channel,
+        verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
+        verify_proof_resp_max_retries: conf.verify_proof_resp_max_retries,
+        verify_proof_remove_after_max_retries: conf.verify_proof_remove_after_max_retries,
+        add_ciphertexts_batch_limit: conf.add_ciphertexts_batch_limit,
+        db_polling_interval_secs: conf.database_polling_interval_secs,
+        error_sleep_initial_secs: conf.error_sleep_initial_secs,
+        error_sleep_max_secs: conf.error_sleep_max_secs,
+        add_ciphertexts_max_retries: conf.add_ciphertexts_max_retries,
+        allow_handle_batch_limit: conf.allow_handle_batch_limit,
+        allow_handle_max_retries: conf.allow_handle_max_retries,
+        txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
+        required_txn_confirmations: conf.required_txn_confirmations,
+        review_after_unlimited_retries: conf.review_after_unlimited_retries,
+        health_check_port: conf.health_check_port,
+        health_check_timeout: conf.health_check_timeout,
+        gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
+    };
+
+    let transaction_sender = std::sync::Arc::new(
+        TransactionSender::new(
+            conf.input_verification_address,
+            conf.ciphertext_commits_address,
+            conf.multichain_acl_address,
+            abstract_signer,
+            provider,
+            cancel_token.clone(),
+            config.clone(),
+            None,
+        )
+        .await?,
     );
-    let sender = TransactionSender::new(
-        conf.input_verification_address,
-        conf.ciphertext_commits_address,
-        conf.multichain_acl_address,
-        signer,
-        provider,
+
+    let http_server = HttpServer::new(
+        transaction_sender.clone(),
+        conf.health_check_port,
         cancel_token.clone(),
-        ConfigSettings {
-            database_url,
-            database_pool_size: conf.database_pool_size,
-            verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
-            add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
-            allow_handle_db_channel: conf.allow_handle_database_channel,
-            verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
-            verify_proof_resp_max_retries: conf.verify_proof_resp_max_retries,
-            verify_proof_remove_after_max_retries: conf.verify_proof_remove_after_max_retries,
-            add_ciphertexts_batch_limit: conf.add_ciphertexts_batch_limit,
-            db_polling_interval_secs: conf.database_polling_interval_secs,
-            error_sleep_initial_secs: conf.error_sleep_initial_secs,
-            error_sleep_max_secs: conf.error_sleep_max_secs,
-            add_ciphertexts_max_retries: conf.add_ciphertexts_max_retries,
-            allow_handle_batch_limit: conf.allow_handle_batch_limit,
-            allow_handle_max_retries: conf.allow_handle_max_retries,
-            txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
-            required_txn_confirmations: conf.required_txn_confirmations,
-            review_after_transport_retries: conf.review_after_transport_retries,
-        },
-        None,
-    )
-    .await?;
-    install_signal_handlers(cancel_token)?;
-    sender.run().await
+    );
+
+    install_signal_handlers(cancel_token.clone())?;
+
+    info!(
+        health_check_port = conf.health_check_port,
+        conf = ?config,
+        "Transaction sender and HTTP health check server starting"
+    );
+
+    // Run both services concurrently
+    let (sender_result, http_result) = tokio::join!(transaction_sender.run(), http_server.start());
+
+    // Check results
+    if let Err(e) = sender_result {
+        error!("Transaction sender error: {}", e);
+        return Err(e);
+    }
+
+    if let Err(e) = http_result {
+        error!("HTTP server error: {}", e);
+        return Err(e);
+    }
+
+    info!("Transaction sender and HTTP server stopped gracefully");
+    Ok(())
 }

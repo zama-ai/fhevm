@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio::sync::watch::Receiver;
+use tracing::Level;
 
 pub struct TestInstance {
     // just to destroy container
@@ -102,6 +103,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         maximimum_compact_inputs_upload: 10,
         coprocessor_private_key: "./coprocessor.key".to_string(),
         service_name: "coprocessor".to_string(),
+        log_level: Level::INFO,
     };
 
     std::thread::spawn(move || {

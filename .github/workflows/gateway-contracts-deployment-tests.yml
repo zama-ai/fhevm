@@ -1,4 +1,4 @@
-name: Fhevm Gateway Contracts Deployment Tests
+name: gateway-contracts-deployment-tests
 
 on:
   pull_request:
@@ -9,6 +9,7 @@ concurrency:
 
 jobs:
   check-changes:
+    name: gateway-contracts-deploymenent-tests/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -18,28 +19,25 @@ jobs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
         id: filter
         with:
           filters: |
             gw-contracts:
               - .github/workflows/gateway-contracts-deployment-tests.yml
-              - gateway-contracts/contracts/**
-              - gateway-contracts/tasks/**
-              - gateway-contracts/package*.json
-              - gateway-contracts/hardhat.config.ts
-              - gateway-contracts/tsconfig.json
-              - gateway-contracts/Dockerfile
-              - gateway-contracts/docker-compose.yml
-              - gateway-contracts/Makefile
-  fhevm-gateway-sc-deploy:
-    name: Fhevm Gateway Contracts Deployment Tests
+              - gateway-contracts/**
+  sc-deploy:
+    name: gateway-contracts-deployment-tests/sc-deploy (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
       - name: Login to Docker Registry
@@ -98,6 +96,6 @@ jobs:
           make docker-compose-down
 
 permissions:
-  contents: read
-  checks: write
-  packages: read
+  contents: 'read'
+  checks: 'write'
+  packages: 'read'

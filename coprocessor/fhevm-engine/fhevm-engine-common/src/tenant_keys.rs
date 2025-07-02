@@ -1,4 +1,5 @@
 use crate::utils::safe_deserialize_key;
+use bytesize::ByteSize;
 use sqlx::{
     postgres::{types::Oid, PgRow},
     PgPool, Row,
@@ -13,10 +14,7 @@ pub struct TfheTenantKeys {
     pub acl_contract_address: String,
     pub sks: tfhe::ServerKey,
 
-    // only used in tests, that's why we put dead_code
-    #[allow(dead_code)]
     pub pks: tfhe::CompactPublicKey,
-    #[allow(dead_code)]
     pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
 }
 
@@ -256,6 +254,9 @@ pub async fn read_large_object_in_chunks(
 
     let mut bytes = Vec::with_capacity(capacity);
 
+    let mut timestamp = std::time::Instant::now();
+    let started_at = std::time::Instant::now();
+
     loop {
         let chunk = sqlx::query("SELECT loread($1, $2)")
             .bind(fd)
@@ -276,12 +277,33 @@ pub async fn read_large_object_in_chunks(
                 break;
             }
         }
+
+        // Log progress every 10 seconds
+        if timestamp.elapsed().as_secs() > 10 {
+            // calculate the bandwidth of the read operation
+            let elapsed = started_at.elapsed().as_secs();
+            let bandwidth = if elapsed > 0 {
+                bytes.len() as u64 / elapsed
+            } else {
+                bytes.len() as u64
+            };
+
+            info!(
+                "Read {} bytes so far from large object (Oid: {:?}), bandwidth: {}/s",
+                ByteSize::b(bytes.len() as u64),
+                large_object_oid,
+                ByteSize::b(bandwidth)
+            );
+
+            timestamp = std::time::Instant::now();
+        }
     }
 
     info!(
-        "End of large object ({:?}) reached, result length: {}",
+        "End of large object ({:?}) reached, result length: {}, elapsed: {}",
         large_object_oid,
-        bytes.len()
+        ByteSize::b(bytes.len() as u64),
+        started_at.elapsed().as_secs()
     );
 
     let _ = sqlx::query("SELECT lo_close($1)")
