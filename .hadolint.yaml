@@ -3,4 +3,9 @@ ignored:
   - DL3007
   - DL3008
   - DL3018
+  - DL4006ignored:
+  - DL3002
+  - DL3007
+  - DL3008
+  - DL3018
   - DL4006
