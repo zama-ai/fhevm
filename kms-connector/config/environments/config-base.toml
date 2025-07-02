@@ -72,6 +72,14 @@ channel_size = 1000
 # ENV: KMS_CONNECTOR_PRIVATE_KEY
 private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 
+# The limit number of events to fetch from the database (optional, defaults to 10)
+# ENV: KMS_CONNECTOR_EVENTS_BATCH_SIZE
+# events_batch_size = 10
+
+# Number of retries for GRPC requests sent to the KMS Core (optional, defaults to 3)
+# ENV: KMS_CONNECTOR_GRPC_REQUEST_RETRIES
+# grpc_request_retries = 3
+
 # Timeout to get public decryption responses from KMS Core in seconds (optional, defaults to 300s / 5min)
 # ENV: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
 # public_decryption_timeout_secs = 300
@@ -80,9 +88,9 @@ private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 # ENV: KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS
 # user_decryption_timeout_secs = 300
 
-# Retry interval for GRPC requests to the KMS Core in seconds (optional, defaults to 5s)
-# ENV: KMS_CONNECTOR_GRPC_RETRY_INTERVAL_SECS
-# grpc_retry_interval_secs = 5
+# Retry interval to poll GRPC responses from KMS Core in seconds (optional, defaults to 5s)
+# ENV: KMS_CONNECTOR_GRPC_POLL_INTERVAL_SECS
+# grpc_poll_interval_secs = 5
 
 # Number of retries for S3 ciphertext retrieval (optional, default: 3).
 # ENV: KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES

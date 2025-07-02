@@ -224,7 +224,7 @@ where
         for sns_material in sns_materials {
             // Get S3 URL and retrieve ciphertext
             // 1. For each SNS material, we try to retrieve its ciphertext from multiple possible S3 URLs
-            //    1.1. We try to fetch the ciphertext for `self.s3_ct_retrieval_retries` times fo each S3 URL
+            //    1.1. We try to fetch the ciphertext for `self.s3_ct_retrieval_retries` times for each S3 URL
             // 2. Once we successfully retrieve a ciphertext from any of those URLs, we break out of the S3 URLs loop
             // 3. Then we continue processing the next SNS material in the outer loop
             let s3_urls = self
