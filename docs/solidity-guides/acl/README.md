@@ -58,7 +58,7 @@ Developers can use functions like `allow`, `allowThis`, and `allowTransient` to 
 To check if an entity has permission to access a ciphertext, use functions like `isAllowed` or `isSenderAllowed`:
 
 - **`isAllowed`**: Verifies if a specific address has permission.
-- **`isSenderAllowed`**: Simplifies checks for the current transaction sender.
+- **`isSenderAllowed`**: Simplifies checks for the current transaction sender
 
 ## Practical uses of the ACL
 
