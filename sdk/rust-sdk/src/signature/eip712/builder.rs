@@ -284,7 +284,7 @@ impl Eip712SignatureBuilder {
         let domain = alloy::sol_types::eip712_domain! {
             name: "Decryption",
             version: "1",
-            chain_id: self.config.gateway_chain_id,
+            chain_id: self.config.contracts_chain_id,
             verifying_contract: self.config.verifying_contract,
         };
 
