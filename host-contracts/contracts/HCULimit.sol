@@ -53,6 +53,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     /// @dev This is the maximum number of homomorphic complexity units that can be used in a single transaction.
     uint256 private constant MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000;
 
+    /// Constant used for making sure the version number using in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 3;
+
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCULimitStorageLocation =
         0xc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad6500;
@@ -66,14 +70,14 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      * @notice  Initializes the contract.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(3) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
     }
 
     /**
      * @notice Re-initializes the contract from V1.
      */
-    function reinitializeV2() public virtual reinitializer(3) {}
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Check the homomorphic complexity units limit for FheAdd.
