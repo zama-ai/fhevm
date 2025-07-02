@@ -108,5 +108,5 @@ prerelease:
 	git add ./rust_bindings && git commit --amend --no-edit
 
 # Get the size of the contracts
-get-contracts-sized: 
+get-contracts-sized:
 	forge build --sizes

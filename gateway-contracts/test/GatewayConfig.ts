@@ -423,10 +423,22 @@ describe("GatewayConfig", function () {
         }
       });
 
+      it("Should not be registered as coprocessors transaction senders", async function () {
+        await expect(gatewayConfig.checkIsCoprocessorTxSender(hre.ethers.ZeroAddress))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+          .withArgs(hre.ethers.ZeroAddress);
+      });
+
       it("Should be registered as coprocessors signers", async function () {
         for (const coprocessorSigner of coprocessorSigners) {
           await expect(gatewayConfig.checkIsCoprocessorSigner(coprocessorSigner.address)).to.not.be.reverted;
         }
+      });
+
+      it("Should not be registered as coprocessors signers", async function () {
+        await expect(gatewayConfig.checkIsCoprocessorSigner(hre.ethers.ZeroAddress))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCoprocessorSigner")
+          .withArgs(hre.ethers.ZeroAddress);
       });
 
       it("Should be registered as custodian transaction senders", async function () {
@@ -435,10 +447,22 @@ describe("GatewayConfig", function () {
         }
       });
 
+      it("Should not be registered as custodian transaction senders", async function () {
+        await expect(gatewayConfig.checkIsCustodianTxSender(hre.ethers.ZeroAddress))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCustodianTxSender")
+          .withArgs(hre.ethers.ZeroAddress);
+      });
+
       it("Should be registered as custodian signers", async function () {
         for (const custodianSigner of custodianSigners) {
           await expect(gatewayConfig.checkIsCustodianSigner(custodianSigner.address)).to.not.be.reverted;
         }
+      });
+
+      it("Should be registered as custodian signers", async function () {
+        await expect(gatewayConfig.checkIsCustodianSigner(hre.ethers.ZeroAddress))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCustodianSigner")
+          .withArgs(hre.ethers.ZeroAddress);
       });
 
       it("Should be registered as host chains", async function () {
