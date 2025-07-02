@@ -1,3 +1,6 @@
-{
+git init
+echo "Hello Zama" > readme.md
+git add .
+git commit -m "Commit 4"{
   "extends": ["@commitlint/config-conventional"]
 }
