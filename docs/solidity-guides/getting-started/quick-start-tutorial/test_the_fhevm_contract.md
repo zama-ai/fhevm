@@ -484,3 +484,6 @@ By now, your project should include the following files:
 
 - [`contracts/FHECounter.sol`](https://docs.zama.ai/protocol/examples#tab-fhecounter.sol) — your Solidity smart contract
 - [`test/FHECounter.ts`](https://docs.zama.ai/protocol/examples#tab-fhecounter.ts) — your Hardhat test suite written in TypeScript
+
+## Next step
+If you would like to deploy your project on the testnet, or learn more about using FHEVM Hardhat Plugin, head to [Deploy contracts and run tests](../../hardhat/run_test.md).
