@@ -56,7 +56,7 @@ FHEVM ensures both confidentiality and composability, with the following guarant
   - [FAQ](#faq)
 - [Support](#support)
   <br></br>
-### Project structure
+## Project structure
 The directories of this repository are organized in the following way:
 
 ###### FHEVM Contracts
