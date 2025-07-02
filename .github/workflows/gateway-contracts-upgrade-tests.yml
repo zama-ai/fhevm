@@ -51,8 +51,6 @@ jobs:
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
-            const semver = require('semver');
-
             // Get the target branch on PRs or the current branch on pushes (e.g. to main)
             const targetBranch = context.payload.pull_request?.base?.ref || context.ref.replace('refs/heads/', '');
             const isReleaseBranch = /^release\/(\d+)\.(\d+)\.x$/.exec(targetBranch);
