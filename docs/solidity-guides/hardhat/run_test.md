@@ -10,6 +10,12 @@ The FHEVM Hardhat plugin provides three **FHEVM runtime modes** tailored for dif
 
 3. The **Sepolia Testnet** network: 🔐 _Uses real encryption._ Use this mode once your contract logic is stable and validated locally. This is the only mode that runs on the full FHEVM stack with **real encrypted values**. It simulates real-world production conditions but is slower and requires Sepolia ETH.
 
+{% hint style="success" %}
+**Zama Protocol** is not a confidential blockchain itself. It is a protocol that enables you to run confidential smart contracts on existing blockchains (such as Ethereum, Base, and others) with the support of encrypted types.
+
+Currently, **Zama Protocol** is available on the **Sepolia testnet**. Support for additional chains will be added in the future. [See the roadmap↗](https://docs.zama.ai/protocol/zama-protocol-litepaper#roadmap)
+{% endhint %}
+
 ### Summary
 
 | Mode              | Encryption         | Persistent | Chain     | Speed          | Usage                                             |
