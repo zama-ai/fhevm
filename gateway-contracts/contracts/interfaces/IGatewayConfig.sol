@@ -320,6 +320,12 @@ interface IGatewayConfig {
     function getCoprocessorSigners() external view returns (address[] memory);
 
     /**
+     * @notice Get the metadata of the host chain with the given index.
+     * @return The host chain's metadata.
+     */
+    function getHostChain(uint256 index) external view returns (HostChain memory);
+
+    /**
      * @notice Get the metadata of all the registered host chains.
      * @return The host chains' metadata.
      */

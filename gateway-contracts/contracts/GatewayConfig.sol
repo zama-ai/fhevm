@@ -377,6 +377,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         return $.coprocessorSignerAddresses;
     }
 
+    /// @dev See {IGatewayConfig-getHostChain}.
+    function getHostChain(uint256 index) external view virtual returns (HostChain memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.hostChains[index];
+    }
+
     /// @dev See {IGatewayConfig-getHostChains}.
     function getHostChains() external view virtual returns (HostChain[] memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();

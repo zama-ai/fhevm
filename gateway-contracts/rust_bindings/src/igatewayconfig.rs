@@ -74,6 +74,7 @@ interface IGatewayConfig {
     function getCustodian(address custodianTxSender) external view returns (Custodian memory);
     function getCustodianSigners() external view returns (address[] memory);
     function getCustodianTxSenders() external view returns (address[] memory);
+    function getHostChain(uint256 index) external view returns (HostChain memory);
     function getHostChains() external view returns (HostChain[] memory);
     function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
     function getKmsSigners() external view returns (address[] memory);
@@ -358,6 +359,52 @@ interface IGatewayConfig {
         "name": "",
         "type": "address[]",
         "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getHostChain",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct HostChain",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "fhevmExecutorAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "aclAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "website",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
       }
     ],
     "stateMutability": "view"
@@ -6514,6 +6561,140 @@ function getCustodianTxSenders() external view returns (address[] memory);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getHostChain(uint256)` and selector `0xd10f7ff9`.
+```solidity
+function getHostChain(uint256 index) external view returns (HostChain memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getHostChainCall {
+        #[allow(missing_docs)]
+        pub index: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getHostChain(uint256)`](getHostChainCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getHostChainReturn {
+        #[allow(missing_docs)]
+        pub _0: <HostChain as alloy::sol_types::SolType>::RustType,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getHostChainCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getHostChainCall) -> Self {
+                    (value.index,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getHostChainCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { index: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (HostChain,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                <HostChain as alloy::sol_types::SolType>::RustType,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getHostChainReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getHostChainReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getHostChainReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getHostChainCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getHostChainReturn;
+            type ReturnTuple<'a> = (HostChain,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getHostChain(uint256)";
+            const SELECTOR: [u8; 4] = [209u8, 15u8, 127u8, 249u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.index),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getHostChains()` and selector `0x2585bb65`.
 ```solidity
 function getHostChains() external view returns (HostChain[] memory);
@@ -8358,6 +8539,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         getCustodianTxSenders(getCustodianTxSendersCall),
         #[allow(missing_docs)]
+        getHostChain(getHostChainCall),
+        #[allow(missing_docs)]
         getHostChains(getHostChainsCall),
         #[allow(missing_docs)]
         getKmsNode(getKmsNodeCall),
@@ -8421,6 +8604,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
             [203u8, 90u8, 167u8, 233u8],
             [203u8, 102u8, 23u8, 85u8],
             [205u8, 180u8, 194u8, 185u8],
+            [209u8, 15u8, 127u8, 249u8],
             [227u8, 178u8, 168u8, 116u8],
             [235u8, 132u8, 60u8, 246u8],
             [239u8, 105u8, 151u8, 249u8],
@@ -8430,7 +8614,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     impl alloy_sol_types::SolInterface for IGatewayConfigCalls {
         const NAME: &'static str = "IGatewayConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 29usize;
+        const COUNT: usize = 30usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -8478,6 +8662,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::getCustodianTxSenders(_) => {
                     <getCustodianTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getHostChain(_) => {
+                    <getHostChainCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getHostChains(_) => {
                     <getHostChainsCall as alloy_sol_types::SolCall>::SELECTOR
@@ -8881,6 +9068,19 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     checkIsCoprocessorSigner
                 },
                 {
+                    fn getHostChain(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IGatewayConfigCalls::getHostChain)
+                    }
+                    getHostChain
+                },
+                {
                     fn getKmsNode(
                         data: &[u8],
                         validate: bool,
@@ -9005,6 +9205,11 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::getCustodianTxSenders(inner) => {
                     <getCustodianTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getHostChain(inner) => {
+                    <getHostChainCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -9163,6 +9368,12 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::getCustodianTxSenders(inner) => {
                     <getCustodianTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getHostChain(inner) => {
+                    <getHostChainCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -10433,6 +10644,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::SolCallBuilder<T, &P, getCustodianTxSendersCall, N> {
             self.call_builder(&getCustodianTxSendersCall {})
+        }
+        ///Creates a new call builder for the [`getHostChain`] function.
+        pub fn getHostChain(
+            &self,
+            index: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<T, &P, getHostChainCall, N> {
+            self.call_builder(&getHostChainCall { index })
         }
         ///Creates a new call builder for the [`getHostChains`] function.
         pub fn getHostChains(
