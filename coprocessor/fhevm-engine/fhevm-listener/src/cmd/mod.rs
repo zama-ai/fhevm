@@ -38,11 +38,11 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub ignore_acl_events: bool,
 
-    #[arg(long, default_value = None)]
-    pub acl_contract_address: Option<String>,
+    #[arg(long)]
+    pub acl_contract_address: String,
 
-    #[arg(long, default_value = None)]
-    pub tfhe_contract_address: Option<String>,
+    #[arg(long)]
+    pub tfhe_contract_address: String,
 
     #[arg(
         long,
@@ -129,13 +129,13 @@ enum LogOrBlockTimeout {
 impl InfiniteLogIter {
     fn new(args: &Args, health: HealthState) -> Self {
         let mut contract_addresses = vec![];
-        if let Some(acl_contract_address) = &args.acl_contract_address {
+        if !args.acl_contract_address.is_empty() {
             contract_addresses
-                .push(Address::from_str(acl_contract_address).unwrap());
+                .push(Address::from_str(&args.acl_contract_address).unwrap());
         };
-        if let Some(tfhe_contract_address) = &args.tfhe_contract_address {
+        if !args.tfhe_contract_address.is_empty() {
             contract_addresses
-                .push(Address::from_str(tfhe_contract_address).unwrap());
+                .push(Address::from_str(&args.tfhe_contract_address).unwrap());
         };
         Self {
             url: args.url.clone(),
@@ -445,19 +445,23 @@ impl InfiniteLogIter {
 pub async fn main(args: Args) {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
-    if let Some(acl_contract_address) = &args.acl_contract_address {
-        if let Err(err) = Address::from_str(acl_contract_address) {
-            // TODO: remove panic and, instead, propagate the error
-            error!(error = %err, "Invalid ACL contract address");
-            panic!("Invalid acl contract address: {err}");
-        };
+    if args.acl_contract_address.is_empty() {
+        error!("--acl-contract-address cannot be empty");
+        #[cfg(not(debug_assertions))] // if release code abort
+        panic!("--acl-contract-address cannot be empty");
+    } else if let Err(err) = Address::from_str(&args.acl_contract_address) {
+        // TODO: remove panic and, instead, propagate the error
+        error!(error = %err, "Invalid ACL contract address");
+        panic!("Invalid acl contract address: {err}");
     };
-    if let Some(tfhe_contract_address) = &args.tfhe_contract_address {
-        if let Err(err) = Address::from_str(tfhe_contract_address) {
-            // TODO: remove panic and, instead, propagate the error
-            error!(error = %err, "Invalid TFHE contract address");
-            panic!("Invalid TFHE contract address: {err}");
-        };
+    if args.tfhe_contract_address.is_empty() {
+        error!("--tfhe-contract-address cannot be empty");
+        #[cfg(not(debug_assertions))] // if release code abort
+        panic!("--tfhe-contract-address cannot be empty");
+    } else if let Err(err) = Address::from_str(&args.tfhe_contract_address) {
+        // TODO: remove panic and, instead, propagate the error
+        error!(error = %err, "Invalid TFHE contract address");
+        panic!("Invalid TFHE contract address: {err}");
     }
 
     let cancel_token = CancellationToken::new();

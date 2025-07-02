@@ -62,7 +62,7 @@ on:
     secrets:
       BLOCKCHAIN_ACTIONS_TOKEN:
         required: true
-      NPM_TOKEN:
+      FHEVM_NPM_TOKEN:
         required: false
       AWS_ACCESS_KEY_S3_USER:
         required: true
@@ -367,7 +367,7 @@ jobs:
         if: ${{ inputs.npm-release }}
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
-          token: ${{ secrets.NPM_TOKEN }}
+          token: ${{ secrets.FHEVM_NPM_TOKEN }}
           package: ./core/service/pkg/package.json
           dry-run: false
           provenance: false # change to true when repo is public (see #1048)
@@ -387,7 +387,7 @@ jobs:
         if: ${{ inputs.npm-release }}
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
-          token: ${{ secrets.NPM_TOKEN }}
+          token: ${{ secrets.FHEVM_NPM_TOKEN }}
           package: ./core/service/pkg/package.json
           dry-run: false
           provenance: false # change to true when repo is public (see #1048)

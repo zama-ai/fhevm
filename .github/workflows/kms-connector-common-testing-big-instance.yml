@@ -67,7 +67,7 @@ on:
         required: true
       BLOCKCHAIN_ACTIONS_TOKEN:
         required: true
-      NPM_TOKEN:
+      FHEVM_NPM_TOKEN:
         required: false
       AWS_ACCESS_KEY_S3_USER:
         required: true
@@ -101,7 +101,7 @@ jobs:
     uses: ./.github/workflows/kms-connector-common-testing.yml
     secrets:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      FHEVM_NPM_TOKEN: ${{ secrets.FHEVM_NPM_TOKEN }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
     with:
