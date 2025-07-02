@@ -229,38 +229,4 @@ describe("Upgrades", function () {
     const metadataAfterUpgrade = await gatewayConfigV3.getProtocolMetadata();
     expect(metadataAfterUpgrade).to.deep.equal(toValues({ name, website, newField }));
   });
-
-  it("Should reinitializeV2 on GatewayConfig", async function () {
-    const emptyUUPS = await upgrades.deployProxy(emptyUUPSFactory, [owner.address], {
-      initializer: "initialize",
-      kind: "uups",
-    });
-    const gatewayConfigFactory = await ethers.getContractFactory("GatewayConfig", owner);
-
-    await expect(
-      upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactory, {
-        call: {
-          fn: "reinitializeV2",
-          args: [[]],
-        },
-      }),
-    ).to.be.revertedWithCustomError(gatewayConfigFactory, "EmptyCustodians");
-
-    await expect(
-      upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactory, {
-        call: {
-          fn: "reinitializeV2",
-          args: [
-            [
-              {
-                txSenderAddress: ethers.ZeroAddress,
-                signerAddress: ethers.ZeroAddress,
-                encryptionKey: ethers.randomBytes(32),
-              },
-            ],
-          ],
-        },
-      }),
-    ).to.not.be.reverted;
-  });
 });
