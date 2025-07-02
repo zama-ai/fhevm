@@ -29,12 +29,12 @@ contract KmsManagement is
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "KmsManagement";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.KmsManagement
@@ -143,6 +143,9 @@ contract KmsManagement is
         $.fheParamsDigests[fheParamsName] = fheParamsDigest;
         $._fheParamsInitialized[fheParamsName] = true;
     }
+
+    /// @notice Re-initializes the contract from V1.
+    function reinitializeV2() external reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev Modifier to check if the given FHE params name is initialized
     modifier fheParamsInitialized(string calldata fheParamsName) {
@@ -439,7 +442,10 @@ contract KmsManagement is
     }
 
     /// @dev See {IKmsManagement-activateKeyResponse}.
-    function activateKeyResponse(uint256 keyId) external virtual onlyCoprocessorTxSender whenNotPaused {
+    /// @dev TODO: This function should only be called by the coprocessor transaction sender,
+    /// @dev update this once integrating keygen in the gateway
+    /// @dev See https://github.com/zama-ai/fhevm/issues/33
+    function activateKeyResponse(uint256 keyId) external virtual whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A coprocessor can only respond once
@@ -561,7 +567,10 @@ contract KmsManagement is
     /// @param coprocessorCounter The number of coprocessors that agreed
     /// @return Whether the consensus is reached
     function _isCoprocessorConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
+        // TODO: Get the consensus threshold from the context associated to the keygen
+        // See https://github.com/zama-ai/fhevm/issues/33
+        // uint256 consensusThreshold = COPROCESSOR_CONTEXTS.getCoprocessorMajorityThresholdFromContext(coprocessorContextId);
+        uint256 consensusThreshold = 0;
         return coprocessorCounter >= consensusThreshold;
     }
 

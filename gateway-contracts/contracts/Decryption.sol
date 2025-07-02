@@ -214,9 +214,7 @@ contract Decryption is
         __Pausable_init();
     }
 
-    /**
-     * @notice Re-initializes the contract from V2.
-     */
+    /// @notice Re-initializes the contract from V2.
     function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IDecryption-publicDecryptionRequest}.

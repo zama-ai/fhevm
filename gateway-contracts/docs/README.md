@@ -2,7 +2,6 @@
 description: >-
   The fhevm Gateway.
 
-
 layout:
   title:
     visible: true
@@ -22,7 +21,11 @@ layout:
 
 Learn the basics of fhevm Gateway, set it up, and make it run with ease.
 
+- [Summary](SUMMARY.md)
+
 ### References
+
+- [Selectors](references/selectors.md)
 
 ### Supports
 

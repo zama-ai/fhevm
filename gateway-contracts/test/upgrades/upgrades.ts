@@ -6,6 +6,8 @@ import { ethers, upgrades } from "hardhat";
 import {
   CiphertextCommitsV2Example__factory,
   CiphertextCommits__factory,
+  CoprocessorContextsV2Example__factory,
+  CoprocessorContexts__factory,
   DecryptionV2Example__factory,
   Decryption__factory,
   EmptyUUPSProxy__factory,
@@ -26,6 +28,8 @@ describe("Upgrades", function () {
   let emptyUUPSFactory: EmptyUUPSProxy__factory;
   let ciphertextCommitsFactoryV1: CiphertextCommits__factory;
   let ciphertextCommitsFactoryV2: CiphertextCommitsV2Example__factory;
+  let coprocessorContextsFactoryV1: CoprocessorContexts__factory;
+  let coprocessorContextsFactoryV2: CoprocessorContextsV2Example__factory;
   let decryptionFactoryV1: Decryption__factory;
   let decryptionFactoryV2: DecryptionV2Example__factory;
   let gatewayConfigFactoryV1: GatewayConfig__factory;
@@ -44,6 +48,9 @@ describe("Upgrades", function () {
 
     ciphertextCommitsFactoryV1 = await ethers.getContractFactory("CiphertextCommits", owner);
     ciphertextCommitsFactoryV2 = await ethers.getContractFactory("CiphertextCommitsV2Example", owner);
+
+    coprocessorContextsFactoryV1 = await ethers.getContractFactory("CoprocessorContexts", owner);
+    coprocessorContextsFactoryV2 = await ethers.getContractFactory("CoprocessorContextsV2Example", owner);
 
     decryptionFactoryV1 = await ethers.getContractFactory("Decryption", owner);
     decryptionFactoryV2 = await ethers.getContractFactory("DecryptionV2Example", owner);
@@ -95,6 +102,19 @@ describe("Upgrades", function () {
     const ciphertextCommitsV2 = await upgrades.upgradeProxy(ciphertextCommits, ciphertextCommitsFactoryV2);
     await ciphertextCommitsV2.waitForDeployment();
     expect(await ciphertextCommitsV2.getVersion()).to.equal("CiphertextCommits v1000.0.0");
+  });
+
+  it("Should deploy upgradable CoprocessorContexts", async function () {
+    const emptyUUPS = await upgrades.deployProxy(emptyUUPSFactory, [owner.address], {
+      initializer: "initialize",
+      kind: "uups",
+    });
+    const coprocessorContexts = await upgrades.upgradeProxy(emptyUUPS, coprocessorContextsFactoryV1);
+    await coprocessorContexts.waitForDeployment();
+    expect(await coprocessorContexts.getVersion()).to.equal("CoprocessorContexts v0.1.0");
+    const coprocessorContextsV2 = await upgrades.upgradeProxy(coprocessorContexts, coprocessorContextsFactoryV2);
+    await coprocessorContextsV2.waitForDeployment();
+    expect(await coprocessorContextsV2.getVersion()).to.equal("CoprocessorContexts v1000.0.0");
   });
 
   it("Should deploy upgradable Decryption", async function () {
