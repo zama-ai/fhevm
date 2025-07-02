@@ -307,7 +307,8 @@ pub async fn decrypt_ciphertexts(
         let mut decrypted: Vec<(Vec<u8>, DecryptionResult)> = Vec::with_capacity(cts.len());
         for ct in cts {
             let deserialized =
-                SupportedFheCiphertexts::decompress(ct.ciphertext_type, &ct.ciphertext).unwrap();
+                SupportedFheCiphertexts::decompress_no_check(ct.ciphertext_type, &ct.ciphertext)
+                    .unwrap();
             decrypted.push((
                 ct.handle,
                 DecryptionResult {

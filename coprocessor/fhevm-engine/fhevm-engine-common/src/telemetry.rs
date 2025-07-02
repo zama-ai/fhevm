@@ -27,7 +27,7 @@ pub fn setup_otlp(
         .with_batch_exporter(otlp_exporter)
         .build();
 
-    opentelemetry::global::set_tracer_provider(trace_provider);
+    opentelemetry::global::set_tracer_provider(opentelemetry::trace::noop::NoopTracerProvider::new());
 
     Ok(())
 }

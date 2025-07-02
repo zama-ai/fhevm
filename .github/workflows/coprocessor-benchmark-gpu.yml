@@ -190,8 +190,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Fetch TFHE-rs
+        run: |
+          pwd
+          git clone https://github.com/zama-ai/tfhe-rs.git
+        working-directory: coprocessor
+
       - name: Init database
-        run: make init_db
+        run: |
+          cat ../../tfhe-rs/tfhe/Cargo.toml
+          make init_db
         working-directory: coprocessor/fhevm-engine/coprocessor
 
       - name: Use Node.js

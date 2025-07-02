@@ -12,6 +12,7 @@ RUN cargo install sqlx-cli --version 0.7.2 \
 # Copy migrations and initialization script
 COPY coprocessor/fhevm-engine/ ./coprocessor/fhevm-engine
 COPY coprocessor/proto/ ./coprocessor/proto/
+COPY coprocessor/tfhe-rs/ ./coprocessor/tfhe-rs/
 COPY coprocessor/fhevm-engine/db-migration/initialize_db.sh ./initialize_db.sh
 COPY coprocessor/fhevm-engine/db-migration/migrations ./migrations
 

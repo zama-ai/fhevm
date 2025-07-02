@@ -155,7 +155,7 @@ async fn schedule_multi_erc20() {
                         if i % 4 != 0 {
                             tt = 5;
                         }
-                        let ctd = SupportedFheCiphertexts::decompress(
+                        let ctd = SupportedFheCiphertexts::decompress_no_check(
                             tt,
                             &cts.ciphertexts[i as usize].serialization,
                         )
