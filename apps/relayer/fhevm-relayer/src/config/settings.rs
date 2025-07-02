@@ -62,8 +62,7 @@ impl NetworksConfig {
                 AppConfigError::InvalidNetworkConfig("Gateway network not configured".into())
             }),
             _ => Err(AppConfigError::InvalidNetworkConfig(format!(
-                "Unknown network: {}",
-                network_name
+                "Unknown network: {network_name}"
             ))),
         }
     }
@@ -218,7 +217,7 @@ impl Settings {
 
         // First get base config from files
         let s = Config::builder()
-            .add_source(File::with_name(&format!("config/{}", run_mode)).required(false))
+            .add_source(File::with_name(&format!("config/{run_mode}")).required(false))
             .add_source(File::with_name("config/local").required(false));
         let s = match config_file {
             Some(config_file) => s.add_source(File::with_name(&config_file).required(true)),
@@ -270,8 +269,7 @@ impl Settings {
         for (name, address) in addresses {
             if !address.starts_with("0x") || address.len() != 42 {
                 return Err(AppConfigError::InvalidAddress(format!(
-                    "Invalid {} address: {}",
-                    name, address
+                    "Invalid {name} address: {address}"
                 )));
             }
         }

@@ -28,17 +28,17 @@ where
 
     // Helper to build key from request_id and event_id with padding
     fn build_key(request_id: &Uuid, event_id: u8) -> String {
-        format!("{}-{:04}", request_id, event_id)
+        format!("{request_id}-{event_id:04}")
     }
 
     // Helper to build a key prefix for a specific request ID
     fn build_request_prefix(request_id: &Uuid) -> String {
-        format!("{}-", request_id)
+        format!("{request_id}-")
     }
 
     // Helper to build latest event ID key for a request ID
     fn build_latest_event_id_key(request_id: &Uuid) -> String {
-        format!("latest:{}", request_id)
+        format!("latest:{request_id}")
     }
 
     /// Persist an event.

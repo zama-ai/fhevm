@@ -653,12 +653,12 @@ impl From<InputProofResponse> for InputProofResponsePayloadJson {
             handles: response
                 .handles
                 .into_iter()
-                .map(|handle| format!("{:#x}", handle))
+                .map(|handle| format!("{handle:#x}"))
                 .collect(),
             signatures: response
                 .signatures
                 .into_iter()
-                .map(|sig| format!("{:#x}", sig))
+                .map(|sig| format!("{sig:#x}"))
                 .collect(),
         }
     }
@@ -667,7 +667,7 @@ impl From<InputProofResponse> for InputProofResponsePayloadJson {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::convert::{TryFrom, TryInto};
+    use std::convert::TryFrom;
     use std::str::FromStr;
 
     // Constants for the test strings.
@@ -716,7 +716,7 @@ mod tests {
             signatures: vec![signature],
         };
 
-        let json: InputProofResponseJson = response.try_into().unwrap();
+        let json: InputProofResponseJson = response.into();
 
         // Using alloy's formatting we expect a 0x‑prefixed hex string.
         let expected_handle = format!("{:#x}", FixedBytes::<32>::from([FIXED_BYTE_VALUE; 32]));
@@ -746,14 +746,14 @@ mod tests {
         };
 
         // Convert UserDecryptResponse to UserDecryptResponseJson
-        let json_response = UserDecryptResponseJson::try_from(response).unwrap();
+        let json_response = UserDecryptResponseJson::from(response);
 
         // Expected UserDecryptResponseJson
         let expected_json_response = "{\"response\":[{\"payload\":\"01020304\",\"signature\":\"090a0b0c\"},{\"payload\":\"05060708\",\"signature\":\"0d0e0f10\"}]}";
         // Serialize the json response and print the json string
         let json_string = serde_json::to_string(&json_response).unwrap();
 
-        println!("JSON Response: {:?}", json_string);
+        println!("JSON Response: {json_string:?}");
         assert_eq!(json_string, expected_json_response);
     }
 }

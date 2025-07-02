@@ -91,26 +91,25 @@ impl From<TransactionServiceError> for EventProcessingError {
     fn from(e: TransactionServiceError) -> Self {
         match e {
             TransactionServiceError::Failed(msg) => {
-                Self::TransactionError(Report::msg(format!("Transaction failed: {}", msg)))
+                Self::TransactionError(Report::msg(format!("Transaction failed: {msg}")))
             }
             TransactionServiceError::Timeout(secs) => Self::TransactionError(Report::msg(format!(
-                "Transaction timed out after {} seconds",
-                secs
+                "Transaction timed out after {secs} seconds"
             ))),
             TransactionServiceError::GasEstimation(msg) => {
-                Self::TransactionError(Report::msg(format!("Gas estimation failed: {}", msg)))
+                Self::TransactionError(Report::msg(format!("Gas estimation failed: {msg}")))
             }
             TransactionServiceError::NonceError(msg) => {
-                Self::TransactionError(Report::msg(format!("Nonce error: {}", msg)))
+                Self::TransactionError(Report::msg(format!("Nonce error: {msg}")))
             }
             TransactionServiceError::Network(msg) => {
-                Self::TransactionError(Report::msg(format!("Network error: {}", msg)))
+                Self::TransactionError(Report::msg(format!("Network error: {msg}")))
             }
             TransactionServiceError::Config(msg) => {
-                Self::HandlerError(format!("Config error: {}", msg))
+                Self::HandlerError(format!("Config error: {msg}"))
             }
             TransactionServiceError::Provider(msg) => {
-                Self::TransactionError(Report::msg(format!("Provider error: {}", msg)))
+                Self::TransactionError(Report::msg(format!("Provider error: {msg}")))
             }
             TransactionServiceError::Other(err) => Self::TransactionError(err),
         }
@@ -121,46 +120,44 @@ impl From<TransactionError> for EventProcessingError {
     fn from(err: TransactionError) -> Self {
         match err {
             TransactionError::InvalidPrivateKey(msg) => {
-                Self::HandlerError(format!("Invalid private key: {}", msg))
+                Self::HandlerError(format!("Invalid private key: {msg}"))
             }
             TransactionError::InvalidAddress(msg) => {
-                Self::HandlerError(format!("Invalid address: {}", msg))
+                Self::HandlerError(format!("Invalid address: {msg}"))
             }
             TransactionError::RpcError(msg) => {
-                Self::TransactionError(Report::msg(format!("RPC error: {}", msg)))
+                Self::TransactionError(Report::msg(format!("RPC error: {msg}")))
             }
             TransactionError::TransactionFailed(msg) => {
-                Self::TransactionError(Report::msg(format!("Transaction failed: {}", msg)))
+                Self::TransactionError(Report::msg(format!("Transaction failed: {msg}")))
             }
             TransactionError::TransactionTimeout(secs) => Self::TransactionError(Report::msg(
-                format!("Transaction timed out after {} seconds", secs),
+                format!("Transaction timed out after {secs} seconds"),
             )),
             TransactionError::MonitoringTimeout(secs) => {
                 Self::TransactionError(Report::msg(format!(
-                    "Transaction monitoring timed out after {} seconds, but may still succeed",
-                    secs
+                    "Transaction monitoring timed out after {secs} seconds, but may still succeed"
                 )))
             }
             TransactionError::GasEstimationFailed(msg) => {
-                Self::TransactionError(Report::msg(format!("Gas estimation failed: {}", msg)))
+                Self::TransactionError(Report::msg(format!("Gas estimation failed: {msg}")))
             }
             TransactionError::ReceiptNotFound(attempts) => Self::TransactionError(Report::msg(
-                format!("Receipt not found after {} attempts", attempts),
+                format!("Receipt not found after {attempts} attempts"),
             )),
             TransactionError::InsufficientConfirmations { required, actual } => {
                 Self::TransactionError(Report::msg(format!(
-                    "Insufficient confirmations: required {}, got {}",
-                    required, actual
+                    "Insufficient confirmations: required {required}, got {actual}"
                 )))
             }
             TransactionError::NetworkError(msg) => {
-                Self::TransactionError(Report::msg(format!("Network error: {}", msg)))
+                Self::TransactionError(Report::msg(format!("Network error: {msg}")))
             }
             TransactionError::TransportError(e) => {
-                Self::TransactionError(Report::msg(format!("Transport Error: {}", e)))
+                Self::TransactionError(Report::msg(format!("Transport Error: {e}")))
             }
             TransactionError::InvalidChainId(msg) => {
-                Self::TransactionError(Report::msg(format!("Chain-id error: {}", msg)))
+                Self::TransactionError(Report::msg(format!("Chain-id error: {msg}")))
             }
         }
     }
@@ -170,10 +167,10 @@ impl From<&TransactionError> for TransactionServiceError {
     fn from(err: &TransactionError) -> Self {
         match err {
             TransactionError::InvalidPrivateKey(msg) => {
-                Self::Failed(format!("Invalid private key: {}", msg))
+                Self::Failed(format!("Invalid private key: {msg}"))
             }
             TransactionError::InvalidAddress(msg) => {
-                Self::Failed(format!("Invalid address: {}", msg))
+                Self::Failed(format!("Invalid address: {msg}"))
             }
             TransactionError::RpcError(msg) => Self::Network(msg.to_string()),
             TransactionError::TransactionFailed(msg) => {
@@ -187,14 +184,11 @@ impl From<&TransactionError> for TransactionServiceError {
             TransactionError::GasEstimationFailed(msg) => Self::GasEstimation(msg.to_string()),
             TransactionError::MonitoringTimeout(secs) => Self::Timeout(*secs), // Transaction may still succeed but monitoring timed out
             TransactionError::ReceiptNotFound(attempts) => {
-                Self::Failed(format!("Receipt not found after {} attempts", attempts))
+                Self::Failed(format!("Receipt not found after {attempts} attempts"))
             }
-            TransactionError::InsufficientConfirmations { required, actual } => {
-                Self::Failed(format!(
-                    "Insufficient confirmations: required {}, got {}",
-                    required, actual
-                ))
-            }
+            TransactionError::InsufficientConfirmations { required, actual } => Self::Failed(
+                format!("Insufficient confirmations: required {required}, got {actual}"),
+            ),
             TransactionError::NetworkError(msg) => Self::Network(msg.to_string()),
             TransactionError::TransportError(e) => Self::Network(e.to_string()),
             TransactionError::InvalidChainId(msg) => Self::Failed(msg.to_string()),
@@ -206,10 +200,10 @@ impl From<TransactionError> for TransactionServiceError {
     fn from(err: TransactionError) -> Self {
         match err {
             TransactionError::InvalidPrivateKey(msg) => {
-                Self::Failed(format!("Invalid private key: {}", msg))
+                Self::Failed(format!("Invalid private key: {msg}"))
             }
             TransactionError::InvalidAddress(msg) => {
-                Self::Failed(format!("Invalid address: {}", msg))
+                Self::Failed(format!("Invalid address: {msg}"))
             }
             TransactionError::RpcError(msg) => Self::Network(msg),
             TransactionError::TransactionFailed(msg) => {
@@ -223,14 +217,11 @@ impl From<TransactionError> for TransactionServiceError {
             TransactionError::GasEstimationFailed(msg) => Self::GasEstimation(msg),
             TransactionError::MonitoringTimeout(secs) => Self::Timeout(secs), // Transaction may still succeed but monitoring timed out
             TransactionError::ReceiptNotFound(attempts) => {
-                Self::Failed(format!("Receipt not found after {} attempts", attempts))
+                Self::Failed(format!("Receipt not found after {attempts} attempts"))
             }
-            TransactionError::InsufficientConfirmations { required, actual } => {
-                Self::Failed(format!(
-                    "Insufficient confirmations: required {}, got {}",
-                    required, actual
-                ))
-            }
+            TransactionError::InsufficientConfirmations { required, actual } => Self::Failed(
+                format!("Insufficient confirmations: required {required}, got {actual}"),
+            ),
             TransactionError::NetworkError(msg) => Self::Network(msg),
             TransactionError::TransportError(e) => Self::Network(e.to_string()),
             TransactionError::InvalidChainId(msg) => Self::Failed(msg),

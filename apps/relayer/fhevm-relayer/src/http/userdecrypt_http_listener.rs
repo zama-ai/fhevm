@@ -117,7 +117,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
                 }
 
                 let error_response = UserDecryptErrorResponseJson {
-                    message: format!("parsing request data: {}", error),
+                    message: format!("parsing request data: {error}"),
                 };
                 return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
             }

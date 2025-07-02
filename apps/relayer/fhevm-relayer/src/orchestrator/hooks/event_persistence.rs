@@ -106,7 +106,7 @@ mod tests {
         let (event_store, hook) = test_utils::setup();
         let request_id = Uuid::new_v4();
         let events: Vec<(u8, String)> = (1..=5)
-            .map(|event_id| (event_id, format!("Event{}", event_id)))
+            .map(|event_id| (event_id, format!("Event{event_id}")))
             .collect();
         test_utils::add_and_assert(&hook, &event_store, request_id, &events).await;
     }

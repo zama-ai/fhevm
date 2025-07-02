@@ -155,7 +155,7 @@ impl GatewayHandler {
 
         let error_event =
             event.derive_next_event(RelayerEventData::InputProof(InputProofEventData::Failed {
-                error: format!("Input request failed: {}", error),
+                error: format!("Input request failed: {error}"),
             }));
 
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
@@ -575,17 +575,14 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
             ));
 
     let sender_address = manager.sender_address();
-    println!("Sender address: {:#x}", sender_address);
+    println!("Sender address: {sender_address:#x}");
 
     // Get the input verification contract address from config
     let input_verification_address =
         Address::from_str(&settings.contracts.input_verification_address)
             .expect("Invalid input verification contract address");
 
-    println!(
-        "Target input verification contract: {:#x}",
-        input_verification_address
-    );
+    println!("Target input verification contract: {input_verification_address:#x}");
 
     // Check contract code
     println!("Checking contract state...");
@@ -624,9 +621,9 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
     let ciphertext_with_zk_proof = Bytes::from(proof_data);
 
     println!("Proof data size: {} bytes", ciphertext_with_zk_proof.len());
-    println!("Target contract: {:#x}", target_contract_address);
-    println!("Target chain ID: {}", target_contract_chain_id);
-    println!("User address: {:#x}", user_address);
+    println!("Target contract: {target_contract_address:#x}");
+    println!("Target chain ID: {target_contract_chain_id}");
+    println!("User address: {user_address:#x}");
 
     // Generate calldata for the verification request
     let calldata = ComputeCalldata::verify_proof_req(
@@ -658,7 +655,7 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
             }
         }
         Err(e) => {
-            println!("Simulation failed: {}", e);
+            println!("Simulation failed: {e}");
             println!("This indicates the transaction would likely revert.");
         }
     }
@@ -671,7 +668,7 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
 
     match gas_result {
         Ok(gas) => {
-            println!("Gas estimation successful: {} gas units", gas);
+            println!("Gas estimation successful: {gas} gas units");
 
             // Set up transaction config
             let mut config = TxConfig::from(settings.transaction.clone());
@@ -680,7 +677,7 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
             let gas_with_buffer = (gas as f64 * 1.2) as u64; // 20% buffer
             config.gas_limit = Some(gas_with_buffer);
 
-            println!("Using gas limit: {} (added 20% buffer)", gas_with_buffer);
+            println!("Using gas limit: {gas_with_buffer} (added 20% buffer)");
 
             // Send the transaction without asking for confirmation
             println!("Sending transaction...");
@@ -716,7 +713,7 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
                             .map(|t| format!("0x{}", hex::encode(t)))
                             .collect();
 
-                        println!("  Topics: {:?}", topics);
+                        println!("  Topics: {topics:?}");
 
                         // Safe way to handle log data
                         let data = log.data();
@@ -729,12 +726,12 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
                     }
                 }
                 Err(e) => {
-                    println!("\n❌ TRANSACTION FAILED: {}", e);
+                    println!("\n❌ TRANSACTION FAILED: {e}");
                 }
             }
         }
         Err(e) => {
-            println!("Gas estimation failed: {}", e);
+            println!("Gas estimation failed: {e}");
             println!("This indicates the transaction would likely revert if sent.");
         }
     }

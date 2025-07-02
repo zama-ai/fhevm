@@ -31,7 +31,7 @@ pub async fn run_http_server<D>(
     let public_decrypt_handler = Arc::new(PublicDecryptHandler::new(orchestrator, api_version));
     let app = Router::new()
         .route(
-            format!("/{}/input-proof", api_version).as_str(),
+            format!("/{api_version}/input-proof").as_str(),
             post({
                 let handler = Arc::clone(&input_proof_handler);
                 move |payload: Json<InputProofRequestJson>| {
@@ -48,7 +48,7 @@ pub async fn run_http_server<D>(
             }),
         )
         .route(
-            format!("/{}/public-decrypt", api_version).as_str(),
+            format!("/{api_version}/public-decrypt").as_str(),
             post({
                 let handler = Arc::new(public_decrypt_handler);
                 move |payload: Json<PublicDecryptRequestJson>| {
@@ -65,7 +65,7 @@ pub async fn run_http_server<D>(
             }),
         )
         .route(
-            format!("/{}/user-decrypt", api_version).as_str(),
+            format!("/{api_version}/user-decrypt").as_str(),
             post({
                 let handler = Arc::clone(&user_decrypt_handler);
                 move |payload: Json<UserDecryptRequestJson>| {
@@ -82,7 +82,7 @@ pub async fn run_http_server<D>(
             }),
         )
         .route(
-            format!("/{}/keyurl", api_version).as_str(),
+            format!("/{api_version}/keyurl").as_str(),
             get({
                 let key_url_clone = key_url.clone();
                 move || async {
@@ -99,7 +99,7 @@ pub async fn run_http_server<D>(
             }),
         );
 
-    println!("Server listening on http://{}", http_endpoint);
+    println!("Server listening on http://{http_endpoint}");
 
     // Start the server with hyper underneath.
     axum::Server::bind(&http_endpoint)

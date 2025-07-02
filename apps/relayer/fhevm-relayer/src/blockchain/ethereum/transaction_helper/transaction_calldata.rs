@@ -247,8 +247,7 @@ impl ComputeCalldata {
                     // Parse the string to Uint, handle  potential parsing errors
                     let num: Uint<512, 8> = clear_text.parse().map_err(|e| {
                         EventProcessingError::ParseError(format!(
-                            "Failed to parse to Uint<512,8>: {}",
-                            e
+                            "Failed to parse to Uint<512,8>: {e}"
                         ))
                     })?;
 
@@ -259,8 +258,7 @@ impl ComputeCalldata {
                 10 => {
                     let num: Uint<1024, 16> = clear_text.parse().map_err(|e| {
                         EventProcessingError::ParseError(format!(
-                            "Failed to parse to Uint<1024,16>: {}",
-                            e
+                            "Failed to parse to Uint<1024,16>: {e}"
                         ))
                     })?;
 
@@ -271,8 +269,7 @@ impl ComputeCalldata {
                 11 => {
                     let num: Uint<2048, 32> = clear_text.parse().map_err(|e| {
                         EventProcessingError::ParseError(format!(
-                            "Failed to parse to Uint<2048,32>: {}",
-                            e
+                            "Failed to parse to Uint<2048,32>: {e}"
                         ))
                     })?;
 
@@ -283,7 +280,7 @@ impl ComputeCalldata {
                 _ => {
                     // Parse the string to U256, handle potential parsing errors
                     let value = U256::from_str(&clear_text).map_err(|e| {
-                        EventProcessingError::ParseError(format!("Failed to parse to U256: {}", e))
+                        EventProcessingError::ParseError(format!("Failed to parse to U256: {e}"))
                     })?;
 
                     results.push(DynSolValue::Uint(value, 256));
@@ -306,10 +303,7 @@ impl ComputeCalldata {
             "30d45b1c5a771e20d0ec15097c3b6ac7153bc1992bc78c42af37725dd93f096a",
         )
         .map_err(|e| {
-            EventProcessingError::SigningError(format!(
-                "Failed to create private key signer: {}",
-                e
-            ))
+            EventProcessingError::SigningError(format!("Failed to create private key signer: {e}"))
         })?;
 
         let domain = eip712_domain! {
@@ -319,7 +313,7 @@ impl ComputeCalldata {
             verifying_contract: decryption_address,
         };
 
-        println!("{:?}", domain);
+        println!("{domain:?}");
 
         let mut ct_handles: Vec<U256> = Vec::new();
         for sns_ct_material in req.snsCtMaterials {
@@ -330,14 +324,14 @@ impl ComputeCalldata {
             decryptedResult: decrypted_result.clone().into(),
         };
 
-        println!("public_decryption_result {:?}", public_decryption_result);
+        println!("public_decryption_result {public_decryption_result:?}");
 
         let hash = public_decryption_result.eip712_signing_hash(&domain);
 
         // Replace unwrap with proper error handling
-        let signature = signer.sign_hash_sync(&hash).map_err(|e| {
-            EventProcessingError::SigningError(format!("Failed to sign hash: {}", e))
-        })?;
+        let signature = signer
+            .sign_hash_sync(&hash)
+            .map_err(|e| EventProcessingError::SigningError(format!("Failed to sign hash: {e}")))?;
 
         info!("Signature: 0x{}", hex::encode(signature.as_bytes()));
 
@@ -367,7 +361,7 @@ fn get_clear_text(db_path: &str, handle: &[u8]) -> Result<Option<String>> {
             Ok(None)
         }
         Err(e) => {
-            println!("Error occurred: {}", e);
+            println!("Error occurred: {e}");
             Err(e)
         }
     }

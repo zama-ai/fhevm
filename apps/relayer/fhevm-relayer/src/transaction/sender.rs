@@ -176,7 +176,7 @@ impl TransactionManager {
         let wallet = EthereumWallet::from(signer.clone());
 
         let ws_rpc_url = Url::parse(ws_rpc_url)
-            .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {}", e)))?;
+            .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {e}")))?;
         let ws = WsConnect::new(ws_rpc_url);
 
         // NOTE: nonce-manager that allows for nonce-resync
@@ -284,12 +284,12 @@ impl TransactionManager {
                     if chunk.len() == 32 {
                         // Try as uint256
                         let as_uint = U256::from_be_bytes::<32>(chunk.try_into().unwrap());
-                        println!("  As uint: {}", as_uint);
+                        println!("  As uint: {as_uint}");
 
                         // Try as address if starts with zeros
                         if chunk[..12].iter().all(|&x| x == 0) {
                             let addr = Address::from_slice(&chunk[12..]);
-                            println!("  As address: {:#x}", addr);
+                            println!("  As address: {addr:#x}");
                         }
                     }
                 }
@@ -443,14 +443,13 @@ impl TransactionManager {
         // Check if contract exists
         info!("Checking contract code at {:#x}", target);
         let code = self.provider.get_code_at(target).await.map_err(|e| {
-            TransactionError::TransactionFailed(format!("Failed to check contract code: {}", e))
+            TransactionError::TransactionFailed(format!("Failed to check contract code: {e}"))
         })?;
 
         if code.is_empty() {
             error!("No code at target address: {:?} !", target);
             return Err(TransactionError::InvalidAddress(format!(
-                "No code at target address: {:#x}",
-                target
+                "No code at target address: {target:#x}"
             )));
         }
 
@@ -564,7 +563,7 @@ impl TransactionManager {
         let reconnect_delay = Duration::from_millis(1000);
 
         let block_subscription = self.provider.subscribe_blocks().await.map_err(|e| {
-            TransactionError::NetworkError(format!("Failed to subscribe for new blocks: {}", e))
+            TransactionError::NetworkError(format!("Failed to subscribe for new blocks: {e}"))
         })?;
         let mut block_subscription_stream = block_subscription.into_stream();
 
@@ -646,8 +645,7 @@ impl TransactionManager {
                     }
                     Err(e) => {
                         return Err(TransactionError::NetworkError(format!(
-                            "Failed to subscribe for new blocks: {}",
-                            e
+                            "Failed to subscribe for new blocks: {e}"
                         )));
                     }
                 }
@@ -736,7 +734,7 @@ mod tests {
             )
             .await
             .expect("Failed to estimate gas");
-        println!("Estimated deployment gas: {}", estimated_gas);
+        println!("Estimated deployment gas: {estimated_gas}");
 
         let config = TxConfig {
             gas_limit: Some((estimated_gas as f64 * 1.2) as u64), // 20% buffer
@@ -752,7 +750,7 @@ mod tests {
         )
         .await
         .expect("Failed to get nonce through Nonce Manager");
-        println!("Nonce {}", current_nonce,);
+        println!("Nonce {current_nonce}",);
 
         // Deploy contract
         let tx_hash = manager
@@ -775,7 +773,7 @@ mod tests {
         )
         .await
         .expect("Failed to get nonce through Nonce Manager");
-        println!("Nonce {}", current_nonce,);
+        println!("Nonce {current_nonce}",);
 
         println!("Deployment receipt status: {:?}", receipt.status());
         println!("Gas used: {}", receipt.gas_used);
@@ -784,7 +782,7 @@ mod tests {
             .contract_address
             .expect("Contract address not found in receipt");
 
-        println!("Contract deployed at: {:?}", contract_address);
+        println!("Contract deployed at: {contract_address:?}");
 
         // Verify contract code
         tokio::time::sleep(Duration::from_secs(2)).await; // Give node time to process
@@ -804,7 +802,7 @@ mod tests {
         )
         .await
         .expect("Failed to get nonce through Nonce Manager");
-        println!("Nonce: {}", nonce_after_deploy,);
+        println!("Nonce: {nonce_after_deploy}",);
 
         // Decreasing a nonce < 0 will result in a panic
         // NOTE: we could probably modify the decrease function to return an error if the current
@@ -850,7 +848,7 @@ mod tests {
         );
 
         let initial_count = U256::from_be_slice(count_bytes.as_ref());
-        println!("Initial count: {}", initial_count);
+        println!("Initial count: {initial_count}");
 
         // Increment count
         let increment_calldata =
@@ -862,7 +860,7 @@ mod tests {
             .await
             .expect("Failed to estimate gas");
 
-        println!("Estimated gas for increment: {}", estimated_gas);
+        println!("Estimated gas for increment: {estimated_gas}");
 
         let config = TxConfig {
             gas_limit: Some(estimated_gas),
@@ -912,7 +910,7 @@ mod tests {
             .expect("Failed to get new count");
 
         let new_count = U256::from_be_slice(new_count_bytes.as_ref());
-        println!("New count: {}", new_count);
+        println!("New count: {new_count}");
 
         assert_eq!(
             new_count,

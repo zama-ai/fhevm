@@ -100,7 +100,7 @@ impl FhevmHandler {
             }
             Err(e) => event.derive_next_event(RelayerEventData::PublicDecrypt(
                 PublicDecryptEventData::Failed {
-                    error: format!("error decoding ethereum event log data: {:?}", e),
+                    error: format!("error decoding ethereum event log data: {e:?}"),
                 },
             )),
         };
@@ -207,7 +207,7 @@ impl FhevmHandler {
 
         let error_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
             PublicDecryptEventData::Failed {
-                error: format!("Callback transaction failed: {}", error),
+                error: format!("Callback transaction failed: {error}"),
             },
         ));
 

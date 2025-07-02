@@ -112,7 +112,7 @@ impl GatewayHandler {
         let url = match Url::parse(&self.gateway_http_url) {
             Ok(url) => url,
             Err(e) => {
-                let error = EventProcessingError::HandlerError(format!("Invalid URL: {}", e));
+                let error = EventProcessingError::HandlerError(format!("Invalid URL: {e}"));
                 self.handle_failed_request(event, error).await;
                 return;
             }
@@ -181,8 +181,7 @@ impl GatewayHandler {
 
                     // Return an error instead of proceeding with the transaction
                     let error = EventProcessingError::HandlerError(format!(
-                        "Gateway not ready after {} retries",
-                        max_retries
+                        "Gateway not ready after {max_retries} retries"
                     ));
                     self.handle_failed_request(event, error).await;
                     return;
@@ -262,7 +261,7 @@ impl GatewayHandler {
 
         let error_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
             PublicDecryptEventData::Failed {
-                error: format!("Callback transaction failed: {}", error),
+                error: format!("Callback transaction failed: {error}"),
             },
         ));
 

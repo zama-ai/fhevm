@@ -36,9 +36,9 @@ impl<E: Event + Send + Sync + 'static> PreDispatchHook<E> for EventLoggingHook {
 }
 
 fn colorize_event_type(event_type: impl Display) -> String {
-    format!("\x1b[36m{}\x1b[0m", event_type) // Cyan for event type
+    format!("\x1b[36m{event_type}\x1b[0m") // Cyan for event type
 }
 
 fn colorize_request_id(request_id: impl Display) -> String {
-    format!("\x1b[33m{}\x1b[0m", request_id) // Yellow for request ID
+    format!("\x1b[33m{request_id}\x1b[0m") // Yellow for request ID
 }

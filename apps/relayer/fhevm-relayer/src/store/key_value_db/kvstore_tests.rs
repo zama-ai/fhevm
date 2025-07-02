@@ -31,7 +31,7 @@ pub mod suite {
         // Cat 1: Numeric keys
         let numeric_keys = vec!["1", "2", "10", "11", "3"];
         for k in &numeric_keys {
-            store.put(k, &format!("val_{}", k)).await?;
+            store.put(k, &format!("val_{k}")).await?;
         }
         let pairs = store.get_by_prefix("").await?;
         let mut keys: Vec<String> = pairs.iter().map(|(k, _)| k.clone()).collect();
@@ -42,7 +42,7 @@ pub mod suite {
         // Cat 2: Alphabetic keys
         let alpha_keys = vec!["a", "b", "aa", "ab", "c"];
         for k in &alpha_keys {
-            store.put(k, &format!("val_{}", k)).await?;
+            store.put(k, &format!("val_{k}")).await?;
         }
         let pairs = store.get_by_prefix("").await?;
         let mut keys: Vec<String> = pairs.iter().map(|(k, _)| k.clone()).collect();
@@ -53,7 +53,7 @@ pub mod suite {
         // Cat 3: Alphanumeric keys
         let alphanum_keys = vec!["a1", "a2", "b1", "b2", "c3"];
         for k in &alphanum_keys {
-            store.put(k, &format!("val_{}", k)).await?;
+            store.put(k, &format!("val_{k}")).await?;
         }
         let pairs = store.get_by_prefix("").await?;
         let mut keys: Vec<String> = pairs.iter().map(|(k, _)| k.clone()).collect();

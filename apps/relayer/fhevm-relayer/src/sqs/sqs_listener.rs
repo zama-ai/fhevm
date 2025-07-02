@@ -199,7 +199,7 @@ where
             value
         }
         Err(err) => {
-            let err_msg = format!("Error serializing message to JSON: {:?}", err);
+            let err_msg = format!("Error serializing message to JSON: {err:?}");
             return Err(err_msg);
         }
     };
@@ -213,7 +213,7 @@ where
         .await
     {
         Err(error) => {
-            let err_msg = format!("Error publishing: {:?}", error);
+            let err_msg = format!("Error publishing: {error:?}");
             return Err(err_msg);
         }
         Ok(response) => response,
@@ -562,6 +562,6 @@ mod tests {
         };
 
         println!("{:?}", request_id_holder.payload.request_id);
-        println!("{:?}", request_json);
+        println!("{request_json:?}");
     }
 }

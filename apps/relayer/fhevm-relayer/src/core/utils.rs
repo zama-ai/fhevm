@@ -39,7 +39,7 @@ where
 pub fn de_string_or_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
     Ok(match Value::deserialize(deserializer)? {
         Value::String(s) => s,
-        Value::Number(num) => format!("{}", num),
+        Value::Number(num) => format!("{num}"),
         _ => return Err(de::Error::custom("wrong type")),
     })
 }

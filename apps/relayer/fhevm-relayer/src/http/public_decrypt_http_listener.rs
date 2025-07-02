@@ -80,7 +80,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
                 }
 
                 let error_response = PublicDecryptErrorResponseJson {
-                    message: format!("parsing request data: {}", error),
+                    message: format!("parsing request data: {error}"),
                 };
                 return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
             }

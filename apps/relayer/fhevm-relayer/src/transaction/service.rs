@@ -217,7 +217,7 @@ impl TransactionService {
                 // Update state to failed
                 self.transactions.entry(request_id).and_modify(|record| {
                     record.state = TransactionState::Failed {
-                        reason: format!("Transaction submission failed: {}", e),
+                        reason: format!("Transaction submission failed: {e}"),
                     };
 
                     // Mark for cleanup after 5 minutes
@@ -663,7 +663,7 @@ impl TransactionService {
             Err(e) => {
                 // For other errors, mark as failed
                 Ok(TransactionState::Failed {
-                    reason: format!("Transaction failed: {}", e),
+                    reason: format!("Transaction failed: {e}"),
                 })
             }
         }
@@ -697,7 +697,7 @@ impl TransactionService {
                     TransactionServiceError::Failed(reason)
                 }
                 TransactionError::RpcError(err) => TransactionServiceError::Network(err),
-                _ => TransactionServiceError::Failed(format!("Receipt error: {}", e)),
+                _ => TransactionServiceError::Failed(format!("Receipt error: {e}")),
             }),
         }
     }

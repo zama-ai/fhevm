@@ -197,7 +197,7 @@ impl GatewayHandler {
 
         let error_event = event.derive_next_event(RelayerEventData::UserDecrypt(
             UserDecryptEventData::Failed {
-                error: format!("Callback transaction failed: {}", error),
+                error: format!("Callback transaction failed: {error}"),
             },
         ));
 
@@ -434,8 +434,7 @@ impl GatewayHandler {
                 } else {
                     warn!("Max retries reached for user decryption readiness check");
                     return Err(EventProcessingError::HandlerError(format!(
-                        "Gateway not ready after {} retries",
-                        max_retries
+                        "Gateway not ready after {max_retries} retries"
                     )));
                 }
             }
@@ -534,7 +533,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     let decryption_address = Address::from_str(&settings.contracts.decryption_address)
         .expect("Invaliddecryption contract address");
 
-    println!("Using decryption manager: {:?}", decryption_address);
+    println!("Using decryption manager: {decryption_address:?}");
 
     println!("Checking contract state...");
     let code = manager
@@ -602,7 +601,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
             }
         }
         Err(e) => {
-            println!("Error getting receipt: {}", e);
+            println!("Error getting receipt: {e}");
         }
     }
     Ok(())
@@ -647,7 +646,7 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
     let decryption_address = Address::from_str(&settings.contracts.decryption_address)
         .expect("Invaliddecryption contract address");
 
-    println!("Using decryption manager: {:?}", decryption_address);
+    println!("Using decryption manager: {decryption_address:?}");
     println!("Sender address: {:?}", manager.sender_address());
     println!("Looking for topic: {}", UserDecryptionRequest::SIGNATURE);
 
