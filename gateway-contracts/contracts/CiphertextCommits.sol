@@ -63,6 +63,7 @@ contract CiphertextCommits is
             _alreadyAddedCoprocessorTxSenders;
         /// @notice The mapping of the coprocessor transaction senders that have added the ciphertext.
         mapping(bytes32 ctHandle => address[] coprocessorTxSenderAddresses) _coprocessorTxSenderAddresses;
+        mapping(bytes32 ctHandle => bytes32 addCiphertextHash) _ctHandleConsensusHash;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -94,45 +95,49 @@ contract CiphertextCommits is
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
     ) external virtual onlyCoprocessorTxSender whenNotPaused {
-        /// @dev Extract the chainId from the ciphertext handle
+        // Extract the chainId from the ciphertext handle
         uint256 chainId = HandleOps.extractChainId(ctHandle);
 
-        /// @dev Check that the associated host chain is registered
+        // Check that the associated host chain is registered
         GATEWAY_CONFIG.checkHostChainIsRegistered(chainId);
 
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
 
-        /**
-         * @dev Check if the coprocessor transaction sender has already added the ciphertext handle.
-         * Note that a coprocessor transaction sender cannot add the same ciphertext material on
-         * two different host chains.
-         */
+        // Check if the coprocessor transaction sender has already added the ciphertext handle.
         if ($._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender]) {
             revert CoprocessorAlreadyAdded(ctHandle, msg.sender);
         }
 
-        /// @dev Check if the received key ID is the latest activated.
+        // Check if the received key ID is the latest activated.
         // TODO: Revisit the following line accordingly with key life-cycles issue
         // See: https://github.com/zama-ai/fhevm-gateway/issues/90
         // TODO: Re-enable this check once keys are generated through the Gateway
         // KMS_MANAGEMENT.checkCurrentKeyId(keyId);
 
-        /**
-         * @dev The addCiphertextHash is the hash of all received input arguments which means that multiple
-         * Coprocessors can only have a consensus on a ciphertext material with the same information.
-         * This hash is used to track the addition consensus on the received ciphertext material.
-         */
-        bytes32 addCiphertextHash = keccak256(
-            abi.encode(ctHandle, chainId, keyId, ciphertextDigest, snsCiphertextDigest)
-        );
+        // The addCiphertextHash is the hash of all received input arguments which means that multiple
+        // Coprocessors can only have a consensus on a ciphertext material with the same information.
+        // This hash is used to differentiate different calls to the function, in particular when
+        // tracking the consensus on the received ciphertext material.
+        // Note that chainId is not included in the hash because it is already contained in the ctHandle.
+        bytes32 addCiphertextHash = keccak256(abi.encode(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest));
         $._addCiphertextHashCounters[addCiphertextHash]++;
 
+        // It is ok to only the handle can be considered here as a handle should only be added once
+        // in the contract anyway
         $._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender] = true;
-        $._coprocessorTxSenderAddresses[ctHandle].push(msg.sender);
 
-        /// @dev Only send the event if consensus has not been reached in a previous call
-        /// @dev and the consensus is reached in the current call.
-        /// @dev This means a "late" addition will not be reverted, just ignored
+        // It's important to consider the hash and not the handle to make sure only the transaction
+        // senders associated to the same inputs are considered in tne event emitted once consensus
+        // is reached. Else, malicious copro that provide fake digests along valid handles could see
+        // their transaction sender being added to this event
+        // In particular, this means that a "late" (see right below) valid coprocessor's transaction
+        // sender address will still be added in the list, which than can be retrieved using the
+        // `getCiphertextMaterials` and `getSnsCiphertextMaterials` methods
+        $._coprocessorTxSenderAddresses[addCiphertextHash].push(msg.sender);
+
+        // Only send the event if consensus has not been reached in a previous call and the consensus
+        // is reached in the current call.
+        // This means a "late" valid addition will not be reverted, just ignored
         if (
             !$._isCiphertextMaterialAdded[ctHandle] &&
             _isConsensusReached($._addCiphertextHashCounters[addCiphertextHash])
@@ -141,13 +146,21 @@ contract CiphertextCommits is
             $._snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
             $._keyIds[ctHandle] = keyId;
             $._chainIds[ctHandle] = chainId;
+
+            // A ciphertext handle should only be added once, ever
             $._isCiphertextMaterialAdded[ctHandle] = true;
+
+            // As explained above, a "late" valid coprocessor could still see its transaction sender
+            // address be added to the list after consensus. This var is here to make the
+            // `getCiphertextMaterials` and `getSneCiphertextMaterials` methods retrieve this list
+            // mor easily
+            $._ctHandleConsensusHash[ctHandle] = addCiphertextHash;
 
             emit AddCiphertextMaterial(
                 ctHandle,
                 ciphertextDigest,
                 snsCiphertextDigest,
-                $._coprocessorTxSenderAddresses[ctHandle]
+                $._coprocessorTxSenderAddresses[addCiphertextHash]
             );
         }
     }
@@ -162,11 +175,15 @@ contract CiphertextCommits is
         for (uint256 i = 0; i < ctHandles.length; i++) {
             checkCiphertextMaterial(ctHandles[i]);
 
+            // Get the unique hash associated to the handle in order to retrieve the list of transaction
+            // sender address that participated in the consensus
+            bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandles[i]];
+
             ctMaterials[i] = CiphertextMaterial(
                 ctHandles[i],
                 $._keyIds[ctHandles[i]],
                 $._ciphertextDigests[ctHandles[i]],
-                $._coprocessorTxSenderAddresses[ctHandles[i]]
+                $._coprocessorTxSenderAddresses[addCiphertextHash]
             );
         }
 
@@ -183,11 +200,15 @@ contract CiphertextCommits is
         for (uint256 i = 0; i < ctHandles.length; i++) {
             checkCiphertextMaterial(ctHandles[i]);
 
+            // Get the unique hash associated to the handle in order to retrieve the list of transaction
+            // sender address that participated in the consensus
+            bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandles[i]];
+
             snsCtMaterials[i] = SnsCiphertextMaterial(
                 ctHandles[i],
                 $._keyIds[ctHandles[i]],
                 $._snsCiphertextDigests[ctHandles[i]],
-                $._coprocessorTxSenderAddresses[ctHandles[i]]
+                $._coprocessorTxSenderAddresses[addCiphertextHash]
             );
         }
 
