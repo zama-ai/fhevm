@@ -86,6 +86,7 @@ jobs:
         run: |
           echo "name=$(echo '${{ inputs.profile }}' | sed 's|.*[[:space:]](\(.*\))|\1|')" >> "${GITHUB_OUTPUT}"
 
+
   setup-instance:
     name: coprocessor-benchmark-gpu/setup-instance
     needs: parse-inputs
@@ -193,7 +194,7 @@ jobs:
       - name: Fetch TFHE-rs
         run: |
           pwd
-          git clone https://github.com/zama-ai/tfhe-rs.git
+          git clone -b go/feature/pbs-with-producer-consumer-logic --single-branch https://github.com/zama-ai/tfhe-rs.git
         working-directory: coprocessor
 
       - name: Init database
