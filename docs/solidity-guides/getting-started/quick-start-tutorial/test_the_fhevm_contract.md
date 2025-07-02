@@ -486,4 +486,4 @@ By now, your project should include the following files:
 - [`test/FHECounter.ts`](https://docs.zama.ai/protocol/examples#tab-fhecounter.ts) — your Hardhat test suite written in TypeScript
 
 ## Next step
-If you would like to deploy your project on the Testnet, or learn more about using FHEVM Hardhat Plug in, head to [Deploy contracts and run tests](../../hardhat/run_test.md).
+If you would like to deploy your project on the testnet, or learn more about using FHEVM Hardhat Plugin, head to [Deploy contracts and run tests](../../hardhat/run_test.md).
