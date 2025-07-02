@@ -27,61 +27,20 @@ jobs:
           filters: |
             gw-contracts:
               - .github/workflows/gateway-contracts-upgrade-tests.yml
-              - gateway-contracts/contracts/**
+              - gateway-contracts/**
   sc-upgrade:
     name: gateway-contracts-upgrade-tests/sc-upgrade (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Install semver
-        run: npm install npm/node-semver#281055e7716ef0415a8826972471331989ede58c # v7.7.2
-
-      - name: Get previous release tag
-        id: get-previous-tag
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        with:
-          script: |
-            const semver = require('semver');
-
-            // Get the target branch on PRs or the current branch on pushes (e.g. to main)
-            const targetBranch = context.payload.pull_request?.base?.ref || context.ref.replace('refs/heads/', '');
-            const isReleaseBranch = /^release\/(\d+)\.(\d+)\.x$/.exec(targetBranch);
-
-            const tags = await github.rest.repos.listTags({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 50,
-            });
-
-            const tagNames = tags.data.map(tag => tag.name).filter(name => semver.valid(name));
-
-            let previousTag = '';
-
-            if (isReleaseBranch) {
-              const [_, major, minor] = isReleaseBranch;
-              const targetPrefix = `${major}.${minor}.`;
-
-              // Filter to tags that start with the major.minor. prefix
-              const matchingTags = tagNames
-                .filter(tag => tag.startsWith(`v${targetPrefix}`))
-                .sort(semver.rcompare);
-
-              previousTag = matchingTags[0] || '';
-              console.log(`Detected release target branch '${targetBranch}', using latest tag: ${previousTag}`);
-            } else {
-              // Get latest valid semver tag, including pre-releases
-              previousTag = tagNames.sort(semver.rcompare)[0] || '';
-              console.log(`Detected non-release target branch '${targetBranch}', using latest tag: ${previousTag}`);
-            }
-
-            core.setOutput('tag', previousTag);
-
-      - name: Checkout the latest release code
+      - name: Checkout previous release code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ steps.get-previous-tag.outputs.tag }}
-          path: latest-fhevm
+          # This version should be updated whenever we release new contract versions or
+          # touch a contract upgrade path.
+          ref: 0.7.5
+          path: previous-fhevm
           persist-credentials: 'false'
 
       - name: Set up Docker Buildx
@@ -94,14 +53,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and start Docker services from latest release
-        working-directory: latest-fhevm/gateway-contracts
+      - name: Build and start Docker services from previous release
+        working-directory: previous-fhevm/gateway-contracts
         run: |
           make docker-compose-build
           make docker-compose-up
 
-      - name: Check smart contract deployment from latest release
-        working-directory: latest-fhevm/gateway-contracts
+      - name: Check smart contract deployment from previous release
+        working-directory: previous-fhevm/gateway-contracts
         run: |
 
           ## Check Contracts Deployment
@@ -153,19 +112,20 @@ jobs:
           HARDHAT_NETWORK: staging
           CHAIN_ID_GATEWAY: 54321
           RPC_URL: http://localhost:8546
-        # The task:deployEmptyUUPSProxies is required to generate the proxy contract addresses, which are then used
-        # for compiling the current and new implementations during the upgrade task.
         run: |
           cp .env.example .env
-          cp -r ../../latest-fhevm/gateway-contracts/contracts ./latest-contracts
+          cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
+
+          # Executing task:deployEmptyUUPSProxies is required to generate the proxy contract addresses, which are then used
+          # for compiling the current and new implementations during the upgrade task.
           npx hardhat task:deployEmptyUUPSProxies
           npx hardhat task:upgradeGatewayConfig \
-            --current-implementation latest-contracts/GatewayConfig.sol:GatewayConfig \
+            --current-implementation previous-contracts/GatewayConfig.sol:GatewayConfig \
             --new-implementation contracts/GatewayConfig.sol:GatewayConfig \
             --verify-contract false
 
       - name: Clean up
-        working-directory: latest-fhevm/gateway-contracts
+        working-directory: previous-fhevm/gateway-contracts
         if: always()
         run: |
           make docker-compose-down
