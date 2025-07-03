@@ -581,45 +581,6 @@ describe("GatewayConfig", function () {
       });
     });
 
-    describe("Update MPC threshold", function () {
-      it("Should revert because the sender is not the owner", async function () {
-        await expect(gatewayConfig.connect(fakeOwner).updateMpcThreshold(1))
-          .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
-          .withArgs(fakeOwner.address);
-      });
-
-      it("Should update the MPC threshold", async function () {
-        const newMpcThreshold = 0;
-
-        const tx = await gatewayConfig.connect(owner).updateMpcThreshold(newMpcThreshold);
-
-        await expect(tx).to.emit(gatewayConfig, "UpdateMpcThreshold").withArgs(newMpcThreshold);
-
-        // Check that the MPC threshold has been updated
-        expect(await gatewayConfig.getMpcThreshold()).to.equal(newMpcThreshold);
-      });
-
-      it("Should revert because the MPC threshold is too high", async function () {
-        // The MPC threshold must be strictly less than the number of KMS nodes
-        const highMpcThreshold = nKmsNodes;
-
-        await expect(gatewayConfig.connect(owner).updateMpcThreshold(highMpcThreshold))
-          .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighMpcThreshold")
-          .withArgs(highMpcThreshold, nKmsNodes);
-      });
-
-      it("Should revert because the contract is paused", async function () {
-        // Pause the contract
-        await gatewayConfig.connect(owner).pause();
-
-        // Try calling paused update MPC threshold
-        await expect(gatewayConfig.connect(owner).updateMpcThreshold(mpcThreshold)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "EnforcedPause",
-        );
-      });
-    });
-
     describe("Update public decryption threshold", function () {
       it("Should revert because the sender is not the owner", async function () {
         await expect(gatewayConfig.connect(fakeOwner).updatePublicDecryptionThreshold(1))

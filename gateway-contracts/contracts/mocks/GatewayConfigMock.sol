@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 import "../shared/Structs.sol";
+import "../shared/Enums.sol";
 
 contract GatewayConfigMock {
     event InitializeGatewayConfig(
         address pauser,
         ProtocolMetadata metadata,
-        uint256 mpcThreshold,
-        KmsNode[] kmsNodes,
         Coprocessor[] coprocessors,
         Custodian[] custodians
     );
@@ -15,8 +14,6 @@ contract GatewayConfigMock {
     event ReinitializeGatewayConfigV2(Custodian[] custodians);
 
     event UpdatePauser(address newPauser);
-
-    event UpdateMpcThreshold(uint256 newMpcThreshold);
 
     event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
 
@@ -27,21 +24,15 @@ contract GatewayConfigMock {
     function initializeFromEmptyProxy(
         address initialPauser,
         ProtocolMetadata memory initialMetadata,
-        uint256 initialMpcThreshold,
-        uint256 initialPublicDecryptionThreshold,
-        uint256 initialUserDecryptionThreshold,
-        KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
     ) public {
         address pauser;
         ProtocolMetadata memory metadata;
-        uint256 mpcThreshold;
-        KmsNode[] memory kmsNodes = new KmsNode[](1);
         Coprocessor[] memory coprocessors = new Coprocessor[](1);
         Custodian[] memory custodians = new Custodian[](1);
 
-        emit InitializeGatewayConfig(pauser, metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
+        emit InitializeGatewayConfig(pauser, metadata, coprocessors, custodians);
     }
 
     function reinitializeV2(Custodian[] memory custodians) external {
@@ -50,18 +41,6 @@ contract GatewayConfigMock {
 
     function updatePauser(address newPauser) external {
         emit UpdatePauser(newPauser);
-    }
-
-    function updateMpcThreshold(uint256 newMpcThreshold) external {
-        emit UpdateMpcThreshold(newMpcThreshold);
-    }
-
-    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external {
-        emit UpdatePublicDecryptionThreshold(newPublicDecryptionThreshold);
-    }
-
-    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external {
-        emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
     }
 
     function addHostChain(HostChain calldata hostChain) external {

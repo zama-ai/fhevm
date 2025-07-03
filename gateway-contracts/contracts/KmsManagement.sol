@@ -176,10 +176,10 @@ contract KmsManagement is
     }
 
     /// @dev See {IKmsManagement-preprocessKeygenResponse}.
-    function preprocessKeygenResponse(
-        uint256 preKeygenRequestId,
-        uint256 preKeyId
-    ) external virtual onlyKmsTxSender whenNotPaused {
+    function preprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId) external virtual whenNotPaused {
+        /// @dev TODO: This function should only be called by a KMS transaction sender,
+        /// @dev update this once integrating keygen in the gateway
+        /// @dev See https://github.com/zama-ai/fhevm/issues/33
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -225,10 +225,10 @@ contract KmsManagement is
     }
 
     /// @dev See {IKmsManagement-preprocessKskgenResponse}.
-    function preprocessKskgenResponse(
-        uint256 preKskgenRequestId,
-        uint256 preKskId
-    ) external virtual onlyKmsTxSender whenNotPaused {
+    function preprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId) external virtual whenNotPaused {
+        /// @dev TODO: This function should only be called by a KMS transaction sender,
+        /// @dev update this once integrating keygen in the gateway
+        /// @dev See https://github.com/zama-ai/fhevm/issues/33
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -272,7 +272,10 @@ contract KmsManagement is
     }
 
     /// @dev See {IKmsManagement-keygenResponse}.
-    function keygenResponse(uint256 preKeyId, uint256 keyId) external virtual onlyKmsTxSender whenNotPaused {
+    function keygenResponse(uint256 preKeyId, uint256 keyId) external virtual whenNotPaused {
+        /// @dev TODO: This function should only be called by a KMS transaction sender,
+        /// @dev update this once integrating keygen in the gateway
+        /// @dev See https://github.com/zama-ai/fhevm/issues/33
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -317,7 +320,10 @@ contract KmsManagement is
     }
 
     /// @dev See {IKmsManagement-crsgenResponse}.
-    function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external virtual onlyKmsTxSender whenNotPaused {
+    function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external virtual whenNotPaused {
+        /// @dev TODO: This function should only be called by a KMS transaction sender,
+        /// @dev update this once integrating keygen in the gateway
+        /// @dev See https://github.com/zama-ai/fhevm/issues/33
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -348,6 +354,9 @@ contract KmsManagement is
         uint256 sourceKeyId,
         uint256 destKeyId
     ) external virtual onlyOwner whenNotPaused {
+        /// @dev TODO: This function should only be called by a KMS transaction sender,
+        /// @dev update this once integrating keygen in the gateway
+        /// @dev See https://github.com/zama-ai/fhevm/issues/33
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KSK generation request can only be sent once
@@ -384,7 +393,7 @@ contract KmsManagement is
     }
 
     /// @dev See {IKmsManagement-kskgenResponse}.
-    function kskgenResponse(uint256 preKskId, uint256 kskId) external virtual onlyKmsTxSender whenNotPaused {
+    function kskgenResponse(uint256 preKskId, uint256 kskId) external virtual whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KMS node can only respond once
@@ -553,7 +562,9 @@ contract KmsManagement is
     /// @param kmsCounter The number of KMS nodes that agreed
     /// @return Whether the consensus is reached
     function _isKmsConsensusReached(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
+        // TODO: Consider a dedicated threshold from the GatewayConfig
+        // See https://github.com/zama-ai/fhevm-gateway/issues/390
+        uint256 consensusThreshold = 0;
         return kmsCounter >= consensusThreshold;
     }
 
