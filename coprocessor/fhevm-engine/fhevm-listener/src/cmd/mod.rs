@@ -300,9 +300,6 @@ impl InfiniteLogIter {
         if logs.is_empty() {
             return false;
         }
-        if logs.len() as u64 == last_block_event_count {
-            return false;
-        }
         info!(
             block = block,
             events_count = logs.len(),
