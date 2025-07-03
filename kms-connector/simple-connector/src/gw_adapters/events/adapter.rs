@@ -15,7 +15,7 @@ use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
 
 /// Default event processing timeout
-const EVENT_TIMEOUT: Duration = Duration::from_secs(5);
+const EVENT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Events that can be processed by the KMS Core
 #[derive(Clone, Debug)]
@@ -357,7 +357,7 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
         };
 
         // Simple timeout for event sending
-        match tokio::time::timeout(EVENT_TIMEOUT, event_tx.send(event)).await {
+        match tokio::time::timeout(EVENT_TIMEOUT, event_tx.send(event.clone())).await {
             Ok(Ok(_)) => {
                 debug!("Successfully sent {} event", event_name);
                 Ok(())
@@ -367,8 +367,11 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
                 Err(anyhow!("Failed to send {}: {}", event_name, e))
             }
             Err(_) => {
-                error!("Event send timeout for {}", event_name);
-                Err(anyhow!("Event send timeout for {}", event_name))
+                warn!(
+                    "Event send timeout for {}. Re-sending the event without timeout",
+                    event_name
+                );
+                event_tx.send(event).await.map_err(anyhow::Error::from)
             }
         }
     }
