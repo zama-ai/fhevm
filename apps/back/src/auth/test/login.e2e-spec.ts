@@ -15,11 +15,17 @@ import {
 } from 'vitest'
 
 describe('login', () => {
-  const manager = new IntegrationManager()
+  const manager = new IntegrationManager({
+    invitations: false,
+  })
 
   beforeAll(async () => {
     await manager.beforeAll()
   }, 30000)
+
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
 
   afterAll(async () => {
     await manager.afterAll()
@@ -29,7 +35,7 @@ describe('login', () => {
     await manager.afterEach()
   })
 
-  describe('given a user exists', () => {
+  describe('given a confirmed user exists', () => {
     let email: string
     let password: string
 
@@ -37,13 +43,15 @@ describe('login', () => {
       email = faker.internet.email()
       password = faker.internet.password()
 
-      await manager.auth.signup(
-        {
-          name: faker.internet.username(),
-          password,
-        },
-        { createInvitation: true, email },
-      )
+      const signup = await manager.auth.signup({
+        email,
+        name: faker.internet.username(),
+        password,
+      })
+      if (!signup.success) {
+        console.log(`failed to signup: ${JSON.stringify(signup)}`)
+        expect(signup.success).toBe(true)
+      }
     })
 
     describe('when logging in', () => {
@@ -51,10 +59,13 @@ describe('login', () => {
       let user: User
 
       beforeEach(async () => {
-        const result = await manager.auth.login({ email, password })
-        if (result.success) {
-          token = result.data.token
-          user = result.data.user
+        const login = await manager.auth.login({ email, password })
+        if (login.success) {
+          token = login.data.token
+          user = login.data.user
+        } else {
+          console.log(`failed to login: ${JSON.stringify(login.errors)}`)
+          expect(login.success, 'login should succeed').toBe(true)
         }
       })
 
@@ -92,6 +103,39 @@ describe('login', () => {
       })
     })
   })
+  describe('given a not confirmed user exists', () => {
+    let email: string
+    let password: string
+
+    beforeEach(async () => {
+      email = faker.internet.email()
+      password = faker.internet.password()
+
+      const signup = await manager.auth.signup(
+        {
+          email,
+          name: faker.internet.username(),
+          password,
+        },
+        { confirm: false },
+      )
+      if (!signup.success) {
+        console.log(`failed to signup: ${JSON.stringify(signup.errors)}`)
+        expect(signup.success).toBe(true)
+      }
+    })
+
+    describe('when logging in', () => {
+      test('then it should return unauthorized', async () => {
+        const result = await manager.auth.login({ email, password })
+        if (result.success) {
+          expect(result.success, 'login should fail').toBe(false)
+        } else {
+          expect(result.errors[0].message).toBe('Unauthorized')
+        }
+      })
+    })
+  })
 
   describe('given a user has been deleted', () => {
     let email: string
@@ -101,13 +145,15 @@ describe('login', () => {
       email = faker.internet.email()
       password = faker.internet.password()
 
-      await manager.auth.signup(
-        {
-          name: faker.internet.username(),
-          password,
-        },
-        { createInvitation: true, email },
-      )
+      const signup = await manager.auth.signup({
+        email,
+        name: faker.internet.username(),
+        password,
+      })
+      if (!signup.success) {
+        console.log(`failed to signup: ${JSON.stringify(signup.errors)}`)
+        expect(signup.success).toBe(true)
+      }
       // TODO: use a GraphQL endpoint when implemented
       await manager.prismaClient.user.update({
         where: { email },
@@ -129,7 +175,7 @@ describe('login', () => {
         if (!login.success) {
           expect(login.errors[0].message).toMatch('Unauthorized')
         } else {
-          expect(login.success, 'It should fail').toBe(false)
+          expect(login.success, 'login should fail').toBe(false)
         }
       })
     })
@@ -158,7 +204,7 @@ describe('login', () => {
         if (!login.success) {
           expect(login.errors[0].message).toMatch('Unauthorized')
         } else {
-          expect(login.success, 'It should fail').toBe(false)
+          expect(login.success, 'login should fail').toBe(false)
         }
       })
     })

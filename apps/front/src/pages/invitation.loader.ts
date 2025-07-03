@@ -18,7 +18,7 @@ type Params = {
   invitationToken: string
 }
 
-export async function signupLoader({
+export async function invitationLoader({
   params: { invitationToken },
 }: LoaderFunctionArgs<Params>) {
   const { error, data } = await apolloClient.query<InvitationTokenQuery>({
@@ -26,6 +26,7 @@ export async function signupLoader({
     variables: {
       token: invitationToken,
     },
+    fetchPolicy: 'network-only',
   })
   if (error) throw error
   return data

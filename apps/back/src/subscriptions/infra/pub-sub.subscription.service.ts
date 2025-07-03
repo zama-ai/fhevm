@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config'
 import { SubscriptionTypes } from '../domain/entities/subscription.js'
 import { SubscriptionId } from '../domain/entities/subscription-id.js'
 import { SubscriptionService } from '../domain/services/subscription.service.js'
+import { shortString } from 'utils'
 
 @Injectable()
 export class PubSubSubscriptionService
@@ -23,7 +24,9 @@ export class PubSubSubscriptionService
         return Math.min(times * 50, 2000)
       },
     }
-    this.logger.debug(`connecting to redis: ${JSON.stringify(options)}`)
+    this.logger.debug(
+      `connecting to redis: ${JSON.stringify(options, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+    )
     this.#pubSub = new RedisPubSub({
       publisher: new Redis(options),
       subscriber: new Redis(options),

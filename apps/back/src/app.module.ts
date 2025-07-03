@@ -12,7 +12,7 @@ import { RestModule } from '#infra/rest/rest.module.js'
 import { ChainsModule } from '#chains/infra/chains.module.js'
 import { RedisModule } from '#infra/redis/redis.module.js'
 import { FeatureFlagModule } from '#feature-flag/feature-flag.module.js'
-import { EnvFeatureFlagHandler } from '#infra/env-feature-flag.handler.js'
+import { ConfigFeatureFlagHandler } from '#infra/config-feature-flag.handler.js'
 import { DefaultFeatureFlagHandler } from '#infra/default-feature-flag.handler.js'
 import configuration from '#config/configuration.js'
 
@@ -53,9 +53,16 @@ export const configModule = ConfigModule.forRoot({
     SqsProducerModule,
     ChainsModule,
     RedisModule,
-    FeatureFlagModule.register({
-      global: true,
-      handlers: [new EnvFeatureFlagHandler(), new DefaultFeatureFlagHandler()],
+    FeatureFlagModule.registerAsync({
+      imports: [configModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        global: true,
+        handlers: [
+          new ConfigFeatureFlagHandler(config),
+          new DefaultFeatureFlagHandler(),
+        ],
+      }),
     }),
   ],
 })

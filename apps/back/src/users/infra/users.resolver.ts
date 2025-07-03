@@ -6,7 +6,7 @@ import {
   Mutation,
   Args,
 } from '@nestjs/graphql'
-import { Inject, UseFilters, UseGuards } from '@nestjs/common'
+import { Inject, Logger, UseFilters, UseGuards } from '@nestjs/common'
 import { JwtAuthGuard } from '../../auth/infra/guards/jwt-auth-guard.js'
 import { CurrentUser } from '../../auth/infra/decorators/current-user.js'
 import { GetTeamsByUserId } from '#teams/use-cases/get-teams-by-user-id.use-case.js'
@@ -14,7 +14,7 @@ import { UserType } from './types/user.type.js'
 import { User } from '../domain/entities/user.js'
 import { UserId } from '../domain/entities/value-objects.js'
 import { UpdateUserInput } from './dto/inputs/update-user.input.js'
-import { UpdateUser } from '#users/use-cases/update-user-by-id.use-case.js'
+import { UpdateUser } from '#users/use-cases/update-user.use-case.js'
 import { AppErrorFilter } from '#auth/infra/filters/app-error.filter.js'
 import {
   CHANGE_PASSWORD,
@@ -25,6 +25,8 @@ import { ChangePasswordInput } from './dto/inputs/change-password.input.js'
 @UseFilters(AppErrorFilter)
 @Resolver(() => UserType)
 export class UsersResolver {
+  private readonly logger = new Logger(UsersResolver.name)
+
   constructor(
     private readonly getTeamsByUserIdUC: GetTeamsByUserId,
     private readonly updateUserUC: UpdateUser,
@@ -40,9 +42,14 @@ export class UsersResolver {
   @ResolveField()
   async teams(@Parent() user: UserType) {
     const { id } = user
-    return UserId.from(id)
-      .asyncChain(this.getTeamsByUserIdUC.execute)
-      .toPromise()
+    try {
+      return UserId.from(id)
+        .asyncChain(this.getTeamsByUserIdUC.execute)
+        .toPromise()
+    } catch (err) {
+      this.logger.warn(`failed to resolve teams for user ${user.id}: ${err}`)
+      throw err
+    }
   }
 
   @Mutation(() => UserType, { name: 'updateUser' })

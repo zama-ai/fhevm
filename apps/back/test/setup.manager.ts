@@ -7,10 +7,16 @@ import { ConfigModule, registerAs } from '@nestjs/config'
 import { inject, vi } from 'vitest'
 import { randomUUID } from 'crypto'
 import { execSync } from 'child_process'
-import { SQSClient } from '@aws-sdk/client-sqs'
+import {
+  GetQueueAttributesCommand,
+  ReceiveMessageCommand,
+  SQSClient,
+} from '@aws-sdk/client-sqs'
 import { JsPromise } from '#prisma/client/runtime/library.js'
 import type { Type } from '@nestjs/common'
 import configuration from '#config/configuration.js'
+import { FeatureFlag } from '#feature-flag/services/feature-flags.service.js'
+import { back } from 'messages'
 export type GraphQlResponse<T> =
   | {
       success: true
@@ -21,6 +27,20 @@ export type GraphQlResponse<T> =
       errors: ReadonlyArray<{ message: string }>
     }
 
+type CamelCase<S extends string> =
+  S extends `${infer P1}_${infer P2}${infer P3}`
+    ? `${Lowercase<P1>}${Uppercase<P2>}${CamelCase<P3>}`
+    : Lowercase<S>
+export type Flags = {
+  [K in CamelCase<FeatureFlag>]: boolean
+}
+
+const DEFAULT_FLAGS: Flags = {
+  apiKeys: true,
+  graphqlPlayground: false,
+  invitations: false,
+}
+
 export class SetupManager {
   #app: INestApplication
 
@@ -28,6 +48,15 @@ export class SetupManager {
 
   #backQueueName: string
   #orchQueueName: string
+
+  private readonly _flags: Flags
+  constructor(flags: Partial<Flags> = DEFAULT_FLAGS) {
+    this._flags = Object.assign({}, DEFAULT_FLAGS, flags)
+  }
+
+  get flags() {
+    return this._flags
+  }
 
   private async startPostgres() {
     const databaseUrls = inject('databaseUrls')
@@ -84,6 +113,12 @@ export class SetupManager {
     await this.createQueue(this.#orchQueueName)
   }
 
+  private sentEvents: back.BackEvent[] = []
+  async beforeEach() {
+    // Reset the orchestrator message queue
+    this.sentEvents = []
+  }
+
   async beforeAll() {
     // Start services
     await Promise.all([this.startAws(), this.startPostgres()])
@@ -115,6 +150,7 @@ export class SetupManager {
                 },
               },
               redis: this.redisConnection,
+              flags: this.flags,
             }),
           ],
         }),
@@ -200,6 +236,44 @@ export class SetupManager {
     return this.#sqs
   }
 
+  private async retrieveSentMessages() {
+    const messages = await this.sqs.send(
+      new ReceiveMessageCommand({
+        QueueUrl: this.orchQueueUrl,
+        MessageAttributeNames: ['All'],
+        MessageSystemAttributeNames: ['All'],
+        MaxNumberOfMessages: 10,
+        WaitTimeSeconds: 1,
+      }),
+    )
+
+    for (const message of messages.Messages ?? []) {
+      if (message.Body) {
+        const event = JSON.parse(message.Body)
+        if (back.isBackEvent(event)) {
+          this.sentEvents.push(event)
+        }
+      }
+    }
+  }
+
+  async getOrchQueueSize() {
+    await this.retrieveSentMessages()
+    return this.sentEvents.length
+  }
+
+  async getMessageFromOrchQueue(
+    type: back.BackEvent['type'],
+  ): Promise<back.BackEvent | undefined> {
+    await this.retrieveSentMessages()
+    return this.sentEvents.find(event => event.type === type)
+  }
+
+  async getAllMessagesFromOrchQueue(): Promise<back.BackEvent[]> {
+    await this.retrieveSentMessages()
+    return this.sentEvents
+  }
+
   private async purgeOrchQueue() {
     await this.deleteQueue(this.orchQueueUrl)
     await this.createQueue(this.#orchQueueName)
@@ -248,8 +322,7 @@ class PrismaClientProxy {
     return this.instances[Number(process.env.VITEST_POOL_ID) - 1].dappStat
   }
 
-  get passwordResetToken() {
-    return this.instances[Number(process.env.VITEST_POOL_ID) - 1]
-      .passwordResetToken
+  get userToken() {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1].userToken
   }
 }

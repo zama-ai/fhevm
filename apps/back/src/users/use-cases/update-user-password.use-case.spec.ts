@@ -14,7 +14,7 @@ import {
   USER_REPOSITORY,
   UserRepository,
 } from '#users/domain/repositories/user.repository.js'
-import { AppError, notFoundError, Task } from 'utils'
+import { AppError, none, notFoundError, some, Task } from 'utils'
 
 describe('UpdateUserPassword', () => {
   let useCase: UpdateUserPassword
@@ -46,7 +46,7 @@ describe('UpdateUserPassword', () => {
       }).unwrap()
       password = faker.internet.password()
 
-      repo.findById.mockReturnValue(Task.of(user))
+      repo.findById.mockReturnValue(Task.of(some(user)))
       repo.update.mockImplementation((userId, props) => {
         expect(userId.value).toBe(user.id.value)
         // NOTE: props.password is an hash
@@ -89,7 +89,7 @@ describe('UpdateUserPassword', () => {
 
     beforeEach(() => {
       userId = UserId.random().value
-      repo.findById.mockReturnValue(Task.reject(notFoundError()))
+      repo.findById.mockReturnValue(Task.of(none()))
     })
 
     describe('when called', () => {

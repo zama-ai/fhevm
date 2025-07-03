@@ -2,7 +2,7 @@ import { User, UserProps } from '#users/domain/entities/user.js'
 import { UserRepository } from '#users/domain/repositories/user.repository.js'
 import { PrismaService } from '../prisma.service.js'
 import { Injectable, Logger } from '@nestjs/common'
-import { AppError, isAppError } from 'utils'
+import { AppError, isAppError, none, Option, shortString, some } from 'utils'
 import { notFoundError, Task, unknownError } from 'utils'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { Email } from '#shared/entities/value-objects/email.js'
@@ -21,7 +21,7 @@ export class PrismaUserRepository implements UserRepository {
     }).chain(props => User.parse(props).async())
   }
 
-  findById = (id: UserId): Task<User, AppError> => {
+  findById = (id: UserId): Task<Option<User>, AppError> => {
     if (!id) {
       return Task.reject(notFoundError('User not found'))
     }
@@ -29,14 +29,20 @@ export class PrismaUserRepository implements UserRepository {
       this.db.user
         .findUnique({ where: { id: id.value, deletedAt: null } })
         .then(data => {
-          this.logger.verbose(`found user by id: ${JSON.stringify(data)}`)
-          return data ? resolve(data) : reject(notFoundError('User not found'))
+          this.logger.verbose(
+            `found user by id: ${JSON.stringify(data, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+          )
+          return resolve(data)
         })
         .catch((err: unknown) => reject(unknownError(String(err))))
-    }).chain(props => User.parse(props).async())
+    }).chain(props =>
+      props
+        ? User.parse(props).map<Option<User>>(some).async()
+        : Task.of(none()),
+    )
   }
 
-  findByEmail = (email: Email): Task<User, AppError> => {
+  findByEmail = (email: Email): Task<Option<User>, AppError> => {
     if (!email) {
       return Task.reject(notFoundError('User not found'))
     }
@@ -44,11 +50,21 @@ export class PrismaUserRepository implements UserRepository {
       this.db.user
         .findFirst({ where: { email: email.value, deletedAt: null } })
         .then(data => {
-          this.logger.verbose(`found user by email: ${JSON.stringify(data)}`)
-          return data ? resolve(data) : reject(notFoundError('User not found'))
+          if (data) {
+            this.logger.verbose(
+              `found user by email: ${JSON.stringify(data, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+            )
+          } else {
+            this.logger.verbose(`user ${email} not found`)
+          }
+          return resolve(data)
         })
         .catch((err: unknown) => reject(unknownError(String(err))))
-    }).chain(props => User.parse(props).async())
+    }).chain(props =>
+      props
+        ? User.parse(props).map<Option<User>>(some).async()
+        : Task.of(none()),
+    )
   }
 
   update = (
@@ -56,7 +72,9 @@ export class PrismaUserRepository implements UserRepository {
     data: Partial<Omit<UserProps, 'id'>>,
   ): Task<User, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
-      this.logger.debug(`updating user ${id} with ${JSON.stringify(data)}`)
+      this.logger.debug(
+        `updating user ${id} with ${JSON.stringify(data, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+      )
       this.db.user
         .update({
           where: { id: id.value },
@@ -68,7 +86,9 @@ export class PrismaUserRepository implements UserRepository {
           reject(unknownError(String(err)))
         })
     }).chain(props => {
-      this.logger.verbose(`parsing user: ${JSON.stringify(props)}`)
+      this.logger.verbose(
+        `parsing user: ${JSON.stringify(props, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+      )
       return User.parse(props).async()
     })
   }

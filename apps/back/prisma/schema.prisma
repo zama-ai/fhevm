@@ -34,14 +34,15 @@ model Invitation {
 }
 
 model User {
-  id        String    @id
-  email     String    @unique
-  password  String
-  name      String
-  teams     Team[]
-  updatedAt DateTime  @updatedAt
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
+  id          String    @id
+  email       String    @unique
+  password    String
+  name        String
+  teams       Team[]
+  confirmedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
 }
 
 model Team {
@@ -92,10 +93,17 @@ model ApiKey {
   deletedAt   DateTime?
 }
 
-model PasswordResetToken {
-  tokenHash String   @id @map("token_hash")
-  userId    String   @unique @map("user_id")
-  expiresAt DateTime @map("expires_at")
+enum UserTokenType {
+  RESET_PASSWORD
+  CONFIRM_EMAIL
+}
 
-  @@map("password_reset_tokens")
+model UserToken {
+  tokenHash String        @id @map("token_hash")
+  userId    String        @map("user_id")
+  expiresAt DateTime      @map("expires_at")
+  type      UserTokenType @map("token_type")
+
+  @@unique([userId, type])
+  @@map("user_tokens")
 }

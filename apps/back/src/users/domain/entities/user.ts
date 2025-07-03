@@ -9,6 +9,7 @@ const schema = z.object({
   email: Email.schema,
   password: Password.schema,
   name: z.string(),
+  confirmedAt: z.date().nullable(),
 })
 
 export type UserProps = Unbrand<z.infer<typeof schema>>
@@ -17,7 +18,7 @@ export class User
   extends Entity<UserProps>
   implements
     Readonly<
-      Omit<UserProps, 'id' | 'password' | 'email'> & {
+      Omit<UserProps, 'id' | 'password' | 'email' | 'confirmedAt'> & {
         id: UserId
         email: Email
       }
@@ -44,6 +45,7 @@ export class User
       email,
       password: Password.hash(password).value,
       name,
+      confirmedAt: null,
     })
   }
 
@@ -57,6 +59,10 @@ export class User
 
   get name() {
     return this.get('name')
+  }
+
+  get isConfirmed() {
+    return this.get('confirmedAt') !== null
   }
 
   checkPassword(password: string): Result<User, AppError> {

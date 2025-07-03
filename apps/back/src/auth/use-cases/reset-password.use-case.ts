@@ -1,10 +1,10 @@
 import { Hash } from '#auth/domain/entities/value-objects/hash.js'
 import { Token } from '#auth/domain/entities/value-objects/token.js'
 import {
-  PASSWORD_RESET_TOKEN_REPOSITORY,
-  PasswordResetTokenRepository,
-} from '#auth/domain/repositories/password-reset-token.repository.js'
-import { User, UserProps } from '#users/domain/entities/user.js'
+  USER_TOKEN_REPOSITORY,
+  UserTokenRepository,
+} from '#auth/domain/repositories/user-token.repository.js'
+import { User } from '#users/domain/entities/user.js'
 import {
   IUpdateUserPassword,
   UPDATE_USER_PASSWORD,
@@ -14,11 +14,12 @@ import {
   AppError,
   forbiddenError,
   isNotFoundError,
+  notFoundError,
   Task,
   UnitOfWork,
   UseCase,
 } from 'utils'
-import { LogIn } from './login.use-case.js'
+import { LOG_IN, ILogIn } from './login.use-case.js'
 import { GetUserById } from '#users/use-cases/get-user-by-id.use-case.js'
 import {
   DELETE_RESET_PASSWORD_TOKEN,
@@ -28,6 +29,7 @@ import { PRODUCER, UNIT_OF_WORK } from '#constants.js'
 import { IProducer } from '#shared/services/producer.js'
 import { back, generateRequestId } from 'messages'
 import { randomUUID } from 'crypto'
+import { UserToken } from '#auth/domain/entities/user-token.js'
 
 export type ResetPasswordInput = {
   token: string
@@ -35,7 +37,7 @@ export type ResetPasswordInput = {
 }
 
 export type ResetPasswordOutput = {
-  user: UserProps
+  user: User
   token: string
 }
 
@@ -49,8 +51,8 @@ export class ResetPassword
   private readonly logger = new Logger(ResetPassword.name)
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
-    @Inject(PASSWORD_RESET_TOKEN_REPOSITORY)
-    private readonly repo: PasswordResetTokenRepository,
+    @Inject(USER_TOKEN_REPOSITORY)
+    private readonly repo: UserTokenRepository,
     private readonly getUserByIdUC: GetUserById,
     @Inject(UPDATE_USER_PASSWORD)
     private readonly updateUserPasswordUC: IUpdateUserPassword,
@@ -68,6 +70,9 @@ export class ResetPassword
     return Token.from(token)
       .map(Hash.hash)
       .asyncChain(this.repo.findByHash)
+      .chain<UserToken>(token =>
+        token.isResetPassword ? Task.of(token) : Task.reject(notFoundError()),
+      )
       .mapError(error => (isNotFoundError(error) ? forbiddenError() : error))
       .chain<{ user: User }>(token => {
         this.logger.debug(`token found: ${token.hash.value}`)
@@ -76,14 +81,21 @@ export class ResetPassword
           ? this.uow
               .exec(
                 Task.all<AppError, { user: User }, void>([
-                  this.getUserByIdUC.execute(token.userId.value).chain(user =>
-                    // NOTE: only the current user can change their password,
-                    // so we need to pass it in the context
-                    this.updateUserPasswordUC.execute(
-                      { userId: token.userId.value, password },
-                      { ...context, user },
+                  this.getUserByIdUC
+                    .execute({ id: token.userId })
+                    .chain<User>(user =>
+                      user.isSome()
+                        ? Task.of(user.unwrap())
+                        : Task.reject(forbiddenError('User not found')),
+                    )
+                    .chain(user =>
+                      // NOTE: only the current user can change their password,
+                      // so we need to pass it in the context
+                      this.updateUserPasswordUC.execute(
+                        { userId: token.userId.value, password },
+                        { ...context, user },
+                      ),
                     ),
-                  ),
                   this.deleteResetPasswordUC.execute({ hash: token.hash }),
                 ]),
               )
@@ -135,7 +147,8 @@ export class ResetPasswordWithLogin implements IResetPassword {
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     private readonly resetPassword: ResetPasswordWithEvents,
-    private readonly logIn: LogIn,
+    @Inject(LOG_IN)
+    private readonly logIn: ILogIn,
   ) {}
   execute = (
     input: ResetPasswordInput,

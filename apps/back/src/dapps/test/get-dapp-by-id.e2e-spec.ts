@@ -22,6 +22,10 @@ describe('get-dapp-by-id', () => {
     await manager.beforeAll()
   }, 30000)
 
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
+
   afterAll(async () => {
     await manager.afterAll()
   })
@@ -36,17 +40,17 @@ describe('get-dapp-by-id', () => {
     let teamId: string
 
     beforeEach(async () => {
-      const result = await manager.auth.login(
+      const login = await manager.auth.login(
         { email: faker.internet.email(), password: faker.internet.password() },
         { signup: true },
       )
-      if (result.success) {
-        token = result.data.token
-        teamId = result.data.user.teams[0].id
+      if (login.success) {
+        token = login.data.token
+        teamId = login.data.user.teams[0].id
       } else {
-        console.log(`failed to login: ${JSON.stringify(result)}`)
+        console.log(`failed to login: ${JSON.stringify(login)}`)
       }
-      expect(result.success, 'Failed to login the user').toBe(true)
+      expect(login.success, 'Failed to login the user').toBe(true)
 
       const createDappResult = await manager.dapp.createDApp({
         token,

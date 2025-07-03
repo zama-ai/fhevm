@@ -7,7 +7,7 @@ import {
 import { faker } from '@faker-js/faker'
 import { Mocked } from '@suites/doubles.vitest'
 import { TestBed } from '@suites/unit'
-import { AppError, notFoundError, Task } from 'utils'
+import { AppError, notFoundError, Option, some, Task } from 'utils'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { GetUserByEmail } from './get-user-by-email.use-case.js'
 import { Email } from '#shared/entities/value-objects/email.js'
@@ -41,19 +41,20 @@ describe('GetUserByEmail', () => {
         name: faker.person.fullName(),
       }).unwrap()
 
-      repo.findByEmail.mockReturnValue(Task.of(user))
+      repo.findByEmail.mockReturnValue(Task.of(some(user)))
     })
 
     describe('when called', () => {
-      let result: Task<User, AppError>
+      let result: ReturnType<GetUserByEmail['execute']>
 
       beforeEach(() => {
-        result = useCase.execute(email)
+        result = useCase.execute({ email })
       })
 
       test('then it returns the user', async () => {
         const expected = await result.toPromise()
-        expect(expected).toEqual(user)
+        expect(expected.isSome()).toBeTruthy()
+        expect(expected.unwrap()).toEqual(user)
       })
 
       test('then it calls the repo', async () => {
@@ -73,10 +74,10 @@ describe('GetUserByEmail', () => {
     })
 
     describe('when called', () => {
-      let result: Task<User, AppError>
+      let result: ReturnType<GetUserByEmail['execute']>
 
       beforeEach(() => {
-        result = useCase.execute(email)
+        result = useCase.execute({ email })
       })
 
       test('then it returns a not found error', async () => {

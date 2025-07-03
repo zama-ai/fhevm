@@ -11,36 +11,31 @@ import {
   type TemplateAdapter,
 } from '#workflows/use-cases/adapters/template.adapter.js'
 import { Email } from '#domain/email.js'
-import { Task, AppError, unknownError } from 'utils'
+import { Task, AppError, unknownError, shortString } from 'utils'
 
 @Injectable()
 export class SESEmailService implements EmailService {
   private readonly logger = new Logger(SESEmailService.name)
-  private _client: SESClient | undefined
 
+  private readonly client: SESClient
   constructor(
     private readonly config: ConfigService,
     @Inject(TEMPLATE_ADAPTER) private readonly templateAdapter: TemplateAdapter,
-  ) {}
-
-  private get client(): SESClient {
-    if (!this._client) {
-      this.logger.verbose(`creating ses client`)
-      this._client = new SESClient(
-        // TODO: change to aws.useConfigCredentials when sqs is ready
-        this.config.get<boolean>('ses.useConfigCredentials', false)
-          ? {
-              region: this.config.get('ses.region'),
-              endpoint: this.config.get('ses.endpoint'),
-              credentials: {
-                accessKeyId: this.config.getOrThrow('ses.accessKeyId'),
-                secretAccessKey: this.config.getOrThrow('ses.secretAccessKey'),
-              },
-            }
-          : {},
-      )
-    }
-    return this._client
+  ) {
+    this.logger.verbose(`creating ses client`)
+    this.client = new SESClient(
+      // TODO: change to aws.useConfigCredentials when sqs is ready
+      this.config.get<boolean>('ses.useConfigCredentials', false)
+        ? {
+            region: this.config.get('ses.region'),
+            endpoint: this.config.get('ses.endpoint'),
+            credentials: {
+              accessKeyId: this.config.getOrThrow('ses.accessKeyId'),
+              secretAccessKey: this.config.getOrThrow('ses.secretAccessKey'),
+            },
+          }
+        : {},
+    )
   }
 
   sendEmail(email: Email): Task<void, AppError> {
@@ -71,7 +66,11 @@ export class SESEmailService implements EmailService {
             }),
           )
 
-          this.logger.debug(`status ${JSON.stringify(output)}`)
+          this.logger.debug(
+            `status ${JSON.stringify(output, (_, v) =>
+              typeof v === 'string' ? shortString(v) : v,
+            )}`,
+          )
           return output
         } catch (err) {
           this.logger.warn(`failed to send email: ${err}`)

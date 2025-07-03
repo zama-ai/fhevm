@@ -170,6 +170,9 @@ export class SetupManager {
             configuration,
             // commonConfig,
             registerAs('aws', () => ({
+              useConfigCredentials: true,
+              accessKeyId: 'test',
+              secretAccessKey: 'test',
               endpoint: this.awsEndpoint,
               back: {
                 queueUrl: this.backQueueUrl,

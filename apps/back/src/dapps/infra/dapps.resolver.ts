@@ -33,6 +33,7 @@ import { DappStatsType } from './types/stat.type.js'
 import { ChainType } from '#chains/infra/graphql/types/chain.type.js'
 import { ChainProps } from '#chains/domain/entities/chain.js'
 import { GetChainById } from '#chains/use-cases/get-chain-by-id.use-case.js'
+import { shortString } from 'utils'
 
 @UseFilters(AppErrorFilter)
 @Resolver(() => DappType)
@@ -65,7 +66,9 @@ export class DappsResolver {
           this.getDappByIdUC.execute({ dappId, userId: user.id }),
         )
         .toPromise()
-      this.logger.debug(`dapp: ${JSON.stringify(dapp)}`)
+      this.logger.debug(
+        `dapp: ${JSON.stringify(dapp, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+      )
       return dapp
     } catch (err) {
       this.logger.warn(`failed to resolve dapp: ${(err as any).message ?? err}`)
@@ -79,7 +82,9 @@ export class DappsResolver {
     @Args('input') input: CreateDappInput,
     @CurrentUser() user: User,
   ) {
-    this.logger.verbose(`creating dapp ${JSON.stringify(input)}`)
+    this.logger.verbose(
+      `creating dapp ${JSON.stringify(input, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+    )
     try {
       const dapp = await this.createDappUC
         .execute({ dapp: input, user })
@@ -99,7 +104,7 @@ export class DappsResolver {
     @CurrentUser() user: User,
   ) {
     this.logger.verbose(
-      `updating dapp ${input.id} with ${JSON.stringify(input)}`,
+      `updating dapp ${input.id} with ${JSON.stringify(input, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
     )
     try {
       const { id, ...props } = input
@@ -147,7 +152,9 @@ export class DappsResolver {
             .map(chain => chain.toJSON())
             .toPromise()
         : null
-      this.logger.debug(`chain: ${JSON.stringify(chain)}`)
+      this.logger.debug(
+        `chain: ${JSON.stringify(chain, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+      )
       return chain
     } catch (err) {
       this.logger.warn(
@@ -166,7 +173,9 @@ export class DappsResolver {
         .execute(teamId)
         .map(team => team.toJSON())
         .toPromise()
-      this.logger.log(`team: ${JSON.stringify(team)}`)
+      this.logger.log(
+        `team: ${JSON.stringify(team, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+      )
       return team
     } catch (err) {
       this.logger.warn(`failed to resolve team: ${(err as any).message ?? err}`)
@@ -205,7 +214,9 @@ export class DappsResolver {
     this.logger.verbose(`validating address ${input.chainId}/${input.address}`)
     try {
       const result = await this.validateAddressUC.execute(input).toPromise()
-      this.logger.verbose(`result: ${JSON.stringify(result)}`)
+      this.logger.verbose(
+        `result: ${JSON.stringify(result, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+      )
       return result
     } catch (err) {
       this.logger.warn(
@@ -225,7 +236,9 @@ export class DappsResolver {
       const apiKeys = await this.getAllApiKeysUC
         .execute({ dappId: dapp.id }, { user })
         .toPromise()
-      this.logger.verbose(`apiKeys: ${JSON.stringify(apiKeys)}`)
+      this.logger.verbose(
+        `apiKeys: ${JSON.stringify(apiKeys, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+      )
       return apiKeys.map(apiKey => ({
         id: apiKey.id,
         name: apiKey.name,

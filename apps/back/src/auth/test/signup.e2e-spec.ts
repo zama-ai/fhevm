@@ -5,6 +5,7 @@ import {
   type User,
 } from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
+import { back } from 'messages'
 import {
   afterAll,
   afterEach,
@@ -17,11 +18,17 @@ import {
 } from 'vitest'
 
 describe('signup', () => {
-  const manager = new IntegrationManager()
+  const manager = new IntegrationManager({
+    invitations: false,
+  })
 
   beforeAll(async () => {
     await manager.beforeAll()
-  }, 30000)
+  }, 30_000)
+
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
 
   afterAll(async () => {
     await manager.afterAll()
@@ -31,153 +38,156 @@ describe('signup', () => {
     await manager.afterEach()
   })
 
-  describe('given an invitation exists', () => {
-    let invitation: string
+  describe('given no other users exists with the same email', () => {
     let email: string
+
+    beforeEach(() => {
+      email = faker.internet.email()
+    })
+
+    describe('when signing up', () => {
+      let result: GraphQlResponse<{ user: User }>
+      let name: string
+      let password: string
+
+      beforeEach(async () => {
+        name = faker.internet.username()
+        password = faker.internet.password()
+        result = await manager.auth.signup(
+          {
+            email,
+            name,
+            password,
+          },
+          { confirm: false },
+        )
+      })
+
+      test('then it should create a new user', async () => {
+        if (result.success) {
+          expect(result.data.user.email).toBe(email)
+          expect(result.data.user.name).toBe(name)
+        } else {
+          console.log(
+            `signup should not fail: ${JSON.stringify(result.errors)}`,
+          )
+          expect(result.success).toBe(true)
+        }
+      })
+
+      test('then the user receives a confirmation token', async () => {
+        await vi.waitUntil(async () => {
+          const event =
+            await manager.getMessageFromOrchQueue('back:user:created')
+          return event !== undefined
+        })
+
+        const event = await manager.getMessageFromOrchQueue('back:user:created')
+        if (event) {
+          expect(back.isBackEvent(event)).toBe(true)
+          expect(event.type).toBe('back:user:created')
+          expect((event.payload as any).email).toBe(email)
+        } else {
+          expect.fail('event is undefined')
+        }
+      })
+
+      test('then the user cannot login before they confirm the email', async () => {
+        const login = await manager.auth.login({
+          email,
+          password,
+        })
+        expect(login.success, 'login should fail before confirmation').toBe(
+          false,
+        )
+      })
+    })
+
+    describe('when signing up and confirming the email', () => {
+      let email: string
+      let password: string
+
+      beforeEach(async () => {
+        email = faker.internet.email()
+        password = faker.internet.password()
+        const signup = await manager.auth.signup(
+          {
+            email,
+            name: faker.internet.username(),
+            password,
+          },
+          {
+            confirm: false,
+          },
+        )
+        if (!signup.success) {
+          console.log(`failed to signup: ${JSON.stringify(signup)}`)
+          expect(signup.success).toBe(true)
+        }
+
+        let token: string | undefined
+        do {
+          const event =
+            await manager.getMessageFromOrchQueue('back:user:created')
+          if (event) {
+            token = (event.payload as any).token
+          }
+        } while (!token)
+
+        const confirmEmail = await manager.auth.confirmEmail(token)
+        if (!confirmEmail.success) {
+          console.log(
+            `failed to confirm email: ${JSON.stringify(confirmEmail)}`,
+          )
+          expect(confirmEmail.success).toBe(true)
+        }
+      })
+
+      test('then the user can login', async () => {
+        const login = await manager.auth.login({
+          email,
+          password,
+        })
+        if (!login.success) {
+          console.log(`failed to login: ${JSON.stringify(login.errors)}`)
+          expect(login.success).toBe(true)
+        }
+        expect(login.success, 'login should succeed').toBe(true)
+      })
+    })
+  })
+
+  describe('given a user signups with the same email', () => {
+    let email: string
+    let password: string
 
     beforeEach(async () => {
       email = faker.internet.email()
-      const request = await manager.auth.createInvitation(email)
-      expect(request.success).toBe(true)
-      if (request.success) {
-        invitation = request.data.token
-      }
-    })
-
-    describe('when signing up', () => {
-      let token: string
-      let user: User
-
-      beforeEach(async () => {
-        const result = await manager.auth.signup({
-          invitation,
+      password = faker.internet.password()
+      const signup = await manager.auth.signup(
+        {
+          email,
           name: faker.internet.username(),
-          password: faker.internet.password(),
-        })
-        if (result.success) {
-          ;({ token, user } = result.data)
-        }
-      })
-
-      test('then it signs up the user', () => {
-        expect(token, 'Token should be defined after signing up').toBeDefined()
-      })
-
-      test('then it returns the user', () => {
-        expect(user, 'User should be defined after signing up').toBeDefined()
-        expect(user.email).toBe(email)
-      })
-
-      test('then it creates a default team', () => {
-        expect(user.teams.length).toBe(1)
-      })
-    })
-
-    describe('when signing up twice', () => {
-      let result: GraphQlResponse<{
-        token: string
-        user: User
-      }>
-      beforeEach(async () => {
-        // first time
-        result = await manager.auth.signup({
-          invitation,
-          name: faker.internet.username(),
-          password: faker.internet.password(),
-        })
-
-        // second time
-        result = await manager.auth.signup({
-          invitation,
-          name: faker.internet.username(),
-          password: faker.internet.password(),
-        })
-      })
-
-      test('then it fails', () => {
-        expect(result.success).toBe(false)
-        if (!result.success) {
-          expect(result.errors[0].message).toMatch(/invalid token/i)
-        }
-      })
-    })
-  })
-
-  describe('given no invitation exists', () => {
-    describe('when signing up', () => {
-      let result: GraphQlResponse<{ token: string; user: User }>
-      let token: string
-      let user: { email: string; name: string }
-
-      beforeEach(async () => {
-        result = await manager.auth.signup({
-          invitation: faker.string.uuid(),
-          name: faker.internet.username(),
-          password: faker.internet.password(),
-        })
-        if (result.success) {
-          ;({ token, user } = result.data)
-        }
-      })
-      test('then it fails', async () => {
-        expect(token).toBeUndefined()
-      })
-
-      test('then it does not return a user', () => {
-        expect(user).toBeUndefined()
-      })
-
-      test('then it raise an error', () => {
-        if (result.success) {
-          console.log(`signup should fail: ${JSON.stringify(result)}`)
-          expect(result.success).toBe(false)
-        } else {
-          expect(result.errors.length).toBe(1)
-          expect(result.errors[0].message).toContain('Invitation not found')
-        }
-      })
-    })
-  })
-
-  describe('given an expired invitation', () => {
-    let invitation: string
-    beforeEach(async () => {
-      const request = await manager.auth.createInvitation(
-        faker.internet.email(),
+          password,
+        },
+        { confirm: true },
       )
-      expect(request.success).toBe(true)
-      if (request.success) {
-        invitation = request.data.token
+      if (!signup.success) {
+        console.log(`failed to signup: ${JSON.stringify(signup)}`)
+        expect(signup.success).toBe(true)
       }
     })
 
-    describe('when signing up', () => {
-      let result: GraphQlResponse<{
-        token: string
-        user: User
-      }>
-
-      beforeEach(async () => {
-        // Move forward in time
-        vi.useFakeTimers()
-        vi.setSystemTime(Date.now() + EXPIRATION_TIME_IN_MILLISECONDS + 1)
-        result = await manager.auth.signup({
-          invitation,
+    describe('when a new user signs up with the same email', () => {
+      test('then it should fail', async () => {
+        const signup = await manager.auth.signup({
+          email,
           name: faker.internet.username(),
           password: faker.internet.password(),
         })
-      })
-
-      afterEach(() => {
-        // Reset time
-        vi.useRealTimers()
-      })
-
-      test('then it fails', async () => {
-        expect(result.success).toBe(false)
-        if (!result.success) {
-          expect(result.errors?.length).toBe(1)
-          expect(result.errors?.[0].message).toMatch(/invalid token/i)
+        expect(signup.success, 'signup should fail').toBe(false)
+        if (!signup.success) {
+          expect(signup.errors[0].message).toBe('Email already in use')
         }
       })
     })

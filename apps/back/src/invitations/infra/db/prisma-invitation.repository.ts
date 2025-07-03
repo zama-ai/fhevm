@@ -23,15 +23,17 @@ export class PrismaInvitationRepository implements InvitationRepository {
     }).chain(props => Invitation.parse(props).async())
   }
 
-  findByToken = (token: Token): Task<Invitation, AppError> => {
+  findByToken = (token: Token): Task<Option<Invitation>, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.invitation
         .findUnique({ where: { token: token.value } })
-        .then(data =>
-          data ? resolve(data) : reject(notFoundError('Invitation not found')),
-        )
+        .then(data => resolve(data))
         .catch((err: unknown) => reject(unknownError(String(err))))
-    }).chain(props => Invitation.parse(props).async())
+    }).chain(props =>
+      props
+        ? Invitation.parse(props).async().map<Option<Invitation>>(some)
+        : Task.of(none()),
+    )
   }
 
   findByEmail = (email: Email): Task<Option<Invitation>, AppError> => {

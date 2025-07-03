@@ -10,7 +10,7 @@ import { IProducer } from '#shared/services/producer.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
 import { back, generateRequestId } from 'messages'
-import { AppError, Task, UseCase, validationError } from 'utils'
+import { AppError, shortString, Task, UseCase, validationError } from 'utils'
 
 type Input = {
   dappId: string
@@ -34,7 +34,9 @@ export class GetDappRawStatsUseCase implements UseCase<Input, Output> {
       .asyncChain(dappId =>
         Task.all<AppError, DAppStat[], void>([
           this.repo.findAllStats(dappId).tap(stats => {
-            this.logger.verbose(`stats: ${JSON.stringify(stats)}`)
+            this.logger.verbose(
+              `stats: ${JSON.stringify(stats, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+            )
           }),
           this.repo
             .findById(dappId)

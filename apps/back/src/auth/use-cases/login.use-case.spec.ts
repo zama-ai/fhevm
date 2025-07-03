@@ -8,9 +8,13 @@ import {
   UserRepository,
 } from '#users/domain/repositories/user.repository.js'
 import { User } from '#users/domain/entities/user.js'
-import { ValidatedPassword } from '#users/domain/entities/value-objects.js'
+import {
+  Password,
+  UserId,
+  ValidatedPassword,
+} from '#users/domain/entities/value-objects.js'
 import { JwtService } from '@nestjs/jwt'
-import { notFoundError, Task } from 'utils'
+import { notFoundError, some, Task } from 'utils'
 import { Email } from '#shared/entities/value-objects/email.js'
 
 describe('LogIn', () => {
@@ -45,14 +49,19 @@ describe('LogIn', () => {
       let expectedToken: string
 
       beforeEach(() => {
-        expectedUser = User.create({
+        expectedUser = User.parse({
+          id: UserId.random().value,
           email,
-          password: ValidatedPassword.validate(password).unwrap(),
+          password: Password.hash(ValidatedPassword.validate(password).unwrap())
+            .value,
           name: faker.person.fullName(),
+          confirmedAt: faker.date.past(),
         }).unwrap()
+        console.log(expectedUser.toJSON())
+        console.log(`is confirmed? ${expectedUser.isConfirmed}`)
         expectedToken = faker.string.alphanumeric(10)
 
-        repo.findByEmail.mockReturnValue(Task.of(expectedUser))
+        repo.findByEmail.mockReturnValue(Task.of(some(expectedUser)))
         jwtService.sign.mockReturnValue(expectedToken)
       })
 
@@ -68,7 +77,7 @@ describe('LogIn', () => {
 
       test('then it returns a user', async () => {
         const { user } = await useCase.execute({ email, password }).toPromise()
-        expect(user).toEqual(expectedUser.toJSON())
+        expect(user).toEqual(expectedUser)
         expect(repo.findByEmail).toHaveBeenCalledWith(new Email(email))
       })
     })
@@ -77,13 +86,19 @@ describe('LogIn', () => {
       beforeEach(() => {
         repo.findByEmail.mockReturnValue(
           Task.of(
-            User.create({
-              email,
-              password: ValidatedPassword.validate(
-                faker.internet.password(),
-              ).unwrap(),
-              name: faker.person.fullName(),
-            }).unwrap(),
+            some(
+              User.parse({
+                id: UserId.random().value,
+                email,
+                password: Password.hash(
+                  ValidatedPassword.validate(
+                    faker.internet.password(),
+                  ).unwrap(),
+                ).value,
+                name: faker.person.fullName(),
+                confirmedAt: faker.date.past(),
+              }).unwrap(),
+            ),
           ),
         )
       })

@@ -1,7 +1,10 @@
-type EnvVariable = 'VITE_BACK_HTTP_URL' | 'VITE_BACK_WS_URL'
+export type EnvVariable = 'VITE_BACK_HTTP_URL' | 'VITE_BACK_WS_URL'
+
 declare global {
   interface Window {
-    env: Record<EnvVariable, string>
+    env: Record<EnvVariable, string> & {
+      [K in `VITE_FLAG_${string}`]: boolean
+    }
   }
 }
 

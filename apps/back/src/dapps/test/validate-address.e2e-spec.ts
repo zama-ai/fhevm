@@ -19,6 +19,10 @@ describe('validate-address', () => {
     await manager.beforeAll()
   }, 30000)
 
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
+
   afterAll(async () => {
     await manager.afterAll()
   })
@@ -33,10 +37,13 @@ describe('validate-address', () => {
     beforeEach(async () => {
       const result = await manager.auth.login(
         { email: faker.internet.email(), password: faker.internet.password() },
-        { signup: true },
+        { signup: true, confirm: true },
       )
       if (result.success) {
         token = result.data.token
+      } else {
+        console.log(`failed to login: ${JSON.stringify(result)}`)
+        expect(result.success).toBe(true)
       }
     })
 
@@ -167,38 +174,39 @@ async function sendValidateAddressRequest(
   })
 
   await vi.waitUntil(async () => {
-    const size = await manager.getOrchQueueSize()
-    return size > 0
+    const event = await manager.getMessageFromOrchQueue(
+      'back:address:validation:requested',
+    )
+    return event !== undefined
   })
-  const message = await manager.getMessageFromOrchQueue()
-  const event = JSON.parse(message!)
-  expect(back.isBackEvent(event)).toBe(true)
-  expect(event.type).toBe('back:address:validation:requested')
-  expect(event.payload).toEqual({
-    chainId,
-    address,
-    requestId: event.payload.requestId,
-  })
-  manager.sendMessage(
-    success
-      ? back.addressValidationConfirmed(
-          {
+  const event = await manager.getMessageFromOrchQueue(
+    'back:address:validation:requested',
+  )
+  if (event) {
+    expect(back.isBackEvent(event)).toBe(true)
+    expect(event.type).toBe('back:address:validation:requested')
+    expect(event.payload).toEqual({
+      chainId,
+      address,
+      requestId: event.payload.requestId,
+    })
+    manager.sendMessage(
+      success
+        ? back.addressValidationConfirmed({
             requestId: event.payload.requestId,
             chainId,
             address,
-          },
-          { correlationId: faker.string.uuid() },
-        )
-      : back.addressValidationFailed(
-          {
+          })
+        : back.addressValidationFailed({
             requestId: event.payload.requestId,
             chainId,
             address,
             reason: 'not valid',
-          },
-          { correlationId: faker.string.uuid() },
-        ),
-  )
+          }),
+    )
+  } else {
+    expect.fail('event is undefined')
+  }
 
   const result = await promise
   if (result.success) {

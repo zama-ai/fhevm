@@ -10,10 +10,12 @@ import {
   forbiddenError,
   Task,
   unauthorizedError,
+  unknownError,
   UseCase,
 } from 'utils'
 
 export type UpdateUserPasswordInput = {
+  // TODO: move userId to context
   userId: string
   password: string
 }
@@ -42,6 +44,11 @@ export class UpdateUserPassword implements IUpdateUserPassword {
 
     return UserId.from(userId)
       .asyncChain(this.repo.findById)
+      .chain<User>(user =>
+        user.isSome()
+          ? Task.of(user.unwrap())
+          : Task.reject(unknownError('User not found')),
+      )
       .chain(user => {
         this.logger.debug(`updating password for user ${userId}/${user.email}`)
         return this.repo.update(user.id, {

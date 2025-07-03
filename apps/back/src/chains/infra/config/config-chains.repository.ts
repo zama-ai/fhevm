@@ -3,7 +3,7 @@ import { ChainId } from '#chains/domain/entities/value-objects.js'
 import { ChainsRepository } from '#chains/domain/repositories/chains.repository.js'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { Task, AppError, every, notFoundError } from 'utils'
+import { Task, AppError, every, notFoundError, shortString } from 'utils'
 
 @Injectable()
 export class ConfigChainsRepository implements ChainsRepository {
@@ -14,7 +14,9 @@ export class ConfigChainsRepository implements ChainsRepository {
   private get chains() {
     if (!this._chains) {
       const chains: unknown[] = this.config.get('chains') ?? []
-      this.logger.verbose(`chains from config: ${JSON.stringify(chains)}`)
+      this.logger.verbose(
+        `chains from config: ${JSON.stringify(chains, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+      )
       this._chains = chains
         .map(Chain.parse)
         .filter(c => c.isOk())

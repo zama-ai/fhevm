@@ -9,10 +9,14 @@ import { ConfigService } from '@nestjs/config'
 import { InvitationsModule } from '#invitations/infra/invitations.module.js'
 import { TeamsModule } from '#teams/infra/teams.module.js'
 import { UsersModule } from '#users/infra/users.module.js'
-import { PASSWORD_RESET_TOKEN_REPOSITORY } from '#auth/domain/repositories/password-reset-token.repository.js'
-import { PrismaPasswordResetTokenRepository } from './db/prisma-password-reset-token.repository.js'
-import { UNIT_OF_WORK } from '#constants.js'
-import { UnitOfWork } from 'utils'
+import { USER_TOKEN_REPOSITORY } from '#auth/domain/repositories/user-token.repository.js'
+import { PrismaUserTokenRepository } from './db/prisma-user-token.repository.js'
+import { PRODUCER } from '#constants.js'
+import { IProducer } from '#shared/services/producer.js'
+import {
+  FEATURE_FLAGS_SERVICE,
+  FeatureFlagsService,
+} from '#feature-flag/services/feature-flags.service.js'
 
 @Module({
   imports: [
@@ -29,29 +33,56 @@ import { UnitOfWork } from 'utils'
     UsersModule,
   ],
   providers: [
+    uc.ConfirmEmail,
+    uc.ConfirmEmailWithLogin,
     {
-      provide: PASSWORD_RESET_TOKEN_REPOSITORY,
-      useClass: PrismaPasswordResetTokenRepository,
+      provide: uc.ConfirmEmailWithEvents,
+      inject: [uc.ConfirmEmailWithLogin, PRODUCER],
+      useFactory: (confirmEmail: uc.IConfirmEmail, producer: IProducer) =>
+        new uc.ConfirmEmailWithEvents(confirmEmail, producer),
+    },
+    {
+      provide: uc.CONFIRM_EMAIL,
+      inject: [uc.ConfirmEmailWithEvents, FEATURE_FLAGS_SERVICE],
+      useFactory: (
+        confirmEmail: uc.IConfirmEmail,
+        featureFlagsService: FeatureFlagsService,
+      ) => new uc.ConfirmEmailWithFlag(confirmEmail, featureFlagsService),
+    },
+    {
+      provide: USER_TOKEN_REPOSITORY,
+      useClass: PrismaUserTokenRepository,
     },
     AuthResolver,
-    uc.CreateResetPasswordToken,
+    {
+      provide: uc.CREATE_RESET_PASSWORD_TOKEN,
+      useClass: uc.CreateResetPasswordToken,
+    },
     {
       provide: uc.DELETE_RESET_PASSWORD_TOKEN,
       useClass: uc.DeleteResetPasswordToken,
     },
-    uc.LogIn,
+    {
+      provide: uc.LOG_IN,
+      useClass: uc.LogIn,
+    },
     uc.ResetPassword,
     uc.ResetPasswordWithEvents,
     {
       provide: uc.RESET_PASSWORD,
-      useFactory: (
-        uow: UnitOfWork,
-        resetPassword: uc.ResetPasswordWithEvents,
-        login: uc.LogIn,
-      ) => new uc.ResetPasswordWithLogin(uow, resetPassword, login),
-      inject: [UNIT_OF_WORK, uc.ResetPasswordWithEvents, uc.LogIn],
+      useClass: uc.ResetPasswordWithLogin,
     },
-    uc.SignUp,
+    uc.SignUpWithEmail,
+    uc.SignUpWithToken,
+    {
+      provide: uc.SIGN_UP,
+      useClass: uc.SignUp,
+    },
+    uc.SignUpWithInvitationToken,
+    {
+      provide: uc.SIGN_UP_WITH_INVITATION_TOKEN,
+      useClass: uc.SignUpWithInvitationTokenFlag,
+    },
     GetUserById,
     JwtStrategy,
   ],

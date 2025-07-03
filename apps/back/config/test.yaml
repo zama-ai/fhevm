@@ -4,6 +4,7 @@ common:
   graphqlMaxComplexity: 150
   logLevel: silent
 aws:
+  useConfigCredentials: true
   accessKeyId: 'test'
   secretAccessKey: 'test'
   region: 'eu-central-1'

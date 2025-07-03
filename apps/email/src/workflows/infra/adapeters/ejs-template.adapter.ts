@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common'
 import { compile, TemplateFunction } from 'ejs'
 import { readFileSync } from 'fs'
 import * as path from 'path'
-import { AppError, Task, unknownError } from 'utils'
+import { AppError, shortString, Task, unknownError } from 'utils'
 import { TemplateAdapter } from '#workflows/use-cases/adapters/template.adapter.js'
 import { Email } from '#domain/email.js'
 
@@ -43,6 +43,7 @@ export class EjsTemplateAdapter implements TemplateAdapter {
       this.logger.debug(
         `rendering template: ${templatePath} with context: ${JSON.stringify(
           context,
+          (_, v) => (typeof v === 'string' ? shortString(v) : v),
         )}`,
       )
       const rendered = this.precompiledTemplates[templatePath](context)

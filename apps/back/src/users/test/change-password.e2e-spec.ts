@@ -17,6 +17,10 @@ describe('Change Password', () => {
     await manager.beforeAll()
   }, 30_000)
 
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
+
   afterAll(async () => {
     await manager.afterAll()
   })

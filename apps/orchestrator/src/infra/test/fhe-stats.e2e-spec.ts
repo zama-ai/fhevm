@@ -39,15 +39,12 @@ describe('fhe stats', () => {
       beforeEach(async () => {
         requestId = faker.string.uuid()
         correlationId = faker.string.uuid()
-        const message = back.dappStatsRequested(
-          {
-            requestId,
-            dAppId: faker.string.uuid(),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-          },
-          { correlationId },
-        )
+        const message = back.dappStatsRequested({
+          requestId,
+          dAppId: faker.string.uuid(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+        })
         await manager.sendMessage(message)
       })
 
@@ -67,10 +64,6 @@ describe('fhe stats', () => {
         expect(messages[0]?.event.payload.requestId, 'wrong requestId').toBe(
           requestId,
         )
-        expect(
-          messages[0]?.event.meta.correlationId,
-          'wrong correlationId',
-        ).toBe(correlationId)
       })
     })
   })
@@ -111,7 +104,9 @@ describe('fhe stats', () => {
       if (!back.isBackEvent(messages[0]?.event)) {
         console.log(`event: ${JSON.stringify(messages[0]?.event)}`)
         console.log(
-          `failed to parse back event: ${JSON.stringify(back.schema.safeParse(messages[0]?.event))}`,
+          `failed to parse back event: ${JSON.stringify(
+            back.schema.safeParse(messages[0]?.event),
+          )}`,
         )
       }
       expect(back.isBackEvent(messages[0]?.event)).toBe(true)
@@ -120,9 +115,6 @@ describe('fhe stats', () => {
       )
       expect(messages[0]?.event.payload.requestId, 'wrong requestId').toBe(
         requestId,
-      )
-      expect(messages[0]?.event.meta.correlationId, 'wrong correlationId').toBe(
-        correlationId,
       )
     })
   })

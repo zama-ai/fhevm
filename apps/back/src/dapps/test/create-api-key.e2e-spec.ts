@@ -19,6 +19,10 @@ describe('create-api-key', () => {
     await manager.beforeAll()
   }, 30000)
 
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
+
   afterAll(async () => {
     await manager.afterAll()
   })

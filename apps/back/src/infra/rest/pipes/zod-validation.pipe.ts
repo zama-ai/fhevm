@@ -5,6 +5,7 @@ import {
   Paramtype,
   PipeTransform,
 } from '@nestjs/common'
+import { shortString } from 'utils'
 import { ZodSchema } from 'zod'
 
 export class ZodValidationPipe implements PipeTransform {
@@ -17,7 +18,7 @@ export class ZodValidationPipe implements PipeTransform {
 
   transform(value: unknown, metadata: ArgumentMetadata) {
     this.logger.debug(
-      `validating ${JSON.stringify(value)} [${JSON.stringify(metadata)}]`,
+      `validating ${JSON.stringify(value, (_, v) => (typeof v === 'string' ? shortString(v) : v))} [${JSON.stringify(metadata, (_, v) => (typeof v === 'string' ? shortString(v) : v))}]`,
     )
     // NOTE: When using a guard that stores a value in the request,
     // it calls the validation pipe twice, the second time with the object

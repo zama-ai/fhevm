@@ -4,7 +4,14 @@ import { ExtractJwt, Strategy } from 'passport-jwt'
 import { GetUserById } from '#users/use-cases/get-user-by-id.use-case.js'
 import { JwtPayload } from '#auth/interfaces/jwt-payload.js'
 import type { AppError } from 'utils'
-import { fail, isNotFoundError, ok, unauthorizedError } from 'utils'
+import {
+  fail,
+  isNotFoundError,
+  ok,
+  shortString,
+  Task,
+  unauthorizedError,
+} from 'utils'
 import { ConfigService } from '@nestjs/config'
 
 @Injectable()
@@ -23,13 +30,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   validate(payload: JwtPayload) {
-    this.logger.debug(`validate payload: ${JSON.stringify(payload)}`)
+    this.logger.debug(
+      `validate payload: ${JSON.stringify(payload, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+    )
     return (
       payload
         ? ok<JwtPayload, AppError>(payload)
         : fail<JwtPayload, AppError>(unauthorizedError())
     )
-      .asyncChain(jwt => this.getUserById.execute(jwt.sub))
+      .asyncChain(jwt => this.getUserById.execute({ id: jwt.sub }))
+      .chain(user =>
+        user.isSome()
+          ? Task.of(user.unwrap())
+          : Task.reject(unauthorizedError()),
+      )
       .mapError(error => (isNotFoundError(error) ? unauthorizedError() : error))
       .toPromise()
   }

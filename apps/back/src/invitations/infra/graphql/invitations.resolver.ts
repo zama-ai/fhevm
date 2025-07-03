@@ -16,7 +16,7 @@ export class InvitationsResolver {
 
   @Query(() => InvitationType, { name: 'invitation' })
   invitation(@Args('token') token: string) {
-    return this.getInvitationByTokenUC.execute(token).toPromise()
+    return this.getInvitationByTokenUC.execute({ token }).toPromise()
   }
 
   @Mutation(() => InvitationType, { name: 'createInvitation' })

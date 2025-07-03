@@ -4,7 +4,7 @@ import {
   USER_REPOSITORY,
   UserRepository,
 } from '#users/domain/repositories/user.repository.js'
-import { Inject, Injectable } from '@nestjs/common'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { AppError, Task, UseCase } from 'utils'
 
 type Input = {
@@ -15,6 +15,8 @@ type Input = {
 
 @Injectable()
 export class CreateUser implements UseCase<Input, User> {
+  private readonly logger = new Logger(CreateUser.name)
+
   constructor(
     @Inject(USER_REPOSITORY) private readonly userRepository: UserRepository,
   ) {}
@@ -24,6 +26,8 @@ export class CreateUser implements UseCase<Input, User> {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     context?: Record<string, unknown>,
   ): Task<User, AppError> => {
+    this.logger.log(`creating user ${input.name} with email ${input.email}`)
+
     return User.create(input).asyncChain(this.userRepository.create)
   }
 }

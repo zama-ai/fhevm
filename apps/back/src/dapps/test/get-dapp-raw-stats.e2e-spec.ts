@@ -21,6 +21,10 @@ describe('get-dapp-raw-stats', () => {
     await manager.beforeAll()
   }, 30000)
 
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
+
   afterAll(async () => {
     await manager.afterAll()
   })
@@ -84,14 +88,21 @@ describe('get-dapp-raw-stats', () => {
 
       test('then it should emit a dapp stats requested event', async () => {
         await vi.waitUntil(async () => {
-          const size = await manager.getOrchQueueSize()
-          return size > 0
+          const event = await manager.getMessageFromOrchQueue(
+            'back:dapp:stats-requested',
+          )
+          return event !== undefined
         })
 
-        const message = await manager.getMessageFromOrchQueue()
-        const event = JSON.parse(message!)
-        expect(back.isBackEvent(event)).toBe(true)
-        expect(event.type).toBe('back:dapp:stats-requested')
+        const event = await manager.getMessageFromOrchQueue(
+          'back:dapp:stats-requested',
+        )
+        if (event) {
+          expect(back.isBackEvent(event)).toBe(true)
+          expect(event.type).toBe('back:dapp:stats-requested')
+        } else {
+          expect(event).toBeDefined()
+        }
       })
     })
   })

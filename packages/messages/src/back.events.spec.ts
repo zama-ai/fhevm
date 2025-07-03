@@ -8,77 +8,75 @@ describe('back', () => {
   describe('isBackEvent', () => {
     test.each([
       {
-        event: back.addressValidationRequested(
-          {
-            requestId: generateRequestId(),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
+        event: back.addressValidationRequested({
+          requestId: generateRequestId(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+        }),
       },
       {
-        event: back.addressValidationConfirmed(
-          {
-            requestId: generateRequestId(),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
+        event: back.addressValidationConfirmed({
+          requestId: generateRequestId(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+        }),
       },
       {
-        event: back.addressValidationFailed(
-          {
-            requestId: generateRequestId(),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-            reason: faker.lorem.paragraph(),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
+        event: back.addressValidationFailed({
+          requestId: generateRequestId(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+          reason: faker.lorem.paragraph(),
+        }),
       },
       {
-        event: back.dappCreated(
-          {
-            requestId: generateRequestId(),
-            dAppId: faker.string.alphanumeric(10),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
+        event: back.dappCreated({
+          requestId: generateRequestId(),
+          dAppId: faker.string.alphanumeric(10),
+        }),
       },
       {
-        event: back.dappStatsRequested(
-          {
-            requestId: generateRequestId(),
-            dAppId: faker.string.alphanumeric(10),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
+        event: back.dappStatsRequested({
+          requestId: generateRequestId(),
+          dAppId: faker.string.alphanumeric(10),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+        }),
       },
       {
-        event: back.dappStatsAvailable(
-          {
-            requestId: generateRequestId(),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-            events: [
-              {
-                name: getRandomOperation(),
-                timestamp: faker.date.past().toISOString(),
-                externalRef: faker.string.alphanumeric(10),
-              },
-              {
-                name: getRandomOperation(),
-                timestamp: faker.date.past().toISOString(),
-                externalRef: faker.string.alphanumeric(10),
-              },
-            ],
-          },
-          { correlationId: faker.string.uuid() },
-        ),
+        event: back.dappStatsAvailable({
+          requestId: generateRequestId(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+          events: [
+            {
+              name: getRandomOperation(),
+              timestamp: faker.date.past().toISOString(),
+              externalRef: faker.string.alphanumeric(10),
+            },
+            {
+              name: getRandomOperation(),
+              timestamp: faker.date.past().toISOString(),
+              externalRef: faker.string.alphanumeric(10),
+            },
+          ],
+        }),
+      },
+      {
+        event: back.userCreated({
+          requestId: generateRequestId(),
+          userId: faker.string.alphanumeric(10),
+          email: faker.internet.email(),
+          name: faker.internet.username(),
+          token: faker.string.alphanumeric(10),
+        }),
+      },
+      {
+        event: back.userConfirmed({
+          requestId: generateRequestId(),
+          userId: faker.string.alphanumeric(10),
+          email: faker.internet.email(),
+        }),
       },
       {
         event: back.passwordResetRequested(
@@ -100,7 +98,11 @@ describe('back', () => {
         ),
       },
     ])('identifies $event.type event', ({ event }) => {
-      expect(back.isBackEvent(event)).toBe(true)
+      const result = back.isBackEvent(event)
+      if (!result) {
+        console.log(`failed: ${JSON.stringify(back.schema.safeParse(event))}`)
+      }
+      expect(result).toBe(true)
     })
   })
 })

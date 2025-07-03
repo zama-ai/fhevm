@@ -6,12 +6,12 @@ import {
 } from './reset-password.use-case.js'
 import { Mocked } from '@suites/doubles.vitest'
 import {
-  PASSWORD_RESET_TOKEN_REPOSITORY,
-  PasswordResetTokenRepository,
-} from '#auth/domain/repositories/password-reset-token.repository.js'
+  USER_TOKEN_REPOSITORY,
+  UserTokenRepository,
+} from '#auth/domain/repositories/user-token.repository.js'
 import { Token } from '#auth/domain/entities/value-objects/token.js'
 import { Hash } from '#auth/domain/entities/value-objects/hash.js'
-import { PasswordResetToken } from '#auth/domain/entities/password-reset-token.js'
+import { UserToken, UserTokenTypes } from '#auth/domain/entities/user-token.js'
 import { User } from '#users/domain/entities/user.js'
 import { faker } from '@faker-js/faker'
 import { ValidatedPassword } from '#users/domain/entities/value-objects.js'
@@ -20,7 +20,7 @@ import {
   IUpdateUserPassword,
   UPDATE_USER_PASSWORD,
 } from '#users/use-cases/update-user-password.use-case.js'
-import { notFoundError, Task, UnitOfWork, unknownError } from 'utils'
+import { notFoundError, some, Task, UnitOfWork, unknownError } from 'utils'
 import { GetUserById } from '#users/use-cases/get-user-by-id.use-case.js'
 import {
   DELETE_RESET_PASSWORD_TOKEN,
@@ -32,7 +32,7 @@ import { IProducer } from '#shared/services/producer.js'
 describe('ResetPassword', () => {
   let useCase: ResetPassword
   let uow: Mocked<UnitOfWork>
-  let repo: Mocked<PasswordResetTokenRepository>
+  let repo: Mocked<UserTokenRepository>
   let getUserById: Mocked<GetUserById>
   let updateUserPassword: Mocked<IUpdateUserPassword>
   let deleteResetPasswordToken: Mocked<IDeleteResetPasswordToken>
@@ -43,8 +43,8 @@ describe('ResetPassword', () => {
     useCase = unit
     uow = unitRef.get(UNIT_OF_WORK) as unknown as Mocked<UnitOfWork>
     repo = unitRef.get(
-      PASSWORD_RESET_TOKEN_REPOSITORY,
-    ) as unknown as Mocked<PasswordResetTokenRepository>
+      USER_TOKEN_REPOSITORY,
+    ) as unknown as Mocked<UserTokenRepository>
     getUserById = unitRef.get(GetUserById) as unknown as Mocked<GetUserById>
     updateUserPassword = unitRef.get(
       UPDATE_USER_PASSWORD,
@@ -78,14 +78,15 @@ describe('ResetPassword', () => {
 
       repo.findByHash.mockReturnValue(
         Task.of(
-          PasswordResetToken.parse({
+          UserToken.parse({
             hash: hash.value,
             userId: user.id.value,
             expiresAt: ExpiresAt.compute().value,
+            type: 'RESET_PASSWORD',
           }).unwrap(),
         ),
       )
-      getUserById.execute.mockReturnValue(Task.of(user))
+      getUserById.execute.mockReturnValue(Task.of(some(user)))
       deleteResetPasswordToken.execute.mockReturnValue(Task.of(void 0))
       updateUserPassword.execute.mockReturnValue(Task.of({ user }))
     })
@@ -106,7 +107,7 @@ describe('ResetPassword', () => {
 
       test('then it should search for the user', async () => {
         await result.toPromise()
-        expect(getUserById.execute).toHaveBeenCalledWith(user.id.value)
+        expect(getUserById.execute).toHaveBeenCalledWith({ id: user.id })
       })
 
       test('then it should delete the used token', async () => {
@@ -123,6 +124,63 @@ describe('ResetPassword', () => {
           },
           { user },
         )
+      })
+    })
+  })
+
+  describe('given a wrong type token exists', () => {
+    let token: Token
+    let hash: Hash
+    let user: User
+
+    beforeEach(() => {
+      token = Token.random()
+      hash = Hash.hash(token)
+      user = User.create({
+        email: faker.internet.email(),
+        password: ValidatedPassword.validate(
+          faker.internet.password(),
+        ).unwrap(),
+        name: faker.person.fullName(),
+      }).unwrap()
+
+      repo.findByHash.mockReturnValue(
+        Task.of(
+          UserToken.parse({
+            hash: hash.value,
+            userId: user.id.value,
+            expiresAt: ExpiresAt.compute().value,
+            type: faker.helpers.arrayElement(
+              UserTokenTypes.filter(t => t !== 'RESET_PASSWORD'),
+            ),
+          }).unwrap(),
+        ),
+      )
+      getUserById.execute.mockReturnValue(Task.of(some(user)))
+      deleteResetPasswordToken.execute.mockReturnValue(Task.of(void 0))
+      updateUserPassword.execute.mockReturnValue(Task.of({ user }))
+    })
+
+    describe('when resetting the password', () => {
+      let result: ReturnType<ResetPassword['execute']>
+      let password: string
+
+      beforeEach(() => {
+        password = faker.internet.password()
+        result = useCase.execute({ token: token.value, password }, { user })
+      })
+
+      test('then it should throw a forbidden error', async () => {
+        await expect(result.toPromise()).rejects.toThrowError(/forbidden/i)
+      })
+
+      test("then it shouldn't update the user password", async () => {
+        try {
+          await result.toPromise()
+        } catch {
+          // ignore
+        }
+        expect(updateUserPassword.execute).not.toHaveBeenCalled()
       })
     })
   })
@@ -145,11 +203,12 @@ describe('ResetPassword', () => {
 
       repo.findByHash.mockReturnValue(
         Task.of(
-          PasswordResetToken.parse({
+          UserToken.parse({
             hash: hash.value,
             userId: user.id.value,
             expiresAt: ExpiresAt.from(faker.date.recent({ days: 10 })).unwrap()
               .value,
+            type: 'RESET_PASSWORD',
           }).unwrap(),
         ),
       )

@@ -2,7 +2,7 @@ import { useRouteError } from 'react-router'
 import { Heading, List, Stack, Text } from '@chakra-ui/react'
 import { Link } from '@/components/ui/link.js'
 
-export function SignupErrorPage() {
+export function InvitationErrorPage() {
   const error = useRouteError() as { message: string; statusText: string }
   console.error(error)
 

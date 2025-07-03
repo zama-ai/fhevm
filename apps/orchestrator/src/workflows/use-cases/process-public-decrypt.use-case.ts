@@ -9,7 +9,7 @@ import {
 } from '#workflows/interfaces/event.producer.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { back, relayer } from 'messages'
-import { AppError, IPubSub, Task, UseCase } from 'utils'
+import { AppError, IPubSub, shortString, Task, UseCase } from 'utils'
 
 @Injectable()
 export class ProcessPublicDecrypt
@@ -35,7 +35,9 @@ export class ProcessPublicDecrypt
     this.logger.verbose(`event ${event.type} received`)
     if (isPublicDecrypt(event)) {
       this.logger.debug(
-        `processing ${event.type}: ${JSON.stringify(event.payload)}`,
+        `processing ${event.type}: ${JSON.stringify(event.payload, (_, v) =>
+          typeof v === 'string' ? shortString(v) : v,
+        )}`,
       )
       return Task.of<PublicDecrypt, AppError>(new PublicDecrypt())
         .map(privateDecrypt => privateDecrypt.send(event))

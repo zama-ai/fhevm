@@ -2,7 +2,7 @@ import { Fieldset, Heading, HStack, Input, Stack, Text } from '@chakra-ui/react'
 import { useFormik } from 'formik'
 
 import { toFormikValidate } from '@/lib/zod-schema-validator.js'
-import { RegisterFormSchema, getPasswordStrengthScore } from './validations.js'
+import { SignupFormSchema, getPasswordStrengthScore } from './validations.js'
 
 import { Checkbox } from '@/components/ui/checkbox.js'
 import { Field } from '@/components/ui/field.js'
@@ -16,35 +16,24 @@ import { SpinnerButton } from '@/components/ui/spinner-button.js'
 import { ErrorMessage } from '@/components/error-message/error-message.js'
 
 type OwnProps = {
-  onSubmit: (values: {
-    name: string
-    password: string
-    invitationToken: string
-  }) => void
-  email: string
+  onSubmit: (values: { name: string; password: string; email: string }) => void
   errorMessage?: string
-  invitationToken: string
   loading: boolean
 }
 
-export function SignupForm({
-  email,
-  errorMessage,
-  invitationToken,
-  loading,
-  onSubmit,
-}: OwnProps) {
+export function SignupForm({ onSubmit, errorMessage, loading }: OwnProps) {
   const formik = useFormik({
     initialValues: {
+      email: '',
       name: '',
       password: '',
       repeatPassword: '',
       agree: false,
     },
     onSubmit: values => {
-      onSubmit({ ...values, invitationToken })
+      onSubmit({ ...values })
     },
-    validate: toFormikValidate(RegisterFormSchema),
+    validate: toFormikValidate(SignupFormSchema),
   })
   return (
     <Fieldset.Root>
@@ -56,15 +45,22 @@ export function SignupForm({
 
           <Fieldset.Content>
             <Field
-              label="Invited Email address"
-              helperText="(cannot be modified)"
+              label="Email address"
+              invalid={!!formik.errors.email && formik.touched.email}
+              errorText={
+                formik.errors.email && formik.touched.email
+                  ? formik.errors.email
+                  : undefined
+              }
             >
               <Input
-                disabled
                 name="email"
                 type="email"
-                value={email}
-                autoComplete="username"
+                placeholder="jane@doe.xyz"
+                onBlur={formik.handleBlur}
+                onChange={formik.handleChange}
+                value={formik.values.email}
+                autoComplete="email"
               />
             </Field>
           </Fieldset.Content>
@@ -101,7 +97,6 @@ export function SignupForm({
               }
             >
               <PasswordInput
-                disabled={loading}
                 name="password"
                 type="password"
                 placeholder="****"
@@ -130,7 +125,6 @@ export function SignupForm({
               }
             >
               <PasswordInput
-                disabled={loading}
                 name="repeatPassword"
                 type="password"
                 placeholder="****"

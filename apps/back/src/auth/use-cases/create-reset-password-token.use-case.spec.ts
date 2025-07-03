@@ -6,12 +6,12 @@ import { faker } from '@faker-js/faker'
 import { ValidatedPassword } from '#users/domain/entities/value-objects.js'
 import { Mocked } from '@suites/doubles.vitest'
 import { GetUserByEmail } from '#users/use-cases/get-user-by-email.use-case.js'
-import { notFoundError, Task, UnitOfWork } from 'utils'
+import { none, some, Task, UnitOfWork } from 'utils'
 import {
-  PASSWORD_RESET_TOKEN_REPOSITORY,
-  PasswordResetTokenRepository,
-} from '#auth/domain/repositories/password-reset-token.repository.js'
-import { PasswordResetToken } from '#auth/domain/entities/password-reset-token.js'
+  USER_TOKEN_REPOSITORY,
+  UserTokenRepository,
+} from '#auth/domain/repositories/user-token.repository.js'
+import { UserToken } from '#auth/domain/entities/user-token.js'
 import { IProducer } from '#shared/services/producer.js'
 import { PRODUCER, UNIT_OF_WORK } from '#constants.js'
 import {
@@ -21,7 +21,7 @@ import {
 
 describe('CreateResetPasswordToken', () => {
   let useCase: CreateResetPasswordToken
-  let repo: Mocked<PasswordResetTokenRepository>
+  let repo: Mocked<UserTokenRepository>
   let producer: Mocked<IProducer>
   let getUserByEmail: Mocked<GetUserByEmail>
 
@@ -35,8 +35,8 @@ describe('CreateResetPasswordToken', () => {
     uow.exec.mockImplementation(task => task)
 
     repo = unitRef.get(
-      PASSWORD_RESET_TOKEN_REPOSITORY,
-    ) as unknown as Mocked<PasswordResetTokenRepository>
+      USER_TOKEN_REPOSITORY,
+    ) as unknown as Mocked<UserTokenRepository>
     producer = unitRef.get(PRODUCER) as unknown as Mocked<IProducer>
     getUserByEmail = unitRef.get(
       GetUserByEmail,
@@ -66,15 +66,15 @@ describe('CreateResetPasswordToken', () => {
         name: faker.person.fullName(),
       }).unwrap()
 
-      getUserByEmail.execute.mockReturnValue(Task.of(user))
+      getUserByEmail.execute.mockReturnValue(Task.of(some(user)))
     })
 
     describe('when executing the use case', () => {
       let result: ReturnType<CreateResetPasswordToken['execute']>
 
       beforeEach(() => {
-        repo.create.mockImplementation((token: PasswordResetToken) => {
-          expect(token).toBeInstanceOf(PasswordResetToken)
+        repo.create.mockImplementation((token: UserToken) => {
+          expect(token).toBeInstanceOf(UserToken)
           return Task.of(token)
         })
         producer.publish.mockReturnValue(Task.of(void 0))
@@ -87,7 +87,7 @@ describe('CreateResetPasswordToken', () => {
 
       test('then it call the GetUserByEmail use case', async () => {
         await result.toPromise()
-        expect(getUserByEmail.execute).toHaveBeenCalledWith(email)
+        expect(getUserByEmail.execute).toHaveBeenCalledWith({ email })
       })
 
       test('then it returns void', async () => {
@@ -124,7 +124,7 @@ describe('CreateResetPasswordToken', () => {
 
     beforeEach(() => {
       email = faker.internet.email()
-      getUserByEmail.execute.mockReturnValue(Task.reject(notFoundError()))
+      getUserByEmail.execute.mockReturnValue(Task.of(none()))
     })
 
     describe('when executing the use case', () => {

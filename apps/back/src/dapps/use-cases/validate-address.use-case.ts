@@ -10,6 +10,7 @@ import {
   every,
   fromNullable,
   fromOption,
+  shortString,
   Task,
   unknownError,
   UseCase,
@@ -101,7 +102,9 @@ export class ValidateAddressWithSync implements IValidateAddress {
               return this.syncService.waitForResponse<ValidateAddressOutput>(
                 requestId,
                 data => {
-                  this.logger.verbose(`received event: ${JSON.stringify(data)}`)
+                  this.logger.verbose(
+                    `received event: ${JSON.stringify(data, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+                  )
                   if (
                     back.isBackEvent(data) &&
                     isAddressValidationResponse(data)
@@ -114,7 +117,7 @@ export class ValidateAddressWithSync implements IValidateAddress {
                         })
                   }
                   this.logger.warn(
-                    `invalid event received: ${JSON.stringify(data)}`,
+                    `invalid event received: ${JSON.stringify(data, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
                   )
                   return Task.reject(unknownError('Invalid event received'))
                 },
@@ -124,7 +127,9 @@ export class ValidateAddressWithSync implements IValidateAddress {
         ]),
       )
       .tap(value => {
-        this.logger.debug(`value=${JSON.stringify(value)}`)
+        this.logger.debug(
+          `value=${JSON.stringify(value, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+        )
       })
       .tapError(error => {
         this.logger.warn(

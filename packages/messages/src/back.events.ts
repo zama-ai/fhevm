@@ -24,6 +24,8 @@ type EventTypes =
   | 'httpz:private-decrypt:completed'
   | 'httpz:public-decrypt:requested'
   | 'httpz:public-decrypt:completed'
+  | 'user:created'
+  | 'user:confirmed'
   | 'password-reset:requested'
   | 'password-reset:completed'
 
@@ -108,6 +110,16 @@ const schemas = [
       }),
     ),
   }),
+  genSchema('user:created', {
+    userId: z.string(),
+    email: z.string().email(),
+    name: z.string(),
+    token: z.string(),
+  }),
+  genSchema('user:confirmed', {
+    userId: z.string(),
+    email: z.string().email(),
+  }),
   genSchema('password-reset:requested', {
     email: z.string().email(),
     token: z.string(),
@@ -119,7 +131,7 @@ const schemas = [
 
 export const schema = z.discriminatedUnion('type', [...schemas]).and(
   z.object({
-    meta: meta,
+    meta: meta.optional(),
   }),
 )
 export type BackEvent = z.infer<typeof schema>
@@ -153,6 +165,8 @@ export const httpzPublicDecryptRequested = factory(
 export const httpzPublicDecryptCompleted = factory(
   'httpz:public-decrypt:completed',
 )
+export const userCreated = factory('user:created')
+export const userConfirmed = factory('user:confirmed')
 export const passwordResetRequested = factory('password-reset:requested')
 export const passwordResetCompleted = factory('password-reset:completed')
 

@@ -94,7 +94,7 @@ function factory<
     payload: object
   } = Extract<RelayerEvent, { type: `relayer:${K}` }>,
 >(type: K) {
-  return function(payload: Event['payload']) {
+  return function (payload: Event['payload']) {
     return {
       type: `relayer:${type}`,
       payload,

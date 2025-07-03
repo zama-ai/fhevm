@@ -6,7 +6,7 @@ import {
   DAppRepository,
 } from '#dapps/domain/repositories/dapp.repository.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { AppError, Task, UnitOfWork, UseCase } from 'utils'
+import { AppError, shortString, Task, UnitOfWork, UseCase } from 'utils'
 
 type Input = {
   token: string
@@ -28,7 +28,9 @@ export class GetApiKeyByToken implements UseCase<Input, Output> {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     context?: Record<string, unknown>,
   ): Task<Output, AppError> => {
-    this.logger.debug(`input: ${JSON.stringify(input)}`)
+    this.logger.debug(
+      `input: ${JSON.stringify(input, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+    )
     return this.uow
       .exec(Token.from(input.token).asyncChain(this.repo.findApiKeyByToken))
       .tapError(error => {

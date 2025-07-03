@@ -11,7 +11,15 @@ import { SyncInstances } from '#shared/use-cases/sync-instances.use-case.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
 import { back, generateRequestId } from 'messages'
-import { any, AppError, every, Task, unknownError, UseCase } from 'utils'
+import {
+  any,
+  AppError,
+  every,
+  shortString,
+  Task,
+  unknownError,
+  UseCase,
+} from 'utils'
 
 type RequestValidity = {
   startTimestamp: string
@@ -34,8 +42,8 @@ type Input = {
 }
 
 type UserDecryptResponse = {
-  payload: string,
-  signature: string,
+  payload: string
+  signature: string
 }
 
 type Output = UserDecryptResponse[]
@@ -66,14 +74,16 @@ export class PrivateDecrypt implements UseCase<Input, Output> {
     input: Input,
     context: Record<string, any>,
   ): Task<Output, AppError> => {
-    this.logger.debug(`input=${JSON.stringify(input)}`)
+    this.logger.debug(
+      `input=${JSON.stringify(input, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+    )
 
     return every([
       typeof input.contractsChainId === 'string'
         ? any([
-          ChainId.fromString(input.contractsChainId),
-          ChainId.fromHex(input.contractsChainId),
-        ])
+            ChainId.fromString(input.contractsChainId),
+            ChainId.fromHex(input.contractsChainId),
+          ])
         : ChainId.from(input.contractsChainId),
       Web3Address.from(input.contractAddresses[0]),
     ])
@@ -114,9 +124,7 @@ export class PrivateDecrypt implements UseCase<Input, Output> {
             .chain(() =>
               this.syncService.waitForResponse<Output>(requestId, data => {
                 if (back.isBackEvent(data) && isPrivateDecryptResult(data)) {
-                  return Task.of<Output, AppError>(
-                    data.payload.response,
-                  )
+                  return Task.of<Output, AppError>(data.payload.response)
                 }
                 return Task.reject(unknownError('Invalid event received'))
               }),

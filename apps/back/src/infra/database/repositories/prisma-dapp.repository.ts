@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import { AppError } from 'utils'
+import { AppError, shortString } from 'utils'
 import {
   duplicatedError,
   every,
@@ -81,7 +81,9 @@ export class PrismaDAppRepository implements DAppRepository {
     id: DAppId,
     data: Partial<Omit<DAppProps, 'id'>>,
   ): Task<DApp, AppError> => {
-    this.logger.debug(`update dapp ${id.value} with ${JSON.stringify(data)}`)
+    this.logger.debug(
+      `update dapp ${id.value} with ${JSON.stringify(data, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+    )
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
         .findUnique({ where: { id: id.value, deletedAt: null } })
@@ -96,7 +98,9 @@ export class PrismaDAppRepository implements DAppRepository {
           }
         })
         .then(data => {
-          this.logger.verbose(`updated: ${JSON.stringify(data)}`)
+          this.logger.verbose(
+            `updated: ${JSON.stringify(data, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+          )
           resolve(data)
         })
         .catch((err: unknown) => {
@@ -184,7 +188,9 @@ export class PrismaDAppRepository implements DAppRepository {
       this.db.dappStat
         .findFirst({ where: { externalRef: props.externalRef } })
         .then(stat => {
-          this.logger.verbose(`stat found: ${JSON.stringify(stat)}`)
+          this.logger.verbose(
+            `stat found: ${JSON.stringify(stat, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+          )
           return stat
             ? reject(duplicatedError(`${props.externalRef} already exists`))
             : resolve(null)
@@ -194,7 +200,9 @@ export class PrismaDAppRepository implements DAppRepository {
       .chain(
         () =>
           new Task((resolve, reject) => {
-            this.logger.verbose(`creating stat: ${JSON.stringify(props)}`)
+            this.logger.verbose(
+              `creating stat: ${JSON.stringify(props, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+            )
             this.db.dappStat
               .create({
                 data: {
@@ -207,7 +215,9 @@ export class PrismaDAppRepository implements DAppRepository {
           }),
       )
       .chain(props => {
-        this.logger.verbose(`parsing stat: ${JSON.stringify(props)}`)
+        this.logger.verbose(
+          `parsing stat: ${JSON.stringify(props, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+        )
         return DAppStat.parse(props).async()
       })
   }
@@ -223,7 +233,9 @@ export class PrismaDAppRepository implements DAppRepository {
           },
         })
         .then(stats => {
-          this.logger.debug(`stats: ${JSON.stringify(stats)}`)
+          this.logger.debug(
+            `stats: ${JSON.stringify(stats, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+          )
           const operations = stats.reduce(
             (acc, stat) => {
               acc[stat.name as DAppStat['name']] = stat._count.name

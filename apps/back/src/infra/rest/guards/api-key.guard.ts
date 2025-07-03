@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common'
 import * as uc from '#dapps/use-cases/index.js'
-import { isAppError } from 'utils'
+import { isAppError, shortString } from 'utils'
 import type { Request } from 'express'
 import {
   FEATURE_FLAGS_SERVICE,
@@ -38,7 +38,9 @@ export class ApiKeyGuard implements CanActivate {
       const apiKey = await this.getApiKeyUC
         .execute({ token: Array.isArray(token) ? token[0] : token })
         .toPromise()
-      this.logger.verbose(`apiKey: ${JSON.stringify(apiKey.toJSON())}`)
+      this.logger.verbose(
+        `apiKey: ${JSON.stringify(apiKey.toJSON(), (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+      )
       // TODO: override Request definition to add an optional `apiKey` field
       ;(request as any).apiKey = apiKey
       return Boolean(apiKey)

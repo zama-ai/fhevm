@@ -14,27 +14,19 @@ import {
 } from 'vitest'
 
 describe('public decrypt', () => {
-  const manager = new IntegrationManager()
-
-  beforeAll(async () => {
-    await manager.beforeAll()
-  }, 30_000)
-
-  afterAll(async () => {
-    await manager.afterAll()
-  })
-
-  afterEach(async () => {
-    await manager.afterEach()
-  })
-
   describe('when API_KEYS flag is enabled', () => {
-    beforeEach(() => {
-      vi.stubEnv('FLAG_API_KEYS', '1')
+    const manager = new IntegrationManager({ apiKeys: true })
+
+    beforeAll(async () => {
+      await manager.beforeAll()
+    }, 30_000)
+
+    afterAll(async () => {
+      await manager.afterAll()
     })
 
-    afterEach(() => {
-      vi.unstubAllEnvs()
+    afterEach(async () => {
+      await manager.afterEach()
     })
 
     describe('given a user has a valid API key', () => {
@@ -46,23 +38,24 @@ describe('public decrypt', () => {
       beforeEach(async () => {
         address = faker.string.hexadecimal({ length: 40 })
 
-        const signup = await manager.auth.signup(
+        const login = await manager.auth.login(
           {
-            name: faker.internet.username(),
+            email: faker.internet.email(),
             password: faker.internet.password(),
           },
           {
-            createInvitation: true,
+            signup: true,
+            confirm: true,
           },
         )
         let token = ''
         let teamId = ''
-        if (signup.success) {
-          token = signup.data.token
-          teamId = signup.data.user.teams[0].id
+        if (login.success) {
+          token = login.data.token
+          teamId = login.data.user.teams[0].id
         } else {
-          console.log(`failed to signup: ${JSON.stringify(signup)}`)
-          expect(signup.success).toBe(true)
+          console.log(`failed to login: ${JSON.stringify(login)}`)
+          expect(login.success).toBe(true)
         }
 
         const createDapp = await manager.dapp.createDApp({
@@ -125,11 +118,14 @@ describe('public decrypt', () => {
           })
 
           await vi.waitUntil(async () => {
-            const size = await manager.getOrchQueueSize()
-            return size > 0
+            const event = await manager.getMessageFromOrchQueue(
+              'back:httpz:public-decrypt:requested',
+            )
+            return event !== undefined
           })
-          const message = await manager.getMessageFromOrchQueue()
-          const event = JSON.parse(message!)
+          const event = await manager.getMessageFromOrchQueue(
+            'back:httpz:public-decrypt:requested',
+          )
           if (!back.isBackEvent(event)) {
             expect(false, 'event is not a BackEvent').toBeTruthy()
             return
@@ -159,12 +155,18 @@ describe('public decrypt', () => {
   })
 
   describe('when API_KEYS flag is disabled', () => {
-    beforeEach(() => {
-      vi.stubEnv('FLAG_API_KEYS', '0')
+    const manager = new IntegrationManager({ apiKeys: false })
+
+    beforeAll(async () => {
+      await manager.beforeAll()
+    }, 30_000)
+
+    afterAll(async () => {
+      await manager.afterAll()
     })
 
-    afterEach(() => {
-      vi.unstubAllEnvs()
+    afterEach(async () => {
+      await manager.afterEach()
     })
 
     describe('given an anonymous user', () => {
@@ -198,11 +200,14 @@ describe('public decrypt', () => {
           })
 
           await vi.waitUntil(async () => {
-            const size = await manager.getOrchQueueSize()
-            return size > 0
+            const event = await manager.getMessageFromOrchQueue(
+              'back:httpz:public-decrypt:requested',
+            )
+            return event !== undefined
           })
-          const message = await manager.getMessageFromOrchQueue()
-          const event = JSON.parse(message!)
+          const event = await manager.getMessageFromOrchQueue(
+            'back:httpz:public-decrypt:requested',
+          )
           if (!back.isBackEvent(event)) {
             expect(false, 'event is not a BackEvent').toBeTruthy()
             return

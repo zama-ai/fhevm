@@ -73,6 +73,7 @@ export class SetupManager {
             configuration,
             () => ({
               aws: {
+                useConfigCredentials: true,
                 accessKeyId: 'test',
                 secretAccessKey: 'test',
                 endpoint: this.awsEndpoint,
@@ -83,6 +84,15 @@ export class SetupManager {
                 orchestrator: {
                   queueUrl: this.orchQueueUrl,
                 },
+              },
+              ses: {
+                useConfigCredentials: true,
+                accessKeyId: 'test',
+                secretAccessKey: 'test',
+                endpoint: this.awsEndpoint,
+                region: this.awsRegion,
+                fromEmail: 'support@zama.ai',
+                frontendUrl: 'http://localhost:5173/',
               },
             }),
           ],

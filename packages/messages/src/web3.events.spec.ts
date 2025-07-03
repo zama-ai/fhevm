@@ -8,66 +8,51 @@ describe('web3', () => {
   describe('isWeb3Event', () => {
     test.each([
       {
-        event: web3.contractValidationFailure(
-          {
-            requestId: generateRequestId(),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
+        event: web3.contractValidationFailure({
+          requestId: generateRequestId(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+        }),
       },
       {
-        event: web3.contractValidationRequested(
-          {
-            requestId: generateRequestId(),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
+        event: web3.contractValidationRequested({
+          requestId: generateRequestId(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+        }),
       },
       {
-        event: web3.contractValidationSuccess(
-          {
-            requestId: generateRequestId(),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
+        event: web3.contractValidationSuccess({
+          requestId: generateRequestId(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+        }),
       },
       {
-        event: web3.fheDetected(
-          {
-            requestId: generateRequestId(),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-            events: [
-              {
-                id: faker.string.alphanumeric(),
-                name: getRandomOperation(),
-                timestamp: faker.date.past().toISOString(),
-              },
-              {
-                id: faker.string.alphanumeric(),
-                name: getRandomOperation(),
-                timestamp: faker.date.past().toISOString(),
-              },
-            ],
-          },
-          { correlationId: faker.string.uuid() },
-        ),
+        event: web3.fheDetected({
+          requestId: generateRequestId(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+          events: [
+            {
+              id: faker.string.alphanumeric(),
+              name: getRandomOperation(),
+              timestamp: faker.date.past().toISOString(),
+            },
+            {
+              id: faker.string.alphanumeric(),
+              name: getRandomOperation(),
+              timestamp: faker.date.past().toISOString(),
+            },
+          ],
+        }),
       },
       {
-        event: web3.fheRequested(
-          {
-            requestId: generateRequestId(),
-            chainId: faker.number.int({ min: 1, max: 100_000 }),
-            address: faker.string.hexadecimal({ length: 40 }),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
+        event: web3.fheRequested({
+          requestId: generateRequestId(),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
+          address: faker.string.hexadecimal({ length: 40 }),
+        }),
       },
     ])('identifies $event.type event', ({ event }) => {
       const check = web3.isWeb3Event(event)

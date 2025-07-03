@@ -20,6 +20,7 @@ import {
   UseCase,
   isNotFoundError,
   isDuplicatedError,
+  shortString,
 } from 'utils'
 
 type Input = {
@@ -58,7 +59,9 @@ export class StoreDAppStats implements UseCase<Input, Output> {
       ? this.execute(event.payload)
           .tap(stats => {
             stats.forEach(stat => {
-              this.logger.debug(`stat created ${JSON.stringify(stat.toJSON())}`)
+              this.logger.debug(
+                `stat created ${JSON.stringify(stat.toJSON(), (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+              )
             })
           })
           .map<void>(() => void 0)

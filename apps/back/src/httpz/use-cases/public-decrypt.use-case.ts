@@ -6,19 +6,8 @@ import {
 import { IProducer } from '#shared/services/producer.js'
 import { SYNC_SERVICE, SyncService } from '#shared/services/sync.service.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { randomUUID } from 'crypto'
 import { back, generateRequestId } from 'messages'
-import {
-  AppError,
-  every,
-  fromNullable,
-  fromOption,
-  Task,
-  unauthorizedError,
-  unknownError,
-  UseCase,
-  validationError,
-} from 'utils'
+import { AppError, shortString, Task, unknownError, UseCase } from 'utils'
 import ms from 'ms'
 import { SyncInstances } from '#shared/use-cases/sync-instances.use-case.js'
 
@@ -50,7 +39,9 @@ export class PublicDecrypt implements UseCase<Input, void> {
     input: Input,
     context?: Record<string, unknown>,
   ): Task<void, AppError> => {
-    this.logger.debug(`input=${JSON.stringify(input)}`)
+    this.logger.debug(
+      `input=${JSON.stringify(input, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+    )
 
     const requestId: string =
       (context?.requestId as string) ?? generateRequestId()

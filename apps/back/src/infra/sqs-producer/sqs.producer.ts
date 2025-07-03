@@ -3,7 +3,7 @@ import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { back } from 'messages'
-import { AppError, Task, unknownError } from 'utils'
+import { AppError, shortString, Task, unknownError } from 'utils'
 
 @Injectable()
 export class SqsProducer implements IProducer {
@@ -15,16 +15,20 @@ export class SqsProducer implements IProducer {
 
   private get sqs(): SQSClient {
     if (!this._sqs) {
-      this._sqs = new SQSClient(this.config.get<boolean>('aws.useConfigCredentials', false)
-        ? {
-            endpoint: this.config.get<string>('aws.endpoint'),
-            region: this.config.get<string>('aws.region'),
-            credentials: {
-              accessKeyId: this.config.getOrThrow<string>('aws.accessKeyId'),
-              secretAccessKey: this.config.getOrThrow<string>('aws.secretAccessKey'),
-            },
-          }
-        : {})
+      this._sqs = new SQSClient(
+        this.config.get<boolean>('aws.useConfigCredentials', false)
+          ? {
+              endpoint: this.config.get<string>('aws.endpoint'),
+              region: this.config.get<string>('aws.region'),
+              credentials: {
+                accessKeyId: this.config.getOrThrow<string>('aws.accessKeyId'),
+                secretAccessKey: this.config.getOrThrow<string>(
+                  'aws.secretAccessKey',
+                ),
+              },
+            }
+          : {},
+      )
       this._sqs.config.useQueueUrlAsEndpoint = true
     }
     return this._sqs
@@ -39,7 +43,7 @@ export class SqsProducer implements IProducer {
 
   publish = (event: back.BackEvent): Task<void, AppError> => {
     this.logger.debug(
-      `publishing: ${JSON.stringify(event)} to ${this.queueUrl}`,
+      `publishing: ${JSON.stringify(event, (_, v) => (typeof v === 'string' ? shortString(v) : v))} to ${this.queueUrl}`,
     )
 
     return new Task((resolve, reject) => {

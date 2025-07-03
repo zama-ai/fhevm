@@ -14,6 +14,7 @@ import * as uc from '#users/use-cases/index.js'
       useClass: uc.ChangePassword,
     },
     uc.CreateUser,
+    uc.ConfirmUser,
     uc.GetUserByEmail,
     uc.GetUserById,
     uc.UpdateUser,
@@ -30,6 +31,7 @@ import * as uc from '#users/use-cases/index.js'
     GetDappsByTeamId,
   ],
   exports: [
+    uc.ConfirmUser,
     uc.GetUserById,
     uc.GetUserByEmail,
     uc.CreateUser,

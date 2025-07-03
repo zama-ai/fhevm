@@ -47,11 +47,10 @@ describe('relayer', () => {
               payload: faker.string.hexadecimal({
                 length: { min: 10, max: 50 },
               }) as `0x${string}`,
-              signature:
-                faker.string.hexadecimal({
-                  length: { min: 10, max: 50 },
-                }) as `0x${string}`,
-            }
+              signature: faker.string.hexadecimal({
+                length: { min: 10, max: 50 },
+              }) as `0x${string}`,
+            },
           ],
         }),
       },

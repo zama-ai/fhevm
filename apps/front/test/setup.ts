@@ -4,13 +4,13 @@ import '@testing-library/jest-dom/vitest'
 import { setupServer } from 'msw/node'
 import { handlers } from './handlers'
 import { createMatchMedia } from './matchMedia'
+import { EnvVariable } from '../src/lib/check-env'
 
 // Declare global types
 declare global {
   interface Window {
-    env: {
-      VITE_BACK_HTTP_URL: string
-      VITE_BACK_WS_URL: string
+    env: Record<EnvVariable, string> & {
+      [K in `VITE_FLAG_${string}`]: boolean
     }
   }
 }
@@ -18,6 +18,7 @@ declare global {
 window.env = {
   VITE_BACK_HTTP_URL: 'http://mocked',
   VITE_BACK_WS_URL: 'ws://mocked',
+  VITE_FLAG_INVITATIONS: true,
 }
 
 export const server = setupServer(...handlers)

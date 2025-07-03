@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { type TeamProps } from '#teams/domain/entities/team.js'
 import type { AppError, Task, UseCase } from 'utils'
 import {
@@ -9,11 +9,15 @@ import { UserId } from '#users/domain/entities/value-objects.js'
 
 @Injectable()
 export class GetTeamsByUserId implements UseCase<UserId, TeamProps[]> {
+  private readonly logger = new Logger(GetTeamsByUserId.name)
+
   constructor(
     @Inject(TEAM_REPOSITORY) private readonly teamRepository: TeamRepository,
   ) {}
 
   execute = (userId: UserId): Task<TeamProps[], AppError> => {
+    this.logger.debug(`getting teams by user id ${userId}`)
+
     return this.teamRepository
       .findManyByUserId(userId)
       .map(teams => teams.map(team => team.toJSON()))

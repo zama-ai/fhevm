@@ -6,7 +6,8 @@ import { SignInMutation } from '@/__generated__/graphql.js'
 import { SigninForm } from '@/components/signin-form/signin-form.js'
 import { formatErrorMessage } from '@/lib/error-message.js'
 import { Link } from '@/components/ui/link'
-import { Text } from '@chakra-ui/react'
+import { HStack, Text } from '@chakra-ui/react'
+import { FeatureFlag } from '@/components/feature-flag/feature-flag'
 
 const SIGN_IN = gql`
   mutation SignIn($email: String!, $password: String!) {
@@ -42,9 +43,16 @@ export function SigninPage() {
         loading={!!loading}
         errorMessage={errorMessage}
       />
-      <Text textStyle="sm">
-        Forgot your password? <Link to="/reset-password">Reset it</Link>
-      </Text>
+      <HStack justifyContent="space-between">
+        <Text textStyle="sm">
+          <Link to="/reset-password">Forgot password?</Link>
+        </Text>
+        <FeatureFlag not is="invitations">
+          <Text textStyle="sm">
+            <Link to="/signup">Sign up</Link>
+          </Text>
+        </FeatureFlag>
+      </HStack>
     </>
   )
 }

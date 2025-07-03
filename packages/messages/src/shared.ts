@@ -44,7 +44,7 @@ export type MSPrefix = (typeof MS_PREFIXES)[number]
 
 export const meta = z.record(z.string(), z.union([z.string(), z.number()])).and(
   z.object({
-    correlationId: z.string().uuid(),
+    correlationId: z.string().uuid().optional(),
   }),
 )
 
@@ -63,7 +63,6 @@ export const handleContractPair = z.object({
   handle: z.string(),
   contractAddress: z.string(),
 })
-
 
 export const userDecryptResponse = z.object({
   signature: z.string(),
@@ -84,7 +83,7 @@ export function metaFactory<
   Events extends {
     type: string
     payload: object
-    meta: Meta
+    meta?: Meta
   },
   Prefix extends string = MSPrefix,
 >(prefix: Prefix) {
@@ -93,10 +92,10 @@ export function metaFactory<
     Event extends {
       type: `${Prefix}:${Key}`
       payload: object
-      meta: Meta
+      meta?: Meta
     } = Extract<Events, { type: `${Prefix}:${Key}` }>,
   >(key: Key) {
-    return function(payload: Event['payload'], meta: Event['meta']) {
+    return function (payload: Event['payload'], meta?: Event['meta']) {
       return {
         type: `${prefix}:${key}`,
         payload,

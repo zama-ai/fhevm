@@ -3,6 +3,17 @@ import { SetupManager, type GraphQlResponse } from './setup.manager.js'
 import { GraphQl } from './graphql.js'
 import { expect } from 'vitest'
 
+type LoginOptions = {
+  signup: boolean
+  name: string | (() => string)
+  confirm: boolean
+}
+const DEFAULT_LOGIN_OPTIONS = {
+  signup: false,
+  name: () => faker.internet.username(),
+  confirm: true,
+} satisfies LoginOptions
+
 export interface User {
   name: string
   email: string
@@ -38,6 +49,38 @@ export class AuthManager {
 
   async signup(
     {
+      email,
+      password,
+      name,
+    }: {
+      email: string
+      password: string
+      name?: string
+    },
+    options: { confirm?: boolean } = { confirm: true },
+  ): Promise<GraphQlResponse<{ user: User }>> {
+    if (this.manager.flags.invitations) {
+      throw new Error('Invitations are enabled')
+    }
+    if (!name) {
+      name = faker.person.fullName()
+    }
+
+    const result = await GraphQl.request<
+      { signup: { user: User } },
+      { email: string; name: string; password: string }
+    >(this.httpServer)
+      .mutate(SIGN_UP, { email, name, password })
+      .exec('signup')
+
+    if (options?.confirm) {
+      await this.confirmUserWithDB(email)
+    }
+
+    return result
+  }
+  async signupWithToken(
+    {
       invitation,
       name,
       password,
@@ -48,6 +91,10 @@ export class AuthManager {
     },
     options?: { createInvitation?: boolean; email?: string },
   ): Promise<GraphQlResponse<{ token: string; user: User }>> {
+    if (!this.manager.flags.invitations) {
+      throw new Error('Invitations are disabled')
+    }
+
     if (!invitation && options?.createInvitation) {
       const created = await this.createInvitation(
         options.email ?? faker.internet.email(),
@@ -59,25 +106,54 @@ export class AuthManager {
     }
 
     return GraphQl.request<
-      { signup: { token: string; user: User } },
+      { signupWithInvitation: { token: string; user: User } },
       { invitation: string; name: string; password: string }
     >(this.httpServer)
-      .mutate(SIGN_UP, { invitation: invitation!, name, password })
-      .exec('signup')
+      .mutate(SIGN_UP_WITH_TOKEN, { invitation: invitation!, name, password })
+      .exec('signupWithInvitation')
+  }
+
+  async confirmEmail(
+    token: string,
+  ): Promise<GraphQlResponse<{ user: User; token: string }>> {
+    console.log(`\x1b[32mconfirmEmail> ${token}\x1b[0m`)
+    return GraphQl.request<
+      { confirmEmail: { token: string; user: User } },
+      { token: string }
+    >(this.httpServer)
+      .query(CONFIRM_EMAIL, { token })
+      .exec('confirmEmail')
+  }
+
+  private async confirmUserWithDB(email: string) {
+    await this.manager.prismaClient.user.update({
+      where: { email },
+      data: { confirmedAt: new Date() },
+    })
   }
 
   async login(
     { email, password }: { email: string; password: string },
-    options?: { signup?: boolean; name?: string },
+    opts: Partial<LoginOptions> = {},
   ): Promise<GraphQlResponse<{ user: User; token: string }>> {
-    if (options?.signup) {
-      await this.signup(
-        {
-          name: options.name ?? faker.internet.username(),
-          password,
-        },
-        { createInvitation: true, email },
-      )
+    const options = Object.assign({}, DEFAULT_LOGIN_OPTIONS, opts)
+    if (options.signup) {
+      const name =
+        typeof options.name === 'function' ? options.name() : options.name
+      if (this.manager.flags.invitations) {
+        await this.signupWithToken(
+          {
+            name,
+            password,
+          },
+          { createInvitation: true, email },
+        )
+      } else {
+        await this.signup({ email, password, name })
+        if (options.confirm) {
+          await this.confirmUserWithDB(email)
+        }
+      }
     }
 
     return GraphQl.request<
@@ -134,11 +210,46 @@ const GET_INVITATION_BY_TOKEN = `
   }
 `
 
-const SIGN_UP = `
+const SIGN_UP_WITH_TOKEN = `
   mutation signup($invitation: String!, $name: String!, $password: String!) {
-    signup(
+    signupWithInvitation(
       input: { invitationToken: $invitation, password: $password, name: $name }
     ) {
+      user {
+        id
+        email
+        name
+        teams {
+          id
+          name
+        }
+      }
+      token
+    }
+  }
+`
+
+const SIGN_UP = `
+  mutation signup($email: String!, $name: String!, $password: String!) {
+    signup(
+      input: { email: $email, password: $password, name: $name }
+    ) {
+      user {
+        id
+        email
+        name
+        teams {
+          id
+          name
+        }
+      }
+    }
+  }
+`
+
+const CONFIRM_EMAIL = `
+  mutation confirmEmail($token: String!) {
+    confirmEmail(input: { token: $token }) {
       user {
         id
         email

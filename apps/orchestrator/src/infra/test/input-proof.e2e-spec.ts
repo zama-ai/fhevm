@@ -64,7 +64,7 @@ describe('input proof', () => {
           type: 'relayer:input-registration:input-registration-request',
         }),
       )
-    })
+    }, 30_000)
   })
 
   describe(`when receiving a 'relayer:input-registration:input-registration-response' event`, () => {
@@ -92,6 +92,6 @@ describe('input proof', () => {
           type: 'back:httpz:input-proof:completed',
         }),
       )
-    })
+    }, 30_000)
   })
 })

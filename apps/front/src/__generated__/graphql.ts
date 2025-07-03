@@ -47,6 +47,10 @@ export type ChangePasswordInput = {
   oldPassword: Scalars['String']['input'];
 };
 
+export type ConfirmEmailInput = {
+  token: Scalars['String']['input'];
+};
+
 export type CreateApiKey = {
   __typename?: 'CreateApiKey';
   /** API Key details */
@@ -178,14 +182,16 @@ export type LoginInput = {
 export type Mutation = {
   __typename?: 'Mutation';
   changePassword: Scalars['Boolean']['output'];
+  confirmEmail: AuthWithToken;
   createApiKey: CreateApiKey;
   createDapp: Dapp;
   createInvitation: Invitation;
   deleteApiKey: Scalars['ID']['output'];
-  login: Auth;
+  login: AuthWithToken;
   requestResetPassword: Scalars['Boolean']['output'];
-  resetPassword: Auth;
+  resetPassword: AuthWithToken;
   signup: Auth;
+  signupWithInvitation: AuthWithToken;
   updateApiKey: ApiKey;
   updateDapp: Dapp;
   updateUser: User;
@@ -194,6 +200,11 @@ export type Mutation = {
 
 export type MutationChangePasswordArgs = {
   input: ChangePasswordInput;
+};
+
+
+export type MutationConfirmEmailArgs = {
+  input: ConfirmEmailInput;
 };
 
 
@@ -234,6 +245,11 @@ export type MutationResetPasswordArgs = {
 
 export type MutationSignupArgs = {
   input: SignupInput;
+};
+
+
+export type MutationSignupWithInvitationArgs = {
+  input: SignupWithInvitationTokenInput;
 };
 
 
@@ -311,7 +327,20 @@ export type RawStats = {
   timestamp: Scalars['Float']['output'];
 };
 
+export type ResetPasswordInput = {
+  /** The new password */
+  password: Scalars['String']['input'];
+  /** The token received by email */
+  token: Scalars['String']['input'];
+};
+
 export type SignupInput = {
+  email: Scalars['String']['input'];
+  name: Scalars['String']['input'];
+  password: Scalars['String']['input'];
+};
+
+export type SignupWithInvitationTokenInput = {
   invitationToken: Scalars['String']['input'];
   name: Scalars['String']['input'];
   password: Scalars['String']['input'];
@@ -380,6 +409,11 @@ export type ValidateAddressInput = {
 
 export type Auth = {
   __typename?: 'auth';
+  user: User;
+};
+
+export type AuthWithToken = {
+  __typename?: 'authWithToken';
   token: Scalars['String']['output'];
   user: User;
 };
@@ -388,13 +422,6 @@ export type Auth = {
 export type RequestResetPasswordInput = {
   /** The user's email address to reset the password */
   email: Scalars['String']['input'];
-};
-
-export type ResetPasswordInput = {
-  /** The new password */
-  password: Scalars['String']['input'];
-  /** The token received by email */
-  token: Scalars['String']['input'];
 };
 
 export type CreateApiKeyMutationVariables = Exact<{
@@ -447,7 +474,7 @@ export type ResetPasswordMutationVariables = Exact<{
 }>;
 
 
-export type ResetPasswordMutation = { __typename?: 'Mutation', resetPassword: { __typename?: 'auth', token: string } };
+export type ResetPasswordMutation = { __typename?: 'Mutation', resetPassword: { __typename?: 'authWithToken', token: string } };
 
 export type ChangePasswordMutationVariables = Exact<{
   oldPassword: Scalars['String']['input'];
@@ -502,14 +529,6 @@ export type DappUpdatedSubscriptionVariables = Exact<{
 
 export type DappUpdatedSubscription = { __typename?: 'Subscription', dappUpdated: { __typename?: 'Dapp', id: string, name: string, rawStats: Array<{ __typename?: 'RawStats', id: string, name: string, timestamp: number, externalRef: string }>, stats: { __typename?: 'DappStats', id: string, cumulative: { __typename?: 'CumulativeDappStats', total: number, FheAdd: number, FheSub: number, FheMul: number, FheDiv: number, FheRem: number, FheBitAnd: number, FheBitOr: number, FheBitXor: number, FheShl: number, FheShr: number, FheRotl: number, FheRotr: number, FheEq: number, FheEqBytes: number, FheNe: number, FheNeBytes: number, FheGe: number, FheGt: number, FheLe: number, FheLt: number, FheMin: number, FheMax: number, FheNeg: number, FheNot: number, VerifyCiphertext: number, Cast: number, TrivialEncrypt: number, TrivialEncryptBytes: number, FheIfThenElse: number, FheRand: number, FheRandBounded: number }, byDay: Array<{ __typename?: 'DailyDappStats', id: string, day: string, total: number, computation: number, encryption: number }> } } };
 
-export type SignInMutationVariables = Exact<{
-  email: Scalars['String']['input'];
-  password: Scalars['String']['input'];
-}>;
-
-
-export type SignInMutation = { __typename?: 'Mutation', login: { __typename?: 'auth', token: string, user: { __typename?: 'User', id: string, email: string, name: string } } };
-
 export type InvitationTokenQueryVariables = Exact<{
   token: Scalars['String']['input'];
 }>;
@@ -517,14 +536,38 @@ export type InvitationTokenQueryVariables = Exact<{
 
 export type InvitationTokenQuery = { __typename?: 'Query', invitation: { __typename?: 'Invitation', id: string, expiresAt: number, token: string, email: string } };
 
-export type SignUpMutationVariables = Exact<{
+export type SignUpWithInvitationTokenMutationVariables = Exact<{
   name: Scalars['String']['input'];
   password: Scalars['String']['input'];
   invitationToken: Scalars['String']['input'];
 }>;
 
 
-export type SignUpMutation = { __typename?: 'Mutation', signup: { __typename?: 'auth', token: string, user: { __typename?: 'User', id: string, email: string, name: string } } };
+export type SignUpWithInvitationTokenMutation = { __typename?: 'Mutation', signupWithInvitation: { __typename?: 'authWithToken', token: string, user: { __typename?: 'User', id: string, email: string, name: string } } };
+
+export type SignInMutationVariables = Exact<{
+  email: Scalars['String']['input'];
+  password: Scalars['String']['input'];
+}>;
+
+
+export type SignInMutation = { __typename?: 'Mutation', login: { __typename?: 'authWithToken', token: string, user: { __typename?: 'User', id: string, email: string, name: string } } };
+
+export type SignUpMutationVariables = Exact<{
+  name: Scalars['String']['input'];
+  password: Scalars['String']['input'];
+  email: Scalars['String']['input'];
+}>;
+
+
+export type SignUpMutation = { __typename?: 'Mutation', signup: { __typename?: 'auth', user: { __typename?: 'User', id: string, email: string, name: string } } };
+
+export type ValidationTokenMutationVariables = Exact<{
+  token: Scalars['String']['input'];
+}>;
+
+
+export type ValidationTokenMutation = { __typename?: 'Mutation', confirmEmail: { __typename?: 'authWithToken', token: string } };
 
 export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -546,7 +589,9 @@ export const ValidateAddressDocument = {"kind":"Document","definitions":[{"kind"
 export const CreateDappDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreateDapp"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"teamId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"chainId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"address"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createDapp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"teamId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"teamId"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"chainId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"chainId"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"address"},"value":{"kind":"Variable","name":{"kind":"Name","value":"address"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"chainId"}},{"kind":"Field","name":{"kind":"Name","value":"address"}}]}}]}}]} as unknown as DocumentNode<CreateDappMutation, CreateDappMutationVariables>;
 export const GetDappDetailsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetDappDetails"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"dappId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dapp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"dappId"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"rawStats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"timestamp"}},{"kind":"Field","name":{"kind":"Name","value":"externalRef"}}]}},{"kind":"Field","name":{"kind":"Name","value":"stats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"cumulative"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"FheAdd"}},{"kind":"Field","name":{"kind":"Name","value":"FheSub"}},{"kind":"Field","name":{"kind":"Name","value":"FheMul"}},{"kind":"Field","name":{"kind":"Name","value":"FheDiv"}},{"kind":"Field","name":{"kind":"Name","value":"FheRem"}},{"kind":"Field","name":{"kind":"Name","value":"FheBitAnd"}},{"kind":"Field","name":{"kind":"Name","value":"FheBitOr"}},{"kind":"Field","name":{"kind":"Name","value":"FheBitXor"}},{"kind":"Field","name":{"kind":"Name","value":"FheShl"}},{"kind":"Field","name":{"kind":"Name","value":"FheShr"}},{"kind":"Field","name":{"kind":"Name","value":"FheRotl"}},{"kind":"Field","name":{"kind":"Name","value":"FheRotr"}},{"kind":"Field","name":{"kind":"Name","value":"FheEq"}},{"kind":"Field","name":{"kind":"Name","value":"FheEqBytes"}},{"kind":"Field","name":{"kind":"Name","value":"FheNe"}},{"kind":"Field","name":{"kind":"Name","value":"FheNeBytes"}},{"kind":"Field","name":{"kind":"Name","value":"FheGe"}},{"kind":"Field","name":{"kind":"Name","value":"FheGt"}},{"kind":"Field","name":{"kind":"Name","value":"FheLe"}},{"kind":"Field","name":{"kind":"Name","value":"FheLt"}},{"kind":"Field","name":{"kind":"Name","value":"FheMin"}},{"kind":"Field","name":{"kind":"Name","value":"FheMax"}},{"kind":"Field","name":{"kind":"Name","value":"FheNeg"}},{"kind":"Field","name":{"kind":"Name","value":"FheNot"}},{"kind":"Field","name":{"kind":"Name","value":"VerifyCiphertext"}},{"kind":"Field","name":{"kind":"Name","value":"Cast"}},{"kind":"Field","name":{"kind":"Name","value":"TrivialEncrypt"}},{"kind":"Field","name":{"kind":"Name","value":"TrivialEncryptBytes"}},{"kind":"Field","name":{"kind":"Name","value":"FheIfThenElse"}},{"kind":"Field","name":{"kind":"Name","value":"FheRand"}},{"kind":"Field","name":{"kind":"Name","value":"FheRandBounded"}}]}},{"kind":"Field","name":{"kind":"Name","value":"byDay"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"day"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"computation"}},{"kind":"Field","name":{"kind":"Name","value":"encryption"}}]}}]}}]}}]}}]} as unknown as DocumentNode<GetDappDetailsQuery, GetDappDetailsQueryVariables>;
 export const DappUpdatedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"subscription","name":{"kind":"Name","value":"DappUpdated"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"dappId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dappUpdated"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"dappId"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"rawStats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"timestamp"}},{"kind":"Field","name":{"kind":"Name","value":"externalRef"}}]}},{"kind":"Field","name":{"kind":"Name","value":"stats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"cumulative"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"FheAdd"}},{"kind":"Field","name":{"kind":"Name","value":"FheSub"}},{"kind":"Field","name":{"kind":"Name","value":"FheMul"}},{"kind":"Field","name":{"kind":"Name","value":"FheDiv"}},{"kind":"Field","name":{"kind":"Name","value":"FheRem"}},{"kind":"Field","name":{"kind":"Name","value":"FheBitAnd"}},{"kind":"Field","name":{"kind":"Name","value":"FheBitOr"}},{"kind":"Field","name":{"kind":"Name","value":"FheBitXor"}},{"kind":"Field","name":{"kind":"Name","value":"FheShl"}},{"kind":"Field","name":{"kind":"Name","value":"FheShr"}},{"kind":"Field","name":{"kind":"Name","value":"FheRotl"}},{"kind":"Field","name":{"kind":"Name","value":"FheRotr"}},{"kind":"Field","name":{"kind":"Name","value":"FheEq"}},{"kind":"Field","name":{"kind":"Name","value":"FheEqBytes"}},{"kind":"Field","name":{"kind":"Name","value":"FheNe"}},{"kind":"Field","name":{"kind":"Name","value":"FheNeBytes"}},{"kind":"Field","name":{"kind":"Name","value":"FheGe"}},{"kind":"Field","name":{"kind":"Name","value":"FheGt"}},{"kind":"Field","name":{"kind":"Name","value":"FheLe"}},{"kind":"Field","name":{"kind":"Name","value":"FheLt"}},{"kind":"Field","name":{"kind":"Name","value":"FheMin"}},{"kind":"Field","name":{"kind":"Name","value":"FheMax"}},{"kind":"Field","name":{"kind":"Name","value":"FheNeg"}},{"kind":"Field","name":{"kind":"Name","value":"FheNot"}},{"kind":"Field","name":{"kind":"Name","value":"VerifyCiphertext"}},{"kind":"Field","name":{"kind":"Name","value":"Cast"}},{"kind":"Field","name":{"kind":"Name","value":"TrivialEncrypt"}},{"kind":"Field","name":{"kind":"Name","value":"TrivialEncryptBytes"}},{"kind":"Field","name":{"kind":"Name","value":"FheIfThenElse"}},{"kind":"Field","name":{"kind":"Name","value":"FheRand"}},{"kind":"Field","name":{"kind":"Name","value":"FheRandBounded"}}]}},{"kind":"Field","name":{"kind":"Name","value":"byDay"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"day"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"computation"}},{"kind":"Field","name":{"kind":"Name","value":"encryption"}}]}}]}}]}}]}}]} as unknown as DocumentNode<DappUpdatedSubscription, DappUpdatedSubscriptionVariables>;
-export const SignInDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SignIn"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"email"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"password"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"login"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"email"},"value":{"kind":"Variable","name":{"kind":"Name","value":"email"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"password"},"value":{"kind":"Variable","name":{"kind":"Name","value":"password"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"token"}},{"kind":"Field","name":{"kind":"Name","value":"user"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"email"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}}]}}]}}]} as unknown as DocumentNode<SignInMutation, SignInMutationVariables>;
 export const InvitationTokenDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"InvitationToken"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"token"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"invitation"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"token"},"value":{"kind":"Variable","name":{"kind":"Name","value":"token"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"expiresAt"}},{"kind":"Field","name":{"kind":"Name","value":"token"}},{"kind":"Field","name":{"kind":"Name","value":"email"}}]}}]}}]} as unknown as DocumentNode<InvitationTokenQuery, InvitationTokenQueryVariables>;
-export const SignUpDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SignUp"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"password"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"invitationToken"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"signup"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"password"},"value":{"kind":"Variable","name":{"kind":"Name","value":"password"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"invitationToken"},"value":{"kind":"Variable","name":{"kind":"Name","value":"invitationToken"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"token"}},{"kind":"Field","name":{"kind":"Name","value":"user"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"email"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}}]}}]}}]} as unknown as DocumentNode<SignUpMutation, SignUpMutationVariables>;
+export const SignUpWithInvitationTokenDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SignUpWithInvitationToken"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"password"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"invitationToken"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"signupWithInvitation"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"password"},"value":{"kind":"Variable","name":{"kind":"Name","value":"password"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"invitationToken"},"value":{"kind":"Variable","name":{"kind":"Name","value":"invitationToken"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"token"}},{"kind":"Field","name":{"kind":"Name","value":"user"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"email"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}}]}}]}}]} as unknown as DocumentNode<SignUpWithInvitationTokenMutation, SignUpWithInvitationTokenMutationVariables>;
+export const SignInDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SignIn"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"email"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"password"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"login"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"email"},"value":{"kind":"Variable","name":{"kind":"Name","value":"email"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"password"},"value":{"kind":"Variable","name":{"kind":"Name","value":"password"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"token"}},{"kind":"Field","name":{"kind":"Name","value":"user"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"email"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}}]}}]}}]} as unknown as DocumentNode<SignInMutation, SignInMutationVariables>;
+export const SignUpDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SignUp"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"password"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"email"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"signup"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"password"},"value":{"kind":"Variable","name":{"kind":"Name","value":"password"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"email"},"value":{"kind":"Variable","name":{"kind":"Name","value":"email"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"user"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"email"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}}]}}]}}]} as unknown as DocumentNode<SignUpMutation, SignUpMutationVariables>;
+export const ValidationTokenDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ValidationToken"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"token"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"confirmEmail"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"token"},"value":{"kind":"Variable","name":{"kind":"Name","value":"token"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"token"}}]}}]}}]} as unknown as DocumentNode<ValidationTokenMutation, ValidationTokenMutationVariables>;
 export const MeDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"Me"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"me"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"email"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"teams"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"dapps"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]}}]}}]} as unknown as DocumentNode<MeQuery, MeQueryVariables>;

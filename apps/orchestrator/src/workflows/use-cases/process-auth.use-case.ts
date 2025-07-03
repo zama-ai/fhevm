@@ -1,40 +1,42 @@
 import { PUBSUB } from '#constants.js'
-import {
-  isPasswordResetEvent,
-  PasswordReset,
-  PasswordResetEvents,
-} from '#workflows/entities/password-reset.js'
+import { isAuthEvent, Auth, AuthEvents } from '#workflows/entities/auth.js'
 import {
   EVENT_PRODUCER,
   type EventProducer,
 } from '#workflows/interfaces/event.producer.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { back, email } from 'messages'
-import { AppError, IPubSub, ISubscriber, Task, UseCase } from 'utils'
+import {
+  AppError,
+  type IPubSub,
+  type ISubscriber,
+  Task,
+  type UseCase,
+} from 'utils'
 
 @Injectable()
-export class ProcessPasswordReset
-  implements UseCase<PasswordResetEvents, void>
-{
-  private readonly logger = new Logger(ProcessPasswordReset.name)
+export class ProcessAuth implements UseCase<AuthEvents, void> {
+  private readonly logger = new Logger(ProcessAuth.name)
 
   constructor(
-    @Inject(PUBSUB) private readonly pubsub: IPubSub<PasswordResetEvents>,
+    @Inject(PUBSUB) private readonly pubsub: IPubSub<AuthEvents>,
     @Inject(EVENT_PRODUCER) private readonly producer: EventProducer,
   ) {
+    this.logger.verbose(`subscribing to 'back:user:created' events`)
+    this.pubsub.subscribe('back:user:created', this.handleEvent)
     this.logger.verbose(`subscribing to 'back:password-reset:*' events`)
     this.pubsub.subscribe('back:password-reset:*', this.handleEvent)
   }
 
-  private handleEvent: ISubscriber<PasswordResetEvents> = event => {
+  private handleEvent: ISubscriber<AuthEvents> = event => {
     this.logger.verbose(`event ${event.type} received`)
-    return isPasswordResetEvent(event) ? this.execute(event) : Task.of(void 0)
+    return isAuthEvent(event) ? this.execute(event) : Task.of(void 0)
   }
 
-  execute = (event: PasswordResetEvents): Task<void, AppError> => {
+  execute = (event: AuthEvents): Task<void, AppError> => {
     this.logger.debug(`processing ${event.type}`)
     return Task.of<(back.BackEvent | email.EmailEvent)[], AppError>(
-      new PasswordReset().send(event),
+      new Auth().send(event),
     )
       .chain(messages => {
         this.logger.verbose(`publishing #${messages.length} messages`)

@@ -17,6 +17,10 @@ describe('fetch all teams', () => {
     await manager.beforeAll()
   }, 30000)
 
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
+
   afterAll(async () => {
     await manager.afterAll()
   })
@@ -32,30 +36,33 @@ describe('fetch all teams', () => {
     let teamIds: string[]
 
     beforeEach(async () => {
-      const resp = await manager.auth.login(
+      const login = await manager.auth.login(
         {
           email: faker.internet.email(),
           password: faker.internet.password(),
         },
         { signup: true },
       )
-      expect(resp.success).toBe(true)
-      if (resp.success) {
-        token = resp.data.token
+      expect(login.success).toBe(true)
+      if (login.success) {
+        token = login.data.token
         // Note: I should create multiple teams, but this is not supported yet
-        teamIds = resp.data.user.teams.map(t => t.id)
+        teamIds = login.data.user.teams.map(t => t.id)
+      } else {
+        console.log(`failed to login: ${JSON.stringify(login.errors)}`)
+        expect(login.success, 'Failed to login the user').toBe(true)
       }
     })
 
     describe('when fetching all teams', () => {
       let user: User
       beforeEach(async () => {
-        const res = await manager.auth.me(token)
-        if (res.success) {
-          user = res.data
+        const me = await manager.auth.me(token)
+        if (me.success) {
+          user = me.data
         } else {
-          console.log(`failed to fetch user: ${JSON.stringify(res)}`)
-          expect(res.success, 'Failed to query ME').toBe(true)
+          console.log(`failed to fetch me: ${JSON.stringify(me)}`)
+          expect(me.success, 'Failed to query ME').toBe(true)
         }
       })
 

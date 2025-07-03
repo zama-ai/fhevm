@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { web3 } from 'messages'
-import { Task, unknownError } from 'utils'
+import { shortString, Task, unknownError } from 'utils'
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 
 @Injectable()
@@ -35,7 +35,11 @@ export class SqsProducer {
    * @param message - The message to publish
    */
   sendMessage = (event: web3.Web3Event) => {
-    this.logger.debug(`sendMessage: ${JSON.stringify(event)}`)
+    this.logger.debug(
+      `sendMessage: ${JSON.stringify(event, (_, v) =>
+        typeof v === 'string' ? shortString(v) : v,
+      )}`,
+    )
 
     return new Task((resolve, reject) =>
       this.#sns

@@ -1,11 +1,11 @@
 import { Hash } from '#auth/domain/entities/value-objects/hash.js'
 import {
-  PASSWORD_RESET_TOKEN_REPOSITORY,
-  PasswordResetTokenRepository,
-} from '#auth/domain/repositories/password-reset-token.repository.js'
+  USER_TOKEN_REPOSITORY,
+  UserTokenRepository,
+} from '#auth/domain/repositories/user-token.repository.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { AppError, Task, UseCase } from 'utils'
+import { AppError, shortString, Task, UseCase } from 'utils'
 
 export type DeleteResetPasswordTokenInput =
   | {
@@ -28,15 +28,17 @@ export class DeleteResetPasswordToken implements IDeleteResetPasswordToken {
   private readonly logger = new Logger(DeleteResetPasswordToken.name)
 
   constructor(
-    @Inject(PASSWORD_RESET_TOKEN_REPOSITORY)
-    private readonly repo: PasswordResetTokenRepository,
+    @Inject(USER_TOKEN_REPOSITORY)
+    private readonly repo: UserTokenRepository,
   ) {}
   execute = (
     input: DeleteResetPasswordTokenInput,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     context?: Record<string, unknown>,
   ): Task<void, AppError> => {
-    this.logger.debug(`deleting token ${JSON.stringify(input)}`)
+    this.logger.debug(
+      `deleting token ${JSON.stringify(input, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+    )
     if ('hash' in input) {
       this.logger.log(`deleting token by hash ${input.hash.toString()}`)
       return this.repo.deleteByHash(

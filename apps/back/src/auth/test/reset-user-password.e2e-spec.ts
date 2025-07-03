@@ -1,7 +1,6 @@
 import { Hash, Token } from '#auth/domain/entities/value-objects/index.js'
 import { IntegrationManager } from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
-import { back } from 'messages'
 import {
   afterAll,
   afterEach,
@@ -14,11 +13,21 @@ import {
 } from 'vitest'
 
 describe('reset-user-password', () => {
-  const manager = new IntegrationManager()
+  const manager = new IntegrationManager({
+    invitations: false,
+  })
+
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
 
   beforeAll(async () => {
     await manager.beforeAll()
   }, 30_000)
+
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
 
   afterAll(async () => {
     await manager.afterAll()
@@ -32,18 +41,19 @@ describe('reset-user-password', () => {
     let email: string
 
     beforeEach(async () => {
+      email = faker.internet.email()
       const signup = await manager.auth.signup(
         {
-          name: faker.internet.username(),
+          email,
           password: faker.internet.password(),
         },
-        { createInvitation: true },
+        {
+          confirm: true,
+        },
       )
       if (!signup.success) {
         console.log(`failed to signup: ${JSON.stringify(signup)}`)
         expect(signup.success).toBe(true)
-      } else {
-        email = signup.data.user.email
       }
     })
 
@@ -61,16 +71,23 @@ describe('reset-user-password', () => {
 
       test('then the user receives an email with the token', async () => {
         await vi.waitUntil(async () => {
-          return (await manager.getOrchQueueSize()) > 0
+          // The system generates at least two events:
+          // 1. back:user:created
+          // 2. back:user:password-reset:requested
+          return (
+            (await manager.getMessageFromOrchQueue(
+              'back:password-reset:requested',
+            )) !== undefined
+          )
         })
-        const message = await manager.getMessageFromOrchQueue()
-        const event = JSON.parse(message!)
-        if (!back.isBackEvent(event)) {
-          expect(false, 'event is not a BackEvent').toBeTruthy()
+        const event = await manager.getMessageFromOrchQueue(
+          'back:password-reset:requested',
+        )
+        if (event) {
+          expect(event.type).toBe('back:password-reset:requested')
+          expect((event.payload as any).email).toBe(email)
+          expect(Token.from((event.payload as any).token).isOk()).toBe(true)
         }
-        expect(event.type).toBe('back:password-reset:requested')
-        expect(event.payload.email).toBe(email)
-        expect(Token.from(event.payload.token).isOk()).toBe(true)
       })
     })
   })
@@ -80,19 +97,15 @@ describe('reset-user-password', () => {
     let token: string
 
     beforeEach(async () => {
+      email = faker.internet.email()
       // Create a user
-      const signup = await manager.auth.signup(
-        {
-          name: faker.internet.username(),
-          password: faker.internet.password(),
-        },
-        { createInvitation: true },
-      )
+      const signup = await manager.auth.signup({
+        email,
+        password: faker.internet.password(),
+      })
       if (!signup.success) {
         console.log(`failed to signup: ${JSON.stringify(signup)}`)
         expect(signup.success).toBe(true)
-      } else {
-        email = signup.data.user.email
       }
 
       // Request a password reset
@@ -106,16 +119,22 @@ describe('reset-user-password', () => {
       }
 
       await vi.waitUntil(async () => {
-        return (await manager.getOrchQueueSize()) > 0
+        const event = await manager.getMessageFromOrchQueue(
+          'back:password-reset:requested',
+        )
+        return event !== undefined
       })
-      const message = await manager.getMessageFromOrchQueue()
-      const event = JSON.parse(message!)
-      if (!back.isBackEvent(event)) {
-        expect(false, 'event is not a BackEvent').toBeTruthy()
+      const event = await manager.getMessageFromOrchQueue(
+        'back:password-reset:requested',
+      )
+      if (event) {
+        expect(event.type).toBe('back:password-reset:requested')
+        expect((event.payload as any).email).toBe(email)
+        expect(Token.from((event.payload as any).token).isOk()).toBe(true)
+        token = (event.payload as any).token
+      } else {
+        expect.fail('event is undefined')
       }
-      expect(event.type).toBe('back:password-reset:requested')
-
-      token = event.payload.token
     })
 
     describe('when the user resets their password', () => {
@@ -140,7 +159,7 @@ describe('reset-user-password', () => {
         if (!login.success) {
           console.log(`failed to login: ${JSON.stringify(login)}`)
         }
-        expect(login.success).toBe(true)
+        expect(login.success, 'failed to login').toBe(true)
       })
 
       test('then the previous token has been deleted', async () => {
@@ -149,7 +168,7 @@ describe('reset-user-password', () => {
         // Sleep for 100ms to ensure the token has been deleted
         await new Promise(resolve => setTimeout(resolve, 100))
         await expect(
-          manager.prismaClient.passwordResetToken.findUnique({
+          manager.prismaClient.userToken.findUnique({
             where: {
               tokenHash: hash,
             },
@@ -159,15 +178,20 @@ describe('reset-user-password', () => {
 
       test('then a password reset completed event has been generated', async () => {
         await vi.waitUntil(async () => {
-          return (await manager.getOrchQueueSize()) > 0
+          const event = await manager.getMessageFromOrchQueue(
+            'back:password-reset:completed',
+          )
+          return event !== undefined
         })
-        const message = await manager.getMessageFromOrchQueue()
-        const event = JSON.parse(message!)
-        if (!back.isBackEvent(event)) {
-          expect(false, 'event is not a BackEvent').toBeTruthy()
+        const event = await manager.getMessageFromOrchQueue(
+          'back:password-reset:completed',
+        )
+        if (event) {
+          expect(event.type).toBe('back:password-reset:completed')
+          expect((event.payload as any).email).toBe(email)
+        } else {
+          expect.fail('event is undefined')
         }
-        expect(event.type).toBe('back:password-reset:completed')
-        expect(event.payload.email).toBe(email)
       })
     })
 
@@ -181,27 +205,40 @@ describe('reset-user-password', () => {
           console.log(
             `failed to request password reset: ${JSON.stringify(requestPasswordReset)}`,
           )
-          expect(requestPasswordReset.success).toBe(true)
+          expect(
+            requestPasswordReset.success,
+            'failed to request password reset',
+          ).toBe(true)
         }
 
         await vi.waitUntil(async () => {
-          return (await manager.getOrchQueueSize()) > 0
-        })
-        const message = await manager.getMessageFromOrchQueue()
-        const event = JSON.parse(message!)
-        if (!back.isBackEvent(event)) {
-          expect(false, 'event is not a BackEvent').toBeTruthy()
-        }
-        expect(event.type).toBe('back:password-reset:requested')
+          const events = await manager.getAllMessagesFromOrchQueue()
 
-        newToken = event.payload.token
+          return (
+            events.filter(
+              event => event.type === 'back:password-reset:requested',
+            ).length > 1
+          )
+        })
+        const events = await manager.getAllMessagesFromOrchQueue()
+        const event = events
+          .filter(event => event.type === 'back:password-reset:requested')
+          .slice(-1)[0]
+        if (event) {
+          expect(event.type, 'wrong event type').toBe(
+            'back:password-reset:requested',
+          )
+          newToken = (event.payload as any).token
+        } else {
+          expect.fail('event is undefined')
+        }
       })
 
       test('then the previous token has been deleted', async () => {
         expect(newToken).not.toBe(token)
         const hash = Hash.hash(Token.from(newToken).unwrap()).value
         await expect(
-          manager.prismaClient.passwordResetToken.findUnique({
+          manager.prismaClient.userToken.findUnique({
             where: {
               tokenHash: hash,
             },

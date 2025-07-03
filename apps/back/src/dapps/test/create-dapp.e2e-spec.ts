@@ -21,6 +21,10 @@ describe('create-dapp', () => {
     await manager.beforeAll()
   }, 30000)
 
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
+
   afterAll(async () => {
     await manager.afterAll()
   })
@@ -34,13 +38,16 @@ describe('create-dapp', () => {
     let teamId: string
 
     beforeEach(async () => {
-      const result = await manager.auth.login(
+      const login = await manager.auth.login(
         { email: faker.internet.email(), password: faker.internet.password() },
         { signup: true },
       )
-      if (result.success) {
-        token = result.data.token
-        teamId = result.data.user.teams[0].id
+      if (login.success) {
+        token = login.data.token
+        teamId = login.data.user.teams[0].id
+      } else {
+        console.log(`login failed: ${JSON.stringify(login.errors)}`)
+        expect(login.success, 'Failed to login the user').toBe(true)
       }
     })
 
@@ -48,18 +55,18 @@ describe('create-dapp', () => {
       let dapp: DApp | undefined
 
       beforeEach(async () => {
-        const result = await manager.dapp.createDApp({
+        const createDApp = await manager.dapp.createDApp({
           token,
           teamId,
           name: faker.string.alphanumeric(10),
           chainId: 11155111, // Sepolia
           address: faker.string.hexadecimal({ length: 40 }),
         })
-        if (result.success) {
-          dapp = result.data
+        if (createDApp.success) {
+          dapp = createDApp.data
         } else {
-          console.log(`failed to create dapp: ${JSON.stringify(result)}`)
-          expect(result.success, 'Failed to create dApp').toBe(true)
+          console.log(`failed to create dapp: ${JSON.stringify(createDApp)}`)
+          expect(createDApp.success, 'Failed to create dApp').toBe(true)
         }
       })
 

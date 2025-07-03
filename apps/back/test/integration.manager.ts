@@ -1,5 +1,5 @@
 import { AuthManager } from './auth.manager.js'
-import { SetupManager } from './setup.manager.js'
+import { type Flags, SetupManager } from './setup.manager.js'
 import { DappManager } from './dapp.manager.js'
 import {
   GetQueueAttributesCommand,
@@ -11,17 +11,26 @@ import { expect } from 'vitest'
 import { Type } from '@nestjs/common'
 import { HttpzManager } from './httpz.manager.js'
 import { UserManager } from './user.manager.js'
+import { back } from 'messages'
 
 export type { GraphQlResponse } from './setup.manager.js'
 export type { User } from './auth.manager.js'
 export type { DApp } from './dapp.manager.js'
 
 export class IntegrationManager {
-  readonly setup = new SetupManager()
-  readonly auth = new AuthManager(this.setup)
-  readonly user = new UserManager(this.setup)
-  readonly dapp = new DappManager(this.setup, this.auth)
-  readonly httpz = new HttpzManager(this.setup)
+  readonly setup: SetupManager
+  readonly auth: AuthManager
+  readonly user: UserManager
+  readonly dapp: DappManager
+  readonly httpz: HttpzManager
+
+  constructor(flags?: Partial<Flags>) {
+    this.setup = new SetupManager(flags)
+    this.auth = new AuthManager(this.setup)
+    this.user = new UserManager(this.setup)
+    this.dapp = new DappManager(this.setup, this.auth)
+    this.httpz = new HttpzManager(this.setup)
+  }
 
   get<TInput = any, TResult = TInput>(
     typeOrToken: Type<TInput> | string | symbol,
@@ -34,6 +43,10 @@ export class IntegrationManager {
   }
   async beforeAll() {
     await this.setup.beforeAll()
+  }
+
+  async beforeEach() {
+    await this.setup.beforeEach()
   }
 
   async afterAll() {
@@ -67,27 +80,15 @@ export class IntegrationManager {
   }
 
   async getOrchQueueSize() {
-    const result = await this.setup.sqs.send(
-      new GetQueueAttributesCommand({
-        QueueUrl: this.setup.orchQueueUrl,
-        AttributeNames: ['ApproximateNumberOfMessages'],
-      }),
-    )
-    return parseInt(result.Attributes?.ApproximateNumberOfMessages ?? '-1')
+    return this.setup.getOrchQueueSize()
   }
 
-  async getMessageFromOrchQueue() {
-    const result = await this.setup.sqs.send(
-      new ReceiveMessageCommand({
-        QueueUrl: this.setup.orchQueueUrl,
-        MessageAttributeNames: ['All'],
-        MessageSystemAttributeNames: ['All'],
-        MaxNumberOfMessages: 1,
-        WaitTimeSeconds: 1,
-      }),
-    )
+  async getMessageFromOrchQueue(type: back.BackEvent['type']) {
+    return this.setup.getMessageFromOrchQueue(type)
+  }
 
-    return result.Messages?.[0].Body
+  async getAllMessagesFromOrchQueue() {
+    return this.setup.getAllMessagesFromOrchQueue()
   }
 
   get prismaClient() {

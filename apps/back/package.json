@@ -55,6 +55,7 @@
     "pino-http": "catalog:",
     "pino-pretty": "catalog:",
     "reflect-metadata": "0.1.13",
+    "remove": "^0.1.5",
     "utils": "workspace:*",
     "yaml": "2.8.0",
     "zod": "catalog:"
@@ -66,6 +67,8 @@
     "@nestjs/testing": "catalog:",
     "@suites/di.nestjs": "3.0.1",
     "@suites/doubles.vitest": "3.0.1",
+    "@suites/types.common": "^3.0.0",
+    "@suites/types.doubles": "^3.0.0",
     "@suites/unit": "3.0.1",
     "@swc/core": "1.10.1",
     "@testcontainers/localstack": "catalog:",

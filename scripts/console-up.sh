@@ -30,7 +30,8 @@ export LOGS=$(docker logs fhevm-host-sc-deploy)
 export HOST_ORACLE_ADDR=$(echo "$LOGS"| grep "DecryptionOracle code set successfully at address:" | awk '{print $7}')
 echo "Host Oracle Address: $HOST_ORACLE_ADDR"
 
-echo """[[host_chains]]
+echo """
+[[host_chains]]
 decryption_oracle = \"${HOST_ORACLE_ADDR}\"
 [host_chains.chain_config]
 chain_id = 12345
@@ -41,7 +42,8 @@ type = \"LOCAL\"
 private_key_env = \"FHEVM_PRIVATE_KEY\"
 """ > ./apps/relayer/compose/host.toml
 
-echo """[gateway_chain]
+echo """
+[gateway_chain]
 zkpok_manager = \"${ZKPOK_ADDR}\"
 decryption_manager = \"${DECRYPT_ADDR}\"
 [gateway_chain.chain_config]
@@ -55,12 +57,14 @@ private_key_env = \"GATEWAY_PRIVATE_KEY\"
 """ > ./apps/relayer/compose/gateway.toml
 
 
-echo """common:
+echo """
+common:
   port: 3005
   prettify: true
   graphqlMaxComplexity: 150
   logLevel: silent
 aws:
+  useConfigCredentials: true
   accessKeyId: 'test'
   secretAccessKey: 'test'
   region: 'eu-central-1'
@@ -91,7 +95,8 @@ redis:
 """ > ./apps/back/config/compose.yaml
 
 # fhevm-Relayer
-echo """environment: production
+echo """
+environment: production
 
 networks:
   fhevm:

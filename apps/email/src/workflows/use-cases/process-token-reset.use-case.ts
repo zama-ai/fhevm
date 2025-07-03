@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { Task, type IPubSub, type ISubscriber, type UseCase } from 'utils'
 import { email } from 'messages'
 import {
+  isPasswordResetRequested,
   PASSWORD_RESET_REQUESTED_PRODUCER,
   PasswordResetRequested,
   PasswordResetRequestedProducer,
@@ -30,10 +31,4 @@ export class ProcessPasswordReset
     }
     return Task.of(void 0)
   }
-}
-
-function isPasswordResetRequested(
-  event: email.EmailEvent,
-): event is PasswordResetRequested {
-  return event.type === 'email:password-reset:requested'
 }

@@ -11,6 +11,7 @@ import { SESEmailService } from './adapeters/ses-email.service.js'
 import { TEMPLATE_ADAPTER } from '#workflows/use-cases/adapters/template.adapter.js'
 import { EjsTemplateAdapter } from './adapeters/ejs-template.adapter.js'
 import * as uc from '#workflows/use-cases/index.js'
+import { USER_CREATED_PRODUCER } from '#workflows/use-cases/gateways/user-created.producer.js'
 
 @Module({
   imports: [
@@ -58,7 +59,12 @@ import * as uc from '#workflows/use-cases/index.js'
       provide: PASSWORD_RESET_REQUESTED_PRODUCER,
       useClass: SESProducer,
     },
+    {
+      provide: USER_CREATED_PRODUCER,
+      useClass: SESProducer,
+    },
     uc.ProcessPasswordReset,
+    uc.ProcessUserCreated,
   ],
 })
 export class InfraModule {}

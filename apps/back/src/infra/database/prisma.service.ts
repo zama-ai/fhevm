@@ -55,7 +55,7 @@ export class PrismaService implements OnModuleInit {
     return this.client.apiKey
   }
 
-  get passwordResetToken() {
-    return this.client.passwordResetToken
+  get userToken() {
+    return this.client.userToken
   }
 }

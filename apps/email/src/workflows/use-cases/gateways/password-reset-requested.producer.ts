@@ -14,3 +14,9 @@ export interface PasswordResetRequestedProducer {
 
 export const PASSWORD_RESET_REQUESTED_PRODUCER =
   'PASSWORD_RESET_REQUESTED_PRODUCER'
+
+export function isPasswordResetRequested(
+  event: email.EmailEvent,
+): event is PasswordResetRequested {
+  return event.type === 'email:password-reset:requested'
+}

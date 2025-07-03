@@ -66,5 +66,6 @@ There are a few feature flags implemented in the console. Currently, you can cha
 
 The implemented feature flags are:
 
-- `FLAG_API_KEY`: when enabled, it requires an API key header for all the httpz requests. Default value: `false`
+- `FLAG_API_KEY`: when enabled, it requires an API key header for all http requests to the relayer. Default value: `false`
 - `FLAG_GRAPHQL_PLAYGROUND` : when enabled, it exposes the Graph QL Playground. Default value `true`
+- `FLAG_INVITATIONS`: when enabled, signup is invitations-only (no self served). Default value `true`

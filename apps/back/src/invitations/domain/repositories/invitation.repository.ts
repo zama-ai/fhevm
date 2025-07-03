@@ -6,7 +6,7 @@ import { Email } from '#shared/entities/value-objects/email.js'
 
 export interface InvitationRepository {
   create(props: Invitation): Task<Invitation, AppError>
-  findByToken(token: Token): Task<Invitation, AppError>
+  findByToken(token: Token): Task<Option<Invitation>, AppError>
   findByEmail(email: Email): Task<Option<Invitation>, AppError>
   markAsUsed(id: InvitationId): Task<Invitation, AppError>
 }

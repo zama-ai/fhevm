@@ -22,6 +22,7 @@ export const userDecryptSchema = z.object({
     z.number().int().positive(),
     z
       .string()
+      .regex(/^\d+$/)
       .refine(
         val => parseInt(val, 10) > 0,
         'Chain ID should be a numeric string',

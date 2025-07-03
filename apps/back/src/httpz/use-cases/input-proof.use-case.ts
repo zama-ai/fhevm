@@ -16,6 +16,7 @@ import {
   every,
   fromNullable,
   fromOption,
+  shortString,
   Task,
   unknownError,
   UseCase,
@@ -50,7 +51,9 @@ export class InputProof implements IInputProof {
     input: Input,
     context?: Record<string, any>,
   ): Task<Output, AppError> => {
-    this.logger.debug(`input=${JSON.stringify(input)}`)
+    this.logger.debug(
+      `input=${JSON.stringify(input, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+    )
 
     return every<string, ChainId, Web3Address, Web3Address, AppError>([
       fromOption(

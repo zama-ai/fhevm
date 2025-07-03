@@ -2,9 +2,9 @@ import { TestBed } from '@suites/unit'
 import { beforeEach, describe, expect, Mocked, test } from 'vitest'
 import { DeleteResetPasswordToken } from './delete-reset-password-token.use-case.js'
 import {
-  PASSWORD_RESET_TOKEN_REPOSITORY,
-  PasswordResetTokenRepository,
-} from '#auth/domain/repositories/password-reset-token.repository.js'
+  USER_TOKEN_REPOSITORY,
+  UserTokenRepository,
+} from '#auth/domain/repositories/user-token.repository.js'
 import { notFoundError, Task } from 'utils'
 import { Token } from '#auth/domain/entities/value-objects/token.js'
 import { Hash } from '#auth/domain/entities/value-objects/hash.js'
@@ -12,7 +12,7 @@ import { faker } from '@faker-js/faker'
 
 describe('DeleteResetPasswordToken', () => {
   let useCase: DeleteResetPasswordToken
-  let repo: Mocked<PasswordResetTokenRepository>
+  let repo: Mocked<UserTokenRepository>
 
   beforeEach(async () => {
     const { unit, unitRef } = await TestBed.solitary(
@@ -21,8 +21,8 @@ describe('DeleteResetPasswordToken', () => {
 
     useCase = unit
     repo = unitRef.get(
-      PASSWORD_RESET_TOKEN_REPOSITORY,
-    ) as unknown as Mocked<PasswordResetTokenRepository>
+      USER_TOKEN_REPOSITORY,
+    ) as unknown as Mocked<UserTokenRepository>
   })
 
   test('should be defined', () => {

@@ -5,7 +5,7 @@ import {
 import { KeyUrlService } from '#httpz/domain/service/key-url.service.js'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { Task, AppError, isOk } from 'utils'
+import { Task, AppError, isOk, shortString } from 'utils'
 
 @Injectable()
 export class ConfigKeyUrlService implements KeyUrlService {
@@ -18,7 +18,9 @@ export class ConfigKeyUrlService implements KeyUrlService {
       this.config.get<{ fhePublicKey?: { dataId?: string; urls?: string } }[]>(
         'httpz.fheKeyInfo',
       )
-    this.logger.verbose(`data: ${JSON.stringify(data)}`)
+    this.logger.verbose(
+      `data: ${JSON.stringify(data, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+    )
 
     return Task.of(
       data
@@ -38,7 +40,9 @@ export class ConfigKeyUrlService implements KeyUrlService {
       this.config.get<Record<string, { dataId?: string; urls?: string }>>(
         'httpz.crs',
       ) ?? {}
-    this.logger.verbose(`data: ${JSON.stringify(data)}`)
+    this.logger.verbose(
+      `data: ${JSON.stringify(data, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
+    )
 
     return Task.of(
       Object.entries(data).reduce(

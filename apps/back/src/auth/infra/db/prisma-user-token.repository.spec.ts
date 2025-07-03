@@ -1,20 +1,21 @@
-import { PasswordResetTokenRepository } from '#auth/domain/repositories/password-reset-token.repository.js'
+import { UserTokenRepository } from '#auth/domain/repositories/user-token.repository.js'
 import { beforeEach, describe, expect, test } from 'vitest'
-import { PrismaPasswordResetTokenRepository } from './prisma-password-reset-token.repository.js'
+import { PrismaUserTokenRepository } from './prisma-user-token.repository.js'
 import { PrismaService } from '#infra/database/prisma.service.js'
 import { Mocked } from '@suites/doubles.vitest'
 import { TestBed } from '@suites/unit'
 import { UserId } from '#users/domain/entities/value-objects.js'
-import { PasswordResetToken } from '#auth/domain/entities/password-reset-token.js'
+import { UserToken, UserTokenTypes } from '#auth/domain/entities/user-token.js'
 import { Token } from '#auth/domain/entities/value-objects/token.js'
+import { faker } from '@faker-js/faker'
 
-describe('PrismaPasswordResetTokenRepository', () => {
-  let repo: PasswordResetTokenRepository
+describe('PrismaUserTokenRepository', () => {
+  let repo: UserTokenRepository
   let prisma: Mocked<PrismaService>
 
   beforeEach(async () => {
     const { unit, unitRef } = await TestBed.solitary(
-      PrismaPasswordResetTokenRepository,
+      PrismaUserTokenRepository,
     ).compile()
 
     repo = unit
@@ -27,15 +28,17 @@ describe('PrismaPasswordResetTokenRepository', () => {
         test('then it should create a password reset token', async () => {
           // Arrange
           const userId = UserId.random()
-          const token = PasswordResetToken.create({
+          const token = UserToken.create({
             token: Token.random(),
             userId,
+            type: 'RESET_PASSWORD',
           }).unwrap()
 
-          prisma.passwordResetToken.upsert.mockResolvedValue({
+          prisma.userToken.upsert.mockResolvedValue({
             tokenHash: token.hash.value,
             userId: userId.value,
             expiresAt: token.expiresAt.value,
+            type: 'RESET_PASSWORD',
           })
 
           // Act
@@ -44,12 +47,46 @@ describe('PrismaPasswordResetTokenRepository', () => {
           // Assert
           expect(created).toBeDefined()
           expect(created).toEqual(token)
-          expect(prisma.passwordResetToken.upsert).toHaveBeenCalledWith({
+          expect(prisma.userToken.upsert).toHaveBeenCalledWith({
             where: { tokenHash: token.hash.value },
             create: {
               tokenHash: token.hash.value,
               userId: userId.value,
               expiresAt: token.expiresAt.value,
+              type: 'RESET_PASSWORD',
+            },
+            update: {},
+          })
+        })
+        test('then it should create a confirm email token', async () => {
+          // Arrange
+          const userId = UserId.random()
+          const token = UserToken.create({
+            token: Token.random(),
+            userId,
+            type: 'CONFIRM_EMAIL',
+          }).unwrap()
+
+          prisma.userToken.upsert.mockResolvedValue({
+            tokenHash: token.hash.value,
+            userId: userId.value,
+            expiresAt: token.expiresAt.value,
+            type: 'CONFIRM_EMAIL',
+          })
+
+          // Act
+          const created = await repo.create(token).toPromise()
+
+          // Assert
+          expect(created).toBeDefined()
+          expect(created).toEqual(token)
+          expect(prisma.userToken.upsert).toHaveBeenCalledWith({
+            where: { tokenHash: token.hash.value },
+            create: {
+              tokenHash: token.hash.value,
+              userId: userId.value,
+              expiresAt: token.expiresAt.value,
+              type: 'CONFIRM_EMAIL',
             },
             update: {},
           })
@@ -62,14 +99,13 @@ describe('PrismaPasswordResetTokenRepository', () => {
         test('then it should raise an error', async () => {
           // Arrange
           const userId = UserId.random()
-          const token = PasswordResetToken.create({
+          const token = UserToken.create({
             token: Token.random(),
             userId,
+            type: faker.helpers.arrayElement(UserTokenTypes),
           }).unwrap()
 
-          prisma.passwordResetToken.upsert.mockRejectedValue(
-            new Error('mocked error'),
-          )
+          prisma.userToken.upsert.mockRejectedValue(new Error('mocked error'))
 
           // Act
           const created = repo.create(token)
@@ -86,15 +122,17 @@ describe('PrismaPasswordResetTokenRepository', () => {
       describe('when finding the token', () => {
         test('then it should find the token', async () => {
           // Arrange
-          const token = PasswordResetToken.create({
+          const token = UserToken.create({
             token: Token.random(),
             userId: UserId.random(),
+            type: faker.helpers.arrayElement(UserTokenTypes),
           }).unwrap()
 
-          prisma.passwordResetToken.findUniqueOrThrow.mockResolvedValue({
+          prisma.userToken.findUniqueOrThrow.mockResolvedValue({
             tokenHash: token.hash.value,
             userId: token.userId.value,
             expiresAt: token.expiresAt.value,
+            type: token.type,
           })
 
           // Act
@@ -103,9 +141,7 @@ describe('PrismaPasswordResetTokenRepository', () => {
           // Assert
           expect(found).toBeDefined()
           expect(found).toEqual(token)
-          expect(
-            prisma.passwordResetToken.findUniqueOrThrow,
-          ).toHaveBeenCalledWith({
+          expect(prisma.userToken.findUniqueOrThrow).toHaveBeenCalledWith({
             where: { tokenHash: token.hash.value },
           })
         })
@@ -116,12 +152,13 @@ describe('PrismaPasswordResetTokenRepository', () => {
       describe('when finding the token', () => {
         test('then it should rise a not found error', async () => {
           // Arrange
-          const token = PasswordResetToken.create({
+          const token = UserToken.create({
             token: Token.random(),
             userId: UserId.random(),
+            type: faker.helpers.arrayElement(UserTokenTypes),
           }).unwrap()
 
-          prisma.passwordResetToken.findUniqueOrThrow.mockRejectedValue(
+          prisma.userToken.findUniqueOrThrow.mockRejectedValue(
             new Error('mocked error'),
           )
 
@@ -130,9 +167,7 @@ describe('PrismaPasswordResetTokenRepository', () => {
 
           // Assert
           await expect(found.toPromise()).rejects.toThrowError(/not found/i)
-          expect(
-            prisma.passwordResetToken.findUniqueOrThrow,
-          ).toHaveBeenCalledWith({
+          expect(prisma.userToken.findUniqueOrThrow).toHaveBeenCalledWith({
             where: { tokenHash: token.hash.value },
           })
         })
@@ -145,25 +180,29 @@ describe('PrismaPasswordResetTokenRepository', () => {
       describe('when finding the token', () => {
         test('then it should find the token', async () => {
           // Arrange
-          const token = PasswordResetToken.create({
+          const token = UserToken.create({
             token: Token.random(),
             userId: UserId.random(),
+            type: faker.helpers.arrayElement(UserTokenTypes),
           }).unwrap()
 
-          prisma.passwordResetToken.findFirst.mockResolvedValue({
+          prisma.userToken.findFirst.mockResolvedValue({
             tokenHash: token.hash.value,
             userId: token.userId.value,
             expiresAt: token.expiresAt.value,
+            type: token.type,
           })
 
           // Act
-          const fetched = await repo.findByUserId(token.userId).toPromise()
+          const fetched = await repo
+            .findByUserId(token.userId, token.type)
+            .toPromise()
 
           // Assert
           expect(fetched).toBeDefined()
           expect(fetched).toEqual(token)
-          expect(prisma.passwordResetToken.findFirst).toHaveBeenCalledWith({
-            where: { userId: token.userId.value },
+          expect(prisma.userToken.findFirst).toHaveBeenCalledWith({
+            where: { userId: token.userId.value, type: token.type },
           })
         })
       })
@@ -173,20 +212,21 @@ describe('PrismaPasswordResetTokenRepository', () => {
       describe('when finding the token', () => {
         test('then it should throw a not found error', async () => {
           // Arrange
-          const token = PasswordResetToken.create({
+          const token = UserToken.create({
             token: Token.random(),
             userId: UserId.random(),
+            type: faker.helpers.arrayElement(UserTokenTypes),
           }).unwrap()
 
-          prisma.passwordResetToken.findFirst.mockResolvedValue(null)
+          prisma.userToken.findFirst.mockResolvedValue(null)
 
           // Act
-          const found = repo.findByUserId(token.userId)
+          const found = repo.findByUserId(token.userId, token.type)
 
           // Assert
           await expect(found.toPromise()).rejects.toThrow(/not found/i)
-          expect(prisma.passwordResetToken.findFirst).toHaveBeenCalledWith({
-            where: { userId: token.userId.value },
+          expect(prisma.userToken.findFirst).toHaveBeenCalledWith({
+            where: { userId: token.userId.value, type: token.type },
           })
         })
       })
@@ -200,7 +240,7 @@ describe('PrismaPasswordResetTokenRepository', () => {
           // Arrange
           const userId = UserId.random()
 
-          prisma.passwordResetToken.deleteMany.mockResolvedValue({
+          prisma.userToken.deleteMany.mockResolvedValue({
             count: 1,
           })
 
@@ -208,7 +248,7 @@ describe('PrismaPasswordResetTokenRepository', () => {
           await repo.deleteByUserId(userId).toPromise()
 
           // Assert
-          expect(prisma.passwordResetToken.deleteMany).toHaveBeenCalledWith({
+          expect(prisma.userToken.deleteMany).toHaveBeenCalledWith({
             where: { userId: userId.value },
           })
         })
@@ -221,7 +261,7 @@ describe('PrismaPasswordResetTokenRepository', () => {
           // Arrange
           const userId = UserId.random()
 
-          prisma.passwordResetToken.deleteMany.mockResolvedValue({
+          prisma.userToken.deleteMany.mockResolvedValue({
             count: 0,
           })
 
@@ -229,7 +269,7 @@ describe('PrismaPasswordResetTokenRepository', () => {
           await repo.deleteByUserId(userId).toPromise()
 
           // Assert
-          expect(prisma.passwordResetToken.deleteMany).toHaveBeenCalledWith({
+          expect(prisma.userToken.deleteMany).toHaveBeenCalledWith({
             where: { userId: userId.value },
           })
         })

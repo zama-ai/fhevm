@@ -140,6 +140,10 @@ type User {
 
 type auth {
   user: User!
+}
+
+type authWithToken {
+  user: User!
   token: String!
 }
 
@@ -185,10 +189,12 @@ input QueryChainInput {
 }
 
 type Mutation {
-  login(input: LoginInput!): auth!
+  login(input: LoginInput!): authWithToken!
+  signupWithInvitation(input: SignupWithInvitationTokenInput!): authWithToken!
   signup(input: SignupInput!): auth!
+  confirmEmail(input: ConfirmEmailInput!): authWithToken!
   requestResetPassword(input: requestResetPasswordInput!): Boolean!
-  resetPassword(input: resetPasswordInput!): auth!
+  resetPassword(input: ResetPasswordInput!): authWithToken!
   createInvitation(input: CreateInvitationInput!): Invitation!
   updateUser(input: UpdateUserInput!): User!
   changePassword(input: ChangePasswordInput!): Boolean!
@@ -204,10 +210,20 @@ input LoginInput {
   password: String!
 }
 
-input SignupInput {
+input SignupWithInvitationTokenInput {
   password: String!
   name: String!
   invitationToken: String!
+}
+
+input SignupInput {
+  password: String!
+  name: String!
+  email: String!
+}
+
+input ConfirmEmailInput {
+  token: String!
 }
 
 """Request reset password input"""
@@ -216,7 +232,7 @@ input requestResetPasswordInput {
   email: String!
 }
 
-input resetPasswordInput {
+input ResetPasswordInput {
   """The token received by email"""
   token: String!
 

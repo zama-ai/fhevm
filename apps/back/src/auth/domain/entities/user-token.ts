@@ -14,16 +14,21 @@ import { UserId } from '#users/domain/entities/value-objects.js'
 import { ExpiresAt } from '#shared/entities/value-objects/expires-at.js'
 import { Token } from './value-objects/token.js'
 
+export const UserTokenTypes = ['RESET_PASSWORD', 'CONFIRM_EMAIL'] as const
+const tokenType = z.enum(UserTokenTypes)
+
 const schema = z.object({
   hash: Hash.schema,
   userId: UserId.schema,
   expiresAt: ExpiresAt.schema,
+  type: tokenType,
 })
 
-export type PasswordResetTokenProps = Unbrand<z.infer<typeof schema>>
+export type UserTokenProps = Unbrand<z.infer<typeof schema>>
+export type UserTokenType = Unbrand<z.infer<typeof tokenType>>
 
-export class PasswordResetToken
-  extends Entity<PasswordResetTokenProps>
+export class UserToken
+  extends Entity<UserTokenProps>
   implements
     Readonly<{
       hash: Hash
@@ -31,22 +36,24 @@ export class PasswordResetToken
       expiresAt: ExpiresAt
     }>
 {
-  static parse(data: unknown): Result<PasswordResetToken, AppError> {
+  static parse(data: unknown): Result<UserToken, AppError> {
     if (!data) return fail(validationError('data is undefined'))
     const check = schema.safeParse(data)
     return check.success
-      ? ok(new PasswordResetToken(check.data))
+      ? ok(new UserToken(check.data))
       : fail(fromZodError(check.error))
   }
 
   static create(data: {
     token: Token
     userId: UserId
-  }): Result<PasswordResetToken, AppError> {
-    return PasswordResetToken.parse({
+    type: UserTokenType
+  }): Result<UserToken, AppError> {
+    return UserToken.parse({
       hash: Hash.hash(data.token).value,
       userId: data.userId.value,
       expiresAt: ExpiresAt.compute().value,
+      type: data.type,
     })
   }
 
@@ -58,11 +65,23 @@ export class PasswordResetToken
     return new UserId(this.get('userId'))
   }
 
+  get type() {
+    return this.get('type')
+  }
+
   get expiresAt() {
     return new ExpiresAt(this.get('expiresAt'))
   }
 
   get isValid() {
     return this.expiresAt.value > new Date()
+  }
+
+  get isConfirmEmail() {
+    return this.type === 'CONFIRM_EMAIL'
+  }
+
+  get isResetPassword() {
+    return this.type === 'RESET_PASSWORD'
   }
 }

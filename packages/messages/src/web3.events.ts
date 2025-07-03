@@ -52,9 +52,11 @@ const schemas = [
 ] as const
 
 export const schema = z.discriminatedUnion('type', [...schemas]).and(
-  z.object({
-    meta: meta,
-  }),
+  z
+    .object({
+      meta: meta.optional(),
+    })
+    .optional(),
 )
 export type Web3Event = z.infer<typeof schema>
 

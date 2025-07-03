@@ -1,6 +1,6 @@
 import { SyncService } from '#shared/services/sync.service.js'
 import { Injectable, Logger } from '@nestjs/common'
-import { Task, AppError, unknownError, timeoutError } from 'utils'
+import { Task, AppError, unknownError, timeoutError, shortString } from 'utils'
 import { Queue, Worker } from 'bullmq'
 import { ConfigService } from '@nestjs/config'
 import { Redis } from 'ioredis'
@@ -17,10 +17,13 @@ export class BullMQSyncService implements SyncService {
     }
   }
   get timeout(): number {
-    return parseInt(
-      process.env.REDIS_SYNC_TIMEOUT || process.env.DEFAULT_TIMEOUT || '30',
+    // TODO: move to config
+    const timeout = parseInt(
+      process.env.REDIS_SYNC_TIMEOUT || process.env.DEFAULT_TIMEOUT || '60',
       10,
     )
+    this.logger.debug(`timeout: ${timeout}`)
+    return timeout
   }
 
   getQueueName(requestId: string): string {
@@ -37,7 +40,9 @@ export class BullMQSyncService implements SyncService {
       const worker = new Worker(
         queueName,
         async job => {
-          this.logger.verbose(`job=${job.name} [${JSON.stringify(job.data)}]`)
+          this.logger.verbose(
+            `job=${job.name} [${JSON.stringify(job.data, (_, v) => (typeof v === 'string' ? shortString(v) : v))}]`,
+          )
           if (job.name === 'response') {
             clearTimeout(timeout)
             resolve(job.data)
@@ -72,7 +77,7 @@ export class BullMQSyncService implements SyncService {
 
   publishResponse = <T>(requestId: string, data: T): Task<void, AppError> => {
     this.logger.verbose(
-      `publishing response ${requestId} ${JSON.stringify(data)}`,
+      `publishing response ${requestId} ${JSON.stringify(data, (_, v) => (typeof v === 'string' ? shortString(v) : v))}`,
     )
     return new Task((resolve, reject) => {
       const queueName = this.getQueueName(requestId)

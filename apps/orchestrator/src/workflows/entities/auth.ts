@@ -2,22 +2,23 @@ import { back, email } from 'messages'
 import { type Actor, createActor, setup } from 'xstate'
 
 export const EVENT_TYPES = [
+  'back:user:created',
   'back:password-reset:completed',
   'back:password-reset:requested',
 ] as const
 
-export type PasswordResetEvents = Extract<
+export type AuthEvents = Extract<
   back.BackEvent | email.EmailEvent,
   { type: (typeof EVENT_TYPES)[number] }
 >
 
-export function isPasswordResetEvent(
+export function isAuthEvent(
   event: back.BackEvent | email.EmailEvent,
-): event is PasswordResetEvents {
+): event is AuthEvents {
   return (EVENT_TYPES as readonly string[]).includes(event.type)
 }
 
-type PasswordResetMachine = ReturnType<typeof factory>
+type AuthMachine = ReturnType<typeof factory>
 
 function factory({
   notifyMessage,
@@ -26,14 +27,30 @@ function factory({
 }) {
   return setup({
     types: {
-      events: {} as PasswordResetEvents,
+      events: {} as AuthEvents,
     },
   }).createMachine({
-    id: 'passwordReset',
+    id: 'auth',
     initial: 'Idle',
     states: {
       Idle: {
         on: {
+          'back:user:created': {
+            actions: [
+              ({
+                event: {
+                  payload: { requestId, email: userEmail, token },
+                  meta,
+                },
+              }) =>
+                notifyMessage(
+                  email.userCreated(
+                    { requestId, email: userEmail, token },
+                    meta,
+                  ),
+                ),
+            ],
+          },
           'back:password-reset:requested': {
             actions: [
               ({ event: { payload, meta } }) =>
@@ -53,8 +70,8 @@ function factory({
   })
 }
 
-export class PasswordReset {
-  #actor: Actor<PasswordResetMachine>
+export class Auth {
+  #actor: Actor<AuthMachine>
   constructor() {
     this.#actor = createActor(factory({ notifyMessage: this.notifyMessage }))
     this.#actor.start()
@@ -63,7 +80,7 @@ export class PasswordReset {
   private notifyMessage = (message: back.BackEvent | email.EmailEvent) => {
     this.messages.push(message)
   }
-  send(event: PasswordResetEvents): (back.BackEvent | email.EmailEvent)[] {
+  send(event: AuthEvents): (back.BackEvent | email.EmailEvent)[] {
     this.messages = []
     this.#actor.send(event)
     return this.messages
