@@ -18,6 +18,9 @@ clean:
 test: clean
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test $(if $(GREP),--grep '$(GREP)',)
 
+coverage: clean
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat coverage
+
 get-accounts:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts --num-accounts 20
 
@@ -86,8 +89,12 @@ ensure-addresses:
 	ENV_PATH=$(ENV_PATH) npx ts-node scripts/ensure_proxy_addresses.ts
 
 # Make sure we only use allowed licenses for dependencies
+# The following packages are excluded based on their licenses incompatibility:
+# - estraverse@1.9.3: Excluded due to BSD license (not a real license)
+# - source-map@0.2.0: Excluded due to BSD license (not a real license)
+# - web3-utils@1.10.4: Excluded due to LGPL-3.0 license
 check-licenses:
-	output=$$(npx license-checker --onlyAllow '0BSD; Apache-2.0; BSD-2-Clause; BSD-3-Clause; CC-BY-3.0; CC0-1.0; ISC; MIT; MPL-2.0; Python-2.0; WTFPL' 2>&1); \
+	output=$$(npx license-checker --onlyAllow '0BSD; Apache-2.0; BSD-2-Clause; BSD-3-Clause; CC-BY-3.0; CC0-1.0; ISC; MIT; MPL-2.0; Python-2.0; WTFPL; PSF;' --excludePackages 'estraverse@1.9.3;source-map@0.2.0;web3-utils@1.10.4;' 2>&1); \
 	status=$$?; \
 	if [ $$status -ne 0 ]; then \
 		printf '%s\n' "$$output"; \
@@ -105,5 +112,5 @@ prerelease:
 	git add ./rust_bindings && git commit --amend --no-edit
 
 # Get the size of the contracts
-get-contracts-sized: 
+get-contracts-sized:
 	forge build --sizes
