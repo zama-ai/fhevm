@@ -105,13 +105,13 @@ jobs:
         working-directory: current-fhevm/gateway-contracts
         run: npm ci
 
+      # Executing task:deployEmptyUUPSProxies is required to generate the proxy contract addresses, which are then used
+      # for compiling the current and new implementations during the upgrade task.
       - name: Prepare and copy previous contract into current directory
         working-directory: current-fhevm/gateway-contracts
         run: |
           cp .env.example .env
           cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
-          # Executing task:deployEmptyUUPSProxies is required to generate the proxy contract addresses, which are then used
-          # for compiling the current and new implementations during the upgrade task.
           npx hardhat task:deployEmptyUUPSProxies
 
       - name: Upgrade GatewayConfig contract
@@ -125,6 +125,7 @@ jobs:
           npx hardhat task:upgradeGatewayConfig \
             --current-implementation previous-contracts/GatewayConfig.sol:GatewayConfig \
             --new-implementation contracts/GatewayConfig.sol:GatewayConfig \
+            --use-internal-proxy-address true \
             --verify-contract false
 
       - name: Upgrade Decryption contract
@@ -138,6 +139,7 @@ jobs:
           npx hardhat task:upgradeDecryption \
             --current-implementation previous-contracts/Decryption.sol:Decryption \
             --new-implementation contracts/Decryption.sol:Decryption \
+            --use-internal-proxy-address true \
             --verify-contract false
 
       - name: Clean up
