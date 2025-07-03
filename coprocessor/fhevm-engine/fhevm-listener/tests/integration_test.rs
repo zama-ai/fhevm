@@ -165,6 +165,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         start_at_block: None,
         end_at_block: None,
         catchup_margin: 5,
+        catchup_paging: 3,
         log_level: Level::INFO,
     };
 
