@@ -9,14 +9,14 @@ The **FHEVM Gateway** is a set of smart contracts that enables decrypting FHE ci
 
 ## Main features
 
-| Contract | Description | Features |
-| --- | --- | --- |
-| `Decryption` | Decrypt FHE ciphertexts | - Request a public decryption<br>- Request a user decryption<br>- Request a delegated user decryption |
-| `InputVerification` | Verify an input's zero-knowledge proof of knowledge (ZKPoK) | - Verify a ZKPoK<br>- Reject a ZKPoK |
-| `MultichainAcl` | Centralize Access Control Lists (ACL) from all host chains | - Grant account access to ciphertexts<br>- Authorize public decryption of ciphertexts<br>- Delegate account access to ciphertexts |
-| `CiphertextCommits` | Store ciphertext commitments from all host chains | - Store regular ciphertext commitments<br>- Store Switch and Squash (SNS) ciphertext commitments |
-| `KmsManagement` | Orchestrate KMS-related materials | 🚧 _Not in use yet_ 🚧 |
-| `GatewayConfig` | Administer configuration settings | - Register KMS nodes, coprocessors and host chains. <br> - Update KMS nodes, coprocessors and host chains. |
+| Contract            | Description                                                 | Features                                                                                                                          |
+| ------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `Decryption`        | Decrypt FHE ciphertexts                                     | - Request a public decryption<br>- Request a user decryption<br>- Request a delegated user decryption                             |
+| `InputVerification` | Verify an input's zero-knowledge proof of knowledge (ZKPoK) | - Verify a ZKPoK<br>- Reject a ZKPoK                                                                                              |
+| `MultichainAcl`     | Centralize Access Control Lists (ACL) from all host chains  | - Grant account access to ciphertexts<br>- Authorize public decryption of ciphertexts<br>- Delegate account access to ciphertexts |
+| `CiphertextCommits` | Store ciphertext commitments from all host chains           | - Store regular ciphertext commitments<br>- Store Switch and Squash (SNS) ciphertext commitments                                  |
+| `KmsManagement`     | Orchestrate KMS-related materials                           | 🚧 _Not in use yet_ 🚧                                                                                                            |
+| `GatewayConfig`     | Administer configuration settings                           | - Register KMS nodes, coprocessors and host chains. <br> - Update KMS nodes, coprocessors and host chains.                        |
 
 ## Getting started
 
