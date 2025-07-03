@@ -111,7 +111,7 @@ async fn tfhe_worker_cycle(
             FROM computations
             WHERE is_completed = false
             AND is_error = false
-            ORDER BY created_at
+            ORDER BY schedule_order
             LIMIT $1
             FOR UPDATE SKIP LOCKED
         ",
@@ -343,7 +343,7 @@ async fn tfhe_worker_cycle(
                     let _ = query!(
                         "
                             UPDATE computations
-                            SET created_at = CURRENT_TIMESTAMP
+                            SET schedule_order = CURRENT_TIMESTAMP
                             WHERE tenant_id = $1
                             AND output_handle = $2
                         ",
