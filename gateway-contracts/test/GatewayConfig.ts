@@ -26,6 +26,8 @@ describe("GatewayConfig", function () {
 
   // Define fake values
   const fakeOwner = createRandomWallet();
+  const fakeTxSender = createRandomWallet();
+  const fakeSigner = createRandomWallet();
 
   let gatewayConfig: GatewayConfig;
   let owner: Wallet;
@@ -424,9 +426,9 @@ describe("GatewayConfig", function () {
       });
 
       it("Should not be registered as coprocessors transaction senders", async function () {
-        await expect(gatewayConfig.checkIsCoprocessorTxSender(hre.ethers.ZeroAddress))
+        await expect(gatewayConfig.checkIsCoprocessorTxSender(fakeTxSender))
           .to.be.revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
-          .withArgs(hre.ethers.ZeroAddress);
+          .withArgs(fakeTxSender);
       });
 
       it("Should be registered as coprocessors signers", async function () {
@@ -436,9 +438,9 @@ describe("GatewayConfig", function () {
       });
 
       it("Should not be registered as coprocessors signers", async function () {
-        await expect(gatewayConfig.checkIsCoprocessorSigner(hre.ethers.ZeroAddress))
+        await expect(gatewayConfig.checkIsCoprocessorSigner(fakeSigner))
           .to.be.revertedWithCustomError(gatewayConfig, "NotCoprocessorSigner")
-          .withArgs(hre.ethers.ZeroAddress);
+          .withArgs(fakeSigner);
       });
 
       it("Should be registered as custodian transaction senders", async function () {
@@ -448,9 +450,9 @@ describe("GatewayConfig", function () {
       });
 
       it("Should not be registered as custodian transaction senders", async function () {
-        await expect(gatewayConfig.checkIsCustodianTxSender(hre.ethers.ZeroAddress))
+        await expect(gatewayConfig.checkIsCustodianTxSender(fakeTxSender))
           .to.be.revertedWithCustomError(gatewayConfig, "NotCustodianTxSender")
-          .withArgs(hre.ethers.ZeroAddress);
+          .withArgs(fakeTxSender);
       });
 
       it("Should be registered as custodian signers", async function () {
@@ -460,9 +462,9 @@ describe("GatewayConfig", function () {
       });
 
       it("Should be registered as custodian signers", async function () {
-        await expect(gatewayConfig.checkIsCustodianSigner(hre.ethers.ZeroAddress))
+        await expect(gatewayConfig.checkIsCustodianSigner(fakeSigner))
           .to.be.revertedWithCustomError(gatewayConfig, "NotCustodianSigner")
-          .withArgs(hre.ethers.ZeroAddress);
+          .withArgs(fakeSigner);
       });
 
       it("Should be registered as host chains", async function () {
