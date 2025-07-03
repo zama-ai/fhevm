@@ -89,6 +89,7 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
         let event_tx = self.event_tx.clone();
         let running = self.running.clone();
 
+        tokio::spawn(schedule_log_queue_capacity(event_tx.clone()));
         let handle = tokio::spawn(async move {
             while running.load(Ordering::SeqCst) {
                 Self::subscribe_to_events(
@@ -370,6 +371,15 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
                 Err(anyhow!("Event send timeout for {}", event_name))
             }
         }
+    }
+}
+
+/// Logs the status of the queue every 5 seconds.
+async fn schedule_log_queue_capacity(event_tx: mpsc::Sender<KmsCoreEvent>) {
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    loop {
+        interval.tick().await;
+        info!("Capacity of the event queue: {}", event_tx.capacity());
     }
 }
 
