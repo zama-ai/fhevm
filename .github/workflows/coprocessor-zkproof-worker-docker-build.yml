@@ -1,4 +1,4 @@
-name: coprocessor-zkproof-worker-docker-build
+name: coprocessor/zkproof-worker/docker-build
 
 on:
   pull_request:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   check-changes:
-    name: coprocessor-zkproof-worker-docker-build/check-changes
+    name: trigger
     permissions:
       actions: 'read'
       contents: 'read'
@@ -35,7 +35,7 @@ jobs:
               - coprocessor/fhevm-engine/Cargo.toml
               - coprocessor/fhevm-engine/Cargo.lock
   build:
-    name: coprocessor-zkproof-worker-docker-build/build
+    name: run
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-zkproof-worker == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6323a1e8e260961562b66a9f33a608f86cd6c831

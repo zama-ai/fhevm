@@ -1,5 +1,5 @@
 # Compile and test Coprocessor on a single L40 GPU, on hyperstack
-name: coprocessor-gpu-tests
+name: coprocessor/gpu-tests
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,7 +21,7 @@ on:
 
 jobs:
   check-changes:
-    name: coprocessor-gpu-tests/check-changes
+    name: trigger
     permissions:
       actions: 'read'
       contents: 'read'
@@ -53,7 +53,7 @@ jobs:
               - ci/slab.toml
 
   setup-instance:
-    name: coprocessor-gpu-tests/setup-instance
+    name: setup
     needs: check-changes
     if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-coprocessor-gpu == 'true' }}
     runs-on: ubuntu-latest
@@ -75,7 +75,7 @@ jobs:
           profile: l40
 
   coprocessor-gpu:
-    name: coprocessor-gpu-tests/tests (bpr)
+    name: run
     needs: [ check-changes, setup-instance ]
     if: github.event_name != 'pull_request' ||
       (github.event_name == 'pull_request' && needs.setup-instance.result != 'skipped')
@@ -173,7 +173,7 @@ jobs:
 
 
   teardown-instance:
-    name: coprocessor-gpu-tests/teardown
+    name: teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
     needs: [ setup-instance, coprocessor-gpu ]
     runs-on: ubuntu-latest
