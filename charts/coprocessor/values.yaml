@@ -8,7 +8,7 @@ config:
       name: coprocessor-key
       key: coprocessor.hex
   apiKey:
-    secret:
+    secret: 
       name: coprocessor-api-key
       key: coprocessor-api-key
   database:
