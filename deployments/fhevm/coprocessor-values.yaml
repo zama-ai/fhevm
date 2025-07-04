@@ -3,7 +3,7 @@ config:
   coprocessorKey:
     secret:
       name: coprocessor-key
-      key: coprocessor.hex
+      key: coprocessor.hex 
   apiKey:
     secret: 
       name: coprocessor-api-key
