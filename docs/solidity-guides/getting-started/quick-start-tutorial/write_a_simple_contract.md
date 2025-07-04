@@ -246,7 +246,7 @@ async function deployFixture() {
 describe("Counter", function () {
   let signers: Signers;
   let counterContract: Counter;
-  let counterContractAddress: Counter;
+  let counterContractAddress: string;
 
   before(async function () {
     const ethSigners: HardhatEthersSigner[] = await ethers.getSigners();
