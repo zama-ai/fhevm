@@ -350,8 +350,7 @@ impl InfiniteLogIter {
                             .into_stream(),
                     );
                     self.provider = Some(provider);
-                    info!(url = %self.url, "Listening on");
-                    info!(contracts = ?self.contract_addresses, "Contracts addresses");
+                    info!(contracts = ?self.contract_addresses, "Listening on contracts");
                     return;
                 }
                 Err(err) => {
@@ -359,14 +358,10 @@ impl InfiniteLogIter {
                         if retry == 0 {
                             // TODO: remove panic and, instead, propagate the error
                             error!(
-                                url = %self.url,
                                 error = %err,
                                 "Cannot connect",
                             );
-                            panic!(
-                                "Cannot connect to {} due to {err}.",
-                                &self.url
-                            )
+                            panic!("Cannot connect due to {err}.",)
                         }
                         5
                     } else {
@@ -374,7 +369,6 @@ impl InfiniteLogIter {
                     };
                     if not_initialized {
                         warn!(
-                            url = %self.url,
                             error = %err,
                             delay_secs = delay,
                             retry = retry,
@@ -382,7 +376,6 @@ impl InfiniteLogIter {
                         );
                     } else {
                         warn!(
-                            url = %self.url,
                             error = %err,
                             delay_secs = delay,
                             "Cannot connect. Will retry infinitely",
