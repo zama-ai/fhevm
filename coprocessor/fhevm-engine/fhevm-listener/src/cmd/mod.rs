@@ -270,7 +270,7 @@ impl InfiniteLogIter {
                     }
                     info!(url = %self.url, "Listening on");
                     info!(contracts = ?self.contract_addresses, "Contracts addresses");
-                    // note subcribing to real-time before reading catchup
+                    // note subscribing to real-time before reading catchup
                     // events to have the minimal gap between the two
                     // TODO: but it does not guarantee no gap for now
                     // (implementation dependant)
