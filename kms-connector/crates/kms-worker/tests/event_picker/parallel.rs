@@ -11,8 +11,8 @@ use tokio::time::timeout;
 async fn test_parallel_event_picker_one_events() -> anyhow::Result<()> {
     let test_instance = test_instance_with_db_only().await?;
 
-    let mut event_picker0 = DbEventPicker::connect(test_instance.db.clone()).await?;
-    let mut event_picker1 = DbEventPicker::connect(test_instance.db.clone()).await?;
+    let mut event_picker0 = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
+    let mut event_picker1 = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
 
     let id0 = U256::ZERO;
     let sns_ct = vec![rand_sns_ct()];
@@ -31,20 +31,20 @@ async fn test_parallel_event_picker_one_events() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking PublicDecryptionRequest...");
-    let event0 = event_picker0.pick_event().await?;
+    let events0 = event_picker0.pick_events().await?;
 
     // Should wait forever
-    if let Ok(res) = timeout(Duration::from_millis(300), event_picker1.pick_event()).await {
+    if let Ok(res) = timeout(Duration::from_millis(300), event_picker1.pick_events()).await {
         panic!("Timeout was expected, got result instead: {res:?}");
     }
 
     println!("Checking PublicDecryptionRequest data...");
     assert_eq!(
-        event0,
-        GatewayEvent::PublicDecryption(PublicDecryptionRequest {
+        events0,
+        vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: id0,
             snsCtMaterials: sns_ct.clone(),
-        })
+        })]
     );
     println!("Data OK!");
     Ok(())
@@ -54,8 +54,8 @@ async fn test_parallel_event_picker_one_events() -> anyhow::Result<()> {
 async fn test_parallel_event_picker_two_events() -> anyhow::Result<()> {
     let test_instance = test_instance_with_db_only().await?;
 
-    let mut event_picker0 = DbEventPicker::connect(test_instance.db.clone()).await?;
-    let mut event_picker1 = DbEventPicker::connect(test_instance.db.clone()).await?;
+    let mut event_picker0 = DbEventPicker::connect(test_instance.db.clone(), 1).await?;
+    let mut event_picker1 = DbEventPicker::connect(test_instance.db.clone(), 1).await?;
 
     let id0 = U256::ZERO;
     let id1 = U256::ONE;
@@ -82,23 +82,23 @@ async fn test_parallel_event_picker_two_events() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking the two PublicDecryptionRequest...");
-    let event0 = event_picker0.pick_event().await?;
-    let event1 = event_picker1.pick_event().await?;
+    let events0 = event_picker0.pick_events().await?;
+    let events1 = event_picker1.pick_events().await?;
 
     println!("Checking PublicDecryptionRequest data...");
     assert_eq!(
-        event0,
-        GatewayEvent::PublicDecryption(PublicDecryptionRequest {
+        events0,
+        vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: id0,
             snsCtMaterials: sns_ct.clone(),
-        })
+        })]
     );
     assert_eq!(
-        event1,
-        GatewayEvent::PublicDecryption(PublicDecryptionRequest {
+        events1,
+        vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: id1,
             snsCtMaterials: sns_ct,
-        })
+        })]
     );
     println!("Data OK!");
     Ok(())

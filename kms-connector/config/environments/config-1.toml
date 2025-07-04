@@ -27,14 +27,13 @@ address = "0x0000000000000000000000000000000000000002"
 # domain_name = "KmsManagement"
 # domain_version = "1"
 
+# events_batch_size = 10
+# grpc_request_retries = 3
 # public_decryption_timeout_secs = 300
-
 # user_decryption_timeout_secs = 300
-
-# grpc_retry_interval_secs = 5
+# grpc_poll_interval_secs = 5
 
 # s3_ciphertext_retrieval_retries = 3
-
 # s3_connect_timeout = 5
 
 # [s3_config]

@@ -16,7 +16,7 @@ use kms_worker::core::{DbEventPicker, EventPicker};
 async fn test_pick_public_decryption() -> anyhow::Result<()> {
     let test_instance = test_instance_with_db_only().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone()).await?;
+    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
 
     let decryption_id = rand_u256();
     let sns_ct = vec![rand_sns_ct()];
@@ -35,15 +35,15 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking PublicDecryptionRequest...");
-    let event = event_picker.pick_event().await?;
+    let events = event_picker.pick_events().await?;
 
     println!("Checking PublicDecryptionRequest data...");
     assert_eq!(
-        event,
-        GatewayEvent::PublicDecryption(PublicDecryptionRequest {
+        events,
+        vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: decryption_id,
             snsCtMaterials: sns_ct,
-        })
+        })]
     );
     println!("Data OK!");
     Ok(())
@@ -53,7 +53,7 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
 async fn test_pick_user_decryption() -> anyhow::Result<()> {
     let test_instance = test_instance_with_db_only().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone()).await?;
+    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
 
     let decryption_id = rand_u256();
     let sns_ct = vec![rand_sns_ct()];
@@ -76,17 +76,17 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking UserDecryptionRequest...");
-    let event_tx = event_picker.pick_event().await?;
+    let events = event_picker.pick_events().await?;
 
     println!("Checking UserDecryptionRequest data...");
     assert_eq!(
-        event_tx,
-        GatewayEvent::UserDecryption(UserDecryptionRequest {
+        events,
+        vec![GatewayEvent::UserDecryption(UserDecryptionRequest {
             decryptionId: decryption_id,
             snsCtMaterials: sns_ct,
             userAddress: user_address,
             publicKey: public_key.into(),
-        })
+        })]
     );
     println!("Data OK!");
     Ok(())
@@ -96,7 +96,7 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
 async fn test_pick_preprocess_keygen() -> anyhow::Result<()> {
     let test_instance = test_instance_with_db_only().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone()).await?;
+    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
 
     let pre_keygen_request_id = rand_u256();
     let fhe_params_digest = rand_digest();
@@ -111,15 +111,15 @@ async fn test_pick_preprocess_keygen() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking PreprocessKeygenRequest...");
-    let event_tx = event_picker.pick_event().await?;
+    let events = event_picker.pick_events().await?;
 
     println!("Checking PreprocessKeygenRequest data...");
     assert_eq!(
-        event_tx,
-        GatewayEvent::PreprocessKeygen(PreprocessKeygenRequest {
+        events,
+        vec![GatewayEvent::PreprocessKeygen(PreprocessKeygenRequest {
             preKeygenRequestId: pre_keygen_request_id,
             fheParamsDigest: fhe_params_digest,
-        })
+        })]
     );
     println!("Data OK!");
     Ok(())
@@ -129,7 +129,7 @@ async fn test_pick_preprocess_keygen() -> anyhow::Result<()> {
 async fn test_pick_preprocess_kskgen() -> anyhow::Result<()> {
     let test_instance = test_instance_with_db_only().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone()).await?;
+    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
 
     let pre_kskgen_request_id = rand_u256();
     let fhe_params_digest = rand_digest();
@@ -144,15 +144,15 @@ async fn test_pick_preprocess_kskgen() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking PreprocessKskgenRequest...");
-    let event_tx = event_picker.pick_event().await?;
+    let events = event_picker.pick_events().await?;
 
     println!("Checking PreprocessKskgenRequest data...");
     assert_eq!(
-        event_tx,
-        GatewayEvent::PreprocessKskgen(PreprocessKskgenRequest {
+        events,
+        vec![GatewayEvent::PreprocessKskgen(PreprocessKskgenRequest {
             preKskgenRequestId: pre_kskgen_request_id,
             fheParamsDigest: fhe_params_digest,
-        })
+        })]
     );
     println!("Data OK!");
     Ok(())
@@ -162,7 +162,7 @@ async fn test_pick_preprocess_kskgen() -> anyhow::Result<()> {
 async fn test_pick_keygen() -> anyhow::Result<()> {
     let test_instance = test_instance_with_db_only().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone()).await?;
+    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
 
     let pre_key_id = rand_u256();
     let fhe_params_digest = rand_digest();
@@ -177,15 +177,15 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking KeygenRequest...");
-    let event_tx = event_picker.pick_event().await?;
+    let events = event_picker.pick_events().await?;
 
     println!("Checking KeygenRequest data...");
     assert_eq!(
-        event_tx,
-        GatewayEvent::Keygen(KeygenRequest {
+        events,
+        vec![GatewayEvent::Keygen(KeygenRequest {
             preKeyId: pre_key_id,
             fheParamsDigest: fhe_params_digest,
-        })
+        })]
     );
     println!("Data OK!");
     Ok(())
@@ -195,7 +195,7 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
 async fn test_pick_kskgen() -> anyhow::Result<()> {
     let test_instance = test_instance_with_db_only().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone()).await?;
+    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
 
     let pre_ksk_id = rand_u256();
     let source_key_id = rand_u256();
@@ -214,17 +214,17 @@ async fn test_pick_kskgen() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking KskgenRequest...");
-    let event_tx = event_picker.pick_event().await?;
+    let events = event_picker.pick_events().await?;
 
     println!("Checking KskgenRequest data...");
     assert_eq!(
-        event_tx,
-        GatewayEvent::Kskgen(KskgenRequest {
+        events,
+        vec![GatewayEvent::Kskgen(KskgenRequest {
             preKskId: pre_ksk_id,
             sourceKeyId: source_key_id,
             destKeyId: dest_key_id,
             fheParamsDigest: fhe_params_digest,
-        })
+        })]
     );
     println!("Data OK!");
     Ok(())
@@ -234,7 +234,7 @@ async fn test_pick_kskgen() -> anyhow::Result<()> {
 async fn test_pick_crsgen() -> anyhow::Result<()> {
     let test_instance = test_instance_with_db_only().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone()).await?;
+    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
 
     let crsgen_request_id = rand_u256();
     let fhe_params_digest = rand_digest();
@@ -249,15 +249,15 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
     .await?;
 
     println!("Picking CrsgenRequest...");
-    let event = event_picker.pick_event().await?;
+    let events = event_picker.pick_events().await?;
 
     println!("Checking CrsgenRequest data...");
     assert_eq!(
-        event,
-        GatewayEvent::Crsgen(CrsgenRequest {
+        events,
+        vec![GatewayEvent::Crsgen(CrsgenRequest {
             crsgenRequestId: crsgen_request_id,
             fheParamsDigest: fhe_params_digest,
-        })
+        })]
     );
     println!("Data OK!");
     Ok(())
