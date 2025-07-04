@@ -61,8 +61,8 @@ impl HealthCheckService for SwitchNSquashService {
             }
         }
 
-        status.set_custom_check("s3_buckets", is_s3_ready);
-        status.set_custom_check("s3_connection", is_s3_connected);
+        status.set_custom_check("s3_buckets", is_s3_ready, true);
+        status.set_custom_check("s3_connection", is_s3_connected, true);
 
         status
     }

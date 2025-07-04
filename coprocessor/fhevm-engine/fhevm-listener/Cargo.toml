@@ -21,7 +21,6 @@ alloy-sol-types = "1.2.0"
 anyhow = { workspace = true }
 alloy = { workspace = true, features = ["contract", "json", "providers", "provider-ws", "pubsub", "rpc-types", "sol-types"] }
 alloy-primitives = { workspace = true }
-axum = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
 rustls = { workspace = true }
@@ -30,7 +29,6 @@ serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
