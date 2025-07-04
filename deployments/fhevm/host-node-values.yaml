@@ -11,7 +11,7 @@ network:
 
 port: 8545
 
-storage:
+storage: 
   size: 5Gi
 
 resources:
