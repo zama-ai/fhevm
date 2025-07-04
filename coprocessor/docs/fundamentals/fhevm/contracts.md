@@ -24,7 +24,7 @@ Inputs can either be other handles or plaintext values.
 
 The [ACL](../../../contracts/contracts/ACL.sol) contract enforces access control for ciphertexts. The model we adopt is very simple - a ciphertext is either allowed for an address or not. An address can be any address - either an EOA address or a contract address. Essentially, it is a mapping from handle to a set of addresses that are allowed to use the handle.
 
-Access control applies to transfering ciphertexts from one contract to another, for FHE computation on ciphertexts, for decryption and for reencryption of a ciphertext to a user-provided key.
+Access control applies to transferring ciphertexts from one contract to another, for FHE computation on ciphertexts, for decryption and for reencryption of a ciphertext to a user-provided key.
 
 ### Garbage Collection of Allowed Ciphertexts Data
 
