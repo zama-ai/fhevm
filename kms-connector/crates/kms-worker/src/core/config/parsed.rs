@@ -31,22 +31,22 @@ pub struct Config {
     /// The service name used for tracing.
     pub service_name: String,
 
-    /// The limit number of events to fetch from the database (default: 10).
+    /// The limit number of events to fetch from the database.
     pub events_batch_size: u8,
-    /// Number of retries for GRPC requests sent to the KMS Core (default: 3).
+    /// Number of retries for GRPC requests sent to the KMS Core.
     pub grpc_request_retries: u8,
-    /// Timeout to get public decryption responses from KMS Core (default: 300s / 5min).
+    /// Timeout to get public decryption responses from KMS Core.
     pub public_decryption_timeout: Duration,
-    /// Timeout to get user decryption responses from KMS Core (default: 300s / 5min).
+    /// Timeout to get user decryption responses from KMS Core.
     pub user_decryption_timeout: Duration,
-    /// Retry interval to poll GRPC responses from KMS Core (default: 5s).
+    /// Retry interval to poll GRPC responses from KMS Core.
     pub grpc_poll_interval: Duration,
 
     /// S3 configuration for ciphertext storage (optional).
     pub s3_config: Option<S3Config>,
-    /// Number of retries for S3 ciphertext retrieval (default: 3).
+    /// Number of retries for S3 ciphertext retrieval.
     pub s3_ciphertext_retrieval_retries: u8,
-    /// Timeout to connect to a S3 bucket (default: 2s).
+    /// Timeout to connect to a S3 bucket.
     pub s3_connect_timeout: Duration,
 
     // TODO: implement to increase security

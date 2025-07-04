@@ -130,10 +130,10 @@ impl KmsResponse {
     pub async fn free_associated_event(&self, db: &Pool<Postgres>) {
         match self {
             KmsResponse::PublicDecryption { decryption_id, .. } => {
-                GatewayEvent::mark_public_decryption_as_free(db, *decryption_id).await
+                GatewayEvent::mark_public_decryption_as_pending(db, *decryption_id).await
             }
             KmsResponse::UserDecryption { decryption_id, .. } => {
-                GatewayEvent::mark_user_decryption_as_free(db, *decryption_id).await
+                GatewayEvent::mark_user_decryption_as_pending(db, *decryption_id).await
             }
         }
     }

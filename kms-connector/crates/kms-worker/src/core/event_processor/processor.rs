@@ -38,7 +38,7 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
         match self.inner_process(event).await {
             Ok(response) => Ok(response),
             Err(e) => {
-                event.mark_as_free(&self.db_pool).await;
+                event.mark_as_pending(&self.db_pool).await;
                 Err(e)
             }
         }

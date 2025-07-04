@@ -107,28 +107,28 @@ impl GatewayEvent {
     }
 
     /// Sets the `under_process` field of the event as `FALSE` in the database.
-    pub async fn mark_as_free(&self, db: &Pool<Postgres>) {
+    pub async fn mark_as_pending(&self, db: &Pool<Postgres>) {
         match self {
             GatewayEvent::PublicDecryption(e) => {
-                Self::mark_public_decryption_as_free(db, e.decryptionId).await
+                Self::mark_public_decryption_as_pending(db, e.decryptionId).await
             }
             GatewayEvent::UserDecryption(e) => {
-                Self::mark_user_decryption_as_free(db, e.decryptionId).await
+                Self::mark_user_decryption_as_pending(db, e.decryptionId).await
             }
             GatewayEvent::PreprocessKeygen(e) => {
-                Self::mark_pre_keygen_as_free(db, e.preKeygenRequestId).await
+                Self::mark_pre_keygen_as_pending(db, e.preKeygenRequestId).await
             }
             GatewayEvent::PreprocessKskgen(e) => {
-                Self::mark_pre_kskgen_as_free(db, e.preKskgenRequestId).await
+                Self::mark_pre_kskgen_as_pending(db, e.preKskgenRequestId).await
             }
-            GatewayEvent::Keygen(e) => Self::mark_keygen_as_free(db, e.preKeyId).await,
-            GatewayEvent::Kskgen(e) => Self::mark_kskgen_as_free(db, e.preKskId).await,
-            GatewayEvent::Crsgen(e) => Self::mark_crsgen_as_free(db, e.crsgenRequestId).await,
+            GatewayEvent::Keygen(e) => Self::mark_keygen_as_pending(db, e.preKeyId).await,
+            GatewayEvent::Kskgen(e) => Self::mark_kskgen_as_pending(db, e.preKskId).await,
+            GatewayEvent::Crsgen(e) => Self::mark_crsgen_as_pending(db, e.crsgenRequestId).await,
         }
     }
 
     /// Sets the `under_process` field of the `PublicDecryptionRequest` as `FALSE` in the database.
-    pub async fn mark_public_decryption_as_free(db: &Pool<Postgres>, id: U256) {
+    pub async fn mark_public_decryption_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
             "UPDATE public_decryption_requests SET under_process = FALSE WHERE decryption_id = $1",
             id.as_le_slice()
@@ -137,7 +137,7 @@ impl GatewayEvent {
     }
 
     /// Sets the `under_process` field of the `UserDecryptionRequest` as `FALSE` in the database.
-    pub async fn mark_user_decryption_as_free(db: &Pool<Postgres>, id: U256) {
+    pub async fn mark_user_decryption_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
             "UPDATE user_decryption_requests SET under_process = FALSE WHERE decryption_id = $1",
             id.as_le_slice()
@@ -146,7 +146,7 @@ impl GatewayEvent {
     }
 
     /// Sets the `under_process` field of the `PreprocessKeygenRequest` as `FALSE` in the database.
-    pub async fn mark_pre_keygen_as_free(db: &Pool<Postgres>, id: U256) {
+    pub async fn mark_pre_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
             "UPDATE preprocess_keygen_requests SET under_process = FALSE WHERE pre_keygen_request_id = $1",
             id.as_le_slice()
@@ -155,7 +155,7 @@ impl GatewayEvent {
     }
 
     /// Sets the `under_process` field of the `PreprocessKskgenRequest` as `FALSE` in the database.
-    pub async fn mark_pre_kskgen_as_free(db: &Pool<Postgres>, id: U256) {
+    pub async fn mark_pre_kskgen_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
             "UPDATE preprocess_kskgen_requests SET under_process = FALSE WHERE pre_kskgen_request_id = $1",
             id.as_le_slice()
@@ -164,7 +164,7 @@ impl GatewayEvent {
     }
 
     /// Sets the `under_process` field of the `KeyRequest` as `FALSE` in the database.
-    pub async fn mark_keygen_as_free(db: &Pool<Postgres>, id: U256) {
+    pub async fn mark_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
             "UPDATE keygen_requests SET under_process = FALSE WHERE pre_key_id = $1",
             id.as_le_slice()
@@ -173,7 +173,7 @@ impl GatewayEvent {
     }
 
     /// Sets the `under_process` field of the `KskgenRequest` as `FALSE` in the database.
-    pub async fn mark_kskgen_as_free(db: &Pool<Postgres>, id: U256) {
+    pub async fn mark_kskgen_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
             "UPDATE kskgen_requests SET under_process = FALSE WHERE pre_ksk_id = $1",
             id.as_le_slice()
@@ -182,7 +182,7 @@ impl GatewayEvent {
     }
 
     /// Sets the `under_process` field of the `CrsgenRequest` as `FALSE` in the database.
-    pub async fn mark_crsgen_as_free(db: &Pool<Postgres>, id: U256) {
+    pub async fn mark_crsgen_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
             "UPDATE crsgen_requests SET under_process = FALSE WHERE crsgen_request_id = $1",
             id.as_le_slice()
