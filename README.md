@@ -25,9 +25,13 @@
 </p>
 
 > [!NOTE]
+> **Devnet EOL Notice**
 >
-> The Zama Confidential Blockchain Protocol Public Testnet is live.
-> Read the litepaper [here](https://docs.zama.ai/protocol/zama-protocol-litepaper).
+> The **Zama Confidential Protocol Testnet (FHEVM v0.7)** is officially released, featuring a new stack with improved resilience, scalability, and performance. [Read the Litepaper ↗](https://docs.zama.ai/protocol/zama-protocol-litepaper).
+>
+>The previous **Hackathon Devnet (FHEVM v0.6)** will reach its end of life on **August 4th**.
+>
+> To ensure the service continuity of your applications, please migrate your projects by following the [migration guide↗](https://docs.zama.ai/protocol/solidity-guides/development-guide/migration).
 
 ## About
 
