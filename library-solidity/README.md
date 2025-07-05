@@ -12,11 +12,11 @@ The FHEVM Solidity library offers the following core features:
 - **Access control**: Restrict which accounts can decrypt or update values with programmable access logic.
 - **Symbolic execution**: All encrypted operations are executed symbolically on the chain, with actual computation performed off-chain by the [coprocessor](../coprocessor/).
 
-_See full details in the [Key concepts](https://docs.zama.ai/fhevm/smart-contract/key_concepts) section of the documentation._
+_See full details in the [Key concepts](https://www.zama.ai/post/confidential-erc-20-tokens-using-homomorphic-encryption) section of the documentation._
 
 ## Get started
 
-To start writing confidential smart contracts using FHEVM Solidity, follow the Hardhat setup guide here: [Getting Started with Hardhat](https://docs.zama.ai/fhevm/getting-started/overview-1/hardhat).
+To start writing confidential smart contracts using FHEVM Solidity, follow the Hardhat setup guide here: [Getting Started with Hardhat](https://github.com/zama-ai/fhevm-hardhat-template).
 
 ## Resources
 
