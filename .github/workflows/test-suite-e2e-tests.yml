@@ -143,6 +143,12 @@ jobs:
         run: |
           ./fhevm-cli test public-decrypt-http-mixed
 
+      - name: Incident simulation
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test host-listener-disconnect-erc
+          ./fhevm-cli test host-listener-disconnect-input-proof
+
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
         if: always()
@@ -155,6 +161,9 @@ jobs:
           echo "::endgroup::"
           echo "::group::Transaction Sender Logs (filtered)"
           ./fhevm-cli logs transaction-sender | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+          echo "::group::Host-listener Logs"
+          ./fhevm-cli logs host-listener
           echo "::endgroup::"
 
       - name: Cleanup
