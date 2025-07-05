@@ -23,12 +23,13 @@ COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY host-contracts/contracts/ ./host-contracts/contracts/
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
+COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 
 WORKDIR /app/coprocessor/fhevm-engine
 
 # Build fhevm_listener binary
 RUN cargo fetch && \
-    SQLX_OFFLINE=true cargo build --release -p fhevm-listener
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --release -p fhevm-listener
 
 # Avoid a conflict with prod stage
 RUN rm -rf /lib/apk
