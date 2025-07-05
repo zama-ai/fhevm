@@ -304,11 +304,11 @@ def _parse_key_results(result_file, crate, bench_type):
                 _create_point(
                     value,
                     test_name,
-                    display_name,
                     "keygen",
                     bench_type,
                     operator,
                     params,
+                    display_name,
                 )
             )
 
