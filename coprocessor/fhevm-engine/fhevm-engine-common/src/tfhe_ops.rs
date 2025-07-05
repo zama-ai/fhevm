@@ -734,7 +734,36 @@ pub fn does_fhe_operation_support_both_encrypted_operands(op: &SupportedFheOpera
     !matches!(op, SupportedFheOperations::FheDiv)
 }
 
+#[cfg(not(feature = "gpu"))]
 pub fn perform_fhe_operation(
+    fhe_operation_int: i16,
+    input_operands: &[SupportedFheCiphertexts],
+    _: usize,
+    // for deterministc randomness functions
+) -> Result<SupportedFheCiphertexts, FhevmError> {
+    perform_fhe_operation_impl(fhe_operation_int, input_operands)
+}
+
+#[cfg(feature = "gpu")]
+pub fn perform_fhe_operation(
+    fhe_operation_int: i16,
+    input_operands: &[SupportedFheCiphertexts],
+    gpu_idx: usize,
+    // for deterministc randomness functions
+) -> Result<SupportedFheCiphertexts, FhevmError> {
+    use crate::gpu_memory::{get_op_size_on_gpu, release_memory_on_gpu, reserve_memory_on_gpu};
+
+    let mut gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, input_operands);
+    let _ = input_operands
+        .iter()
+        .map(|i| gpu_mem_res += i.get_size_on_gpu());
+    reserve_memory_on_gpu(gpu_mem_res, gpu_idx);
+    let res = perform_fhe_operation_impl(fhe_operation_int, input_operands);
+    release_memory_on_gpu(gpu_mem_res, gpu_idx);
+    res
+}
+
+pub fn perform_fhe_operation_impl(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
     // for deterministc randomness functions
@@ -3131,7 +3160,7 @@ fn to_constant_size_array<const SIZE: usize>(inp: &[u8]) -> [u8; SIZE] {
 macro_rules! to_be_function {
     ( $x:ty ) => {
         paste::paste! {
-            fn [<to_be_ $x _bit>](inp: &[u8]) -> $x {
+            pub fn [<to_be_ $x _bit>](inp: &[u8]) -> $x {
                 $x::from_be_bytes(to_constant_size_array::<{ std::mem::size_of::<$x>() }>(inp))
             }
         }
@@ -3144,7 +3173,7 @@ to_be_function!(u64);
 to_be_function!(u128);
 
 // return U256 because that's supported from tfhe-rs and will need cast later
-fn to_be_u160_bit(inp: &[u8]) -> U256 {
+pub fn to_be_u160_bit(inp: &[u8]) -> U256 {
     const SIZE: usize = 160 / 8;
     // truncate first
     let arr = to_constant_size_array::<SIZE>(inp);
@@ -3156,7 +3185,7 @@ fn to_be_u160_bit(inp: &[u8]) -> U256 {
     res
 }
 
-fn to_be_u256_bit(inp: &[u8]) -> U256 {
+pub fn to_be_u256_bit(inp: &[u8]) -> U256 {
     const FINAL_SIZE: usize = 256 / 8;
     // final value
     let arr = to_constant_size_array::<FINAL_SIZE>(inp);
@@ -3165,7 +3194,7 @@ fn to_be_u256_bit(inp: &[u8]) -> U256 {
     res
 }
 
-fn to_be_u512_bit(inp: &[u8]) -> StaticUnsignedBigInt<8> {
+pub fn to_be_u512_bit(inp: &[u8]) -> StaticUnsignedBigInt<8> {
     type TheType = StaticUnsignedBigInt<8>;
     const FINAL_SIZE: usize = std::mem::size_of::<TheType>();
     // final value
@@ -3175,7 +3204,7 @@ fn to_be_u512_bit(inp: &[u8]) -> StaticUnsignedBigInt<8> {
     res
 }
 
-fn to_be_u1024_bit(inp: &[u8]) -> StaticUnsignedBigInt<16> {
+pub fn to_be_u1024_bit(inp: &[u8]) -> StaticUnsignedBigInt<16> {
     type TheType = StaticUnsignedBigInt<16>;
     const FINAL_SIZE: usize = std::mem::size_of::<TheType>();
     // final value
@@ -3185,7 +3214,7 @@ fn to_be_u1024_bit(inp: &[u8]) -> StaticUnsignedBigInt<16> {
     res
 }
 
-fn to_be_u2048_bit(inp: &[u8]) -> StaticUnsignedBigInt<32> {
+pub fn to_be_u2048_bit(inp: &[u8]) -> StaticUnsignedBigInt<32> {
     type TheType = StaticUnsignedBigInt<32>;
     const FINAL_SIZE: usize = std::mem::size_of::<TheType>();
     // final value

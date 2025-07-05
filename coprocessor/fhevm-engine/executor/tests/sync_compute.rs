@@ -120,7 +120,8 @@ async fn compute_on_two_serialized_ciphertexts() {
                 if ct.handle != vec![0xaa; HANDLE_LEN] {
                     panic!("response handle is unexpected");
                 }
-                let ct = SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                let ct =
+                    SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization).unwrap();
                 match ct
                     .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                     .as_str()
@@ -195,7 +196,8 @@ async fn compute_on_compact_and_serialized_ciphertexts() {
                 if ct.handle != vec![0xaa; HANDLE_LEN] {
                     panic!("response handle is unexpected");
                 }
-                let ct = SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                let ct =
+                    SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization).unwrap();
                 match ct
                     .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                     .as_str()
@@ -277,7 +279,8 @@ async fn compute_on_result_ciphertext() {
                 if ct.handle != vec![0xbb; HANDLE_LEN] {
                     panic!("response handle is unexpected");
                 }
-                let ct = SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                let ct =
+                    SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization).unwrap();
                 match ct
                     .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                     .as_str()
@@ -327,7 +330,8 @@ async fn trivial_encryption_scalar_less_than_32_bytes() {
                 if ct.handle != vec![0xaa; HANDLE_LEN] {
                     panic!("response handle is unexpected: {:?}", ct.handle);
                 }
-                let ct = SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                let ct =
+                    SupportedFheCiphertexts::decompress_no_check(3, &ct.serialization).unwrap();
                 match ct
                     .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
                     .as_str()

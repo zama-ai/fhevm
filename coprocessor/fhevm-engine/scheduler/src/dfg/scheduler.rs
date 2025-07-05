@@ -12,6 +12,8 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
+#[cfg(feature = "gpu")]
+use fhevm_engine_common::gpu_memory::{get_op_size_on_gpu, get_supported_ct_size_on_gpu};
 use fhevm_engine_common::{
     common::FheOperation, tfhe_ops::perform_fhe_operation, types::SupportedFheCiphertexts,
 };
@@ -134,14 +136,14 @@ impl<'a> Scheduler<'a> {
                     .map(|i| match i {
                         DFGTaskInput::Value(i) => Ok(i.clone()),
                         DFGTaskInput::Compressed((t, c)) => {
-                            SupportedFheCiphertexts::decompress(*t, c)
+                            SupportedFheCiphertexts::decompress_no_check(*t, c)
                         }
                         _ => Err(SchedulerError::UnsatisfiedDependence.into()),
                     })
                     .collect::<Result<Vec<_>>>()?;
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(sks.clone());
-                    run_computation(opcode, inputs, idx)
+                    run_computation(opcode, inputs, idx, 0)
                 });
             }
         }
@@ -169,14 +171,14 @@ impl<'a> Scheduler<'a> {
                             .map(|i| match i {
                                 DFGTaskInput::Value(i) => Ok(i.clone()),
                                 DFGTaskInput::Compressed((t, c)) => {
-                                    SupportedFheCiphertexts::decompress(*t, c)
+                                    SupportedFheCiphertexts::decompress_no_check(*t, c)
                                 }
                                 _ => Err(SchedulerError::UnsatisfiedDependence.into()),
                             })
                             .collect::<Result<Vec<_>>>()?;
                         set.spawn_blocking(move || {
                             tfhe::set_server_key(sks.clone());
-                            run_computation(opcode, inputs, child_index.index())
+                            run_computation(opcode, inputs, child_index.index(), 0)
                         });
                     }
                 }
@@ -222,7 +224,7 @@ impl<'a> Scheduler<'a> {
                 }
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(sks.clone());
-                    execute_partition(args, index)
+                    execute_partition(args, index, 0)
                 });
             }
         }
@@ -274,7 +276,7 @@ impl<'a> Scheduler<'a> {
                     }
                     set.spawn_blocking(move || {
                         tfhe::set_server_key(sks.clone());
-                        execute_partition(args, dependent_task_index)
+                        execute_partition(args, dependent_task_index, 0)
                     });
                 }
             }
@@ -317,7 +319,8 @@ impl<'a> Scheduler<'a> {
         tokio::task::spawn_blocking(move || {
             tfhe::set_server_key(sks.clone());
             comps.par_iter().for_each_with(src, |src, (args, index)| {
-                src.send(execute_partition(args.to_vec(), *index)).unwrap();
+                src.send(execute_partition(args.to_vec(), *index, 0))
+                    .unwrap();
             });
         })
         .await?;
@@ -346,8 +349,9 @@ impl<'a> Scheduler<'a> {
                 .node_weight_mut(index)
                 .ok_or(SchedulerError::DataflowGraphError)?;
             if Self::is_ready(node) {
-                let key = keys[rr % keys.len()].clone();
-                node.locality = (rr % keys.len()) as i32;
+                let gpu_index = rr % keys.len();
+                let key = keys[gpu_index].clone();
+                node.locality = (gpu_index) as i32;
                 rr += 1;
                 tfhe::set_server_key(key.clone());
                 let opcode = node.opcode;
@@ -357,14 +361,14 @@ impl<'a> Scheduler<'a> {
                     .map(|i| match i {
                         DFGTaskInput::Value(i) => Ok(i.clone()),
                         DFGTaskInput::Compressed((t, c)) => {
-                            SupportedFheCiphertexts::decompress(*t, c)
+                            SupportedFheCiphertexts::decompress(*t, c, gpu_index)
                         }
                         _ => Err(SchedulerError::UnsatisfiedDependence.into()),
                     })
                     .collect::<Result<Vec<_>>>()?;
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(key);
-                    run_computation(opcode, inputs, idx)
+                    run_computation(opcode, inputs, idx, gpu_index)
                 });
             }
         }
@@ -402,14 +406,14 @@ impl<'a> Scheduler<'a> {
                             .map(|i| match i {
                                 DFGTaskInput::Value(i) => Ok(i.clone()),
                                 DFGTaskInput::Compressed((t, c)) => {
-                                    SupportedFheCiphertexts::decompress(*t, c)
+                                    SupportedFheCiphertexts::decompress(*t, c, loc)
                                 }
                                 _ => Err(SchedulerError::UnsatisfiedDependence.into()),
                             })
                             .collect::<Result<Vec<_>>>()?;
                         set.spawn_blocking(move || {
                             tfhe::set_server_key(key);
-                            run_computation(opcode, inputs, child_index.index())
+                            run_computation(opcode, inputs, child_index.index(), loc)
                         });
                     }
                 }
@@ -464,7 +468,7 @@ impl<'a> Scheduler<'a> {
                 }
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(key);
-                    execute_partition(args, index)
+                    execute_partition(args, index, loc)
                 });
             }
         }
@@ -525,7 +529,7 @@ impl<'a> Scheduler<'a> {
                     }
                     set.spawn_blocking(move || {
                         tfhe::set_server_key(key);
-                        execute_partition(args, dependent_task_index)
+                        execute_partition(args, dependent_task_index, loc)
                     });
                 }
             }
@@ -589,7 +593,8 @@ impl<'a> Scheduler<'a> {
                             tfhe::set_server_key(keys[i].clone());
                             // Sequential iteration over the chunks of data for each stream
                             chunk.iter().for_each(|(args, index)| {
-                                src.send(execute_partition(args.to_vec(), *index)).unwrap();
+                                src.send(execute_partition(args.to_vec(), *index, i))
+                                    .unwrap();
                             });
                         });
                 });
@@ -736,6 +741,7 @@ type TaskResult = (usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>);
 fn execute_partition(
     computations: Vec<(i32, Vec<DFGTaskInput>, NodeIndex)>,
     task_id: NodeIndex,
+    gpu_idx: usize,
 ) -> (Vec<TaskResult>, NodeIndex) {
     let mut res: HashMap<usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>> =
         HashMap::with_capacity(computations.len());
@@ -760,7 +766,7 @@ fn execute_partition(
                     cts.push(v.clone());
                 }
                 DFGTaskInput::Compressed((t, c)) => {
-                    let decomp = SupportedFheCiphertexts::decompress(*t, c);
+                    let decomp = SupportedFheCiphertexts::decompress(*t, c, gpu_idx);
                     if let Ok(decomp) = decomp {
                         cts.push(decomp);
                     } else {
@@ -770,7 +776,7 @@ fn execute_partition(
                 }
             }
         }
-        let (node_index, result) = run_computation(opcode, cts, nidx.index());
+        let (node_index, result) = run_computation(opcode, cts, nidx.index(), gpu_idx);
         res.insert(node_index, result);
     }
     (Vec::from_iter(res), task_id)
@@ -780,6 +786,7 @@ fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
     graph_node_index: usize,
+    gpu_idx: usize,
 ) -> TaskResult {
     let op = FheOperation::try_from(operation);
     match op {
@@ -787,7 +794,7 @@ fn run_computation(
             let (ct_type, ct_bytes) = inputs[0].compress();
             (graph_node_index, Ok((inputs[0].clone(), ct_type, ct_bytes)))
         }
-        Ok(_) => match perform_fhe_operation(operation as i16, &inputs) {
+        Ok(_) => match perform_fhe_operation(operation as i16, &inputs, gpu_idx) {
             Ok(result) => {
                 let (ct_type, ct_bytes) = result.compress();
                 (graph_node_index, Ok((result, ct_type, ct_bytes)))
