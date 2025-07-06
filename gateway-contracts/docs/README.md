@@ -44,5 +44,3 @@ Collaborate with us to advance the FHE spaces and drive innovation together.
 <!-- markdown-link-check-enable -->
 
 ---
-
-We value your feedback! [Take a 5-question developer survey](http://zama.ai/developer-survey) to improve the fhevm Gateway and the documentation and help other developers use FHE.
