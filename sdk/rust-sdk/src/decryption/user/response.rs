@@ -7,7 +7,7 @@ use alloy::primitives::Address;
 use alloy::signers::Signature;
 use kms_grpc::kms::v1::{Eip712DomainMsg, TypedPlaintext};
 use kms_lib::client::js_api::{
-    new_client, process_user_decryption_resp, u8vec_to_cryptobox_pk, u8vec_to_cryptobox_sk,
+    new_client, new_server_id_addr, process_user_decryption_resp, u8vec_to_ml_kem_pke_pk, u8vec_to_ml_kem_pke_sk
 };
 use kms_lib::client::{CiphertextHandle, ParsedUserDecryptionRequest};
 use tracing::{debug, info};
@@ -211,10 +211,10 @@ impl ResponseProcessor {
         let responses = UserDecryptionDeserializer::json_to_responses(&json_response)?;
 
         // Convert keys for cryptobox
-        let crypto_pub_key = u8vec_to_cryptobox_pk(&public_key_bytes)
+        let crypto_pub_key = u8vec_to_ml_kem_pke_pk(&public_key_bytes)
             .map_err(|e| FhevmError::DecryptionError(format!("Invalid public key: {:?}", e)))?;
 
-        let crypto_priv_key = u8vec_to_cryptobox_sk(&private_key_bytes)
+        let crypto_priv_key = u8vec_to_ml_kem_pke_sk(&private_key_bytes)
             .map_err(|e| FhevmError::DecryptionError(format!("Invalid private key: {:?}", e)))?;
 
         // Process decryption
@@ -254,7 +254,15 @@ fn create_kms_client(
     kms_signers: &[String],
     user_address: &str,
 ) -> Result<kms_lib::client::Client> {
-    new_client(kms_signers.to_vec(), user_address, "default")
+    let kms_signers = kms_signers.iter()
+        .enumerate()
+        .map(|(i, s)| {
+            new_server_id_addr(i as u32, s.clone())
+                .map_err(|_| FhevmError::AddressError(s.clone()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    new_client(kms_signers, user_address, "default")
         .map_err(|_| FhevmError::DecryptionError("Failed to create KMS client".to_string()))
 }
 
