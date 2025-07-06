@@ -239,7 +239,7 @@ impl FhevmSdk {
             .gateway_contracts
             .decryption
             .unwrap_or_else(|| {
-                warn!("Input verification contract not set, using zero address");
+                warn!("Decryption contract not set, using zero address");
                 Address::ZERO
             });
 
