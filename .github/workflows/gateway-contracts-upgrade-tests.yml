@@ -142,6 +142,20 @@ jobs:
             --use-internal-proxy-address true \
             --verify-contract false
 
+      - name: Upgrade CiphertextCommits contract
+        working-directory: current-fhevm/gateway-contracts
+        env:
+          DOTENV_CONFIG_PATH: .env
+          HARDHAT_NETWORK: staging
+          CHAIN_ID_GATEWAY: 54321
+          RPC_URL: http://localhost:8546
+        run: |
+          npx hardhat task:upgradeCiphertextCommits \
+            --current-implementation previous-contracts/CiphertextCommits.sol:CiphertextCommits \
+            --new-implementation contracts/CiphertextCommits.sol:CiphertextCommits \
+            --use-internal-proxy-address true \
+            --verify-contract false
+
       - name: Clean up
         working-directory: previous-fhevm/gateway-contracts
         if: always()
