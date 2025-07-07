@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: {{ include "hostListenerName" . }}
   name: {{ include "hostListenerName" . }}
 spec:
-  replicas: {{ .Values.hostListener.replicas | default 1 }}
+  replicas: {{ .Values.hostListener.replicas }}
   selector:
     matchLabels:
       app: coprocessor-host-listener
