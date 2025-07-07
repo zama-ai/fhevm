@@ -3,6 +3,7 @@ use std::fmt::Display;
 use crate::types::{
     GatewayEvent, KmsGrpcResponse,
     fhe::{abi_encode_plaintexts, fhe_type_to_string},
+    grpc::KmsGrpcResponseKind,
 };
 use alloy::primitives::U256;
 use anyhow::anyhow;
@@ -27,15 +28,13 @@ pub enum KmsResponse {
 impl KmsResponse {
     /// Processes a KMS GRPC response into a `KmsResponse` enum.
     pub fn process(response: KmsGrpcResponse) -> anyhow::Result<Self> {
-        match response {
-            KmsGrpcResponse::PublicDecryption {
-                decryption_id,
-                grpc_response,
-            } => Self::process_public_decryption(decryption_id, grpc_response),
-            KmsGrpcResponse::UserDecryption {
-                decryption_id,
-                grpc_response,
-            } => Self::process_user_decryption(decryption_id, grpc_response),
+        match response.kind {
+            KmsGrpcResponseKind::PublicDecryption(grpc_response) => {
+                Self::process_public_decryption(response.id, grpc_response)
+            }
+            KmsGrpcResponseKind::UserDecryption(grpc_response) => {
+                Self::process_user_decryption(response.id, grpc_response)
+            }
         }
     }
 
@@ -127,7 +126,7 @@ impl KmsResponse {
 
     /// Sets the `under_process` field of the event associated to this response as `FALSE` in the
     /// database.
-    pub async fn free_associated_event(&self, db: &Pool<Postgres>) {
+    pub async fn mark_associated_event_as_pending(&self, db: &Pool<Postgres>) {
         match self {
             KmsResponse::PublicDecryption { decryption_id, .. } => {
                 GatewayEvent::mark_public_decryption_as_pending(db, *decryption_id).await

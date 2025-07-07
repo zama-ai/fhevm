@@ -3,32 +3,34 @@ use connector_tests::{
     rand::{rand_signature, rand_u256},
     setup::test_instance_with_db_only,
 };
-use connector_utils::types::{KmsGrpcResponse, KmsResponse};
+use connector_utils::types::{KmsGrpcResponse, KmsGrpcResponseKind, KmsResponse};
 use kms_grpc::kms::v1::{
     PublicDecryptionResponse, PublicDecryptionResponsePayload, UserDecryptionResponse,
     UserDecryptionResponsePayload,
 };
-use kms_worker::core::{DbKmsResponsePublisher, KmsResponsePublisher};
+use kms_worker::core::KmsResponsePublisher;
 use sqlx::Row;
+use tokio::sync::mpsc;
 
 #[tokio::test]
 async fn test_publish_public_decryption_response() -> anyhow::Result<()> {
     let test_instance = test_instance_with_db_only().await?;
 
-    let publisher = DbKmsResponsePublisher::new(test_instance.db.clone());
+    let (_sender, receiver) = mpsc::channel(1);
+    let publisher = KmsResponsePublisher::new(test_instance.db.clone(), receiver);
 
     println!("Mocking PublicDecryptionResponse from KMS Core...");
     let rand_decryption_id = rand_u256();
     let rand_signature = rand_signature();
-    let grpc_response = KmsGrpcResponse::PublicDecryption {
-        decryption_id: rand_decryption_id,
-        grpc_response: PublicDecryptionResponse {
+    let grpc_response = KmsGrpcResponse {
+        id: rand_decryption_id,
+        kind: KmsGrpcResponseKind::PublicDecryption(PublicDecryptionResponse {
             signature: rand_signature.clone(),
             payload: Some(PublicDecryptionResponsePayload {
                 external_signature: Some(rand_signature.clone()),
                 ..Default::default()
             }),
-        },
+        }),
     };
     let response = KmsResponse::process(grpc_response)?;
 
@@ -54,18 +56,19 @@ async fn test_publish_public_decryption_response() -> anyhow::Result<()> {
 async fn test_publish_user_decryption_response() -> anyhow::Result<()> {
     let test_instance = test_instance_with_db_only().await?;
 
-    let publisher = DbKmsResponsePublisher::new(test_instance.db.clone());
+    let (_sender, receiver) = mpsc::channel(1);
+    let publisher = KmsResponsePublisher::new(test_instance.db.clone(), receiver);
 
     println!("Mocking UserDecryptionResponse from KMS Core...");
     let rand_decryption_id = rand_u256();
     let rand_signature = rand_signature();
-    let grpc_response = KmsGrpcResponse::UserDecryption {
-        decryption_id: rand_decryption_id,
-        grpc_response: UserDecryptionResponse {
+    let grpc_response = KmsGrpcResponse {
+        id: rand_decryption_id,
+        kind: KmsGrpcResponseKind::UserDecryption(UserDecryptionResponse {
             signature: rand_signature.clone(),
             external_signature: rand_signature.clone(),
             payload: Some(UserDecryptionResponsePayload::default()),
-        },
+        }),
     };
     let response = KmsResponse::process(grpc_response)?;
 

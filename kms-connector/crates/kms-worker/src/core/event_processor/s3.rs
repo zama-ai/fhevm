@@ -108,10 +108,7 @@ where
     }
 
     /// Prefetches and caches S3 bucket URLs to return a list of coprocessor s3 urls.
-    async fn prefetch_coprocessor_buckets(
-        &self,
-        coprocessor_addresses: Vec<Address>,
-    ) -> Vec<String> {
+    async fn prefetch_coprocessor_buckets(&self, coprocessor_addresses: &[Address]) -> Vec<String> {
         info!(
             "S3 PREFETCH START: Prefetching S3 bucket URLs for {} coprocessors",
             coprocessor_addresses.len()
@@ -217,18 +214,18 @@ where
     /// Helper method to retrieve ciphertext materials from S3.
     pub async fn retrieve_sns_ciphertext_materials(
         &self,
-        sns_materials: Vec<SnsCiphertextMaterial>,
+        sns_materials: &[SnsCiphertextMaterial],
     ) -> Vec<(Vec<u8>, Vec<u8>)> {
         let mut sns_ciphertext_materials = Vec::new();
 
-        for sns_material in sns_materials {
+        for sns_material in sns_materials.iter() {
             // Get S3 URL and retrieve ciphertext
             // 1. For each SNS material, we try to retrieve its ciphertext from multiple possible S3 URLs
             //    1.1. We try to fetch the ciphertext for `self.s3_ct_retrieval_retries` times for each S3 URL
             // 2. Once we successfully retrieve a ciphertext from any of those URLs, we break out of the S3 URLs loop
             // 3. Then we continue processing the next SNS material in the outer loop
             let s3_urls = self
-                .prefetch_coprocessor_buckets(sns_material.coprocessorTxSenderAddresses)
+                .prefetch_coprocessor_buckets(&sns_material.coprocessorTxSenderAddresses)
                 .await;
 
             let ct_digest = sns_material.snsCiphertextDigest.as_slice();

@@ -55,7 +55,7 @@ where
     pub async fn prepare_decryption_request(
         &self,
         decryption_id: U256,
-        sns_materials: Vec<SnsCiphertextMaterial>,
+        sns_materials: &[SnsCiphertextMaterial],
         user_decrypt_data: Option<UserDecryptionExtraData>,
     ) -> anyhow::Result<KmsGrpcRequest> {
         let decryption_type = if user_decrypt_data.is_some() {
@@ -128,7 +128,7 @@ where
         &self,
         decryption_id: U256,
         key_id: &str,
-        sns_materials: Vec<SnsCiphertextMaterial>,
+        sns_materials: &[SnsCiphertextMaterial],
     ) -> anyhow::Result<Vec<TypedCiphertext>> {
         // Retrieve ciphertext materials from S3
         let sns_ciphertext_materials = self
