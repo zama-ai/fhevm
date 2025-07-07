@@ -93,23 +93,35 @@ jobs:
           {
             echo "GATEWAY_VERSION=${{ github.ref_name }}"
             echo "HOST_VERSION=${{ github.ref_name }}"
-            echo "COPROCESSOR_VERSION=${{ github.ref_name }}"
             echo "DB_MIGRATION_VERSION=${{ github.ref_name }}"
             echo "CONNECTOR_VERSION=${{ github.ref_name }}"
             echo "TEST_SUITE_VERSION=${{ github.ref_name }}"
+            echo "HOST_LISTENER_VERSION=${{ github.ref_name }}"
+            echo "GW_LISTENER_VERSION=${{ github.ref_name }}"
+            echo "TX_SENDER_VERSION=${{ github.ref_name }}"
+            echo "TFHE_WORKER_VERSION=${{ github.ref_name }}"
+            echo "SNS_WORKER_VERSION=${{ github.ref_name }}"
+            echo "ZKPROOF_WORKER_VERSION=${{ github.ref_name }}"
           } >> "$GITHUB_ENV"
 
+      # Github does not support more than 10 inputs in a workflow dispatch so we expose all
+      # coprocessor components under the same coprocessor version input
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         env:
           GATEWAY_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.gateway_version || env.GATEWAY_VERSION }}
           HOST_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.host_version || env.HOST_VERSION }}
-          COPROCESSOR_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.coprocessor_version || env.COPROCESSOR_VERSION }}
           DB_MIGRATION_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.db_migration_version || env.DB_MIGRATION_VERSION }}
           CONNECTOR_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_VERSION }}
           TEST_SUITE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.test_suite_version || env.TEST_SUITE_VERSION }}
           CORE_VERSION: ${{ inputs.core_version }}
           RELAYER_VERSION: ${{ inputs.relayer_version }}
+          HOST_LISTENER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.coprocessor_version || env.HOST_LISTENER_VERSION }}
+          GW_LISTENER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.coprocessor_version || env.GW_LISTENER_VERSION }}
+          TX_SENDER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.coprocessor_version || env.TX_SENDER_VERSION }}
+          TFHE_WORKER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.coprocessor_version || env.TFHE_WORKER_VERSION }}
+          SNS_WORKER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.coprocessor_version || env.SNS_WORKER_VERSION }}
+          ZKPROOF_WORKER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.coprocessor_version || env.ZKPROOF_WORKER_VERSION }}
         run: |
           ./fhevm-cli deploy
 
