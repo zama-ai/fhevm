@@ -70,9 +70,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     website: getRequiredEnvVar("PROTOCOL_WEBSITE"),
   };
 
-  // Parse the pauser address
-  const pauserAddress = getRequiredEnvVar(`PAUSER_ADDRESS`);
-
   // Parse the MPC threshold
   const mpcThreshold = getRequiredEnvVar("MPC_THRESHOLD");
 
@@ -113,7 +110,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     });
   }
 
-  console.log("Pauser address:", pauserAddress);
   console.log("Protocol metadata:", protocolMetadata);
   console.log("MPC threshold:", mpcThreshold);
   console.log("Public decryption threshold:", publicDecryptionThreshold);
@@ -123,7 +119,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   console.log("Custodians:", custodians);
 
   await deployContractImplementation("GatewayConfig", hre, [
-    pauserAddress,
     protocolMetadata,
     mpcThreshold,
     publicDecryptionThreshold,
@@ -165,10 +160,61 @@ task("task:deployDecryption").setAction(async function (_, hre) {
   await deployContractImplementation("Decryption", hre);
 });
 
+task("task:deploySafeSmartAccounts").setAction(async function (_, { ethers, run }) {
+  await run("compile:specific", { contract: "contracts/safeModules" });
+
+  // Get a deployer wallet
+  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+  const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+
+  const safeFactory = await ethers.getContractFactory("Safe", deployer);
+  const masterCopy = await safeFactory.deploy();
+
+  console.log("Deploy Safe Smart Account contracts:");
+
+  // Deploy a new SafeProxyFactory contract
+  const safeProxyFactoryFactory = await ethers.getContractFactory("SafeProxyFactory", deployer);
+  const safeProxyFactory = await safeProxyFactoryFactory.deploy();
+
+  // Setup the Safe, Step 1, generate transaction data
+  const safeData = masterCopy.interface.encodeFunctionData("setup", [
+    [await deployer.getAddress()], // Owners
+    1, // Threshold
+    ethers.ZeroAddress,
+    "0x",
+    ethers.ZeroAddress,
+    ethers.ZeroAddress,
+    0,
+    ethers.ZeroAddress,
+  ]);
+
+  // Read the safe address by executing the static call to createProxyWithNonce function
+  const safeAddress = await safeProxyFactory.createProxyWithNonce.staticCall(
+    await masterCopy.getAddress(),
+    safeData,
+    0n,
+  );
+
+  if (safeAddress === ethers.ZeroAddress) {
+    throw new Error("Safe address not found");
+  }
+
+  // Setup the Safe, Step 2, execute the transaction
+  await safeProxyFactory.createProxyWithNonce(await masterCopy.getAddress(), safeData, 0n);
+
+  await run("task:setContractAddress", {
+    name: "CircuitBreakerSafeAccount",
+    address: safeAddress,
+  });
+});
+
 // Deploy all the contracts
 task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   // Deploy the EmptyUUPS proxy contracts
   await hre.run("task:deployEmptyUUPSProxies");
+
+  // Deploy the Safe Smart Account contracts
+  await hre.run("task:deploySafeSmartAccounts");
 
   // Compile the implementation contracts
   // The deployEmptyUUPSProxies task has generated the contracts' addresses in `addresses/*.sol`.

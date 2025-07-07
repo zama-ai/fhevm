@@ -153,6 +153,13 @@ export async function loadTestVariablesFixture() {
   const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
   const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
 
+  // Load the Safe Smart Account
+  const parsedEnvCircuitBreakerAccount = dotenv.parse(fs.readFileSync("addresses/.env.circuit_breaker_safe_account"));
+  const circuitBreakerSafeAccount = await hre.ethers.getContractAt(
+    "Safe",
+    parsedEnvCircuitBreakerAccount.CIRCUIT_BREAKER_SAFE_ACCOUNT_ADDRESS,
+  );
+
   return {
     ...fixtureData,
     gatewayConfig,
@@ -161,6 +168,7 @@ export async function loadTestVariablesFixture() {
     multichainAcl,
     decryption,
     inputVerification,
+    circuitBreakerSafeAccount,
     chainIds,
     nKmsNodes,
     nCoprocessors,

@@ -319,3 +319,46 @@ export async function getSignaturesUserDecryptResponse(
     ),
   );
 }
+
+// Create an EIP712 message for a pause contract call.
+export function createEIP712PauseContract(
+  chainId: number,
+  verifyingContract: string,
+  contractAddress: string,
+  signer: string,
+  nonce: number,
+  deadline: number,
+): EIP712 {
+  if (!ethers.isAddress(verifyingContract)) {
+    throw new Error("Invalid verifying contract address.");
+  }
+  return {
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      PauseContract: [
+        { name: "contractAddress", type: "address" },
+        { name: "signer", type: "address" },
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint256" },
+      ],
+    },
+    primaryType: "PauseContract",
+    domain: {
+      name: "CircuitBreaker",
+      version: "1",
+      chainId,
+      verifyingContract,
+    },
+    message: {
+      contractAddress,
+      signer,
+      nonce,
+      deadline,
+    },
+  };
+}

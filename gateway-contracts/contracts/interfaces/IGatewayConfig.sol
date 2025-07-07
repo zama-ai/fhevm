@@ -21,7 +21,6 @@ import "../shared/Structs.sol";
 interface IGatewayConfig {
     /**
      * @notice Emitted when the GatewayConfig initialization is completed.
-     * @param pauser Pauser address.
      * @param metadata Metadata of the protocol.
      * @param mpcThreshold The MPC threshold.
      * @param kmsNodes List of KMS nodes.
@@ -29,7 +28,6 @@ interface IGatewayConfig {
      * @param custodians List of custodians.
      */
     event InitializeGatewayConfig(
-        address pauser,
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes,
