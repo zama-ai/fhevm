@@ -34,12 +34,12 @@ contract CiphertextCommits is
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "CiphertextCommits";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.CiphertextCommits
@@ -62,7 +62,7 @@ contract CiphertextCommits is
         mapping(bytes32 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAdded)) 
             _alreadyAddedCoprocessorTxSenders;
         /// @notice The mapping of the coprocessor transaction senders that have added the ciphertext.
-        mapping(bytes32 ctHandle => address[] coprocessorTxSenderAddresses) _coprocessorTxSenderAddresses;
+        mapping(bytes32 addCiphertextHash => address[] coprocessorTxSenderAddresses) _coprocessorTxSenderAddresses;
         mapping(bytes32 ctHandle => bytes32 addCiphertextHash) _ctHandleConsensusHash;
     }
 
@@ -86,6 +86,11 @@ contract CiphertextCommits is
         __Ownable_init(owner());
         __Pausable_init();
     }
+
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @notice See {ICiphertextCommits-addCiphertextMaterial}.
     /// @dev This function calls the GatewayConfig contract to check that the sender address is a Coprocessor.
@@ -153,7 +158,7 @@ contract CiphertextCommits is
             // As explained above, a "late" valid coprocessor could still see its transaction sender
             // address be added to the list after consensus. This var is here to make the
             // `getCiphertextMaterials` and `getSneCiphertextMaterials` methods retrieve this list
-            // mor easily
+            // more easily
             $._ctHandleConsensusHash[ctHandle] = addCiphertextHash;
 
             emit AddCiphertextMaterial(
