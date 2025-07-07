@@ -1,20 +1,18 @@
-use alloy_provider::fillers::{
+use alloy::primitives::Address;
+use alloy::providers::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
     NonceFiller,
 };
+use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
+use alloy::pubsub::SubscriptionStream;
+use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
+use alloy::sol_types::SolEventInterface;
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
 use std::collections::VecDeque;
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{error, info, warn, Level};
-
-use alloy::primitives::Address;
-use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
-use alloy::pubsub::SubscriptionStream;
-use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
-
-use alloy_sol_types::SolEventInterface;
 
 use clap::Parser;
 
