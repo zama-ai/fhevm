@@ -1,4 +1,4 @@
-name: gateway-contracts-deployment-tests
+name: gateway-contracts-upgrade-tests
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   check-changes:
-    name: gateway-contracts-deployment-tests/check-changes
+    name: gateway-contracts-upgrade-tests/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -26,20 +26,26 @@ jobs:
         with:
           filters: |
             gw-contracts:
-              - .github/workflows/gateway-contracts-deployment-tests.yml
+              - .github/workflows/gateway-contracts-upgrade-tests.yml
               - gateway-contracts/**
-  sc-deploy:
-    name: gateway-contracts-deployment-tests/sc-deploy (bpr)
+  sc-upgrade:
+    name: gateway-contracts-upgrade-tests/sc-upgrade (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout previous release code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          # This version should be updated whenever we release new contract versions or
+          # touch a contract upgrade path.
+          ref: v0.7.4
+          path: previous-fhevm
           persist-credentials: 'false'
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
       - name: Login to Docker Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
@@ -47,14 +53,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and start Docker services
-        working-directory: gateway-contracts
+      - name: Build and start Docker services from previous release
+        working-directory: previous-fhevm/gateway-contracts
         run: |
           make docker-compose-build
           make docker-compose-up
 
-      - name: Check smart contract deployment
-        working-directory: gateway-contracts
+      - name: Check smart contract deployment from previous release
+        working-directory: previous-fhevm/gateway-contracts
         run: |
 
           ## Check Contracts Deployment
@@ -89,8 +95,55 @@ jobs:
             echo "Host chain registration completed successfully with expected completion message"
           fi
 
+      - name: Checkout current code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+          path: current-fhevm
+
+      - name: Install dependencies
+        working-directory: current-fhevm/gateway-contracts
+        run: npm ci
+
+      # Executing task:deployEmptyUUPSProxies is required to generate the proxy contract addresses, which are then used
+      # for compiling the current and new implementations during the upgrade task.
+      - name: Prepare and copy previous contract into current directory
+        working-directory: current-fhevm/gateway-contracts
+        run: |
+          cp .env.example .env
+          cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
+          npx hardhat task:deployEmptyUUPSProxies
+
+      - name: Upgrade GatewayConfig contract
+        working-directory: current-fhevm/gateway-contracts
+        env:
+          DOTENV_CONFIG_PATH: .env
+          HARDHAT_NETWORK: staging
+          CHAIN_ID_GATEWAY: 54321
+          RPC_URL: http://localhost:8546
+        run: |
+          npx hardhat task:upgradeGatewayConfig \
+            --current-implementation previous-contracts/GatewayConfig.sol:GatewayConfig \
+            --new-implementation contracts/GatewayConfig.sol:GatewayConfig \
+            --use-internal-proxy-address true \
+            --verify-contract false
+
+      - name: Upgrade Decryption contract
+        working-directory: current-fhevm/gateway-contracts
+        env:
+          DOTENV_CONFIG_PATH: .env
+          HARDHAT_NETWORK: staging
+          CHAIN_ID_GATEWAY: 54321
+          RPC_URL: http://localhost:8546
+        run: |
+          npx hardhat task:upgradeDecryption \
+            --current-implementation previous-contracts/Decryption.sol:Decryption \
+            --new-implementation contracts/Decryption.sol:Decryption \
+            --use-internal-proxy-address true \
+            --verify-contract false
+
       - name: Clean up
-        working-directory: gateway-contracts
+        working-directory: previous-fhevm/gateway-contracts
         if: always()
         run: |
           make docker-compose-down

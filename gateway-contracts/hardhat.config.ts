@@ -10,6 +10,7 @@ import { resolve } from "path";
 
 import "./tasks/accounts";
 import "./tasks/addHostChains";
+import "./tasks/blockExplorerVerify";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
