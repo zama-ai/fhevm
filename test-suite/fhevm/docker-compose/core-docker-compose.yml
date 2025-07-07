@@ -13,8 +13,9 @@ services:
         export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key)
         export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key)
         echo '=================GENERATING SIGNING KEYS================='
-        kms-gen-keys --pub-url "$$KMS_CORE__PUBLIC_VAULT__STORAGE" --aws-s3-endpoint "$$S3_ENDPOINT" --aws-region "$$S3_REGION" --priv-url "$$KMS_CORE__PRIVATE_VAULT__STORAGE" --cmd signing-keys centralized
+        kms-gen-keys --public-storage s3 --public-s3-bucket "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET" --aws-s3-endpoint "$$S3_ENDPOINT" --aws-region "$$S3_REGION" --private-file-path "$$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH" --cmd signing-keys centralized
         echo '=================STARTING KMS SERVICE================='
+        # note that ENV vars in `.env.core.local` will override settings in `config.toml`!
         kms-server --config-file config/config.toml
     volumes:
       - fhevm_minio_secrets:/minio_secrets
