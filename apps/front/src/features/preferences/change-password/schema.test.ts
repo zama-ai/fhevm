@@ -23,7 +23,7 @@ describe('ChangePasswordSchema', () => {
     test('should contain a least a lowercase character', () => {
       const object = {
         oldPassword: faker.internet.password(),
-        newPassword: faker.internet.password({ length: 8 }).toUpperCase(),
+        newPassword: `${faker.internet.password({ length: 7 }).toUpperCase()}$`,
         repeatPassword: faker.internet.password(),
       } satisfies ChangePasswordValues
 
@@ -37,10 +37,12 @@ describe('ChangePasswordSchema', () => {
     })
 
     test('should contain a least an uppercase character', () => {
+      const password = `@${faker.internet.password({ length: 7 }).toLowerCase()}`
       const object = {
         oldPassword: faker.internet.password(),
-        newPassword: faker.internet.password({ length: 8 }).toLowerCase(),
-        repeatPassword: faker.internet.password(),
+        // ensure at least a lowercase and a special char
+        newPassword: password,
+        repeatPassword: password,
       } satisfies ChangePasswordValues
 
       const parsed = ChangePasswordSchema.safeParse(object)
@@ -53,10 +55,13 @@ describe('ChangePasswordSchema', () => {
     })
 
     test('should contain a least a special character', () => {
+      // Ensure the new password to contains at least a lowercase and an uppercase
+      // chars.
+      const password = `aA${faker.string.alphanumeric({ length: 6 })}`
       const object = {
         oldPassword: faker.internet.password(),
-        newPassword: faker.string.alphanumeric({ length: 8 }),
-        repeatPassword: faker.internet.password(),
+        newPassword: password,
+        repeatPassword: password,
       } satisfies ChangePasswordValues
 
       const parsed = ChangePasswordSchema.safeParse(object)
@@ -73,7 +78,7 @@ describe('ChangePasswordSchema', () => {
     test('should match newPassword', () => {
       const object = {
         oldPassword: faker.internet.password(),
-        newPassword: faker.internet.password(),
+        newPassword: `aB${faker.internet.password()}$`,
         repeatPassword: faker.internet.password(),
       } satisfies ChangePasswordValues
 
@@ -90,7 +95,7 @@ describe('ChangePasswordSchema', () => {
   })
 
   test('should be valid', () => {
-    const password = faker.internet.password() + '!@#$'
+    const password = `aA${faker.string.alphanumeric({ length: 10 })}$!`
     const object = {
       oldPassword: faker.internet.password(),
       newPassword: password,
