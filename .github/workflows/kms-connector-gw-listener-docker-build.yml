@@ -41,8 +41,8 @@ jobs:
     name: kms-connector-gw-listener-docker-build/build
     needs: check-changes
     if: >-
-      (startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/main') ||
-      (${{ needs.check-changes.outputs.changes-kms-connector-gw-listener == 'true' }})
+      ${{ needs.check-changes.outputs.changes-kms-connector-gw-listener == 'true' ||
+      (startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/main') }}
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6323a1e8e260961562b66a9f33a608f86cd6c831
     secrets:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
