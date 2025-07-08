@@ -1,38 +1,50 @@
 name: test-suite-e2e-tests
 
+# Github does not support more than 10 inputs for workflow_dispatch:
+# https://docs.github.com/en/actions/reference/events-that-trigger-workflows#providing-inputs
+# Core, relayer and test-suite will use the default versions defined in the `fhevm-cli` script
 on:
   workflow_dispatch:
     inputs:
-      gateway_version:
-        description: "Gateway Image Version"
-        default: ""
-        type: string
-      host_version:
-        description: "Host Image Version"
-        default: ""
-        type: string
-      coprocessor_version:
-        description: "Coprocessor Image Version"
+      connector_version:
+        description: "Connector Version"
         default: ""
         type: string
       db_migration_version:
         description: "Coprocessor DB Migration Image Version"
         default: ""
         type: string
-      connector_version:
-        description: "Connector Version"
+      host_version:
+        description: "Host Image Version"
         default: ""
         type: string
-      test_suite_version:
-        description: "Test Suite E2E Image Version"
+      gateway_version:
+        description: "Gateway Image Version"
+        required: false
         default: ""
         type: string
-      core_version:
-        description: "KMS Core Version"
+      host_listener_version:
+        description: "Host Listener Image Version"
         default: ""
         type: string
-      relayer_version:
-        description: "Relayer Image Version"
+      gateway_listener_version:
+        description: "Gateway Listener Image Version"
+        default: ""
+        type: string
+      tx_sender_version:
+        description: "Transaction Sender Image Version"
+        default: ""
+        type: string
+      tfhe_worker_version:
+        description: "TFHE Worker Image Version"
+        default: ""
+        type: string
+      sns_worker_version:
+        description: "SNS Worker Image Version"
+        default: ""
+        type: string
+      zkproof_worker_version:
+        description: "ZKProof Worker Image Version"
         default: ""
         type: string
   pull_request:
@@ -91,25 +103,31 @@ jobs:
         if: github.event_name == 'release'
         run: |
           {
+            echo "CONNECTOR_VERSION=${{ github.ref_name }}"
+            echo "DB_MIGRATION_VERSION=${{ github.ref_name }}"
             echo "GATEWAY_VERSION=${{ github.ref_name }}"
             echo "HOST_VERSION=${{ github.ref_name }}"
-            echo "COPROCESSOR_VERSION=${{ github.ref_name }}"
-            echo "DB_MIGRATION_VERSION=${{ github.ref_name }}"
-            echo "CONNECTOR_VERSION=${{ github.ref_name }}"
-            echo "TEST_SUITE_VERSION=${{ github.ref_name }}"
+            echo "HOST_LISTENER_VERSION=${{ github.ref_name }}"
+            echo "GW_LISTENER_VERSION=${{ github.ref_name }}"
+            echo "TX_SENDER_VERSION=${{ github.ref_name }}"
+            echo "TFHE_WORKER_VERSION=${{ github.ref_name }}"
+            echo "SNS_WORKER_VERSION=${{ github.ref_name }}"
+            echo "ZKPROOF_WORKER_VERSION=${{ github.ref_name }}"
           } >> "$GITHUB_ENV"
 
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         env:
+          CONNECTOR_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_VERSION }}
+          DB_MIGRATION_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.db_migration_version || env.DB_MIGRATION_VERSION }}
           GATEWAY_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.gateway_version || env.GATEWAY_VERSION }}
           HOST_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.host_version || env.HOST_VERSION }}
-          COPROCESSOR_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.coprocessor_version || env.COPROCESSOR_VERSION }}
-          DB_MIGRATION_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.db_migration_version || env.DB_MIGRATION_VERSION }}
-          CONNECTOR_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_VERSION }}
-          TEST_SUITE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.test_suite_version || env.TEST_SUITE_VERSION }}
-          CORE_VERSION: ${{ inputs.core_version }}
-          RELAYER_VERSION: ${{ inputs.relayer_version }}
+          HOST_LISTENER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.host_listener_version || env.HOST_LISTENER_VERSION }}
+          GW_LISTENER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.gateway_listener_version || env.GW_LISTENER_VERSION }}
+          TX_SENDER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.tx_sender_version || env.TX_SENDER_VERSION }}
+          TFHE_WORKER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.tfhe_worker_version || env.TFHE_WORKER_VERSION }}
+          SNS_WORKER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.sns_worker_version || env.SNS_WORKER_VERSION }}
+          ZKPROOF_WORKER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.zkproof_worker_version || env.ZKPROOF_WORKER_VERSION }}
         run: |
           ./fhevm-cli deploy
 

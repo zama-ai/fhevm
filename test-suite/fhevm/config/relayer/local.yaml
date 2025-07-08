@@ -3,8 +3,8 @@ environment: development
 http_endpoint: "0.0.0.0:3000"
 
 transaction:
-  private_key_fhevm_env: FHEVM_PRIVATE_KEY
-  private_key_gateway_env: GATEWAY_PRIVATE_KEY
+  private_key_fhevm: FHEVM_PRIVATE_KEY
+  private_key_gateway: GATEWAY_PRIVATE_KEY
   gas_limit: 150000
   max_priority_fee: 2000000000
   timeout_secs: 60
