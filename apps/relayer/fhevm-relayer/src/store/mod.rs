@@ -7,6 +7,8 @@
 // Export the store components and traits
 mod event;
 pub mod key_value_db;
+mod pub_decrypt_cache;
 
 // Re-export EventStore interface easier access
 pub use event::EventStore;
+pub use pub_decrypt_cache::PublicDecryptCacheStore;

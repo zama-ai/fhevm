@@ -384,7 +384,7 @@ pub struct RequestValidity {
     pub duration_days: U256,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PublicDecryptResponse {
     pub gateway_request_id: U256,
     pub decrypted_value: Bytes,
