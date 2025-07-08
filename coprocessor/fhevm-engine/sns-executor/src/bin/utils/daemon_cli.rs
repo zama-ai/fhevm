@@ -95,6 +95,12 @@ pub struct Args {
     /// and will be restarted by the orchestrator
     #[arg(long, default_value = "70s", value_parser = parse_duration)]
     pub liveness_threshold: Duration,
+
+    /// LIFO (Last In, First Out) processing
+    /// If true, the worker will process the most recent tasks
+    /// if false, default FIFO (First In, First Out) processing is used
+    #[arg(long, default_value_t = false)]
+    pub lifo: bool,
 }
 
 pub fn parse_args() -> Args {
