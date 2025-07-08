@@ -7,10 +7,9 @@ use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use tracing::Level;
 
+use alloy::providers::{Provider, ProviderBuilder, WalletProvider, WsConnect};
+use alloy::rpc::types::TransactionRequest;
 use alloy_primitives::U256;
-use alloy_provider::{Provider, ProviderBuilder, WalletProvider, WsConnect};
-
-use alloy_rpc_types::TransactionRequest;
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 
@@ -47,9 +46,9 @@ async fn emit_events<P, N>(
     tfhe_contract: FHEVMExecutorTestInstance<P, N>,
     acl_contract: ACLTestInstance<P, N>,
 ) where
-    P: Clone + alloy_provider::Provider<N> + 'static,
+    P: Clone + alloy::providers::Provider<N> + 'static,
     N: Clone
-        + alloy_provider::Network<TransactionRequest = TransactionRequest>
+        + alloy::providers::Network<TransactionRequest = TransactionRequest>
         + 'static,
 {
     let mut providers = vec![];

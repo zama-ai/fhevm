@@ -27,4 +27,5 @@ foundry-compilers = { workspace = true }
 semver = { workspace = true }
 
 [dev-dependencies]
+alloy = { workspace = true, features = ["node-bindings"] }
 serial_test = { workspace = true }
