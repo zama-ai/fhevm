@@ -23,7 +23,7 @@ RUN --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
     <<EOF
 set -e
 
-apt-get update && apt-get install libssl-dev libpq-dev libsqlite3-dev ca-certificates gettext git musl-dev pkg-config -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
+apt-get update && apt-get install build-essential libclang-dev libssl-dev libpq-dev libsqlite3-dev ca-certificates gettext git musl-dev pkg-config -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 ls -R && cargo build --locked --release
 cp ./target/release/$APP_NAME /bin/server
 EOF
