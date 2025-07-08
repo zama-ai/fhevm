@@ -48,6 +48,7 @@ aws-sdk-sqs = { version = "1" }
 rustls = { version = "0.23", features = [
   "aws-lc-rs",
 ], default-features = false } #, features = ["ring", "aws-lc-rs", "std", "tls12"]
+rocksdb = "0.23.0"
 
 
 [dev-dependencies]
@@ -55,3 +56,4 @@ ctor = { version = "0.4" }
 alloy-provider = { version = "1.0.3", features = ["anvil-node"] }
 nix = { version = "0.30.1", features = ["process", "signal"] }
 aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
+tempfile = "3.10.1"

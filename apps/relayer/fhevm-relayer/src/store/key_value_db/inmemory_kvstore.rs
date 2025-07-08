@@ -13,6 +13,7 @@ pub struct InMemoryKVStore {
 }
 
 impl InMemoryKVStore {
+    /// Initialize a new in-memory key value store instance.
     pub fn new() -> Self {
         Self {
             data: DashMap::new(),
