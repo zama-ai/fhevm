@@ -5,16 +5,13 @@ ARG RUST_IMAGE_VERSION=1.87.0
 
 ## Multistage build to reduce image size
 # First stage sets up basic Rust build environment
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS base
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 # The profile used to run `cargo build`
 ARG LTO_RELEASE=release
 
 # Use root user for build stage
 USER root
-
-RUN cargo install sccache --version ^0.7
-ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
@@ -47,9 +44,9 @@ RUN chown -R fhevm:fhevm /app/kms-connector
 # Final runtime stage for the three sub-components
 FROM cgr.dev/chainguard/glibc-dynamic:latest AS prod
 
-COPY --from=base /etc/group /etc/group
-COPY --from=base /etc/passwd /etc/passwd
-COPY --from=base --chown=fhevm:fhevm /app/kms-connector/target/release/kms-worker /app/kms-connector/bin/
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /app/kms-connector/target/release/kms-worker /app/kms-connector/bin/kms-worker
 
 USER fhevm:fhevm
 

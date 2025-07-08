@@ -1,34 +1,15 @@
 services:
-  kms-connector-db:
-    container_name: kms-connector-db
-    image: postgres:17.5
-    restart: always
-    env_file:
-      - ../env/staging/.env.connector.local
-    ports:
-      - '5431:5432'
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    volumes:
-      - kms-connector-db:/var/lib/postgresql/data
-
   kms-connector-db-migration:
     container_name: kms-connector-db-migration
     build:
-      context: ../../../kms-connector
-      dockerfile: connector-db/Dockerfile
+      context: ../../..
+      dockerfile: kms-connector/connector-db/Dockerfile
     env_file:
       - ../env/staging/.env.connector.local
-    depends_on:
-      kms-connector-db:
-        condition: service_healthy
 
   kms-connector-gw-listener:
     container_name: kms-connector-gw-listener
-    image: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener:${CONNECTOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener:${CONNECTOR_GW_LISTENER_VERSION}
     build:
       context: ../../..
       dockerfile: kms-connector/crates/gw-listener/Dockerfile
@@ -44,7 +25,7 @@ services:
 
   kms-connector-kms-worker:
     container_name: kms-connector-kms-worker
-    image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:${CONNECTOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:${CONNECTOR_KMS_WORKER_VERSION}
     build:
       context: ../../..
       dockerfile: kms-connector/crates/kms-worker/Dockerfile
@@ -60,7 +41,7 @@ services:
 
   kms-connector-tx-sender:
     container_name: kms-connector-tx-sender
-    image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:${CONNECTOR_VERSION}
+    image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:${CONNECTOR_TX_SENDER_VERSION}
     build:
       context: ../../..
       dockerfile: kms-connector/crates/tx-sender/Dockerfile

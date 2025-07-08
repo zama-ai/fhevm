@@ -19,8 +19,8 @@ services:
   kms-connector-db-migration:
     container_name: kms-connector-db-migration
     build:
-      context: ..
-      dockerfile: connector-db/Dockerfile
+      context: ../..
+      dockerfile: kms-connector/connector-db/Dockerfile
     environment:
       DATABASE_URL: postgresql://postgres:postgres@kms-connector-db:5432/kms-connector
     depends_on:
