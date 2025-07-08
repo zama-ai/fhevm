@@ -26,7 +26,7 @@ jobs:
           filters: |
             charts:
               - '.github/workflows/charts-helm-checks.yml'
-              - 'charts/**'
+              - 'ccharts/**/Chart.yaml'
   lint:
     name: charts-helm-checks/lint
     needs: check-changes
@@ -41,7 +41,7 @@ jobs:
       - name: Lint
         uses: WyriHaximus/github-action-helm3@fc4ba26e75cf5d08182c6ce3b72623c8bfd7272b # v3.1.0
         with:
-          exec: helm lint charts/*
+          exec: helm lint charts/charts/*
   test:
     name: charts-helm-checks/test (bpr)
     needs: check-changes

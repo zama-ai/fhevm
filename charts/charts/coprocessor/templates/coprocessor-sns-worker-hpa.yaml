@@ -1,0 +1,42 @@
+{{- if and .Values.snsWorker.hpa.enabled .Values.snsWorker.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "snsWorkerName" . }}-hpa
+  labels:
+    app: coprocessor-sns-worker
+    app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "snsWorkerName" . }}
+  minReplicas: {{ .Values.snsWorker.hpa.minReplicas }}
+  maxReplicas: {{ .Values.snsWorker.hpa.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.snsWorker.hpa.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.snsWorker.hpa.scaleUp.stabilizationWindowSeconds }}
+      selectPolicy: {{ .Values.snsWorker.hpa.scaleUp.selectPolicy }}
+      policies:
+      {{- range .Values.snsWorker.hpa.scaleUp.policies }}
+      - type: {{ .type }}
+        value: {{ .value }}
+        periodSeconds: {{ .periodSeconds }}
+      {{- end }}
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.snsWorker.hpa.scaleDown.stabilizationWindowSeconds }}
+      selectPolicy: {{ .Values.snsWorker.hpa.scaleDown.selectPolicy }}
+      policies:
+      {{- range .Values.snsWorker.hpa.scaleDown.policies }}
+      - type: {{ .type }}
+        value: {{ .value }}
+        periodSeconds: {{ .periodSeconds }}
+      {{- end }}
+{{- end }}

@@ -3,15 +3,6 @@ repositories:
     url: https://charts.bitnami.com/bitnami
 
 releases:
-  # S3 - MINIO
-  # temporiraly we set our own minio - this should run first + copy keys then run other releases
-  - name: minio
-    namespace: fhevm
-    chart: bitnami/minio
-    version: 15.0.3
-    values:
-      - minio-values.yaml
-
   # fhevm postgresql    
   - name: fhevm-postgresql
     namespace: fhevm

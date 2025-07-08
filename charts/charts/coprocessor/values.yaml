@@ -260,6 +260,28 @@ tfheWorker:
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 80
+    scaleUp:
+      stabilizationWindowSeconds: 20
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 900
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 300
+      selectPolicy: Min
 
 zkProofWorker:
   enabled: false
@@ -315,6 +337,28 @@ zkProofWorker:
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 80
+    scaleUp:
+      stabilizationWindowSeconds: 20
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 900
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 300
+      selectPolicy: Min
 
 snsWorker:
   enabled: false
@@ -380,6 +424,28 @@ snsWorker:
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 80
+    scaleUp:
+      stabilizationWindowSeconds: 20
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 900
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 300
+      selectPolicy: Min
 
 txSender:
   enabled: false

@@ -32,7 +32,7 @@ jobs:
           filters: |
             charts:
               - '.github/workflows/charts-helm-release.yml'
-              - 'charts/**'
+              - 'charts/**/Chart.yaml'
   release:
     needs: check-changes
     name: charts-helm-release/release
