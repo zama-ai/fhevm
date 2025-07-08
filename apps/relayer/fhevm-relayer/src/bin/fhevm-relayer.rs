@@ -35,6 +35,7 @@
 use alloy::primitives::Address;
 use alloy::signers::Signer;
 use clap::Parser;
+use fhevm_relayer::store::PublicDecryptCacheStore;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::{str::FromStr, sync::Arc};
@@ -215,6 +216,7 @@ async fn main() -> eyre::Result<()> {
             info!("using rocks db databse at: {}", path_rocks_db.display());
             let kv_store = Arc::new(kv_store);
             let event_store = Arc::new(EventStore::<RelayerEvent>::new(kv_store.clone()));
+            let public_decrypt_cache = Arc::new(PublicDecryptCacheStore::new(kv_store.clone()));
 
             // Register event logging hook to capture all events
             orchestrator.register_pre_dispatch_hook(EventLoggingHook::new(
@@ -272,6 +274,7 @@ async fn main() -> eyre::Result<()> {
             let public_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =
                 Arc::new(PublicDecryptGatewayHandler::new(
                     Arc::clone(&orchestrator),
+                    public_decrypt_cache,
                     tx_service_gateway.clone(),
                     tx_config.clone(),
                     settings.contracts.clone(),
