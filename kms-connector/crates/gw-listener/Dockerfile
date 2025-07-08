@@ -3,8 +3,7 @@
 # RUST_IMAGE_VERSION arg can be used to override the default version
 ARG RUST_IMAGE_VERSION=1.87.0
 
-## Multistage build to reduce image size
-# First stage sets up basic Rust build environment
+# Stage 1: Build gw-listener
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 # The profile used to run `cargo build`
@@ -13,17 +12,20 @@ ARG LTO_RELEASE=release
 # Use root user for build stage
 USER root
 
+WORKDIR /app
+
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY kms-connector ./kms-connector
+
+# TODO: Remove SSH configuration once KMS Core repo is public.
+#       This is currently needed as the KMS Connector depends on KMS Core to be built.
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
     --mount=type=cache,target=/var/lib/apk,sharing=locked \
     apk add --no-cache \
     openssh-keyscan \
-    protoc \
-    gcc
-
-WORKDIR /app
-COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
-COPY kms-connector ./kms-connector
+    gcc \
+    protoc
 
 # Setup SSH and git
 RUN mkdir -p -m 0600 /root/.ssh && \
@@ -38,7 +40,7 @@ RUN --mount=type=secret,id=BLOCKCHAIN_ACTIONS_TOKEN,env=BLOCKCHAIN_ACTIONS_TOKEN
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked cd kms-connector && \
     cargo build --profile=${LTO_RELEASE} -p gw-listener
 
-# Final runtime stage for the three sub-components
+# Stage 2: Runtime image
 FROM cgr.dev/chainguard/glibc-dynamic:latest AS prod
 
 COPY --from=builder /etc/group /etc/group
