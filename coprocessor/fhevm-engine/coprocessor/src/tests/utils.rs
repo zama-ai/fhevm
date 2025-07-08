@@ -45,6 +45,10 @@ pub fn default_tenant_id() -> i32 {
     1
 }
 
+pub fn default_dependence_cache_size() -> u16 {
+    128
+}
+
 pub fn random_handle() -> u64 {
     rand::rng().random()
 }
@@ -92,6 +96,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         server_maximum_ciphertexts_to_schedule: 5000,
         server_maximum_ciphertexts_to_get: 5000,
         work_items_batch_size: 40,
+        dependence_chains_per_worker: 2,
         tenant_key_cache_size: 4,
         coprocessor_fhe_threads: 4,
         maximum_handles_per_input: 255,

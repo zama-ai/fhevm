@@ -14,6 +14,8 @@ use crate::tests::utils::{default_api_key, setup_test_app, TestInstance};
 use crate::tests::operators::BinaryOperatorTestCase;
 use crate::tests::operators::UnaryOperatorTestCase;
 
+use super::utils::default_dependence_cache_size;
+
 pub fn supported_types() -> &'static [i32] {
     &[
         0, // bool
@@ -231,7 +233,13 @@ async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
     let coprocessor_api_key = sqlx::types::Uuid::parse_str(default_api_key()).unwrap();
     let url = app.db_url().to_string();
     let chain_id = 0;
-    ListenerDatabase::new(&url, &coprocessor_api_key, chain_id).await
+    ListenerDatabase::new(
+        &url,
+        &coprocessor_api_key,
+        chain_id,
+        default_dependence_cache_size(),
+    )
+    .await
 }
 
 #[tokio::test]

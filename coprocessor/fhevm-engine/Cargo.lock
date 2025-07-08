@@ -3389,6 +3389,7 @@ dependencies = [
  "foundry-compilers",
  "foundry-compilers-artifacts",
  "futures-util",
+ "lru 0.13.0",
  "reqwest",
  "rustls 0.23.24",
  "semver 1.0.26",

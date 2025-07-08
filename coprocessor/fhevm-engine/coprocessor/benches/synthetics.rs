@@ -1,8 +1,8 @@
 #[path = "./utils.rs"]
 mod utils;
 use crate::utils::{
-    default_api_key, default_tenant_id, query_tenant_keys, random_handle, setup_test_app,
-    wait_until_all_ciphertexts_computed, write_to_json, OperatorType,
+    allow_handle, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
+    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, OperatorType,
 };
 use coprocessor::server::common::FheOperation;
 use coprocessor::server::coprocessor::{async_computation_input::Input, AsyncComputationInput};
@@ -187,6 +187,8 @@ async fn counter_increment(
         };
     }
 
+    allow_handle(&output_handles.last().unwrap(), &pool).await?;
+
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
         computations: async_computations,
     });
@@ -202,9 +204,11 @@ async fn counter_increment(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -325,7 +329,8 @@ async fn tree_reduction(
         }
         level_inputs = std::mem::take(&mut level_outputs);
     }
-    output_handles.push(output_handle);
+    output_handles.push(output_handle.clone());
+    allow_handle(&output_handle, &pool).await?;
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
         computations: async_computations,
@@ -342,9 +347,11 @@ async fn tree_reduction(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),

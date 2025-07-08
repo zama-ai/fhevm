@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH selected_computations AS (\n              SELECT c.tenant_id, c.output_handle, ah.handle\n              FROM computations c LEFT JOIN allowed_handles ah ON c.output_handle = ah.handle\n              WHERE c.schedule_order IN (\n                -- Find immediately computable computations\n                SELECT schedule_order\n                FROM computations\n                WHERE is_completed = false\n                AND is_error = false\n                AND NOT EXISTS (\n                    SELECT 1\n                    FROM unnest(dependencies) WITH ORDINALITY AS elems(v, dep_index)\n                    WHERE (tenant_id, elems.v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )\n                    -- don't select scalar operands\n                    AND (\n                        NOT is_scalar\n                        OR is_scalar AND NOT elems.dep_index = 2\n                    )\n                    -- ignore fhe random, trivial encrypt operations, all inputs are scalars\n                    AND NOT fhe_operation = ANY(ARRAY[24, 26, 27])\n                )\n                ORDER BY created_at\n                LIMIT $2\n              )\n            )\n            -- Acquire the buckets of these schedulable computations. \n            SELECT c.tenant_id, c.output_handle, c.dependencies, c.fhe_operation, c.is_scalar,\n                   sc.handle IS NOT NULL AS is_allowed, c.schedule_order\n            FROM computations c, selected_computations sc\n            WHERE c.tenant_id = sc.tenant_id\n            AND c.output_handle = sc.output_handle\n            LIMIT $1\n            FOR UPDATE SKIP LOCKED\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "output_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "dependencies",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 3,
+        "name": "fhe_operation",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_scalar",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_allowed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "schedule_order",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "b508ec9f6d2e1d088ffe3f3fd1bb4ff7c10123e7b95bc38edfcf93f581a9e25c"
+}

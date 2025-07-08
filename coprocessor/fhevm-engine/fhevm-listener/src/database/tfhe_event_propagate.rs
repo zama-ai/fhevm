@@ -2,9 +2,11 @@ use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use fhevm_engine_common::types::AllowEvents;
+use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::compact_hex;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use sqlx::types::Uuid;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
@@ -12,8 +14,6 @@ use std::time::Duration;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
-
-use fhevm_engine_common::types::SupportedFheOperations;
 
 use crate::contracts::AclContract::AclContractEvents;
 use crate::contracts::TfheContract;
@@ -46,6 +46,9 @@ pub struct Database {
     pool: sqlx::Pool<Postgres>,
     tenant_id: TenantId,
     chain_id: ChainId,
+    bucket_cache: std::sync::Arc<
+        tokio::sync::RwLock<lru::LruCache<Handle, PrimitiveDateTime>>,
+    >,
 }
 
 impl Database {
@@ -53,15 +56,21 @@ impl Database {
         url: &str,
         coprocessor_api_key: &CoprocessorApiKey,
         chain_id: ChainId,
+        bucket_cache_size: u16,
     ) -> Self {
         let pool = Self::new_pool(url).await;
         let tenant_id =
             Self::find_tenant_id_or_panic(&pool, coprocessor_api_key).await;
+        let bucket_cache =
+            std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+                std::num::NonZeroU16::new(bucket_cache_size).unwrap().into(),
+            )));
         Database {
             url: url.into(),
             tenant_id,
             chain_id,
             pool,
+            bucket_cache,
         }
     }
 
@@ -124,6 +133,7 @@ impl Database {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn insert_computation_bytes(
         &mut self,
         tenant_id: TenantId,
@@ -134,6 +144,9 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
     ) -> Result<(), SqlxError> {
+        let bucket = self
+            .sort_computation_into_bucket(result, dependencies_handles)
+            .await;
         let dependencies_handles = dependencies_handles
             .iter()
             .map(|d| d.to_vec())
@@ -145,6 +158,7 @@ impl Database {
             dependencies,
             fhe_operation,
             scalar_byte,
+            &bucket,
         )
         .await
     }
@@ -157,6 +171,9 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
     ) -> Result<(), SqlxError> {
+        let bucket = self
+            .sort_computation_into_bucket(result, dependencies)
+            .await;
         let dependencies =
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
         self.insert_computation_inner(
@@ -165,10 +182,12 @@ impl Database {
             dependencies,
             fhe_operation,
             scalar_byte,
+            &bucket,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn insert_computation_inner(
         &mut self,
         tenant_id: TenantId,
@@ -176,6 +195,7 @@ impl Database {
         dependencies: Vec<Vec<u8>>,
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
+        bucket: &PrimitiveDateTime,
     ) -> Result<(), SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
@@ -187,16 +207,18 @@ impl Database {
                 output_handle,
                 dependencies,
                 fhe_operation,
-                is_scalar
+                is_scalar,
+                schedule_order
             )
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (tenant_id, output_handle) DO NOTHING
             "#,
                 tenant_id as i32,
                 output_handle,
                 &dependencies,
                 fhe_operation as i16,
-                is_scalar
+                is_scalar,
+                bucket
             )
         };
         // retry mecanism
@@ -215,6 +237,32 @@ impl Database {
                 }
             }
         }
+    }
+
+    async fn sort_computation_into_bucket(
+        &self,
+        output: &Handle,
+        dependencies: &[&Handle],
+    ) -> PrimitiveDateTime {
+        // If any input dependence is a match, return its bucket. This
+        // computation is in a connected component with other ops in
+        // this bucket
+        let mut bucket_cache = self.bucket_cache.write().await;
+        for d in dependencies {
+            // We peek here as the reuse is less likely than the use
+            // of the new handle which we add - because handles
+            // operate under single assinment
+            if let Some(ce) = bucket_cache.peek(*d).cloned() {
+                bucket_cache.put(*output, ce);
+                return ce;
+            }
+        }
+        // If this computation is not linked to any others, assign it
+        // to a new empty bucket
+        let t = OffsetDateTime::now_utc();
+        let t = PrimitiveDateTime::new(t.date(), t.time());
+        bucket_cache.put(*output, t);
+        t
     }
 
     #[rustfmt::skip]

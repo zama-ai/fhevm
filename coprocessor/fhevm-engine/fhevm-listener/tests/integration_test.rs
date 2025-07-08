@@ -162,6 +162,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         catchup_paging: 3,
         log_level: Level::INFO,
         health_port: 8080,
+        dependence_cache_size: 128,
     };
 
     // Start listener in background task
@@ -189,8 +190,13 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     // Kill the listener
     eprintln!("First kill, check database valid block has been updated");
     listener_handle.abort();
-    let mut database =
-        Database::new(DATABASE_URL, &coprocessor_api_key, chain_id).await;
+    let mut database = Database::new(
+        DATABASE_URL,
+        &coprocessor_api_key,
+        chain_id,
+        args.dependence_cache_size,
+    )
+    .await;
     let last_block = database.read_last_valid_block().await;
     assert!(last_block.is_some());
     assert!(last_block.unwrap() > 1);
@@ -292,6 +298,7 @@ async fn test_health() -> Result<(), anyhow::Error> {
         catchup_paging: 3,
         log_level: Level::INFO,
         health_port: 8081,
+        dependence_cache_size: 128,
     };
 
     const LIVENESS_URL: &str = "http://0.0.0.0:8081/liveness";

@@ -27,6 +27,7 @@ use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
 use prometheus::{register_int_counter, IntCounter};
 use sha3::{Digest, Keccak256};
+use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use sqlx::{query, Acquire};
 use tokio::task::spawn_blocking;
 use tonic::transport::Server;
@@ -628,6 +629,8 @@ impl CoprocessorService {
         span.end();
 
         // to insert to db
+        let mut computation_buckets: Vec<PrimitiveDateTime> =
+            Vec::with_capacity(sorted_computations.len());
         let mut computations_inputs: Vec<Vec<Vec<u8>>> =
             Vec::with_capacity(sorted_computations.len());
         let mut computations_outputs: Vec<Vec<u8>> = Vec::with_capacity(sorted_computations.len());
@@ -663,6 +666,15 @@ impl CoprocessorService {
             check_fhe_operand_types(comp.operation, &this_comp_inputs, &is_scalar_op_vec)
                 .map_err(CoprocessorError::FhevmError)?;
 
+            // Sort computation into its bucket
+            let inputs = if is_computation_scalar {
+                vec![this_comp_inputs[0].as_ref()]
+            } else {
+                this_comp_inputs.iter().collect()
+            };
+            computation_buckets
+                .push(sort_computation_into_bucket(&comp.output_handle, &inputs).await);
+
             computations_inputs.push(this_comp_inputs);
             are_comps_scalar.push(is_computation_scalar);
         }
@@ -692,16 +704,18 @@ impl CoprocessorService {
                         dependencies,
                         fhe_operation,
                         is_completed,
-                        is_scalar
+                        is_scalar,
+                        schedule_order
                     )
-                    VALUES($1, $2, $3, $4, false, $5)
+                    VALUES($1, $2, $3, $4, false, $5, $6)
                     ON CONFLICT (tenant_id, output_handle) DO NOTHING
                 ",
                 tenant_id,
                 comp.output_handle,
                 &computations_inputs[idx],
                 fhe_operation,
-                are_comps_scalar[idx]
+                are_comps_scalar[idx],
+                computation_buckets[idx]
             )
             .execute(trx.as_mut())
             .await
@@ -894,4 +908,35 @@ impl CoprocessorService {
 
         Ok(tonic::Response::new(result))
     }
+}
+
+lazy_static! {
+    pub static ref BUCKET_CACHE: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<Vec<u8>, PrimitiveDateTime>>> =
+        std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(128).unwrap(),
+        )));
+}
+
+async fn sort_computation_into_bucket(
+    output: &[u8],
+    dependencies: &Vec<&Vec<u8>>,
+) -> PrimitiveDateTime {
+    // If any input dependence is a match, return its bucket. This
+    // computation is in a connected component with other ops in
+    // this bucket
+    let mut bucket_cache = BUCKET_CACHE.write().await;
+    for d in dependencies {
+        // We peek here as the reuse is less likely than the use
+        // of the new handle which we add
+        if let Some(ce) = bucket_cache.peek(*d).cloned() {
+            bucket_cache.put(output.to_owned(), ce);
+            return ce;
+        }
+    }
+    // If this computation is not linked to any others, assign it
+    // to a new empty bucket
+    let t = OffsetDateTime::now_utc();
+    let t = PrimitiveDateTime::new(t.date(), t.time());
+    bucket_cache.put(output.to_owned(), t);
+    t
 }

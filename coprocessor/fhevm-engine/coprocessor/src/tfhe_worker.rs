@@ -117,15 +117,42 @@ async fn tfhe_worker_cycle(
         let now = std::time::SystemTime::now();
         let the_work = query!(
             "
-            SELECT tenant_id, output_handle, dependencies, fhe_operation, is_scalar
-            FROM computations
-            WHERE is_completed = false
-            AND is_error = false
-            ORDER BY schedule_order
+            WITH selected_computations AS (
+              SELECT c.tenant_id, c.output_handle, ah.handle
+              FROM computations c LEFT JOIN allowed_handles ah ON c.output_handle = ah.handle
+              WHERE c.schedule_order IN (
+                -- Find immediately computable computations
+                SELECT schedule_order
+                FROM computations
+                WHERE is_completed = false
+                AND is_error = false
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM unnest(dependencies) WITH ORDINALITY AS elems(v, dep_index)
+                    WHERE (tenant_id, elems.v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )
+                    -- don't select scalar operands
+                    AND (
+                        NOT is_scalar
+                        OR is_scalar AND NOT elems.dep_index = 2
+                    )
+                    -- ignore fhe random, trivial encrypt operations, all inputs are scalars
+                    AND NOT fhe_operation = ANY(ARRAY[24, 26, 27])
+                )
+                ORDER BY created_at
+                LIMIT $2
+              )
+            )
+            -- Acquire the buckets of these schedulable computations. 
+            SELECT c.tenant_id, c.output_handle, c.dependencies, c.fhe_operation, c.is_scalar,
+                   sc.handle IS NOT NULL AS is_allowed, c.schedule_order
+            FROM computations c, selected_computations sc
+            WHERE c.tenant_id = sc.tenant_id
+            AND c.output_handle = sc.output_handle
             LIMIT $1
             FOR UPDATE SKIP LOCKED
         ",
-            args.work_items_batch_size as i32
+            args.work_items_batch_size as i32,
+            args.dependence_chains_per_worker as i32,
         )
         .fetch_all(trx.as_mut())
         .await?;
@@ -343,25 +370,12 @@ async fn tfhe_worker_cycle(
                 // Filter out computations that could not complete
                 if uncomputable.contains_key(&idx) {
                     // Update timestamp of uncomputable computation
-                    let mut s =
-                        tracer.start_with_context("update_unschedulable_computation", &loop_ctx);
+                    let mut s = tracer.start_with_context("unschedulable_computation", &loop_ctx);
                     s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
                     s.set_attribute(KeyValue::new(
                         "handle",
                         format!("0x{}", hex::encode(&w.output_handle)),
                     ));
-                    let _ = query!(
-                        "
-                            UPDATE computations
-                            SET schedule_order = CURRENT_TIMESTAMP
-                            WHERE tenant_id = $1
-                            AND output_handle = $2
-                        ",
-                        w.tenant_id,
-                        w.output_handle
-                    )
-                    .execute(trx.as_mut())
-                    .await?;
                     s.end();
                     continue;
                 }

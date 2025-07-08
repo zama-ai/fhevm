@@ -1,8 +1,8 @@
 #[path = "./utils.rs"]
 mod utils;
 use crate::utils::{
-    default_api_key, default_tenant_id, query_tenant_keys, random_handle, setup_test_app,
-    wait_until_all_ciphertexts_computed, write_to_json, OperatorType,
+    allow_handle, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
+    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, OperatorType,
 };
 use coprocessor::server::common::FheOperation;
 use coprocessor::server::coprocessor::{async_computation_input::Input, AsyncComputationInput};
@@ -453,6 +453,11 @@ async fn swap_request_whitepaper(
             output_handle: pending_total_token_1_in.clone(),
             inputs: vec![total_dex_token_1_in.clone(), sent_1.clone()],
         });
+
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -470,9 +475,11 @@ async fn swap_request_whitepaper(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -767,6 +774,11 @@ async fn swap_request_no_cmux(
             output_handle: pending_total_token_1_in.clone(),
             inputs: vec![total_dex_token_1_in.clone(), sent_1.clone()],
         });
+
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -784,9 +796,11 @@ async fn swap_request_no_cmux(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -1031,6 +1045,8 @@ async fn swap_claim_whitepaper(
                     current_dex_balance_0.clone(),
                 ],
             });
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
         if total_dex_token_0_in != 0 {
             async_computations.push(AsyncComputation {
@@ -1146,6 +1162,8 @@ async fn swap_claim_whitepaper(
                     current_dex_balance_1.clone(),
                 ],
             });
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -1164,9 +1182,11 @@ async fn swap_claim_whitepaper(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -1410,6 +1430,8 @@ async fn swap_claim_no_cmux(
                     },
                 ],
             });
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
 
         if total_dex_token_0_in != 0 {
@@ -1524,6 +1546,8 @@ async fn swap_claim_no_cmux(
                     },
                 ],
             });
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -1542,9 +1566,11 @@ async fn swap_claim_no_cmux(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -1831,6 +1857,11 @@ async fn swap_request_whitepaper_dep(
         // Update DEX balance handles
         current_dex_balance_0 = new_current_balance_0.clone();
         current_dex_balance_1 = new_current_balance_1.clone();
+
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -1848,9 +1879,11 @@ async fn swap_request_whitepaper_dep(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -2150,6 +2183,11 @@ async fn swap_request_no_cmux_dep(
         // Update DEX balance handles
         current_dex_balance_0 = new_current_balance_0.clone();
         current_dex_balance_1 = new_current_balance_1.clone();
+
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -2167,9 +2205,11 @@ async fn swap_request_no_cmux_dep(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -2420,6 +2460,8 @@ async fn swap_claim_whitepaper_dep(
             current_dex_balance_0 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_0.clone())),
             };
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
         if total_dex_token_0_in != 0 {
             async_computations.push(AsyncComputation {
@@ -2539,6 +2581,8 @@ async fn swap_claim_whitepaper_dep(
             current_dex_balance_1 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_1.clone())),
             };
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -2557,9 +2601,11 @@ async fn swap_claim_whitepaper_dep(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -2809,6 +2855,8 @@ async fn swap_claim_no_cmux_dep(
             current_dex_balance_0 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_0.clone())),
             };
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
 
         if total_dex_token_0_in != 0 {
@@ -2927,6 +2975,8 @@ async fn swap_claim_no_cmux_dep(
             current_dex_balance_1 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_1.clone())),
             };
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -2945,9 +2995,11 @@ async fn swap_claim_no_cmux_dep(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
