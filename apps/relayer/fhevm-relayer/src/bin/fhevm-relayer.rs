@@ -36,6 +36,7 @@ use alloy::primitives::Address;
 use alloy::signers::Signer;
 use clap::Parser;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::{str::FromStr, sync::Arc};
 use tracing::{debug, info, span, Level};
 #[cfg(feature = "tracing-chrome")]
@@ -79,7 +80,7 @@ use fhevm_relayer::{
         Orchestrator, TokioEventDispatcher,
     },
     sqs::sqs_listener::run_sqs_server,
-    store::{key_value_db::InMemoryKVStore, EventStore},
+    store::{key_value_db::RocksDBKVStore, EventStore},
     transaction::{TransactionService, TxConfig},
 };
 use prometheus::Registry;
@@ -208,7 +209,11 @@ async fn main() -> eyre::Result<()> {
                 ));
 
             // Create the storage components for event persistence
-            let kv_store = Arc::new(InMemoryKVStore::default());
+            let path_rocks_db = PathBuf::from(settings.db_path_rocksdb);
+            let kv_store = RocksDBKVStore::open(path_rocks_db.clone())
+                .map_err(|e| eyre::eyre!("Failed to open RocksDB: {}", e))?;
+            info!("using rocks db databse at: {}", path_rocks_db.display());
+            let kv_store = Arc::new(kv_store);
             let event_store = Arc::new(EventStore::<RelayerEvent>::new(kv_store.clone()));
 
             // Register event logging hook to capture all events

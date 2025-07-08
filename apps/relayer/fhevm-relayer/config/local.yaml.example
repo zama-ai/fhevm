@@ -68,6 +68,8 @@ log:
   # Include timestamps in logs
   show_timestamp: true
 
+db_path_rocksdb: "./.database"
+
 # Instructions:
 # 1. Copy this file to local.yaml: cp config/local.yaml.example config/local.yaml
 # 2. Update the contract addresses after deploying your contracts

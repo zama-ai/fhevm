@@ -187,6 +187,8 @@ pub struct Settings {
     pub metrics_endpoint: String,
     /// HTTP metrics configuration
     pub http_metrics: HttpMetricsConfig,
+    /// Path on disk to store Rocks DB database for crash recovery
+    pub db_path_rocksdb: String,
 }
 
 #[derive(Debug, Deserialize)]
