@@ -89,10 +89,11 @@ ensure-addresses:
 	ENV_PATH=$(ENV_PATH) npx ts-node scripts/ensure_proxy_addresses.ts
 
 # Make sure we only use allowed licenses for dependencies
-# The following packages are excluded based on their licenses incompatibility:
-# - estraverse@1.9.3: Excluded due to BSD license (not a real license)
-# - source-map@0.2.0: Excluded due to BSD license (not a real license)
-# - web3-utils@1.10.4: Excluded due to LGPL-3.0 license
+# Full list of SPDX identifiers can be found here: https://spdx.org/licenses/
+# The following packages are exceptionally excluded from the check:
+# - estraverse@1.9.3: invalid SPDX identifier (`BSD`) but licensed under `BSD-2-Clause` (https://www.npmjs.com/package/estraverse)
+# - source-map@0.2.0: invalid SPDX identifier (`BSD`) but licensed under `BSD-3-Clause` (https://www.npmjs.com/package/source-map)
+# - web3-utils@1.10.4: licensed under `LGPL-3.0 license` (https://www.npmjs.com/package/web3-utils), which we only allow for tooling
 check-licenses:
 	output=$$(npx license-checker --onlyAllow '0BSD; Apache-2.0; BSD-2-Clause; BSD-3-Clause; CC-BY-3.0; CC0-1.0; ISC; MIT; MPL-2.0; Python-2.0; WTFPL; PSF;' --excludePackages 'estraverse@1.9.3;source-map@0.2.0;web3-utils@1.10.4;' 2>&1); \
 	status=$$?; \
