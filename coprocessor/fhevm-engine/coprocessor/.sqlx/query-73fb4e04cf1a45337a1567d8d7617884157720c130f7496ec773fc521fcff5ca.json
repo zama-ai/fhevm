@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT tenant_id, output_handle, dependencies, fhe_operation, is_scalar\n            FROM computations\n            WHERE is_completed = false\n            AND is_error = false\n            ORDER BY created_at\n            LIMIT $1\n            FOR UPDATE SKIP LOCKED\n        ",
+  "query": "\n            SELECT tenant_id, output_handle, dependencies, fhe_operation, is_scalar\n            FROM computations\n            WHERE is_completed = false\n            AND is_error = false\n            ORDER BY schedule_order\n            LIMIT $1\n            FOR UPDATE SKIP LOCKED\n        ",
   "describe": {
     "columns": [
       {
@@ -42,5 +42,5 @@
       false
     ]
   },
-  "hash": "514d2ee9ff416b42cc48b33df6a2ef5bb25f3ed9abdd2a03957d42252812278a"
+  "hash": "73fb4e04cf1a45337a1567d8d7617884157720c130f7496ec773fc521fcff5ca"
 }
