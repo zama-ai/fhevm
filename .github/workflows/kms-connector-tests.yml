@@ -1,0 +1,140 @@
+# Workflow running the tests of the KMS Connector components.
+name: kms-connector-tests
+
+on:
+  pull_request:
+  push:
+    branches: ['main', 'release/*']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  actions: 'read'
+  contents: 'read'
+  packages: 'read'
+  pull-requests: 'read'
+
+jobs:
+  # Initial job that determines which components have changed
+  # Used by subsequent jobs to decide whether they need to run
+  check-changes:
+    name: kms-connector-tests/check-changes
+    runs-on: ubuntu-latest
+    outputs:
+      # Each output indicates if files in a specific component were modified
+      changes-connector: ${{ steps.filter.outputs.connector }}
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        persist-credentials: 'false'
+    - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+      id: filter
+      with:
+        # Define paths that trigger specific component workflows
+        # Changes to conf-trace affect multiple components
+        filters: |
+          connector:
+            - '.github/workflows/kms-connector-*'
+            - 'kms-connector/config/**'
+            - 'kms-connector/connector-db/**'
+            - 'kms-connector/crates/**'
+            - 'kms-connector/simple-connector/**'
+            - 'kms-connector/Cargo.toml'
+
+  start-runner:
+    name: kms-connector-tests/start-runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+    steps:
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac # v1.4.1
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: aws
+          profile: big-instance
+
+  test-connector:
+    name: kms-connector-tests/test-connector (bpr)
+    needs: start-runner
+    timeout-minutes: 50
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: './kms-connector'
+
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: true
+          token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+          persist-credentials: 'false'
+
+      - name: Setup common environment variables
+        run: |
+          echo "HOME=/home/ubuntu" >> "${GITHUB_ENV}"
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "26.x"
+
+      - name: Install Docker
+        uses: docker/setup-docker-action@b60f85385d03ac8acfca6d9996982511d8620a19 # v4.3.0
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
+      - name: Setup usage of private repo
+        run: git config --global url."https://${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}@github.com".insteadOf ssh://git@github.com
+
+      - name: Formatting
+        run: cargo fmt -- --check
+
+      - name: Linting
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run Tests
+        env:
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+        run: |
+          RUST_BACKTRACE=full cargo test
+
+  stop-runner:
+    name: kms-connector-tests/stop-runner
+    needs:
+      - start-runner
+      - test-connector
+    runs-on: ubuntu-latest
+    if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
+    steps:
+      - name: Stop EC2 runner
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac # v1.4.1
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.start-runner.outputs.label }}

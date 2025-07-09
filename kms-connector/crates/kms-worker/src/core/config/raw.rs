@@ -29,12 +29,16 @@ pub struct RawConfig {
     pub gateway_config_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
+    #[serde(default = "default_events_batch_size")]
+    pub events_batch_size: u8,
+    #[serde(default = "default_grpc_request_retries")]
+    pub grpc_request_retries: u8,
     #[serde(default = "default_public_decryption_timeout")]
     pub public_decryption_timeout_secs: u64,
     #[serde(default = "default_user_decryption_timeout")]
     pub user_decryption_timeout_secs: u64,
-    #[serde(default = "default_grpc_retry_interval")]
-    pub grpc_retry_interval_secs: u64,
+    #[serde(default = "default_grpc_poll_interval")]
+    pub grpc_poll_interval_secs: u64,
     #[serde(default)]
     pub s3_config: Option<S3Config>,
     #[serde(default = "default_s3_ciphertext_retrieval_retries")]
@@ -53,6 +57,14 @@ fn default_database_pool_size() -> u32 {
     16
 }
 
+fn default_events_batch_size() -> u8 {
+    10
+}
+
+fn default_grpc_request_retries() -> u8 {
+    3
+}
+
 fn default_public_decryption_timeout() -> u64 {
     300 // 5 minutes
 }
@@ -61,12 +73,12 @@ fn default_user_decryption_timeout() -> u64 {
     300 // 5 minutes
 }
 
-fn default_grpc_retry_interval() -> u64 {
+fn default_grpc_poll_interval() -> u64 {
     5 // 5 seconds
 }
 
 fn default_s3_ciphertext_retrieval_retries() -> u8 {
-    3 // 3 seconds
+    3
 }
 
 fn default_s3_connect_timeout() -> u64 {
@@ -99,9 +111,11 @@ impl Default for RawConfig {
                 domain_version: Some("1".to_string()),
             },
             service_name: "kms-connector".to_string(),
+            events_batch_size: 10,
+            grpc_request_retries: 3,
             public_decryption_timeout_secs: 300,
             user_decryption_timeout_secs: 300,
-            grpc_retry_interval_secs: 5,
+            grpc_poll_interval_secs: 5,
             s3_ciphertext_retrieval_retries: 3,
             s3_connect_timeout: 2,
             s3_config: None,

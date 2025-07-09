@@ -22,10 +22,11 @@ impl DbKmsResponsePublisher {
 
 impl KmsResponsePublisher for DbKmsResponsePublisher {
     async fn publish(&self, response: KmsResponse) -> anyhow::Result<()> {
-        let response_log = response.to_string();
-        info!("Storing {response_log} in DB...");
+        let response_str = response.to_string();
+        info!("Storing {response_str} in DB...");
 
-        let query_result = match response {
+        // Execute sqlx query
+        let sqlx_result = match response.clone() {
             KmsResponse::PublicDecryption {
                 decryption_id: id,
                 decrypted_result: result,
@@ -36,14 +37,24 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
                 user_decrypted_shares: shares,
                 signature,
             } => self.publish_user_decryption(id, shares, signature).await,
-        }?;
+        };
 
+        // Mark event associated to the current response as free on error
+        let query_result = match sqlx_result {
+            Ok(result) => result,
+            Err(e) => {
+                response.free_associated_event(&self.db_pool).await;
+                return Err(e.into());
+            }
+        };
+
+        // Check query result is what we expect
         if query_result.rows_affected() == 1 {
-            info!("Successfully stored {response_log} in DB!");
+            info!("Successfully stored {response_str} in DB!");
         } else {
             warn!(
                 "Unexpected query result while publishing {}: {:?}",
-                response_log, query_result
+                response_str, query_result
             )
         }
         Ok(())

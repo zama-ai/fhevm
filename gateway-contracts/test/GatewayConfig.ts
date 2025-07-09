@@ -34,6 +34,8 @@ describe("GatewayConfig", function () {
 
   // Define fake values
   const fakeOwner = createRandomWallet();
+  const fakeTxSender = createRandomWallet();
+  const fakeSigner = createRandomWallet();
 
   let gatewayConfig: GatewayConfig;
   let owner: Wallet;
@@ -55,9 +57,11 @@ describe("GatewayConfig", function () {
     const {
       kmsTxSenders,
       kmsSigners,
+      kmsNodeIps,
       nKmsNodes,
       coprocessorTxSenders,
       coprocessorSigners,
+      coprocessorS3Buckets,
       nCoprocessors,
       custodianTxSenders,
       custodianSigners,
@@ -71,7 +75,7 @@ describe("GatewayConfig", function () {
       kmsNodes.push({
         txSenderAddress: kmsTxSenders[i].address,
         signerAddress: kmsSigners[i].address,
-        ipAddress: `127.0.0.${i}`,
+        ipAddress: kmsNodeIps[i],
       });
     }
 
@@ -81,7 +85,7 @@ describe("GatewayConfig", function () {
       coprocessors.push({
         txSenderAddress: coprocessorTxSenders[i].address,
         signerAddress: coprocessorSigners[i].address,
-        s3BucketUrl: `s3://bucket-${i}`,
+        s3BucketUrl: coprocessorS3Buckets[i],
       });
     }
 
@@ -413,10 +417,6 @@ describe("GatewayConfig", function () {
     });
 
     describe("GatewayConfig initialization checks and getters", function () {
-      it("Should be registered as a pauser", async function () {
-        await expect(gatewayConfig.checkIsPauser(pauserAddress)).to.not.be.reverted;
-      });
-
       it("Should be registered as KMS nodes transaction senders", async function () {
         for (const kmsTxSender of kmsTxSenders) {
           await expect(gatewayConfig.checkIsKmsTxSender(kmsTxSender.address)).to.not.be.reverted;
@@ -435,10 +435,22 @@ describe("GatewayConfig", function () {
         }
       });
 
+      it("Should not be registered as coprocessors transaction senders", async function () {
+        await expect(gatewayConfig.checkIsCoprocessorTxSender(fakeTxSender))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+          .withArgs(fakeTxSender);
+      });
+
       it("Should be registered as coprocessors signers", async function () {
         for (const coprocessorSigner of coprocessorSigners) {
           await expect(gatewayConfig.checkIsCoprocessorSigner(coprocessorSigner.address)).to.not.be.reverted;
         }
+      });
+
+      it("Should not be registered as coprocessors signers", async function () {
+        await expect(gatewayConfig.checkIsCoprocessorSigner(fakeSigner))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCoprocessorSigner")
+          .withArgs(fakeSigner);
       });
 
       it("Should be registered as custodian transaction senders", async function () {
@@ -447,16 +459,42 @@ describe("GatewayConfig", function () {
         }
       });
 
+      it("Should not be registered as custodian transaction senders", async function () {
+        await expect(gatewayConfig.checkIsCustodianTxSender(fakeTxSender))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCustodianTxSender")
+          .withArgs(fakeTxSender);
+      });
+
       it("Should be registered as custodian signers", async function () {
         for (const custodianSigner of custodianSigners) {
           await expect(gatewayConfig.checkIsCustodianSigner(custodianSigner.address)).to.not.be.reverted;
         }
       });
 
+      it("Should be registered as custodian signers", async function () {
+        await expect(gatewayConfig.checkIsCustodianSigner(fakeSigner))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCustodianSigner")
+          .withArgs(fakeSigner);
+      });
+
       it("Should be registered as host chains", async function () {
         for (const hostChainId of hostChainIds) {
           await expect(gatewayConfig.checkHostChainIsRegistered(hostChainId)).to.not.be.reverted;
         }
+      });
+
+      it("Should get the protocol metadata", async function () {
+        const metadata = await gatewayConfig.getProtocolMetadata();
+
+        // Check that the protocol metadata is correct
+        expect(metadata).to.deep.equal(toValues(protocolMetadata));
+      });
+
+      it("Should get the KMS node metadata by its transaction sender address", async function () {
+        const kmsNode = await gatewayConfig.getKmsNode(kmsNodes[0].txSenderAddress);
+
+        // Check that KMS node metadata for the given transaction sender addresses is correct
+        expect(kmsNode).to.deep.equal(toValues(kmsNodes[0]));
       });
 
       it("Should get all KMS node transaction sender addresses", async function () {
@@ -547,6 +585,15 @@ describe("GatewayConfig", function () {
         // Check that all host chains' chainIds are in the list
         for (const hostChain of hostChains) {
           expect(hostChainIds).to.include(Number(hostChain.chainId));
+        }
+      });
+
+      it("Should get host chain's metadata", async function () {
+        const hostChains = await gatewayConfig.getHostChains();
+
+        for (let i = 0; i < hostChainIds.length; i++) {
+          const hostChain = await gatewayConfig.getHostChain(i);
+          expect(hostChain).to.deep.equal(hostChains[i]);
         }
       });
     });

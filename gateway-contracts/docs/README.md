@@ -2,7 +2,6 @@
 description: >-
   The fhevm Gateway.
 
-
 layout:
   title:
     visible: true

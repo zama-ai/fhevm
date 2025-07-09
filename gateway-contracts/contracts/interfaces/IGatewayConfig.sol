@@ -206,12 +206,6 @@ interface IGatewayConfig {
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
 
     /**
-     * @notice Check if an address is the pauser.
-     * @param pauserAddress The address to check.
-     */
-    function checkIsPauser(address pauserAddress) external view;
-
-    /**
      * @notice Check if an address is a registered KMS transaction sender.
      * @param kmsTxSenderAddress The address to check.
      */

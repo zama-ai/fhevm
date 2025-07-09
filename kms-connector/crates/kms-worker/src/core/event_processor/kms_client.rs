@@ -1,7 +1,7 @@
 use crate::core::{Config, event_processor::eip712::verify_user_decryption_eip712};
 use anyhow::anyhow;
 use connector_utils::{
-    conn::{RETRY_DELAY, RETRY_NUMBER},
+    conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
     types::{KmsGrpcRequest, KmsGrpcResponse},
 };
 use kms_grpc::{
@@ -18,69 +18,76 @@ pub struct KmsClient {
     /// The internal KMS Core client from the `kms_grpc` crate.
     inner: CoreServiceEndpointClient<Channel>,
 
+    /// Number of retries for GRPC requests sent to the KMS Core.
+    grpc_request_retries: u8,
+
     /// The timeout to retrieve the response of a public decryption operation.
     public_decryption_timeout: Duration,
 
     /// The timeout to retrieve the response of a user decryption operation.
     user_decryption_timeout: Duration,
 
-    /// The interval between retries.
-    retry_interval: Duration,
+    /// The interval between GRPC response collection retries.
+    grpc_poll_interval: Duration,
 }
 
 impl KmsClient {
+    /// Creates a new instance of `KmsClient`.
     pub fn new(
         channel: Channel,
+        grpc_request_retries: u8,
         public_decryption_timeout: Duration,
         user_decryption_timeout: Duration,
-        retry_interval: Duration,
+        grpc_poll_interval: Duration,
     ) -> Self {
         let inner = CoreServiceEndpointClient::new(channel);
         Self {
             inner,
+            grpc_request_retries,
             public_decryption_timeout,
             user_decryption_timeout,
-            retry_interval,
+            grpc_poll_interval,
         }
     }
 
+    /// Connects to the KMS Core.
     pub async fn connect(config: &Config) -> anyhow::Result<Self> {
-        let endpoint = Channel::from_shared(config.kms_core_endpoint.clone()).map_err(|e| {
-            anyhow!(
-                "Invalid KMS Core endpoint {}: {}",
-                config.kms_core_endpoint,
-                e
-            )
-        })?;
+        let kms_core_endpoint = &config.kms_core_endpoint;
+        let grpc_endpoint = Channel::from_shared(kms_core_endpoint.to_string())
+            .map_err(|e| anyhow!("Invalid KMS Core endpoint {kms_core_endpoint}: {e}"))?;
 
-        for i in 1..=RETRY_NUMBER {
-            info!("Attempting connection to KMS Core... ({i}/{RETRY_NUMBER})");
+        for i in 1..=CONNECTION_RETRY_NUMBER {
+            info!("Attempting connection to KMS Core... ({i}/{CONNECTION_RETRY_NUMBER})");
 
-            match endpoint.connect().await {
+            match grpc_endpoint.connect().await {
                 Ok(channel) => {
-                    info!("Connected to KMS Core at {}", config.kms_core_endpoint);
+                    info!("Connected to KMS Core at {kms_core_endpoint}");
                     return Ok(Self::new(
                         channel,
+                        config.grpc_request_retries,
                         config.public_decryption_timeout,
                         config.user_decryption_timeout,
-                        config.grpc_retry_interval,
+                        config.grpc_poll_interval,
                     ));
                 }
                 Err(e) => warn!("KMS Core connection attempt #{i} failed: {e}"),
             }
 
-            if i != RETRY_NUMBER {
-                tokio::time::sleep(RETRY_DELAY).await;
+            if i != CONNECTION_RETRY_NUMBER {
+                tokio::time::sleep(CONNECTION_RETRY_DELAY).await;
             }
         }
 
         Err(anyhow!(
-            "Could not connect to KMS Core at {}",
-            config.kms_core_endpoint
+            "Could not connect to KMS Core at {kms_core_endpoint}"
         ))
     }
 
-    pub async fn send_request(self, request: KmsGrpcRequest) -> anyhow::Result<KmsGrpcResponse> {
+    /// Sends the GRPC request to the KMS Core.
+    pub async fn send_request(
+        &mut self,
+        request: KmsGrpcRequest,
+    ) -> anyhow::Result<KmsGrpcResponse> {
         match request {
             KmsGrpcRequest::PublicDecryption(request) => {
                 self.request_public_decryption(request).await
@@ -89,8 +96,9 @@ impl KmsClient {
         }
     }
 
+    /// Sends a public decryption request to the KMS Core.
     async fn request_public_decryption(
-        mut self,
+        &mut self,
         request: PublicDecryptionRequest,
     ) -> anyhow::Result<KmsGrpcResponse> {
         let request_id = request
@@ -111,23 +119,37 @@ impl KmsClient {
             );
         }
 
-        // Send initial request
-        self.inner.public_decrypt(request).await?;
+        // Send initial request with retries
+        for i in 1..=self.grpc_request_retries {
+            match self.inner.public_decrypt(request.clone()).await {
+                Ok(_) => break,
+                Err(e) => {
+                    warn!("GRPC PublicDecryptionRequest attempt #{i} failed: {e}");
+                    if i == self.grpc_request_retries {
+                        return Err(anyhow!("All GRPC PublicDecryptionRequest attempts failed!"));
+                    }
+                }
+            }
+        }
 
         // Poll for result with timeout
-        let grpc_response =
-            poll_for_result(self.public_decryption_timeout, self.retry_interval, || {
+        let grpc_response = poll_for_result(
+            self.public_decryption_timeout,
+            self.grpc_poll_interval,
+            || {
                 let request = Request::new(request_id.clone());
                 let mut inner_client = self.inner.clone();
                 async move { inner_client.get_public_decryption_result(request).await }
-            })
-            .await?;
+            },
+        )
+        .await?;
 
         KmsGrpcResponse::try_from((request_id, grpc_response))
     }
 
+    /// Sends a user decryption request to the KMS Core.
     async fn request_user_decryption(
-        mut self,
+        &mut self,
         request: UserDecryptionRequest,
     ) -> anyhow::Result<KmsGrpcResponse> {
         let request_id = request
@@ -154,17 +176,30 @@ impl KmsClient {
             request_id.request_id, request.client_address, fhe_types
         );
 
-        // Send initial request
-        self.inner.user_decrypt(request).await?;
+        // Send initial request with retries
+        for i in 1..=self.grpc_request_retries {
+            match self.inner.user_decrypt(request.clone()).await {
+                Ok(_) => break,
+                Err(e) => {
+                    warn!("GRPC UserDecryptionRequest attempt #{i} failed: {e}");
+                    if i == self.grpc_request_retries {
+                        return Err(anyhow!("All GRPC UserDecryptionRequest attempts failed!"));
+                    }
+                }
+            }
+        }
 
         // Poll for result with timeout
-        let grpc_response =
-            poll_for_result(self.user_decryption_timeout, self.retry_interval, || {
+        let grpc_response = poll_for_result(
+            self.user_decryption_timeout,
+            self.grpc_poll_interval,
+            || {
                 let request = Request::new(request_id.clone());
                 let mut inner_client = self.inner.clone();
                 async move { inner_client.get_user_decryption_result(request).await }
-            })
-            .await?;
+            },
+        )
+        .await?;
 
         KmsGrpcResponse::try_from((request_id, grpc_response))
     }

@@ -51,6 +51,13 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     kmsSigners.push(kmsSigner);
   }
 
+  // Load the KMS node IPs
+  const kmsNodeIps = [];
+  for (let idx = 0; idx < nKmsNodes; idx++) {
+    const kmsNodeIp = getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`);
+    kmsNodeIps.push(kmsNodeIp);
+  }
+
   // Load the coprocessor transaction senders
   const coprocessorTxSenders = [];
   for (let idx = 0; idx < nCoprocessors; idx++) {
@@ -65,6 +72,13 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     const coprocessorSigner = await hre.ethers.getSigner(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
     await checkIsHardhatSigner(coprocessorSigner);
     coprocessorSigners.push(coprocessorSigner);
+  }
+
+  // Load the coprocessor S3 buckets
+  const coprocessorS3Buckets = [];
+  for (let idx = 0; idx < nCoprocessors; idx++) {
+    const coprocessorS3Bucket = getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`);
+    coprocessorS3Buckets.push(coprocessorS3Bucket);
   }
 
   // Load the custodian transaction senders
@@ -94,8 +108,10 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     owner,
     kmsTxSenders,
     kmsSigners,
+    kmsNodeIps,
     coprocessorTxSenders,
     coprocessorSigners,
+    coprocessorS3Buckets,
     custodianTxSenders,
     custodianSigners,
     custodianEncryptionKeys,

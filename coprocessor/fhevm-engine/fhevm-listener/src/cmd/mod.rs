@@ -1,20 +1,18 @@
-use alloy_provider::fillers::{
+use alloy::primitives::Address;
+use alloy::providers::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
     NonceFiller,
 };
+use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
+use alloy::pubsub::SubscriptionStream;
+use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
+use alloy::sol_types::SolEventInterface;
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
 use std::collections::VecDeque;
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{error, info, warn, Level};
-
-use alloy::primitives::Address;
-use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
-use alloy::pubsub::SubscriptionStream;
-use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
-
-use alloy_sol_types::SolEventInterface;
 
 use clap::Parser;
 
@@ -68,6 +66,13 @@ pub struct Args {
 
     #[arg(
         long,
+        default_value = "100",
+        help = "Catchup paging size in number of blocks"
+    )]
+    pub catchup_paging: u64,
+
+    #[arg(
+        long,
         default_value = "false",
         help = "Disable block immediate recheck"
     )]
@@ -108,6 +113,8 @@ struct InfiniteLogIter {
                       * events data */
     no_block_immediate_recheck: bool,
     contract_addresses: Vec<Address>,
+    catchup_blocks: Option<(u64, Option<u64>)>, // to do catchup blocks by chunks
+    // Option<(from_block, optional to_block)>
     catchup_logs: VecDeque<Log>,
     stream: Option<SubscriptionStream<Log>>,
     provider: Option<RProvider>, // required to maintain the stream
@@ -115,6 +122,7 @@ struct InfiniteLogIter {
     start_at_block: Option<i64>,
     end_at_block: Option<u64>,
     catchup_margin: u64,
+    catchup_paging: u64,
     prev_event: Option<Log>,
     current_event: Option<Log>,
     last_block_event_count: u64,
@@ -142,12 +150,14 @@ impl InfiniteLogIter {
             block_time: args.catchup_margin,
             no_block_immediate_recheck: args.no_block_immediate_recheck,
             contract_addresses,
+            catchup_blocks: None,
             catchup_logs: VecDeque::new(),
             stream: None,
             provider: None,
             last_valid_block: None,
             start_at_block: args.start_at_block,
             end_at_block: args.end_at_block,
+            catchup_paging: args.catchup_paging,
             catchup_margin: args.catchup_margin,
             prev_event: None,
             current_event: None,
@@ -197,13 +207,82 @@ impl InfiniteLogIter {
         BlockNumberOrTag::Number(last_block - catch_size.min(last_block))
     }
 
-    async fn fill_catchup_events(
-        &mut self,
-        provider: &RProvider,
-        filter: &Filter,
-    ) {
-        let logs = provider.get_logs(filter).await.expect("BLA2");
+    async fn consume_catchup_blocks(&mut self) {
+        let Some(provider) = &self.provider else {
+            error!("No provider, inconsistent state");
+            return;
+        };
+        let Some((_, to_block)) = self.catchup_blocks else {
+            return;
+        };
+        let mut paging_size = self.catchup_paging;
+        let (logs, from_block, paging_to_block) = loop {
+            let Some((from_block, to_block)) = self.catchup_blocks else {
+                return;
+            };
+            let paging_to_block = if let Some(to_block) = to_block {
+                to_block.min(from_block + paging_size)
+            } else {
+                from_block + paging_size
+            };
+            let mut filter = Filter::new()
+                .from_block(from_block)
+                .to_block(paging_to_block);
+            if !self.contract_addresses.is_empty() {
+                filter = filter.address(self.contract_addresses.clone())
+            }
+            let logs = provider.get_logs(&filter).await;
+            match logs {
+                Ok(logs) => break (logs, from_block, paging_to_block),
+                Err(err) => {
+                    if err.to_string().contains("limited") {
+                        // too much blocks or logs
+                        if paging_size == 1 {
+                            error!(block=from_block, "Cannot catchup block {filter:?} due to {err}, aborting this block");
+                            self.catchup_blocks =
+                                Some((from_block + 1, to_block));
+                            continue;
+                        } else {
+                            // retry with paging size 1
+                            info!("Retrying catchup with smaller paging size");
+                            paging_size = (paging_size / 2).max(1);
+                            continue;
+                        }
+                    }
+                    warn!("Cannot get logs for {filter:?} due to {err}");
+                    return;
+                }
+            };
+        };
+
+        info!(
+            nb_events = logs.len(),
+            from_block = from_block,
+            to_block = paging_to_block,
+            "Catchup get_logs step done"
+        );
+
+        let nb_logs = logs.len();
         self.catchup_logs.extend(logs);
+        self.catchup_blocks = Some((paging_to_block + 1, to_block)); //default
+
+        if Some(paging_to_block) == to_block {
+            self.catchup_blocks = None;
+        } else if let Some(to_block) = to_block {
+            if paging_to_block + 1 > to_block {
+                self.catchup_blocks = None;
+            }
+        } else if nb_logs == 0 {
+            // either empty or futur block
+            if let Ok(current_block) = provider.get_block_number().await {
+                if current_block < paging_to_block + 1 {
+                    self.catchup_blocks = None;
+                }
+            }
+        };
+        if self.catchup_blocks.is_none() {
+            info!("Catchup no next get_logs step");
+        }
     }
 
     async fn recheck_prev_block(&mut self) -> bool {
@@ -231,9 +310,6 @@ impl InfiniteLogIter {
             return false;
         };
         if logs.is_empty() {
-            return false;
-        }
-        if logs.len() as u64 == last_block_event_count {
             return false;
         }
         info!(
@@ -265,6 +341,10 @@ impl InfiniteLogIter {
                             .to_block(BlockNumberOrTag::Number(end_at_block));
                         // inclusive
                     }
+                    self.catchup_blocks = Some((
+                        catch_up_from.as_number().unwrap_or(0),
+                        self.end_at_block,
+                    ));
                     if !self.contract_addresses.is_empty() {
                         filter = filter.address(self.contract_addresses.clone())
                     }
@@ -281,7 +361,6 @@ impl InfiniteLogIter {
                             .expect("BLA2")
                             .into_stream(),
                     );
-                    self.fill_catchup_events(&provider, &filter).await;
                     self.provider = Some(provider);
                     return;
                 }
@@ -356,6 +435,9 @@ impl InfiniteLogIter {
                 not_initialized = false;
                 continue;
             };
+            if self.catchup_logs.is_empty() {
+                self.consume_catchup_blocks().await;
+            };
             if let Some(log) = self.catchup_logs.pop_front() {
                 if self.catchup_logs.is_empty() {
                     info!("Going back to real-time events");
@@ -380,6 +462,7 @@ impl InfiniteLogIter {
                     continue;
                 }
                 LogOrBlockTimeout::Log(Some(log)) => {
+                    info!(log = ?log, "Log event");
                     self.current_event = Some(log);
                     if self.is_first_of_block() {
                         self.health.write().await.tick();

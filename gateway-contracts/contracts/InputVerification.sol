@@ -299,15 +299,6 @@ contract InputVerification is
     }
 
     /**
-     * @notice Computes the hash of ctHandles
-     * @param ctHandles The ctHandles
-     * @return The hash of the ctHandles
-     */
-    function _hashCtHandles(bytes32[] calldata ctHandles) internal view virtual returns (bytes32) {
-        return keccak256(abi.encodePacked(ctHandles));
-    }
-
-    /**
      * @notice Checks if the consensus is reached among the coprocessors.
      * @param coprocessorCounter The number of coprocessors that agreed
      * @return Whether the consensus is reached

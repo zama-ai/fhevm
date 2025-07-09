@@ -4,13 +4,15 @@ use crate::core::event_processor::{
 };
 use alloy::providers::Provider;
 use connector_utils::types::{GatewayEvent, KmsGrpcRequest, KmsResponse};
+use sqlx::{Pool, Postgres};
+use tracing::info;
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
     type Event: Send;
 
     fn process(
-        self,
+        &mut self,
         event: &Self::Event,
     ) -> impl Future<Output = anyhow::Result<KmsResponse>> + Send;
 }
@@ -23,13 +25,36 @@ pub struct DbEventProcessor<P: Provider> {
 
     /// The entity used to process decryption requests.
     decryption_processor: DecryptionProcessor<P>,
+
+    /// The DB connection pool used to reset events `under_process` field on error.
+    db_pool: Pool<Postgres>,
+}
+
+impl<P: Provider> EventProcessor for DbEventProcessor<P> {
+    type Event = GatewayEvent;
+
+    async fn process(&mut self, event: &Self::Event) -> anyhow::Result<KmsResponse> {
+        info!("Starting to process {event}...");
+        match self.inner_process(event).await {
+            Ok(response) => Ok(response),
+            Err(e) => {
+                event.mark_as_pending(&self.db_pool).await;
+                Err(e)
+            }
+        }
+    }
 }
 
 impl<P: Provider> DbEventProcessor<P> {
-    pub fn new(kms_client: KmsClient, decryption_processor: DecryptionProcessor<P>) -> Self {
+    pub fn new(
+        kms_client: KmsClient,
+        decryption_processor: DecryptionProcessor<P>,
+        db_pool: Pool<Postgres>,
+    ) -> Self {
         Self {
             kms_client,
             decryption_processor,
+            db_pool,
         }
     }
 
@@ -53,12 +78,9 @@ impl<P: Provider> DbEventProcessor<P> {
             _ => unimplemented!(),
         }
     }
-}
 
-impl<P: Provider> EventProcessor for DbEventProcessor<P> {
-    type Event = GatewayEvent;
-
-    async fn process(self, event: &Self::Event) -> anyhow::Result<KmsResponse> {
+    /// Core event processing logic function.
+    async fn inner_process(&mut self, event: &GatewayEvent) -> anyhow::Result<KmsResponse> {
         let request = self.prepare_request(event.clone()).await?;
         let grpc_response = self.kms_client.send_request(request).await?;
         KmsResponse::process(grpc_response)

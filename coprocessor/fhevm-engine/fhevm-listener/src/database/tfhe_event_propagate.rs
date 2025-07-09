@@ -287,8 +287,8 @@ impl Database {
 
     pub async fn mark_prev_block_as_valid(
         &mut self,
-        opt_event: &Option<alloy_rpc_types::Log>,
-        opt_prev_event: &Option<alloy_rpc_types::Log>,
+        opt_event: &Option<alloy::rpc::types::Log>,
+        opt_prev_event: &Option<alloy::rpc::types::Log>,
     ) -> Option<u64> {
         let Some(prev_event) = opt_prev_event else {
             return None;
