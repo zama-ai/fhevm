@@ -83,6 +83,7 @@ config:
     show_file_line: false
     show_thread_ids: false
     show_timestamp: true
+  db_path_rocksdb: "./.database"
   staging:
     verbose_errors: true
 
