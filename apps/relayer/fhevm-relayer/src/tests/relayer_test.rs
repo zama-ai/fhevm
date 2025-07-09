@@ -57,14 +57,11 @@ mod tests {
         .await;
         match response {
             Err(_) => {
-                panic!(
-                    "Relayer didn't respond through SQS in less than {:?}",
-                    timeout
-                );
+                panic!("Relayer didn't respond through SQS in less than {timeout:?}");
             }
             Ok(value) => match value {
                 Err(error) => {
-                    panic!("Relayer didn't respond correctly {:?}", error);
+                    panic!("Relayer didn't respond correctly {error:?}");
                 }
                 Ok(sub_value) => {
                     matches!(
@@ -165,7 +162,7 @@ mod tests {
             let (result, index) = res.unwrap();
             let result = result.unwrap();
             assert_eq!(result.status(), 200);
-            println!("{} request is ok", index);
+            println!("{index} request is ok");
         }
         let after_time = tokio::time::Instant::now();
         let multi_query_duration = after_time - before_time;
@@ -196,7 +193,7 @@ mod tests {
 
         let status_code = res.status();
         let res_text = res.text().await;
-        assert_eq!(status_code, 400, "{:?}, {}", res_text, status_code);
+        assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
         if let Ok(ok_text) = res_text {
             assert_eq!(
                 ok_text,
@@ -224,7 +221,7 @@ mod tests {
         let res_text = res.text().await;
         let check_incorrect_chain_id = false;
         if check_incorrect_chain_id {
-            assert_eq!(status_code, 400, "{:?}, {}", res_text, status_code);
+            assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
             if let Ok(ok_text) = res_text {
                 assert_eq!(
                     ok_text,
@@ -251,7 +248,7 @@ mod tests {
 
         let status_code = res.status();
         let res_text = res.text().await;
-        assert_eq!(status_code, 400, "{:?}, {}", res_text, status_code);
+        assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
         if let Ok(ok_text) = res_text {
             assert_eq!(
                 ok_text,
@@ -277,7 +274,7 @@ mod tests {
 
         let status_code = res.status();
         let res_text = res.text().await;
-        assert_eq!(status_code, 400, "{:?}, {}", res_text, status_code);
+        assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
         if let Ok(ok_text) = res_text {
             assert_eq!(
                 ok_text,
@@ -303,7 +300,7 @@ mod tests {
 
         let status_code = res.status();
         let res_text = res.text().await;
-        assert_eq!(status_code, 400, "{:?}, {}", res_text, status_code);
+        assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
         if let Ok(ok_text) = res_text {
             assert_eq!(
                 ok_text,

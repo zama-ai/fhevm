@@ -22,26 +22,20 @@ pub mod test_utils {
     pub fn kill_gracefully(mut child_process: Child) -> Result<(), String> {
         let child_pid_raw = child_process.id();
         let child_pid = Pid::from_raw(child_pid_raw as i32);
-        println!("Child process started with PID: {}", child_pid_raw);
+        println!("Child process started with PID: {child_pid_raw}");
 
         // 2. Try to send SIGINT for graceful shutdown
-        println!("Sending SIGINT to child process (PID: {})...", child_pid);
+        println!("Sending SIGINT to child process (PID: {child_pid})...");
         match signal::kill(child_pid, Signal::SIGINT) {
             Ok(_) => println!("SIGINT sent successfully."),
             Err(Errno::ESRCH) => {
                 // ESRCH means "No such process"
-                println!(
-                    "Child process (PID: {}) already exited before SIGINT.",
-                    child_pid
-                );
+                println!("Child process (PID: {child_pid}) already exited before SIGINT.");
                 // Process is already gone, no need to do anything else
                 return Ok(());
             }
             Err(e) => {
-                eprintln!(
-                    "Error sending SIGINT to PID {}: {}. Attempting SIGKILL.",
-                    child_pid, e
-                );
+                eprintln!("Error sending SIGINT to PID {child_pid}: {e}. Attempting SIGKILL.");
                 // Proceed to SIGKILL if sending SIGINT failed for other reasons
             }
         }
@@ -55,8 +49,7 @@ pub mod test_utils {
                 Ok(Some(status)) => {
                     // Process has exited
                     println!(
-                        "Child process (PID: {}) exited gracefully with status: {}",
-                        child_pid_raw, status
+                        "Child process (PID: {child_pid_raw}) exited gracefully with status: {status}"
                     );
                     return Ok(()); // Successfully terminated
                 }
@@ -64,8 +57,7 @@ pub mod test_utils {
                     // Process is still running
                     if start_time.elapsed() > timeout {
                         println!(
-                            "Child process (PID: {}) did not exit after SIGINT and timeout.",
-                            child_pid_raw
+                            "Child process (PID: {child_pid_raw}) did not exit after SIGINT and timeout."
                         );
                         break; // Timeout expired, proceed to SIGKILL
                     }
@@ -74,7 +66,7 @@ pub mod test_utils {
                 }
                 Err(e) => {
                     // Error trying to wait (e.g., permissions, or if the PID was reused quickly, though unlikely here)
-                    eprintln!("Error waiting for child process (PID: {}): {}. Assuming it's gone or needs SIGKILL.", child_pid_raw, e);
+                    eprintln!("Error waiting for child process (PID: {child_pid_raw}): {e}. Assuming it's gone or needs SIGKILL.");
                     // It's safer to try SIGKILL if unsure
                     break;
                 }
@@ -82,22 +74,16 @@ pub mod test_utils {
         }
 
         // 4. If timeout expired and process is still running (or if SIGINT send failed), send SIGKILL
-        println!(
-            "Sending SIGKILL to child process (PID: {})...",
-            child_pid_raw
-        );
+        println!("Sending SIGKILL to child process (PID: {child_pid_raw})...");
         match signal::kill(child_pid, Signal::SIGKILL) {
-            Ok(_) => println!("SIGKILL sent successfully to PID {}.", child_pid_raw),
+            Ok(_) => println!("SIGKILL sent successfully to PID {child_pid_raw}."),
             Err(Errno::ESRCH) => {
                 // ESRCH means "No such process"
-                println!(
-                    "Child process (PID: {}) already exited before SIGKILL.",
-                    child_pid_raw
-                );
+                println!("Child process (PID: {child_pid_raw}) already exited before SIGKILL.");
             }
             Err(e) => {
                 // This is problematic, as SIGKILL should generally work if the process exists and you have permissions
-                eprintln!("Error sending SIGKILL to PID {}: {}. The process might be unkillable or already gone.", child_pid_raw, e);
+                eprintln!("Error sending SIGKILL to PID {child_pid_raw}: {e}. The process might be unkillable or already gone.");
                 // You might still want to wait to see if it terminates despite the error
             }
         }
@@ -107,12 +93,10 @@ pub mod test_utils {
         //    `child_process.wait()` will clean up the zombie process.
         match child_process.wait() {
             Ok(status) => println!(
-                "Child process (PID: {}) terminated with status after SIGKILL: {}",
-                child_pid_raw, status
+                "Child process (PID: {child_pid_raw}) terminated with status after SIGKILL: {status}"
             ),
             Err(e) => eprintln!(
-                "Error waiting for child process (PID: {}) after SIGKILL: {}",
-                child_pid_raw, e
+                "Error waiting for child process (PID: {child_pid_raw}) after SIGKILL: {e}"
             ),
         }
         Ok(())
@@ -162,7 +146,7 @@ pub mod test_utils {
             if Path::new(project_root.as_str()).join(path).exists() {
                 match fs::remove_file(path) {
                     Ok(()) => println!("File deleted successfully"),
-                    Err(e) => println!("Error deleting file: {}", e),
+                    Err(e) => println!("Error deleting file: {e}"),
                 }
             }
             // Config setup
