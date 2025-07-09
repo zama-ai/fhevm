@@ -53,7 +53,7 @@ async fn test_get_unstored_s3_ciphertext() -> anyhow::Result<()> {
         )
         .await
     {
-        panic!("Unexpected ciphertext retrievd {:?}", ct);
+        panic!("Unexpected ciphertext retrievd {ct:?}");
     }
 
     Ok(())
