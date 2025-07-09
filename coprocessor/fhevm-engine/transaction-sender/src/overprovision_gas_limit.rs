@@ -1,6 +1,6 @@
 use alloy::network::{Ethereum, TransactionBuilder};
-use alloy_provider::Provider;
-use alloy_rpc_types::TransactionRequest;
+use alloy::providers::Provider;
+use alloy::rpc::types::TransactionRequest;
 use tracing::{debug, warn};
 
 // If `txn_request.gas` is set, overprovision it by the given percent.

@@ -28,10 +28,6 @@ humantime = { workspace = true }
 
 # crates.io dependencies
 async-trait = "0.1.88"
-alloy-provider = "1.0.9"
-alloy-eips = "1.0.9"
-alloy-rpc-types = "1.0.9"
-alloy-sol-types = "1.2.0"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
@@ -41,6 +37,7 @@ foundry-compilers = { workspace = true }
 semver = { workspace = true }
 
 [dev-dependencies]
+alloy = { workspace = true, features = ["node-bindings"] }
 rstest = "0.25.0"
 serial_test = { workspace = true }
 testcontainers = { workspace = true }

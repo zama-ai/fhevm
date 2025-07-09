@@ -14,7 +14,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
@@ -121,7 +121,7 @@ async fn tfhe_worker_cycle(
             FROM computations
             WHERE is_completed = false
             AND is_error = false
-            ORDER BY created_at
+            ORDER BY schedule_order
             LIMIT $1
             FOR UPDATE SKIP LOCKED
         ",
@@ -342,10 +342,6 @@ async fn tfhe_worker_cycle(
             for (idx, w) in work.iter().enumerate() {
                 // Filter out computations that could not complete
                 if uncomputable.contains_key(&idx) {
-                    warn!(
-                        "Unschedulable computation in batch - can't compute handle 0x{}",
-                        hex::encode(&w.output_handle)
-                    );
                     // Update timestamp of uncomputable computation
                     let mut s =
                         tracer.start_with_context("update_unschedulable_computation", &loop_ctx);
@@ -357,7 +353,7 @@ async fn tfhe_worker_cycle(
                     let _ = query!(
                         "
                             UPDATE computations
-                            SET created_at = CURRENT_TIMESTAMP
+                            SET schedule_order = CURRENT_TIMESTAMP
                             WHERE tenant_id = $1
                             AND output_handle = $2
                         ",
