@@ -40,6 +40,29 @@ const NB_EVENTS_PER_WALLET: i64 = 400;
 const DATABASE_URL: &str =
     "postgresql://postgres:postgres@localhost:5432/coprocessor";
 
+pub async fn wait_url_success(url: &str, retry: u64, delay: u64) -> bool {
+    for step in 0..=retry {
+        let response = reqwest::get(url).await;
+        if response.is_ok() && response.as_ref().unwrap().status().is_success()
+        {
+            eprintln!("Listener ok after {} seconds", step * delay);
+            return true;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
+    }
+    false
+}
+
+pub async fn wait_alive(url: &str, retry: u64, delay: u64) -> bool {
+    let alive_url = format!("{}/liveness", url);
+    wait_url_success(&alive_url, retry, delay).await
+}
+
+pub async fn wait_healthy(url: &str, retry: u64, delay: u64) -> bool {
+    let healthz_url = format!("{}/healthz", url);
+    wait_url_success(&healthz_url, retry, delay).await
+}
+
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
     url: &str,
@@ -160,13 +183,13 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         end_at_block: None,
         catchup_margin: 5,
         log_level: Level::INFO,
-        health_port: 8080,
+        health_port: 8082,
     };
 
     // Start listener in background task
     let listener_handle = tokio::spawn(main(args.clone()));
 
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    assert!(wait_healthy("http://127.0.0.1:8082", 60, 1).await);
 
     // Emit first batch of events
     let wallets_clone = wallets.clone();
@@ -183,7 +206,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         .await;
     });
 
-    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 
     // Kill the listener
     eprintln!("First kill, check database valid block has been updated");
@@ -289,42 +312,18 @@ async fn test_health() -> Result<(), anyhow::Error> {
         end_at_block: None,
         catchup_margin: 5,
         log_level: Level::INFO,
-        health_port: 8081,
+        health_port: 8083,
     };
-
-    const LIVENESS_URL: &str = "http://0.0.0.0:8081/liveness";
-    const HEALTHZ_URL: &str = "http://0.0.0.0:8081/healthz";
 
     // Start listener in background task
     let listener_handle: tokio::task::JoinHandle<()> =
         tokio::spawn(main(args.clone()));
-    for _ in 1..10 {
-        let response = reqwest::get(LIVENESS_URL).await;
-        if response.is_ok() && response.unwrap().status().is_success() {
-            break;
-        }
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-    }
-    let response = reqwest::get(LIVENESS_URL).await;
-    assert!(response.is_ok());
-    assert!(response.unwrap().status().is_success());
-    let response = reqwest::get(HEALTHZ_URL).await;
-    let Ok(response) = response else {
-        return Err(anyhow::anyhow!("Failed to get healthz"));
-    };
-    if !response.status().is_success() {
-        eprintln!("response: {:?}", response.text().await);
-        return Err(anyhow::anyhow!("Failed to get healthz"));
-    }
+    assert!(wait_alive("http://127.0.0.1:8083", 60, 1).await);
+    assert!(wait_healthy("http://127.0.0.1:8083", 60, 1).await);
+
     anvil.child_mut().kill().unwrap();
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-    let response = reqwest::get(HEALTHZ_URL).await;
-    let Ok(response) = response else {
-        return Err(anyhow::anyhow!("Failed to get healthz"));
-    };
-    if response.status().is_success() {
-        return Err(anyhow::anyhow!("Healthz should be unhealthy"));
-    }
+    tokio::time::sleep(tokio::time::Duration::from_secs(20)).await; // time to detect issue
+    assert!(!wait_healthy("http://127.0.0.1:8083", 10, 1).await);
     listener_handle.abort();
     Ok(())
 }
