@@ -158,7 +158,10 @@ const config: HardhatUserConfig = {
     },
   },
   dependencyCompiler: {
-    paths: ["@safe-global/safe-contracts/contracts/proxies/SafeProxyFactory.sol"],
+    paths: [
+      "@safe-global/safe-contracts/contracts/proxies/SafeProxyFactory.sol",
+      "@safe-global/safe-contracts/contracts/Safe.sol",
+    ],
   },
   warnings: {
     // Turn off all warnings for mocked contracts

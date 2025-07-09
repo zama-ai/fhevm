@@ -4,8 +4,8 @@ import { expect } from "chai";
 import { EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
-import { KmsManagement, KmsManagement__factory } from "../typechain-types";
-import { createRandomWallet, loadTestVariablesFixture } from "./utils";
+import { KmsManagement, KmsManagement__factory, Safe } from "../typechain-types";
+import { createRandomWallet, execSafeTransaction, loadTestVariablesFixture } from "./utils";
 
 describe("KmsManagement", function () {
   const fakeFheParamsName = "FAKE_FHE_PARAMS_NAME";
@@ -825,13 +825,13 @@ describe("KmsManagement", function () {
   describe("Pause", async function () {
     let kmsManagement: KmsManagement;
     let owner: Wallet;
-    let pauser: SignerWithAddress;
+    let pauserSmartAccount: Safe;
 
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       kmsManagement = fixtureData.kmsManagement;
       owner = fixtureData.owner;
-      pauser = fixtureData.pauser;
+      pauserSmartAccount = fixtureData.pauserSmartAccount;
     });
 
     it("Should pause and unpause contract with owner address", async function () {
@@ -851,8 +851,14 @@ describe("KmsManagement", function () {
       // Check that the contract is not paused
       expect(await kmsManagement.paused()).to.be.false;
 
-      // Pause the contract with the pauser address
-      await expect(kmsManagement.connect(pauser).pause()).to.emit(kmsManagement, "Paused").withArgs(pauser);
+      // Get the target contract address and the data to call the pause function.
+      const to = await kmsManagement.getAddress();
+      const data = kmsManagement.interface.encodeFunctionData("pause");
+
+      // Execute the Safe transaction through the Pauser Smart Account.
+      await execSafeTransaction([owner], pauserSmartAccount, to, data);
+
+      // Contract should be paused.
       expect(await kmsManagement.paused()).to.be.true;
     });
 

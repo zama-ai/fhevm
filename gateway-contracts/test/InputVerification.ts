@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { GatewayConfig, InputVerification, InputVerification__factory } from "../typechain-types";
+import { GatewayConfig, InputVerification, InputVerification__factory, Safe } from "../typechain-types";
 import {
   EIP712,
   createBytes32,
@@ -12,6 +12,7 @@ import {
   createEIP712ResponseZKPoK,
   createRandomAddress,
   createRandomWallet,
+  execSafeTransaction,
   getSignaturesZKPoK,
   loadTestVariablesFixture,
 } from "./utils";
@@ -490,13 +491,13 @@ describe("InputVerification", function () {
   describe("Pause", async function () {
     let inputVerification: InputVerification;
     let owner: Wallet;
-    let pauser: HardhatEthersSigner;
+    let pauserSmartAccount: Safe;
 
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       inputVerification = fixtureData.inputVerification;
       owner = fixtureData.owner;
-      pauser = fixtureData.pauser;
+      pauserSmartAccount = fixtureData.pauserSmartAccount;
     });
 
     it("Should pause and unpause contract with owner address", async function () {
@@ -516,8 +517,14 @@ describe("InputVerification", function () {
       // Check that the contract is not paused
       expect(await inputVerification.paused()).to.be.false;
 
-      // Pause the contract with the pauser address
-      await expect(inputVerification.connect(pauser).pause()).to.emit(inputVerification, "Paused").withArgs(pauser);
+      // Get the target contract address and the data to call the pause function.
+      const to = await inputVerification.getAddress();
+      const data = inputVerification.interface.encodeFunctionData("pause");
+
+      // Execute the Safe transaction through the Pauser Smart Account.
+      await execSafeTransaction([owner], pauserSmartAccount, to, data);
+
+      // Contract should be paused.
       expect(await inputVerification.paused()).to.be.true;
     });
 

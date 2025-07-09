@@ -24,6 +24,7 @@
     "@nomicfoundation/hardhat-verify": "^2.0.13",
     "@openzeppelin/hardhat-upgrades": "^3.9.0",
     "@safe-global/safe-contracts": "^1.4.1-2",
+    "@safe-global/types-kit": "^3.0.0",
     "@solidity-parser/parser": "^0.20.1",
     "@trivago/prettier-plugin-sort-imports": "^4.3.0",
     "@typechain/ethers-v6": "^0.5.1",

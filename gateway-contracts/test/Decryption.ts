@@ -12,6 +12,7 @@ import {
   IDecryption,
   KmsManagement,
   MultichainAcl,
+  Safe,
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
@@ -33,6 +34,7 @@ import {
   createRandomAddress,
   createRandomAddresses,
   createRandomWallet,
+  execSafeTransaction,
   getSignaturesDelegatedUserDecryptRequest,
   getSignaturesPublicDecrypt,
   getSignaturesUserDecryptRequest,
@@ -174,7 +176,7 @@ describe("Decryption", function () {
   let ciphertextCommits: CiphertextCommits;
   let decryption: Decryption;
   let owner: Wallet;
-  let pauser: HardhatEthersSigner;
+  let pauserSmartAccount: Safe;
   let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
   let kmsSignatures: string[];
   let kmsTxSenders: HardhatEthersSigner[];
@@ -308,7 +310,6 @@ describe("Decryption", function () {
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
-      pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       kmsSignatures = fixtureData.kmsSignatures;
       kmsTxSenders = fixtureData.kmsTxSenders;
@@ -2147,7 +2148,7 @@ describe("Decryption", function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
-      pauser = fixtureData.pauser;
+      pauserSmartAccount = fixtureData.pauserSmartAccount;
     });
 
     it("Should pause and unpause contract with owner address", async function () {
@@ -2167,8 +2168,14 @@ describe("Decryption", function () {
       // Check that the contract is not paused
       expect(await decryption.paused()).to.be.false;
 
-      // Pause the contract with the pauser address
-      await expect(decryption.connect(pauser).pause()).to.emit(decryption, "Paused").withArgs(pauser);
+      // Get the target contract address and the data to call the pause function.
+      const to = await decryption.getAddress();
+      const data = decryption.interface.encodeFunctionData("pause");
+
+      // Execute the Safe transaction through the Pauser Smart Account.
+      await execSafeTransaction([owner], pauserSmartAccount, to, data);
+
+      // Contract should be paused.
       expect(await decryption.paused()).to.be.true;
     });
 

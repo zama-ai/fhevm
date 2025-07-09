@@ -32,11 +32,8 @@ async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
 async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCustodians: number) {
   // Get signers
   // - the owner owns the contracts and can initialize the protocol, update FHE params
-  // - the pauser can pause the protocol
   const owner = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY"), hre.ethers.provider);
   await fund(owner.address);
-  const pauser = await hre.ethers.getSigner(getRequiredEnvVar("PAUSER_ADDRESS"));
-  await checkIsHardhatSigner(pauser);
 
   // Load the KMS transaction senders
   const kmsTxSenders = [];
@@ -95,7 +92,6 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
 
   return {
     owner,
-    pauser,
     kmsTxSenders,
     kmsSigners,
     coprocessorTxSenders,
@@ -149,16 +145,16 @@ export async function loadTestVariablesFixture() {
   const parsedEnvDecryption = dotenv.parse(fs.readFileSync("addresses/.env.decryption"));
   const decryption = await hre.ethers.getContractAt("Decryption", parsedEnvDecryption.DECRYPTION_ADDRESS);
 
+  // Load the Pauser smart account
+  const parsedEnvPauserSmartAccount = dotenv.parse(fs.readFileSync("addresses/.env.pauser_smart_account"));
+  const pauserSmartAccount = await hre.ethers.getContractAt(
+    "Safe",
+    parsedEnvPauserSmartAccount.PAUSER_SMART_ACCOUNT_ADDRESS,
+  );
+
   // Load the FHE parameters
   const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
   const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
-
-  // Load the Safe Smart Account
-  const parsedEnvCircuitBreakerAccount = dotenv.parse(fs.readFileSync("addresses/.env.circuit_breaker_safe_account"));
-  const circuitBreakerSafeAccount = await hre.ethers.getContractAt(
-    "Safe",
-    parsedEnvCircuitBreakerAccount.CIRCUIT_BREAKER_SAFE_ACCOUNT_ADDRESS,
-  );
 
   return {
     ...fixtureData,
@@ -168,7 +164,7 @@ export async function loadTestVariablesFixture() {
     multichainAcl,
     decryption,
     inputVerification,
-    circuitBreakerSafeAccount,
+    pauserSmartAccount,
     chainIds,
     nKmsNodes,
     nCoprocessors,
