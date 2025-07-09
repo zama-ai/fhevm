@@ -68,12 +68,14 @@ scDeploy:
       value: ""
     - name: NUM_COPROCESSORS
       value: "1"
+    - name: COPROCESSORS_FEATURE_SET
+      value: "1"
+    - name: COPROCESSOR_NAME_0
+      value: "Coprocessor 1"
     - name: COPROCESSOR_TX_SENDER_ADDRESS_0
       value: "0x6254A198F67ad40290a2E7B48aDB2d19B71f67BD"
     - name: COPROCESSOR_SIGNER_ADDRESS_0
       value: "0x6254A198F67ad40290a2E7B48aDB2d19B71f67BD"
-    - name: COPROCESSOR_DA_URL_0
-      value: ""
     - name: COPROCESSOR_S3_BUCKET_URL_0
       value: "http://example.com"
     - name: FHE_PARAMS_NAME
