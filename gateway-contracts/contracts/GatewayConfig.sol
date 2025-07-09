@@ -32,7 +32,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.GatewayConfig
     struct GatewayConfigStorage {
-        /// @notice The pauser's address.
+        /// @notice The pauser's address
         address pauser;
         /// @notice The KMS nodes' transaction sender addresses
         mapping(address kmsTxSenderAddress => bool isKmsTxSender) _isKmsTxSender;
