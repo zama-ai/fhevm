@@ -155,6 +155,7 @@ const config: HardhatUserConfig = {
     '*': {
       'transient-storage': false,
     },
+    'examples/TracingSubCalls.sol': { default: 'off' },
   },
   typechain: {
     outDir: 'types',

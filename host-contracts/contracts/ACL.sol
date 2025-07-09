@@ -107,6 +107,8 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
      * @notice Re-initializes the contract from V1, adding new storage variable pauser.
      * @param initialPauser Pauser address
      */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2(address initialPauser) public virtual reinitializer(REINITIALIZER_VERSION) {
         if (initialPauser == address(0)) {
             revert InvalidNullPauser();

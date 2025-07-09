@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: {{ include "txSenderName" . }}
   name: {{ include "txSenderName" . }}
 spec:
-  replicas: {{ .Values.txSender.replicas | default 1 }}
+  replicas: {{ .Values.txSender.replicas }}
   selector:
     matchLabels:
       app: coprocessor-tx-sender

@@ -67,7 +67,6 @@ interface IGatewayConfig {
     function checkIsCustodianTxSender(address txSenderAddress) external view;
     function checkIsKmsSigner(address signerAddress) external view;
     function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
-    function checkIsPauser(address pauserAddress) external view;
     function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
     function getCoprocessorMajorityThreshold() external view returns (uint256);
     function getCoprocessorSigners() external view returns (address[] memory);
@@ -220,19 +219,6 @@ interface IGatewayConfig {
     "inputs": [
       {
         "name": "kmsTxSenderAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "checkIsPauser",
-    "inputs": [
-      {
-        "name": "pauserAddress",
         "type": "address",
         "internalType": "address"
       }
@@ -5646,131 +5632,6 @@ function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `checkIsPauser(address)` and selector `0x195afde6`.
-```solidity
-function checkIsPauser(address pauserAddress) external view;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkIsPauserCall {
-        #[allow(missing_docs)]
-        pub pauserAddress: alloy::sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the [`checkIsPauser(address)`](checkIsPauserCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkIsPauserReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkIsPauserCall> for UnderlyingRustTuple<'_> {
-                fn from(value: checkIsPauserCall) -> Self {
-                    (value.pauserAddress,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkIsPauserCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { pauserAddress: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkIsPauserReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: checkIsPauserReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkIsPauserReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for checkIsPauserCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = checkIsPauserReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkIsPauser(address)";
-            const SELECTOR: [u8; 4] = [25u8, 90u8, 253u8, 230u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.pauserAddress,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCoprocessor(address)` and selector `0xef6997f9`.
 ```solidity
 function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
@@ -8664,8 +8525,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         checkIsKmsTxSender(checkIsKmsTxSenderCall),
         #[allow(missing_docs)]
-        checkIsPauser(checkIsPauserCall),
-        #[allow(missing_docs)]
         getCoprocessor(getCoprocessorCall),
         #[allow(missing_docs)]
         getCoprocessorMajorityThreshold(getCoprocessorMajorityThresholdCall),
@@ -8720,7 +8579,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [13u8, 142u8, 110u8, 44u8],
-            [25u8, 90u8, 253u8, 230u8],
             [30u8, 165u8, 189u8, 66u8],
             [37u8, 133u8, 187u8, 101u8],
             [38u8, 207u8, 93u8, 239u8],
@@ -8756,7 +8614,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     impl alloy_sol_types::SolInterface for IGatewayConfigCalls {
         const NAME: &'static str = "IGatewayConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 31usize;
+        const COUNT: usize = 30usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -8783,9 +8641,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::checkIsKmsTxSender(_) => {
                     <checkIsKmsTxSenderCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::checkIsPauser(_) => {
-                    <checkIsPauserCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getCoprocessor(_) => {
                     <getCoprocessorCall as alloy_sol_types::SolCall>::SELECTOR
@@ -8886,19 +8741,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigCalls::getVersion)
                     }
                     getVersion
-                },
-                {
-                    fn checkIsPauser(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <checkIsPauserCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigCalls::checkIsPauser)
-                    }
-                    checkIsPauser
                 },
                 {
                     fn getCoprocessorTxSenders(
@@ -9331,11 +9173,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
-                Self::checkIsPauser(inner) => {
-                    <checkIsPauserCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::getCoprocessor(inner) => {
                     <getCoprocessorCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -9489,12 +9326,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::checkIsKmsTxSender(inner) => {
                     <checkIsKmsTxSenderCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::checkIsPauser(inner) => {
-                    <checkIsPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -10753,13 +10584,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     kmsTxSenderAddress,
                 },
             )
-        }
-        ///Creates a new call builder for the [`checkIsPauser`] function.
-        pub fn checkIsPauser(
-            &self,
-            pauserAddress: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkIsPauserCall, N> {
-            self.call_builder(&checkIsPauserCall { pauserAddress })
         }
         ///Creates a new call builder for the [`getCoprocessor`] function.
         pub fn getCoprocessor(

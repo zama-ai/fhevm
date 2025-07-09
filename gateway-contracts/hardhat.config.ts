@@ -7,9 +7,11 @@ import dotenv from "dotenv";
 import "hardhat-ignore-warnings";
 import { HardhatUserConfig, task, types } from "hardhat/config";
 import { resolve } from "path";
+import "solidity-coverage";
 
 import "./tasks/accounts";
 import "./tasks/addHostChains";
+import "./tasks/blockExplorerVerify";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
