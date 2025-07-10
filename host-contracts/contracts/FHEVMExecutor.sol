@@ -136,8 +136,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
     /// @notice IInputVerifier.
     IInputVerifier private constant inputVerifier = IInputVerifier(inputVerifierAdd);
 
-    /// Constant used for making sure the version number using in the `reinitializer` modifier is
-    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    /// Constant used for making sure the version number used in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
     uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMExecutor")) - 1)) & ~bytes32(uint256(0xff))
