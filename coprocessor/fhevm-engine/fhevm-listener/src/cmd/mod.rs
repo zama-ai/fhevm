@@ -1,7 +1,10 @@
+use alloy_eips::BlockId;
 use alloy_provider::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
     NonceFiller,
 };
+use alloy_rpc_types::Block;
+use anyhow::{anyhow, Context, Result};
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
 use std::collections::VecDeque;
@@ -20,8 +23,15 @@ use clap::Parser;
 
 use rustls;
 
+pub mod block_history;
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::tfhe_event_propagate::{ChainId, Database};
+use block_history::{BlockHash, BlockHistory, BlockSummary};
+
+const REORG_RETRY_GET_LOGS: u64 = 10; // retry 10 times to get logs for a block
+const RETRY_GET_LOGS_DELAY_IN_MS: u64 = 100;
+const REORG_RETRY_GET_BLOCK: u64 = 10; // retry 10 times to get logs for a block
+const RETRY_GET_BLOCK_DELAY_IN_MS: u64 = 100;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -63,7 +73,11 @@ pub struct Args {
     )]
     pub catchup_margin: u64,
 
-    #[arg(long, default_value = "100", help = "Catchup paging size in number of blocks")]
+    #[arg(
+        long,
+        default_value = "100",
+        help = "Catchup paging size in number of blocks"
+    )]
     pub catchup_paging: u64,
 
     #[arg(
@@ -85,6 +99,13 @@ pub struct Args {
         value_parser = clap::value_parser!(Level),
         default_value_t = Level::INFO)]
     pub log_level: Level,
+
+    #[arg(
+        long,
+        default_value = "50",
+        help = "Maximum duration in blocks to detect reorgs"
+    )]
+    pub reorg_maximum_duration_in_blocks: u64,
 }
 
 type RProvider = FillProvider<
@@ -118,7 +139,9 @@ struct InfiniteLogIter {
     prev_event: Option<Log>,
     current_event: Option<Log>,
     last_block_event_count: u64,
-    last_block_recheck_planned: u64,
+    last_block_recheck_planned: Option<BlockHash>,
+    reorg_maximum_duration_in_blocks: u64, // in blocks
+    block_history: BlockHistory,           // to detect reorgs
 }
 enum LogOrBlockTimeout {
     Log(Option<Log>),
@@ -153,7 +176,12 @@ impl InfiniteLogIter {
             prev_event: None,
             current_event: None,
             last_block_event_count: 0,
-            last_block_recheck_planned: 0,
+            last_block_recheck_planned: None,
+            reorg_maximum_duration_in_blocks: args
+                .reorg_maximum_duration_in_blocks,
+            block_history: BlockHistory::new(
+                args.reorg_maximum_duration_in_blocks as usize,
+            ),
         }
     }
 
@@ -261,7 +289,8 @@ impl InfiniteLogIter {
             if paging_to_block + 1 > to_block {
                 self.catchup_blocks = None;
             }
-        } else if nb_logs == 0 { // either empty or futur block
+        } else if nb_logs == 0 {
+            // either empty or future block
             if let Ok(current_block) = provider.get_block_number().await {
                 if current_block < paging_to_block + 1 {
                     self.catchup_blocks = None;
@@ -273,35 +302,28 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn recheck_prev_block(&mut self) -> bool {
-        let Some(provider) = &self.provider else {
-            error!("No provider, inconsistent state");
+    async fn recheck_block(&mut self, block: Option<BlockSummary>) -> bool {
+        if self.no_block_immediate_recheck {
             return false;
-        };
-        let Some(event) = &self.prev_event else {
-            return false;
-        };
-        let Some(block) = event.block_number else {
+        }
+        let Some(block) = block else {
             return false;
         };
         let last_block_event_count = self.last_block_event_count;
         self.last_block_event_count = 0;
-        if self.last_block_recheck_planned == block {
+        if self.last_block_recheck_planned == Some(block.hash) {
             // no need to replan anything
             return false;
         }
-        let mut filter = Filter::new().from_block(block).to_block(block); // inclusive
-        if !self.contract_addresses.is_empty() {
-            filter = filter.address(self.contract_addresses.clone())
-        }
-        let Ok(logs) = provider.get_logs(&filter).await else {
+        let Ok(logs) = self.get_logs_at_hash(block.hash).await else {
             return false;
         };
         if logs.is_empty() {
             return false;
         }
         info!(
-            block = block,
+            block = ?block.number,
+            block_hash = ?block.hash,
             events_count = logs.len(),
             last_block_event_count = last_block_event_count,
             "Replaying Block"
@@ -310,7 +332,227 @@ impl InfiniteLogIter {
         if let Some(event) = self.current_event.take() {
             self.catchup_logs.push_back(event);
         }
-        self.last_block_recheck_planned = block;
+        self.last_block_recheck_planned = Some(block.hash);
+        true
+    }
+
+    async fn get_current_block(&self) -> Result<Block> {
+        let block_id = BlockId::latest();
+        let provider = self.provider.as_ref().context("no provider")?;
+        for i in 0..=REORG_RETRY_GET_BLOCK {
+            let block = provider.get_block(block_id).await;
+            match block {
+                Ok(Some(block)) => return Ok(block),
+                Ok(None) => error!(
+                    block_id = ?block_id,
+                    "Cannot get current block {block_id}, retrying",
+                ),
+                Err(err) => error!(
+                    block_id = ?block_id,
+                    error = %err,
+                    "Cannot get current block {block_id}, retrying",
+                ),
+            }
+            if i != REORG_RETRY_GET_BLOCK {
+                tokio::time::sleep(Duration::from_millis(
+                    RETRY_GET_BLOCK_DELAY_IN_MS,
+                ))
+                .await;
+            }
+        }
+        Err(anyhow::anyhow!("Cannot get current block after retries"))
+    }
+
+    async fn get_block(&self, block_hash: BlockHash) -> Result<Block> {
+        let provider = self.provider.as_ref().context("no provider")?;
+        for i in 0..=REORG_RETRY_GET_BLOCK {
+            let block = provider.get_block_by_hash(block_hash).await;
+            match block {
+                Ok(Some(block)) => return Ok(block),
+                Ok(None) => error!(
+                     block_hash = ?block_hash,
+                    "Cannot get block, retrying",
+                ),
+                Err(err) => error!(
+                    block_hash = ?block_hash,
+                    error = %err,
+                    "Cannot get block, retrying",
+                ),
+            }
+            if i != REORG_RETRY_GET_BLOCK {
+                tokio::time::sleep(Duration::from_millis(
+                    RETRY_GET_BLOCK_DELAY_IN_MS,
+                ))
+                .await;
+            }
+        }
+        Err(anyhow::anyhow!(
+            "Cannot get block {block_hash} after retries"
+        ))
+    }
+
+    async fn get_logs_at_hash(
+        &self,
+        block_hash: BlockHash,
+    ) -> Result<Vec<Log>> {
+        let provider = self.provider.as_ref().context("no provider")?;
+        let mut filter = Filter::new().at_block_hash(block_hash);
+        if !self.contract_addresses.is_empty() {
+            filter = filter.address(self.contract_addresses.clone())
+        }
+        for _ in 0..REORG_RETRY_GET_LOGS {
+            let logs = provider.get_logs(&filter).await;
+            match logs {
+                Ok(logs) => return Ok(logs),
+                Err(err) => {
+                    error!(
+                        block_hash = ?block_hash,
+                        error = %err,
+                        "Cannot get logs for block {block_hash}, retrying",
+                    );
+                    tokio::time::sleep(Duration::from_millis(
+                        RETRY_GET_LOGS_DELAY_IN_MS,
+                    ))
+                    .await;
+                    continue;
+                }
+            }
+        }
+        Err(anyhow::anyhow!(
+            "Cannot get logs for block {block_hash} after retries"
+        ))
+    }
+
+    async fn get_missings_ancestors(
+        &self,
+        mut current_block: BlockSummary,
+    ) -> Vec<BlockSummary> {
+        // iter on current block ancestors to collect missing blocks
+        let mut missing_blocks: Vec<BlockSummary> = Vec::new();
+        for i in 1..=self.reorg_maximum_duration_in_blocks {
+            let parent_block_hash = current_block.parent_hash;
+            if self.block_history.is_known(&parent_block_hash) {
+                break;
+            }
+            missing_blocks.push(current_block);
+            if parent_block_hash == BlockHash::ZERO {
+                // can happen in tests
+                break;
+            }
+            let Ok(parent_block) = self.get_block(parent_block_hash).await
+            else {
+                error!(
+                    parent_block_hash = ?parent_block_hash,
+                    "Reorg chaining stopped. Cannot get parent block.",
+                );
+                break;
+            };
+            current_block = parent_block.into();
+            if i == self.reorg_maximum_duration_in_blocks {
+                error!(
+                    history_size = self.block_history.size(),
+                    reorg_maximum_duration_in_blocks = self.reorg_maximum_duration_in_blocks,
+                    "reorg_maximum_duration_in_blocks maybe too short for the last reorg or the listener was restarted during a reorg");
+            }
+        }
+        missing_blocks.reverse();
+        missing_blocks
+    }
+
+    async fn populate_catchup_logs_from_missing_blocks(
+        &mut self,
+        missing_blocks: Vec<BlockSummary>,
+    ) {
+        // move current to catchup as catchup could overwrite it
+        if let Some(event) = self.current_event.take() {
+            self.catchup_logs.push_back(event);
+        }
+        for missing_block in missing_blocks {
+            let Ok(logs) = self.get_logs_at_hash(missing_block.hash).await
+            else {
+                error!(
+                    block_summary = ?missing_block,
+                    "Cannot get logs for missing block, skipping it.",
+                );
+                continue; // skip this block
+            };
+            warn!(
+                block_summary = ?missing_block,
+                nb_events = logs.len(),
+                "Missing block retrieved",
+            );
+            self.catchup_logs.extend(logs);
+            self.block_history.add_block(missing_block);
+        }
+    }
+
+    async fn check_missing_ancestors(&mut self) -> bool {
+        let current_block_hash =
+            self.current_event.as_ref().and_then(|e| e.block_hash);
+        let mut current_block = None;
+        let current_block_hash = if current_block_hash.is_none() {
+            // if no info is available we do the check+catchup from current block
+            // can happens in block timeout
+            current_block = self.get_current_block().await.ok();
+            current_block.as_ref().map(|b| b.header.hash)
+        } else {
+            current_block_hash
+        };
+        let Some(current_block_hash) = current_block_hash else {
+            // Cannot happen, but just in case
+            error!("Check missing ancestors. No current block hash, skipping the check");
+            return false;
+        };
+        if self
+            .block_history
+            .block_has_not_changed(&current_block_hash)
+        {
+            return false;
+        }
+        // starting the detection
+        let current_block = match current_block {
+            Some(current_block) => current_block,
+            None => match self.get_block(current_block_hash).await {
+                Ok(block) => block,
+                Err(_) => match self.get_current_block().await {
+                    Ok(block) => block,
+                    Err(_) => {
+                        error!(
+                            current_block_hash = ?current_block_hash,
+                            "Reorg. Cannot get current block, cannot detect reorgs",
+                        );
+                        return false; // no reorg
+                    }
+                },
+            },
+        };
+        let current_block_summary = current_block.into();
+        if self.current_event.is_some() {
+            // we don't add to history from which we have no event
+            // e.g. at timeout, because emtpy blokcs are not get_logs
+            self.block_history.add_block(current_block_summary);
+        }
+
+        if !self.block_history.is_ready_to_detect_reorg() {
+            // at fresh restart no ancestor are known
+            return false;
+        }
+
+        let missing_blocks =
+            self.get_missings_ancestors(current_block_summary).await;
+
+        if missing_blocks.is_empty() {
+            return false; // no reorg
+        }
+        warn!(
+            nb_missing_blocks = missing_blocks.len(),
+            "Missing ancestors detected.",
+        );
+        self.populate_catchup_logs_from_missing_blocks(missing_blocks)
+            .await;
+        // let's maintain the tip block by re-adding at end
+        self.block_history.add_block(current_block_summary);
+        warn!("Missing ancestors catchup done.");
         true
     }
 
@@ -359,9 +601,7 @@ impl InfiniteLogIter {
                                 error = %err,
                                 "Cannot connect",
                             );
-                            panic!(
-                                "Cannot connect due to {err}.",
-                            )
+                            panic!("Cannot connect due to {err}.",)
                         }
                         5
                     } else {
@@ -444,15 +684,17 @@ impl InfiniteLogIter {
                 }
                 LogOrBlockTimeout::Log(Some(log)) => {
                     info!(log = ?log, "Log event");
+                    let block_hash_or_0 = log.block_hash.unwrap_or_default();
+                    let is_first_of_block = !self
+                        .block_history
+                        .block_has_not_changed(&block_hash_or_0);
                     self.current_event = Some(log);
-                    let recheck_planned = if !self.no_block_immediate_recheck
-                        && self.is_first_of_block()
-                    {
-                        self.recheck_prev_block().await
-                    } else {
-                        false
-                    };
-                    if recheck_planned {
+                    // check reorgs update the block history
+                    let reorg_planned = self.check_missing_ancestors().await;
+                    let prev_block = self.block_history.tip();
+                    let recheck_planned = is_first_of_block
+                        && self.recheck_block(prev_block).await;
+                    if reorg_planned || recheck_planned {
                         // current log is delayed and pushed to be replayed
                         // after the previous block in catchup
                         continue; // jump to the first event of catchup phase
@@ -461,7 +703,14 @@ impl InfiniteLogIter {
                     }
                 }
                 LogOrBlockTimeout::BlockTimeout => {
-                    self.recheck_prev_block().await;
+                    let prev_block = self.block_history.tip();
+                    // check reorgs update the block history
+                    warn!(
+                        block_time = self.block_time,
+                        "Block timeout, checking for missing ancestors"
+                    );
+                    self.check_missing_ancestors().await;
+                    self.recheck_block(prev_block).await;
                     continue;
                 }
             }
@@ -495,7 +744,9 @@ impl InfiniteLogIter {
                     block_number: Some(prev_n),
                     ..
                 }),
-            ) => self.block_time = (curr_t - prev_t) / (curr_n - prev_n),
+            ) if curr_n > prev_n && curr_t > prev_t => {
+                self.block_time = (curr_t - prev_t) / (curr_n - prev_n)
+            }
             _ => (),
         }
     }
