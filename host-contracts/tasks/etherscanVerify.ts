@@ -3,7 +3,7 @@ import fs from 'fs';
 import { task } from 'hardhat/config';
 
 task('task:verifyACL').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
+  const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.host'));
   const proxyACLAddress = parsedEnvACL.ACL_CONTRACT_ADDRESS;
   const implementationACLAddress = await upgrades.erc1967.getImplementationAddress(proxyACLAddress);
   await run('verify:verify', {
@@ -17,7 +17,7 @@ task('task:verifyACL').setAction(async function (taskArguments, { upgrades, run 
 });
 
 task('task:verifyFHEVMExecutor').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvFHEVMExecutor = dotenv.parse(fs.readFileSync('addresses/.env.exec'));
+  const parsedEnvFHEVMExecutor = dotenv.parse(fs.readFileSync('addresses/.env.host'));
   const proxyFHEVMExecutorAddress = parsedEnvFHEVMExecutor.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
   const implementationFHEVMExecutorAddress = await upgrades.erc1967.getImplementationAddress(proxyFHEVMExecutorAddress);
   await run('verify:verify', {
@@ -31,7 +31,7 @@ task('task:verifyFHEVMExecutor').setAction(async function (taskArguments, { upgr
 });
 
 task('task:verifyKMSVerifier').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvKMSVerifier = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier'));
+  const parsedEnvKMSVerifier = dotenv.parse(fs.readFileSync('addresses/.env.host'));
   const proxyKMSVerifier = parsedEnvKMSVerifier.KMS_VERIFIER_CONTRACT_ADDRESS;
   const implementationKMSVerifierAddress = await upgrades.erc1967.getImplementationAddress(proxyKMSVerifier);
   await run('verify:verify', {
@@ -45,7 +45,7 @@ task('task:verifyKMSVerifier').setAction(async function (taskArguments, { upgrad
 });
 
 task('task:verifyInputVerifier').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvInputVerifier = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier'));
+  const parsedEnvInputVerifier = dotenv.parse(fs.readFileSync('addresses/.env.host'));
   const proxyInputVerifier = parsedEnvInputVerifier.INPUT_VERIFIER_CONTRACT_ADDRESS;
   const implementationInputVerifierAddress = await upgrades.erc1967.getImplementationAddress(proxyInputVerifier);
   await run('verify:verify', {
@@ -59,7 +59,7 @@ task('task:verifyInputVerifier').setAction(async function (taskArguments, { upgr
 });
 
 task('task:verifyHCULimit').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvHCULimit = dotenv.parse(fs.readFileSync('addresses/.env.hculimit'));
+  const parsedEnvHCULimit = dotenv.parse(fs.readFileSync('addresses/.env.host'));
   const proxyHCULimit = parsedEnvHCULimit.HCU_LIMIT_CONTRACT_ADDRESS;
   const implementationHCULimitAddress = await upgrades.erc1967.getImplementationAddress(proxyHCULimit);
   await run('verify:verify', {

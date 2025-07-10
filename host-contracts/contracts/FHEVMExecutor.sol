@@ -7,9 +7,7 @@ import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol"
 
 import {ACL} from "./ACL.sol";
 import {HCULimit} from "./HCULimit.sol";
-import {aclAdd} from "../addresses/ACLAddress.sol";
-import {HCULimitAdd} from "../addresses/HCULimitAddress.sol";
-import {inputVerifierAdd} from "../addresses/InputVerifierAddress.sol";
+import {aclAdd, hcuLimitAdd, inputVerifierAdd} from "../addresses/FHEVMHostAddresses.sol";
 
 import {FheType} from "./shared/FheType.sol";
 import {FHEEvents} from "./FHEEvents.sol";
@@ -131,7 +129,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
     ACL private constant acl = ACL(aclAdd);
 
     /// @notice hcuLimit.
-    HCULimit private constant hcuLimit = HCULimit(HCULimitAdd);
+    HCULimit private constant hcuLimit = HCULimit(hcuLimitAdd);
 
     /// @notice IInputVerifier.
     IInputVerifier private constant inputVerifier = IInputVerifier(inputVerifierAdd);

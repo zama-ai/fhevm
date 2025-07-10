@@ -139,7 +139,7 @@ task('task:upgradeACL')
 
     let proxyAddress: string;
     if (useInternalProxyAddress) {
-      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
+      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
       proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
     } else {
       proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
@@ -183,7 +183,7 @@ task('task:upgradeFHEVMExecutor')
 
     let proxyAddress: string;
     if (useInternalProxyAddress) {
-      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.exec'));
+      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
       proxyAddress = parsedEnv.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
     } else {
       proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
@@ -223,7 +223,7 @@ task('task:upgradeKMSVerifier')
 
     let proxyAddress: string;
     if (useInternalProxyAddress) {
-      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier'));
+      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
       proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
     } else {
       proxyAddress = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
@@ -263,7 +263,7 @@ task('task:upgradeInputVerifier')
 
     let proxyAddress: string;
     if (useInternalProxyAddress) {
-      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier'));
+      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
       proxyAddress = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
     } else {
       proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
@@ -303,7 +303,7 @@ task('task:upgradeHCULimit')
 
     let proxyAddress: string;
     if (useInternalProxyAddress) {
-      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.hculimit'));
+      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
       proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
     } else {
       proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');

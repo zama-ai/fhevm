@@ -5,7 +5,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {fhevmExecutorAdd} from "../addresses/FHEVMExecutorAddress.sol";
+import {fhevmExecutorAdd} from "../addresses/FHEVMHostAddresses.sol";
 
 import {ACLEvents} from "./ACLEvents.sol";
 

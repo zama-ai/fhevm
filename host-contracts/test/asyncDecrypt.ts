@@ -10,7 +10,7 @@ import { checkIsHardhatSigner } from './utils';
 
 const networkName = network.name;
 
-const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
+const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.host'));
 const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
 
 async function getKMSSigners() {

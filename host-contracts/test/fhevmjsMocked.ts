@@ -33,7 +33,7 @@ async function getCoprocessorSigners() {
   return coprocessorSigners;
 }
 
-const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
+const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.host'));
 const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
 
 enum Types {
