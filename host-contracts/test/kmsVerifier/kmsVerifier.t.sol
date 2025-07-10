@@ -8,7 +8,7 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
 
 import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
 import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
-import {fhevmExecutorAdd} from "../../addresses/FHEVMExecutorAddress.sol";
+import {fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract KMSVerifierTest is Test {
     KMSVerifier internal kmsVerifier;

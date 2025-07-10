@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import {fhevmExecutorAdd} from "../addresses/FHEVMExecutorAddress.sol";
+import {fhevmExecutorAdd} from "../addresses/FHEVMHostAddresses.sol";
 
 import {FheType} from "./shared/FheType.sol";
 

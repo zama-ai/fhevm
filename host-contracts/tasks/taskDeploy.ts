@@ -291,13 +291,13 @@ pragma solidity ^0.8.24;
 address constant aclAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./addresses/ACLAddress.sol', solidityTemplate, {
+      fs.writeFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.log('./addresses/ACLAddress.sol file generated successfully!');
+      console.log('./addresses/FHEVMHostAddresses.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./addresses/ACLAddress.sol', error);
+      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
     }
   });
 
@@ -313,20 +313,17 @@ task('task:setFHEVMExecutorAddress')
       console.error('Failed to write FHEVMExecutor address:', err);
     }
 
-    const solidityTemplateCoprocessor = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
+    const solidityTemplate = `
 address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./addresses/FHEVMExecutorAddress.sol', solidityTemplateCoprocessor, {
+      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, {
         encoding: 'utf8',
-        flag: 'w',
+        flag: 'a',
       });
-      console.log('./addresses/FHEVMExecutorAddress.sol file generated successfully!');
+      console.log('./addresses/FHEVMHostAddresses.sol file appended with fhevmExecutorAdd successfully!');
     } catch (error) {
-      console.error('Failed to write ./addresses/FHEVMExecutorAddress.sol', error);
+      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
     }
   });
 
@@ -342,20 +339,17 @@ task('task:setKMSVerifierAddress')
       console.error('Failed to write KMSVerifier address:', err);
     }
 
-    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
+    const solidityTemplate = `
 address constant kmsVerifierAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./addresses/KMSVerifierAddress.sol', solidityTemplate, {
+      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, {
         encoding: 'utf8',
-        flag: 'w',
+        flag: 'a',
       });
-      console.log('./addresses/KMSVerifierAddress.sol file generated successfully!');
+      console.log('./addresses/FHEVMHostAddresses.sol file appended with kmsVerifierAdd successfully!');
     } catch (error) {
-      console.error('Failed to write ./addresses/KMSVerifierAddress.sol', error);
+      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
     }
   });
 
@@ -372,20 +366,17 @@ task('task:setInputVerifierAddress')
       console.error('Failed to write InputVerifier address:', err);
     }
 
-    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
+    const solidityTemplate = `
 address constant inputVerifierAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./addresses/InputVerifierAddress.sol', solidityTemplate, {
+      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, {
         encoding: 'utf8',
-        flag: 'w',
+        flag: 'a',
       });
-      console.log('./addresses/InputVerifierAddress.sol file generated successfully!');
+      console.log('./addresses/FHEVMHostAddresses.sol file appended with inputVerifierAdd successfully!');
     } catch (error) {
-      console.error('Failed to write ./addresses/InputVerifierAddress.sol', error);
+      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
     }
   });
 
@@ -401,20 +392,17 @@ task('task:setHCULimitAddress')
       console.error('Failed to write HCULimit address:', err);
     }
 
-    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
-address constant HCULimitAdd = ${taskArguments.address};\n`;
+    const solidityTemplate = `
+address constant hcuLimitAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./addresses/HCULimitAddress.sol', solidityTemplate, {
+      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, {
         encoding: 'utf8',
-        flag: 'w',
+        flag: 'a',
       });
-      console.log('./addresses/HCULimitAddress.sol file generated successfully!');
+      console.log('./addresses/FHEVMHostAddresses.sol appended with hcuLimitAdd successfully!');
     } catch (error) {
-      console.error('Failed to write ./addresses/HCULimitAddress.sol', error);
+      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
     }
   });
 
