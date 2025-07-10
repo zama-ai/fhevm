@@ -91,7 +91,9 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
      * @param initialPauser Pauser address
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy(address initialPauser) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+    function initializeFromEmptyProxy(
+        address initialPauser
+    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __Pausable_init();
 
