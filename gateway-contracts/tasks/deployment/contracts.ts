@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import { Wallet } from "ethers";
+import { EventLog, Wallet } from "ethers";
 import fs from "fs";
 import { task } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
@@ -173,6 +173,7 @@ task("task:deployPauserSmartAccount").setAction(async function (_, { ethers, net
   // Deploy a new Safe contract
   const safeFactory = await ethers.getContractFactory("Safe", deployer);
   const safe = await safeFactory.deploy();
+  const safeAddress = await safe.getAddress();
 
   // Deploy a new SafeProxyFactory contract
   const safeProxyFactoryFactory = await ethers.getContractFactory("SafeProxyFactory", deployer);
@@ -200,23 +201,30 @@ task("task:deployPauserSmartAccount").setAction(async function (_, { ethers, net
     paymentReceiver,
   ]);
 
-  // Predict the safe proxy factory address by executing the static call to createProxyWithNonce function
-  const safeProxyFactoryAddress = await safeProxyFactory.createProxyWithNonce.staticCall(
-    await safe.getAddress(),
-    safeData,
-    0n,
-  );
-
-  if (safeProxyFactoryAddress === ethers.ZeroAddress) {
-    throw new Error("Safe address not found");
+  // Setup the Safe proxy factory
+  const saltNonce = 0n;
+  const txResponse = await safeProxyFactory.createProxyWithNonce(safeAddress, safeData, saltNonce);
+  const txReceipt = await txResponse.wait();
+  if (!txReceipt) {
+    throw new Error("Create Safe proxy transaction receipt not found");
   }
 
-  // Setup the Safe proxy factory
-  await safeProxyFactory.createProxyWithNonce(await safe.getAddress(), safeData, 0n);
+  // Get the Safe proxy address from the ProxyCreation event
+  const event = txReceipt.logs
+    .filter((l) => l instanceof EventLog)
+    .find((l) => l.eventName === safeProxyFactory.getEvent("ProxyCreation").name);
+  if (!event) {
+    throw new Error("ProxyCreation event not found in transaction receipt");
+  }
+  const safeProxyAddress = event.args.proxy;
+
+  if (safeProxyAddress === ethers.ZeroAddress) {
+    throw new Error("Safe proxy address not found");
+  }
 
   await run("task:setContractAddress", {
     name: "PauserSmartAccount",
-    address: safeProxyFactoryAddress,
+    address: safeProxyAddress,
   });
 });
 

@@ -3,6 +3,7 @@ include .env.example
 LOCAL_NETWORK_NAME=localGateway
 ENV_PATH=.env.example
 FORGE_DAPP_OUT=artifacts
+SOLIDITY_COVERAGE_PAUSER_ADDRESS=0x172C529a26B7f840FA8e95F10297B06c3B8F6d64
 
 prettier:
 	npx prettier . --write
@@ -19,7 +20,7 @@ test: clean
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test $(if $(GREP),--grep '$(GREP)',)
 
 coverage: clean
-	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat coverage
+	DOTENV_CONFIG_PATH=$(ENV_PATH) PAUSER_ADDRESS=$(SOLIDITY_COVERAGE_PAUSER_ADDRESS) npx hardhat coverage
 
 get-accounts:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts --num-accounts 20
