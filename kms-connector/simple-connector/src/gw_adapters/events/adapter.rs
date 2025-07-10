@@ -161,7 +161,7 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
                             for task in &tasks {
                                 task.abort();
                             }
-                            return error!("Task {} failed: {}", idx, e);
+                            error!("Task {} failed: {}", idx, e);
                         }
                         Err(e) => {
                             // Abort other tasks
