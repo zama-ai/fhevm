@@ -42,7 +42,7 @@
 FHEVM ensures both confidentiality and composability, with the following guarantees:
 - **End-to-end encryption of transactions and state:** Data included in transactions is encrypted and never visible to anyone.
 - **Composability and data availability on-chain:** States are updated while remaining encrypted at all times.
-- **No impact on existing dApps and state:** Encrypted state co-exists alongside public one, and doesn't impact existing dApps.
+- **No impact on existing dApps and state:** Encrypted state coexists alongside the public one, and doesn't impact existing dApps.
 <br></br>
 
 ### Table of contents
@@ -65,9 +65,9 @@ The directories of this repository are organized in the following way:
 
 ###### FHEVM Contracts
 
-- **`gateway-contracts/`**: Smart contracts managing the gateway between on-chain and off-chain components.
+- **`gateway-contracts/`**: smart contracts managing the gateway between on-chain and off-chain components.
 
-- **`host-contracts/`**: Smart Contracts deployed on the host chain for orchestrating FHE workflows.
+- **`host-contracts/`**: smart Contracts deployed on the host chain for orchestrating FHE workflows.
 
 ###### FHEVM Compute Engines
 
@@ -90,9 +90,9 @@ The directories of this repository are organized in the following way:
 - **Privacy by design:** Building decentralized apps with full privacy and confidentiality on Ethereum, leveraging FHE.
 - **Solidity integration:** Write FHEVM contracts like any standard Solidity contract using Solidity. Compatible with existing toolchains — such as Hardhat and Foundry (*coming soon*).
 - **Programmable privacy:**  Define exactly what data is encrypted and write the access control logic directly in your smart contracts.
-- **High precision encrypted integers :** Up to 256 bits of precision for integers.
+- **High precision encrypted integers:** Up to 256 bits of precision for integers.
 - **Full range of operators:** All typical operators are available: `+`, `-`, `*`, `/`, `<`, `>`, `==`, ternary-if, boolean operations…. Consecutive FHE operations are not limited.
-- **Security:** The underlying FHE crypto-scheme of FHEVM is quantum-resistant. Decryption is managed via a key management system (KMS) using multi-party computation (MPC), ensuring security even if some parties are compromised or misbehaving.
+- **Security:** The underlying FHE crypto-scheme of FHEVM is quantum-resistant. Decryption is managed via a key management system (KMS) that uses multi-party computation (MPC), ensuring security even if some parties are compromised or misbehaving.
 - **Symbolic execution of FHE computations:** All FHE operations are executed symbolically on the host chain, significantly reducing execution time. The actual computations on encrypted data are offloaded asynchronously to our coprocessor, allowing for faster, efficient, and scalable processing.
 
 _Learn more about FHEVM features in the [documentation](https://docs.zama.ai/protocol) and in our [whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)._
