@@ -20,6 +20,7 @@ use tokio::{
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
+const RETRY_NUMBER: usize = 15;
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 
 /// Keep trying to connect to the RPC endpoint until successful or shutdown signal
@@ -27,10 +28,10 @@ async fn connect_with_retry(
     config: &Config,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<Option<Arc<impl Provider + Clone + std::fmt::Debug + 'static>>> {
-    loop {
+    for i in 1..=RETRY_NUMBER {
         info!(
-            "Attempting to connect to Gateway RPC endpoint: {}",
-            config.gateway_url
+            "{}/{} Attempting to connect to Gateway RPC endpoint: {}",
+            i, RETRY_NUMBER, config.gateway_url
         );
         match ProviderBuilder::new()
             .wallet(config.wallet.clone())
@@ -43,7 +44,9 @@ async fn connect_with_retry(
             }
             Err(e) => {
                 error!(
-                    "Failed to connect to Gateway RPC endpoint: {}, retrying in {}s...",
+                    "{}/{} Failed to connect to Gateway RPC endpoint: {}, retrying in {}s...",
+                    i,
+                    RETRY_NUMBER,
                     e,
                     RETRY_DELAY.as_secs()
                 );
@@ -59,6 +62,9 @@ async fn connect_with_retry(
             }
         }
     }
+    Err(Error::Transport(
+        "Failed to connect to the Gateway".to_string(),
+    ))
 }
 
 /// Run the connector with automatic reconnection
