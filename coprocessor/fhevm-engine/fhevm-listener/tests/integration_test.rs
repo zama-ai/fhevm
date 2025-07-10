@@ -2,7 +2,11 @@ use alloy::network::EthereumWallet;
 use alloy::node_bindings::Anvil;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
+use alloy_provider::ext::AnvilApi;
+use alloy_rpc_types::anvil::ReorgOptions;
+use alloy_rpc_types::anvil::TransactionData;
 use futures_util::future::try_join_all;
+use tracing::warn;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use tracing::Level;
@@ -44,6 +48,7 @@ async fn emit_events<P, N>(
     url: &String,
     tfhe_contract: FHEVMExecutorTestInstance<P, N>,
     acl_contract: ACLTestInstance<P, N>,
+    reorg: bool,
 ) where
     P: Clone + alloy_provider::Provider<N> + 'static,
     N: Clone
@@ -62,31 +67,67 @@ async fn emit_events<P, N>(
     }
     static UNIQUE_INT: AtomicU32 = AtomicU32::new(1); // to counter avoid idempotency
     let mut threads = vec![];
-    for provider in providers.iter() {
+    for (i_wallet, wallet) in wallets.iter().enumerate() {
+        let wallet = wallet.clone();
         let tfhe_contract = tfhe_contract.clone();
         let acl_contract = acl_contract.clone();
-        let provider = provider.clone();
+        let url_clone = url.clone();
         let thread = tokio::spawn(async move {
-            for _ in 1..=NB_EVENTS_PER_WALLET {
+            for i_message in 1..=NB_EVENTS_PER_WALLET {
+                let reorg_point =
+                    reorg && i_message == (2 * NB_EVENTS_PER_WALLET) / 3;
+                let provider = ProviderBuilder::new()
+                    .wallet(wallet.clone())
+                    .connect_ws(WsConnect::new(url_clone.clone()))
+                    .await
+                    .unwrap();
                 let to_type: ToType = 4_u8;
                 let pt = U256::from(UNIQUE_INT.fetch_add(1, Ordering::SeqCst));
-                let txn_req = tfhe_contract
+                let tfhe_txn_req = tfhe_contract
                     .trivialEncrypt(pt.clone(), to_type.clone())
-                    .into_transaction_request()
-                    .into();
-                let pending_txn =
-                    provider.send_transaction(txn_req).await.unwrap();
+                    .into_transaction_request();
+                let pending_txn = provider
+                    .send_transaction(tfhe_txn_req.clone())
+                    .await
+                    .unwrap();
                 let receipt = pending_txn.get_receipt().await.unwrap();
                 assert!(receipt.status());
                 let add: Vec<_> = provider.signer_addresses().collect();
-                let txn_req = acl_contract
+                let acl_txn_req = acl_contract
                     .allow(pt.clone().into(), add[0].clone())
-                    .into_transaction_request()
-                    .into();
-                let pending_txn =
-                    provider.send_transaction(txn_req).await.unwrap();
-                let receipt = pending_txn.get_receipt().await.unwrap();
-                assert!(receipt.status());
+                    .into_transaction_request();
+                if reorg_point && i_wallet == 0 {
+                    // ensure no event is lost also on loosing chain to facilitate the test assert
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5))
+                        .await;
+                    // ACL event is only in the past of winning chain in reorg
+                    let cur_block = receipt.block_number.unwrap();
+                    warn!("Start reorg");
+                    provider
+                        .anvil_reorg(ReorgOptions {
+                            depth: 25, // big depth otherwise anvil is not forgetting to send to subscribe
+                            tx_block_pairs: vec![
+                                (TransactionData::JSON(tfhe_txn_req), 24),
+                                // this event is only on winning chain
+                                (TransactionData::JSON(acl_txn_req), 0),
+                            ],
+                        })
+                        .await
+                        .unwrap();
+                    warn!("Reorg happened at block {cur_block}");
+                } else {
+                    let pending_txn = provider
+                        .send_transaction(acl_txn_req.clone())
+                        .await
+                        .unwrap();
+                    let receipt = pending_txn.get_receipt().await.unwrap();
+                    assert!(receipt.status());
+                    if reorg_point {
+                        // ensure no event is lost also on loosing chain to facilitate the test assert
+                        tokio::time::sleep(tokio::time::Duration::from_secs(5))
+                            .await;
+                    }
+                }
             }
         });
         threads.push(thread);
@@ -100,6 +141,21 @@ async fn emit_events<P, N>(
 #[tokio::test]
 #[serial(db)]
 async fn test_listener_restart() -> Result<(), anyhow::Error> {
+    test_listener_no_event_loss(true, false).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_listener_restart_and_chain_reorg() -> Result<(), anyhow::Error> {
+    test_listener_no_event_loss(true, true).await
+}
+
+async fn test_listener_no_event_loss(kill: bool, reorg: bool) -> Result<(), anyhow::Error> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .compact()
+        .try_init()
+        .ok();
     let anvil = Anvil::new()
         .block_time_f64(1.0)
         .args(["--accounts", "15"])
@@ -167,10 +223,11 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         catchup_margin: 5,
         catchup_paging: 3,
         log_level: Level::INFO,
+        reorg_maximum_duration_in_blocks: 100, // to go beyond chain start
     };
 
     // Start listener in background task
-    let listener_handle = tokio::spawn(main(args.clone()));
+    let mut listener_handle = tokio::spawn(main(args.clone()));
 
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
@@ -185,15 +242,18 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
             &url_clone,
             tfhe_contract_clone,
             acl_contract_clone,
+            reorg,
         )
         .await;
     });
 
     tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 
-    // Kill the listener
-    eprintln!("First kill, check database valid block has been updated");
-    listener_handle.abort();
+    if kill {
+        // Kill the listener
+        eprintln!("First kill, check database valid block has been updated");
+        listener_handle.abort();
+    }
     let mut database =
         Database::new(&database_url, &coprocessor_api_key.unwrap(), chain_id)
             .await;
@@ -211,7 +271,9 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     // Restart/kill many time until no more events are consumned.
     for _ in 1..120 {
         // 10 mins max to avoid stalled CI
-        let listener_handle = tokio::spawn(main(args.clone()));
+        if kill {
+            listener_handle = tokio::spawn(main(args.clone()));
+        }
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
         let tfhe_new_count = sqlx::query!("SELECT COUNT(*) FROM computations")
             .fetch_one(&db_pool)
@@ -232,13 +294,18 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         };
         tfhe_events_count = tfhe_new_count;
         acl_events_count = acl_new_count;
-        listener_handle.abort();
-        nb_kill += 1;
+        if kill {
+            listener_handle.abort();
+            nb_kill += 1;
+        }
+        let b_number = provider.get_block_number().await.unwrap();
         eprintln!(
-            "Kill {nb_kill} ongoing, event source ongoing: {}, {} {}",
+            "Kill {nb_kill} ongoing, event source ongoing: {}, {} {} (vs {}), block: {}",
             event_source.is_finished(),
             tfhe_events_count,
-            acl_events_count
+            acl_events_count,
+            nb_wallet * NB_EVENTS_PER_WALLET,
+            b_number
         );
         tokio::time::sleep(tokio::time::Duration::from_secs_f64(1.5)).await;
     }
@@ -246,6 +313,8 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     assert_eq!(tfhe_events_count, nb_wallet * NB_EVENTS_PER_WALLET);
     assert_eq!(acl_events_count, nb_wallet * NB_EVENTS_PER_WALLET);
     eprintln!("Total kills: {nb_kill}");
-    assert!(3 < nb_kill);
+    if kill {
+        assert!(3 < nb_kill);
+    }
     Ok(())
 }
