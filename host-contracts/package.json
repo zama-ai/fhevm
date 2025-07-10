@@ -19,7 +19,8 @@
     "test": "HARDHAT_PARALLEL=1 hardhat test --parallel",
     "test:mock": "hardhat test --network hardhat",
     "coverage:mock": "SOLIDITY_COVERAGE=true hardhat coverage",
-    "codegen": "npx ts-node codegen/main.ts && npm run prettier"
+    "codegen": "npx ts-node codegen/main.ts && npm run prettier",
+    "test:gas": "hardhat test --grep Gas --network hardhat"
   },
   "author": "",
   "license": "BSD-3-Clause",
